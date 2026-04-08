@@ -41,10 +41,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         // CacheCodehash: available only on ArbOS 30, replaced by CacheProgram at 31.
@@ -76,7 +78,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let _ = &mut input;
             Err(PrecompileError::other("caller is not a cache manager"))
         }
-        _ => Err(PrecompileError::other("unknown ArbWasmCache selector")),
+        _ => return crate::burn_all_revert(input.gas),
     };
     crate::gas_check(input.gas, result)
 }
@@ -96,6 +98,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 

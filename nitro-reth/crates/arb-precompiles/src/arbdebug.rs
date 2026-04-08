@@ -15,6 +15,7 @@ pub fn create_arbdebug_precompile() -> DynPrecompile {
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     // ArbDebug is gated by the DebugPrecompile wrapper in Go.
     // In production, all calls are rejected.
+    crate::init_precompile_gas(input.data.len());
     crate::gas_check(
         input.gas,
         Err(PrecompileError::other(

@@ -893,14 +893,6 @@ where
 
     let zero_gas = || EvmGas::new(0);
 
-    // Strip the 4-byte Stylus prefix to get the serialized module.
-    let (module_bytes, _version_byte) = match arb_stylus::strip_stylus_prefix(bytecode) {
-        Ok(v) => v,
-        Err(_) => {
-            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
-        }
-    };
-
     let code_hash = alloy_primitives::keccak256(bytecode);
     let arbos_version = arb_precompiles::get_arbos_version();
     let block_timestamp = arb_precompiles::get_block_timestamp();
@@ -1008,10 +1000,20 @@ where
             }
         }
     } else {
-        // Compile from WASM source.
+        let decompressed = match arb_stylus::decompress_wasm(bytecode) {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
+                set_stylus_pages_open(prev_open);
+                if !is_delegate {
+                    pop_stylus_program(target_addr);
+                }
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
+        };
         let compile = arb_stylus::CompileConfig::version(params.version, false);
         match arb_stylus::NativeInstance::from_bytes(
-            module_bytes,
+            &decompressed,
             evm_api,
             evm_data,
             &compile,

@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
+arb-stylus = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 alloy-sol-types = { workspace = true }
 alloy-evm = { workspace = true }

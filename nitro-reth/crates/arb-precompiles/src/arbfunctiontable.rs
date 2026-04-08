@@ -23,10 +23,12 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
 
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         UPLOAD => {
@@ -43,7 +45,7 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         GET => Err(PrecompileError::other("table is empty")),
-        _ => Err(PrecompileError::other("unknown ArbFunctionTable selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }

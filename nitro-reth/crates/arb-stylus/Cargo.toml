@@ -18,7 +18,11 @@ alloy-primitives = { workspace = true }
 wasmer = { workspace = true }
 wasmer-compiler = "4.4"
 wasmer-types = "4.4"
-wasmparser = "0.121"
+wasmparser = { workspace = true }
+
+nitro-prover = { workspace = true }
+nitro-arbutil = { workspace = true }
+nitro-brotli = { package = "nitro-brotli", path = "../../vendor/nitro-crates/brotli" }
 
 # Revm
 revm = { workspace = true }

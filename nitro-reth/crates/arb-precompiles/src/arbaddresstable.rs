@@ -34,10 +34,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         SIZE => handle_size(&mut input),
@@ -47,7 +49,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         REGISTER => handle_register(&mut input),
         COMPRESS => handle_compress(&mut input),
         DECOMPRESS => handle_decompress(&mut input),
-        _ => Err(PrecompileError::other("unknown ArbAddressTable selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -101,7 +103,7 @@ fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_address_exists(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -133,7 +135,7 @@ fn handle_address_exists(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_lookup(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -167,7 +169,7 @@ fn handle_lookup(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -204,7 +206,7 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -263,7 +265,7 @@ fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_compress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -311,7 +313,7 @@ fn handle_decompress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // data[4..36] = offset to bytes data
     // data[36..68] = offset value
     if data.len() < 68 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;

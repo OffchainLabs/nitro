@@ -23,15 +23,17 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
+    crate::init_precompile_gas(data.len());
+
     let result = match selector {
         GET_BALANCE => handle_get_balance(&mut input),
         GET_CODE => handle_get_code(&mut input),
-        _ => Err(PrecompileError::other("unknown ArbInfo selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -39,7 +41,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 fn handle_get_balance(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let addr = Address::from_slice(&data[16..36]);
@@ -63,7 +65,7 @@ fn handle_get_balance(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_get_code(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let addr = Address::from_slice(&data[16..36]);

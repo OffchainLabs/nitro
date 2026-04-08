@@ -163,6 +163,15 @@ dyn-clone = "1"
 wasmer = { version = "4.4", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
 
+# Nitro Stylus crates (vendored from OffchainLabs/nitro @ d7fe12c77)
+nitro-prover = { package = "prover", path = "vendor/nitro-crates/prover", default-features = false }
+nitro-arbutil = { package = "arbutil", path = "vendor/nitro-crates/arbutil" }
+
+# Transitive deps for Nitro crates
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+wasmparser = "0.121"
+ruint2 = "1.9.0"
+
 [workspace.lints.rust]
 unused_must_use = "deny"
 

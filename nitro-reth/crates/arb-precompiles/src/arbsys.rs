@@ -151,10 +151,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         ARB_BLOCK_NUMBER => handle_arb_block_number(&mut input),
@@ -169,7 +170,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         WITHDRAW_ETH => handle_withdraw_eth(&mut input),
         SEND_TX_TO_L1 => handle_send_tx_to_l1(&mut input),
         SEND_MERKLE_TREE_STATE => handle_send_merkle_tree_state(&mut input),
-        _ => Err(PrecompileError::other("unknown ArbSys selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -189,7 +190,7 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 4 + 32 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let requested_u256 = U256::from_be_slice(&data[4..36]);
@@ -336,7 +337,7 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
 fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 4 + 64 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     // mapL1SenderContractAddressToL2Alias(address l1_addr, address _unused)
     let l1_addr = Address::from_slice(&data[16..36]);
@@ -372,7 +373,7 @@ fn handle_withdraw_eth(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 + 32 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let destination = Address::from_slice(&data[16..36]);
@@ -389,7 +390,7 @@ fn handle_send_tx_to_l1(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 + 64 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     // sendTxToL1(address destination, bytes calldata)

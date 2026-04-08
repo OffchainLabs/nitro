@@ -39,6 +39,17 @@ const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 /// Timeout queue subspace key within the retryables storage.
 const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
 
+/// SolError selectors (keccak256 of error signature, first 4 bytes).
+fn no_ticket_with_id_selector() -> [u8; 4] {
+    let hash = keccak256(b"NoTicketWithID()");
+    [hash[0], hash[1], hash[2], hash[3]]
+}
+
+fn not_callable_selector() -> [u8; 4] {
+    let hash = keccak256(b"NotCallable()");
+    [hash[0], hash[1], hash[2], hash[3]]
+}
+
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const SSTORE_ZERO_GAS: u64 = 5_000;
@@ -78,11 +89,13 @@ pub fn create_arbretryabletx_precompile() -> DynPrecompile {
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
     let gas_limit = input.gas;
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         GET_LIFETIME => {
@@ -109,15 +122,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         SUBMIT_RETRYABLE => {
-            // Not callable — exists only for ABI/explorer purposes.
-            Err(PrecompileError::other("not callable"))
+            return crate::sol_error_revert(not_callable_selector(), gas_limit);
         }
         GET_TIMEOUT => handle_get_timeout(&mut input),
         GET_BENEFICIARY => handle_get_beneficiary(&mut input),
         REDEEM => handle_redeem(&mut input),
         KEEPALIVE => handle_keepalive(&mut input),
         CANCEL => handle_cancel(&mut input),
-        _ => Err(PrecompileError::other("unknown ArbRetryableTx selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -137,6 +149,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -164,22 +177,17 @@ fn open_retryable(
     input: &mut PrecompileInput<'_>,
     ticket_id: B256,
     current_timestamp: u64,
-) -> Result<B256, PrecompileError> {
+) -> Result<Option<B256>, PrecompileError> {
     let ticket_key = ticket_storage_key(ticket_id);
     let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
     let timeout = sload_field(input, timeout_slot)?;
-    let timeout_u64: u64 = timeout
-        .try_into()
-        .map_err(|_| PrecompileError::other("invalid timeout value"))?;
+    let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
-    if timeout_u64 == 0 {
-        return Err(PrecompileError::other("retryable ticket not found"));
-    }
-    if timeout_u64 < current_timestamp {
-        return Err(PrecompileError::other("retryable ticket expired"));
+    if timeout_u64 == 0 || timeout_u64 < current_timestamp {
+        return Ok(None);
     }
 
-    Ok(ticket_key)
+    Ok(Some(ticket_key))
 }
 
 /// GetTimeout returns the effective timeout for a retryable ticket.
@@ -187,7 +195,7 @@ fn open_retryable(
 fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -197,13 +205,12 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let ticket_key = ticket_storage_key(ticket_id);
 
-    // Read raw timeout.
     let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
     let timeout = sload_field(input, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
     if timeout_u64 == 0 {
-        return Err(PrecompileError::other("retryable ticket not found"));
+        return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
     }
 
     // Read timeout_windows_left for effective timeout calculation.
@@ -256,7 +263,7 @@ fn queue_put(input: &mut PrecompileInput<'_>, value: B256) -> Result<(), Precomp
 fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -269,9 +276,11 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     load_arbos(input)?;
 
-    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+    let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
+        Some(k) => k,
+        None => return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit),
+    };
 
-    // Read beneficiary (stored as address in 32 bytes, right-aligned).
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
     let beneficiary = sload_field(input, beneficiary_slot)?;
 
@@ -288,7 +297,7 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -300,63 +309,67 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .try_into()
         .unwrap_or(u64::MAX);
 
-    let internals = input.internals_mut();
-
-    // Load the ArbOS state account.
-    internals
-        .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
-
-    // Guard: a retryable cannot redeem itself during its own retry execution.
-    let current_retryable = internals
-        .sload(ARBOS_STATE_ADDRESS, current_retryable_slot())
-        .map_err(|_| PrecompileError::other("sload failed"))?
-        .data;
-    if !current_retryable.is_zero()
-        && B256::from(current_retryable.to_be_bytes::<32>()) == ticket_id
+    // Guard: cannot redeem itself during its own retry execution.
     {
-        return Err(PrecompileError::other("retryable cannot redeem itself"));
+        let internals = input.internals_mut();
+        internals
+            .load_account(ARBOS_STATE_ADDRESS)
+            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        let current_retryable = internals
+            .sload(ARBOS_STATE_ADDRESS, current_retryable_slot())
+            .map_err(|_| PrecompileError::other("sload failed"))?
+            .data;
+        if !current_retryable.is_zero()
+            && B256::from(current_retryable.to_be_bytes::<32>()) == ticket_id
+        {
+            return Err(PrecompileError::other("retryable cannot redeem itself"));
+        }
     }
 
-    // Read retryable data through internals.sload.
+    // RetryableSizeBytes → OpenRetryable reads timeout (1 sload).
     let ticket_key_pre = ticket_storage_key(ticket_id);
-    let (calldata_words, write_bytes, nonce, calldata_raw_size) = {
-        // Read timeout
-        let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
-        let timeout_check = internals
-            .sload(ARBOS_STATE_ADDRESS, timeout_slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
-        let timeout_u64: u64 = timeout_check.try_into().unwrap_or(0);
-        if timeout_u64 == 0 || timeout_u64 < current_timestamp {
-            return Err(PrecompileError::other(
-                "retryable ticket not found or expired",
-            ));
-        }
+    let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
+    let timeout_val = sload_field(input, timeout_slot)?;
+    let timeout_u64: u64 = timeout_val.try_into().unwrap_or(0);
 
-        // Read calldata size
+    let (_calldata_words, write_bytes, calldata_raw_size) = if timeout_u64 == 0
+        || timeout_u64 < current_timestamp
+    {
+        (0u64, 0u64, 0u64)
+    } else {
         let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
         let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
-        let calldata_size = internals
-            .sload(ARBOS_STATE_ADDRESS, calldata_size_slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
+        let calldata_size = sload_field(input, calldata_size_slot)?;
         let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
         let cw = calldata_size_u64.div_ceil(32);
         let nbytes = 6 * 32 + 32 + 32 * cw;
         let wb = nbytes.div_ceil(32);
-
-        // Read numTries
-        let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
-        let num_tries = internals
-            .sload(ARBOS_STATE_ADDRESS, num_tries_slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
-        let n: u64 = num_tries.try_into().unwrap_or(0);
-
-        (cw, wb, n, calldata_size_u64)
+        (cw, wb, calldata_size_u64)
     };
-    let _ticket_key = ticket_key_pre;
+
+    const PARAMS_SLOAD_GAS: u64 = 50;
+    let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);
+    crate::charge_precompile_gas(retryable_size_gas);
+
+    // OpenRetryable reads timeout again (second sload, matching Nitro's flow).
+    let timeout_val2 = sload_field(input, timeout_slot)?;
+    let timeout_u64_2: u64 = timeout_val2.try_into().unwrap_or(0);
+    if timeout_u64_2 == 0 || timeout_u64_2 < current_timestamp {
+        return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
+    }
+
+    let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
+    let num_tries = sload_field(input, num_tries_slot)?;
+    crate::charge_precompile_gas(SSTORE_GAS);
+    let nonce: u64 = num_tries.try_into().unwrap_or(0);
+    let internals = input.internals_mut();
+    internals
+        .sstore(ARBOS_STATE_ADDRESS, num_tries_slot, U256::from(nonce + 1))
+        .map_err(|_| PrecompileError::other("sstore failed"))?;
+
+    // MakeTx reads: from + to + callvalue + GetBytes(size + floor(len/32) loop + trailing)
+    let make_tx_reads = 5 + calldata_raw_size / 32;
+    crate::charge_precompile_gas(make_tx_reads * SLOAD_GAS);
 
     // Compute deterministic retry tx hash: keccak256(ticket_id || nonce).
     let mut hash_input = [0u8; 64];
@@ -364,49 +377,9 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(hash_input);
 
-    // Gas accounting matching Nitro's precompile framework.
-    //
-    // In Nitro, `c.State` uses the precompile Context as burner, so ALL
-    // storage reads/writes charge gas. Additionally, the explicit
-    // `c.Burn(StorageAccess, params.SloadGas * writeBytes)` uses
-    // params.SloadGas = 50 (NOT StorageReadCost = 800).
-    //
-    // Charges before gas_to_donate calculation (all through burner):
-    //   Framework argsCost:        3  (CopyGas * 1 word)
-    //   OpenArbosState version:  800  (1 storage read)
-    //   RetryableSizeBytes:     1600  (2 storage reads: timeout + calldataSize)
-    //   Explicit burn:    50*writeBytes  (params.SloadGas * writeBytes)
-    //   OpenRetryable:          800  (1 storage read: timeout)
-    //   IncrementNumTries:    20800  (1 read + 1 write: 800 + 20000)
-    //   MakeTx reads:          N*800  (from + to + value + calldataSize + calldataWords)
-    //
-    // After gas_to_donate: event + c.Burn(donate) + ShrinkBacklog + copyGas
-    //
-    // The precompile returns gasLeft = BacklogUpdateCost_reserved - actual_shrinkBacklog_cost.
-    // When backlog is zero, ShrinkBacklog costs 5800 instead of 20800, leaving 15000 as gasLeft.
+    let gas_used_so_far = crate::get_precompile_gas();
 
-    // Compute retryable size gas: params.SloadGas (50) * writeBytes
-    const PARAMS_SLOAD_GAS: u64 = 50; // params.SloadGas (NOT StorageReadCost)
-    let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);
-
-    // MakeTx reads: from + to + callvalue + GetBytes(size + floor(len/32) loop + trailing)
-    let make_tx_reads = 5 + calldata_raw_size / 32;
-
-    let gas_used_so_far = COPY_GAS
-        + SLOAD_GAS       // OpenArbosState version read
-        + 2 * SLOAD_GAS   // RetryableSizeBytes: timeout + calldataSize
-        + retryable_size_gas
-        + SLOAD_GAS       // OpenRetryable timeout
-        + SLOAD_GAS + SSTORE_GAS // IncrementNumTries
-        + make_tx_reads * SLOAD_GAS;
-
-    // BacklogUpdateCost: RESERVATION used for computing gas_to_donate.
-    // Actual ShrinkBacklog cost may be less (5800 if writing zero).
-    let backlog_reservation = SLOAD_GAS + SSTORE_GAS; // 800 + 20000 = 20800
-
-    // Future gas costs: use RESERVATION for computing gas_to_donate
-    // (matching Nitro's BacklogUpdateCost()). The savings from
-    // over-reservation naturally become gasLeft.
+    let backlog_reservation = SLOAD_GAS + SSTORE_GAS;
     let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
     if gas_remaining < future_gas_costs + TX_GAS {
@@ -416,21 +389,17 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
 
-    // Actual ShrinkBacklog cost: Nitro's writeCost() checks the VALUE
-    // BEING WRITTEN, not the current value. After ShrinkBacklog shrinks
-    // by gas_to_donate, the new backlog determines the write cost.
     let actual_backlog_cost = {
         let current_backlog = crate::get_current_gas_backlog();
         let new_backlog = current_backlog.saturating_sub(gas_to_donate);
         let write_cost = if new_backlog == 0 {
-            SSTORE_ZERO_GAS // 5000 (StorageWriteZeroCost)
+            SSTORE_ZERO_GAS
         } else {
-            SSTORE_GAS // 20000 (StorageWriteCost)
+            SSTORE_GAS
         };
         SLOAD_GAS + write_cost
     };
 
-    // Manual redeem: maxRefund = 2^256 - 1, submissionFeeRefund = 0.
     let max_refund = U256::MAX;
     let submission_fee_refund = U256::ZERO;
 
@@ -448,19 +417,14 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     event_data.extend_from_slice(&max_refund.to_be_bytes::<32>());
     event_data.extend_from_slice(&submission_fee_refund.to_be_bytes::<32>());
 
+    let internals = input.internals_mut();
     internals.log(Log::new_unchecked(
         ARBRETRYABLETX_ADDRESS,
         vec![topic0, topic1, topic2, topic3],
         event_data.into(),
     ));
 
-    // Return total gas consumed, matching Nitro's model:
-    // gas_used = pre-donate charges + event + donated gas + actual backlog cost + copy
-    // gasLeft = gas_limit - gas_used = BacklogUpdateCost_reserved - actual_backlog_cost
-    //
-    // This matches Nitro where the precompile burns gas_to_donate, then
-    // ShrinkBacklog charges the actual (possibly cheaper) cost, leaving
-    // the over-reservation savings as gasLeft.
+    // Total gas = pre-donate charges + event + donated gas + actual backlog cost + resultCost
     let total_gas = gas_used_so_far
         + REDEEM_SCHEDULED_EVENT_COST
         + gas_to_donate
@@ -480,7 +444,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -493,8 +457,10 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     load_arbos(input)?;
 
-    // Open the retryable (verifies exists and not expired).
-    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+    let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
+        Some(k) => k,
+        None => return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit),
+    };
 
     // Read calldata size for updateCost computation (RetryableSizeBytes).
     let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
@@ -560,7 +526,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -574,8 +540,10 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     load_arbos(input)?;
 
-    // Open the retryable (verifies exists and not expired).
-    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+    let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
+        Some(k) => k,
+        None => return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit),
+    };
 
     // Read beneficiary and verify caller is the beneficiary.
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);

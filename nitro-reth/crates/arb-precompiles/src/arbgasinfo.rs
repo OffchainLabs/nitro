@@ -98,10 +98,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         GET_L1_BASEFEE_ESTIMATE | GET_L1_GAS_PRICE_ESTIMATE => {
@@ -221,7 +223,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             handle_multi_gas_base_fee(&mut input)
         }
-        _ => Err(PrecompileError::other("unknown selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -241,6 +243,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 

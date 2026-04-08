@@ -1,0 +1,18 @@
+[package]
+name = "arbutil"
+version = "0.1.0"
+edition = "2021"
+license = "BUSL-1.1"
+
+[dependencies]
+digest = "0.10.7"
+eyre = "0.6"
+fnv = "1.0.7"
+hex = { version = "0.4.3", default-features = false }
+num_enum = { version = "0.7.2", default-features = true }
+num-traits = "0.2.17"
+ruint2 = "1.9.0"
+serde = { version = "1", features = ["derive", "rc"] }
+siphasher = "0.3.10"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+wasmparser = "0.121"

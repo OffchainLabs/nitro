@@ -37,15 +37,17 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
+    crate::init_precompile_gas(data.len());
+
     let result = match selector {
         MINT_NATIVE_TOKEN => handle_mint(&mut input),
         BURN_NATIVE_TOKEN => handle_burn(&mut input),
-        _ => Err(PrecompileError::other("unknown selector")),
+        _ => return crate::burn_all_revert(input.gas),
     };
     crate::gas_check(input.gas, result)
 }
@@ -87,7 +89,7 @@ fn is_native_token_owner(
 fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -113,7 +115,7 @@ fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;

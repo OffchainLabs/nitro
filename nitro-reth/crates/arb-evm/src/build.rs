@@ -48,6 +48,8 @@ pub trait ArbTransactionEnv: TransactionEnv {
     fn set_gas_price(&mut self, gas_price: u128);
     /// Set the max priority fee per gas (tip cap).
     fn set_gas_priority_fee(&mut self, fee: Option<u128>);
+    /// Set the transaction value.
+    fn set_value(&mut self, value: U256);
 }
 
 impl ArbTransactionEnv for TxEnv {
@@ -56,6 +58,9 @@ impl ArbTransactionEnv for TxEnv {
     }
     fn set_gas_priority_fee(&mut self, fee: Option<u128>) {
         self.gas_priority_fee = fee;
+    }
+    fn set_value(&mut self, value: U256) {
+        self.value = value;
     }
 }
 
@@ -208,6 +213,7 @@ where
 /// Captured per-transaction state for fee distribution in `commit_transaction`.
 struct PendingArbTx {
     sender: Address,
+    tx_value: U256,
     tx_gas_limit: u64,
     arb_tx_type: Option<ArbTxType>,
     has_poster_costs: bool,
@@ -222,6 +228,8 @@ struct PendingArbTx {
     /// True when the tx's effective gas price is non-zero. Backlog updates
     /// are skipped when gas price is zero (test/estimation scenarios).
     gas_price_positive: bool,
+    /// Stylus activation data fee to transfer from sender to network post-commit.
+    stylus_data_fee: U256,
     /// Retry tx context for end-tx retryable processing.
     retry_context: Option<PendingRetryContext>,
 }
@@ -517,6 +525,7 @@ where
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
+                tx_value: U256::ZERO,
                 tx_gas_limit: user_gas,
                 arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
                 has_poster_costs: false,
@@ -525,6 +534,7 @@ where
 
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                stylus_data_fee: U256::ZERO,
                 retry_context: None,
             });
 
@@ -600,6 +610,7 @@ where
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
+                tx_value: U256::ZERO,
                 tx_gas_limit: user_gas,
                 arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
                 has_poster_costs: false,
@@ -608,6 +619,7 @@ where
 
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                stylus_data_fee: U256::ZERO,
                 retry_context: None,
             });
 
@@ -809,6 +821,7 @@ where
         let gas_used = if fees.can_pay_for_gas { user_gas } else { 0 };
         self.pending_tx = Some(PendingArbTx {
             sender,
+            tx_value: U256::ZERO,
             tx_gas_limit: user_gas,
             arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
             has_poster_costs: false, // No poster costs for submit retryable
@@ -820,6 +833,7 @@ where
                 MultiGas::default()
             },
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+            stylus_data_fee: U256::ZERO,
             retry_context: None,
         });
 
@@ -978,6 +992,7 @@ where
         let sender = *recovered.signer();
         let tx_type_raw = recovered.tx().ty();
         let tx_gas_limit = recovered.tx().gas_limit();
+        let tx_value = recovered.tx().value();
         let envelope_tx_type = recovered.tx().tx_type();
 
         // Classify the transaction type.
@@ -1146,6 +1161,7 @@ where
             // Internal txs end immediately — no EVM execution.
             self.pending_tx = Some(PendingArbTx {
                 sender,
+                tx_value: U256::ZERO,
                 tx_gas_limit: 0,
                 arb_tx_type: Some(ArbTxType::ArbitrumInternalTx),
                 has_poster_costs: false,
@@ -1154,6 +1170,7 @@ where
 
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                stylus_data_fee: U256::ZERO,
                 retry_context: None,
             });
 
@@ -1223,6 +1240,7 @@ where
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
+                tx_value: U256::ZERO,
                 tx_gas_limit: 0,
                 arb_tx_type: Some(ArbTxType::ArbitrumDepositTx),
                 has_poster_costs: false,
@@ -1231,6 +1249,7 @@ where
 
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                stylus_data_fee: U256::ZERO,
                 retry_context: None,
             });
 
@@ -1312,6 +1331,7 @@ where
                                 let tx_type = recovered.tx().tx_type();
                                 self.pending_tx = Some(PendingArbTx {
                                     sender,
+                                    tx_value: U256::ZERO,
                                     tx_gas_limit: 0,
                                     arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                     has_poster_costs: false,
@@ -1320,6 +1340,7 @@ where
 
                                     charged_multi_gas: MultiGas::default(),
                                     gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                                    stylus_data_fee: U256::ZERO,
                                     retry_context: None,
                                 });
                                 return Ok(EthTxResult {
@@ -1371,6 +1392,7 @@ where
                             let tx_type = recovered.tx().tx_type();
                             self.pending_tx = Some(PendingArbTx {
                                 sender,
+                                tx_value: U256::ZERO,
                                 tx_gas_limit: 0,
                                 arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                 has_poster_costs: false,
@@ -1379,6 +1401,7 @@ where
 
                                 charged_multi_gas: MultiGas::default(),
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                                stylus_data_fee: U256::ZERO,
                                 retry_context: None,
                             });
                             let err_msg = format!("retryable ticket {} not found", info.ticket_id,);
@@ -1399,6 +1422,7 @@ where
                             let tx_type = recovered.tx().tx_type();
                             self.pending_tx = Some(PendingArbTx {
                                 sender,
+                                tx_value: U256::ZERO,
                                 tx_gas_limit: 0,
                                 arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                 has_poster_costs: false,
@@ -1407,6 +1431,7 @@ where
 
                                 charged_multi_gas: MultiGas::default(),
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                                stylus_data_fee: U256::ZERO,
                                 retry_context: None,
                             });
                             return Ok(EthTxResult {
@@ -1449,6 +1474,17 @@ where
                 hooks.tx_proc.poster_fee =
                     base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
                 poster_gas = hooks.tx_proc.poster_gas;
+            }
+
+            if tx_gas_limit > 2_000_000 && tx_gas_limit < 3_000_000 {
+                let compressed_len = l1_pricing::byte_count_after_brotli_level(
+                    &tx_bytes, self.arb_ctx.brotli_compression_level);
+                let tx_hash = recovered.tx().trie_hash();
+                tracing::warn!(target: "stylus",
+                    tx_bytes_len = tx_bytes.len(), compressed_len,
+                    poster_gas, units, brotli_level = self.arb_ctx.brotli_compression_level,
+                    %tx_hash,
+                    "POSTER_DIAG");
             }
 
             units
@@ -1570,6 +1606,7 @@ where
                             .saturating_add(MultiGas::computation_gas(gas_to_consume));
                         self.pending_tx = Some(PendingArbTx {
                             sender,
+                            tx_value: U256::ZERO,
                             tx_gas_limit,
                             arb_tx_type,
                             has_poster_costs,
@@ -1577,6 +1614,7 @@ where
                             evm_gas_used: 0,
                             charged_multi_gas,
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                            stylus_data_fee: U256::ZERO,
                             retry_context,
                         });
                         return Ok(EthTxResult {
@@ -1604,6 +1642,7 @@ where
                             .saturating_add(MultiGas::computation_gas(gas_remaining));
                         self.pending_tx = Some(PendingArbTx {
                             sender,
+                            tx_value: U256::ZERO,
                             tx_gas_limit,
                             arb_tx_type,
                             has_poster_costs,
@@ -1611,6 +1650,7 @@ where
                             evm_gas_used: 0,
                             charged_multi_gas,
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                            stylus_data_fee: U256::ZERO,
                             retry_context,
                         });
                         return Ok(EthTxResult {
@@ -1772,6 +1812,20 @@ where
             tx_env.set_nonce(sender_nonce);
         }
 
+        // For payable ArbWasm calls (ActivateProgram, CodehashKeepalive),
+        // zero out value so revm doesn't transfer ETH to the precompile.
+        // We handle the data fee transfer from sender to network post-commit.
+        {
+            let to_addr = match recovered.tx().kind() {
+                TxKind::Call(a) => Some(a),
+                _ => None,
+            };
+            if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) && tx_value > U256::ZERO {
+                tx_env.set_value(U256::ZERO);
+                tracing::warn!(target: "stylus", %tx_value, new_value = %revm::context_interface::Transaction::value(&tx_env), "ZEROED tx value for ArbWasm payable call");
+            }
+        }
+
         let mut output = match self
             .inner
             .execute_transaction_without_commit((tx_env, recovered))
@@ -1786,6 +1840,16 @@ where
         // Capture gas_used as reported by reth's EVM (before our adjustments).
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
+
+        if tx_gas_limit > 2_000_000 && tx_gas_limit < 3_000_000 {
+            tracing::warn!(target: "stylus",
+                evm_gas_used, poster_gas, compute_hold_gas,
+                evm_gas_limit = evm_gas_limit_before,
+                tx_gas_limit,
+                gas_deduction = poster_gas.saturating_add(compute_hold_gas),
+                precompile_input_gas = evm_gas_limit_before.saturating_sub(poster_gas).saturating_sub(compute_hold_gas),
+                "ACTIVATE_TX raw EVM gas");
+        }
 
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
@@ -1897,15 +1961,37 @@ where
             }
         }
 
-        // Store per-tx state for fee distribution in commit_transaction.
-        // Build multi-gas: L1 calldata from poster costs + EVM execution as computation.
-        // Note: revm doesn't track per-resource gas dimensions, so all EVM gas
-        // (intrinsic + opcode execution) is classified as computation gas.
+        // Handle Stylus activation/keepalive data fee payment post-commit.
+        // We zero out tx_env.value before EVM execution (below) so revm
+        // doesn't transfer value to the precompile. The data_fee transfer
+        // from sender to network happens via the cache after commit.
+        let stylus_data_fee = if arb_precompiles::take_stylus_activation_request().is_some()
+            || arb_precompiles::take_stylus_keepalive_request().is_some()
+        {
+            arb_precompiles::take_stylus_activation_data_fee()
+        } else {
+            U256::ZERO
+        };
+
+        // Inject pending precompile logs into the execution result.
+        let pending_logs = arb_precompiles::take_pending_precompile_logs();
+        if !pending_logs.is_empty() {
+            if let ExecutionResult::Success { ref mut logs, .. } = output.result.result {
+                for (address, topics, data) in pending_logs {
+                    logs.push(Log {
+                        address,
+                        data: alloy_primitives::LogData::new(topics, data.into()).unwrap_or_default(),
+                    });
+                }
+            }
+        }
+
         let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
             .saturating_add(MultiGas::computation_gas(evm_gas_used));
 
         self.pending_tx = Some(PendingArbTx {
             sender,
+            tx_value,
             tx_gas_limit,
             arb_tx_type,
             has_poster_costs,
@@ -1913,6 +1999,7 @@ where
             evm_gas_used,
             charged_multi_gas,
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+            stylus_data_fee,
             retry_context,
         });
 
@@ -1924,6 +2011,15 @@ where
         let pending = self.pending_tx.take();
         let gas_used_total = output.result.result.gas_used();
         let success = matches!(&output.result.result, ExecutionResult::Success { .. });
+
+        if let Some(ref p) = pending {
+            if p.poster_gas > 0 || p.evm_gas_used > 1_000_000 {
+                tracing::warn!(target: "stylus",
+                    gas_used_total, evm_gas_used = p.evm_gas_used,
+                    poster_gas = p.poster_gas, tx_gas_limit = p.tx_gas_limit,
+                    "commit_transaction gas debug");
+            }
+        }
 
         // Scan receipt logs for L2→L1 withdrawal events and burn value from ArbSys.
         // Value transferred to the ArbSys address during a withdrawEth call
@@ -1960,6 +2056,19 @@ where
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
 
+        // Stylus activation data fee: sender → network (via cache, post-commit).
+        // Value was zeroed in tx_env so sender still has the ETH.
+        if let Some(ref p) = pending {
+            if !p.stylus_data_fee.is_zero() {
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                burn_balance(db, p.sender, p.stylus_data_fee);
+                mint_balance(db, self.arb_ctx.network_fee_account, p.stylus_data_fee);
+                self.touched_accounts.insert(p.sender);
+                self.touched_accounts
+                    .insert(self.arb_ctx.network_fee_account);
+            }
+        }
+
         // Burn ETH from ArbSys address for L2→L1 withdrawals.
         if !withdrawal_value.is_zero() {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
@@ -1967,6 +2076,7 @@ where
             self.touched_accounts
                 .insert(arb_precompiles::ARBSYS_ADDRESS);
         }
+
 
         // Track poster gas and multi-gas for this receipt (parallel to receipts vector).
         let poster_gas_for_receipt = pending.as_ref().map_or(0, |p| p.poster_gas);

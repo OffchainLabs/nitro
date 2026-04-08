@@ -1,6 +1,6 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 /// ArbStatistics precompile address (0x6f).
 pub const ARBSTATISTICS_ADDRESS: Address = Address::new([
@@ -21,14 +21,16 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
+    crate::init_precompile_gas(data.len());
+
     let result = match selector {
         GET_STATS => handle_get_stats(&input),
-        _ => Err(PrecompileError::other("unknown ArbStatistics selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }

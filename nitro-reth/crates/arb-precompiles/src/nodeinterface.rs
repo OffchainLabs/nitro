@@ -52,10 +52,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         GAS_ESTIMATE_COMPONENTS => handle_gas_estimate_components(&mut input),
@@ -73,7 +75,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         | LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => {
             Err(PrecompileError::other("method only available via RPC"))
         }
-        _ => Err(PrecompileError::other("unknown selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -160,7 +162,7 @@ fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResu
 fn handle_block_l1_num(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 4 + 32 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let block_num: u64 = U256::from_be_slice(&data[4..36])
@@ -222,5 +224,6 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }

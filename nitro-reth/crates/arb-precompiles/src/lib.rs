@@ -76,6 +76,8 @@ thread_local! {
     /// Current gas backlog value, set by executor before each tx.
     /// Used by Redeem precompile to determine ShrinkBacklog write cost.
     static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
+    /// Gas consumed by precompile operations before an error.
+    static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
     /// Current tx poster fee (wei), set by executor before each tx.
     /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
     static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
@@ -87,6 +89,15 @@ thread_local! {
     /// Current transaction sender address (first 20 bytes as u128 + extra Cell).
     static TX_SENDER_LO: Cell<u128> = const { Cell::new(0) };
     static TX_SENDER_HI: Cell<u32> = const { Cell::new(0) };
+    static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
+    static STYLUS_KEEPALIVE_HASH: Cell<Option<[u8; 32]>> = const { Cell::new(None) };
+    static STYLUS_ACTIVATION_DATA_FEE: Cell<u128> = const { Cell::new(0) };
+}
+
+use std::cell::RefCell;
+
+thread_local! {
+    static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = RefCell::new(Vec::new());
 }
 
 use std::sync::Mutex as StdMutex;
@@ -143,6 +154,26 @@ pub fn set_current_gas_backlog(backlog: u64) {
 /// Get the current gas backlog value.
 pub fn get_current_gas_backlog() -> u64 {
     CURRENT_GAS_BACKLOG.with(|v| v.get())
+}
+
+pub fn reset_precompile_gas() {
+    PRECOMPILE_GAS_USED.with(|v| v.set(0));
+}
+
+pub fn charge_precompile_gas(gas: u64) {
+    PRECOMPILE_GAS_USED.with(|v| v.set(v.get() + gas));
+}
+
+pub fn get_precompile_gas() -> u64 {
+    PRECOMPILE_GAS_USED.with(|v| v.get())
+}
+
+/// Initialize gas tracking for a precompile call: reset accumulator, charge
+/// argsCost (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
+pub fn init_precompile_gas(input_len: usize) {
+    reset_precompile_gas();
+    let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
+    charge_precompile_gas(args_cost + 800);
 }
 
 /// Set the current tx poster fee for ArbGasInfo.getCurrentTxL1GasFees.
@@ -206,9 +237,52 @@ pub fn get_block_timestamp() -> u64 {
     BLOCK_TIMESTAMP.with(|v| v.get())
 }
 
-/// Check precompile-level version gate. If the current ArbOS version is below
-/// `min_version`, the precompile is not yet active and we return success with
-/// empty bytes (as if calling a contract that doesn't exist).
+pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
+    STYLUS_ACTIVATION_ADDR.with(|v| v.set(addr.map(|a| *a.as_ref())));
+}
+
+pub fn take_stylus_activation_request() -> Option<alloy_primitives::Address> {
+    STYLUS_ACTIVATION_ADDR.with(|v| {
+        let val = v.get();
+        v.set(None);
+        val.map(alloy_primitives::Address::from)
+    })
+}
+
+pub fn set_stylus_keepalive_request(hash: Option<alloy_primitives::B256>) {
+    STYLUS_KEEPALIVE_HASH.with(|v| v.set(hash.map(|h| h.0)));
+}
+
+pub fn take_stylus_keepalive_request() -> Option<alloy_primitives::B256> {
+    STYLUS_KEEPALIVE_HASH.with(|v| {
+        let val = v.get();
+        v.set(None);
+        val.map(alloy_primitives::B256::from)
+    })
+}
+
+pub fn set_stylus_activation_data_fee(fee: alloy_primitives::U256) {
+    STYLUS_ACTIVATION_DATA_FEE.with(|v| v.set(fee.try_into().unwrap_or(u128::MAX)));
+}
+
+pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
+    STYLUS_ACTIVATION_DATA_FEE.with(|v| {
+        let val = v.get();
+        v.set(0);
+        alloy_primitives::U256::from(val)
+    })
+}
+
+pub fn emit_log(address: alloy_primitives::Address, topics: &[alloy_primitives::B256], data: &[u8]) {
+    PENDING_PRECOMPILE_LOGS.with(|logs| {
+        logs.borrow_mut().push((address, topics.to_vec(), data.to_vec()));
+    });
+}
+
+pub fn take_pending_precompile_logs() -> Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)> {
+    PENDING_PRECOMPILE_LOGS.with(|logs| std::mem::take(&mut *logs.borrow_mut()))
+}
+
 fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
     if get_arbos_version() < min_version {
         Some(Ok(PrecompileOutput::new(0, Default::default())))
@@ -217,12 +291,33 @@ fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
     }
 }
 
-/// Cap gas usage at gas_limit and convert generic errors to reverts for ArbOS >= 11.
+/// Pre-dispatch error: consumes all supplied gas and reverts.
+fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
+    Ok(PrecompileOutput::new_reverted(gas_limit, Default::default()))
+}
+
+/// SolError revert: returns accumulated gas + resultCost with the error selector.
+/// Always reverts regardless of ArbOS version, matching Nitro's SolError handling.
+pub fn sol_error_revert(error_selector: [u8; 4], gas_limit: u64) -> PrecompileResult {
+    let result_cost = 3u64 * (error_selector.len() as u64 + 31) / 32; // CopyGas * words
+    charge_precompile_gas(result_cost);
+    let gas = get_precompile_gas();
+    Ok(PrecompileOutput::new_reverted(
+        gas.min(gas_limit),
+        error_selector.to_vec().into(),
+    ))
+}
+
 fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
+    let accumulated_gas = get_precompile_gas();
+    reset_precompile_gas();
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
         Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => {
-            Ok(PrecompileOutput::new_reverted(0, Default::default()))
+            Ok(PrecompileOutput::new_reverted(
+                accumulated_gas.min(gas_limit),
+                Default::default(),
+            ))
         }
         other => other,
     }
@@ -295,5 +390,8 @@ mod selector_audit {
         check("arbBlockHash(uint256)", &[0x2b,0x40,0x7a,0x82]);
         check("arbChainID()", &[0xd1,0x27,0xf5,0x4a]);
         check("isTopLevelCall()", &[0x08,0xbd,0x62,0x4c]);
+        // ArbWasm selectors
+        check("activateProgram(address)", &[0x58,0xc7,0x80,0xc2]);
+        check("codehashKeepalive(bytes32)", &[0xc6,0x89,0xba,0xd5]);
     }
 }

@@ -56,8 +56,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
+
+    crate::init_precompile_gas(data.len());
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
@@ -181,7 +183,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }
-        _ => Err(PrecompileError::other("unknown ArbOwnerPublic selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -201,6 +203,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -209,6 +212,7 @@ fn sstore_field(input: &mut PrecompileInput<'_>, slot: U256, value: U256) -> Res
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
+    crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
 
@@ -244,7 +248,7 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
 fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -306,7 +310,7 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResu
 fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -368,7 +372,7 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_is_set_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);

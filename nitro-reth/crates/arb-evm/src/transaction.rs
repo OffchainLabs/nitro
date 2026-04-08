@@ -170,6 +170,9 @@ impl crate::build::ArbTransactionEnv for ArbTransaction {
     fn set_gas_priority_fee(&mut self, fee: Option<u128>) {
         self.0.gas_priority_fee = fee;
     }
+    fn set_value(&mut self, value: alloy_primitives::U256) {
+        self.0.value = value;
+    }
 }
 
 impl FromRecoveredTx<TransactionSigned> for ArbTransaction {

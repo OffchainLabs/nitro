@@ -13,8 +13,5 @@ pub fn create_arbosacts_precompile() -> DynPrecompile {
 }
 
 fn handler(_input: PrecompileInput<'_>) -> PrecompileResult {
-    // All ArbosActs methods reject non-ArbOS callers.
-    // These are internal lifecycle hooks invoked by the block production engine,
-    // never by external transactions.
     Err(PrecompileError::other("caller is not ArbOS"))
 }

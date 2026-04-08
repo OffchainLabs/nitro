@@ -39,16 +39,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         ADD_FILTERED_TX => handle_add_filtered_tx(&mut input),
         DELETE_FILTERED_TX => handle_delete_filtered_tx(&mut input),
         IS_TX_FILTERED => handle_is_tx_filtered(&mut input),
-        _ => Err(PrecompileError::other("unknown selector")),
+        _ => return crate::burn_all_revert(input.gas),
     };
     crate::gas_check(input.gas, result)
 }
@@ -120,7 +122,7 @@ fn is_transaction_filterer(
 fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -145,7 +147,7 @@ fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -173,7 +175,7 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
