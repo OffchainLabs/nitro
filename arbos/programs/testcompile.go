@@ -29,6 +29,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -791,15 +792,23 @@ func testRetryRestoresStylusPages() error {
 		return fmt.Errorf("inflation failed: open=%d ever=%d", inflatedOpen, inflatedEver)
 	}
 
+	// Set a non-zero UsedMultiGas to verify it is restored on retry.
+	// UsedMultiGas is modified by host I/O callbacks (api.go) and lives on
+	// the contract scope, not the StateDB, so RevertToSnapshot does not
+	// restore it — restoreState must do it explicitly.
+	initialMultiGas := multigas.NewMultiGas(multigas.ResourceKindComputation, 42)
+	scope.Contract.UsedMultiGas = initialMultiGas
+
 	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
 	memModel := NewMemoryModel(0, 0)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 	allowFallback.Store(true)
 
 	saved := savedState{
-		gas:       gas,
-		openPages: initialOpen,
-		everPages: initialEver,
+		gas:          gas,
+		usedMultiGas: initialMultiGas,
+		openPages:    initialOpen,
+		everPages:    initialEver,
 	}
 
 	snapshot := db.Snapshot()
@@ -825,7 +834,15 @@ func testRetryRestoresStylusPages() error {
 		return fmt.Errorf("everWasmPages not restored: got %d, want %d", gotEver, initialEver)
 	}
 
-	fmt.Printf("testRetryRestoresStylusPages: passed (open=%d, ever=%d after retry)\n", gotOpen, gotEver)
+	// The test WAT program does no host I/O, so UsedMultiGas is only modified
+	// by restoreState. Verify it was restored to the saved value.
+	gotMultiGas := scope.Contract.UsedMultiGas.SingleGas()
+	wantMultiGas := initialMultiGas.SingleGas()
+	if gotMultiGas != wantMultiGas {
+		return fmt.Errorf("usedMultiGas not restored: got %d, want %d", gotMultiGas, wantMultiGas)
+	}
+
+	fmt.Printf("testRetryRestoresStylusPages: passed (open=%d, ever=%d, multiGas=%d after retry)\n", gotOpen, gotEver, gotMultiGas)
 	return nil
 }
 

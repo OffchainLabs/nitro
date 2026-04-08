@@ -52,8 +52,8 @@ type rustSlice = C.RustSlice
 
 // savedState captures the contract state before a Stylus call so it can be
 // restored if the call hits a native stack overflow and needs to be retried
-// (first with cranelift at the current stack size, then optionally with a
-// doubled stack).
+// with cranelift (at the original or doubled stack size, depending on whether
+// this is the first overflow).
 type savedState struct {
 	gas          uint64
 	usedMultiGas multigas.MultiGas
@@ -593,8 +593,8 @@ func callProgram(
 	// from nodes that CAN run it — which is a consensus failure. This matches
 	// the panics in handleProgramPrepare and cacheProgram for the same reason.
 	if status == userNativeStackOverflow {
-		panic(fmt.Sprintf("native stack overflow not resolved (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v)",
-			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain()))
+		panic(fmt.Sprintf("native stack overflow not resolved (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v, stackSize=%d)",
+			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain(), GetNativeStackSize()))
 	}
 	data, msg, err := status.toResult(output, debug)
 	if status == userFailure && debug {
