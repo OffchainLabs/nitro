@@ -60,6 +60,7 @@ func TestPostAssertionCatchesUpThroughExistingAssertions(t *testing.T) {
 	stateManagerOpts := cfg.StateManagerOpts
 	stateManagerOpts = append(
 		stateManagerOpts,
+		//#nosec G115
 		stateprovider.WithNumBatchesRead(uint64(numExistingAssertions+2)),
 	)
 	stateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
