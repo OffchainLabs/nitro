@@ -85,8 +85,12 @@ func TestReportForwarder_ForwardsMessages(t *testing.T) {
 	var mu sync.Mutex
 	var receivedBodiesByExternalEndpoint []string
 	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		// TODO: handle error
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		mu.Lock()
 		receivedBodiesByExternalEndpoint = append(receivedBodiesByExternalEndpoint, string(body))
 		mu.Unlock()
