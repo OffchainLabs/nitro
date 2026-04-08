@@ -52,7 +52,8 @@ type rustSlice = C.RustSlice
 
 // savedState captures the contract state before a Stylus call so it can be
 // restored if the call hits a native stack overflow and needs to be retried
-// with a doubled stack size.
+// (first with cranelift at the current stack size, then optionally with a
+// doubled stack).
 type savedState struct {
 	gas          uint64
 	usedMultiGas multigas.MultiGas
@@ -495,7 +496,8 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 }
 
 // doStylusCall performs a single CGo call to stylus_call and returns the status and output.
-// Each invocation creates a fresh NativeApi because the Rust side takes ownership of the handler.
+// Each invocation creates a fresh NativeApi because the Go-side API object is
+// deregistered on drop, so the handler ID cannot be reused across calls.
 func doStylusCall(
 	asm []byte,
 	calldata []byte,
@@ -585,6 +587,11 @@ func callProgram(
 	}
 
 	depth := evm.Depth()
+	// Panic if native stack overflow was not resolved after all recovery
+	// attempts (cranelift retry + stack doubling). An activated program that
+	// cannot execute would cause this node to produce wrong state — diverging
+	// from nodes that CAN run it — which is a consensus failure. This matches
+	// the panics in handleProgramPrepare and cacheProgram for the same reason.
 	if status == userNativeStackOverflow {
 		panic(fmt.Sprintf("native stack overflow not resolved (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v)",
 			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain()))
@@ -597,6 +604,17 @@ func callProgram(
 		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
 	}
 	return data, err
+}
+
+// restoreState reverts the StateDB to the given snapshot and restores the
+// contract gas, multi-gas, and Stylus page counters from the saved checkpoint.
+// openWasmPages/everWasmPages are not journaled, so RevertToSnapshot alone
+// does not restore them — we must do it explicitly.
+func restoreState(scope *vm.ScopeContext, saved savedState, db vm.StateDB, snapshot int) {
+	db.RevertToSnapshot(snapshot)
+	scope.Contract.Gas = saved.gas
+	scope.Contract.UsedMultiGas = saved.usedMultiGas
+	db.SetStylusPages(saved.openPages, saved.everPages)
 }
 
 // handleNativeStackOverflow handles a native stack overflow in two steps:
@@ -649,12 +667,7 @@ func handleNativeStackOverflow(
 	// Revert any partial state changes the previous attempt may have made via
 	// host I/O before the overflow. After reverting, take a fresh snapshot so
 	// we can revert again if cranelift also overflows.
-	// Note: openWasmPages/everWasmPages are not journaled, so RevertToSnapshot
-	// does not restore them — we must do it manually.
-	db.RevertToSnapshot(snapshot)
-	scope.Contract.Gas = saved.gas
-	scope.Contract.UsedMultiGas = saved.usedMultiGas
-	db.SetStylusPages(saved.openPages, saved.everPages)
+	restoreState(scope, saved, db, snapshot)
 	snapshot = db.Snapshot()
 	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 	if status != userNativeStackOverflow {
@@ -671,10 +684,7 @@ func handleNativeStackOverflow(
 		"program", address, "module", moduleHash, "newSize", GetNativeStackSize())
 
 	// Revert state before the doubling retry.
-	db.RevertToSnapshot(snapshot)
-	scope.Contract.Gas = saved.gas
-	scope.Contract.UsedMultiGas = saved.usedMultiGas
-	db.SetStylusPages(saved.openPages, saved.everPages)
+	restoreState(scope, saved, db, snapshot)
 
 	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 }

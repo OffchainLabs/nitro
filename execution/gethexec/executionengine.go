@@ -349,6 +349,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
 }
