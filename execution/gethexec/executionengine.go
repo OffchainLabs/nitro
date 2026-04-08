@@ -936,9 +936,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		if len(filteringHooks.FilteredTxHashes) > 0 {
 			if s.transactionFiltererRPCClient != nil {
 				s.LaunchThread(func(ctx context.Context) {
-					// Call transaction-filterer sequentially.
-					// To avoid nonce collisions when adding a tx to ArbFilteredTransactionsManager,
-					// transaction-filterer will process only one Filter call at a time.
 					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
 						_, err := s.transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
 						if err != nil {
