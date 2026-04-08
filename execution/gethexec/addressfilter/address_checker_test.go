@@ -34,7 +34,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 
 	// These values are test values from the provider, to cross-check the salting/hashing algorithm.
 	hash := common.HexToHash("0x8fb74f22f0aed996e7548101ae1cea812ccdf86e7ad8a781eebea00f797ce4a6")
-	store.Store(salt, []common.Hash{hash}, "test")
+	store.Store(uuid.New(), salt, []common.Hash{hash}, "test")
 
 	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -96,7 +96,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	}
 
 	store := NewHashStore(cacheSize)
-	store.Store(salt, filteredHashes, "heavy")
+	store.Store(uuid.New(), salt, filteredHashes, "heavy")
 
 	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
