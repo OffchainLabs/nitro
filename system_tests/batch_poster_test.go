@@ -172,7 +172,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		)
 		Require(t, err)
 		batchPoster.Start(ctx)
-		defer batchPoster.StopAndWait()
+		t.Cleanup(batchPoster.StopAndWait)
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
