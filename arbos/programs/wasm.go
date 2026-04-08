@@ -209,7 +209,6 @@ func callProgram(
 
 func GetWasmLruCacheMetrics() {}
 
-
 func CallProgramLoop(
 	moduleHash common.Hash,
 	calldata []byte,

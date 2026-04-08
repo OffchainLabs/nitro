@@ -276,7 +276,7 @@ func testCompileLoadFor(filePath string) error {
 // testNativeStackSize tests that:
 // 1. SetNativeStackSize correctly configures the Wasmer coroutine stack size.
 // 2. A program that overflows a tiny native stack returns NativeStackOverflow.
-// 3. The Go-side retry logic (cranelift + stack doubling) recovers.
+// 3. Increasing the stack size and re-running succeeds.
 //
 // It compiles and runs a WAT program with deep recursion (500 calls), using a very
 // high MaxStackDepth and a very small native stack so it overflows.
@@ -335,8 +335,8 @@ func testNativeStackSize() error {
 		return fmt.Errorf("expected userNativeStackOverflow with 32KB stack, got status %d", status)
 	}
 
-	// Now test the Go retry path: double the stack and run again.
-	// This simulates what retryOnStackOverflow does.
+	// Now increase the stack and run again to verify the program succeeds
+	// with a larger stack (simulating what future calls get after doubling).
 	SetNativeStackSize(1024 * 1024)
 	DrainStackPool()
 
@@ -375,7 +375,7 @@ func testNativeStackSize() error {
 		return fmt.Errorf("SetNativeStackSize(0) should be a no-op, but stack size changed to %d", got)
 	}
 
-	_, err = fmt.Printf("testNativeStackSize: passed (status=%d, gas_left=%d), Go retry recovered\n", status, gas)
+	_, err = fmt.Printf("testNativeStackSize: passed (status=%d, gas_left=%d)\n", status, gas)
 	if err != nil {
 		return err
 	}
@@ -483,38 +483,59 @@ func makeTestEVMScope(gas uint64) (*vm.EVM, *vm.ScopeContext, vm.StateDB) {
 	return evm, scope, statedb
 }
 
-// testRetryOnStackOverflow tests that retryOnStackOverflow returns
-// NativeStackOverflow immediately when allowFallback is false, and also
-// when the execution is off-chain (gas estimation).
-func testRetryOnStackOverflow() error {
+// testHandleNativeStackOverflow tests that handleNativeStackOverflow:
+// 1. Does not double when allowFallback is false.
+// 2. Does not double for off-chain execution.
+// 3. Doubles the stack and retries with cranelift on first on-chain overflow.
+// 4. Does not double again on second overflow.
+func testHandleNativeStackOverflow() error {
 	localTarget := rawdb.LocalTarget()
 	if err := SetTarget(localTarget, "", true); err != nil {
 		return fmt.Errorf("failed setting target: %w", err)
 	}
 
+	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling native: %w", err)
+	}
+
+	// Compile cranelift ASM and pre-populate the wasm store for sub-test 3.
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling cranelift: %w", err)
+	}
+
 	SetInitialNativeStackSize(32 * 1024)
 	DrainStackPool()
+
+	moduleHash := common.HexToHash("0x1234567890abcdef")
+	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
+	memModel := NewMemoryModel(0, 0)
 
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
 	scope.Contract.Gas = gas
 
-	stylusParams := &ProgParams{
-		Version:   1,
-		MaxDepth:  1000000,
-		InkPrice:  1,
-		DebugMode: true,
+	// Pre-populate cranelift ASM in the wasm store so getCraneliftAsm finds it.
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("failed getting cranelift target: %w", err)
 	}
-	memModel := NewMemoryModel(0, 0)
-	moduleHash := common.HexToHash("0x1234567890abcdef")
+	wasmStore := db.Database().WasmStore()
+	rawdb.WriteActivatedAsm(wasmStore, craneliftTarget, moduleHash, craneliftAsm)
 
-	// Sub-test 1: allowFallback=false → immediate NativeStackOverflow, no retry.
+	// Sub-test 1: allowFallback=false → no doubling, returns overflow.
 	allowFallback.Store(false)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
 	snapshot := db.Snapshot()
-	status, _ := retryOnStackOverflow(
-		common.Address{}, moduleHash,
+	status, _ := handleNativeStackOverflow(
+		common.Address{}, moduleHash, localAsm,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -522,14 +543,17 @@ func testRetryOnStackOverflow() error {
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("allowFallback=false: expected NativeStackOverflow, got %d", status)
 	}
+	if HasDoubledNativeStack() {
+		return fmt.Errorf("allowFallback=false: stack should not have been doubled")
+	}
 
-	// Sub-test 2: allowFallback=true but off-chain → immediate NativeStackOverflow.
+	// Sub-test 2: allowFallback=true but off-chain → no doubling.
 	allowFallback.Store(true)
 	offChainCtx := core.NewMessageGasEstimationContext()
 	scope.Contract.Gas = gas
 
-	status, _ = retryOnStackOverflow(
-		common.Address{}, moduleHash,
+	status, _ = handleNativeStackOverflow(
+		common.Address{}, moduleHash, localAsm,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, offChainCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -537,294 +561,96 @@ func testRetryOnStackOverflow() error {
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("off-chain: expected NativeStackOverflow, got %d", status)
 	}
-
-	fmt.Printf("testRetryOnStackOverflow: passed (no-fallback and off-chain both return immediately)\n")
-	return nil
-}
-
-// testCraneliftCompilationAndCache tests getCraneliftAsm:
-// 1. getCraneliftAsm reads from the wasm store when cranelift ASM is cached.
-// 2. The returned cranelift ASM produces valid execution results.
-func testCraneliftCompilationAndCache() error {
-	localTarget := rawdb.LocalTarget()
-	if err := SetTarget(localTarget, "", true); err != nil {
-		return fmt.Errorf("failed setting target: %w", err)
+	if HasDoubledNativeStack() {
+		return fmt.Errorf("off-chain: stack should not have been doubled")
 	}
 
-	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
-	if err != nil {
-		return fmt.Errorf("failed compiling WAT: %w", err)
+	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
+	// with cranelift ASM (from wasm store). The program recurses 500 times.
+	// At 32KB it overflows, at 64KB (doubled) with cranelift it should succeed.
+	scope.Contract.Gas = gas
+	snapshot = db.Snapshot()
+	status, _ = handleNativeStackOverflow(
+		common.Address{}, moduleHash, localAsm,
+		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
+		memModel, runCtx, savedState{gas: gas}, true,
+		db, snapshot, nil, nil, Program{version: 1},
+	)
+	if !HasDoubledNativeStack() {
+		return fmt.Errorf("on-chain: stack should have been doubled")
 	}
-
-	moduleHash := common.HexToHash("0xdeadbeef")
-	gas := uint64(0xfffffffffffffff)
-	_, _, db := makeTestEVMScope(gas)
-
-	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
-	if err != nil {
-		return fmt.Errorf("failed getting cranelift target: %w", err)
-	}
-
-	// Verify wasm store is initially empty for this module.
-	wasmStore := db.Database().WasmStore()
-	existing := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash)
-	if len(existing) > 0 {
-		return fmt.Errorf("expected empty wasm store, but found %d bytes", len(existing))
-	}
-
-	// Manually compile cranelift ASM and persist it (simulating what
-	// getCraneliftAsm does internally, since getCraneliftAsm needs
-	// getWasmFromContractCode which requires real contract state).
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
-	if err != nil {
-		return fmt.Errorf("cranelift compilation failed: %w", err)
-	}
-	if len(craneliftAsm) == 0 {
-		return fmt.Errorf("cranelift produced empty ASM")
-	}
-
-	// Persist to wasm store.
-	batch := wasmStore.NewBatch()
-	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
-	if err := batch.Write(); err != nil {
-		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
-	}
-
-	// Verify getCraneliftAsm reads from the wasm store.
-	readAsm, err := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
-	if err != nil {
-		return fmt.Errorf("getCraneliftAsm failed: %w", err)
-	}
-	if len(readAsm) == 0 {
-		return fmt.Errorf("getCraneliftAsm returned empty after wasm store write")
-	}
-	if len(readAsm) != len(craneliftAsm) {
-		return fmt.Errorf("getCraneliftAsm length mismatch: expected %d, got %d", len(craneliftAsm), len(readAsm))
-	}
-
-	// Verify the cranelift ASM actually executes correctly.
-	SetNativeStackSize(1024 * 1024)
-	DrainStackPool()
-
-	reqHandler := C.NativeRequestHandler{
-		handle_request_fptr: (*[0]byte)(C.handleReqWrap),
-		id:                  0,
-	}
-	cgas := u64(0xfffffffffffffff)
-	output := &rustBytes{}
-	progParams := ProgParams{
-		MaxDepth:  1000000,
-		InkPrice:  1,
-		DebugMode: true,
-	}
-
-	status := userStatus(C.stylus_call(
-		goSlice(readAsm),
-		goSlice([]byte{}),
-		progParams.encode(),
-		reqHandler,
-		(&EvmData{}).encode(),
-		cbool(true),
-		output,
-		(*u64)(&cgas),
-		u32(0),
-	))
-	rustBytesIntoBytes(output)
-
-	if status == userNativeStackOverflow {
-		return fmt.Errorf("cranelift ASM overflowed with 1MB stack")
+	if got := GetNativeStackSize(); got != 64*1024 {
+		return fmt.Errorf("on-chain: expected stack doubled to 64KB, got %d", got)
 	}
 	if status != userSuccess {
-		return fmt.Errorf("expected success from cranelift ASM, got %d", status)
+		return fmt.Errorf("on-chain: expected success after retry with cranelift + doubled stack, got %d", status)
 	}
 
-	fmt.Printf("testCraneliftCompilationAndCache: passed (status=%d, getCraneliftAsm + wasm store verified)\n", status)
+	// Sub-test 4: second overflow → does not double again, returns overflow.
+	// Reset stack to 32KB to force overflow, but hasDoubledNativeStack is true.
+	SetNativeStackSize(32 * 1024)
+	DrainStackPool()
+	scope.Contract.Gas = gas
+	snapshot = db.Snapshot()
+	status, _ = handleNativeStackOverflow(
+		common.Address{}, moduleHash, localAsm,
+		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
+		memModel, runCtx, savedState{gas: gas}, true,
+		db, snapshot, nil, nil, Program{version: 1},
+	)
+	if status != userNativeStackOverflow {
+		return fmt.Errorf("second overflow: expected NativeStackOverflow (no second doubling), got %d", status)
+	}
+
+	fmt.Printf("testHandleNativeStackOverflow: passed\n")
 	return nil
 }
 
-// testGetCraneliftAsmErrors verifies getCraneliftAsm returns specific errors
-// when the wasm store has no cached ASM and compilation is not possible.
-func testGetCraneliftAsmErrors() error {
+// testHandleNativeStackOverflowAtMax verifies that handleNativeStackOverflow
+// does not double when configuredNativeStackSize is already at MaxNativeStackSize.
+func testHandleNativeStackOverflowAtMax() error {
 	localTarget := rawdb.LocalTarget()
 	if err := SetTarget(localTarget, "", true); err != nil {
 		return fmt.Errorf("failed setting target: %w", err)
 	}
 
-	moduleHash := common.HexToHash("0xdeadbeef")
-	gas := uint64(0xfffffffffffffff)
-	_, _, db := makeTestEVMScope(gas)
-
-	// With no cached ASM and invalid code, getWasmFromContractCode should fail,
-	// and getCraneliftAsm should return that error instead of a bare nil.
-	// Use non-empty invalid bytes so we don't hit the ProgramNotWasmError()
-	// function pointer (which is only initialized by the precompiles package).
-	asm, err := getCraneliftAsm(moduleHash, common.Address{}, db, []byte{0xff}, &StylusParams{}, 1, true)
-	if err == nil {
-		return fmt.Errorf("expected error from getCraneliftAsm with no cached ASM and invalid code, got nil (asm len=%d)", len(asm))
-	}
-	if len(asm) != 0 {
-		return fmt.Errorf("expected nil ASM on error, got %d bytes", len(asm))
-	}
-
-	fmt.Printf("testGetCraneliftAsmErrors: passed (err=%v)\n", err)
-	return nil
-}
-
-// testStackDoublingGivesUp verifies behavior when configuredNativeStackSize is
-// already at MaxNativeStackSize: the doubling path cannot grow further, so the
-// cranelift retry at max stack is the last attempt. Since the 500-recursion
-// program succeeds at 100MB, the test verifies that cranelift works at max
-// stack and that the stack size is properly restored afterward.
-//
-// To test the true give-up path (cranelift also overflows at max stack) we
-// would need a program that exceeds 100MB even with cranelift, which is
-// impractical. What we CAN test: the stack is at max, cranelift is called,
-// and the stack size globals are properly restored regardless of outcome.
-func testStackDoublingGivesUp() error {
-	localTarget := rawdb.LocalTarget()
-	if err := SetTarget(localTarget, "", true); err != nil {
-		return fmt.Errorf("failed setting target: %w", err)
-	}
-
-	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
-	if err != nil {
-		return fmt.Errorf("failed compiling WAT: %w", err)
-	}
-
-	// Compile singlepass ASM so we have something to call initially.
-	// The cranelift ASM we pre-populate will be real but compiled for tiny stack,
-	// meaning at 100MB it should succeed — so this test actually verifies that
-	// when cranelift *succeeds* at max stack, the function returns that success.
-	// To test the true give-up (cranelift also overflows), we'd need a program
-	// that exceeds 100MB stack even with cranelift, which is impractical.
-	//
-	// What we CAN test: the stack is at max, cranelift is called, and the
-	// stack size is properly restored after the call regardless of outcome.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
-	if err != nil {
-		return fmt.Errorf("failed compiling cranelift: %w", err)
-	}
-
-	// Set the stack to exactly MaxNativeStackSize.
 	SetInitialNativeStackSize(MaxNativeStackSize)
 	DrainStackPool()
+	allowFallback.Store(true)
 
+	moduleHash := common.HexToHash("0x1234567890abcdef")
+	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
+	memModel := NewMemoryModel(0, 0)
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
 	scope.Contract.Gas = gas
-
-	// Pre-populate cranelift ASM in wasm store.
-	moduleHash := common.HexToHash("0x1234567890abcdef")
-	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
-	if err != nil {
-		return fmt.Errorf("failed getting cranelift target: %w", err)
-	}
-	wasmStore := db.Database().WasmStore()
-	rawdb.WriteActivatedAsm(wasmStore, craneliftTarget, moduleHash, craneliftAsm)
-
-	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
-	memModel := NewMemoryModel(0, 0)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
-	allowFallback.Store(true)
 
 	snapshot := db.Snapshot()
-	retryStatus, _ := retryOnStackOverflow(
-		common.Address{}, moduleHash,
+	status, _ := handleNativeStackOverflow(
+		common.Address{}, moduleHash, nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
-
-	// Cranelift at 100MB should succeed (out-of-ink or out-of-stack), not overflow.
-	// This verifies the cranelift path works at max stack size.
-	if retryStatus == userNativeStackOverflow {
-		// If it did overflow, that's also fine — the test still verifies
-		// the stack size is properly restored.
-		fmt.Printf("testStackDoublingGivesUp: cranelift overflowed at max (give-up path exercised)\n")
+	if status != userNativeStackOverflow {
+		return fmt.Errorf("expected NativeStackOverflow at max, got %d", status)
 	}
-
-	// Key invariant: stack size is restored to MaxNativeStackSize.
+	if HasDoubledNativeStack() {
+		return fmt.Errorf("should not have doubled at max stack size")
+	}
 	if got := GetNativeStackSize(); got != MaxNativeStackSize {
-		return fmt.Errorf("expected stack size to remain at %d, got %d", MaxNativeStackSize, got)
+		return fmt.Errorf("expected stack to remain at %d, got %d", MaxNativeStackSize, got)
 	}
 
-	fmt.Printf("testStackDoublingGivesUp: passed (status=%d, stack size preserved at max)\n", retryStatus)
+	fmt.Printf("testHandleNativeStackOverflowAtMax: passed\n")
 	return nil
 }
 
-// testCraneliftFallbackInRetry tests the cranelift fallback path inside
-// retryOnStackOverflow. It uses a commit-mode RunContext (IsExecutedOnChain=true)
-// and pre-populates cranelift ASM in the wasm store so the fallback succeeds
-// without needing real contract code / getWasmFromContractCode.
-func testCraneliftFallbackInRetry() error {
-	localTarget := rawdb.LocalTarget()
-	if err := SetTarget(localTarget, "", true); err != nil {
-		return fmt.Errorf("failed setting target: %w", err)
-	}
-
-	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
-	if err != nil {
-		return fmt.Errorf("failed compiling WAT: %w", err)
-	}
-
-	// Compile cranelift ASM.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
-	if err != nil {
-		return fmt.Errorf("failed compiling cranelift: %w", err)
-	}
-
-	// Use a tiny stack so singlepass overflows.
-	SetInitialNativeStackSize(32 * 1024)
-	DrainStackPool()
-
-	gas := uint64(0xfffffffffffffff)
-	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = gas
-
-	// Pre-populate cranelift ASM in the wasm store.
-	moduleHash := common.HexToHash("0x1234567890abcdef")
-	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
-	if err != nil {
-		return fmt.Errorf("failed getting cranelift target: %w", err)
-	}
-	wasmStore := db.Database().WasmStore()
-	rawdb.WriteActivatedAsm(wasmStore, craneliftTarget, moduleHash, craneliftAsm)
-
-	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
-	memModel := NewMemoryModel(0, 0)
-	// Use commit context: IsExecutedOnChain() = true → cranelift fallback enabled.
-	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
-	allowFallback.Store(true)
-
-	snapshot := db.Snapshot()
-	status, _ := retryOnStackOverflow(
-		common.Address{}, moduleHash,
-		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, savedState{gas: gas}, true,
-		db, snapshot, nil, nil, Program{version: 1},
-	)
-
-	// Cranelift should have succeeded (program completes its recursions, not overflow).
-	if status == userNativeStackOverflow {
-		return fmt.Errorf("cranelift fallback did not resolve overflow")
-	}
-	if status != userSuccess {
-		return fmt.Errorf("expected success from cranelift fallback, got %d", status)
-	}
-
-	// Verify the stack size was restored (cranelift path doesn't double).
-	if got := GetNativeStackSize(); got != 32*1024 {
-		return fmt.Errorf("expected stack size to remain at 32KB after cranelift fallback, got %d", got)
-	}
-
-	fmt.Printf("testCraneliftFallbackInRetry: passed (status=%d, cranelift fallback worked)\n", status)
-	return nil
-}
-
-// testRetryRestoresStylusPages verifies that retryOnStackOverflow correctly
-// restores openWasmPages and everWasmPages after reverting a failed attempt.
-// These fields are not journaled, so RevertToSnapshot alone does not restore
-// them — the retry path must do it explicitly via savedState.
+// testRetryRestoresStylusPages verifies that handleNativeStackOverflow correctly
+// restores openWasmPages and everWasmPages before retrying. These fields are not
+// journaled, so RevertToSnapshot alone does not restore them — the retry path
+// must do it explicitly via savedState.
 func testRetryRestoresStylusPages() error {
 	localTarget := rawdb.LocalTarget()
 	if err := SetTarget(localTarget, "", true); err != nil {
@@ -836,13 +662,18 @@ func testRetryRestoresStylusPages() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	// Compile cranelift ASM so the retry path succeeds.
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling native: %w", err)
+	}
+
+	// Compile cranelift ASM for the retry.
 	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
 
-	// Use a tiny stack so singlepass overflows and retry is triggered.
+	// Use a tiny stack so the first call overflows and the retry is triggered.
 	SetInitialNativeStackSize(32 * 1024)
 	DrainStackPool()
 
@@ -877,8 +708,6 @@ func testRetryRestoresStylusPages() error {
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 	allowFallback.Store(true)
 
-	// savedState captures the pre-call values; retryOnStackOverflow must
-	// restore them before retrying.
 	saved := savedState{
 		gas:       gas,
 		openPages: initialOpen,
@@ -886,24 +715,17 @@ func testRetryRestoresStylusPages() error {
 	}
 
 	snapshot := db.Snapshot()
-	status, _ := retryOnStackOverflow(
-		common.Address{}, moduleHash,
+	status, _ := handleNativeStackOverflow(
+		common.Address{}, moduleHash, localAsm,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 
 	if status == userNativeStackOverflow {
-		return fmt.Errorf("cranelift fallback did not resolve overflow")
+		return fmt.Errorf("retry did not resolve overflow")
 	}
 
-	// Verify pages were restored before the retry executed.
-	// After the successful retry, openWasmPages may have been modified by the
-	// retried program's own memory.grow calls, but everWasmPages must be at
-	// least initialEver (the restored value) and must NOT still be the
-	// inflated value from the first attempt unless the retry itself grew
-	// beyond it.
-	//
 	// The recursive_stack_overflow program doesn't call memory.grow, so
 	// openWasmPages should equal initialOpen after the retry's revert +
 	// re-execution.
@@ -916,6 +738,126 @@ func testRetryRestoresStylusPages() error {
 	}
 
 	fmt.Printf("testRetryRestoresStylusPages: passed (open=%d, ever=%d after retry)\n", gotOpen, gotEver)
+	return nil
+}
+
+// testGetCraneliftAsmErrors verifies getCraneliftAsm returns specific errors
+// when the wasm store has no cached ASM and compilation is not possible.
+func testGetCraneliftAsmErrors() error {
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	moduleHash := common.HexToHash("0xdeadbeef")
+	gas := uint64(0xfffffffffffffff)
+	_, _, db := makeTestEVMScope(gas)
+
+	// With no cached ASM and invalid code, getWasmFromContractCode should fail,
+	// and getCraneliftAsm should return that error instead of a bare nil.
+	// Use non-empty invalid bytes so we don't hit the ProgramNotWasmError()
+	// function pointer (which is only initialized by the precompiles package).
+	asm, err := getCraneliftAsm(moduleHash, common.Address{}, db, []byte{0xff}, &StylusParams{}, 1, true)
+	if err == nil {
+		return fmt.Errorf("expected error from getCraneliftAsm with no cached ASM and invalid code, got nil (asm len=%d)", len(asm))
+	}
+	if len(asm) != 0 {
+		return fmt.Errorf("expected nil ASM on error, got %d bytes", len(asm))
+	}
+
+	fmt.Printf("testGetCraneliftAsmErrors: passed (err=%v)\n", err)
+	return nil
+}
+
+// testCraneliftCompilationAndCache tests getCraneliftAsm:
+// 1. getCraneliftAsm reads from the wasm store when cranelift ASM is cached.
+// 2. The returned cranelift ASM produces valid execution results.
+func testCraneliftCompilationAndCache() error {
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+
+	moduleHash := common.HexToHash("0xdeadbeef")
+	gas := uint64(0xfffffffffffffff)
+	_, _, db := makeTestEVMScope(gas)
+
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("failed getting cranelift target: %w", err)
+	}
+
+	// Verify wasm store is initially empty for this module.
+	wasmStore := db.Database().WasmStore()
+	existing := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash)
+	if len(existing) > 0 {
+		return fmt.Errorf("expected empty wasm store, but found %d bytes", len(existing))
+	}
+
+	// Manually compile cranelift ASM and persist it.
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	if err != nil {
+		return fmt.Errorf("cranelift compilation failed: %w", err)
+	}
+	if len(craneliftAsm) == 0 {
+		return fmt.Errorf("cranelift produced empty ASM")
+	}
+
+	// Persist to wasm store.
+	batch := wasmStore.NewBatch()
+	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
+	}
+
+	// Verify getCraneliftAsm reads from the wasm store.
+	readAsm, err := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
+	if err != nil {
+		return fmt.Errorf("getCraneliftAsm failed: %w", err)
+	}
+	if len(readAsm) != len(craneliftAsm) {
+		return fmt.Errorf("getCraneliftAsm length mismatch: expected %d, got %d", len(craneliftAsm), len(readAsm))
+	}
+
+	// Verify the cranelift ASM actually executes correctly.
+	SetNativeStackSize(1024 * 1024)
+	DrainStackPool()
+
+	reqHandler := C.NativeRequestHandler{
+		handle_request_fptr: (*[0]byte)(C.handleReqWrap),
+		id:                  0,
+	}
+	cgas := u64(0xfffffffffffffff)
+	output := &rustBytes{}
+	progParams := ProgParams{
+		MaxDepth:  1000000,
+		InkPrice:  1,
+		DebugMode: true,
+	}
+
+	status := userStatus(C.stylus_call(
+		goSlice(readAsm),
+		goSlice([]byte{}),
+		progParams.encode(),
+		reqHandler,
+		(&EvmData{}).encode(),
+		cbool(true),
+		output,
+		(*u64)(&cgas),
+		u32(0),
+	))
+	rustBytesIntoBytes(output)
+
+	if status != userSuccess {
+		return fmt.Errorf("expected success from cranelift ASM, got %d", status)
+	}
+
+	fmt.Printf("testCraneliftCompilationAndCache: passed (getCraneliftAsm + wasm store verified)\n")
 	return nil
 }
 

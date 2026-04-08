@@ -72,9 +72,24 @@ func TestNativeStackSizeMaxCap(t *testing.T) {
 	}
 }
 
-func TestRetryOnStackOverflow(t *testing.T) {
+func TestHandleNativeStackOverflow(t *testing.T) {
 	defer SetNativeStackSize(1024 * 1024)
-	err := testRetryOnStackOverflow()
+	err := testHandleNativeStackOverflow()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRetryRestoresStylusPages(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024)
+	err := testRetryRestoresStylusPages()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetCraneliftAsmErrors(t *testing.T) {
+	err := testGetCraneliftAsmErrors()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,32 +103,9 @@ func TestCraneliftCompilationAndCache(t *testing.T) {
 	}
 }
 
-func TestGetCraneliftAsmErrors(t *testing.T) {
-	err := testGetCraneliftAsmErrors()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStackDoublingGivesUp(t *testing.T) {
+func TestHandleNativeStackOverflowAtMax(t *testing.T) {
 	defer SetNativeStackSize(1024 * 1024)
-	err := testStackDoublingGivesUp()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCraneliftFallbackInRetry(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024)
-	err := testCraneliftFallbackInRetry()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRetryRestoresStylusPages(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024)
-	err := testRetryRestoresStylusPages()
+	err := testHandleNativeStackOverflowAtMax()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,14 +151,21 @@ func TestSelectLocalAsm(t *testing.T) {
 		t.Fatalf("expected singlepass when cranelift absent, got ok=%v asm=%q", ok, asm)
 	}
 
-	// Cranelift-only: returned regardless of allowFallback.
-	SetAllowFallback(false)
+	// Cranelift-only with allowFallback=true: returned.
+	SetAllowFallback(true)
 	asmMap = map[rawdb.WasmTarget][]byte{
 		craneliftTarget: craneliftAsm,
 	}
 	asm, ok = selectLocalAsm(asmMap)
 	if !ok || string(asm) != "cranelift-asm" {
-		t.Fatalf("expected cranelift when singlepass absent, got ok=%v asm=%q", ok, asm)
+		t.Fatalf("expected cranelift when singlepass absent and fallback=true, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Cranelift-only with allowFallback=false: not returned.
+	SetAllowFallback(false)
+	_, ok = selectLocalAsm(asmMap)
+	if ok {
+		t.Fatal("expected ok=false for cranelift-only with allowFallback=false")
 	}
 
 	// Neither exists: returns false.
