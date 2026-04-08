@@ -1040,10 +1040,8 @@ func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled boo
 			return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
 		}
 		deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
-		// This fetcher is only needed for BatchPostingReport messages, which
-		// should not appear at the deployment block. We only need Initialize
-		// messages here, but LookupMessagesInRange processes all messages in
-		// the block and requires a non-nil fetcher for BatchPostingReport.
+		// LookupMessagesInRange requires a non-nil fetcher for BatchPostingReport
+		// messages, but no batches should exist at the deployment block.
 		batchFetcher := func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
 			return nil, fmt.Errorf("batch data not available during init (batch %d at L1 block %d)", batchNum, parentChainBlockNumber)
 		}
