@@ -5,9 +5,9 @@ package melextraction
 import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 var BatchDeliveredID common.Hash
@@ -16,6 +16,7 @@ var InboxMessageFromOriginID common.Hash
 var MELConfigEventID common.Hash
 var SeqInboxABI *abi.ABI
 var IBridgeABI *abi.ABI
+var RollupAdminABI *abi.ABI
 var iInboxABI *abi.ABI
 var iDelayedMessageProviderABI *abi.ABI
 
@@ -48,6 +49,10 @@ func init() {
 	}
 	iInboxABI = parsedIInboxABI
 
-	// MELConfigEvent(address inbox, address sequencerInbox, uint256 melVersionActivationBlock)
-	MELConfigEventID = crypto.Keccak256Hash([]byte("MELConfigEvent(address,address,uint256)"))
+	parsedRollupAdminABI, err := rollupgen.RollupAdminLogicMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	RollupAdminABI = parsedRollupAdminABI
+	MELConfigEventID = parsedRollupAdminABI.Events["MELConfigEvent"].ID
 }
