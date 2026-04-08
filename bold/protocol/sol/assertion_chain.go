@@ -7,9 +7,9 @@
 package sol
 
 import (
+	"bytes"
 	"context"
 	"flag"
-	"bytes"
 	"fmt"
 	"math/big"
 	"strings"
