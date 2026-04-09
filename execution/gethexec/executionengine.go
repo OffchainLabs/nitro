@@ -244,6 +244,7 @@ type ExecutionEngine struct {
 	addressChecker                 state.AddressChecker
 	eventFilter                    *eventfilter.EventFilter
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
+	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
 }
 
@@ -1243,6 +1244,13 @@ func (s *ExecutionEngine) Start(ctxIn context.Context) error {
 		}
 		s.TrackChild(s.transactionFiltererRPCClient)
 	}
+	if s.filteringReportRPCClient != nil {
+		err := s.filteringReportRPCClient.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to start filtering report RPC client: %w", err)
+		}
+		s.TrackChild(s.filteringReportRPCClient)
+	}
 
 	s.LaunchThread(func(ctx context.Context) {
 		for {
@@ -1358,6 +1366,10 @@ func (s *ExecutionEngine) SetEventFilter(ef *eventfilter.EventFilter) {
 
 func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
 	s.transactionFiltererRPCClient = client
+}
+
+func (s *ExecutionEngine) SetFilteringReportRPCClient(client *FilteringReportRPCClient) {
+	s.filteringReportRPCClient = client
 }
 
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {

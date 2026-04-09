@@ -130,6 +130,7 @@ type TransactionFilteringConfig struct {
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -142,6 +143,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
 	}
+	if err := c.FilteringReportRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
+	}
 	return nil
 }
 
@@ -151,6 +155,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -159,6 +164,7 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
 }
 
 type Config struct {
@@ -376,6 +382,12 @@ func CreateExecutionNode(
 				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
 			}
 			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		}
+		if config.TransactionFiltering.FilteringReportRPCClient.URL != "" {
+			filteringReportConfigFetcher := func() *rpcclient.ClientConfig {
+				return &configFetcher.Get().TransactionFiltering.FilteringReportRPCClient
+			}
+			execEngine.SetFilteringReportRPCClient(NewFilteringReportRPCClient(filteringReportConfigFetcher))
 		}
 		sequencer, err = NewSequencer(
 			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
