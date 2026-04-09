@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -99,43 +100,6 @@ type SequencerConfig struct {
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
-}
-
-type TransactionFilteringConfig struct {
-	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
-	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
-	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
-	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
-	FilterSetReportingInterval     time.Duration                 `koanf:"filter-set-reporting-interval"`
-}
-
-func (c *TransactionFilteringConfig) Validate() error {
-	if err := c.EventFilter.Validate(); err != nil {
-		return fmt.Errorf("invalid event filter config: %w", err)
-	}
-	if err := c.AddressFilter.Validate(); err != nil {
-		return fmt.Errorf("error validating address-filter config: %w", err)
-	}
-	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
-		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
-	}
-	return nil
-}
-
-var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
-	DisableDelayedSequencingFilter: false,
-	EventFilter:                    eventfilter.DefaultEventFilterConfig,
-	AddressFilter:                  addressfilter.DefaultConfig,
-	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
-	FilterSetReportingInterval:     5 * time.Minute,
-}
-
-func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
-	EventFilterAddOptions(prefix+".event-filter", f)
-	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
-	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
-	f.Duration(prefix+".filter-set-reporting-interval", DefaultTransactionFilteringConfig.FilterSetReportingInterval, "interval for reporting current filter set id to the transaction-filterer")
 }
 
 type DangerousConfig struct {
@@ -465,8 +429,9 @@ type Sequencer struct {
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
-	eventFilter          *eventfilter.EventFilter
-	addressFilterService *addressfilter.FilterService
+	eventFilter            *eventfilter.EventFilter
+	addressFilterService   *addressfilter.FilterService
+	filteringConfigFetcher func() *TransactionFilteringConfig
 }
 
 func NewSequencer(
@@ -476,6 +441,7 @@ func NewSequencer(
 	parentChain *parent.ParentChain,
 	eventFilter *eventfilter.EventFilter,
 	addressFilterService *addressfilter.FilterService,
+	filteringConfigFetcher func() *TransactionFilteringConfig,
 ) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
@@ -503,6 +469,7 @@ func NewSequencer(
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
 		addressFilterService:              addressFilterService,
+		filteringConfigFetcher:            filteringConfigFetcher,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -1705,32 +1672,30 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
 	}
 
-	if s.addressFilterService != nil {
-		s.addressFilterService.Start(ctx)
-		s.execEngine.SetAddressChecker(s.addressFilterService.GetAddressChecker())
-
-		if s.execEngine.GetTransactionFiltererRPCClient() != nil {
-			s.CallIteratively(func(ctx context.Context) time.Duration {
-				reportingInterval := s.config().TransactionFiltering.FilterSetReportingInterval
-				if reportingInterval <= 0 {
-					return 5 * time.Minute
-				}
-				// Only report if active sequencer
-				pauseChan, forwarder := s.GetPauseAndForwarder()
-				if pauseChan != nil || forwarder != nil {
-					return reportingInterval
-				}
-				filterSetId := s.addressFilterService.GetFilterSetId()
-				if filterSetId == uuid.Nil {
-					return reportingInterval
-				}
-				_, err := s.execEngine.GetTransactionFiltererRPCClient().ReportCurrentFilterSetId(filterSetId.String()).Await(ctx)
-				if err != nil {
-					log.Warn("failed to report filter set id", "filterSetId", filterSetId, "err", err)
-				}
+	if s.execEngine.GetTransactionFiltererRPCClient() != nil {
+		s.CallIteratively(func(ctx context.Context) time.Duration {
+			reportingInterval := s.filteringConfigFetcher().FilterSetReportingInterval
+			if reportingInterval <= 0 {
+				return 5 * time.Minute
+			}
+			if s.addressFilterService == nil {
 				return reportingInterval
-			})
-		}
+			}
+			// Only report if active sequencer
+			pauseChan, forwarder := s.GetPauseAndForwarder()
+			if pauseChan != nil || forwarder != nil {
+				return reportingInterval
+			}
+			filterSetId := s.addressFilterService.GetFilterSetId()
+			if filterSetId == uuid.Nil {
+				return reportingInterval
+			}
+			_, err := s.execEngine.GetTransactionFiltererRPCClient().ReportCurrentFilterSetId(filterSetId.String()).Await(ctx)
+			if err != nil {
+				log.Warn("failed to report filter set id", "filterSetId", filterSetId, "err", err)
+			}
+			return reportingInterval
+		})
 	}
 
 	if s.l1Reader != nil {
@@ -1903,4 +1868,9 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 func (s *Sequencer) SetAddressFilterServiceForTest(t *testing.T, service *addressfilter.FilterService) {
 	t.Helper()
 	s.addressFilterService = service
+}
+
+func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, id uuid.UUID, salt uuid.UUID, hashes []common.Hash, digest string) {
+	t.Helper()
+	s.addressFilterService.GetHashStore().Store(id, salt, hashes, digest)
 }

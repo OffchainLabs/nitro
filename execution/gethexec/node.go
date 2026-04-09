@@ -130,6 +130,7 @@ type TransactionFilteringConfig struct {
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilterSetReportingInterval     time.Duration                 `koanf:"filter-set-reporting-interval"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -151,6 +152,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilterSetReportingInterval:     5 * time.Minute,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -159,6 +161,7 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultTransactionFilteringConfig.FilterSetReportingInterval, "interval for reporting current filter set id to the transaction-filterer")
 }
 
 type Config struct {
@@ -377,8 +380,11 @@ func CreateExecutionNode(
 			}
 			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
 		}
+		filteringConfigFetcher := func() *TransactionFilteringConfig {
+			return &configFetcher.Get().TransactionFiltering
+		}
 		sequencer, err = NewSequencer(
-			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
+			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService, filteringConfigFetcher)
 		if err != nil {
 			return nil, err
 		}

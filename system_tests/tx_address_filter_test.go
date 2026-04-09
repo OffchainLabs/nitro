@@ -659,10 +659,24 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	Require(t, err)
 	defer transactionFiltererStack.Close()
 
-	// Build sequencer node with address filtering and short reporting interval
+	// Build sequencer node with transaction-filterer RPC client and short reporting interval.
+	// Address filtering is NOT enabled via config (to avoid S3 initialization), instead we
+	// set up the filter service manually after the node starts.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
-	builder.execConfig.Sequencer.TransactionFiltering.AddressFilter = addressfilter.Config{
+	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
+	builder.execConfig.TransactionFiltering.FilterSetReportingInterval = 500 * time.Millisecond
+
+	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
+	builder.execConfig.SyncMonitor.MsgLag = time.Hour
+	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	execNode := builder.L2.ExecNode
+
+	// Create a minimal filter service for testing (no S3 download, just a hash store with known ID)
+	filterConfig := &addressfilter.Config{
 		Enable: true,
 		S3: s3syncer.Config{
 			Config:    s3client.Config{Region: "us-east-1"},
@@ -674,19 +688,9 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 		AddressCheckerWorkerCount: 1,
 		AddressCheckerQueueSize:   10,
 	}
-	builder.execConfig.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
-	builder.execConfig.Sequencer.TransactionFiltering.FilterSetReportingInterval = 500 * time.Millisecond
-
-	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
-	builder.execConfig.SyncMonitor.MsgLag = time.Hour
-	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	execNode := builder.L2.ExecNode
-
-	// Small delay to ensure ConsensusExecutionSyncer's initial sync call completes
-	time.Sleep(500 * time.Millisecond)
+	filterService, err := addressfilter.NewFilterService(filterConfig)
+	Require(t, err)
+	execNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
 
 	// Store filter rules with a known ID so periodic reporting has something to report
 	salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")

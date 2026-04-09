@@ -178,9 +178,11 @@ func NewStack(
 	}
 
 	api := &TransactionFiltererAPI{
-		arbFilteredTransactionsManager: arbFilteredTransactionsManager,
-		txOpts:                         txOpts,
-		filterSetReportingEndpoint:     filterSetReportingEndpoint,
+		txOpts:                     txOpts,
+		filterSetReportingEndpoint: filterSetReportingEndpoint,
+	}
+	if arbFilteredTransactionsManager != nil {
+		api.arbFilteredTransactionsManager.Store(arbFilteredTransactionsManager)
 	}
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,
