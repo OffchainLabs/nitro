@@ -34,7 +34,7 @@ func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 	}
-	return New(config, sqsMockClient, testQueueURL)
+	return New(config, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
 }
 
 func TestForwarder_ForwardsMessages(t *testing.T) {
@@ -57,7 +57,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	sqsMockClient := &sqsclient.MockClient{}
 
 	stackConfig := api.DefaultStackConfig
-	_, reportAPI, err := api.NewStack(&stackConfig, sqsMockClient, testQueueURL)
+	_, reportAPI, err := api.NewStack(&stackConfig, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	sqsMockClient := &sqsclient.MockClient{}
 
 	stackConfig := api.DefaultStackConfig
-	_, reportAPI, err := api.NewStack(&stackConfig, sqsMockClient, testQueueURL)
+	_, reportAPI, err := api.NewStack(&stackConfig, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
 	if err != nil {
 		t.Fatal(err)
 	}

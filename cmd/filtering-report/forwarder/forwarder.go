@@ -46,18 +46,16 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type Forwarder struct {
 	stopwaiter.StopWaiter
-	config      *Config
-	sqsClient   sqsclient.Client
-	sqsQueueURL string
-	httpClient  *http.Client
+	config     *Config
+	sqsClient  *sqsclient.QueueClient
+	httpClient *http.Client
 }
 
-func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwarder {
+func New(config *Config, sqsClient *sqsclient.QueueClient) *Forwarder {
 	return &Forwarder{
-		config:      config,
-		sqsClient:   sqsClient,
-		sqsQueueURL: sqsQueueURL,
-		httpClient:  &http.Client{Timeout: config.ExternalEndpoint.Timeout},
+		config:     config,
+		sqsClient:  sqsClient,
+		httpClient: &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 	}
 }
 
@@ -72,7 +70,7 @@ func (r *Forwarder) Start(ctx context.Context) {
 
 func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	out, err := r.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            &r.sqsQueueURL,
+		QueueUrl:            &r.sqsClient.QueueURL,
 		WaitTimeSeconds:     r.config.WaitTimeSeconds,
 		MaxNumberOfMessages: 1,
 	})
@@ -92,7 +90,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 		return 0
 	}
 	_, err = r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-		QueueUrl:      &r.sqsQueueURL,
+		QueueUrl:      &r.sqsClient.QueueURL,
 		ReceiptHandle: msg.ReceiptHandle,
 	})
 	if err != nil {

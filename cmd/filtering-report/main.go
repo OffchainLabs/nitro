@@ -183,7 +183,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	var sqsClient sqsclient.Client
+	var sqsClient *sqsclient.QueueClient
 	if config.SQS.Enable {
 		sqsClient, err = sqsclient.NewClient(ctx, &config.SQS)
 		if err != nil {
@@ -197,12 +197,12 @@ func mainImpl() int {
 			fmt.Fprintf(os.Stderr, "error: report-forwarder requires SQS to be enabled\n")
 			return 1
 		}
-		fwd := forwarder.New(&config.ReportForwarder, sqsClient, config.SQS.QueueURL)
+		fwd := forwarder.New(&config.ReportForwarder, sqsClient)
 		fwd.Start(ctx)
 		defer fwd.StopAndWait()
 	}
 
-	stack, _, err := api.NewStack(&stackConf, sqsClient, config.SQS.QueueURL)
+	stack, _, err := api.NewStack(&stackConf, sqsClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

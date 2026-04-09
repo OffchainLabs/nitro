@@ -39,7 +39,16 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secret-key", DefaultConfig.SecretKey, "SQS secret key")
 }
 
-func NewClient(ctx context.Context, config *Config) (Client, error) {
+type QueueClient struct {
+	Client
+	QueueURL string
+}
+
+func NewQueueClient(client Client, queueURL string) *QueueClient {
+	return &QueueClient{Client: client, QueueURL: queueURL}
+}
+
+func NewClient(ctx context.Context, config *Config) (*QueueClient, error) {
 	cfg, err := awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(config.Region), func(options *awsConfig.LoadOptions) error {
 		if config.AccessKey != "" && config.SecretKey != "" {
 			options.Credentials = credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, "")
@@ -49,10 +58,13 @@ func NewClient(ctx context.Context, config *Config) (Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	var client Client
 	if config.Endpoint != "" {
-		return sqs.NewFromConfig(cfg, func(o *sqs.Options) {
+		client = sqs.NewFromConfig(cfg, func(o *sqs.Options) {
 			o.BaseEndpoint = &config.Endpoint
-		}), nil
+		})
+	} else {
+		client = sqs.NewFromConfig(cfg)
 	}
-	return sqs.NewFromConfig(cfg), nil
+	return &QueueClient{Client: client, QueueURL: config.QueueURL}, nil
 }

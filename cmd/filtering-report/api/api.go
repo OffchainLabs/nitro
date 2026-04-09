@@ -21,14 +21,12 @@ import (
 )
 
 type FilteringReportAPI struct {
-	sqsClient   sqsclient.Client
-	sqsQueueURL string
+	sqsClient *sqsclient.QueueClient
 }
 
-func NewFilteringReportAPI(sqsClient sqsclient.Client, sqsQueueURL string) *FilteringReportAPI {
+func NewFilteringReportAPI(sqsClient *sqsclient.QueueClient) *FilteringReportAPI {
 	return &FilteringReportAPI{
-		sqsClient:   sqsClient,
-		sqsQueueURL: sqsQueueURL,
+		sqsClient: sqsClient,
 	}
 }
 
@@ -44,7 +42,7 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 		}
 		bodyStr := string(body)
 		_, err = a.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
-			QueueUrl:    &a.sqsQueueURL,
+			QueueUrl:    &a.sqsClient.QueueURL,
 			MessageBody: &bodyStr,
 		})
 		if err != nil {
@@ -78,15 +76,14 @@ var DefaultStackConfig = node.Config{
 
 func NewStack(
 	stackConfig *node.Config,
-	sqsClient sqsclient.Client,
-	sqsQueueURL string,
+	sqsClient *sqsclient.QueueClient,
 ) (*node.Node, *FilteringReportAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	api := NewFilteringReportAPI(sqsClient, sqsQueueURL)
+	api := NewFilteringReportAPI(sqsClient)
 
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,
