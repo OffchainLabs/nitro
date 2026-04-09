@@ -49,6 +49,7 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
 			return err
 		}
+		log.Debug("Successfully sent filtered transaction report to SQS", "txHash", report.TxHash.Hex())
 	}
 	return nil
 }

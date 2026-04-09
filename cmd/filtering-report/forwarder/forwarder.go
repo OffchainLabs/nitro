@@ -110,11 +110,14 @@ func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 		return err
 	}
 	defer func() {
-		io.Copy(io.Discard, resp.Body)
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			log.Error("Failed draining response body", "err", err)
+		}
 		resp.Body.Close()
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("external endpoint returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
