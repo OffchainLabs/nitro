@@ -24,12 +24,14 @@ type Config struct {
 	Enable           bool                         `koanf:"enable"`
 	Workers          int                          `koanf:"worker-count"`
 	PollInterval     time.Duration                `koanf:"poll-interval"`
+	WaitTimeSeconds  int32                        `koanf:"wait-time-seconds"`
 	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
 var DefaultConfig = Config{
 	Workers:          1,
 	PollInterval:     1 * time.Second,
+	WaitTimeSeconds:  5,
 	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
 }
 
@@ -37,6 +39,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable SQS consumer workers")
 	f.Int(prefix+".worker-count", DefaultConfig.Workers, "number of workers")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
+	f.Int32(prefix+".wait-time-seconds", DefaultConfig.WaitTimeSeconds, "SQS long polling wait time in seconds")
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 }
 
@@ -45,8 +48,7 @@ type Forwarder struct {
 	config           *Config
 	sqsClient        sqsclient.Client
 	sqsQueueURL      string
-	httpClient       *http.Client
-	externalEndpoint string
+	httpClient *http.Client
 }
 
 func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwarder {
@@ -54,8 +56,7 @@ func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwar
 		config:           config,
 		sqsClient:        sqsClient,
 		sqsQueueURL:      sqsQueueURL,
-		httpClient:       &http.Client{Timeout: config.ExternalEndpoint.Timeout},
-		externalEndpoint: config.ExternalEndpoint.URL,
+		httpClient: &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 	}
 }
 
@@ -69,10 +70,9 @@ func (r *Forwarder) Start(ctx context.Context) {
 }
 
 func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
-	waitTime := int32(5)
 	out, err := r.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 		QueueUrl:            &r.sqsQueueURL,
-		WaitTimeSeconds:     waitTime,
+		WaitTimeSeconds:     r.config.WaitTimeSeconds,
 		MaxNumberOfMessages: 1,
 	})
 	if err != nil {
@@ -101,7 +101,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 }
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.externalEndpoint, bytes.NewBufferString(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.ExternalEndpoint.URL, bytes.NewBufferString(body))
 	if err != nil {
 		return err
 	}
