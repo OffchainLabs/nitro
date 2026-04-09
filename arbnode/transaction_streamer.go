@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -344,9 +345,6 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		header := oldMessage.Message.Header
 
 		if header.RequestId != nil {
-			// When using MEL:
-			// This is a delayed message and concerns delayedMessages 'Seen' and not 'Read' so not including any delayed messages in
-			// resequencing is fair- since they will anyway be re-added by MEL later and the corresponding merkle partials would have changed
 			delayedMsgIdx := header.RequestId.Big().Uint64()
 			if delayedMsgIdx+1 != oldMessage.DelayedMessagesRead {
 				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", oldMessage.Message.Header, "delayedMessagesRead", oldMessage.DelayedMessagesRead)
@@ -497,7 +495,11 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		if message.DelayedMessagesRead != 0 && s.batchDataProvider != nil {
 			localParentChainBlockNumber, err := s.batchDataProvider.FindParentChainBlockContainingDelayed(ctx, message.DelayedMessagesRead-1)
 			if err != nil {
-				log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
+				if errors.Is(err, melrunner.ErrFindDelayedNotImplementedByMEL) {
+					log.Debug("MEL: using BatchMetadata fallback for parent chain block number", "idx", message.DelayedMessagesRead-1)
+				} else {
+					log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1, "err", err)
+				}
 			} else {
 				parentChainBlockNumber = &localParentChainBlockNumber
 			}

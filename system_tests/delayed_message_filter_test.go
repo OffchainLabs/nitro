@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -127,7 +126,7 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 	t.Fatal("timeout waiting for delayed sequencer to resume")
 }
 
-func createTransactionFiltererService(t *testing.T, ctx context.Context, builder *NodeBuilder, filtererName string) (*node.Node, *api.TransactionFiltererAPI) {
+func createTransactionFiltererService(t *testing.T, ctx context.Context, builder *NodeBuilder, filtererName string) *api.TransactionFiltererAPI {
 	t.Helper()
 
 	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
@@ -140,12 +139,18 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	transactionFiltererStackConf.AuthPort = 0
 	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil)
 	require.NoError(t, err)
+
+	err = transactionFiltererAPI.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { transactionFiltererAPI.StopAndWait() })
+
 	err = transactionFiltererStack.Start()
 	require.NoError(t, err)
+	t.Cleanup(func() { transactionFiltererStack.Close() })
 
 	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
 
-	return transactionFiltererStack, transactionFiltererAPI
+	return transactionFiltererAPI
 }
 
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
@@ -283,8 +288,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -443,8 +447,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -561,8 +564,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -763,8 +765,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -833,8 +834,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -900,8 +900,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -971,8 +970,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -1041,8 +1039,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	builder.L2Info.GenerateAccount("Filterer")
 	builder.L2Info.GenerateAccount("FilteredBeneficiary")
 
-	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
-	defer transactionFiltererStack.Close()
+	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	cleanup := builder.Build(t)
 	defer cleanup()

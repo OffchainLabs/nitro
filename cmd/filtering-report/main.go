@@ -4,9 +4,7 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,17 +12,14 @@ import (
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
-type TransactionFiltererConfig struct {
+type FilteringReportConfig struct {
 	Conf       genericconf.ConfConfig `koanf:"conf"`
 	Persistent conf.PersistentConfig  `koanf:"persistent"`
 
@@ -42,10 +37,6 @@ type TransactionFiltererConfig struct {
 	WS   genericconf.WSConfig      `koanf:"ws"`
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
-
-	ChainId   int64                    `koanf:"chain-id"`
-	Wallet    genericconf.WalletConfig `koanf:"wallet"`
-	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -71,7 +62,7 @@ var IPCConfigDefault = genericconf.IPCConfig{
 	Path: "",
 }
 
-var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
+var DefaultFilteringReportConfig = FilteringReportConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
@@ -83,8 +74,6 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
 	Auth:          genericconf.AuthRPCConfigDefault,
-	ChainId:       412346, // nitro-testnode chainid
-	Sequencer:     rpcclient.DefaultClientConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -92,25 +81,21 @@ func addFlags(f *pflag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	f.String("log-level", DefaultTransactionFiltererConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
-	f.String("log-type", DefaultTransactionFiltererConfig.LogType, "log type (plaintext or json)")
+	f.String("log-level", DefaultFilteringReportConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
+	f.String("log-type", DefaultFilteringReportConfig.LogType, "log type (plaintext or json)")
 
-	f.Bool("metrics", DefaultTransactionFiltererConfig.Metrics, "enable metrics")
+	f.Bool("metrics", DefaultFilteringReportConfig.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 
-	f.Bool("pprof", DefaultTransactionFiltererConfig.PProf, "enable pprof")
+	f.Bool("pprof", DefaultFilteringReportConfig.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
-
-	f.Int64("chain-id", DefaultTransactionFiltererConfig.ChainId, "chain ID of the chain being filtered")
-	genericconf.WalletConfigAddOptions("wallet", f, "")
-	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
 }
 
-func parseConfig(args []string) (*TransactionFiltererConfig, error) {
+func parseConfig(args []string) (*FilteringReportConfig, error) {
 	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	addFlags(f)
@@ -120,15 +105,12 @@ func parseConfig(args []string) (*TransactionFiltererConfig, error) {
 		return nil, err
 	}
 
-	var config TransactionFiltererConfig
+	var config FilteringReportConfig
 	if err := confighelpers.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
 	if config.Conf.Dump {
-		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"wallet.password":    "",
-			"wallet.private-key": "",
-		})
+		err = confighelpers.DumpConfig(k, map[string]interface{}{})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
 		}
@@ -151,9 +133,6 @@ func printSampleUsage(progname string) {
 }
 
 func mainImpl() int {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-
 	config, err := parseConfig(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -187,34 +166,11 @@ func mainImpl() int {
 		return 1
 	}
 
-	sequencerRPCConfigFetcher := func() *rpcclient.ClientConfig { return &config.Sequencer }
-	sequencerRPCClient := rpcclient.NewRpcClient(sequencerRPCConfigFetcher, nil)
-	err = sequencerRPCClient.Start(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error starting sequencer rpc client: %v\n", err)
-		return 1
-	}
-	defer sequencerRPCClient.Close()
-	sequencerClient := ethclient.NewClient(sequencerRPCClient)
-	defer sequencerClient.Close()
-
-	txOpts, _, err := util.OpenWallet("transaction-filterer", &config.Wallet, big.NewInt(config.ChainId))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error opening wallet: %v\n", err)
-		return 1
-	}
-
-	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient)
+	stack, err := api.NewStack(&stackConf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1
 	}
-	err = api.Start(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error starting API: %v\n", err)
-		return 1
-	}
-	defer api.StopAndWait()
 
 	err = stack.Start()
 	if err != nil {
