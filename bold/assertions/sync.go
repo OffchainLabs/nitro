@@ -163,7 +163,7 @@ func (m *Manager) processAllAssertionsInRange(
 	for it.Next() {
 		if it.Error() != nil {
 			return errors.Wrapf(
-				err,
+				it.Error(),
 				"got iterator error when scanning assertion creations from block %d to %d",
 				filterOpts.Start,
 				*filterOpts.End,

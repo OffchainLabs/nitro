@@ -111,14 +111,19 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 	}
 	none := option.None[protocol.Assertion]()
 
+	staked, err := m.chain.IsStaked(ctx)
+	if err != nil {
+		return none, err
+	}
+
 	for {
 		if ctx.Err() != nil {
 			return none, ctx.Err()
 		}
 		// Ensure that we only build on a valid parent from this validator's perspective.
-		m.assertionChainData.Lock()
+		m.assertionChainData.RLock()
 		parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
-		m.assertionChainData.Unlock()
+		m.assertionChainData.RUnlock()
 		if !ok {
 			return none, fmt.Errorf(
 				"latest agreed assertion %#x not part of canonical mapping, something is wrong",
@@ -126,10 +131,6 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 			)
 		}
 
-		staked, err := m.chain.IsStaked(ctx)
-		if err != nil {
-			return none, err
-		}
 		// If the validator is already staked, we post an assertion and move existing stake to it.
 		var assertionOpt option.Option[protocol.Assertion]
 		var postErr error
