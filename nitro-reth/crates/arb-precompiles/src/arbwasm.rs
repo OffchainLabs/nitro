@@ -125,6 +125,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         MIN_INIT_GAS => {
             // Requires ArbOS >= 32 (StylusChargingFixes).
             if let Some(result) = crate::check_method_version(
+                input.gas,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES,
                 0,
             ) {

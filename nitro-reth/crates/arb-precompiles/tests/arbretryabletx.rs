@@ -1,11 +1,3 @@
-//! Integration tests for ArbRetryableTx (address 0x6e).
-//!
-//! Each test mirrors a method on `precompiles/ArbRetryableTx.go`. Methods that
-//! require a fully-populated retryable ticket in storage (Redeem, Keepalive end
-//! to end) are exercised at the simpler boundary cases (no ticket, self-redeem
-//! guard) since constructing a complete retryable through every code path is a
-//! larger task that belongs to a follow-up.
-
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
@@ -33,7 +25,6 @@ fn ticket_storage_key(ticket_id: B256) -> B256 {
 
 #[test]
 fn get_lifetime_returns_seven_days() {
-    // Per ArbRetryableTx.go:162, GetLifetime returns RetryableLifetimeSeconds (7d).
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
@@ -43,8 +34,7 @@ fn get_lifetime_returns_seven_days() {
 
 #[test]
 fn submit_retryable_always_reverts_with_not_callable() {
-    // Per ArbRetryableTx.go:269, SubmitRetryable always returns NotCallableError.
-    let payload = vec![0u8; 11 * 32 + 32]; // dummy args
+    let payload = vec![0u8; 11 * 32 + 32];
     let mut data = vec![0xc9, 0xf9, 0x5d, 0x32];
     data.extend_from_slice(&payload);
     let run = PrecompileTest::new()
@@ -59,9 +49,6 @@ fn submit_retryable_always_reverts_with_not_callable() {
 
 #[test]
 fn get_current_redeemer_returns_zero_outside_retry() {
-    // Outside a retry tx the scratch slot is unset, so the precompile reports
-    // address(0). Mirrors the `if c.txProcessor.CurrentRefundTo != nil` branch
-    // (ArbRetryableTx.go:256-259) returning the zero address.
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
@@ -106,7 +93,7 @@ fn get_timeout_unknown_ticket_reverts_with_no_ticket() {
 #[test]
 fn get_timeout_returns_effective_timeout_no_extension() {
     let ticket_id = B256::from([0x42; 32]);
-    let stored_timeout: u64 = 1_800_000_000; // a future timestamp
+    let stored_timeout: u64 = 1_800_000_000;
     let ticket_key = ticket_storage_key(ticket_id);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
@@ -114,12 +101,12 @@ fn get_timeout_returns_effective_timeout_no_extension() {
         .arbos_state()
         .storage(
             ARBOS_STATE_ADDRESS,
-            map_slot(ticket_key.as_slice(), 5), // TIMEOUT_OFFSET
+            map_slot(ticket_key.as_slice(), 5),
             U256::from(stored_timeout),
         )
         .storage(
             ARBOS_STATE_ADDRESS,
-            map_slot(ticket_key.as_slice(), 6), // TIMEOUT_WINDOWS_LEFT_OFFSET
+            map_slot(ticket_key.as_slice(), 6),
             U256::ZERO,
         )
         .call(
@@ -131,7 +118,6 @@ fn get_timeout_returns_effective_timeout_no_extension() {
 
 #[test]
 fn get_timeout_includes_extra_lifetime_windows() {
-    // Effective timeout = stored + windows * RETRYABLE_LIFETIME (7d).
     let ticket_id = B256::from([0x42; 32]);
     let stored_timeout: u64 = 1_800_000_000;
     let windows: u64 = 3;
@@ -184,7 +170,6 @@ fn get_beneficiary_returns_stored_address() {
         .arbos_version(ARBOS_V30)
         .block_timestamp(now)
         .arbos_state()
-        // timeout > now so the ticket is "open"
         .storage(
             ARBOS_STATE_ADDRESS,
             map_slot(ticket_key.as_slice(), 5),
@@ -192,7 +177,7 @@ fn get_beneficiary_returns_stored_address() {
         )
         .storage(
             ARBOS_STATE_ADDRESS,
-            map_slot(ticket_key.as_slice(), 4), // BENEFICIARY_OFFSET
+            map_slot(ticket_key.as_slice(), 4),
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
@@ -218,10 +203,6 @@ fn cancel_unknown_ticket_reverts() {
 
 #[test]
 fn cancel_rejects_non_beneficiary_caller() {
-    // Per ArbRetryableTx.go:240-242, only the beneficiary may cancel.
-    // ArbOS >= 11 wraps PrecompileError::Other into a reverted PrecompileOutput
-    // (see arb-precompiles::lib::gas_check), so we check `reverted` rather than
-    // `is_err`.
     let ticket_id = B256::from([0x55; 32]);
     let beneficiary: Address = address!("00000000000000000000000000000000000000bb");
     let intruder: Address = address!("00000000000000000000000000000000000000cc");
@@ -251,9 +232,6 @@ fn cancel_rejects_non_beneficiary_caller() {
 
 #[test]
 fn redeem_self_modifying_guard_rejects_current_retryable() {
-    // Per ArbRetryableTx.go:51, redeeming the currently-executing retryable must
-    // bail with ErrSelfModifyingRetryable. ArbOS >= 11 wraps the error into a
-    // reverted PrecompileOutput.
     let ticket_id = B256::from([0x33; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
@@ -272,7 +250,6 @@ fn redeem_self_modifying_guard_rejects_current_retryable() {
 
 #[test]
 fn redeem_unknown_ticket_reverts_with_no_ticket() {
-    // Ticket with timeout=0 → reverts with NoTicketWithID.
     let ticket_id = B256::from([0x44; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)

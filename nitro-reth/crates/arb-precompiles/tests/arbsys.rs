@@ -1,9 +1,3 @@
-//! Integration tests for ArbSys precompile (address 0x64).
-//!
-//! Each test mirrors a method of `precompiles/ArbSys.go` in Nitro and asserts
-//! that our handler returns the same value, modifies the same state, and emits
-//! the same events as Nitro's reference implementation.
-
 mod common;
 
 use alloy_primitives::{address, Address, B256, U256};
@@ -39,8 +33,6 @@ fn arb_chain_id_returns_configured_chain_id() {
 
 #[test]
 fn arbos_version_returns_55_plus_raw() {
-    // Nitro's ArbOSVersion (precompiles/ArbSys.go:67) returns 55 + raw stored value.
-    // The protocol stores the raw version (e.g. 30); the precompile reports 85.
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
@@ -50,7 +42,6 @@ fn arbos_version_returns_55_plus_raw() {
 
 #[test]
 fn get_storage_gas_available_returns_zero() {
-    // Nitro precompiles/ArbSys.go:73 always returns 0.
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
@@ -80,10 +71,6 @@ fn is_top_level_call_at_depth_three() {
 
 #[test]
 fn map_l1_sender_low_byte_carry() {
-    // 0x0123...4567 + 0x1111...1111
-    //   low bytes: 0x67 + 0x11 = 0x78 (no carry)
-    //   high bytes: 0x01 + 0x11 = 0x12 (no carry into byte -1)
-    //   middle bytes unchanged because the offset's middle is all zero
     let l1: Address = address!("0123456789abcdef0123456789abcdef01234567");
     let expected: Address = address!("1234456789abcdef0123456789abcdef01235678");
     let run = PrecompileTest::new()
@@ -101,8 +88,6 @@ fn map_l1_sender_low_byte_carry() {
 
 #[test]
 fn map_l1_sender_with_carry_propagation() {
-    // Per-byte addition would give 0x1111 ef 00... wrong.
-    // True 160-bit integer addition gives 0x12 00 00... 1111 (carry from byte 1 into byte 0).
     let l1: Address = address!("00ef000000000000000000000000000000000000");
     let expected: Address = address!("1200000000000000000000000000000000001111");
     let run = PrecompileTest::new()
@@ -148,7 +133,7 @@ fn arb_block_hash_returns_cached_hash_for_recent_block() {
     arb_precompiles::set_l2_block_hash(99, target_hash);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
-        .block_number(100) // current = 100, requested = 99 (within 256 window, < current)
+        .block_number(100)
         .arbos_state()
         .call(
             &arbsys(),
@@ -160,7 +145,6 @@ fn arb_block_hash_returns_cached_hash_for_recent_block() {
 
 #[test]
 fn arb_block_hash_reverts_for_future_block_arbos11() {
-    // requestedBlockNum >= currentNumber must revert with InvalidBlockNumberError on ArbOS >= 11.
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V11)
         .block_number(100)
@@ -170,8 +154,7 @@ fn arb_block_hash_reverts_for_future_block_arbos11() {
             &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(100))]),
         );
     let out = run.assert_ok();
-    assert_eq!(out.reverted, true, "expected reverted output");
-    // Selector for InvalidBlockNumberError(uint256,uint256) is the first 4 bytes of revert data.
+    assert!(out.reverted);
     assert_eq!(&out.bytes[..4], &[0xd5, 0xdc, 0x64, 0x2d]);
 }
 

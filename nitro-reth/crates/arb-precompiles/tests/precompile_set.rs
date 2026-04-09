@@ -1,6 +1,3 @@
-//! Asserts that `register_arb_precompiles` produces the right precompile address
-//! set for each ArbOS version, matching Nitro's gethhook precompile selection.
-
 use alloy_evm::{eth::EthEvmContext, precompiles::PrecompilesMap};
 use alloy_primitives::{address, Address};
 use arb_precompiles::register_arb_precompiles;
@@ -41,7 +38,6 @@ fn contains(map: &PrecompilesMap, addr: &Address) -> bool {
 
 #[test]
 fn arbos_29_excludes_bls_kzg_p256() {
-    // Pre-Stylus: Berlin precompiles (0x01..0x09) only.
     let map = build(SpecId::SHANGHAI, 29);
     for addr in [ECRECOVER, SHA256, RIPEMD, IDENTITY, MODEXP, BN_ADD, BN_MUL, BN_PAIR, BLAKE2F] {
         assert!(contains(&map, &addr), "expected {addr} for ArbOS 29");
@@ -56,7 +52,6 @@ fn arbos_29_excludes_bls_kzg_p256() {
 
 #[test]
 fn arbos_30_includes_p256_and_kzg_excludes_bls() {
-    // Stylus (Cancun + P256VERIFY).
     let map = build(SpecId::CANCUN, 30);
     for addr in [
         ECRECOVER, SHA256, RIPEMD, IDENTITY, MODEXP, BN_ADD, BN_MUL, BN_PAIR, BLAKE2F, KZG,
@@ -73,10 +68,6 @@ fn arbos_30_includes_p256_and_kzg_excludes_bls() {
 
 #[test]
 fn arbos_50_includes_bls_and_p256() {
-    // Dia: Cancun + P256VERIFY + Osaka (BLS12-381 + Osaka modexp/P256).
-    // The OSAKA P256 (6900 gas) is overridden with the 3450-gas version by
-    // register_arb_precompiles, so the address still resolves but our handler is in
-    // place. Address-set membership is what we assert here.
     let map = build(SpecId::OSAKA, 50);
     for addr in [
         ECRECOVER,

@@ -1,6 +1,3 @@
-//! Smoke test that the shared harness compiles and exercises end-to-end against a real
-//! precompile. Uses ArbSys.arbBlockNumber() because it's the simplest read-only path.
-
 mod common;
 
 use alloy_primitives::U256;

@@ -52,6 +52,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // CacheCodehash: available only on ArbOS 30, replaced by CacheProgram at 31.
         CACHE_CODEHASH => {
             if let Some(result) = crate::check_method_version(
+                input.gas,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
             ) {
@@ -63,6 +64,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // CacheProgram: requires ArbOS >= 31 (StylusFixes).
         CACHE_PROGRAM => {
             if let Some(result) = crate::check_method_version(
+                input.gas,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES,
                 0,
             ) {

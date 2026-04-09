@@ -57,16 +57,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match selector {
         GET_PREFERRED_AGGREGATOR => {
-            // Deprecated view method: always returns (BatchPosterAddress, true).
-            // OpenArbosState (800) + argsCost (3) + resultCost (6) = 809.
-            let mut out = Vec::with_capacity(96);
-            out.extend_from_slice(&U256::from(0x40u64).to_be_bytes::<32>());
-            out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
+            let mut out = Vec::with_capacity(64);
             let mut addr_word = [0u8; 32];
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
+            out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + 9).min(gas_limit),
+                (SLOAD_GAS + 6).min(gas_limit),
                 out.into(),
             ))
         }

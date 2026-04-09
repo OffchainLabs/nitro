@@ -59,8 +59,7 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 use std::cell::Cell;
 
-/// RIP-7212 P256VERIFY (secp256r1 signature verification) precompile address.
-/// Available on Arbitrum from ArbOS v30 onwards.
+/// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
     alloy_primitives::address!("0000000000000000000000000000000000000100");
 
@@ -368,35 +367,27 @@ fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
     }
 }
 
-/// Check method-level version gate. If the current ArbOS version is below
-/// `min_version` or above `max_version` (when non-zero), the method reverts.
-fn check_method_version(min_version: u64, max_version: u64) -> Option<PrecompileResult> {
+/// Returns a revert that consumes the full `gas_limit` if the current ArbOS
+/// version is outside `[min_version, max_version]`. `max_version == 0` is
+/// unbounded.
+fn check_method_version(
+    gas_limit: u64,
+    min_version: u64,
+    max_version: u64,
+) -> Option<PrecompileResult> {
     let v = get_arbos_version();
     if v < min_version || (max_version > 0 && v > max_version) {
-        Some(Err(PrecompileError::other(
-            "method not available at this ArbOS version",
-        )))
+        Some(burn_all_revert(gas_limit))
     } else {
         None
     }
 }
 
-/// Address of the standard Ethereum KZG point evaluation precompile (EIP-4844).
 const KZG_POINT_EVALUATION_ADDRESS: alloy_primitives::Address =
     alloy_primitives::address!("000000000000000000000000000000000000000a");
 
-/// Register all Arbitrum precompiles and apply per-ArbOS-version precompile-set
-/// adjustments.
-///
-/// Mirrors Nitro's `gethhook.addPrecompiles` (gethhook/geth-hook.go) which selects
-/// the precompile set per ArbOS milestone:
-///   - ArbOS < 30: Berlin precompiles + Arbitrum precompiles
-///   - ArbOS 30+: + RIP-7212 P256VERIFY (3450 gas)
-///   - ArbOS 50+: + Osaka modexp (eip7823+eip7883) + BLS12-381
-///
-/// The caller has already populated `map` with the EVM-spec precompile set; this
-/// function adds the always-on Arbitrum precompiles and toggles the
-/// version-gated standard ones.
+/// Registers Arbitrum precompiles into `map` and applies the per-ArbOS-version
+/// adjustments to the standard Ethereum precompile set.
 pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     map.extend_precompiles([
         (ARBSYS_ADDRESS, create_arbsys_precompile()),
@@ -429,13 +420,8 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     ]);
 
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {
-        // Override any spec-default P256VERIFY (revm OSAKA installs the 6900-gas
-        // variant) with the 3450-gas RIP-7212 implementation Nitro uses for all
-        // post-Stylus chains.
         map.extend_precompiles([(P256VERIFY_ADDRESS, create_p256verify_precompile())]);
     } else {
-        // Pre-Stylus: KZG point evaluation must not be live (Nitro's
-        // PrecompiledContractsBeforeArbOS30 stops at 0x09).
         map.apply_precompile(&KZG_POINT_EVALUATION_ADDRESS, |_| None);
         map.apply_precompile(&P256VERIFY_ADDRESS, |_| None);
     }

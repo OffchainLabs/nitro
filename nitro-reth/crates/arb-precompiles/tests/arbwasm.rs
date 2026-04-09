@@ -1,14 +1,7 @@
-//! Integration tests for ArbWasm precompile (address 0x71).
-//!
-//! Each read-only param getter mirrors a method on `precompiles/ArbWasm.go`. The
-//! harness pre-populates the packed `StylusParams` word at its derived slot in the
-//! ArbOS state and then asserts that the precompile decodes the same fields Nitro
-//! writes via `StylusParams.Save()` (precompiles/programs/params.go).
-
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, U256};
+use alloy_primitives::U256;
 use arb_precompiles::{
     create_arbwasm_precompile,
     storage_slot::{
@@ -25,8 +18,6 @@ fn arbwasm() -> DynPrecompile {
     create_arbwasm_precompile()
 }
 
-/// Build a packed StylusParams word matching `arbos/programs/params.go`'s
-/// `StylusParams.Save()` byte layout. All fields are required.
 #[derive(Clone, Copy)]
 struct StylusParamsWord {
     version: u16,
@@ -54,7 +45,7 @@ impl StylusParamsWord {
         };
         put(&mut buf, &mut i, &self.version.to_be_bytes());
         let ink = self.ink_price.to_be_bytes();
-        put(&mut buf, &mut i, &ink[1..4]); // uint24, big-endian
+        put(&mut buf, &mut i, &ink[1..4]);
         put(&mut buf, &mut i, &self.max_stack_depth.to_be_bytes());
         put(&mut buf, &mut i, &self.free_pages.to_be_bytes());
         put(&mut buf, &mut i, &self.page_gas.to_be_bytes());
@@ -83,7 +74,7 @@ fn default_params() -> StylusParamsWord {
         free_pages: 2,
         page_gas: 1_000,
         page_limit: 128,
-        min_init_gas: 69, // v2 default per params.go: v2MinInitGas
+        min_init_gas: 69,
         min_cached_init_gas: 11,
         init_cost_scalar: 50,
         cached_cost_scalar: 50,
@@ -108,16 +99,12 @@ fn test_with(params: StylusParamsWord, arbos_version: u64) -> PrecompileTest {
 
 #[test]
 fn pre_stylus_arbos_returns_empty_like_unregistered() {
-    // Pre-Stylus chains don't register ArbWasm at all (gethhook addPrecompiles
-    // StartingFromArbOS30). Calling the address behaves like an EOA: empty output.
-    // The handler's internal fallback also returns empty output for safety even
-    // if it's invoked directly.
     let run = PrecompileTest::new()
         .arbos_version(29)
         .arbos_state()
         .call(&arbwasm(), &calldata("stylusVersion()", &[]));
     let out = run.assert_ok();
-    assert!(out.bytes.is_empty(), "expected empty output, got {:?}", out.bytes);
+    assert!(out.bytes.is_empty());
 }
 
 #[test]
@@ -162,9 +149,6 @@ fn page_gas_returns_packed_field() {
 
 #[test]
 fn page_ramp_returns_initial_constant() {
-    // Per params.go: PageRamp is `initialPageRamp = 620674314`, NOT stored in the
-    // packed word. Our handler returns the constant; this test pins it to the
-    // exact value Nitro hardcodes.
     let run =
         test_with(default_params(), ARBOS_V30).call(&arbwasm(), &calldata("pageRamp()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(620_674_314_u64));
@@ -180,7 +164,6 @@ fn page_limit_returns_packed_field() {
 
 #[test]
 fn min_init_gas_returns_units_multiplied() {
-    // Per ArbWasm.go:139-140 and programs/params.go MinInitGasUnits=128, MinCachedGasUnits=32.
     let mut p = default_params();
     p.min_init_gas = 7;
     p.min_cached_init_gas = 9;
@@ -192,18 +175,18 @@ fn min_init_gas_returns_units_multiplied() {
 
 #[test]
 fn min_init_gas_reverts_pre_charging_fixes() {
-    // Per ArbWasm.go:141: ArbOS < StylusChargingFixes (=32) reverts ExecutionReverted.
     let p = default_params();
-    let run = test_with(p, 31).call(&arbwasm(), &calldata("minInitGas()", &[]));
-    assert!(
-        run.result.is_err(),
-        "expected revert below StylusChargingFixes"
-    );
+    let gas = 100_000_u64;
+    let run = test_with(p, 31)
+        .gas(gas)
+        .call(&arbwasm(), &calldata("minInitGas()", &[]));
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    assert_eq!(out.gas_used, gas);
 }
 
 #[test]
 fn init_cost_scalar_returns_field_times_percent() {
-    // Per ArbWasm.go:150: returns `params.InitCostScalar * CostScalarPercent (=2)`.
     let mut p = default_params();
     p.init_cost_scalar = 50;
     let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("initCostScalar()", &[]));
@@ -236,8 +219,6 @@ fn block_cache_size_returns_packed_field() {
 
 #[test]
 fn full_round_trip_packs_and_unpacks_all_fields() {
-    // One test that exercises every field at once with non-default values, to
-    // catch any byte-offset bug that a single-field test might miss.
     let p = StylusParamsWord {
         version: 0xabcd,
         ink_price: 0x111213,
@@ -276,16 +257,8 @@ fn full_round_trip_packs_and_unpacks_all_fields() {
     check!("blockCacheSize()", 0xc1c2_u64);
     check!("initCostScalar()", 0x81_u64 * 2);
 
-    // minInitGas() returns a 2-tuple
     let run = test_with(p, ARBOS_V32).call(&arbwasm(), &calldata("minInitGas()", &[]));
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u64(0x61_u64 * 128));
     assert_eq!(decode_word(out, 1), common::word_u64(0x71_u64 * 32));
-}
-
-#[test]
-fn unknown_address_used_anywhere() {
-    // Sanity test that an unrecognised address is benign — confirms our test
-    // builders don't accidentally trigger the precompile via stale state.
-    let _: alloy_primitives::Address = address!("0123456789abcdef0123456789abcdef01234567");
 }

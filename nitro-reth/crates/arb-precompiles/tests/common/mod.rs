@@ -1,9 +1,3 @@
-//! Shared test harness for Arbitrum precompile integration tests.
-//!
-//! Mirrors Nitro's `newMockEVMForTesting` from `precompiles/ArbAddressTable_test.go`:
-//! a fresh in-memory revm context with configurable block/cfg/tx/state, against which a
-//! `DynPrecompile` handler can be invoked through the real `EvmInternals` path.
-
 #![allow(dead_code)]
 
 use alloy_evm::{
@@ -16,7 +10,7 @@ use revm::{
     database::{CacheDB, EmptyDB},
     precompile::{PrecompileError, PrecompileOutput, PrecompileResult},
     primitives::hardfork::SpecId,
-    state::AccountInfo,
+    state::{AccountInfo, EvmState},
     Database,
 };
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -24,8 +18,7 @@ use tiny_keccak::{Hasher, Keccak};
 
 use arb_precompiles::storage_slot::{root_slot, ARBOS_STATE_ADDRESS, VERSION_OFFSET};
 
-/// Process-wide lock that serialises precompile tests sharing global mutexes
-/// (CURRENT_L2_BLOCK, L1_BLOCK_CACHE, L2_BLOCKHASH_CACHE, RECENT_WASMS, ...).
+/// Serialises tests that share global state in arb-precompiles.
 fn test_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -33,7 +26,6 @@ fn test_lock() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|p| p.into_inner())
 }
 
-/// 4-byte function selector helper. Mirrors keccak256(signature)[..4].
 pub fn selector(sig: &str) -> [u8; 4] {
     let mut h = Keccak::v256();
     let mut out = [0u8; 32];
@@ -42,7 +34,6 @@ pub fn selector(sig: &str) -> [u8; 4] {
     [out[0], out[1], out[2], out[3]]
 }
 
-/// Build calldata: 4-byte selector + ABI-encoded 32-byte words.
 pub fn calldata(sig: &str, args: &[B256]) -> Bytes {
     let mut buf = Vec::with_capacity(4 + args.len() * 32);
     buf.extend_from_slice(&selector(sig));
@@ -52,24 +43,20 @@ pub fn calldata(sig: &str, args: &[B256]) -> Bytes {
     Bytes::from(buf)
 }
 
-/// ABI-encode a U256 as a 32-byte word.
 pub fn word_u256(v: U256) -> B256 {
     B256::from(v.to_be_bytes::<32>())
 }
 
-/// ABI-encode a u64 as a 32-byte word.
 pub fn word_u64(v: u64) -> B256 {
     word_u256(U256::from(v))
 }
 
-/// ABI-encode an address as a 32-byte left-padded word.
 pub fn word_address(a: Address) -> B256 {
     let mut out = [0u8; 32];
     out[12..].copy_from_slice(a.as_slice());
     B256::from(out)
 }
 
-/// Decode a single 32-byte word from precompile output.
 pub fn decode_word(out: &Bytes, index: usize) -> B256 {
     let start = index * 32;
     let mut w = [0u8; 32];
@@ -77,18 +64,15 @@ pub fn decode_word(out: &Bytes, index: usize) -> B256 {
     B256::from(w)
 }
 
-/// Decode a U256 from precompile output (single word at offset 0).
 pub fn decode_u256(out: &Bytes) -> U256 {
     U256::from_be_bytes(decode_word(out, 0).0)
 }
 
-/// Decode an address from precompile output (single word at offset 0).
 pub fn decode_address(out: &Bytes) -> Address {
     let w = decode_word(out, 0);
     Address::from_slice(&w.0[12..])
 }
 
-/// Builder for a single precompile invocation.
 pub struct PrecompileTest {
     db: CacheDB<EmptyDB>,
     spec: SpecId,
@@ -187,12 +171,10 @@ impl PrecompileTest {
         self
     }
 
-    /// Pre-populate an account.
     pub fn account(mut self, addr: Address, info: AccountInfo) -> Self {
         self.db.insert_account_info(addr, info);
         self
     }
-    /// Pre-populate an account with the given balance and zero nonce/code.
     pub fn balance(mut self, addr: Address, balance: U256) -> Self {
         let info = self.db.basic(addr).ok().flatten().unwrap_or_default();
         self.db.insert_account_info(
@@ -207,7 +189,6 @@ impl PrecompileTest {
         );
         self
     }
-    /// Pre-populate a single storage slot of an account. Implicitly creates the account.
     pub fn storage(mut self, addr: Address, slot: U256, value: U256) -> Self {
         if self.db.basic(addr).ok().flatten().is_none() {
             self.db.insert_account_info(addr, AccountInfo::default());
@@ -218,10 +199,6 @@ impl PrecompileTest {
         self
     }
 
-    /// Configure ArbOS state: ensures the ArbOS state account exists with nonce=1
-    /// (so it survives EIP-161 deletion) and writes the raw arbos version into
-    /// root slot 0. The raw value is what the protocol stores; the +55 offset
-    /// applied by `arbOSVersion()` is purely a presentation concern.
     pub fn arbos_state(mut self) -> Self {
         let info = AccountInfo {
             nonce: 1,
@@ -239,10 +216,6 @@ impl PrecompileTest {
         self
     }
 
-    /// Run the precompile and return both the result and the post-state CacheDB
-    /// for further assertion. Acquires a process-wide test lock for the duration of
-    /// the call so the global state set via thread-locals/mutexes can't race with
-    /// other tests.
     pub fn call(self, precompile: &DynPrecompile, input: &Bytes) -> PrecompileRun {
         let _guard = test_lock();
 
@@ -273,28 +246,28 @@ impl PrecompileTest {
             })
         };
 
+        let journal_state = ctx.journaled_state.inner.state.clone();
         PrecompileRun {
             result,
             db: ctx.journaled_state.database,
+            journal_state,
         }
     }
 }
 
-/// Outcome of a single precompile call. Owns the post-state DB.
 pub struct PrecompileRun {
     pub result: PrecompileResult,
     pub db: CacheDB<EmptyDB>,
+    pub journal_state: EvmState,
 }
 
 impl PrecompileRun {
-    /// Unwrap to a successful PrecompileOutput, panicking with the error otherwise.
     pub fn assert_ok(&self) -> &PrecompileOutput {
         match &self.result {
             Ok(out) => out,
             Err(e) => panic!("expected Ok, got Err: {e:?}"),
         }
     }
-    /// Assert the precompile errored.
     pub fn assert_err(&self) -> &PrecompileError {
         match &self.result {
             Err(e) => e,
@@ -308,15 +281,25 @@ impl PrecompileRun {
         self.assert_ok().gas_used
     }
     pub fn storage(&self, addr: Address, slot: U256) -> U256 {
+        if let Some(account) = self.journal_state.get(&addr) {
+            if let Some(s) = account.storage.get(&slot) {
+                return s.present_value;
+            }
+        }
         self.db
-            .cache.accounts
+            .cache
+            .accounts
             .get(&addr)
             .and_then(|a| a.storage.get(&slot).copied())
             .unwrap_or(U256::ZERO)
     }
     pub fn balance(&self, addr: Address) -> U256 {
+        if let Some(account) = self.journal_state.get(&addr) {
+            return account.info.balance;
+        }
         self.db
-            .cache.accounts
+            .cache
+            .accounts
             .get(&addr)
             .map(|a| a.info.balance)
             .unwrap_or(U256::ZERO)
