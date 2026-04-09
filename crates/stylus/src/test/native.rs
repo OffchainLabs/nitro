@@ -317,7 +317,7 @@ fn test_rust() -> Result<()> {
     //     the input is the # of hashings followed by a preimage
     //     the output is the iterated hash of the preimage
 
-    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/keccak.wasm";
     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
     let preimage = preimage.as_bytes().to_vec();
     let hash = hex::encode(crypto::keccak(&preimage));
@@ -347,7 +347,7 @@ fn test_fallible() -> Result<()> {
     //     an input starting with 0x00 will execute an unreachable
     //     an empty input induces a panic
 
-    let filename = "tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/fallible.wasm";
     let (compile, config, ink) = test_configs();
 
     let mut native = TestInstance::new_linked(filename, &compile, config)?;
@@ -384,7 +384,7 @@ fn test_storage() -> Result<()> {
     //     an input starting with 0x00 will induce a storage read
     //     all other inputs induce a storage write
 
-    let filename = "tests/storage/target/wasm32-unknown-unknown/release/storage.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/storage.wasm";
     let (compile, config, ink) = test_configs();
 
     let key = crypto::keccak(filename.as_bytes());
@@ -476,7 +476,7 @@ fn test_calls() -> Result<()> {
     let args = tree[53..].to_vec();
     println!("ARGS {}", hex::encode(&args));
 
-    let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/multicall.wasm";
     let (compile, config, ink) = test_configs();
 
     let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;

@@ -47,7 +47,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	}
 
 	// Store the hashes
-	store.Store(salt, hashes, "test-etag")
+	store.Store(uuid.New(), salt, hashes, "test-etag")
 
 	// Test restricted addresses
 	for _, addr := range addresses {
@@ -76,10 +76,10 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 
 	salt1, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	hash1 := HashWithSalt(salt1, addr1)
+	hash1 := HashWithPrefix(GetHashInputPrefix(salt1), addr1)
 
 	// Store first set
-	store.Store(salt1, []common.Hash{hash1}, "etag1")
+	store.Store(uuid.New(), salt1, []common.Hash{hash1}, "etag1")
 	if !store.IsRestricted(addr1) {
 		t.Error("addr1 should be restricted after first load")
 	}
@@ -87,9 +87,9 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	// Store second set with different salt (simulating hourly rotation)
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
-	hash2 := HashWithSalt(salt2, addr2)
+	hash2 := HashWithPrefix(GetHashInputPrefix(salt2), addr2)
 
-	store.Store(salt2, []common.Hash{hash2}, "etag2")
+	store.Store(uuid.New(), salt2, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
 	if store.IsRestricted(addr1) {
@@ -115,10 +115,10 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		addr := common.BigToAddress(common.Big1)
 		addr[18] = byte(i)
 		addresses = append(addresses, addr)
-		hash := HashWithSalt(salt1, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(salt1), addr)
 		hashes1 = append(hashes1, hash)
 	}
-	store.Store(salt1, hashes1, "etag")
+	store.Store(uuid.New(), salt1, hashes1, "etag")
 
 	// prepare second set for swapping
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
@@ -128,7 +128,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		addr := common.BigToAddress(common.Big2)
 		addr[18] = byte(i)
 		addresses2 = append(addresses2, addr)
-		hash := HashWithSalt(salt2, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(salt2), addr)
 		hashes2 = append(hashes2, hash)
 	}
 
@@ -160,9 +160,9 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 10; i++ {
 			if i%2 == 0 {
-				store.Store(salt1, hashes1, "etag")
+				store.Store(uuid.New(), salt1, hashes1, "etag")
 			} else {
-				store.Store(salt2, hashes2, "new-etag")
+				store.Store(uuid.New(), salt2, hashes2, "new-etag")
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -175,8 +175,10 @@ func TestParseHashListJSON(t *testing.T) {
 	hashed_addr1 := sha256.Sum256(common.BigToAddress(common.Big1).Bytes())
 	hashed_addr2 := sha256.Sum256(common.BigToAddress(common.Big2).Bytes())
 	// Test valid JSON
-	// should follow format: {"salt": "hex...", "address_hashes": [{"hash": "hex1", "max_risk_score_level":1}, {"hash": "hex2", "max_risk_score_level":3}, ...]}
+	// should follow format: {"id": "uuid-format", "salt": "uuid-format", "address_hashes": [{"hash": "hex1", "max_risk_score_level":1}, {"hash": "hex2", "max_risk_score_level":3}, ...]}
+	id := uuid.New()
 	validPayload := map[string]interface{}{
+		"id":   id,
 		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"address_hashes": []map[string]interface{}{
 			{
@@ -191,20 +193,25 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 	validJSON, _ := json.Marshal(validPayload)
 
-	salt, hashes, err := parseHashListJSON(validJSON)
+	parsedJson, err := parseHashListJSON(validJSON)
 	if err != nil {
 		t.Fatalf("failed to parse valid JSON: %v", err)
 	}
 	expectedSalt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
-	if salt != expectedSalt {
-		t.Errorf("expected salt '%s', got '%s'", expectedSalt.String(), salt.String())
+	if parsedJson.Salt != expectedSalt {
+		t.Errorf("expected salt '%s', got '%s'", expectedSalt.String(), parsedJson.Salt.String())
 	}
-	if len(hashes) != 2 {
-		t.Errorf("expected 2 hashes, got %d", len(hashes))
+
+	if parsedJson.Id != id {
+		t.Errorf("expected id '%s', got '%s'", id.String(), parsedJson.Id.String())
+	}
+
+	if len(parsedJson.Hashes) != 2 {
+		t.Errorf("expected 2 hashes, got %d", len(parsedJson.Hashes))
 	}
 
 	// Test invalid JSON
-	_, _, err = parseHashListJSON([]byte("not json"))
+	_, err = parseHashListJSON([]byte("not json"))
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -212,10 +219,11 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test invalid salt hex
 	invalidSaltPayload := map[string]interface{}{
 		"salt":           "not-UUID-salt",
+		"id":             uuid.NewString(),
 		"address_hashes": []map[string]interface{}{{"hash": hex.EncodeToString(hashed_addr1[:])}},
 	}
 	invalidSaltJSON, _ := json.Marshal(invalidSaltPayload)
-	_, _, err = parseHashListJSON(invalidSaltJSON)
+	_, err = parseHashListJSON(invalidSaltJSON)
 	if err == nil {
 		t.Error("expected error for invalid salt hex")
 	}
@@ -226,7 +234,7 @@ func TestParseHashListJSON(t *testing.T) {
 		"address_hashes": []map[string]interface{}{{"hash": "not-hex"}},
 	}
 	invalidHashJSON, _ := json.Marshal(invalidHashPayload)
-	_, _, err = parseHashListJSON(invalidHashJSON)
+	_, err = parseHashListJSON(invalidHashJSON)
 	if err == nil {
 		t.Error("expected error for invalid hash hex")
 	}
@@ -237,7 +245,7 @@ func TestParseHashListJSON(t *testing.T) {
 		"address_hashes": []map[string]interface{}{{"hash": "0123456789abcdef"}},
 	}
 	wrongLenJSON, _ := json.Marshal(wrongLenPayload)
-	_, _, err = parseHashListJSON(wrongLenJSON)
+	_, err = parseHashListJSON(wrongLenJSON)
 	if err == nil {
 		t.Error("expected error for wrong hash length")
 	}
@@ -245,70 +253,74 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test with hashing_scheme: Sha256 (should parse without error)
 	sha256Payload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
 		"hashing_scheme": "Sha256",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
 		},
 	}
 	sha256JSON, _ := json.Marshal(sha256Payload)
-	salt, hashes, err = parseHashListJSON(sha256JSON)
+	parsedJson, err = parseHashListJSON(sha256JSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON with Sha256 hashing_scheme: %v", err)
 	}
-	if len(hashes) != 1 {
-		t.Errorf("expected 1 hash, got %d", len(hashes))
+	if len(parsedJson.Hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
 
 	// Test with unknown hashing_scheme (should parse but log warning - we can't easily verify log in test)
 	unknownSchemePayload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
 		"hashing_scheme": "Unknown",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
 		},
 	}
 	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
-	_, hashes, err = parseHashListJSON(unknownSchemeJSON)
+	parsedJson, err = parseHashListJSON(unknownSchemeJSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON with unknown hashing_scheme: %v", err)
 	}
-	if len(hashes) != 1 {
-		t.Errorf("expected 1 hash, got %d", len(hashes))
+	if len(parsedJson.Hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
 
-	// Test with 0x-prefixed salt and hashes (lowercase)
+	// Test with 0x-prefixed hashes (lowercase)
 	prefixedPayload := map[string]interface{}{
 		"salt": "3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7",
+		"id":   uuid.NewString(),
 		"address_hashes": []map[string]interface{}{
 			{"hash": "0x" + hex.EncodeToString(hashed_addr1[:])},
 			{"hash": "0X" + hex.EncodeToString(hashed_addr2[:])},
 		},
 	}
 	prefixedJSON, _ := json.Marshal(prefixedPayload)
-	salt, hashes, err = parseHashListJSON(prefixedJSON)
+	parsedJson, err = parseHashListJSON(prefixedJSON)
 	if err != nil {
 		t.Fatalf("failed to parse 0x-prefixed JSON: %v", err)
 	}
-	if len(hashes) != 2 {
-		t.Errorf("expected 2 hashes, got %d", len(hashes))
+	if len(parsedJson.Hashes) != 2 {
+		t.Errorf("expected 2 hashes, got %d", len(parsedJson.Hashes))
 	}
-	if hashes[0] != hashed_addr1 {
-		t.Errorf("hash[0] mismatch: got %x, want %x", hashes[0], hashed_addr1)
+	if parsedJson.Hashes[0] != hashed_addr1 {
+		t.Errorf("hash[0] mismatch: got %x, want %x", parsedJson.Hashes[0], hashed_addr1)
 	}
 	// Test without hashing_scheme field (backward compatible)
 	noSchemePayload := map[string]interface{}{
 		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":   uuid.NewString(),
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
 		},
 	}
 	noSchemeJSON, _ := json.Marshal(noSchemePayload)
-	_, hashes, err = parseHashListJSON(noSchemeJSON)
+	parsedJson, err = parseHashListJSON(noSchemeJSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON without hashing_scheme: %v", err)
 	}
-	if len(hashes) != 1 {
-		t.Errorf("expected 1 hash, got %d", len(hashes))
+	if len(parsedJson.Hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
 }
 
@@ -378,12 +390,12 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	// Pre-compute hashes
 	hashes := make([]common.Hash, 0, len(addresses))
 	for _, addr := range addresses {
-		hash := HashWithSalt(salt, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(salt), addr)
 		hashes = append(hashes, hash)
 	}
 
 	// Store the hashes
-	store.Store(salt, hashes, "test-etag")
+	store.Store(uuid.New(), salt, hashes, "test-etag")
 
 	// Verify store works correctly with custom size
 	if !store.IsRestricted(addresses[0]) {
@@ -410,7 +422,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	// After load, should have current time
 	before := time.Now()
 	salt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
-	store.Store(salt, nil, "etag")
+	store.Store(uuid.New(), salt, nil, "etag")
 	after := time.Now()
 
 	loadedAt := store.LoadedAt()
@@ -435,7 +447,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithSalt(data.salt, addr)
+		hash := HashWithPrefix(data.hashInputPrefix, addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if !restricted {
@@ -461,7 +473,7 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithSalt(data.salt, addr)
+		hash := HashWithPrefix(data.hashInputPrefix, addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if restricted {
