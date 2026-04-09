@@ -55,9 +55,20 @@ pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
 pub use nodeinterface::{create_nodeinterface_precompile, NODE_INTERFACE_ADDRESS};
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
-use alloy_evm::precompiles::PrecompilesMap;
-use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
+use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
+use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 use std::cell::Cell;
+
+/// RIP-7212 P256VERIFY (secp256r1 signature verification) precompile address.
+/// Available on Arbitrum from ArbOS v30 onwards.
+pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
+    alloy_primitives::address!("0000000000000000000000000000000000000100");
+
+fn create_p256verify_precompile() -> DynPrecompile {
+    DynPrecompile::new(PrecompileId::P256Verify, |input: PrecompileInput<'_>| {
+        revm::precompile::secp256r1::p256_verify(input.data, input.gas)
+    })
+}
 
 // ── ArbOS version thread-local ──────────────────────────────────────
 
@@ -400,6 +411,7 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
             create_arbnativetokenmanager_precompile(),
         ),
         (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
+        (P256VERIFY_ADDRESS, create_p256verify_precompile()),
     ]);
 }
 
