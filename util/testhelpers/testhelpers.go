@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"testing"
 
@@ -136,6 +137,32 @@ func (h *LogHandler) wasLoggedWithFilter(pattern string, lvl *slog.Level) bool {
 	return false
 }
 
+// WasLoggedWithAttr checks whether a log record matching msgPattern has an
+// attribute whose key equals attrKey and whose string value contains attrSubstr.
+func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrSubstr string) bool {
+	msgRe, err := regexp.Compile(msgPattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if !msgRe.MatchString(record.Message) {
+			continue
+		}
+		found := false
+		record.Attrs(func(a slog.Attr) bool {
+			if a.Key == attrKey && strings.Contains(a.Value.String(), attrSubstr) {
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
 func newLogHandler(t *testing.T) *LogHandler {
 	return &LogHandler{
 		t:               t,
@@ -143,7 +170,14 @@ func newLogHandler(t *testing.T) *LogHandler {
 	}
 }
 
+var initTestLogMu sync.Mutex
+
 func InitTestLog(t *testing.T, level slog.Level) *LogHandler {
+	t.Helper()
+	if !initTestLogMu.TryLock() {
+		t.Fatal("InitTestLog called concurrently - this test must not run in parallel")
+	}
+	t.Cleanup(initTestLogMu.Unlock)
 	handler := newLogHandler(t)
 	glogger := log.NewGlogHandler(handler)
 	glogger.Verbosity(level)

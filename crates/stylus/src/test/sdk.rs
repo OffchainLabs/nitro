@@ -3,16 +3,17 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use crate::test::{random_bytes20, random_bytes32, run_native, test_configs, TestInstance};
 use eyre::Result;
 use num_bigint::BigUint;
 
+use crate::test::{TestInstance, random_bytes20, random_bytes32, run_native, test_configs};
+
 #[test]
 fn test_sdk_routes() -> Result<()> {
-    let filename = "tests/erc20/target/wasm32-unknown-unknown/release/erc20.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/erc20.wasm";
 
     macro_rules! hex {
-        ($($hex:expr),+) => {
+        ($($hex:expr_2021),+) => {
             hex::decode(&format!($($hex),+))?
         };
     }
@@ -35,7 +36,7 @@ fn test_sdk_routes() -> Result<()> {
     assert!(output.is_empty());
 
     macro_rules! big {
-        ($int:expr) => {
+        ($int:expr_2021) => {
             &format!("{:0>64}", $int.to_str_radix(16))
         };
     }

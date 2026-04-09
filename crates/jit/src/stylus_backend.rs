@@ -3,28 +3,30 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::machine::{Escape, MaybeEscape};
-use arbutil::benchmark::Benchmark;
-use arbutil::evm::api::{Gas, Ink, VecReader};
-use arbutil::evm::{
-    api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
-    req::EvmApiRequestor,
-    req::RequestHandler,
-    user::UserOutcome,
-    EvmData,
-};
-use eyre::{eyre, Result};
-use prover::programs::prelude::*;
-use std::thread;
-use std::time::Duration;
 use std::{
     sync::{
-        mpsc::{self, Receiver, SyncSender},
         Arc,
+        mpsc::{self, Receiver, SyncSender},
     },
+    thread,
     thread::JoinHandle,
+    time::Duration,
 };
+
+use arbutil::{
+    benchmark::Benchmark,
+    evm::{
+        EvmData,
+        api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas, Ink, VecReader},
+        req::{EvmApiRequestor, RequestHandler},
+        user::UserOutcome,
+    },
+};
+use eyre::{Result, eyre};
+use prover::programs::prelude::*;
 use stylus::{native::NativeInstance, run::RunProgram};
+
+use crate::machine::{Escape, MaybeEscape};
 
 struct MessageToCothread {
     result: Vec<u8>,

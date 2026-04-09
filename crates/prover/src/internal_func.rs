@@ -1,9 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::value::ArbValueType::{I32, I64};
-use crate::value::FunctionType;
 use num_derive::FromPrimitive;
+
+use crate::value::{
+    ArbValueType::{I32, I64},
+    FunctionType,
+};
 
 /// Represents the internal hostio functions a module may have.
 #[derive(Clone, Copy, Debug, FromPrimitive)]
@@ -28,7 +31,7 @@ impl InternalFunc {
     pub fn ty(&self) -> FunctionType {
         use InternalFunc::*;
         macro_rules! func {
-            ([$($args:expr),*], [$($outs:expr),*]) => {
+            ([$($args:expr_2021),*], [$($outs:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![$($outs),*])
             };
         }

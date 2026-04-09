@@ -29,7 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -273,7 +273,7 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 	batch := db.NewBatch()
 	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
 	defer startIter.Release()
-	var prunedKeysRange []uint64
+	prunedKeysRange := make([]uint64, 0, 2) // at most 2 elements: range start and end
 	for startIter.Next() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -641,7 +641,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 		return nil
 	}
 	broadcastFirstMsgIdx := feedMessages[0].SequenceNumber
-	var messages []arbostypes.MessageWithMetadataAndBlockInfo
+	messages := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(feedMessages))
 	expectedMsgIdx := broadcastFirstMsgIdx
 	for _, feedMessage := range feedMessages {
 		if expectedMsgIdx != feedMessage.SequenceNumber {
@@ -1212,7 +1212,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
 	}
-	var feedMessages []*message.BroadcastFeedMessage
+	feedMessages := make([]*message.BroadcastFeedMessage, 0, arbmath.SaturatingUSub(messageCount, startMessage))
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
 		message, err := s.GetMessage(seqNum)
 		if err != nil {

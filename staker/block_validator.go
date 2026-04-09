@@ -993,7 +993,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		for _, moduleRoot := range wasmRoots {
 			v.chosenValidator[moduleRoot].Throttler.Acquire()
 		}
-		var runs []validator.ValidationRun
+		runs := make([]validator.ValidationRun, 0, len(wasmRoots))
 		for _, moduleRoot := range wasmRoots {
 			throttledSpawner := v.chosenValidator[moduleRoot]
 			input, err := validationStatus.Entry.ToInput(throttledSpawner.Spawner.StylusArchs())
@@ -1557,18 +1557,11 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
 	for _, throttled := range v.chosenValidator {
-		throttled.Spawner.Start(v.GetContext())
+		v.StartAndTrackChild(throttled.Spawner)
 	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
-}
-
-func (v *BlockValidator) StopAndWait() {
-	for _, throttled := range v.chosenValidator {
-		throttled.Spawner.StopAndWait()
-	}
-	v.StopWaiter.StopAndWait()
 }
 
 // WaitForPos can only be used from One thread
