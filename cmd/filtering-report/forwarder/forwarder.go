@@ -88,7 +88,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	}
 	msgID := "<unknown>"
 	if msg.MessageId != nil {
-		msgID = msgID
+		msgID = *msg.MessageId
 	}
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
 		log.Warn("Failed to forward report to external endpoint", "err", err, "messageId", msgID)
