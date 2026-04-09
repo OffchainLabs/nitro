@@ -13,11 +13,6 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// FilteredTxReport is a dummy struct for now, to be extended with full report fields later.
-type FilteredTxReport struct {
-	TxHash common.Hash `json:"txHash"`
-}
-
 const TransactionFiltererNamespace = "transactionfilterer"
 
 var DefaultTransactionFiltererRPCClientConfig = rpcclient.ClientConfig{

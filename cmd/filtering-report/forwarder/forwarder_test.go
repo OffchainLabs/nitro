@@ -18,7 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
@@ -62,7 +62,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reports := []gethexec.FilteredTxReport{
+	reports := []addressfilter.FilteredTxReport{
 		{TxHash: common.HexToHash("0x01")},
 		{TxHash: common.HexToHash("0x02")},
 	}
@@ -116,7 +116,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reports := []gethexec.FilteredTxReport{
+	reports := []addressfilter.FilteredTxReport{
 		{TxHash: common.HexToHash("0x01")},
 	}
 	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {

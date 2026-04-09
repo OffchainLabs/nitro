@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
@@ -30,7 +31,7 @@ func NewFilteringReportAPI(sqsClient *sqsclient.QueueClient) *FilteringReportAPI
 	}
 }
 
-func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, reports []gethexec.FilteredTxReport) error {
+func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, reports []addressfilter.FilteredTxReport) error {
 	if a.sqsClient == nil {
 		return errors.New("SQS client not configured")
 	}
