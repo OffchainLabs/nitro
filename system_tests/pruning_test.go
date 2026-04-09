@@ -80,8 +80,11 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 	Require(t, err)
 
 	l2cleanupDone = true
+	builder.ctxCancel() // cancel context before cleanup so StartWatchChanErr ignores shutdown errors
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")
+	// Refresh builder context for Build2ndNode (the test-level ctx is still alive)
+	builder.ctx, builder.ctxCancel = context.WithCancel(ctx)
 
 	func() {
 		stack, err := node.New(builder.l2StackConfig)
@@ -259,8 +262,11 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	}
 
 	l2cleanupDone = true
+	builder.ctxCancel() // cancel context before cleanup so StartWatchChanErr ignores shutdown errors
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")
+	// Refresh builder context for Build2ndNode (the test-level ctx is still alive)
+	builder.ctx, builder.ctxCancel = context.WithCancel(ctx)
 
 	func() {
 		stack, err := node.New(builder.l2StackConfig)

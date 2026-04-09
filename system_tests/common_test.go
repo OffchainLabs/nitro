@@ -1027,6 +1027,9 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		if b.WithPrestateTracerChecks {
 			AutomatedPrestateTracerTest(t, b.L2)
 		}
+		// Cancel context before stopping nodes so that StartWatchChanErr
+		// can detect shutdown and ignore expected context-canceled validation errors.
+		b.ctxCancel()
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
@@ -1036,7 +1039,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 				t.Logf("Error shutting down ReferenceDA server: %v", err)
 			}
 		}
-		b.ctxCancel()
 	}
 }
 
@@ -1122,8 +1124,10 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		if b.WithPrestateTracerChecks {
 			AutomatedPrestateTracerTest(t, b.L2)
 		}
-		b.L2.cleanup()
+		// Cancel context before stopping nodes so that StartWatchChanErr
+		// can detect shutdown and ignore expected context-canceled validation errors.
 		b.ctxCancel()
+		b.L2.cleanup()
 	}
 }
 
@@ -2196,6 +2200,7 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 			// because the node may be explicitly stopped (e.g. for
 			// pruning) before the test context is cancelled.
 			if isContextError(err) {
+				t.Logf("StartWatchChanErr: suppressed context error (likely shutdown): %v", err)
 				return
 			}
 			t.Errorf("error occurred: %v", err)
