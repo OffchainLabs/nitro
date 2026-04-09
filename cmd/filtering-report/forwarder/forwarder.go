@@ -47,16 +47,16 @@ type Forwarder struct {
 	stopwaiter.StopWaiter
 	config           *Config
 	sqsClient        sqsclient.Client
-	sqsQueueURL      string
-	httpClient *http.Client
+	sqsQueueURL string
+	httpClient  *http.Client
 }
 
 func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwarder {
 	return &Forwarder{
 		config:           config,
 		sqsClient:        sqsClient,
-		sqsQueueURL:      sqsQueueURL,
-		httpClient: &http.Client{Timeout: config.ExternalEndpoint.Timeout},
+		sqsQueueURL: sqsQueueURL,
+		httpClient:  &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 	}
 }
 

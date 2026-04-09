@@ -83,8 +83,8 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	WS:              WSConfigDefault,
 	IPC:             IPCConfigDefault,
 	Auth:            genericconf.AuthRPCConfigDefault,
-	ChainId:   412346, // nitro-testnode chainid
-	Sequencer: rpcclient.DefaultClientConfig,
+	ChainId:         412346, // nitro-testnode chainid
+	Sequencer:       rpcclient.DefaultClientConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {

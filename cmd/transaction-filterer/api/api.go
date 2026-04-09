@@ -143,7 +143,6 @@ func NewStack(
 	}
 
 	api := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts)
-
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,
 		Version:   "1.0",

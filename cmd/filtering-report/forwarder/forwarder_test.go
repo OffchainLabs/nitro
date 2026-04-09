@@ -26,8 +26,9 @@ const testQueueURL = "https://sqs.test/queue"
 
 func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *Forwarder {
 	config := &Config{
-		Workers:  1,
-		PollInterval: time.Second,
+		Workers:         1,
+		PollInterval:    time.Second,
+		WaitTimeSeconds: DefaultConfig.WaitTimeSeconds,
 		ExternalEndpoint: genericconf.HTTPClientConfig{
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,

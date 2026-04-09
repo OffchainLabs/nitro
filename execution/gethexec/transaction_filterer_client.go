@@ -57,4 +57,3 @@ func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) contai
 		return struct{}{}, err
 	})
 }
-
