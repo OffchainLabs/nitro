@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -23,6 +24,22 @@ import (
 )
 
 const testQueueURL = "https://sqs.test/queue"
+
+func newTestStack(t *testing.T, sqsMockClient *sqsclient.MockClient) *rpc.Client {
+	t.Helper()
+	stackConfig := api.DefaultStackConfig
+	stack, err := api.NewStack(&stackConfig, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stack.Close() })
+	client := stack.Attach()
+	t.Cleanup(func() { client.Close() })
+	return client
+}
 
 func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *Forwarder {
 	config := &Config{
@@ -55,12 +72,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	sqsMockClient := &sqsclient.MockClient{}
-
-	stackConfig := api.DefaultStackConfig
-	_, reportAPI, err := api.NewStack(&stackConfig, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
-	if err != nil {
-		t.Fatal(err)
-	}
+	filteringReportClient := newTestStack(t, sqsMockClient)
 
 	reports := []addressfilter.FilteredTxReport{
 		{
@@ -88,7 +100,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 			DelayedReportData: nil,
 		},
 	}
-	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
+	if err := filteringReportClient.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,12 +143,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	sqsMockClient := &sqsclient.MockClient{}
-
-	stackConfig := api.DefaultStackConfig
-	_, reportAPI, err := api.NewStack(&stackConfig, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
-	if err != nil {
-		t.Fatal(err)
-	}
+	filteringReportClient := newTestStack(t, sqsMockClient)
 
 	reports := []addressfilter.FilteredTxReport{
 		{
@@ -152,7 +159,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 			DelayedReportData: nil,
 		},
 	}
-	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
+	if err := filteringReportClient.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
 		t.Fatal(err)
 	}
 

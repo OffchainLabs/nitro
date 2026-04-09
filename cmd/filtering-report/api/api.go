@@ -48,10 +48,10 @@ var DefaultStackConfig = node.Config{
 func NewStack(
 	stackConfig *node.Config,
 	sqsClient *sqsclient.QueueClient,
-) (*node.Node, *FilteringReportAPI, error) {
+) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	api := NewFilteringReportAPI(sqsClient)
@@ -71,5 +71,5 @@ func NewStack(
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	return stack, api, nil
+	return stack, nil
 }

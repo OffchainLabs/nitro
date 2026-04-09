@@ -210,7 +210,7 @@ func mainImpl() int {
 		defer fwd.StopAndWait()
 	}
 
-	stack, _, err := api.NewStack(&stackConf, sqsClient)
+	stack, err := api.NewStack(&stackConf, sqsClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1
