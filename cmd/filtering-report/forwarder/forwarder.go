@@ -65,9 +65,7 @@ func (r *Forwarder) Start(ctx context.Context) {
 	}
 	r.StopWaiter.Start(ctx, r)
 	for i := 0; i < r.config.Workers; i++ {
-		r.LaunchThread(func(ctx context.Context) {
-			r.CallIteratively(r.pollAndForward)
-		})
+		r.CallIteratively(r.pollAndForward)
 	}
 }
 
