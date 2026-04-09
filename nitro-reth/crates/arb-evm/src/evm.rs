@@ -1042,11 +1042,10 @@ where
     // Convert EVM gas (after upfront deduction) to ink.
     let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas_for_wasm));
 
-    // Get calldata from CallInput enum.
-    let calldata: &[u8] = match &inputs.input {
-        CallInput::Bytes(bytes) => bytes,
-        CallInput::SharedBuffer(_) => &[],
-    };
+    // Get calldata from CallInput enum. SharedBuffer references parent's
+    // memory and must be resolved via the context.
+    let calldata_owned: Bytes = inputs.input.bytes(context);
+    let calldata: &[u8] = &calldata_owned;
 
     // Execute the WASM program.
     let outcome = match instance.run_main(calldata, stylus_config, ink) {
