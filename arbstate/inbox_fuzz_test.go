@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,7 +52,10 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 	if seqNum != 0 {
 		return nil, errors.New("reading unknown delayed message")
 	}
-	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(b.delayedMessage), nil)
+	batchFetcher := func(batchNum uint64) ([]byte, error) {
+		return nil, fmt.Errorf("batch data not available in fuzz test (batch %d)", batchNum)
+	}
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(b.delayedMessage), batchFetcher)
 	if err != nil {
 		// The bridge won't generate an invalid L1 message,
 		// so here we substitute it with a less invalid one for fuzzing.

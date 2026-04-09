@@ -1040,7 +1040,12 @@ func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled boo
 			return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
 		}
 		deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
-		delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
+		// No BatchPostingReport messages are expected at the deployment block; use a
+		// stub fetcher that returns a clear error if one appears unexpectedly.
+		batchFetcher := func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
+			return nil, fmt.Errorf("batch data not available during init (batch %d at L1 block %d)", batchNum, parentChainBlockNumber)
+		}
+		delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, batchFetcher)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
 		}

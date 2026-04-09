@@ -115,7 +115,10 @@ func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMe
 	if seqNum >= uint64(len(b.delayedMessages)) {
 		return nil, errors.New("delayed inbox message out of bounds")
 	}
-	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
+	batchFetcher := func(batchNum uint64) ([]byte, error) {
+		return nil, fmt.Errorf("batch data not available in fuzz test (batch %d)", batchNum)
+	}
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), batchFetcher)
 	if err != nil {
 		// The bridge won't generate an invalid L1 message,
 		// so here we substitute it with a less invalid one for fuzzing.
