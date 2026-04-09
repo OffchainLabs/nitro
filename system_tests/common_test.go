@@ -2189,11 +2189,13 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 		case <-ctx.Done():
 			return
 		case err := <-feedErrChan:
-			// During shutdown, ctx.Done() and feedErrChan may both be ready
-			// simultaneously and Go's select picks randomly. Ignore context
-			// cancellation errors that are expected during normal shutdown,
-			// but still report any other errors.
-			if ctx.Err() != nil && isContextError(err) {
+			// Context errors in the feedErrChan always indicate node
+			// shutdown: the block validator or another component had its
+			// context cancelled while work was in-flight. Suppress these
+			// regardless of whether the test context is already done,
+			// because the node may be explicitly stopped (e.g. for
+			// pruning) before the test context is cancelled.
+			if isContextError(err) {
 				return
 			}
 			t.Errorf("error occurred: %v", err)
