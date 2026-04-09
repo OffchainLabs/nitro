@@ -337,6 +337,18 @@ fn read_program_word<DB: Database>(
     sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
 }
 
+/// Read the activation-time module hash for a Stylus program by code hash.
+/// Stored at programs subspace key [2] (mirroring Nitro's `moduleHashesKey`).
+fn read_module_hash<DB: Database>(
+    journal: &mut revm::Journal<DB>,
+    code_hash: B256,
+) -> Option<B256> {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let module_hashes_key = derive_subspace_key(programs_key.as_slice(), &[2]);
+    let slot = map_slot_b256(module_hashes_key.as_slice(), &code_hash);
+    sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
+}
+
 /// Parse essential StylusParams fields from the packed storage word.
 /// This mirrors `StylusParams::load()` but works with raw bytes from journal sload.
 fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
@@ -974,11 +986,17 @@ where
         false
     };
 
+    // Read the activation-time module hash from storage. This differs from
+    // code_hash (which is keccak256 of the bytecode); it is the hash of the
+    // compiled module computed during activateProgram.
+    let module_hash = read_module_hash(&mut context.journaled_state, code_hash)
+        .unwrap_or(code_hash);
+
     // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
     evm_data.reentrant = reentrant as u32;
     evm_data.cached = effective_program.cached;
-    evm_data.module_hash = code_hash;
+    evm_data.module_hash = module_hash;
 
     // Track pages — add this program's footprint.
     let (prev_open, _prev_ever) = add_stylus_pages(program.footprint);
@@ -1150,13 +1168,17 @@ where
     let gas_price = U256::from(context.tx.gas_price());
     let value = inputs.value.get();
 
+    // Stylus's block.number must be the L1 block number, not the L2 block number.
+    // Nitro uses `evm.ProcessingHook.L1BlockNumber(evm.Context)` for this field.
+    let l1_block_number = arb_precompiles::get_l1_block_number_for_evm();
+
     EvmData {
         arbos_version: arb_precompiles::get_arbos_version(),
         block_basefee: B256::from(basefee.to_be_bytes()),
         chain_id: context.cfg.chain_id(),
         block_coinbase: context.block.beneficiary(),
         block_gas_limit: context.block.gas_limit(),
-        block_number: context.block.number().saturating_to(),
+        block_number: l1_block_number,
         block_timestamp: context.block.timestamp().saturating_to(),
         contract_address: inputs.target_address,
         module_hash: alloy_primitives::keccak256(b""),
