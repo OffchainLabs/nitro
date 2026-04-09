@@ -6,6 +6,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
@@ -65,13 +66,19 @@ func TestReportFilteredTransactions(t *testing.T) {
 	defer client.Close()
 
 	reports := []addressfilter.FilteredTxReport{{
-		ID:          "test-id",
-		TxHash:      common.HexToHash("0x1234"),
-		BlockNumber: 42,
+		ID:     "test-id",
+		TxHash: common.HexToHash("0x1234"),
+		TxRLP:  nil,
 		FilteredAddresses: []filter.FilteredAddressRecord{{
 			Address:      common.HexToAddress("0xdead"),
-			FilterReason: filter.FilterReason{Reason: filter.ReasonFrom},
+			FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil},
 		}},
+		BlockNumber:       42,
+		ParentBlockHash:   common.Hash{},
+		PositionInBlock:   0,
+		FilteredAt:        time.Time{},
+		IsDelayed:         false,
+		DelayedReportData: nil,
 	}}
 	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
 		t.Fatal(err)

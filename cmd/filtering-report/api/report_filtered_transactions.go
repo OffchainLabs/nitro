@@ -11,7 +11,6 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 )
 
-// ReportFilteredTransactions logs each filtered transaction report to stdout.
 func (a *FilteringReportAPI) ReportFilteredTransactions(_ context.Context, reports []addressfilter.FilteredTxReport) error {
 	for _, report := range reports {
 		log.Info("Filtered transaction report",
