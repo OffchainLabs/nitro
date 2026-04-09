@@ -5,6 +5,7 @@ package sqsclient
 
 import (
 	"context"
+	"errors"
 
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -29,6 +30,16 @@ type Config struct {
 }
 
 var DefaultConfig = Config{}
+
+func (c *Config) Validate() error {
+	if !c.Enable {
+		return nil
+	}
+	if c.QueueURL == "" {
+		return errors.New("queue-url is required when SQS is enabled")
+	}
+	return nil
+}
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable SQS reporting of filtered transactions")

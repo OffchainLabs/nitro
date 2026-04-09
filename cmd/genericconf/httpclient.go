@@ -4,6 +4,7 @@
 package genericconf
 
 import (
+	"errors"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -16,6 +17,13 @@ type HTTPClientConfig struct {
 
 var HTTPClientConfigDefault = HTTPClientConfig{
 	Timeout: 5 * time.Second,
+}
+
+func (c *HTTPClientConfig) Validate() error {
+	if c.URL == "" {
+		return errors.New("url is required")
+	}
+	return nil
 }
 
 func HTTPClientConfigAddOptions(prefix string, f *pflag.FlagSet) {

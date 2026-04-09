@@ -183,12 +183,12 @@ func mainImpl() int {
 		return 1
 	}
 
+	if err := config.SQS.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: SQS config validation failed: %v\n", err)
+		return 1
+	}
 	var sqsClient *sqsclient.QueueClient
 	if config.SQS.Enable {
-		if config.SQS.QueueURL == "" {
-			fmt.Fprintf(os.Stderr, "error: sqs.queue-url is required when SQS is enabled\n")
-			return 1
-		}
 		sqsClient, err = sqsclient.NewClient(ctx, &config.SQS)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
@@ -197,8 +197,8 @@ func mainImpl() int {
 	}
 
 	if config.ReportForwarder.Enable {
-		if config.ReportForwarder.ExternalEndpoint.URL == "" {
-			fmt.Fprintf(os.Stderr, "error: report-forwarder.external-endpoint.url is required when report-forwarder is enabled\n")
+		if err := config.ReportForwarder.ExternalEndpoint.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: report-forwarder external endpoint config validation failed: %v\n", err)
 			return 1
 		}
 		if sqsClient == nil {
