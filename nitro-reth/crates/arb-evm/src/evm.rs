@@ -375,9 +375,14 @@ fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
 }
 
 /// Compute upfront gas cost for a Stylus call, per `Programs.CallProgram`.
-fn stylus_call_gas_cost(params: &StylusParams, program: &Program, pages_open: u16) -> u64 {
+fn stylus_call_gas_cost(
+    params: &StylusParams,
+    program: &Program,
+    pages_open: u16,
+    pages_ever: u16,
+) -> u64 {
     let model = MemoryModel::new(params.free_pages, params.page_gas);
-    let mut cost = model.gas_cost(program.footprint, pages_open, pages_open);
+    let mut cost = model.gas_cost(program.footprint, pages_open, pages_ever);
 
     let cached = program.cached;
     if cached || program.version > 1 {
@@ -947,7 +952,7 @@ where
     }
 
     // ── Compute and deduct upfront gas costs ────────────────────────
-    let (pages_open, _pages_ever) = get_stylus_pages();
+    let (pages_open, pages_ever) = get_stylus_pages();
     // ArbOS v60+: recent WASMs cache hit makes the program count as cached
     // for the purposes of gas pricing (mirrors Nitro's GetRecentWasms.Insert).
     let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
@@ -963,7 +968,7 @@ where
     } else {
         program.clone()
     };
-    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open);
+    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open, pages_ever);
     let total_gas = inputs.gas_limit;
 
     tracing::warn!(target: "stylus",
