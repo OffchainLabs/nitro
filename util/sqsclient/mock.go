@@ -37,6 +37,9 @@ func (m *MockClient) ReceiveMessage(_ context.Context, params *sqs.ReceiveMessag
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	limit := int(params.MaxNumberOfMessages)
+	if limit == 0 {
+		limit = 1
+	}
 	if limit < 1 || limit > 10 {
 		return nil, fmt.Errorf("invalid parameter: MaxNumberOfMessages must be between 1 and 10, got %d", limit)
 	}
