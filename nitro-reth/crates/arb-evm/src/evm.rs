@@ -523,7 +523,7 @@ where
         <alloy_evm::precompiles::PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
         >>::set_spec(&mut precompiles, context.cfg.spec());
-        register_arb_precompiles(&mut precompiles);
+        register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
         let mut arb_map = ArbPrecompilesMap(precompiles);
         let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
@@ -1424,7 +1424,7 @@ fn build_arb_evm<DB: Database, I>(
         SELFBALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
-    register_arb_precompiles(&mut precompiles);
+    register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 
     let revm_evm =

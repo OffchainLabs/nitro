@@ -18,5 +18,10 @@ revm-primitives = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+hex = { workspace = true }
+rstest = { workspace = true }
+tiny-keccak = { workspace = true }
+
 [lints]
 workspace = true

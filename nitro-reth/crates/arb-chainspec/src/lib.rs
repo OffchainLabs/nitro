@@ -69,9 +69,17 @@ pub trait ArbitrumChainSpec {
 }
 
 /// Map ArbOS version to the appropriate SpecId.
+///
+/// Mirrors Nitro's `activePrecompiledContracts` (vm/contracts.go) which selects
+/// the precompile set per ArbOS milestone:
+///   - ArbOS 50+ (Dia) → Osaka (BLS12-381 + Osaka modexp)
+///   - ArbOS 30+ (Stylus) → Cancun
+///   - ArbOS 20+ → Cancun (transient storage, blob basefee)
+///   - ArbOS 11+ → Shanghai
+///   - else Merge
 pub fn spec_id_by_arbos_version(arbos_version: u64) -> SpecId {
-    if arbos_version >= arbos_version::ARBOS_VERSION_40 {
-        SpecId::PRAGUE
+    if arbos_version >= arbos_version::ARBOS_VERSION_50 {
+        SpecId::OSAKA
     } else if arbos_version >= arbos_version::ARBOS_VERSION_20 {
         SpecId::CANCUN
     } else if arbos_version >= arbos_version::ARBOS_VERSION_11 {

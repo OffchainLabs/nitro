@@ -246,8 +246,7 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // ArbOS version is at root offset 0. Add 55 because the storage value is 0-based (v56 = stored
-    // 1).
+    // Nitro's arbOSVersion() returns 55 + raw stored version (precompiles/ArbSys.go:67).
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
@@ -850,18 +849,68 @@ fn compute_merkle_root(partials: &[B256], size: u64) -> B256 {
 
 // ── L1 alias helpers ─────────────────────────────────────────────────
 
+fn alias_offset_u256() -> U256 {
+    U256::from_be_slice(L1_ALIAS_OFFSET.as_slice())
+}
+
+fn truncate_to_address(v: U256) -> Address {
+    let bytes = v.to_be_bytes::<32>();
+    Address::from_slice(&bytes[12..])
+}
+
 fn apply_l1_alias(addr: Address) -> Address {
-    let mut bytes = [0u8; 20];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = addr.0[i].wrapping_add(L1_ALIAS_OFFSET.0[i]);
-    }
-    Address::new(bytes)
+    let val = U256::from_be_slice(addr.as_slice());
+    truncate_to_address(val.wrapping_add(alias_offset_u256()))
 }
 
 fn undo_l1_alias(addr: Address) -> Address {
-    let mut bytes = [0u8; 20];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = addr.0[i].wrapping_sub(L1_ALIAS_OFFSET.0[i]);
+    let val = U256::from_be_slice(addr.as_slice());
+    truncate_to_address(val.wrapping_sub(alias_offset_u256()))
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+    use alloy_primitives::address;
+
+    #[test]
+    fn alias_simple_no_carry() {
+        let l1 = address!("0000000000000000000000000000000000000000");
+        let aliased = apply_l1_alias(l1);
+        assert_eq!(aliased, L1_ALIAS_OFFSET);
+        assert_eq!(undo_l1_alias(aliased), l1);
     }
-    Address::new(bytes)
+
+    #[test]
+    fn alias_carry_propagates_across_bytes() {
+        let l1 = address!("00ef000000000000000000000000000000000000");
+        let expected = address!("1200000000000000000000000000000000001111");
+        assert_eq!(apply_l1_alias(l1), expected);
+        assert_eq!(undo_l1_alias(expected), l1);
+    }
+
+    #[test]
+    fn alias_wraps_at_160_bits() {
+        // (2^160 - 1) + 0x1111000000000000000000000000000000001111
+        //   = 2^160 + (0x1111000000000000000000000000000000001110)
+        //   ≡ 0x1111000000000000000000000000000000001110 (mod 2^160)
+        let l1 = address!("ffffffffffffffffffffffffffffffffffffffff");
+        let expected = address!("1111000000000000000000000000000000001110");
+        assert_eq!(apply_l1_alias(l1), expected);
+        assert_eq!(undo_l1_alias(expected), l1);
+    }
+
+    #[test]
+    fn alias_inverse_round_trip() {
+        let cases = [
+            address!("0123456789abcdef0123456789abcdef01234567"),
+            address!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
+            address!("ffeeffeeffeeffeeffeeffeeffeeffeeffeeffee"),
+        ];
+        for addr in cases {
+            let aliased = apply_l1_alias(addr);
+            let restored = undo_l1_alias(aliased);
+            assert_eq!(restored, addr, "round trip failed for {addr}");
+        }
+    }
 }
