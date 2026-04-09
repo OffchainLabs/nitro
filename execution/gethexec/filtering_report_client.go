@@ -14,11 +14,14 @@ import (
 
 const FilteringReportNamespace = "filteringreport"
 
-var DefaultFilteringReportRPCClientConfig = func() rpcclient.ClientConfig {
-	cfg := rpcclient.DefaultClientConfig
-	cfg.URL = ""
-	return cfg
-}()
+var DefaultFilteringReportRPCClientConfig = rpcclient.ClientConfig{
+	URL:                       "",
+	JWTSecret:                 "",
+	Retries:                   3,
+	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+	ArgLogLimit:               2048,
+	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+}
 
 type FilteringReportRPCClient struct {
 	stopwaiter.StopWaiter
