@@ -53,6 +53,11 @@ pub fn push_stylus_program(addr: Address) -> bool {
     })
 }
 
+/// Get the current Stylus program count for an address (no mutation).
+pub fn get_stylus_program_count(addr: Address) -> u32 {
+    STYLUS_PROGRAM_COUNTS.with(|v| v.borrow().get(&addr).copied().unwrap_or(0))
+}
+
 /// Pop a Stylus program address from the reentrancy tracker.
 pub fn pop_stylus_program(addr: Address) {
     STYLUS_PROGRAM_COUNTS.with(|v| {

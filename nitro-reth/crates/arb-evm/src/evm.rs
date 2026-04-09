@@ -293,8 +293,8 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
 // both arb-evm (dispatch) and arb-stylus (EvmApi add_pages) can access it.
 
 pub use arb_stylus::pages::{
-    add_stylus_pages, get_stylus_pages, pop_stylus_program, push_stylus_program,
-    reset_stylus_pages, set_stylus_pages_open,
+    add_stylus_pages, get_stylus_pages, get_stylus_program_count, pop_stylus_program,
+    push_stylus_program, reset_stylus_pages, set_stylus_pages_open,
 };
 
 // ── Stylus storage helpers ───────────────────────────────────────────
@@ -987,10 +987,13 @@ where
         inputs.scheme,
         CallScheme::DelegateCall | CallScheme::CallCode
     );
+    // Only non-delegate-non-callcode calls increment the reentrancy counter.
+    // Delegate and callcode frames check the counter without bumping it, so an
+    // actual re-entry into the same storage context reports `reentrant=true`.
     let reentrant = if !is_delegate {
         push_stylus_program(target_addr)
     } else {
-        false
+        get_stylus_program_count(target_addr) > 1
     };
 
     // Read the activation-time module hash from storage. This differs from
