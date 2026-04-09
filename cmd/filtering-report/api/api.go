@@ -36,6 +36,7 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 	if a.sqsClient == nil {
 		return errors.New("SQS client not configured")
 	}
+	log.Debug("Sending filtered transaction reports to SQS", "count", len(reports))
 	for _, report := range reports {
 		body, err := json.Marshal(report)
 		if err != nil {
@@ -50,7 +51,6 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
 			return err
 		}
-		log.Info("Sent filtered transaction report to SQS", "txHash", report.TxHash.Hex())
 	}
 	return nil
 }

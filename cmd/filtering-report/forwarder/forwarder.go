@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -45,16 +46,16 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type Forwarder struct {
 	stopwaiter.StopWaiter
-	config           *Config
-	sqsClient        sqsclient.Client
+	config      *Config
+	sqsClient   sqsclient.Client
 	sqsQueueURL string
 	httpClient  *http.Client
 }
 
 func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwarder {
 	return &Forwarder{
-		config:           config,
-		sqsClient:        sqsClient,
+		config:      config,
+		sqsClient:   sqsClient,
 		sqsQueueURL: sqsQueueURL,
 		httpClient:  &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 	}
@@ -110,9 +111,13 @@ func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("external endpoint returned status %d", resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("external endpoint returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }
