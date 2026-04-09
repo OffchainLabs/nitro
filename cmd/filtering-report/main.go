@@ -185,6 +185,10 @@ func mainImpl() int {
 
 	var sqsClient *sqsclient.QueueClient
 	if config.SQS.Enable {
+		if config.SQS.QueueURL == "" {
+			fmt.Fprintf(os.Stderr, "error: sqs.queue-url is required when SQS is enabled\n")
+			return 1
+		}
 		sqsClient, err = sqsclient.NewClient(ctx, &config.SQS)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
@@ -193,6 +197,10 @@ func mainImpl() int {
 	}
 
 	if config.ReportForwarder.Enable {
+		if config.ReportForwarder.ExternalEndpoint.URL == "" {
+			fmt.Fprintf(os.Stderr, "error: report-forwarder.external-endpoint.url is required when report-forwarder is enabled\n")
+			return 1
+		}
 		if sqsClient == nil {
 			fmt.Fprintf(os.Stderr, "error: report-forwarder requires SQS to be enabled\n")
 			return 1

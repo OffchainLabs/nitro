@@ -4,11 +4,11 @@
 package forwarder
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -100,7 +100,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 }
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.ExternalEndpoint.URL, bytes.NewBufferString(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.ExternalEndpoint.URL, strings.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 		resp.Body.Close()
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("external endpoint returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
