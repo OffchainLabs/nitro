@@ -25,7 +25,6 @@ impl Erc20Params for WethParams {
 sol_storage! {
     #[entrypoint]
     struct Weth {
-        #[borrow] // Allows erc20 to access Weth's storage and make calls
         Erc20<WethParams> erc20;
     }
 }
@@ -69,37 +68,28 @@ impl Weth {
 
 #[public]
 impl IErc20 for Weth {
-    fn name(&self) -> Result<String, Erc20Error> {
-        Ok(Erc20::<WethParams>::name())
+    fn name(&self) -> String {
+        Erc20::<WethParams>::name()
     }
 
-    fn symbol(&self) -> Result<String, Erc20Error> {
-        Ok(Erc20::<WethParams>::symbol())
+    fn symbol(&self) -> String {
+        Erc20::<WethParams>::symbol()
     }
 
-    fn decimals(&self) -> Result<u8, Erc20Error> {
-        Ok(Erc20::<WethParams>::decimals())
+    fn decimals(&self) -> u8 {
+        Erc20::<WethParams>::decimals()
     }
 
-    fn balance_of(&self, address: Address) -> Result<U256, Erc20Error> {
-        Ok(self.erc20.balances.get(address))
+    fn balance_of(&self, address: Address) -> U256 {
+        self.erc20.balance_of(address)
     }
 
     fn transfer(&mut self, to: Address, value: U256) -> Result<bool, Erc20Error> {
-        self.erc20.transfer_impl(self.vm().msg_sender(), to, value)?;
-        Ok(true)
+        self.erc20.transfer(to, value)
     }
 
-    fn approve(&mut self, spender: Address, value: U256) -> Result<bool, Erc20Error> {
-        self.erc20.allowances
-            .setter(self.vm().msg_sender())
-            .insert(spender, value);
-        self.vm().log(erc20::Approval {
-            owner: self.vm().msg_sender(),
-            spender,
-            value,
-        });
-        Ok(true)
+    fn approve(&mut self, spender: Address, value: U256) -> bool {
+        self.erc20.approve(spender, value)
     }
 
     fn transfer_from(
@@ -108,24 +98,10 @@ impl IErc20 for Weth {
         to: Address,
         value: U256,
     ) -> Result<bool, Erc20Error> {
-        let sender = self.vm().msg_sender();
-        let mut sender_allowances = self.erc20.allowances.setter(from);
-        let mut allowance = sender_allowances.setter(sender);
-        let old_allowance = allowance.get();
-        if old_allowance < value {
-            return Err(Erc20Error::InsufficientAllowance(erc20::InsufficientAllowance {
-                owner: from,
-                spender: sender,
-                have: old_allowance,
-                want: value,
-            }));
-        }
-        allowance.set(old_allowance - value);
-        self.erc20.transfer_impl(from, to, value)?;
-        Ok(true)
+        self.erc20.transfer_from(from, to, value)
     }
 
-    fn allowance(&self, owner: Address, spender: Address) -> Result<U256, Erc20Error> {
-        Ok(self.erc20.allowances.getter(owner).get(spender))
+    fn allowance(&self, owner: Address, spender: Address) -> U256 {
+        self.erc20.allowance(owner, spender)
     }
 }
