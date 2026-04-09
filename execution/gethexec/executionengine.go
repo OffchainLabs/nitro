@@ -1368,10 +1368,6 @@ func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFil
 	s.transactionFiltererRPCClient = client
 }
 
-func (s *ExecutionEngine) GetTransactionFiltererRPCClient() *TransactionFiltererRPCClient {
-	return s.transactionFiltererRPCClient
-}
-
 func (s *ExecutionEngine) SetFilteringReportRPCClient(client *FilteringReportRPCClient) {
 	s.filteringReportRPCClient = client
 }

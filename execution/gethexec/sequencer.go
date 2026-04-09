@@ -1675,8 +1675,8 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	if s.execEngine.GetFilteringReportRPCClient() != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
 			reportingInterval := s.filteringConfigFetcher().FilterSetReportingInterval
-			if reportingInterval <= 0 {
-				return 5 * time.Minute
+			if reportingInterval == 0 {
+				return reportingInterval
 			}
 			if s.addressFilterService == nil {
 				return reportingInterval
@@ -1688,6 +1688,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			}
 			filterSetId := s.addressFilterService.GetFilterSetId()
 			if filterSetId == uuid.Nil {
+				log.Info("filter set id is nil, skipping reporting")
 				return reportingInterval
 			}
 			_, err := s.execEngine.GetFilteringReportRPCClient().ReportCurrentFilterSetId(filterSetId.String()).Await(ctx)
