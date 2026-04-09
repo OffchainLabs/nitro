@@ -72,19 +72,19 @@ var IPCConfigDefault = genericconf.IPCConfig{
 }
 
 var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
-	Conf:            genericconf.ConfConfigDefault,
-	LogLevel:        "INFO",
-	LogType:         "plaintext",
-	Metrics:         false,
-	MetricsServer:   genericconf.MetricsServerConfigDefault,
-	PProf:           false,
-	PprofCfg:        genericconf.PProfDefault,
-	HTTP:            HTTPConfigDefault,
-	WS:              WSConfigDefault,
-	IPC:             IPCConfigDefault,
-	Auth:            genericconf.AuthRPCConfigDefault,
-	ChainId:         412346, // nitro-testnode chainid
-	Sequencer:       rpcclient.DefaultClientConfig,
+	Conf:          genericconf.ConfConfigDefault,
+	LogLevel:      "INFO",
+	LogType:       "plaintext",
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
+	HTTP:          HTTPConfigDefault,
+	WS:            WSConfigDefault,
+	IPC:           IPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
+	ChainId:       412346, // nitro-testnode chainid
+	Sequencer:     rpcclient.DefaultClientConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
