@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
@@ -74,7 +74,11 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages after reorg: %w", err)
 		}
 		if m.reorgEventsNotifier != nil {
-			m.reorgEventsNotifier <- preState.ParentChainBlockNumber
+			select {
+			case m.reorgEventsNotifier <- preState.ParentChainBlockNumber:
+			case <-ctx.Done():
+				return m.config.RetryInterval, ctx.Err()
+			}
 		}
 		if m.blockValidator != nil {
 			m.blockValidator.ReorgToBatchCount(preState.BatchCount)
@@ -84,6 +88,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
 		return m.config.RetryInterval, err
 	}
+	start := time.Now()
 	postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
 		ctx,
 		preState,
@@ -95,14 +100,34 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.chainConfig,
 	)
 	if err != nil {
+		extractionErrors.Inc(1)
 		if errors.Is(err, mel.ErrDelayedMessagePreimageNotFound) {
 			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
 				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
 			}
-			return 0, nil
+			return m.config.RetryInterval, nil
 		}
 		return m.config.RetryInterval, err
 	}
+	elapsed := time.Since(start)
+	// After processing every 100 parent chain blocks, print a status log
+	if postState.ParentChainBlockNumber%m.config.LogExtractionStatusFrequencyBlocks == 0 {
+		log.Info("Message extraction successful", "parentChainBlockNumber", postState.ParentChainBlockNumber, "msgCount", postState.MsgCount)
+	}
+
+	// Update metrics.
+	//#nosec G115
+	latestBlockGauge.Update(int64(postState.ParentChainBlockNumber))
+	//#nosec G115
+	latestMsgCountGauge.Update(int64(postState.MsgCount))
+	//#nosec G115
+	latestDelayedSeenCountGauge.Update(int64(postState.DelayedMessagesSeen))
+	//#nosec G115
+	latestDelayedReadCountGauge.Update(int64(postState.DelayedMessagesRead))
+	//#nosec G115
+	msgsExtractedCounter.Inc(int64(len(msgs)))
+	blockProcessTimeGauge.Update(elapsed.Microseconds())
+
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{
 		preStateMsgCount: preState.MsgCount,
