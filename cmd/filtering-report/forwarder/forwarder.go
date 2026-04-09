@@ -118,7 +118,7 @@ func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 		resp.Body.Close()
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("external endpoint returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
