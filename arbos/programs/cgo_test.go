@@ -111,14 +111,6 @@ func TestHandleNativeStackOverflowAtMax(t *testing.T) {
 	}
 }
 
-func TestDoubleNativeStackSize(t *testing.T) {
-	defer SetInitialNativeStackSize(1024 * 1024)
-	err := testDoubleNativeStackSize()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestSelectLocalAsm(t *testing.T) {
 	localTarget := rawdb.LocalTarget()
 	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)

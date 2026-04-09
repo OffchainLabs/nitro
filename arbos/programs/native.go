@@ -59,6 +59,30 @@ type savedState struct {
 	usedMultiGas multigas.MultiGas
 	openPages    uint16
 	everPages    uint16
+	snapshot     int
+}
+
+// saveState captures a checkpoint of the contract gas, multi-gas, Stylus page
+// counters, and a StateDB snapshot. Call restore() to revert to this checkpoint.
+func saveState(scope *vm.ScopeContext, db vm.StateDB) savedState {
+	openPages, everPages := db.GetStylusPages()
+	return savedState{
+		gas:          scope.Contract.Gas,
+		usedMultiGas: scope.Contract.UsedMultiGas,
+		openPages:    openPages,
+		everPages:    everPages,
+		snapshot:     db.Snapshot(),
+	}
+}
+
+// restore reverts the StateDB to the saved snapshot and restores the contract
+// gas, multi-gas, and Stylus page counters. openWasmPages/everWasmPages are
+// not journaled, so RevertToSnapshot alone does not restore them.
+func (s *savedState) restore(scope *vm.ScopeContext, db vm.StateDB) {
+	db.RevertToSnapshot(s.snapshot)
+	scope.Contract.Gas = s.gas
+	scope.Contract.UsedMultiGas = s.usedMultiGas
+	db.SetStylusPages(s.openPages, s.everPages)
 }
 
 // allowFallback controls whether compilation failures fall back to an alternative compiler.
@@ -99,31 +123,32 @@ func SetInitialNativeStackSize(size uint64) {
 }
 
 // doubleNativeStackSize doubles the process-wide Wasmer coroutine stack size
-// from the configured baseline, capped at MaxNativeStackSize. Returns true if
-// the stack was successfully doubled. The baseline is atomically set to 0 on
-// success, so subsequent calls return false (one-time doubling).
-func doubleNativeStackSize() bool {
+// from the configured baseline, capped at MaxNativeStackSize. The CAS on the
+// baseline is performed after SetNativeStackSize and DrainStackPool, so that
+// concurrent callers cannot observe a half-updated state. Only the goroutine
+// that wins the CAS logs; all others are silent no-ops.
+func doubleNativeStackSize() {
 	baseStackSize := nativeStackBaseline.Load()
 	if baseStackSize == 0 {
 		// Zero means either not yet initialized (SetInitialNativeStackSize
 		// was never called) or already doubled. Both cases correctly mean
 		// "don't double": uninitialized has no baseline to double from,
 		// and already-doubled must not double again.
-		return false
+		return
 	}
 	newStackSize := baseStackSize * 2
 	if newStackSize > MaxNativeStackSize {
 		newStackSize = MaxNativeStackSize
 	}
 	if newStackSize <= baseStackSize {
-		return false
-	}
-	if !nativeStackBaseline.CompareAndSwap(baseStackSize, 0) {
-		return false // another goroutine doubled first
+		return
 	}
 	SetNativeStackSize(newStackSize)
 	DrainStackPool()
-	return true
+	if nativeStackBaseline.CompareAndSwap(baseStackSize, 0) {
+		log.Warn("native stack overflow, doubled stack size",
+			"newSize", newStackSize)
+	}
 }
 
 // SetNativeStackSize configures the Wasmer coroutine stack size for Stylus execution.
@@ -552,18 +577,7 @@ func callProgram(
 		}
 	}
 
-	openPages, everPages := db.GetStylusPages()
-	saved := savedState{
-		gas:          scope.Contract.Gas,
-		usedMultiGas: scope.Contract.UsedMultiGas,
-		openPages:    openPages,
-		everPages:    everPages,
-	}
-
-	// Snapshot the StateDB before the first attempt so we can revert any partial
-	// state changes (storage writes, subcalls) if the call hits a native stack
-	// overflow and we need to retry. Snapshot is cheap — it just records a journal ID.
-	snapshot := db.Snapshot()
+	saved := saveState(scope, db)
 
 	// First attempt with the locally-compiled ASM (singlepass or cranelift, depending on activation).
 	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
@@ -572,7 +586,7 @@ func callProgram(
 		status, output = handleNativeStackOverflow(
 			address, moduleHash,
 			scope, evm, tracingInfo, calldata, evmData, stylusParams,
-			memoryModel, runCtx, saved, debug, db, snapshot,
+			memoryModel, runCtx, &saved, debug, db,
 			code, params, program,
 		)
 	}
@@ -597,17 +611,6 @@ func callProgram(
 	return data, err
 }
 
-// restoreState reverts the StateDB to the given snapshot and restores the
-// contract gas, multi-gas, and Stylus page counters from the saved checkpoint.
-// openWasmPages/everWasmPages are not journaled, so RevertToSnapshot alone
-// does not restore them — we must do it explicitly.
-func restoreState(scope *vm.ScopeContext, saved savedState, db vm.StateDB, snapshot int) {
-	db.RevertToSnapshot(snapshot)
-	scope.Contract.Gas = saved.gas
-	scope.Contract.UsedMultiGas = saved.usedMultiGas
-	db.SetStylusPages(saved.openPages, saved.everPages)
-}
-
 // handleNativeStackOverflow handles a native stack overflow by compiling
 // cranelift ASM and retrying. On the first overflow it also doubles the
 // process-wide Wasmer coroutine stack size (kept permanently); subsequent
@@ -626,10 +629,9 @@ func handleNativeStackOverflow(
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
-	saved savedState,
+	saved *savedState,
 	debug bool,
 	db vm.StateDB,
-	snapshot int,
 	code []byte,
 	params *StylusParams,
 	program Program,
@@ -655,14 +657,11 @@ func handleNativeStackOverflow(
 	// On the first overflow, double the process-wide Wasmer coroutine stack size.
 	// On subsequent overflows doubleNativeStackSize is a no-op (baseline already
 	// consumed via CAS) — we still retry with cranelift at the already-doubled size.
-	if doubleNativeStackSize() {
-		log.Warn("native stack overflow, doubled stack size",
-			"program", address, "module", moduleHash, "newSize", GetNativeStackSize())
-	}
+	doubleNativeStackSize()
 
 	// Revert any partial state changes the previous attempt may have made via
 	// host I/O before the overflow, then retry with cranelift.
-	restoreState(scope, saved, db, snapshot)
+	saved.restore(scope, db)
 
 	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 }

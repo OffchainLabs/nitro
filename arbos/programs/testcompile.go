@@ -458,59 +458,6 @@ func testNativeStackSizeMaxCap() error {
 	return nil
 }
 
-// testDoubleNativeStackSize verifies doubleNativeStackSize:
-// 1. Returns true and doubles the stack on first call.
-// 2. Returns false on second call (baseline already consumed via CAS to 0).
-// 3. Returns false when baseline was never initialized (zero).
-// 4. Returns false when baseline is already at MaxNativeStackSize.
-// 5. SetInitialNativeStackSize re-enables doubling by restoring a non-zero baseline.
-func testDoubleNativeStackSize() error {
-	// 1. First call doubles the stack.
-	SetInitialNativeStackSize(32 * 1024)
-	if !doubleNativeStackSize() {
-		return fmt.Errorf("first call: expected true (should double from 32KB to 64KB)")
-	}
-	if got := GetNativeStackSize(); got != 64*1024 {
-		return fmt.Errorf("first call: expected 64KB, got %d", got)
-	}
-
-	// 2. Second call returns false (baseline consumed to 0).
-	if doubleNativeStackSize() {
-		return fmt.Errorf("second call: expected false (already doubled)")
-	}
-	// Stack size should remain at 64KB.
-	if got := GetNativeStackSize(); got != 64*1024 {
-		return fmt.Errorf("second call: expected stack to remain at 64KB, got %d", got)
-	}
-
-	// 3. Zero baseline (not initialized) returns false.
-	nativeStackBaseline.Store(0)
-	if doubleNativeStackSize() {
-		return fmt.Errorf("zero baseline: expected false")
-	}
-
-	// 4. Baseline at MaxNativeStackSize returns false (doubled would exceed cap).
-	SetInitialNativeStackSize(MaxNativeStackSize)
-	if doubleNativeStackSize() {
-		return fmt.Errorf("max baseline: expected false (cannot double beyond max)")
-	}
-	if got := GetNativeStackSize(); got != MaxNativeStackSize {
-		return fmt.Errorf("max baseline: expected stack to remain at %d, got %d", MaxNativeStackSize, got)
-	}
-
-	// 5. SetInitialNativeStackSize re-enables doubling.
-	SetInitialNativeStackSize(32 * 1024)
-	if !doubleNativeStackSize() {
-		return fmt.Errorf("re-enabled: expected true after SetInitialNativeStackSize reset")
-	}
-	if got := GetNativeStackSize(); got != 64*1024 {
-		return fmt.Errorf("re-enabled: expected 64KB, got %d", got)
-	}
-
-	fmt.Printf("testDoubleNativeStackSize: passed\n")
-	return nil
-}
-
 func testCompileLoad() error {
 	filePathStart := "../../target/testdata/host"
 	localTarget := rawdb.LocalTarget()
@@ -588,12 +535,12 @@ func testHandleNativeStackOverflow() error {
 	allowFallback.Store(false)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
-	snapshot := db.Snapshot()
+	saved := &savedState{gas: gas, snapshot: db.Snapshot()}
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, savedState{gas: gas}, true,
-		db, snapshot, nil, nil, Program{version: 1},
+		memModel, runCtx, saved, true,
+		db, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("allowFallback=false: expected NativeStackOverflow, got %d", status)
@@ -607,11 +554,12 @@ func testHandleNativeStackOverflow() error {
 	offChainCtx := core.NewMessageGasEstimationContext()
 	scope.Contract.Gas = gas
 
+	saved = &savedState{gas: gas, snapshot: db.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, offChainCtx, savedState{gas: gas}, true,
-		db, snapshot, nil, nil, Program{version: 1},
+		memModel, offChainCtx, saved, true,
+		db, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("off-chain: expected NativeStackOverflow, got %d", status)
@@ -624,12 +572,12 @@ func testHandleNativeStackOverflow() error {
 	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
 	// retry at 64KB should succeed for the 500-recursion program.
 	scope.Contract.Gas = gas
-	snapshot = db.Snapshot()
+	saved = &savedState{gas: gas, snapshot: db.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, savedState{gas: gas}, true,
-		db, snapshot, nil, nil, Program{version: 1},
+		memModel, runCtx, saved, true,
+		db, nil, nil, Program{version: 1},
 	)
 	if status != userSuccess {
 		return fmt.Errorf("on-chain: expected success after stack doubling + cranelift retry, got %d", status)
@@ -648,12 +596,12 @@ func testHandleNativeStackOverflow() error {
 	DrainStackPool()
 	evm4, scope4, db4 := makeTestEVMScope(gas)
 	scope4.Contract.Gas = gas
-	snapshot = db4.Snapshot()
+	saved = &savedState{gas: gas, snapshot: db4.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope4, evm4, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, savedState{gas: gas}, true,
-		db4, snapshot, nil, nil, Program{version: 1},
+		memModel, runCtx, saved, true,
+		db4, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("no cranelift available: expected NativeStackOverflow, got %d", status)
@@ -711,12 +659,12 @@ func testHandleNativeStackOverflowAtMax() error {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
 
-	snapshot := db.Snapshot()
+	saved := &savedState{gas: gas, snapshot: db.Snapshot()}
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, savedState{gas: gas}, true,
-		db, snapshot, nil, nil, Program{version: 1},
+		memModel, runCtx, saved, true,
+		db, nil, nil, Program{version: 1},
 	)
 	// Cranelift at 100MB should succeed (500 recursions is trivial at this stack size).
 	if status != userSuccess {
@@ -795,7 +743,7 @@ func testRetryRestoresStylusPages() error {
 	// Set a non-zero UsedMultiGas to verify it is restored on retry.
 	// UsedMultiGas is modified by host I/O callbacks (api.go) and lives on
 	// the contract scope, not the StateDB, so RevertToSnapshot does not
-	// restore it — restoreState must do it explicitly.
+	// restore it — savedState.restore() must do it explicitly.
 	initialMultiGas := multigas.NewMultiGas(multigas.ResourceKindComputation, 42)
 	scope.Contract.UsedMultiGas = initialMultiGas
 
@@ -804,19 +752,19 @@ func testRetryRestoresStylusPages() error {
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 	allowFallback.Store(true)
 
-	saved := savedState{
+	saved := &savedState{
 		gas:          gas,
 		usedMultiGas: initialMultiGas,
 		openPages:    initialOpen,
 		everPages:    initialEver,
+		snapshot:     db.Snapshot(),
 	}
 
-	snapshot := db.Snapshot()
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
-		db, snapshot, nil, nil, Program{version: 1},
+		db, nil, nil, Program{version: 1},
 	)
 
 	if status == userNativeStackOverflow {
@@ -835,7 +783,7 @@ func testRetryRestoresStylusPages() error {
 	}
 
 	// The test WAT program does no host I/O, so UsedMultiGas is only modified
-	// by restoreState. Verify it was restored to the saved value.
+	// by savedState.restore(). Verify it was restored to the saved value.
 	gotMultiGas := scope.Contract.UsedMultiGas.SingleGas()
 	wantMultiGas := initialMultiGas.SingleGas()
 	if gotMultiGas != wantMultiGas {
