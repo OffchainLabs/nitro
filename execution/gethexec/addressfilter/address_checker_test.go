@@ -88,10 +88,11 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	filteredAddrs := make([]common.Address, filteredCount)
 	filteredHashes := make([]common.Hash, filteredCount)
 
+	hashPrefix := GetHashInputPrefix(salt)
 	for i := range filteredAddrs {
 		addr := common.BytesToAddress([]byte{byte(i + 1)})
 		filteredAddrs[i] = addr
-		filteredHashes[i] = HashWithSalt(salt, addr)
+		filteredHashes[i] = HashWithPrefix(hashPrefix, addr)
 	}
 
 	store := NewHashStore(cacheSize)

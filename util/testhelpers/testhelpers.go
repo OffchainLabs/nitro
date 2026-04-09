@@ -143,7 +143,14 @@ func newLogHandler(t *testing.T) *LogHandler {
 	}
 }
 
+var initTestLogMu sync.Mutex
+
 func InitTestLog(t *testing.T, level slog.Level) *LogHandler {
+	t.Helper()
+	if !initTestLogMu.TryLock() {
+		t.Fatal("InitTestLog called concurrently - this test must not run in parallel")
+	}
+	t.Cleanup(initTestLogMu.Unlock)
 	handler := newLogHandler(t)
 	glogger := log.NewGlogHandler(handler)
 	glogger.Verbosity(level)

@@ -15,14 +15,14 @@ use std::{
 };
 
 use alloy_rpc_types_engine::JwtSecret;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use clap::{Parser, ValueEnum};
 use tracing::info;
 
 use crate::{
     engine::{
-        machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
-        DEFAULT_JIT_CRANELIFT,
+        DEFAULT_JIT_CRANELIFT, ModuleRoot, machine::JitProcessManager,
+        machine_locator::MachineLocator, replay_binary,
     },
     jwt,
 };
@@ -166,7 +166,9 @@ impl ServerConfig {
             let workers = match std::thread::available_parallelism() {
                 Ok(count) => count.get(),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    warn!(
+                        "Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}."
+                    );
                     DEFAULT_NUM_WORKERS
                 }
                 Err(e) => return Err(e.into()),
@@ -223,7 +225,7 @@ pub fn get_jit_path() -> Result<PathBuf> {
 mod tests {
     use clap::Parser;
 
-    use crate::config::{get_jit_path, ServerConfig};
+    use crate::config::{ServerConfig, get_jit_path};
 
     #[test]
     fn verify_cli() {

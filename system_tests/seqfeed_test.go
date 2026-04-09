@@ -440,7 +440,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(rawdb.DBPebble)
 	builder.BuildL1(t)
 
 	userAccount := "User2"

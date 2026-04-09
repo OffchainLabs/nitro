@@ -17,7 +17,7 @@ pub fn write_wat_ops(
             format!(
                 "            {}.const {}\n",
                 source_data_type,
-                DataType::I32.gen()
+                DataType::I32.r#gen()
             )
             .as_bytes(),
         )
