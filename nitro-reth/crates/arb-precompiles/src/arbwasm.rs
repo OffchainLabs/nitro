@@ -429,18 +429,16 @@ fn hours_since_arbitrum(time: u64) -> u32 {
     (elapsed / 3600) as u32
 }
 
+/// Approximates b * e^(x/b) where b = 10000 (basis points), using Horner's
+/// method with accuracy=12. Matches Nitro's `arbmath.ApproxExpBasisPoints(x, 12)`.
 fn approx_exp_basis_points(x: u64) -> u64 {
-    let basis = 10_000u64;
-    let mut result = basis;
-    let mut term = basis;
-    for i in 1..=12u64 {
-        term = term.saturating_mul(x) / (i * basis);
-        result = result.saturating_add(term);
-        if term == 0 {
-            break;
-        }
+    let b = 10_000u64;
+    let accuracy = 12u64;
+    let mut res = b + x / accuracy;
+    for i in (1..accuracy).rev() {
+        res = b + res.saturating_mul(x) / (i * b);
     }
-    result
+    res
 }
 
 fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
