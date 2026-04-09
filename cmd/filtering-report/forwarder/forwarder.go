@@ -22,14 +22,14 @@ import (
 
 type Config struct {
 	Enable           bool                         `koanf:"enable"`
-	Workers      int                          `koanf:"worker-count"`
+	Workers          int                          `koanf:"worker-count"`
 	PollInterval     time.Duration                `koanf:"poll-interval"`
 	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
 var DefaultConfig = Config{
-	Workers:      1,
-	PollInterval:     5 * time.Second,
+	Workers:          1,
+	PollInterval:     1 * time.Second,
 	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
 }
 
@@ -70,11 +70,10 @@ func (r *Forwarder) Start(ctx context.Context) {
 
 func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	waitTime := int32(5)
-	maxMessages := int32(1)
 	out, err := r.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 		QueueUrl:            &r.sqsQueueURL,
 		WaitTimeSeconds:     waitTime,
-		MaxNumberOfMessages: maxMessages,
+		MaxNumberOfMessages: 1,
 	})
 	if err != nil {
 		log.Error("Failed to receive SQS messages", "err", err)
@@ -88,7 +87,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 		return 0
 	}
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
+		log.Warn("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
 		return 0
 	}
 	_, err = r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
