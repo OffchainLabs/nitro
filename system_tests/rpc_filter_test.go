@@ -145,6 +145,15 @@ func TestEthCallFilterDirectAddress(t *testing.T) {
 		t.Fatalf("expected filtered error for eth_call FROM filtered address, got: %v", err)
 	}
 
+	// eth_call with nil To (contract creation) FROM filtered address should fail
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		From:  filteredAddr,
+		Value: big.NewInt(1e12),
+	}, nil)
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error for eth_call with nil To FROM filtered address, got: %v", err)
+	}
+
 	// eth_call between clean addresses should succeed
 	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
 		From:  normalAddr,
@@ -245,7 +254,7 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 		Data: redeemData,
 	}
 
-	// eth_call WITHOUT address checker — filtering path runs but checker is nil
+	// eth_call without address checker
 	resultWithoutChecker, err := builder.L2.Client.CallContract(ctx, callMsg, nil)
 	Require(t, err)
 
@@ -253,7 +262,7 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 	filter := newHashedChecker([]common.Address{unrelatedAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
-	// eth_call WITH address checker — full filtering path with active checker
+	// eth_call with address checker
 	resultWithChecker, err := builder.L2.Client.CallContract(ctx, callMsg, nil)
 	Require(t, err)
 
