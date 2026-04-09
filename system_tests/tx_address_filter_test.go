@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	filteringReportAPI "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
@@ -646,25 +646,25 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	}))
 	defer externalServer.Close()
 
-	// Set up transaction-filterer API stack with external endpoint
-	transactionFiltererStackConf := api.DefaultStackConfig
-	transactionFiltererStackConf.HTTPPort = 0
-	transactionFiltererStackConf.WSPort = 0
-	transactionFiltererStackConf.AuthPort = 0
-	transactionFiltererStack, _, err := api.NewStack(
-		&transactionFiltererStackConf, nil, nil, externalServer.URL,
+	// Set up filtering-report API stack with external endpoint
+	filteringReportStackConf := filteringReportAPI.DefaultStackConfig
+	filteringReportStackConf.HTTPPort = 0
+	filteringReportStackConf.WSPort = 0
+	filteringReportStackConf.AuthPort = 0
+	filteringReportStack, err := filteringReportAPI.NewStack(
+		&filteringReportStackConf, externalServer.URL,
 	)
 	Require(t, err)
-	err = transactionFiltererStack.Start()
+	err = filteringReportStack.Start()
 	Require(t, err)
-	defer transactionFiltererStack.Close()
+	defer filteringReportStack.Close()
 
-	// Build sequencer node with transaction-filterer RPC client and short reporting interval.
+	// Build sequencer node with filtering-report RPC client and short reporting interval.
 	// Address filtering is NOT enabled via config (to avoid S3 initialization), instead we
 	// set up the filter service manually after the node starts.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
-	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	builder.execConfig.TransactionFiltering.FilterSetReportingInterval = 500 * time.Millisecond
 
 	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
@@ -693,8 +693,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	execNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
 
 	// Store filter rules with a known ID so periodic reporting has something to report
-	salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
-	execNode.Sequencer.StoreFilterRulesForTest(t, expectedId, salt, nil, "test-digest")
+	execNode.Sequencer.StoreFilterRulesForTest(t, expectedId, uuid.New(), nil, "test-digest")
 
 	// Wait for at least 2 periodic reports to arrive
 	var reports []string

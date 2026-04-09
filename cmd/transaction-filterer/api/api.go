@@ -4,15 +4,11 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -37,7 +33,6 @@ type TransactionFiltererAPI struct {
 
 	arbFilteredTransactionsManager atomic.Pointer[precompilesgen.ArbFilteredTransactionsManager]
 	txOpts                         *bind.TransactOpts
-	filterSetReportingEndpoint     string
 }
 
 func NewTransactionFiltererAPI(
@@ -87,35 +82,6 @@ func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter comm
 	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 }
 
-// ReportCurrentFilterSetId POSTs the given filter set ID to the configured external reporting endpoint.
-func (t *TransactionFiltererAPI) ReportCurrentFilterSetId(ctx context.Context, filterSetId string) error {
-	// add timeout to context to avoid hanging if the endpoint is unresponsive
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if t.filterSetReportingEndpoint == "" {
-		return errors.New("filter set reporting endpoint not configured")
-	}
-	payload, err := json.Marshal(map[string]string{"filterSetId": filterSetId})
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.filterSetReportingEndpoint, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to POST filter set id: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-	log.Info("Reported filter set id", "filterSetId", filterSetId)
-	return nil
-}
-
 // Only used for testing.
 // Sequencer and TransactionFiltererAPI depend on each other, as a workaround for the egg/chicken problem,
 // we set the sequencer client after both are created.
@@ -159,7 +125,6 @@ func NewStack(
 	stackConfig *node.Config,
 	txOpts *bind.TransactOpts,
 	sequencerClient *ethclient.Client,
-	filterSetReportingEndpoint string,
 ) (*node.Node, *TransactionFiltererAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
@@ -178,8 +143,7 @@ func NewStack(
 	}
 
 	api := &TransactionFiltererAPI{
-		txOpts:                     txOpts,
-		filterSetReportingEndpoint: filterSetReportingEndpoint,
+		txOpts: txOpts,
 	}
 	if arbFilteredTransactionsManager != nil {
 		api.arbFilteredTransactionsManager.Store(arbFilteredTransactionsManager)

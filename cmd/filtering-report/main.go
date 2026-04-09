@@ -37,6 +37,8 @@ type FilteringReportConfig struct {
 	WS   genericconf.WSConfig      `koanf:"ws"`
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
+
+	FilterSetReportingEndpoint string `koanf:"filter-set-reporting-endpoint"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -93,6 +95,8 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
+
+	f.String("filter-set-reporting-endpoint", DefaultFilteringReportConfig.FilterSetReportingEndpoint, "external endpoint to POST current filter set id")
 }
 
 func parseConfig(args []string) (*FilteringReportConfig, error) {
@@ -166,7 +170,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, err := api.NewStack(&stackConf)
+	stack, err := api.NewStack(&stackConf, config.FilterSetReportingEndpoint)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

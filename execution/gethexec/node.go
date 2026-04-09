@@ -130,6 +130,7 @@ type TransactionFilteringConfig struct {
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
 	FilterSetReportingInterval     time.Duration                 `koanf:"filter-set-reporting-interval"`
 }
 
@@ -143,6 +144,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
 	}
+	if err := c.FilteringReportRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
+	}
 	return nil
 }
 
@@ -152,6 +156,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
 	FilterSetReportingInterval:     5 * time.Minute,
 }
 
@@ -161,7 +166,8 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
-	f.Duration(prefix+".filter-set-reporting-interval", DefaultTransactionFilteringConfig.FilterSetReportingInterval, "interval for reporting current filter set id to the transaction-filterer")
+	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultTransactionFilteringConfig.FilterSetReportingInterval, "interval for reporting current filter set id to the filtering-report service")
 }
 
 type Config struct {
@@ -379,6 +385,12 @@ func CreateExecutionNode(
 				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
 			}
 			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		}
+		if config.TransactionFiltering.FilteringReportRPCClient.URL != "" {
+			reportConfigFetcher := func() *rpcclient.ClientConfig {
+				return &configFetcher.Get().TransactionFiltering.FilteringReportRPCClient
+			}
+			execEngine.SetFilteringReportRPCClient(NewFilteringReportRPCClient(reportConfigFetcher))
 		}
 		filteringConfigFetcher := func() *TransactionFilteringConfig {
 			return &configFetcher.Get().TransactionFiltering

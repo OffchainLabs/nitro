@@ -1672,7 +1672,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
 	}
 
-	if s.execEngine.GetTransactionFiltererRPCClient() != nil {
+	if s.execEngine.GetFilteringReportRPCClient() != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
 			reportingInterval := s.filteringConfigFetcher().FilterSetReportingInterval
 			if reportingInterval <= 0 {
@@ -1690,7 +1690,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			if filterSetId == uuid.Nil {
 				return reportingInterval
 			}
-			_, err := s.execEngine.GetTransactionFiltererRPCClient().ReportCurrentFilterSetId(filterSetId.String()).Await(ctx)
+			_, err := s.execEngine.GetFilteringReportRPCClient().ReportCurrentFilterSetId(filterSetId.String()).Await(ctx)
 			if err != nil {
 				log.Warn("failed to report filter set id", "filterSetId", filterSetId, "err", err)
 			}
