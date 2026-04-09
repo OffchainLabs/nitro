@@ -36,17 +36,14 @@ func (m *MockClient) SendMessage(_ context.Context, params *sqs.SendMessageInput
 func (m *MockClient) ReceiveMessage(_ context.Context, params *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	max := int(params.MaxNumberOfMessages)
-	if max < 1 || max > 10 {
-		return nil, fmt.Errorf("invalid parameter: MaxNumberOfMessages must be between 1 and 10, got %d", max)
+	limit := int(params.MaxNumberOfMessages)
+	if limit < 1 || limit > 10 {
+		return nil, fmt.Errorf("invalid parameter: MaxNumberOfMessages must be between 1 and 10, got %d", limit)
 	}
 	if len(m.queue) == 0 {
 		return &sqs.ReceiveMessageOutput{}, nil
 	}
-	n := len(m.queue)
-	if n > max {
-		n = max
-	}
+	n := min(len(m.queue), limit)
 	msgs := make([]sqstypes.Message, n)
 	copy(msgs, m.queue[:n])
 	m.queue = m.queue[n:]
