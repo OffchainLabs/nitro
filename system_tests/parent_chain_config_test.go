@@ -90,9 +90,10 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 
 	// Create a custom L1 chain config: all forks active at genesis except BPO1
 	// far in the future. The pointer is shared with the geth node's config so we
-	// can mutate it later to simulate a fork activation without restarting the node
-	// #nosec G115
-	farFuture := uint64(time.Now().Unix()) + 60
+	// can mutate it later to simulate a fork activation without restarting the node.
+	// Use a very large initial value so that t.Parallel() delays don't cause the
+	// fork to activate before Phase 1 checks run.
+	farFuture := uint64(time.Now().Unix()) + 86400
 	l1ChainConfig := *params.AllDevChainProtocolChanges
 	l1ChainConfig.BPO1Time = &farFuture
 	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
@@ -105,6 +106,12 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithL1ChainConfig(&l1ChainConfig)
 	cleanup := builder.Build(t)
 	defer cleanup()
+
+	// Now that t.Parallel() has resumed and L1 is running, set BPO1 activation
+	// relative to L1's latest block timestamp so it's resilient to scheduling delays.
+	latestHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+	Require(t, err)
+	farFuture = latestHeader.Time + 15
 
 	// Create a header reader connected to the L1
 	l1Client := builder.L1.Client
