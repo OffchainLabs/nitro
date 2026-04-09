@@ -403,6 +403,7 @@ fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     call_type: u8,
     contract: Address,
     caller: Address,
+    storage_addr: Address,
     input: &[u8],
     gas: u64,
     value: U256,
@@ -477,8 +478,11 @@ where
         };
     }
 
-    // Determine target address (for DELEGATECALL, execution happens at caller's address)
-    let target_address = if is_delegate { caller } else { contract };
+    // For DELEGATECALL, target_address (storage context) is the current Stylus
+    // contract's address — passed in `storage_addr`. For CALL/STATICCALL it equals
+    // the target contract.
+    let target_address = storage_addr;
+    let _ = is_delegate;
 
     // Build CallInputs for dispatch
     let call_scheme = match call_type {
@@ -775,7 +779,12 @@ where
                 return result;
             }
             InterpreterAction::NewFrame(FrameInput::Call(sub_call)) => {
-                // Dispatch nested call through our trampoline
+                // Dispatch nested call through our trampoline.
+                // For DELEGATECALL, target_address is the storage context (preserved
+                // from parent), and caller is the msg.sender (preserved). For
+                // CALL/STATICCALL, target_address == bytecode_address.
+                let resolved_input: Bytes = sub_call.input.bytes(context);
+                let bytecode_address = sub_call.bytecode_address;
                 let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
                     match sub_call.scheme {
@@ -783,12 +792,10 @@ where
                         CallScheme::DelegateCall => 1,
                         CallScheme::StaticCall => 2,
                     },
-                    sub_call.target_address,
+                    bytecode_address,
                     sub_call.caller,
-                    match &sub_call.input {
-                        CallInput::Bytes(b) => b,
-                        CallInput::SharedBuffer(_) => &[],
-                    },
+                    sub_call.target_address,
+                    &resolved_input,
                     sub_call.gas_limit,
                     sub_call.value.get(),
                 );

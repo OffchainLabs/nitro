@@ -154,9 +154,13 @@ pub struct SubCreateResult {
 
 /// Type-erased function pointer for executing sub-calls from Stylus.
 ///
-/// Parameters: (ctx_ptr, call_type, contract, caller, input, gas, value)
+/// Parameters: (ctx_ptr, call_type, contract, caller, storage_addr, input, gas, value)
+/// - `caller`: msg.sender for the new frame (preserved for DELEGATECALL)
+/// - `storage_addr`: address whose storage the new frame uses
+///   (= current contract for CALL/STATICCALL, = preserved storage context for DELEGATECALL)
 /// call_type: 0=CALL, 1=DELEGATECALL, 2=STATICCALL
-pub type DoCallFn = fn(*mut (), u8, Address, Address, &[u8], u64, U256) -> SubCallResult;
+pub type DoCallFn =
+    fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
 ///
@@ -502,6 +506,7 @@ impl EvmApi for StylusEvmApi {
             0, // CALL
             contract,
             self.address, // caller = current contract
+            contract,     // storage_addr = target contract (CALL semantics)
             calldata,
             gas,
             value,
@@ -552,7 +557,8 @@ impl EvmApi for StylusEvmApi {
             self.ctx_ptr,
             1, // DELEGATECALL
             contract,
-            self.caller, // original caller
+            self.caller,  // caller = preserved msg.sender
+            self.address, // storage_addr = current contract (DELEGATECALL preserves storage context)
             calldata,
             gas,
             self.call_value, // forward current call value
@@ -602,7 +608,8 @@ impl EvmApi for StylusEvmApi {
             self.ctx_ptr,
             2, // STATICCALL
             contract,
-            self.address,
+            self.address, // caller = current contract
+            contract,     // storage_addr = target contract (STATICCALL semantics)
             calldata,
             gas,
             U256::ZERO,
