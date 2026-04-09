@@ -14,7 +14,7 @@ component_management:
   default_rules:
     statuses:
       - type: project # in this case every component that doens't have a status defined will have a project type one
-    informational: true
+        target: 30
   individual_components:
     - component_id: module_stf
       name: STF
