@@ -16,8 +16,8 @@ alloy-primitives = { workspace = true }
 
 # Wasmer
 wasmer = { workspace = true }
-wasmer-compiler = "4.4"
-wasmer-types = "4.4"
+wasmer-compiler = { path = "../../vendor/wasmer/lib/compiler" }
+wasmer-types = { path = "../../vendor/wasmer/lib/types" }
 wasmparser = { workspace = true }
 
 nitro-prover = { workspace = true }

@@ -132,6 +132,11 @@ impl CompileConfig {
         cranelift.canonicalize_nans(true);
 
         if self.pricing.ink_header_cost > 0 {
+            // Order matches Nitro's `CompileConfig::engine_type`:
+            //   StartMover -> InkMeter -> DynamicMeter -> DepthChecker -> HeapBound
+            cranelift.push_middleware(Arc::new(middleware::StartMover::new(
+                self.debug.debug_info,
+            )));
             cranelift.push_middleware(Arc::new(middleware::InkMeter::new(
                 self.pricing.ink_header_cost,
             )));

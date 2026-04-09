@@ -35,7 +35,7 @@ smallvec = { version = "1.10.0", features = ["serde"] }
 static_assertions = "1.1.0"
 structopt = "0.3.26"
 validation = { path = "../validation" }
-wasmer-types = { path = "../wasmer-types" }
+wasmer-types = { path = "../../wasmer/lib/types" }
 wasmparser = "0.121"
 wat = "1.0.56"
 

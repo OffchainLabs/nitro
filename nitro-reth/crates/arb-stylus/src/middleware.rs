@@ -2,17 +2,98 @@ use std::{collections::HashMap, sync::RwLock};
 
 use wasmer_compiler::{FunctionMiddleware, MiddlewareReaderState, ModuleMiddleware};
 use wasmer_types::{
-    FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex, MiddlewareError,
-    ModuleInfo, Type,
+    ExportIndex, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
+    MiddlewareError, ModuleInfo, Type,
 };
 use wasmparser::{BlockType, Operator};
 
-use crate::meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT};
+use crate::meter::{STYLUS_ENTRY_POINT, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT};
 
 const SCRATCH_GLOBAL: &str = "stylus_scratch_global";
 
 fn mw_err(msg: impl Into<String>) -> MiddlewareError {
     MiddlewareError::new("stylus", msg.into())
+}
+
+// ── StartMover ──────────────────────────────────────────────────────
+//
+// Renames the WASM start function to "stylus_start" so it doesn't run
+// automatically at module instantiation, then drops all exports except the
+// allowed whitelist. Mirrors Nitro's `start::StartMover`. Must run BEFORE
+// the metering middleware so the meter sees the modified module.
+
+/// Name the start function is renamed to (matches Nitro).
+const STYLUS_START: &str = "stylus_start";
+
+#[derive(Debug)]
+pub struct StartMover {
+    debug: bool,
+}
+
+impl StartMover {
+    pub fn new(debug: bool) -> Self {
+        Self { debug }
+    }
+}
+
+impl ModuleMiddleware for StartMover {
+    fn transform_module_info(&self, info: &mut ModuleInfo) -> Result<(), MiddlewareError> {
+        let exports_before = info.exports.len();
+
+        // Move the start function to a named export, mirroring Nitro.
+        let had_start = if let Some(start) = info.start_function.take() {
+            if info.exports.contains_key(STYLUS_START) {
+                return Err(mw_err(format!(
+                    "function {STYLUS_START} already exists"
+                )));
+            }
+            info.exports
+                .insert(STYLUS_START.to_owned(), ExportIndex::Function(start));
+            info.function_names.insert(start, STYLUS_START.to_owned());
+            true
+        } else {
+            false
+        };
+
+        if had_start && !self.debug {
+            return Err(mw_err("start functions not allowed"));
+        }
+
+        if !self.debug {
+            // Drop all exports except the whitelist (entry point, start, memory).
+            info.exports.retain(|name, export| match name.as_str() {
+                STYLUS_ENTRY_POINT => matches!(export, ExportIndex::Function(_)),
+                STYLUS_START => matches!(export, ExportIndex::Function(_)),
+                "memory" => matches!(export, ExportIndex::Memory(_)),
+                _ => false,
+            });
+            info.function_names.clear();
+        }
+        tracing::warn!(target: "stylus",
+            had_start, exports_before, exports_after = info.exports.len(),
+            "STARTMOVER applied");
+        Ok(())
+    }
+
+    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
+        Box::new(NoopFunctionMiddleware)
+    }
+}
+
+#[derive(Debug)]
+struct NoopFunctionMiddleware;
+
+impl<'a> FunctionMiddleware<'a> for NoopFunctionMiddleware {
+    fn feed(
+        &mut self,
+        op: Operator<'a>,
+        state: &mut MiddlewareReaderState<'a>,
+    ) -> Result<(), MiddlewareError> {
+        // SAFETY: Operator variants we encounter contain no borrowed data we keep.
+        let op_static = unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
+        state.push_operator(op_static);
+        Ok(())
+    }
 }
 
 // ── InkMeter ────────────────────────────────────────────────────────
@@ -69,7 +150,7 @@ impl ModuleMiddleware for InkMeter {
         Ok(())
     }
 
-    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let [ink, status] = self.globals();
         let sigs = self.sigs.read().expect("ink sigs lock poisoned").clone();
         Box::new(InkMeterFn {
@@ -109,8 +190,8 @@ fn ends_basic_block(op: &Operator) -> bool {
     )
 }
 
-impl FunctionMiddleware for InkMeterFn {
-    fn feed<'a>(
+impl<'a> FunctionMiddleware<'a> for InkMeterFn {
+    fn feed(
         &mut self,
         op: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
@@ -211,7 +292,7 @@ impl ModuleMiddleware for DynamicMeter {
         Ok(())
     }
 
-    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let globals = self
             .globals
             .read()
@@ -232,8 +313,8 @@ struct DynamicMeterFn {
     globals: [GlobalIndex; 3],
 }
 
-impl FunctionMiddleware for DynamicMeterFn {
-    fn feed<'a>(
+impl<'a> FunctionMiddleware<'a> for DynamicMeterFn {
+    fn feed(
         &mut self,
         op: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
@@ -317,7 +398,7 @@ impl ModuleMiddleware for DepthChecker {
         Ok(())
     }
 
-    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let g = self
             .global
             .read()
@@ -338,8 +419,8 @@ struct DepthCheckerFn {
     emitted_entry: bool,
 }
 
-impl FunctionMiddleware for DepthCheckerFn {
-    fn feed<'a>(
+impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
+    fn feed(
         &mut self,
         op: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
@@ -421,7 +502,7 @@ impl ModuleMiddleware for HeapBound {
         Ok(())
     }
 
-    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let (scratch, pay_func) = self
             .globals
             .read()
@@ -437,8 +518,8 @@ struct HeapBoundFn {
     pay_func: Option<FunctionIndex>,
 }
 
-impl FunctionMiddleware for HeapBoundFn {
-    fn feed<'a>(
+impl<'a> FunctionMiddleware<'a> for HeapBoundFn {
+    fn feed(
         &mut self,
         op: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
@@ -523,3 +604,4 @@ fn opcode_ink_cost(op: &Operator, sigs: &HashMap<u32, usize>) -> u64 {
         _ => u64::MAX,
     }
 }
+

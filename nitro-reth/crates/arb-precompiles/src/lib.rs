@@ -98,6 +98,40 @@ use std::cell::RefCell;
 
 thread_local! {
     static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = RefCell::new(Vec::new());
+    /// Per-block cache of recently invoked Stylus program codehashes (LRU).
+    /// Mirrors Nitro's `statedb.GetRecentWasms()` for ArbOS v60+.
+    /// Capacity is set per-block from `params.BlockCacheSize`.
+    static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = RefCell::new((Vec::new(), 0));
+}
+
+/// Reset the recent WASMs cache for a new block, with the given capacity.
+pub fn reset_recent_wasms(capacity: usize) {
+    RECENT_WASMS.with(|c| {
+        let mut cache = c.borrow_mut();
+        cache.0.clear();
+        cache.1 = capacity;
+    });
+}
+
+/// Insert a Stylus program codehash into the recent WASMs cache.
+/// Returns `true` if the codehash was already present (cache hit).
+/// Mirrors Nitro's `RecentWasms.Insert(codeHash, blockCacheSize)`.
+pub fn insert_recent_wasm(hash: alloy_primitives::B256) -> bool {
+    RECENT_WASMS.with(|c| {
+        let mut cache = c.borrow_mut();
+        let was_present = if let Some(pos) = cache.0.iter().position(|h| *h == hash) {
+            cache.0.remove(pos);
+            true
+        } else {
+            false
+        };
+        cache.0.push(hash);
+        let max = cache.1;
+        if max > 0 && cache.0.len() > max {
+            cache.0.remove(0);
+        }
+        was_present
+    })
 }
 
 use std::sync::Mutex as StdMutex;

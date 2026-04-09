@@ -160,7 +160,7 @@ sha2 = "0.10"
 jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"
 dyn-clone = "1"
-wasmer = { version = "4.4", default-features = false, features = ["sys", "cranelift"] }
+wasmer = { path = "vendor/wasmer/lib/api", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
 
 # Nitro Stylus crates (vendored from OffchainLabs/nitro @ d7fe12c77)

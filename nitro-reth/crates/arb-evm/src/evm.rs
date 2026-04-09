@@ -929,7 +929,22 @@ where
 
     // ── Compute and deduct upfront gas costs ────────────────────────
     let (pages_open, _pages_ever) = get_stylus_pages();
-    let upfront_cost = stylus_call_gas_cost(&params, &program, pages_open);
+    // ArbOS v60+: recent WASMs cache hit makes the program count as cached
+    // for the purposes of gas pricing (mirrors Nitro's GetRecentWasms.Insert).
+    let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+        arb_precompiles::insert_recent_wasm(code_hash)
+    } else {
+        false
+    };
+    let effective_cached = program.cached || recent_wasms_hit;
+    let effective_program = if effective_cached != program.cached {
+        let mut p = program.clone();
+        p.cached = effective_cached;
+        p
+    } else {
+        program.clone()
+    };
+    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open);
     let total_gas = inputs.gas_limit;
 
     tracing::warn!(target: "stylus",
@@ -962,7 +977,7 @@ where
     // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
     evm_data.reentrant = reentrant as u32;
-    evm_data.cached = program.cached;
+    evm_data.cached = effective_program.cached;
     evm_data.module_hash = code_hash;
 
     // Track pages — add this program's footprint.
