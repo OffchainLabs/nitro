@@ -26,10 +26,8 @@ const testQueueURL = "https://sqs.test/queue"
 
 func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *Forwarder {
 	config := &Config{
-		Workers: WorkersConfig{
-			Count:        1,
-			PollInterval: time.Second,
-		},
+		Workers:  1,
+		PollInterval: time.Second,
 		ExternalEndpoint: genericconf.HTTPClientConfig{
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
@@ -152,7 +150,7 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 	if len(deleted) != 0 {
 		t.Fatalf("expected 0 deletes on empty queue, got %d", len(deleted))
 	}
-	if interval != forwarder.config.Workers.PollInterval {
-		t.Fatalf("expected poll interval %v on empty queue, got %v", forwarder.config.Workers.PollInterval, interval)
+	if interval != forwarder.config.PollInterval {
+		t.Fatalf("expected poll interval %v on empty queue, got %v", forwarder.config.PollInterval, interval)
 	}
 }

@@ -20,35 +20,23 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type WorkersConfig struct {
-	Count        int           `koanf:"count"`
-	PollInterval time.Duration `koanf:"poll-interval"`
-}
-
-var DefaultWorkersConfig = WorkersConfig{
-	Count:        1,
-	PollInterval: 5 * time.Second,
-}
-
-func WorkersConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Int(prefix+".count", DefaultWorkersConfig.Count, "number of workers")
-	f.Duration(prefix+".poll-interval", DefaultWorkersConfig.PollInterval, "interval between SQS polls when queue is empty")
-}
-
 type Config struct {
 	Enable           bool                         `koanf:"enable"`
-	Workers          WorkersConfig                `koanf:"workers"`
+	Workers      int                          `koanf:"worker-count"`
+	PollInterval     time.Duration                `koanf:"poll-interval"`
 	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
 var DefaultConfig = Config{
-	Workers:          DefaultWorkersConfig,
+	Workers:      1,
+	PollInterval:     5 * time.Second,
 	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable SQS consumer workers")
-	WorkersConfigAddOptions(prefix+".workers", f)
+	f.Int(prefix+".worker-count", DefaultConfig.Workers, "number of workers")
+	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 }
 
@@ -73,7 +61,7 @@ func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwar
 
 func (r *Forwarder) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
-	for i := 0; i < r.config.Workers.Count; i++ {
+	for i := 0; i < r.config.Workers; i++ {
 		r.LaunchThread(func(ctx context.Context) {
 			r.CallIteratively(r.pollAndForward)
 		})
@@ -90,10 +78,10 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	})
 	if err != nil {
 		log.Error("Failed to receive SQS messages", "err", err)
-		return r.config.Workers.PollInterval
+		return r.config.PollInterval
 	}
 	if len(out.Messages) == 0 {
-		return r.config.Workers.PollInterval
+		return r.config.PollInterval
 	}
 	for _, msg := range out.Messages {
 		if msg.Body == nil {
