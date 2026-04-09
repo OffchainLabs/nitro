@@ -50,3 +50,10 @@ func (c *FilteringReportRPCClient) ReportCurrentFilterSetId(filterSetId string) 
 		return struct{}{}, err
 	})
 }
+
+func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []FilteredTxReport) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
+		return struct{}{}, err
+	})
+}

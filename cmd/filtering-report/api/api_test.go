@@ -10,7 +10,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
 func newTestStack(t *testing.T, filterSetReportingEndpoint string) *node.Node {
@@ -92,5 +95,35 @@ func TestReportCurrentFilterSetId(t *testing.T) {
 	got := <-received
 	if got != expectedId {
 		t.Fatalf("expected filterSetId %q, got %q", expectedId, got)
+	}
+}
+
+func TestReportFilteredTransactions(t *testing.T) {
+	stack := newTestStack(t, "")
+	client := stack.Attach()
+	defer client.Close()
+
+	reports := []gethexec.FilteredTxReport{{
+		Id:          "test-id",
+		TxHash:      common.HexToHash("0x1234"),
+		BlockNumber: 42,
+		ChainId:     "412346",
+		FilteredAddresses: []gethexec.FilteredAddressRecord{{
+			Address:      common.HexToAddress("0xdead"),
+			FilterReason: gethexec.FilterReason{Reason: gethexec.ReasonFrom},
+		}},
+	}}
+	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReportFilteredTransactionsEmpty(t *testing.T) {
+	stack := newTestStack(t, "")
+	client := stack.Attach()
+	defer client.Close()
+
+	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", []gethexec.FilteredTxReport{}); err != nil {
+		t.Fatal(err)
 	}
 }
