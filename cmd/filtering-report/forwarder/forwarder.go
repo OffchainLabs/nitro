@@ -70,7 +70,7 @@ func (r *Forwarder) Start(ctx context.Context) {
 
 func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	waitTime := int32(5)
-	maxMessages := int32(10)
+	maxMessages := int32(1)
 	out, err := r.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 		QueueUrl:            &r.sqsQueueURL,
 		WaitTimeSeconds:     waitTime,
@@ -83,21 +83,20 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	if len(out.Messages) == 0 {
 		return r.config.PollInterval
 	}
-	for _, msg := range out.Messages {
-		if msg.Body == nil {
-			continue
-		}
-		if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-			log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
-			continue
-		}
-		_, err := r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-			QueueUrl:      &r.sqsQueueURL,
-			ReceiptHandle: msg.ReceiptHandle,
-		})
-		if err != nil {
-			log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)
-		}
+	msg := out.Messages[0]
+	if msg.Body == nil {
+		return 0
+	}
+	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
+		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
+		return 0
+	}
+	_, err = r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+		QueueUrl:      &r.sqsQueueURL,
+		ReceiptHandle: msg.ReceiptHandle,
+	})
+	if err != nil {
+		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)
 	}
 	return 0
 }

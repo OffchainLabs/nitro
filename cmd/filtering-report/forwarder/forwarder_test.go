@@ -71,6 +71,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 
 	forwarder := newTestForwarder(sqsMockClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(context.Background())
+	forwarder.pollAndForward(context.Background())
 
 	mu.Lock()
 	defer mu.Unlock()
