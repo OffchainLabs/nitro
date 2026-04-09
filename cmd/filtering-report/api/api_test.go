@@ -7,7 +7,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 )
 
 func newTestStack(t *testing.T) *node.Node {
@@ -52,5 +56,34 @@ func TestReadiness(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestReportFilteredTransactions(t *testing.T) {
+	stack := newTestStack(t)
+	client := stack.Attach()
+	defer client.Close()
+
+	reports := []addressfilter.FilteredTxReport{{
+		ID:          "test-id",
+		TxHash:      common.HexToHash("0x1234"),
+		BlockNumber: 42,
+		FilteredAddresses: []filter.FilteredAddressRecord{{
+			Address:      common.HexToAddress("0xdead"),
+			FilterReason: filter.FilterReason{Reason: filter.ReasonFrom},
+		}},
+	}}
+	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReportFilteredTransactionsEmpty(t *testing.T) {
+	stack := newTestStack(t)
+	client := stack.Attach()
+	defer client.Close()
+
+	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", []addressfilter.FilteredTxReport{}); err != nil {
+		t.Fatal(err)
 	}
 }
