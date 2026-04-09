@@ -84,7 +84,7 @@ func (f *logsAndHeadersFetcher) fetch(ctx context.Context, preState *mel.State) 
 			fetchLogsErr = f.fetchDelayedMessageLogs(ctx, parentChainBlockNumber, toBlock, preState.DelayedMessagePostingTargetAddress)
 		}
 		if fetchLogsErr == nil && f.rollupAddr != (common.Address{}) {
-			fetchLogsErr = f.fetchRollupLogs(ctx, parentChainBlockNumber, toBlock)
+			fetchLogsErr = f.fetchMELConfigUpdateLogs(ctx, parentChainBlockNumber, toBlock)
 		}
 		wg.Done()
 	}()
@@ -170,7 +170,7 @@ func (f *logsAndHeadersFetcher) fetchDelayedMessageLogs(ctx context.Context, fro
 	return conditionalFetch(nil, [][]common.Hash{{melextraction.InboxMessageDeliveredID, melextraction.InboxMessageFromOriginID}})
 }
 
-func (f *logsAndHeadersFetcher) fetchRollupLogs(ctx context.Context, from, to uint64) error {
+func (f *logsAndHeadersFetcher) fetchMELConfigUpdateLogs(ctx context.Context, from, to uint64) error {
 	query := ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(from),
 		ToBlock:   new(big.Int).SetUint64(to),

@@ -132,8 +132,8 @@ func extractMessagesImpl(
 		return nil, nil, nil, nil, fmt.Errorf("failed to lookup MEL config event: %w", err)
 	}
 	if melConfig != nil {
-		if melConfig.VersionActivationBlock <= state.VersionActivationBlock {
-			return nil, nil, nil, nil, fmt.Errorf("current MEL state VersionActivationBlock: %d cannot be greater or equal to the next scheduled MEL config's VersionActivationBlock: %d", state.VersionActivationBlock, melConfig.VersionActivationBlock)
+		if state.VersionActivationBlock >= melConfig.VersionActivationBlock {
+			return nil, nil, nil, nil, fmt.Errorf("current MEL state VersionActivationBlock: %d cannot be greater than or equal to the next scheduled MEL config's VersionActivationBlock: %d", state.VersionActivationBlock, melConfig.VersionActivationBlock)
 		}
 		state.VersionActivationBlock = melConfig.VersionActivationBlock
 		state.PendingInbox = melConfig.Inbox
