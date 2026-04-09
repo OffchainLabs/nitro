@@ -251,6 +251,8 @@ pub struct StylusEvmApi {
     call_value: U256,
     /// Per-call storage cache matching Nitro's Rust-side cache.
     storage_cache: StorageCache,
+    /// Accumulated SSTORE refund (EIP-3529) from flush operations.
+    sstore_refund: i64,
     /// Return data from the last sub-call.
     return_data: Vec<u8>,
     /// Whether the current execution context is read-only (STATICCALL).
@@ -304,6 +306,7 @@ impl StylusEvmApi {
             caller,
             call_value,
             storage_cache: StorageCache::new(),
+            sstore_refund: 0,
             return_data: Vec::new(),
             read_only,
             free_pages,
@@ -317,6 +320,11 @@ impl StylusEvmApi {
     /// Get a mutable reference to the type-erased journal.
     fn journal(&mut self) -> &mut dyn JournalAccess {
         unsafe { &mut *self.journal }
+    }
+
+    /// Return the accumulated SSTORE refund from flush operations.
+    pub fn sstore_refund(&self) -> i64 {
+        self.sstore_refund
     }
 }
 
@@ -420,6 +428,9 @@ impl EvmApi for StylusEvmApi {
             }
             remaining -= sstore_cost;
             total_gas += sstore_cost;
+
+            // Track SSTORE refunds (EIP-3529).
+            self.sstore_refund += sstore_refund(&info);
         }
 
         Ok((Gas(total_gas), UserOutcomeKind::Success))
@@ -878,6 +889,48 @@ fn wasm_call_cost(
     }
 
     (total, false)
+}
+
+/// SSTORE_CLEARS_SCHEDULE: refund for clearing a storage slot (EIP-2929 + EIP-3529).
+const SSTORE_CLEARS_SCHEDULE: i64 = 4_800; // SSTORE_RESET_GAS(2900) + ACCESS_LIST_STORAGE_KEY(1900)
+
+/// Compute SSTORE refund following EIP-2929 + EIP-3529 (post-London).
+fn sstore_refund(info: &SStoreInfo) -> i64 {
+    if info.original_value == info.new_value {
+        return 0;
+    }
+    let mut refund: i64 = 0;
+    if !info.original_value.is_zero() {
+        if info.new_value.is_zero() {
+            // Clear: original != 0, new == 0
+            refund += SSTORE_CLEARS_SCHEDULE;
+        }
+    }
+    if info.original_value == info.present_value {
+        // No additional refund for first write
+    } else {
+        // Restoring original value cases
+        if !info.original_value.is_zero() && info.new_value.is_zero() {
+            // Already counted above
+        } else if info.original_value.is_zero() && !info.new_value.is_zero() {
+            // Un-clear: original == 0, present != 0, new != 0 (but original == 0 && new != 0)
+            // Negative refund (penalty): -SSTORE_CLEARS_SCHEDULE
+        }
+        if info.original_value == info.new_value {
+            // Restoring original value
+            if info.original_value.is_zero() {
+                // Was set, now cleared back to 0: refund SSTORE_SET_GAS - WARM_STORAGE_READ
+                refund += 20_000 - WARM_STORAGE_READ_COST as i64; // 19,900
+            } else {
+                // Was modified, now restored: refund SSTORE_RESET_GAS - WARM_STORAGE_READ
+                refund += 2_900 - WARM_STORAGE_READ_COST as i64; // 2,800
+                if info.is_cold {
+                    refund += COLD_SLOAD_COST as i64; // 2,100
+                }
+            }
+        }
+    }
+    refund
 }
 
 /// Compute SSTORE gas cost following EIP-2929 + EIP-3529 (post-London).

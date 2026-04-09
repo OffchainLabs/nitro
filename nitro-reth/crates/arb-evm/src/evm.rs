@@ -1094,7 +1094,12 @@ where
         output_len = output.len(), outcome = ?outcome,
         "STYLUS_CALL result");
 
-    let gas_result = EvmGas::new(gas_left);
+    let mut gas_result = EvmGas::new(gas_left);
+    // Propagate SSTORE refunds from Stylus flush to the EVM gas accounting.
+    let sstore_refund = instance.env().evm_api.sstore_refund();
+    if sstore_refund != 0 {
+        gas_result.record_refund(sstore_refund);
+    }
 
     // Map UserOutcome to InterpreterResult.
     match outcome {
