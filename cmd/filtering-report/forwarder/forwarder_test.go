@@ -63,8 +63,30 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	}
 
 	reports := []addressfilter.FilteredTxReport{
-		{TxHash: common.HexToHash("0x01")},
-		{TxHash: common.HexToHash("0x02")},
+		{
+			ID:                "",
+			TxHash:            common.HexToHash("0x01"),
+			TxRLP:             nil,
+			FilteredAddresses: nil,
+			BlockNumber:       0,
+			ParentBlockHash:   common.Hash{},
+			PositionInBlock:   0,
+			FilteredAt:        time.Time{},
+			IsDelayed:         false,
+			DelayedReportData: nil,
+		},
+		{
+			ID:                "",
+			TxHash:            common.HexToHash("0x02"),
+			TxRLP:             nil,
+			FilteredAddresses: nil,
+			BlockNumber:       0,
+			ParentBlockHash:   common.Hash{},
+			PositionInBlock:   0,
+			FilteredAt:        time.Time{},
+			IsDelayed:         false,
+			DelayedReportData: nil,
+		},
 	}
 	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
 		t.Fatal(err)
@@ -117,7 +139,18 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}
 
 	reports := []addressfilter.FilteredTxReport{
-		{TxHash: common.HexToHash("0x01")},
+		{
+			ID:                "",
+			TxHash:            common.HexToHash("0x01"),
+			TxRLP:             nil,
+			FilteredAddresses: nil,
+			BlockNumber:       0,
+			ParentBlockHash:   common.Hash{},
+			PositionInBlock:   0,
+			FilteredAt:        time.Time{},
+			IsDelayed:         false,
+			DelayedReportData: nil,
+		},
 	}
 	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
 		t.Fatal(err)
