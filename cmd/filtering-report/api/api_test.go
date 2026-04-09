@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func newTestStack(t *testing.T) *node.Node {
@@ -23,7 +24,7 @@ func newTestStack(t *testing.T) *node.Node {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, _, err := NewStack(&stackConfig, nil)
+	stack, _, err := NewStack(&stackConfig, sqsclient.NewQueueClient(&sqsclient.MockClient{}, "https://sqs.test/queue"))
 	if err != nil {
 		t.Fatal(err)
 	}
