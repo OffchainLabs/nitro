@@ -71,6 +71,8 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 	}
 	targets := targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
+	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 
 	latestHeader := l2Blockchain.CurrentBlock()
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
