@@ -281,6 +281,30 @@ func extractMessagesImpl(
 		return nil, nil, nil, nil, fmt.Errorf("failed to lookup MEL config event: %w", err)
 	}
 	if melConfig != nil {
+		// MEL consensus getting activated for the first time
+		if state.Version == 0 {
+			var unreadDelayedMsgs []*mel.DelayedInboxMessage
+			for i := state.DelayedMessagesRead; i < state.DelayedMessagesSeen; i++ {
+				delayedMsg, err := delayedMsgDatabase.ReadDelayedMessage(state, i)
+				if err != nil {
+					return nil, nil, nil, nil, fmt.Errorf("failed creating delayed msg accumulators during MEL consensus activation: %w", err)
+				}
+				unreadDelayedMsgs = append(unreadDelayedMsgs, delayedMsg)
+			}
+			// Both the accumulators must be now empty
+			if state.DelayedMessageInboxAcc != (common.Hash{}) || state.DelayedMessageOutboxAcc != (common.Hash{}) {
+				return nil, nil, nil, nil, fmt.Errorf(
+					"one of DelayedMessageInboxAcc: %v and DelayedMessageOutboxAcc: %v is non zero after reading all delayed msgs for MEL activation",
+					state.DelayedMessageInboxAcc,
+					state.DelayedMessageOutboxAcc,
+				)
+			}
+			for _, delayedMsg := range unreadDelayedMsgs {
+				if err := state.AccumulateDelayedMessage(delayedMsg); err != nil {
+					return nil, nil, nil, nil, fmt.Errorf("failed creating delayed msg accumulators during MEL consensus activation: %w", err)
+				}
+			}
+		}
 		state.Version += 1
 		state.DelayedMessagePostingTargetAddress = melConfig.Inbox
 		state.BatchPostingTargetAddress = melConfig.SequencerInbox
