@@ -31,26 +31,26 @@ func QueueConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	SQSClientConfigAddOptions(prefix+".sqs-client", f)
 }
 
-type Queue interface {
+type QueueClient interface {
 	Send(ctx context.Context, body string) error
 	Receive(ctx context.Context, waitTimeSecs, maxMessages int32) ([]sqstypes.Message, error)
 	Delete(ctx context.Context, receiptHandle string) error
 }
 
-type QueueClient struct {
+type queueClient struct {
 	sqsClient *sqs.Client
 	queueURL  string
 }
 
-func NewQueueClient(ctx context.Context, config *QueueConfig) (*QueueClient, error) {
+func NewQueueClient(ctx context.Context, config *QueueConfig) (QueueClient, error) {
 	sqsClient, err := NewSQSClient(ctx, &config.SQSClient)
 	if err != nil {
 		return nil, err
 	}
-	return &QueueClient{sqsClient: sqsClient, queueURL: config.QueueURL}, nil
+	return &queueClient{sqsClient: sqsClient, queueURL: config.QueueURL}, nil
 }
 
-func (q *QueueClient) Send(ctx context.Context, body string) error {
+func (q *queueClient) Send(ctx context.Context, body string) error {
 	_, err := q.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
 		QueueUrl:    &q.queueURL,
 		MessageBody: &body,
@@ -58,7 +58,7 @@ func (q *QueueClient) Send(ctx context.Context, body string) error {
 	return err
 }
 
-func (q *QueueClient) Receive(ctx context.Context, waitTimeSecs, maxMessages int32) ([]sqstypes.Message, error) {
+func (q *queueClient) Receive(ctx context.Context, waitTimeSecs, maxMessages int32) ([]sqstypes.Message, error) {
 	out, err := q.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 		QueueUrl:            &q.queueURL,
 		WaitTimeSeconds:     waitTimeSecs,
@@ -70,7 +70,7 @@ func (q *QueueClient) Receive(ctx context.Context, waitTimeSecs, maxMessages int
 	return out.Messages, nil
 }
 
-func (q *QueueClient) Delete(ctx context.Context, receiptHandle string) error {
+func (q *queueClient) Delete(ctx context.Context, receiptHandle string) error {
 	_, err := q.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 		QueueUrl:      &q.queueURL,
 		ReceiptHandle: &receiptHandle,

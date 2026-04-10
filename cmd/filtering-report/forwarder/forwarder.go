@@ -48,11 +48,11 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type Forwarder struct {
 	stopwaiter.StopWaiter
 	config      *Config
-	queueClient sqsclient.Queue
+	queueClient sqsclient.QueueClient
 	httpClient  *http.Client
 }
 
-func New(config *Config, queueClient sqsclient.Queue) *Forwarder {
+func New(config *Config, queueClient sqsclient.QueueClient) *Forwarder {
 	return &Forwarder{
 		config:      config,
 		queueClient: queueClient,

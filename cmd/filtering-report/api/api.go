@@ -15,10 +15,10 @@ import (
 )
 
 type FilteringReportAPI struct {
-	queueClient sqsclient.Queue
+	queueClient sqsclient.QueueClient
 }
 
-func NewFilteringReportAPI(queueClient sqsclient.Queue) *FilteringReportAPI {
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient) *FilteringReportAPI {
 	return &FilteringReportAPI{
 		queueClient: queueClient,
 	}
@@ -47,7 +47,7 @@ var DefaultStackConfig = node.Config{
 
 func NewStack(
 	stackConfig *node.Config,
-	queueClient sqsclient.Queue,
+	queueClient sqsclient.QueueClient,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
