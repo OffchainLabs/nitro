@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -42,10 +43,18 @@ import (
 )
 
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
+	testChallengeProtocolBOLD_Bisections(t, rawdb.HashScheme)
+}
+
+func TestChallengeProtocolBOLD_BisectionsPathDB(t *testing.T) {
+	testChallengeProtocolBOLD_Bisections(t, rawdb.PathScheme)
+}
+
+func testChallengeProtocolBOLD_Bisections(t *testing.T, stateScheme string) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5, stateScheme)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -159,11 +168,19 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 }
 
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
+	testChallengeProtocolBOLD_StateProvider(t, rawdb.HashScheme)
+}
+
+func TestChallengeProtocolBOLD_StateProviderPathDB(t *testing.T) {
+	testChallengeProtocolBOLD_StateProvider(t, rawdb.PathScheme)
+}
+
+func testChallengeProtocolBOLD_StateProvider(t *testing.T, stateScheme string) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	maxNumBlocks := uint64(1 << 14)
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks, stateScheme)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -345,7 +362,11 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64, stateSchemes ...string) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
+	stateScheme := rawdb.HashScheme
+	if len(stateSchemes) > 0 && stateSchemes[0] != "" {
+		stateScheme = stateSchemes[0]
+	}
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -374,6 +395,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		l2info,
 		false, // useExternalSigner
 		false, // enableCustomDA
+		stateScheme,
 	)
 
 	valnode.TestValidationConfig.UseJit = false

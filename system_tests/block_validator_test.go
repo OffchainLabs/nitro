@@ -49,6 +49,7 @@ type Options struct {
 	useRedisStreams bool
 	wasmRootDir     string
 	arbosVersion    uint64 // sets InitialArbOSVersion, overwrites any other operation setting it like upgradeArbOs worload
+	stateScheme     string // if set, forces a specific state scheme (e.g. rawdb.PathScheme)
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
@@ -70,8 +71,10 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
-	// For now PathDB is not supported when using block validation
-	builder.RequireScheme(t, rawdb.HashScheme)
+	// PathDB is now supported via eager preimage recording (auto-enabled for PathDB)
+	if opts.stateScheme != "" {
+		builder.RequireScheme(t, opts.stateScheme)
+	}
 
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
@@ -411,6 +414,84 @@ func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    false,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// PathDB variants — test block validation with PathDB state scheme using eager preimage recording
+func TestBlockValidatorSimpleOnchainPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:  "onchain",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+		stateScheme:   rawdb.PathScheme,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleOnchainUpgradeArbOsPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:  "onchain",
+		workloadLoops: 1,
+		workload:      upgradeArbOs,
+		arbitrator:    true,
+		stateScheme:   rawdb.PathScheme,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleLocalAnyTrustPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:  "files",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+		stateScheme:   rawdb.PathScheme,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleJITOnchainPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:  "files",
+		workloadLoops: 8,
+		workload:      smallContract,
+		stateScheme:   rawdb.PathScheme,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleOnchainWithRedisStreamsPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:    "onchain",
+		workloadLoops:   1,
+		workload:        ethSend,
+		arbitrator:      true,
+		useRedisStreams: true,
+		stateScheme:     rawdb.PathScheme,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorReferenceDAWithProverPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:  "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+		stateScheme:   rawdb.PathScheme,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorReferenceDAWithJITPathDB(t *testing.T) {
+	opts := Options{
+		daModeString:  "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
+		stateScheme:   rawdb.PathScheme,
 	}
 	testBlockValidatorSimple(t, opts)
 }

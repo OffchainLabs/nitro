@@ -266,6 +266,10 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethex
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
+	if config.Caching.StateHistory == gethexec.UninitializedStateHistory {
+		config.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
+	}
+
 	Require(t, config.Validate())
 
 	return &config
@@ -280,6 +284,10 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
 	config.TransactionFiltering.EnableETHCallFilter = false
+
+	if config.Caching.StateHistory == gethexec.UninitializedStateHistory {
+		config.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
+	}
 
 	Require(t, config.Validate())
 
@@ -721,10 +729,8 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
-	if b.nodeConfig.ValidatorRequired() {
-		// validation currently requires hash
-		b.RequireScheme(t, rawdb.HashScheme)
-	}
+	// PathDB validation is now supported via eager preimage recording.
+	// No longer need to force HashScheme when validators are required.
 	if b.defaultStateScheme == "" {
 		b.defaultStateScheme = env.GetTestStateScheme()
 	}

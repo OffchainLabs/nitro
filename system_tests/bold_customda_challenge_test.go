@@ -64,25 +64,42 @@ import (
 // Test with evil data but good certificate
 // Evil validator will fail at OSP with "Invalid preimage hash"
 func TestChallengeProtocolBOLDCustomDA_EvilDataGoodCert(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, EvilDataGoodCert)
+	testChallengeProtocolBOLDCustomDA(t, EvilDataGoodCert, rawdb.HashScheme)
 }
 
 // Test with evil data and evil certificate
 // Evil validator will fail at OSP with "WRONG_CERTIFICATE_HASH"
 func TestChallengeProtocolBOLDCustomDA_EvilDataEvilCert(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, EvilDataEvilCert)
+	testChallengeProtocolBOLDCustomDA(t, EvilDataEvilCert, rawdb.HashScheme)
 }
 
 // Test with certificate signed by untrusted key
 // Evil validator will lie about certificate validity and will fail at OSP with "CLAIMED_VALID_BUT_INVALID"
 func TestChallengeProtocolBOLDCustomDA_UntrustedSignerCert(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, UntrustedSignerCert)
+	testChallengeProtocolBOLDCustomDA(t, UntrustedSignerCert, rawdb.HashScheme)
 }
 
 // Test with valid certificate but validator claims it's invalid
 // Evil validator will fail at OSP with "CLAIMED_INVALID_BUT_VALID"
 func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalid(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, ValidCertClaimedInvalid)
+	testChallengeProtocolBOLDCustomDA(t, ValidCertClaimedInvalid, rawdb.HashScheme)
+}
+
+// PathDB variants
+func TestChallengeProtocolBOLDCustomDA_EvilDataGoodCertPathDB(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, EvilDataGoodCert, rawdb.PathScheme)
+}
+
+func TestChallengeProtocolBOLDCustomDA_EvilDataEvilCertPathDB(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, EvilDataEvilCert, rawdb.PathScheme)
+}
+
+func TestChallengeProtocolBOLDCustomDA_UntrustedSignerCertPathDB(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, UntrustedSignerCert, rawdb.PathScheme)
+}
+
+func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalidPathDB(t *testing.T) {
+	testChallengeProtocolBOLDCustomDA(t, ValidCertClaimedInvalid, rawdb.PathScheme)
 }
 
 // postBatchWithDA posts a batch through DA and returns the certificate
@@ -170,7 +187,12 @@ func createNodeBWithSharedContracts(
 	l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain,
 	parentChain *parent.ParentChain,
+	stateSchemes ...string,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
+	stateScheme := rawdb.HashScheme
+	if len(stateSchemes) > 0 && stateSchemes[0] != "" {
+		stateScheme = stateSchemes[0]
+	}
 	fatalErrChan := make(chan error, 10)
 
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
@@ -208,7 +230,7 @@ func createNodeBWithSharedContracts(
 	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
 	Require(t, err)
 
-	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	execConfig := ExecConfigDefaultNonSequencerTest(t, stateScheme)
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
@@ -230,7 +252,7 @@ func createNodeBWithSharedContracts(
 	return l2client, l2node, execNode, l2stack
 }
 
-func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, stateScheme string, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -325,7 +347,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	// Create L2 node A
 	l2info, l2nodeA, l2execNodeA, _, l2stackA, assertionChain, _ := createL2NodeWithRollupAddresses(
 		t, ctx, true, nodeConfigA, l2chainConfig, l2info,
-		l1info, l1client, addresses, false, asserterOpts, signerCfg,
+		l1info, l1client, addresses, false, asserterOpts, signerCfg, stateScheme,
 	)
 	defer l2nodeA.StopAndWait()
 
@@ -357,6 +379,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		l1client,
 		assertionChain,
 		parentChain,
+		stateScheme,
 	)
 	defer l2nodeB.StopAndWait()
 	_ = l2clientB // suppress unused variable warning

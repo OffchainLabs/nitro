@@ -151,11 +151,17 @@ func createCompleteTestNodeOnL1(
 	l2infoIn info,
 	useExternalSigner bool,
 	enableCustomDA bool,
+	stateSchemes ...string,
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 	assertionChain *sol.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts, l2blockchain *core.BlockChain, addresses *chaininfo.RollupAddresses,
 ) {
+	stateScheme := rawdb.HashScheme
+	if len(stateSchemes) > 0 && stateSchemes[0] != "" {
+		stateScheme = stateSchemes[0]
+	}
+
 	// First set up L1 and deploy contracts
 	var signerCfg *dataposter.ExternalSignerCfg
 	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
@@ -167,6 +173,7 @@ func createCompleteTestNodeOnL1(
 		t, ctx, isSequencer, nodeConfig, chainConfig, l2infoIn,
 		l1info, l1client, addresses,
 		useExternalSigner, asserterOpts, signerCfg,
+		stateScheme,
 	)
 
 	return
@@ -279,16 +286,22 @@ func createL2NodeWithRollupAddresses(
 	useExternalSigner bool,
 	asserterOpts *bind.TransactOpts,
 	signerCfg *dataposter.ExternalSignerCfg,
+	stateSchemes ...string,
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *sol.AssertionChain, l2blockchain *core.BlockChain,
 ) {
+	stateScheme := rawdb.HashScheme
+	if len(stateSchemes) > 0 && stateSchemes[0] != "" {
+		stateScheme = stateSchemes[0]
+	}
+
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
 	fatalErrChan := make(chan error, 10)
 
-	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	execConfig := ExecConfigDefaultNonSequencerTest(t, stateScheme)
 
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")

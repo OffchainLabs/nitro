@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -214,6 +215,8 @@ type ExecutionEngine struct {
 	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
+	eagerRecorder *EagerBlockRecorder
+
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
@@ -362,6 +365,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 	s.recorder = recorder
 }
 
+func (s *ExecutionEngine) SetEagerRecorder(eagerRecorder *EagerBlockRecorder) {
+	if s.Started() {
+		panic("trying to set eager recorder after start")
+	}
+	if s.eagerRecorder != nil {
+		panic("trying to set eager recorder when already set")
+	}
+	s.eagerRecorder = eagerRecorder
+}
+
 func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
 	if s.Started() {
 		panic("trying to set reorg events notifier after start")
@@ -487,6 +500,9 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	}
 	if s.recorder != nil {
 		s.recorder.ReorgTo(lastBlockToKeep.Header())
+	}
+	if s.eagerRecorder != nil {
+		s.eagerRecorder.ReorgTo(lastBlockToKeep.Header())
 	}
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
@@ -663,7 +679,19 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+	// Determine if eager preimage recording is needed
+	eagerRecording := s.eagerRecorder != nil
+
+	var statedb *state.StateDB
+	var recordingStateDB *arbitrum.RecordingStateDatabase
+	if eagerRecording {
+		recordingStateDB = arbitrum.NewRecordingStateDatabase(s.bc.StateCache())
+		// Use NewDeterministic to match the validator's replay (see comment
+		// in createBlockFromNextMessage for details).
+		statedb, err = state.NewDeterministic(lastBlockHeader.Root, recordingStateDB)
+	} else {
+		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -689,16 +717,29 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
+	runCtx := core.NewMessageSequencingContext(s.wasmTargets)
+	if eagerRecording {
+		statedb.StartRecording()
+		runCtx.SetEagerRecording(true)
+	}
+
+	var chainContext core.ChainContext = s.bc
+	var recordingChainCtx *arbitrum.RecordingChainContext
+	if eagerRecording {
+		recordingChainCtx = arbitrum.NewRecordingChainContext(s.bc, lastBlockHeader.Number.Uint64())
+		chainContext = recordingChainCtx
+	}
+
 	startTime := time.Now()
 	block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
-		s.bc,
+		chainContext,
 		hooks,
 		false,
-		core.NewMessageSequencingContext(s.wasmTargets),
+		runCtx,
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -753,6 +794,12 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+
+	// Store eagerly recorded preimages after successful block production
+	if eagerRecording {
+		s.storeEagerPreimages(block, lastBlockHeader.Root, recordingStateDB, recordingChainCtx, statedb)
+	}
+
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
 
 	return block, nil
@@ -870,7 +917,23 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
 
-	statedb, err := s.bc.StateAt(currentHeader.Root)
+	// Determine if eager preimage recording is needed for this block
+	eagerRecording := s.eagerRecorder != nil && !isMsgForPrefetch
+
+	var statedb *state.StateDB
+	var recordingStateDB *arbitrum.RecordingStateDatabase
+	if eagerRecording {
+		// Create a recording state database that wraps the real state cache.
+		// This intercepts all trie node reads to capture preimages.
+		recordingStateDB = arbitrum.NewRecordingStateDatabase(s.bc.StateCache())
+		// Use NewDeterministic so the trie operations in IntermediateRoot use
+		// deterministic (sorted) account ordering, matching the validator's
+		// replay binary which also uses NewDeterministic. This ensures the
+		// same trie node resolutions happen in the same order.
+		statedb, err = state.NewDeterministic(currentHeader.Root, recordingStateDB)
+	} else {
+		statedb, err = s.bc.StateAt(currentHeader.Root)
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -903,6 +966,21 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 
+	// When eager recording is enabled, we also capture Stylus WASM programs
+	if eagerRecording {
+		statedb.StartRecording()
+		runCtx.SetEagerRecording(true)
+	}
+
+	// Set up chain context — use a recording wrapper to track which block
+	// headers are accessed (needed for adding RLP-encoded header preimages)
+	var chainContext core.ChainContext = s.bc
+	var recordingChainCtx *arbitrum.RecordingChainContext
+	if eagerRecording {
+		recordingChainCtx = arbitrum.NewRecordingChainContext(s.bc, currentHeader.Number.Uint64())
+		chainContext = recordingChainCtx
+	}
+
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
@@ -922,7 +1000,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			msg.DelayedMessagesRead,
 			currentHeader,
 			statedb,
-			s.bc,
+			chainContext,
 			filteringHooks,
 			isMsgForPrefetch,
 			runCtx,
@@ -949,6 +1027,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
 		}
+
+		// Store eagerly recorded preimages after successful block production
+		if eagerRecording {
+			s.storeEagerPreimages(block, currentHeader.Root, recordingStateDB, recordingChainCtx, statedb)
+		}
+
 		return block, statedb, receipts, nil
 	}
 
@@ -957,13 +1041,102 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		msg.DelayedMessagesRead,
 		currentHeader,
 		statedb,
-		s.bc,
+		chainContext,
 		isMsgForPrefetch,
 		runCtx,
 		s.exposeMultiGas,
 	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Store eagerly recorded preimages after successful block production
+	if eagerRecording {
+		s.storeEagerPreimages(block, currentHeader.Root, recordingStateDB, recordingChainCtx, statedb)
+	}
 
 	return block, statedb, receipts, err
+}
+
+// storeEagerPreimages persists captured preimages after a successful block production
+// with eager recording enabled.
+func (s *ExecutionEngine) storeEagerPreimages(
+	block *types.Block,
+	preStateRoot common.Hash,
+	recordingStateDB *arbitrum.RecordingStateDatabase,
+	recordingChainCtx *arbitrum.RecordingChainContext,
+	statedb *state.StateDB,
+) {
+	// The validator's replay binary (cmd/replay/main.go) reads chain configuration
+	// from ArbOS state BEFORE calling ProduceBlock. This means it accesses accounts
+	// and storage slots that the production code doesn't touch during block execution.
+	// We must capture those trie nodes too, or the validator will fail with missing
+	// preimages. We do this by opening ArbOS state through the recording statedb
+	// and reading the same fields the validator reads.
+	s.warmUpValidatorReads(recordingStateDB, preStateRoot)
+
+	preimages := recordingStateDB.Preimages()
+	userWasms := statedb.UserWasms()
+	minBlockAccessed := recordingChainCtx.GetMinBlockNumberAccessed()
+
+	log.Debug("storeEagerPreimages",
+		"block", block.NumberU64(), "hash", block.Hash(),
+		"numPreimages", len(preimages), "minBlockAccessed", minBlockAccessed,
+		"numUserWasms", len(userWasms))
+
+	err := s.eagerRecorder.StoreBlockPreimages(
+		block.Hash(),
+		block.NumberU64(),
+		preimages,
+		userWasms,
+		minBlockAccessed,
+	)
+	if err != nil {
+		log.Error("failed to store eager preimages", "block", block.NumberU64(), "err", err)
+	}
+}
+
+// warmUpValidatorReads reads the ArbOS system state through the recording state
+// database to capture trie nodes that the validator's replay binary will need.
+// The validator reads chain config, chain ID, and genesis block number before
+// replaying the block, but the production code doesn't do these reads.
+func (s *ExecutionEngine) warmUpValidatorReads(
+	recordingStateDB *arbitrum.RecordingStateDatabase,
+	preStateRoot common.Hash,
+) {
+	preimagesBefore := len(recordingStateDB.Preimages())
+
+	// Create a temporary statedb that reads through the recording layer for
+	// the pre-state root. The statedb used for block production has already
+	// been modified, so we need a fresh one at the original root.
+	tmpStateDB, err := state.New(preStateRoot, recordingStateDB)
+	if err != nil {
+		log.Warn("warmUpValidatorReads: failed to open pre-state", "root", preStateRoot, "err", err)
+		return
+	}
+
+	// Read ArbOS state the same way the validator does (mirrors cmd/replay/main.go)
+	arbState, err := arbosState.OpenSystemArbosState(tmpStateDB, nil, true)
+	if err != nil {
+		log.Warn("warmUpValidatorReads: failed to open ArbOS state", "err", err)
+		return
+	}
+
+	// These reads mirror cmd/replay/main.go:
+	//   initialArbosState, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
+	//   chainId, _ := initialArbosState.ChainId()
+	//   genesisBlockNum, _ := initialArbosState.GenesisBlockNum()
+	//   chainConfigJson, _ := initialArbosState.ChainConfig()
+	_, _ = arbState.ChainId()
+	_, _ = arbState.GenesisBlockNum()
+	_, _ = arbState.ChainConfig()
+
+	preimagesAfter := len(recordingStateDB.Preimages())
+	log.Debug("warmUpValidatorReads",
+		"preStateRoot", preStateRoot,
+		"preimagesBefore", preimagesBefore,
+		"preimagesAfter", preimagesAfter,
+		"added", preimagesAfter-preimagesBefore)
 }
 
 // must hold createBlockMutex

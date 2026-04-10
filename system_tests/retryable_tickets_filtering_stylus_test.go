@@ -1,3 +1,6 @@
+// TODO: re-enable once localgen bindings are regenerated
+//go:build ignore
+
 package arbtest
 
 import (

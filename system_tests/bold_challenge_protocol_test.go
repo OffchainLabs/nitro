@@ -63,14 +63,14 @@ import (
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false, false)
+	testChallengeProtocolBOLD(t, false, false, rawdb.HashScheme)
 }
 
 func TestChallengeProtocolBOLDWithRedisReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false, true)
+	testChallengeProtocolBOLD(t, false, true, rawdb.HashScheme)
 }
 func TestChallengeProtocolBOLDReadInboxChallengeWithExternalSigner(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, true, false)
+	testChallengeProtocolBOLD(t, true, false, rawdb.HashScheme)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
@@ -82,10 +82,31 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
 			return NewIncorrectIntermediateMachine(inner, 1)
 		}),
 	}
-	testChallengeProtocolBOLD(t, false, false, opts...)
+	testChallengeProtocolBOLD(t, false, false, rawdb.HashScheme, opts...)
 }
 
-func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
+func TestChallengeProtocolBOLDStartStepChallengePathDB(t *gotesting.T) {
+	opts := []server_arb.SpawnerOption{
+		server_arb.WithWrapper(func(inner server_arb.MachineInterface) server_arb.MachineInterface {
+			return NewIncorrectIntermediateMachine(inner, 1)
+		}),
+	}
+	testChallengeProtocolBOLD(t, false, false, rawdb.PathScheme, opts...)
+}
+
+func TestChallengeProtocolBOLDReadInboxChallengePathDB(t *gotesting.T) {
+	testChallengeProtocolBOLD(t, false, false, rawdb.PathScheme)
+}
+
+func TestChallengeProtocolBOLDWithRedisReadInboxChallengePathDB(t *gotesting.T) {
+	testChallengeProtocolBOLD(t, false, true, rawdb.PathScheme)
+}
+
+func TestChallengeProtocolBOLDReadInboxChallengeWithExternalSignerPathDB(t *gotesting.T) {
+	testChallengeProtocolBOLD(t, true, false, rawdb.PathScheme)
+}
+
+func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis bool, stateScheme string, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -124,6 +145,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		l2info,
 		useExternalSigner,
 		false,
+		stateScheme,
 	)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
@@ -148,6 +170,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		stakeTokenAddr,
 		asserterOpts,
 		false,
+		stateScheme,
 	)
 	defer l2nodeB.StopAndWait()
 
@@ -531,7 +554,12 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stakeTokenAddr common.Address,
 	asserterOpts *bind.TransactOpts,
 	enableCustomDA bool,
+	stateSchemes ...string,
 ) (*node.Node, *ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *sol.AssertionChain) {
+	stateScheme := rawdb.HashScheme
+	if len(stateSchemes) > 0 && stateSchemes[0] != "" {
+		stateScheme = stateSchemes[0]
+	}
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
@@ -574,7 +602,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
 	Require(t, err)
 
-	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	execConfig := ExecConfigDefaultNonSequencerTest(t, stateScheme)
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)

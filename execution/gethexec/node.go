@@ -165,6 +165,7 @@ type Config struct {
 	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
 	RecordingDatabase           BlockRecorderConfig        `koanf:"recording-database"`
+	EagerRecording              EagerBlockRecorderConfig   `koanf:"eager-recording"`
 	TxPreChecker                TxPreCheckerConfig         `koanf:"tx-pre-checker" reload:"hot"`
 	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
 	Forwarder                   ForwarderConfig            `koanf:"forwarder"`
@@ -226,6 +227,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	BlockRecorderConfigAddOptions(prefix+".recording-database", f)
+	EagerBlockRecorderConfigAddOptions(prefix+".eager-recording", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
@@ -265,6 +267,7 @@ var ConfigDefault = Config{
 	Sequencer:                 DefaultSequencerConfig,
 	ParentChainReader:         headerreader.DefaultConfig,
 	RecordingDatabase:         DefaultBlockRecorderConfig,
+	EagerRecording:            DefaultEagerBlockRecorderConfig,
 	ForwardingTarget:          "",
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
@@ -304,6 +307,7 @@ type ExecutionNode struct {
 	ArbInterface             *ArbInterface
 	ExecEngine               *ExecutionEngine
 	Recorder                 *BlockRecorder
+	EagerRecorder            *EagerBlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
@@ -355,6 +359,19 @@ func CreateExecutionNode(
 	}
 
 	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+
+	// Enable eager preimage recording if explicitly enabled or if using PathDB scheme.
+	// PathDB doesn't support the replay-based recording that BlockRecorder uses,
+	// so eager recording is required for validation.
+	var eagerRecorder *EagerBlockRecorder
+	stateScheme := l2BlockChain.TrieDB().Scheme()
+	if config.EagerRecording.Enable || stateScheme == rawdb.PathScheme {
+		eagerConfig := config.EagerRecording
+		eagerConfig.Enable = true
+		eagerRecorder = NewEagerBlockRecorder(&eagerConfig, execEngine, executionDB)
+		execEngine.SetEagerRecorder(eagerRecorder)
+	}
+
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -437,6 +454,7 @@ func CreateExecutionNode(
 		ArbInterface:             arbInterface,
 		ExecEngine:               execEngine,
 		Recorder:                 recorder,
+		EagerRecorder:            eagerRecorder,
 		Sequencer:                sequencer,
 		TxPreChecker:             txPreChecker,
 		TxPublisher:              txPublisher,
@@ -664,12 +682,20 @@ func (n *ExecutionNode) RecordBlockCreation(
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
+		// Prefer eager recorder when available (required for PathDB)
+		if n.EagerRecorder != nil {
+			return n.EagerRecorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+		}
 		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 	})
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		// Eager recorder doesn't need preparation — preimages are already stored during block production
+		if n.EagerRecorder != nil {
+			return struct{}{}, n.EagerRecorder.PrepareForRecord(ctx, start, end)
+		}
 		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
 	})
 }
@@ -745,6 +771,10 @@ func (n *ExecutionNode) SetFinalityData(
 	}
 	if n.Recorder != nil && validatedFinalityData != nil {
 		n.Recorder.MarkValid(validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash)
+	}
+	if n.EagerRecorder != nil && validatedFinalityData != nil {
+		validatedBlockNum := n.ExecEngine.MessageIndexToBlockNumber(validatedFinalityData.MsgIdx)
+		n.EagerRecorder.GarbageCollect(validatedBlockNum)
 	}
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
