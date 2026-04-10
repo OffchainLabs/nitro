@@ -24,11 +24,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -271,63 +268,6 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	}
 }
 
-func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
-	batchCount, err := t.GetBatchCount()
-	if err != nil {
-		return fmt.Errorf("error getting batch count: %w", err)
-	}
-	var startMessage arbutil.MessageIndex
-	if batchCount >= 2 {
-		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
-		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
-		// `batchCount - 2` is the index of the batch before the last batch.
-		batchIndex := batchCount - 2
-		startMessage, err = t.GetBatchMessageCount(batchIndex)
-		if err != nil {
-			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
-		}
-	}
-
-	if t.txStreamer == nil {
-		return errors.New("txStreamer is nil")
-	}
-
-	messageCount, err := t.txStreamer.GetMessageCount()
-	if err != nil {
-		return fmt.Errorf("error getting tx streamer message count: %w", err)
-	}
-	feedMessages := make([]*message.BroadcastFeedMessage, 0, arbmath.SaturatingUSub(messageCount, startMessage))
-	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
-		message, err := t.txStreamer.GetMessage(seqNum)
-		if err != nil {
-			return fmt.Errorf("error getting message %v: %w", seqNum, err)
-		}
-
-		msgResult, err := t.txStreamer.ResultAtMessageIndex(seqNum)
-		var blockHash *common.Hash
-		if err == nil {
-			blockHash = &msgResult.BlockHash
-		}
-
-		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
-		if err != nil {
-			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
-		}
-
-		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: *message,
-			BlockHash:       blockHash,
-			BlockMetadata:   blockMetadata,
-		}
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
-		if err != nil {
-			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
-		}
-		feedMessages = append(feedMessages, feedMessage)
-	}
-	return broadcastServer.PopulateFeedBacklog(feedMessages)
-}
-
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(schema.LegacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
@@ -345,7 +285,7 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 	}
 
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		data, _, err := t.txStreamer.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
 		return data, err
 	})
 
@@ -358,7 +298,7 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx
 		return msg, acc, parentChainBlockNumber, err
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
+		data, _, err := t.txStreamer.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 		return data, err
 	})
 	return msg, acc, parentChainBlockNumber, err
@@ -942,7 +882,7 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 		}
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(
+		data, _, err := t.txStreamer.batchDataProvider.GetSequencerMessageBytesForParentBlock(
 			ctx, batchNum, parentChainBlockNumber,
 		)
 		return data, err
