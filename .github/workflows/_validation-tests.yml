@@ -45,6 +45,14 @@ jobs:
           JIT_HASH=$(grep -oP 'hash \K(0x)?[a-f0-9]+' /tmp/jit_output.txt)
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
+      - name: Download a second module root (consensus-v60-alpha.2)
+        env:
+          SECOND_MODULE_ROOT: "0x5a79438ff2ab312234ee23839ea03b0c9348e856298b5ab1d2c067bf3c725bd0"
+        run: |
+          scripts/download-machine.sh consensus-v60-alpha.2 "$SECOND_MODULE_ROOT"
+          mv "$SECOND_MODULE_ROOT" target/machines/
+          rm -f latest
+
       - name: Run Rust validation server (Native & Continuous)
         run: |
           # Capture the expected hash once
@@ -75,8 +83,10 @@ jobs:
               curl -s -X POST http://localhost:4141/ \
                 -H "Content-Type: application/json" -d @-)
 
+            SECOND_MODULE_ROOT="0x5a79438ff2ab312234ee23839ea03b0c9348e856298b5ab1d2c067bf3c725bd0"
             RESPONSE2=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-              '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0]]}' | \
+              --arg mr "$SECOND_MODULE_ROOT" \
+              '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0], $mr]}' | \
               curl -s -X POST http://localhost:4141/ \
                 -H "Content-Type: application/json" -d @-)
 
@@ -101,12 +111,24 @@ jobs:
             echo "Server response 1 Hash: $SERVER_HASH1"
             echo "Server response 2 Hash: $SERVER_HASH2"
 
-            if [ "$JIT_HASH" == "$SERVER_HASH1" ] && [ "$JIT_HASH" == "$SERVER_HASH2" ]; then
-              echo "✅ $MODE_NAME Validation successful"
-            else
-              echo "❌ $MODE_NAME Validation failed: hashes do not match"
+            if [ "$JIT_HASH" != "$SERVER_HASH1" ]; then
+              echo "--- $MODE_NAME Validation failed: HASH1 does not match JIT hash"
               exit 1
             fi
+            echo "+++ $MODE_NAME Request 1 (latest module root): hash matches JIT"
+
+            # HASH2 uses a different module root, so it will differ from JIT_HASH.
+            # Verify the response is successful but don't compare hashes.
+            ERROR2=$(echo "$RESPONSE2" | jq -r '.error // empty')
+            if [ -n "$ERROR2" ]; then
+              echo "--- $MODE_NAME Request 2 failed with error: $ERROR2"
+              exit 1
+            fi
+            if [ -z "$SERVER_HASH2" ] || [ "$SERVER_HASH2" == "null" ]; then
+              echo "--- $MODE_NAME Request 2 returned null hash"
+              exit 1
+            fi
+            echo "+++ $MODE_NAME Request 2 (second module root): validation succeeded with hash $SERVER_HASH2"
             echo "::endgroup::"
           }
 
