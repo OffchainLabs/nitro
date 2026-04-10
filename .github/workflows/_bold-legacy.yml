@@ -11,11 +11,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
           submodules: recursive
 
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
+
+      - name: Build
+        run: make -j8 build test-go-deps
 
       - name: run challenge tests
         run: >-

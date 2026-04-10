@@ -17,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
           submodules: recursive
 
       - name: Setup CI
