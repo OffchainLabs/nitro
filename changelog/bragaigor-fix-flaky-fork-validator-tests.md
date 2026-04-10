@@ -1,0 +1,2 @@
+### Ignored
+- Fix flaky system tests: suppress spurious block validator "context canceled" errors during node shutdown in `StartWatchChanErr`, fix `TestParentChainEthConfigForkTransition` BPO1 fork timing, cancel builder context before node cleanup in `BuildL2OnL1`/`BuildL2`

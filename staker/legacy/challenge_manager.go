@@ -476,7 +476,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if err != nil {
 		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
 	}
-	var prunedBatches []validator.BatchInfo
+	prunedBatches := make([]validator.BatchInfo, 0, len(input.BatchInfo))
 	for _, batch := range input.BatchInfo {
 		if batch.Number < m.maxBatchesRead {
 			prunedBatches = append(prunedBatches, batch)

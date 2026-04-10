@@ -410,7 +410,7 @@ func threeBatchLookup(
 	logsFetcher LogsFetcher,
 	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
-	batches := []*mel.SequencerInboxBatch{{}, {}, {}}
+	batches := []*mel.SequencerInboxBatch{{SequenceNumber: 0}, {SequenceNumber: 1}, {SequenceNumber: 2}}
 	txs := []*types.Transaction{{}, {}, {}}
 	return batches, txs, nil
 }
