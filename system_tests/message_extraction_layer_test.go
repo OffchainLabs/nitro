@@ -800,15 +800,10 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	newInbox := common.HexToAddress("0x0000000000000000000000000000000000001111")
 	newSequencerInbox := common.HexToAddress("0x0000000000000000000000000000000000002222")
 
-	// Determine an activation block in the future
-	currentL1Block, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
-	activationBlock := currentL1Block + 20
-
 	// Pack the setMELConfig calldata using the generated rollup ABI
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err)
-	calldata, err := rollupABI.Pack("setMELConfig", newInbox, newSequencerInbox, new(big.Int).SetUint64(activationBlock))
+	calldata, err := rollupABI.Pack("setMELConfig", newInbox, newSequencerInbox)
 	Require(t, err)
 
 	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -816,15 +811,14 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	Require(t, err)
 	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, builder.addresses.Rollup, calldata)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L1.Client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, builder.L1.Client, tx)
 	Require(t, err)
+	eventBlock := receipt.BlockNumber.Uint64()
 
-	// Advance L1 past the activation block
-	// #nosec G115
-	blocksToAdvance := int(activationBlock - currentL1Block + 5)
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, blocksToAdvance)
+	// Advance L1 so MEL can process the block containing the event
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
-	// Wait for MEL to process past the activation block
+	// Wait for MEL to process past the event block
 	timeout := time.NewTimer(time.Minute)
 	defer timeout.Stop()
 	tick := time.NewTicker(200 * time.Millisecond)
@@ -832,36 +826,27 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	for {
 		headState, err := msgExtractor.GetHeadState()
 		Require(t, err)
-		if headState.ParentChainBlockNumber >= activationBlock {
+		if headState.ParentChainBlockNumber >= eventBlock {
 			break
 		}
 		select {
 		case <-tick.C:
 		case <-timeout.C:
-			t.Fatal("timed out waiting for MEL to process past activation block")
+			t.Fatal("timed out waiting for MEL to process past event block")
 		}
 	}
 
-	// Verify the config was applied
+	// Verify the config was applied immediately
 	postConfigState, err := msgExtractor.GetHeadState()
 	Require(t, err)
 	if postConfigState.Version != 1 {
-		t.Fatalf("Expected version 1 after config activation, got %d", postConfigState.Version)
-	}
-	if postConfigState.VersionActivationBlock != activationBlock {
-		t.Fatalf("Expected VersionActivationBlock %d, got %d", activationBlock, postConfigState.VersionActivationBlock)
+		t.Fatalf("Expected version 1 after config event, got %d", postConfigState.Version)
 	}
 	if postConfigState.BatchPostingTargetAddress != newSequencerInbox {
 		t.Fatalf("Expected BatchPostingTargetAddress %s, got %s", newSequencerInbox.Hex(), postConfigState.BatchPostingTargetAddress.Hex())
 	}
 	if postConfigState.DelayedMessagePostingTargetAddress != newInbox {
 		t.Fatalf("Expected DelayedMessagePostingTargetAddress %s, got %s", newInbox.Hex(), postConfigState.DelayedMessagePostingTargetAddress.Hex())
-	}
-	if postConfigState.PendingInbox != (common.Address{}) {
-		t.Fatalf("Expected PendingInbox to be zero after activation, got %s", postConfigState.PendingInbox.Hex())
-	}
-	if postConfigState.PendingSequencerInbox != (common.Address{}) {
-		t.Fatalf("Expected PendingSequencerInbox to be zero after activation, got %s", postConfigState.PendingSequencerInbox.Hex())
 	}
 }
 

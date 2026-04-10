@@ -31,9 +31,7 @@ func SplitPreimage(preimage []byte) (left, right common.Hash, err error) {
 // be deterministically constructed from any start state and parent chain blocks from
 // that point onwards.
 type State struct {
-	Version                uint16
-	VersionActivationBlock uint64
-
+	Version                            uint16
 	ParentChainId                      uint64
 	ParentChainBlockNumber             uint64
 	BatchPostingTargetAddress          common.Address
@@ -47,11 +45,6 @@ type State struct {
 	DelayedMessagesSeen                uint64
 	DelayedMessageInboxAcc             common.Hash
 	DelayedMessageOutboxAcc            common.Hash
-
-	// Pending value changes to DelayedMessagePostingTargetAddress and
-	// BatchPostingTargetAddress from a MELConfig upgrade event
-	PendingInbox          common.Address
-	PendingSequencerInbox common.Address
 
 	msgPreimagesDest        daprovider.PreimagesMap
 	delayedMsgPreimagesDest daprovider.PreimagesMap
@@ -97,19 +90,14 @@ func (s *State) Clone() *State {
 	parentChainPrevHash := common.Hash{}
 	delayedInboxAcc := common.Hash{}
 	delayedOutboxAcc := common.Hash{}
-	pendingInbox := common.Address{}
-	pendingSequencerInbox := common.Address{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
 	copy(delayedInboxAcc[:], s.DelayedMessageInboxAcc[:])
 	copy(delayedOutboxAcc[:], s.DelayedMessageOutboxAcc[:])
-	copy(pendingInbox[:], s.PendingInbox[:])
-	copy(pendingSequencerInbox[:], s.PendingSequencerInbox[:])
 	return &State{
 		Version:                            s.Version,
-		VersionActivationBlock:             s.VersionActivationBlock,
 		ParentChainId:                      s.ParentChainId,
 		ParentChainBlockNumber:             s.ParentChainBlockNumber,
 		BatchPostingTargetAddress:          batchPostingTarget,
@@ -122,8 +110,6 @@ func (s *State) Clone() *State {
 		DelayedMessagesSeen:                s.DelayedMessagesSeen,
 		DelayedMessageInboxAcc:             delayedInboxAcc,
 		DelayedMessageOutboxAcc:            delayedOutboxAcc,
-		PendingInbox:                       pendingInbox,
-		PendingSequencerInbox:              pendingSequencerInbox,
 		// LocalMsgAccumulator is intentionally not copied — each cloned state
 		// starts a fresh hash chain for its own batch of accumulated messages.
 		//

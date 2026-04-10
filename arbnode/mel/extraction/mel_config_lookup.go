@@ -33,13 +33,9 @@ func ParseMELConfigFromBlock(
 		if err := eventUnpacker.UnpackLogTo(event, RollupAdminABI, "MELConfigEvent", *log); err != nil {
 			return nil, err
 		}
-		if !event.MelVersionActivationBlock.IsUint64() {
-			return nil, nil
-		}
 		return &mel.MELConfig{
-			Inbox:                  event.Inbox,
-			SequencerInbox:         event.SequencerInbox,
-			VersionActivationBlock: event.MelVersionActivationBlock.Uint64(),
+			Inbox:          event.Inbox,
+			SequencerInbox: event.SequencerInbox,
 		}, nil
 	}
 	return nil, nil

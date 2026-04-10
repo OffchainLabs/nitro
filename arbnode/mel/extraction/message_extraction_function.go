@@ -121,25 +121,6 @@ func extractMessagesImpl(
 	state.ParentChainBlockNumber = parentChainHeader.Number.Uint64()
 	state.ParentChainPreviousBlockHash = parentChainHeader.ParentHash
 
-	// Check for MEL config events in this block.
-	melConfig, err := lookupMELConfig(
-		ctx,
-		parentChainHeader,
-		logsFetcher,
-		eventUnpacker,
-	)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to lookup MEL config event: %w", err)
-	}
-	if melConfig != nil {
-		if state.VersionActivationBlock >= melConfig.VersionActivationBlock {
-			return nil, nil, nil, nil, fmt.Errorf("current MEL state VersionActivationBlock: %d cannot be greater than or equal to the next scheduled MEL config's VersionActivationBlock: %d", state.VersionActivationBlock, melConfig.VersionActivationBlock)
-		}
-		state.VersionActivationBlock = melConfig.VersionActivationBlock
-		state.PendingInbox = melConfig.Inbox
-		state.PendingSequencerInbox = melConfig.SequencerInbox
-	}
-
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
 	batches, batchTxs, err := lookupBatches(
@@ -289,16 +270,20 @@ func extractMessagesImpl(
 			return nil, nil, nil, nil, fmt.Errorf("batch AfterDelayedCount: %d and MEL state DelayedMessagesRead: %d mismatch", batch.AfterDelayedCount, state.DelayedMessagesRead)
 		}
 	}
-	// Apply pending config if the activation block has been reached.
-	if state.ParentChainBlockNumber == state.VersionActivationBlock {
-		state.DelayedMessagePostingTargetAddress = state.PendingInbox
-		state.BatchPostingTargetAddress = state.PendingSequencerInbox
+	// Check for MEL config events in this block.
+	melConfig, err := lookupMELConfig(
+		ctx,
+		parentChainHeader,
+		logsFetcher,
+		eventUnpacker,
+	)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to lookup MEL config event: %w", err)
+	}
+	if melConfig != nil {
 		state.Version += 1
-		// Reset PendingInbox and PendingSequencerInbox because having them non-zero after a version upgrade is incorrect,
-		// we don't reset the VersionActivationBlock though, to keep in the state when the current version was activated
-		state.PendingInbox = common.Address{}
-		state.PendingSequencerInbox = common.Address{}
-
+		state.DelayedMessagePostingTargetAddress = melConfig.Inbox
+		state.BatchPostingTargetAddress = melConfig.SequencerInbox
 	}
 	return state, messages, delayedMessages, batchMetas, nil
 }
