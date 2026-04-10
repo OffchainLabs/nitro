@@ -20,7 +20,7 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 			return err
 		}
 		bodyStr := string(body)
-		err = a.sqsClient.Send(ctx, bodyStr)
+		err = a.queueClient.Send(ctx, bodyStr)
 		if err != nil {
 			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
 			return err

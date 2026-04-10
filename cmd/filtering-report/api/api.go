@@ -15,12 +15,12 @@ import (
 )
 
 type FilteringReportAPI struct {
-	sqsClient sqsclient.Queue
+	queueClient sqsclient.Queue
 }
 
-func NewFilteringReportAPI(sqsClient sqsclient.Queue) *FilteringReportAPI {
+func NewFilteringReportAPI(queueClient sqsclient.Queue) *FilteringReportAPI {
 	return &FilteringReportAPI{
-		sqsClient: sqsClient,
+		queueClient: queueClient,
 	}
 }
 
@@ -47,14 +47,14 @@ var DefaultStackConfig = node.Config{
 
 func NewStack(
 	stackConfig *node.Config,
-	sqsClient sqsclient.Queue,
+	queueClient sqsclient.Queue,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	api := NewFilteringReportAPI(sqsClient)
+	api := NewFilteringReportAPI(queueClient)
 
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,
