@@ -30,6 +30,13 @@ type RPCError struct {
 func (e *RPCError) Error() string  { return e.msg }
 func (e *RPCError) ErrorCode() int { return e.code }
 
+// Sentinel errors returned across the Consensus/Execution RPC boundary.
+var (
+	ErrRetrySequencer           = &RPCError{code: ErrCodeRetrySequencer, msg: "please retry transaction"}
+	ErrSequencerInsertLockTaken = &RPCError{code: ErrCodeInsertLockTaken, msg: "insert lock taken"}
+	ResultNotFound              = &RPCError{code: ErrCodeResultNotFound, msg: "result not found"}
+)
+
 // Is reports whether target is an RPCError with the same code.
 // This makes errors.Is(receivedErr, sentinel) return true whenever the
 // received error carries the same code as the sentinel, regardless of whether

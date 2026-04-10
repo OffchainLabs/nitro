@@ -41,10 +41,6 @@ type ConsensusSyncData struct {
 	UpdatedAt       time.Time
 }
 
-var ErrRetrySequencer = &RPCError{code: ErrCodeRetrySequencer, msg: "please retry transaction"}
-var ErrSequencerInsertLockTaken = &RPCError{code: ErrCodeInsertLockTaken, msg: "insert lock taken"}
-var ResultNotFound = &RPCError{code: ErrCodeResultNotFound, msg: "result not found"}
-
 // always needed
 type ExecutionClient interface {
 	ArbOSVersionGetter
