@@ -445,7 +445,7 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 	if err != nil {
 		return nil, common.Hash{}, err
 	}
-	var seenBatches []uint64
+	seenBatches := make([]uint64, 0, len(seqBatches))
 	for i, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
 			data, err := melextraction.SerializeBatch(ctx, batch, batchTxs[i], logsFetcher)

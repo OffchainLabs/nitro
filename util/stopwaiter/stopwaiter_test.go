@@ -339,6 +339,73 @@ func TestStopOnlyThenStopAndWaitIndependentGoroutine(t *testing.T) {
 	}
 }
 
+// Before the fix, stopAndWaitImpl held an RLock across <-waitChan, so any
+// goroutine that needed the write lock (StopOnly or StopAndWait) would deadlock.
+func TestStopAndWaitNoDeadlockWhenGoroutineNeedsLock(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		stopFn func(*StopWaiter)
+	}{
+		{"StopOnly", (*StopWaiter).StopOnly},
+		{"StopAndWait", (*StopWaiter).StopAndWait},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parent := StopWaiter{}
+			parent.Start(context.Background(), &TestStruct{})
+
+			child := StopWaiter{}
+			child.Start(parent.GetContext(), &TestStruct{})
+			parent.TrackChild(&child)
+
+			stopFn := tc.stopFn
+			parent.LaunchThread(func(ctx context.Context) {
+				time.Sleep(testStopDelayWarningTimeout + 200*time.Millisecond)
+				stopFn(&child)
+			})
+
+			done := make(chan struct{})
+			var stopErr error
+			go func() {
+				stopErr = parent.stopAndWaitImpl(testStopDelayWarningTimeout)
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				if stopErr != nil {
+					t.Errorf("stopAndWaitImpl returned unexpected error: %v", stopErr)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("stopAndWaitImpl deadlocked: goroutine calling %s could not acquire lock", tc.name)
+			}
+		})
+	}
+}
+
+func TestLaunchThreadSafePanicRecovery(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+	sw := StopWaiter{}
+	sw.Start(context.Background(), &TestStruct{})
+
+	sw.LaunchThread(func(ctx context.Context) {
+		panic("test panic message")
+	})
+
+	sw.StopAndWait()
+
+	if !logHandler.WasLogged("Thread crashed") {
+		t.Error("expected 'Thread crashed' log entry after panicking goroutine")
+	}
+	if !logHandler.WasLoggedWithAttr("Thread crashed", "message", "test panic message") {
+		t.Error("expected panic message in 'Thread crashed' log entry")
+	}
+	if !logHandler.WasLoggedWithAttr("Thread crashed", "stack", "stopwaiter_test.go") {
+		t.Error("expected stack trace in 'Thread crashed' log entry")
+	}
+}
+
 func TestStopOnlyThenStopAndWaitWaitsForChildGoroutines(t *testing.T) {
 	t.Parallel()
 	parent := StopWaiter{}
