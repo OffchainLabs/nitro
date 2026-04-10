@@ -57,9 +57,13 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
                         return Ok(UserOutcome::OutOfInk);
                     }
 
+                    tracing::warn!(target: "stylus",
+                        ink = ?self.ink_left(), stack = self.stack_left(),
+                        "WASM trap");
                     let escape: Escape = match outcome.downcast() {
                         Ok(escape) => escape,
-                        Err(_error) => {
+                        Err(error) => {
+                            tracing::warn!(target: "stylus", err = %error, "WASM trap detail");
                             return Ok(UserOutcome::Failure);
                         }
                     };

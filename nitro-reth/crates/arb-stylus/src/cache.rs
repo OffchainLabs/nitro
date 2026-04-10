@@ -146,6 +146,7 @@ impl CompileConfig {
             )));
             cranelift.push_middleware(Arc::new(middleware::DepthChecker::new(
                 self.bounds.max_frame_size,
+                self.bounds.max_frame_contention,
             )));
             cranelift.push_middleware(Arc::new(middleware::HeapBound::new()));
         }

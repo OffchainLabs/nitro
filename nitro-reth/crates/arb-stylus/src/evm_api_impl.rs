@@ -347,10 +347,8 @@ impl EvmApi for StylusEvmApi {
         let mut cost = self.storage_cache.read_gas();
 
         let value = if let Some(entry) = self.storage_cache.slots.get(&key) {
-            // Cache hit: no journal access, no evm_api_gas
             entry.value
         } else {
-            // Cache miss: read from journal, charge full cost
             let storage_key = U256::from_be_bytes(key.0);
             let addr = self.address;
             let (value_u256, is_cold) = self.journal().sload(addr, storage_key)?;
