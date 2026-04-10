@@ -21,7 +21,6 @@ import (
 )
 
 type Config struct {
-	Enable           bool                         `koanf:"enable"`
 	Workers          int                          `koanf:"workers"`
 	PollInterval     time.Duration                `koanf:"poll-interval"`
 	WaitTimeSeconds  int32                        `koanf:"wait-time-seconds"`
@@ -36,7 +35,6 @@ var DefaultConfig = Config{
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable SQS consumer workers")
 	f.Int(prefix+".workers", DefaultConfig.Workers, "number of workers")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
 	f.Int32(prefix+".wait-time-seconds", DefaultConfig.WaitTimeSeconds, "SQS long polling wait time in seconds")
@@ -59,9 +57,6 @@ func New(config *Config, queueClient sqsclient.Queue) *Forwarder {
 }
 
 func (r *Forwarder) Start(ctx context.Context) {
-	if !r.config.Enable {
-		return
-	}
 	r.StopWaiter.Start(ctx, r)
 	for i := 0; i < r.config.Workers; i++ {
 		r.CallIteratively(r.pollAndForward)

@@ -184,31 +184,22 @@ func mainImpl() int {
 	}
 
 	if err := config.Queue.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: SQS config validation failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: queue config validation failed: %v\n", err)
 		return 1
 	}
-	var queueClient *sqsclient.QueueClient
-	if config.Queue.Enable {
-		queueClient, err = sqsclient.NewQueueClient(ctx, &config.Queue)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
-			return 1
-		}
+	queueClient, err := sqsclient.NewQueueClient(ctx, &config.Queue)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
+		return 1
 	}
 
-	if config.ReportForwarder.Enable {
-		if err := config.ReportForwarder.ExternalEndpoint.Validate(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: report-forwarder external endpoint config validation failed: %v\n", err)
-			return 1
-		}
-		if queueClient == nil {
-			fmt.Fprintf(os.Stderr, "error: report-forwarder requires SQS to be enabled\n")
-			return 1
-		}
-		fwd := forwarder.New(&config.ReportForwarder, queueClient)
-		fwd.Start(ctx)
-		defer fwd.StopAndWait()
+	if err := config.ReportForwarder.ExternalEndpoint.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: report-forwarder external endpoint config validation failed: %v\n", err)
+		return 1
 	}
+	fwd := forwarder.New(&config.ReportForwarder, queueClient)
+	fwd.Start(ctx)
+	defer fwd.StopAndWait()
 
 	stack, err := api.NewStack(&stackConf, queueClient)
 	if err != nil {

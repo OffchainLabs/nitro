@@ -13,7 +13,6 @@ import (
 )
 
 type QueueConfig struct {
-	Enable    bool            `koanf:"enable"`
 	QueueURL  string          `koanf:"queue-url"`
 	SQSClient SQSClientConfig `koanf:"sqs-client"`
 }
@@ -21,17 +20,13 @@ type QueueConfig struct {
 var DefaultQueueConfig = QueueConfig{}
 
 func (c *QueueConfig) Validate() error {
-	if !c.Enable {
-		return nil
-	}
 	if c.QueueURL == "" {
-		return errors.New("queue-url is required when SQS is enabled")
+		return errors.New("queue-url is required")
 	}
 	return nil
 }
 
 func QueueConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultQueueConfig.Enable, "enable SQS reporting of filtered transactions")
 	f.String(prefix+".queue-url", DefaultQueueConfig.QueueURL, "SQS queue URL for filtered transaction reports")
 	SQSClientConfigAddOptions(prefix+".sqs-client", f)
 }
