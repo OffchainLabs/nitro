@@ -24,6 +24,7 @@ import (
 // --- Test helpers ---
 
 func makeDelayedL1Msg(index uint64) *arbostypes.L1IncomingMessage {
+	// #nosec G115
 	reqID := common.BigToHash(big.NewInt(int64(index + 1)))
 	return &arbostypes.L1IncomingMessage{
 		Header: &arbostypes.L1IncomingMessageHeader{
@@ -321,6 +322,7 @@ func TestLegacyFindBatchCountAtBlock(t *testing.T) {
 	setupBatches := func(t *testing.T, db ethdb.KeyValueStore, blocks []uint64) {
 		t.Helper()
 		for i, block := range blocks {
+			// #nosec G115
 			storeBatchMetadata(t, db, uint64(i), mel.BatchMetadata{ParentChainBlock: block})
 		}
 	}
