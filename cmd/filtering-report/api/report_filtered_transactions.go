@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
-
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -26,10 +24,7 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 			return err
 		}
 		bodyStr := string(body)
-		_, err = a.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
-			QueueUrl:    &a.sqsClient.QueueURL,
-			MessageBody: &bodyStr,
-		})
+		err = a.sqsClient.Send(ctx, bodyStr)
 		if err != nil {
 			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
 			return err

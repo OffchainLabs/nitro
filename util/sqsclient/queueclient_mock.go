@@ -8,18 +8,17 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
-type MockClient struct {
+type MockQueueClient struct {
 	mu                    sync.Mutex
 	queue                 []sqstypes.Message
 	msgCounter            int
 	deletedReceiptHandles []string
 }
 
-func (m *MockClient) SendMessage(_ context.Context, params *sqs.SendMessageInput, _ ...func(*sqs.Options)) (*sqs.SendMessageOutput, error) {
+func (m *MockQueueClient) Send(_ context.Context, body string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.msgCounter++
@@ -27,16 +26,16 @@ func (m *MockClient) SendMessage(_ context.Context, params *sqs.SendMessageInput
 	rh := fmt.Sprintf("rh-%d", m.msgCounter)
 	m.queue = append(m.queue, sqstypes.Message{
 		MessageId:     &msgId,
-		Body:          params.MessageBody,
+		Body:          &body,
 		ReceiptHandle: &rh,
 	})
-	return &sqs.SendMessageOutput{}, nil
+	return nil
 }
 
-func (m *MockClient) ReceiveMessage(_ context.Context, params *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+func (m *MockQueueClient) Receive(_ context.Context, _ int32, maxMessages int32) ([]sqstypes.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	limit := int(params.MaxNumberOfMessages)
+	limit := int(maxMessages)
 	if limit == 0 {
 		limit = 1
 	}
@@ -44,23 +43,23 @@ func (m *MockClient) ReceiveMessage(_ context.Context, params *sqs.ReceiveMessag
 		return nil, fmt.Errorf("invalid parameter: MaxNumberOfMessages must be between 1 and 10, got %d", limit)
 	}
 	if len(m.queue) == 0 {
-		return &sqs.ReceiveMessageOutput{}, nil
+		return nil, nil
 	}
 	n := min(len(m.queue), limit)
 	msgs := make([]sqstypes.Message, n)
 	copy(msgs, m.queue[:n])
 	m.queue = m.queue[n:]
-	return &sqs.ReceiveMessageOutput{Messages: msgs}, nil
+	return msgs, nil
 }
 
-func (m *MockClient) DeleteMessage(_ context.Context, params *sqs.DeleteMessageInput, _ ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error) {
+func (m *MockQueueClient) Delete(_ context.Context, receiptHandle string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.deletedReceiptHandles = append(m.deletedReceiptHandles, *params.ReceiptHandle)
-	return &sqs.DeleteMessageOutput{}, nil
+	m.deletedReceiptHandles = append(m.deletedReceiptHandles, receiptHandle)
+	return nil
 }
 
-func (m *MockClient) DeletedReceiptHandles() []string {
+func (m *MockQueueClient) DeletedReceiptHandles() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	result := make([]string, len(m.deletedReceiptHandles))

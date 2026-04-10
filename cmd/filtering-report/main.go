@@ -41,8 +41,8 @@ type FilteringReportConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	SQS             sqsclient.Config `koanf:"sqs"`
-	ReportForwarder forwarder.Config `koanf:"report-forwarder"`
+	SQS             sqsclient.QueueConfig `koanf:"sqs"`
+	ReportForwarder forwarder.Config      `koanf:"report-forwarder"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -80,7 +80,7 @@ var DefaultFilteringReportConfig = FilteringReportConfig{
 	WS:              WSConfigDefault,
 	IPC:             IPCConfigDefault,
 	Auth:            genericconf.AuthRPCConfigDefault,
-	SQS:             sqsclient.DefaultConfig,
+	SQS:             sqsclient.DefaultQueueConfig,
 	ReportForwarder: forwarder.DefaultConfig,
 }
 
@@ -102,7 +102,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 
-	sqsclient.ConfigAddOptions("sqs", f)
+	sqsclient.QueueConfigAddOptions("sqs", f)
 	forwarder.ConfigAddOptions("report-forwarder", f)
 }
 
@@ -122,8 +122,8 @@ func parseConfig(args []string) (*FilteringReportConfig, error) {
 	}
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"sqs.access-key": "",
-			"sqs.secret-key": "",
+			"sqs.sqs-client.access-key": "",
+			"sqs.sqs-client.secret-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -187,9 +187,9 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "error: SQS config validation failed: %v\n", err)
 		return 1
 	}
-	var sqsClient *sqsclient.QueueClient
+	var queueClient *sqsclient.QueueClient
 	if config.SQS.Enable {
-		sqsClient, err = sqsclient.NewClient(ctx, &config.SQS)
+		queueClient, err = sqsclient.NewQueueClient(ctx, &config.SQS)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
 			return 1
@@ -201,16 +201,16 @@ func mainImpl() int {
 			fmt.Fprintf(os.Stderr, "error: report-forwarder external endpoint config validation failed: %v\n", err)
 			return 1
 		}
-		if sqsClient == nil {
+		if queueClient == nil {
 			fmt.Fprintf(os.Stderr, "error: report-forwarder requires SQS to be enabled\n")
 			return 1
 		}
-		fwd := forwarder.New(&config.ReportForwarder, sqsClient)
+		fwd := forwarder.New(&config.ReportForwarder, queueClient)
 		fwd.Start(ctx)
 		defer fwd.StopAndWait()
 	}
 
-	stack, err := api.NewStack(&stackConf, sqsClient)
+	stack, err := api.NewStack(&stackConf, queueClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

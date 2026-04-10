@@ -23,12 +23,10 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-const testQueueURL = "https://sqs.test/queue"
-
-func newTestStack(t *testing.T, sqsMockClient *sqsclient.MockClient) *rpc.Client {
+func newTestStack(t *testing.T, sqsMockClient *sqsclient.MockQueueClient) *rpc.Client {
 	t.Helper()
 	stackConfig := api.DefaultStackConfig
-	stack, err := api.NewStack(&stackConfig, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
+	stack, err := api.NewStack(&stackConfig, sqsMockClient)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +39,7 @@ func newTestStack(t *testing.T, sqsMockClient *sqsclient.MockClient) *rpc.Client
 	return client
 }
 
-func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *Forwarder {
+func newTestForwarder(sqsMockClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
 	config := &Config{
 		Workers:         1,
 		PollInterval:    time.Second,
@@ -51,7 +49,7 @@ func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 	}
-	return New(config, sqsclient.NewQueueClient(sqsMockClient, testQueueURL))
+	return New(config, sqsMockClient)
 }
 
 func TestForwarder_ForwardsMessages(t *testing.T) {
@@ -71,7 +69,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	}))
 	defer externalEndpointServer.Close()
 
-	sqsMockClient := &sqsclient.MockClient{}
+	sqsMockClient := &sqsclient.MockQueueClient{}
 	filteringReportClient := newTestStack(t, sqsMockClient)
 
 	reports := []addressfilter.FilteredTxReport{
@@ -142,7 +140,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}))
 	defer externalEndpointServer.Close()
 
-	sqsMockClient := &sqsclient.MockClient{}
+	sqsMockClient := &sqsclient.MockQueueClient{}
 	filteringReportClient := newTestStack(t, sqsMockClient)
 
 	reports := []addressfilter.FilteredTxReport{
@@ -180,7 +178,7 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 	}))
 	defer externalEndpointServer.Close()
 
-	sqsMockClient := &sqsclient.MockClient{}
+	sqsMockClient := &sqsclient.MockQueueClient{}
 
 	forwarder := newTestForwarder(sqsMockClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(context.Background())

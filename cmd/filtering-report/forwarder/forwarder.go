@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -46,16 +45,16 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type Forwarder struct {
 	stopwaiter.StopWaiter
-	config     *Config
-	sqsClient  *sqsclient.QueueClient
-	httpClient *http.Client
+	config      *Config
+	queueClient sqsclient.Queue
+	httpClient  *http.Client
 }
 
-func New(config *Config, sqsClient *sqsclient.QueueClient) *Forwarder {
+func New(config *Config, queueClient sqsclient.Queue) *Forwarder {
 	return &Forwarder{
-		config:     config,
-		sqsClient:  sqsClient,
-		httpClient: &http.Client{Timeout: config.ExternalEndpoint.Timeout},
+		config:      config,
+		queueClient: queueClient,
+		httpClient:  &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 	}
 }
 
@@ -70,30 +69,22 @@ func (r *Forwarder) Start(ctx context.Context) {
 }
 
 func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
-	out, err := r.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:            &r.sqsClient.QueueURL,
-		WaitTimeSeconds:     r.config.WaitTimeSeconds,
-		MaxNumberOfMessages: 1,
-	})
+	msgs, err := r.queueClient.Receive(ctx, r.config.WaitTimeSeconds, 1)
 	if err != nil {
 		log.Error("Failed to receive SQS messages", "err", err)
 		return r.config.PollInterval
 	}
-	if len(out.Messages) == 0 {
+	if len(msgs) == 0 {
 		return r.config.PollInterval
 	}
-	msg := out.Messages[0]
+	msg := msgs[0]
 	msgID := "<unknown>"
 	if msg.MessageId != nil {
 		msgID = *msg.MessageId
 	}
 	if msg.Body == nil {
 		log.Warn("Received SQS message with nil body, deleting", "messageId", msgID)
-		_, err = r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-			QueueUrl:      &r.sqsClient.QueueURL,
-			ReceiptHandle: msg.ReceiptHandle,
-		})
-		if err != nil {
+		if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
 			log.Error("Failed to delete nil-body SQS message", "err", err, "messageId", msgID)
 		}
 		return 0
@@ -102,11 +93,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 		log.Warn("Failed to forward report to external endpoint", "err", err, "messageId", msgID)
 		return 0
 	}
-	_, err = r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-		QueueUrl:      &r.sqsClient.QueueURL,
-		ReceiptHandle: msg.ReceiptHandle,
-	})
-	if err != nil {
+	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
 		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", msgID)
 	}
 	return 0
