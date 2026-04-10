@@ -5,7 +5,6 @@ package rpcclient
 
 import (
 	"context"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
@@ -40,24 +39,11 @@ func (c *Client) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 }
 
-func convertError(err error) error {
-	if err == nil {
-		return nil
-	}
-	errStr := err.Error()
-	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
-		return execution.ErrRetrySequencer
-	} else if strings.Contains(errStr, execution.ResultNotFound.Error()) {
-		return execution.ResultNotFound
-	}
-	return err
-}
-
 func sendRequest[T any](c *Client, method string, args ...any) containers.PromiseInterface[T] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (T, error) {
 		var res T
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+method, args...)
-		return res, convertError(err)
+		return res, err
 	})
 }
 

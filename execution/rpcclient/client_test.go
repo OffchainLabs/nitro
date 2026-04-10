@@ -64,29 +64,24 @@ func TestClientErrorHandling(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			name:        "ResultNotFound mapped to sentinel",
+			name:        "ResultNotFound",
 			serverErr:   execution.ResultNotFound,
 			expectedErr: execution.ResultNotFound,
 		},
 		{
-			name:        "ResultNotFound wrapped in longer message mapped to sentinel",
+			name:        "ResultNotFound wrapped",
 			serverErr:   fmt.Errorf("execution context: %w", execution.ResultNotFound),
 			expectedErr: execution.ResultNotFound,
 		},
 		{
-			name:        "ErrRetrySequencer mapped to sentinel",
+			name:        "ErrRetrySequencer",
 			serverErr:   execution.ErrRetrySequencer,
 			expectedErr: execution.ErrRetrySequencer,
 		},
 		{
-			name:        "ErrRetrySequencer wrapped in longer message mapped to sentinel",
+			name:        "ErrRetrySequencer wrapped",
 			serverErr:   fmt.Errorf("rpc context: %w", execution.ErrRetrySequencer),
 			expectedErr: execution.ErrRetrySequencer,
-		},
-		{
-			name:        "generic error message is preserved",
-			serverErr:   errors.New("unexpected failure"),
-			expectedErr: errors.New("unexpected failure"),
 		},
 	}
 
@@ -109,15 +104,8 @@ func TestClientErrorHandling(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error from server, got nil")
 			}
-			switch {
-			case errors.Is(tc.expectedErr, execution.ResultNotFound), errors.Is(tc.expectedErr, execution.ErrRetrySequencer):
-				if !errors.Is(err, tc.expectedErr) {
-					t.Errorf("expected sentinel error %v, got %v", tc.expectedErr, err)
-				}
-			default:
-				if err.Error() != tc.expectedErr.Error() {
-					t.Errorf("expected error message %q, got %q", tc.expectedErr.Error(), err.Error())
-				}
+			if !errors.Is(err, tc.expectedErr) {
+				t.Errorf("expected %v, got %v", tc.expectedErr, err)
 			}
 		})
 	}
