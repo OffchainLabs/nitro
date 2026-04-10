@@ -984,7 +984,7 @@ func TestRetryableFilteringAutoRedeemCascadeWithCallValue(t *testing.T) {
 	require.NoError(t, err)
 	arbRetryableTxAddr := common.HexToAddress("6e")
 
-	callValue := big.NewInt(1e6)
+	callValue := big.NewInt(1e7)
 
 	// Submit B (gasLimit=0, callValue=1e6, data=callTarget(filteredTarget)). Process.
 	bRetryData, err := callerABI.Pack("callTarget", filteredTarget)
