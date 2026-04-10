@@ -41,7 +41,7 @@ type FilteringReportConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	SQS             sqsclient.QueueConfig `koanf:"sqs"`
+	Queue           sqsclient.QueueConfig `koanf:"queue"`
 	ReportForwarder forwarder.Config      `koanf:"report-forwarder"`
 }
 
@@ -80,7 +80,7 @@ var DefaultFilteringReportConfig = FilteringReportConfig{
 	WS:              WSConfigDefault,
 	IPC:             IPCConfigDefault,
 	Auth:            genericconf.AuthRPCConfigDefault,
-	SQS:             sqsclient.DefaultQueueConfig,
+	Queue:           sqsclient.DefaultQueueConfig,
 	ReportForwarder: forwarder.DefaultConfig,
 }
 
@@ -102,7 +102,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 
-	sqsclient.QueueConfigAddOptions("sqs", f)
+	sqsclient.QueueConfigAddOptions("queue", f)
 	forwarder.ConfigAddOptions("report-forwarder", f)
 }
 
@@ -122,8 +122,8 @@ func parseConfig(args []string) (*FilteringReportConfig, error) {
 	}
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"sqs.sqs-client.access-key": "",
-			"sqs.sqs-client.secret-key": "",
+			"queue.sqs-client.access-key": "",
+			"queue.sqs-client.secret-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -183,13 +183,13 @@ func mainImpl() int {
 		return 1
 	}
 
-	if err := config.SQS.Validate(); err != nil {
+	if err := config.Queue.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: SQS config validation failed: %v\n", err)
 		return 1
 	}
 	var queueClient *sqsclient.QueueClient
-	if config.SQS.Enable {
-		queueClient, err = sqsclient.NewQueueClient(ctx, &config.SQS)
+	if config.Queue.Enable {
+		queueClient, err = sqsclient.NewQueueClient(ctx, &config.Queue)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
 			return 1
