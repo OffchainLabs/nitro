@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+var testFilterSetID = uuid.MustParse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
 func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 	report := FilteredTxReport{
 		ID:     "019539b4-6b30-7e5a-8000-1a2b3c4d5e6f",
@@ -23,7 +26,8 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8, 0x6c},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address: common.HexToAddress("0xdead"),
+				FilterSetID: testFilterSetID,
+				Address:     common.HexToAddress("0xdead"),
 				FilterReason: filter.FilterReason{
 					Reason:         filter.ReasonFrom,
 					EventRuleMatch: nil,
@@ -47,6 +51,7 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		"txRLP": "0xf86c",
 		"filteredAddresses": [
 			{
+				"filterSetId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 				"address": "0x000000000000000000000000000000000000dead",
 				"reason": "from"
 			}
@@ -73,7 +78,8 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8, 0x6c},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address: common.HexToAddress("0xdead"),
+				FilterSetID: testFilterSetID,
+				Address:     common.HexToAddress("0xdead"),
 				FilterReason: filter.FilterReason{
 					Reason:         filter.ReasonDealiasedFrom,
 					EventRuleMatch: nil,
@@ -99,6 +105,7 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		"txRLP": "0xf86c",
 		"filteredAddresses": [
 			{
+				"filterSetId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 				"address": "0x000000000000000000000000000000000000dead",
 				"reason": "dealiased_from"
 			}
@@ -125,7 +132,8 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address: common.HexToAddress("0xbeef"),
+				FilterSetID: testFilterSetID,
+				Address:     common.HexToAddress("0xbeef"),
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonEventRule,
 					EventRuleMatch: &filter.EventRuleMatch{
@@ -161,6 +169,7 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		"txRLP": "0xf8",
 		"filteredAddresses": [
 			{
+				"filterSetId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 				"address": "0x000000000000000000000000000000000000beef",
 				"reason": "event_rule",
 				"matchedEvent": "Transfer(address,address,uint256)",

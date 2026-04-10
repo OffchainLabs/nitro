@@ -25,7 +25,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 
 	// Test empty store
 	addr := common.HexToAddress("0xddfAbCdc4D8FfC6d5beaf154f18B778f892A0740")
-	if store.IsRestricted(addr) {
+	if restricted, _ := store.IsRestricted(addr); restricted {
 		t.Error("empty store should not restrict any address")
 	}
 
@@ -51,14 +51,14 @@ func TestHashStore_IsRestricted(t *testing.T) {
 
 	// Test restricted addresses
 	for _, addr := range addresses {
-		if !store.IsRestricted(addr) {
+		if restricted, _ := store.IsRestricted(addr); !restricted {
 			t.Errorf("address %s should be restricted", addr.Hex())
 		}
 	}
 
 	// Test non-restricted address
 	nonRestrictedAddr := common.HexToAddress("0x4444444444444444444444444444444444444444")
-	if store.IsRestricted(nonRestrictedAddr) {
+	if restricted, _ := store.IsRestricted(nonRestrictedAddr); restricted {
 		t.Errorf("address %s should not be restricted", nonRestrictedAddr.Hex())
 	}
 
@@ -80,7 +80,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 
 	// Store first set
 	store.Store(uuid.New(), salt1, []common.Hash{hash1}, "etag1")
-	if !store.IsRestricted(addr1) {
+	if restricted, _ := store.IsRestricted(addr1); !restricted {
 		t.Error("addr1 should be restricted after first load")
 	}
 
@@ -92,11 +92,11 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	store.Store(uuid.New(), salt2, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
-	if store.IsRestricted(addr1) {
+	if restricted, _ := store.IsRestricted(addr1); restricted {
 		t.Error("addr1 should not be restricted after swap (salt changed)")
 	}
 	// addr2 should now be restricted
-	if !store.IsRestricted(addr2) {
+	if restricted, _ := store.IsRestricted(addr2); !restricted {
 		t.Error("addr2 should be restricted after swap")
 	}
 	if store.Digest() != "etag2" {
@@ -145,8 +145,10 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 					if store.isAllRestricted([]common.Address{addr1, addr2}) ||
 						!store.isAnyRestricted([]common.Address{addr1, addr2}) {
 						// One should be restricted, the other not, atomic swap should ensure consistency
-						t.Log("addr1:", addr1.Hex(), "restricted:", store.IsRestricted(addr1))
-						t.Log("addr2:", addr2.Hex(), "restricted:", store.IsRestricted(addr2))
+						r1, _ := store.IsRestricted(addr1)
+						r2, _ := store.IsRestricted(addr2)
+						t.Log("addr1:", addr1.Hex(), "restricted:", r1)
+						t.Log("addr2:", addr2.Hex(), "restricted:", r2)
 						t.Error("concurrent access yielded inconsistent results")
 					}
 				}
@@ -398,15 +400,15 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	store.Store(uuid.New(), salt, hashes, "test-etag")
 
 	// Verify store works correctly with custom size
-	if !store.IsRestricted(addresses[0]) {
+	if restricted, _ := store.IsRestricted(addresses[0]); !restricted {
 		t.Error("address should be restricted")
 	}
-	if !store.IsRestricted(addresses[1]) {
+	if restricted, _ := store.IsRestricted(addresses[1]); !restricted {
 		t.Error("address should be restricted")
 	}
 
 	nonRestrictedAddr := common.HexToAddress("0x3333333333333333333333333333333333333333")
-	if store.IsRestricted(nonRestrictedAddr) {
+	if restricted, _ := store.IsRestricted(nonRestrictedAddr); restricted {
 		t.Error("address should not be restricted")
 	}
 }

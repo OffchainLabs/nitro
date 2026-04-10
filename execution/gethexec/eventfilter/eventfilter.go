@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
@@ -209,8 +211,8 @@ func (f *EventFilter) HasRules() bool {
 
 // AddressesForFiltering returns FilteredAddressRecords for all addresses
 // referenced by the matching event rule. Each record includes the event rule
-// match details (event name, topic index, raw log).
-func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address, _sender common.Address) []filter.FilteredAddressRecord {
+// match details (event name, topic index, raw log) and the given filterSetID.
+func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address, filterSetID uuid.UUID) []filter.FilteredAddressRecord {
 	if len(topics) == 0 {
 		return nil
 	}
@@ -244,7 +246,8 @@ func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, e
 		if idx > 0 && idx < len(topics) {
 			address := common.BytesToAddress(topics[idx][abiAddressOffset:])
 			out = append(out, filter.FilteredAddressRecord{
-				Address: address,
+				FilterSetID: filterSetID,
+				Address:     address,
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonEventRule,
 					EventRuleMatch: &filter.EventRuleMatch{
