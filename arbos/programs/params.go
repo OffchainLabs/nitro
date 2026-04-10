@@ -113,8 +113,9 @@ func (p Programs) Params() (*StylusParams, error) {
 	return stylusParams, nil
 }
 
-// Writes the params to permanent storage.
-func (p *StylusParams) Save() error {
+// Writes the params to permanent storage. If reallyStore is false, the params
+// are not actually written but the equivalent storage gas is still charged.
+func (p *StylusParams) Save(reallyStore bool) error {
 	if p.backingStorage == nil {
 		log.Error("tried to Save invalid StylusParams")
 		return errors.New("invalid StylusParams")
@@ -148,8 +149,18 @@ func (p *StylusParams) Save() error {
 
 		word := common.Hash{}
 		copy(word[:], info) // right-pad with zeros
-		if err := p.backingStorage.SetByUint64(slot, word); err != nil {
-			return err
+		if reallyStore {
+			if err := p.backingStorage.SetByUint64(slot, word); err != nil {
+				return err
+			}
+		} else {
+			writeCost := storage.StorageWriteCost
+			if (word == common.Hash{}) {
+				writeCost = storage.StorageWriteZeroCost
+			}
+			if err := p.backingStorage.Burner().Burn(multigas.ResourceKindStorageAccess, writeCost); err != nil {
+				return err
+			}
 		}
 		slot += 1
 	}
@@ -214,5 +225,5 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 	if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
-	_ = stylusParams.Save()
+	_ = stylusParams.Save(true)
 }

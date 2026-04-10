@@ -407,7 +407,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToVersion(2))
-			ensure(params.Save())
+			ensure(params.Save(true))
 
 		case params.ArbosVersion_32:
 			// no change state needed
@@ -424,7 +424,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(params.Save())
+			ensure(params.Save(true))
 
 		case params.ArbosVersion_41:
 			// no change state needed
@@ -436,7 +436,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(p.Save())
+			ensure(p.Save(true))
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 
 		case params.ArbosVersion_51:
