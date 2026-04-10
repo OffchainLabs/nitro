@@ -4,7 +4,6 @@
 package forwarder
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -102,9 +101,10 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	ctx := t.Context()
 	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
-	forwarder.pollAndForward(context.Background())
-	forwarder.pollAndForward(context.Background())
+	forwarder.pollAndForward(ctx)
+	forwarder.pollAndForward(ctx)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -161,8 +161,9 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	ctx := t.Context()
 	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
-	forwarder.pollAndForward(context.Background())
+	forwarder.pollAndForward(ctx)
 
 	deleted := queueClient.DeletedReceiptHandles()
 	if len(deleted) != 0 {
@@ -181,7 +182,7 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 	queueClient := &sqsclient.MockQueueClient{}
 
 	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
-	interval := forwarder.pollAndForward(context.Background())
+	interval := forwarder.pollAndForward(t.Context())
 
 	if externalEndpointServerCalled {
 		t.Fatal("expected no HTTP calls on empty queue")
