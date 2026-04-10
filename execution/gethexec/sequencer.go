@@ -17,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -430,6 +432,9 @@ type Sequencer struct {
 
 	eventFilter          *eventfilter.EventFilter
 	addressFilterService *addressfilter.FilterService
+
+	filteringReportRPCClient *FilteringReportRPCClient
+	pendingFilteredTxReports []addressfilter.FilteredTxReport
 }
 
 func NewSequencer(
@@ -482,6 +487,30 @@ func (s *Sequencer) FilteringReady() bool {
 		return true
 	}
 	return !s.addressFilterService.GetLoadedAt().IsZero()
+}
+
+func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
+	if s.filteringReportRPCClient == nil {
+		return
+	}
+	txRLP, err := tx.MarshalBinary()
+	if err != nil {
+		log.Error("failed to marshal filtered tx RLP", "txHash", tx.Hash(), "err", err)
+		return
+	}
+	report := addressfilter.FilteredTxReport{
+		ID:                uuid.NewString(),
+		TxHash:            tx.Hash(),
+		TxRLP:             txRLP,
+		FilteredAddresses: filteredAddresses,
+		BlockNumber:       header.Number.Uint64(),
+		ParentBlockHash:   header.ParentHash,
+		PositionInBlock:   uint64(positionInBlock), // #nosec G115
+		FilteredAt:        time.Now(),
+		IsDelayed:         false,
+		DelayedReportData: nil,
+	}
+	s.pendingFilteredTxReports = append(s.pendingFilteredTxReports, report)
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -703,7 +732,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	return nil
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info, positionInBlock int) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -722,14 +751,15 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	}
 
 	touchAddresses(statedb, tx, sender)
-	addressFiltered, _ := statedb.IsAddressFiltered()
+	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
 	if statedb.IsTxFiltered() || addressFiltered {
+		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
 		return state.ErrArbTxFilter
 	}
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
@@ -739,7 +769,8 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		}
 	}
 
-	if addressFiltered, _ := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
+	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
+		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
 		return state.ErrArbTxFilter
 	}
 
@@ -921,8 +952,8 @@ type FullSequencingHooks struct {
 	sequencedTxsSizeSoFar    int
 	maxSequencedTxsSize      int
 	txErrors                 []error
-	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
-	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error
+	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
 }
@@ -1024,19 +1055,19 @@ func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) 
 	return s.queueItems[txId].tx, nil
 }
 
-func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info) error {
+func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info, positionInBlock int) error {
 	if s.preTxFilter != nil {
-		return s.preTxFilter(config, header, db, a, transaction, options, address, info)
+		return s.preTxFilter(config, header, db, a, transaction, options, address, info, positionInBlock)
 	}
 	return nil
 }
 
-func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if transaction.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
 	if s.postTxFilter != nil {
-		return s.postTxFilter(header, db, a, transaction, address, u, result)
+		return s.postTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
 	}
 	return nil
 }
@@ -1051,8 +1082,8 @@ func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 func MakeSequencingHooks(
 	items []txQueueItem,
 	maxSequencedTxsSize int,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
+	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
@@ -1071,8 +1102,8 @@ func MakeSequencingHooks(
 // This allows all transactions to be included in a block regardless of size.
 func MakeZeroTxSizeSequencingHooksForTesting(
 	txes types.Transactions,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
+	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	var items []txQueueItem
@@ -1398,6 +1429,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
+	s.pendingFilteredTxReports = nil
+
 	start := time.Now()
 	var (
 		block *types.Block
@@ -1407,6 +1440,16 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, hooks, timeboostedTxs)
 	} else {
 		block, err = s.execEngine.SequenceTransactions(header, hooks, timeboostedTxs)
+	}
+
+	if len(s.pendingFilteredTxReports) > 0 && s.filteringReportRPCClient != nil {
+		reports := s.pendingFilteredTxReports
+		s.pendingFilteredTxReports = nil
+		s.LaunchThread(func(ctx context.Context) {
+			if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+				log.Warn("failed to report filtered transactions", "count", len(reports), "err", err)
+			}
+		})
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed.Nanoseconds())
@@ -1664,6 +1707,12 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
+	if s.filteringReportRPCClient != nil {
+		if err := s.filteringReportRPCClient.Start(ctxIn); err != nil {
+			return fmt.Errorf("failed to start filtering report RPC client: %w", err)
+		}
+	}
+
 	config := s.config()
 	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
@@ -1753,6 +1802,9 @@ func (s *Sequencer) StopAndWait() {
 	// but stopped here because the Sequencer owns it.
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
+	}
+	if s.filteringReportRPCClient != nil {
+		s.filteringReportRPCClient.StopAndWait()
 	}
 	s.StopWaiter.StopAndWait()
 	if s.txRetryQueue.Len() == 0 &&

@@ -213,10 +213,10 @@ type SequencingHooks interface {
 	// SupportsGroupRollback returns whether the hooks support checkpointing and
 	// rolling back a group of transactions (user tx + its scheduled redeems).
 	SupportsGroupRollback() bool
-	// PreTxFilter rejects a tx before execution.
-	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
-	// PostTxFilter rejects a tx after execution.
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	// PreTxFilter rejects a tx before execution. positionInBlock is len(receipts) at call time.
+	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info, int) error
+	// PostTxFilter rejects a tx after execution. positionInBlock is len(receipts) at call time.
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
 	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
@@ -244,11 +244,11 @@ func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 
 func (n *NoopSequencingHooks) CanDiscardTx() bool { return false }
 
-func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
+func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info, positionInBlock int) error {
 	return nil
 }
 
-func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, positionInBlock int) error {
 	return nil
 }
 
@@ -426,7 +426,7 @@ func ProduceBlockAdvanced(
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if isUserTx {
-				if err = sequencingHooks.PreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info); err != nil {
+				if err = sequencingHooks.PreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, len(buildState.receipts)); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -489,7 +489,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result); err != nil {
+					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result, len(buildState.receipts)); err != nil {
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
