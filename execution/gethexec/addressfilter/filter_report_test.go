@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-var testFilterSetID = uuid.MustParse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+const testFilterSetID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
 func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 	report := FilteredTxReport{

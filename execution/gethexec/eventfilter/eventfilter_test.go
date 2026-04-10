@@ -6,7 +6,6 @@ package eventfilter
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -124,7 +123,7 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 }
 
 func TestExtractAddresses_EdgeCases(t *testing.T) {
-	filterSetID := uuid.New()
+	filterSetID := "test-filter-set-id"
 	event := "Transfer(address,address,uint256)"
 	selector, _, err := CanonicalSelectorFromEvent(event)
 	if err != nil {
@@ -197,7 +196,7 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 }
 
 func TestExtractAddresses_TransferRules(t *testing.T) {
-	filterSetID := uuid.New()
+	filterSetID := "test-filter-set-id"
 	rulesJSON := `{
 		"rules": [
 			{

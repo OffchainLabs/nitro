@@ -10,8 +10,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
@@ -212,7 +210,7 @@ func (f *EventFilter) HasRules() bool {
 // AddressesForFiltering returns FilteredAddressRecords for all addresses
 // referenced by the matching event rule. Each record includes the event rule
 // match details (event name, topic index, raw log) and the given filterSetID.
-func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address, filterSetID uuid.UUID) []filter.FilteredAddressRecord {
+func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address, filterSetID string) []filter.FilteredAddressRecord {
 	if len(topics) == 0 {
 		return nil
 	}

@@ -7,8 +7,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/google/uuid"
-
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/core/state"
 
@@ -77,14 +75,14 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
-func (c *HashedAddressChecker) FilterSetID() uuid.UUID {
-	return c.store.ID()
+func (c *HashedAddressChecker) FilterSetID() string {
+	return c.store.ID().String()
 }
 
 func (c *HashedAddressChecker) processRecord(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
 	restricted, filterSetID := c.store.IsRestricted(record.Address)
 	// Override with the ID from the same snapshot as the restriction check.
-	record.FilterSetID = filterSetID
+	record.FilterSetID = filterSetID.String()
 	state.report(record, restricted)
 }
 
