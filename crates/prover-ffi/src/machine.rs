@@ -280,6 +280,18 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
     }
 }
 
+/// Sets the ending parent chain block hash used for a machine when executing message extraction
+/// algorithms.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_set_end_parent_chain_block_hash(
+    mach: *mut Machine,
+    block_hash: *const Bytes32,
+) {
+    unsafe {
+        (*mach).set_end_parent_chain_block_hash(*block_hash);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
     unsafe {
