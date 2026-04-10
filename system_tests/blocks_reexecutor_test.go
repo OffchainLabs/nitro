@@ -201,7 +201,16 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 		}
 	}
 
-	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+	// Restart the node to flush the dirty trie cache. Sparse archive mode
+	// only saves state every N blocks, but the in-memory dirty cache holds
+	// all intermediate states until the node stops. After restart, only
+	// states that were persisted to disk survive.
+	builder.ctxCancel()
+	builder.L2.cleanup()
+	builder.ctx, builder.ctxCancel = context.WithCancel(ctx)
+	cleanup = builder.Build(t)
+	blockchain = builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+	bc := blockchain
 
 	// 3. Assert that some blocks are missing in 140 block windows
 	offset := uint64(maxNumberOfBlocksToSkipStateSaving - 10)

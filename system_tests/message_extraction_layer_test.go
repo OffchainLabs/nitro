@@ -491,9 +491,9 @@ func TestMessageExtractionLayer_RunningNode(t *testing.T) {
 	Require(t, err)
 	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
 
-	// Test eth deposit
+	// Test eth deposit - use enough funds to cover high gas prices under parallel test load
 	builder.L1Info.GenerateAccount("UserX")
-	builder.L1.TransferBalance(t, "Faucet", "UserX", big.NewInt(1e18), builder.L1Info)
+	builder.L1.TransferBalance(t, "Faucet", "UserX", new(big.Int).Mul(big.NewInt(1e18), big.NewInt(100)), builder.L1Info)
 
 	txOpts := builder.L1Info.GetDefaultTransactOpts("UserX", ctx)
 	txOpts.Value = big.NewInt(13)

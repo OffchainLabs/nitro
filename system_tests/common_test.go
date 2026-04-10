@@ -2727,15 +2727,18 @@ func deployContractForwardError(
 	if err != nil {
 		return common.Address{}, err
 	}
-	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
-		From:      auth.From,
-		GasPrice:  basefee,
-		GasTipCap: auth.GasTipCap,
-		Value:     big.NewInt(0),
-		Data:      deploy,
-	})
-	if err != nil {
-		return common.Address{}, err
+	gas := auth.GasLimit
+	if gas == 0 {
+		gas, err = client.EstimateGas(ctx, ethereum.CallMsg{
+			From:      auth.From,
+			GasPrice:  basefee,
+			GasTipCap: auth.GasTipCap,
+			Value:     big.NewInt(0),
+			Data:      deploy,
+		})
+		if err != nil {
+			return common.Address{}, err
+		}
 	}
 	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
 	tx, err = auth.Signer(auth.From, tx)

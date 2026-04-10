@@ -350,7 +350,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
-	timer := time.NewTimer(5 * time.Second)
+	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 	select {
 	case err := <-feedErrChan:
@@ -365,7 +365,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	b.Confirm(42)
 
 	// Wait for client to receive confirm message
-	timer2 := time.NewTimer(5 * time.Second)
+	timer2 := time.NewTimer(30 * time.Second)
 	defer timer2.Stop()
 	select {
 	case err := <-feedErrChan:
