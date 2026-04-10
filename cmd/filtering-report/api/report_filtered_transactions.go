@@ -6,7 +6,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -14,9 +13,6 @@ import (
 )
 
 func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, reports []addressfilter.FilteredTxReport) error {
-	if a.sqsClient == nil {
-		return errors.New("SQS client not configured")
-	}
 	log.Debug("Sending filtered transaction reports to SQS", "count", len(reports))
 	for _, report := range reports {
 		body, err := json.Marshal(report)
