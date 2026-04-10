@@ -163,6 +163,11 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 	// For now PathDB is not supported
 	builder.RequireScheme(t, rawdb.HashScheme)
+	// This test asserts that intermediate state has been garbage-collected from
+	// the trie dirty cache (blocks between sparse-archive commit points should
+	// have no state). Under concurrent test load the assertions fail at
+	// non-deterministic blocks yet the test passes reliably in isolation.
+	builder.DontParalellise()
 
 	maxNumberOfBlocksToSkipStateSaving := uint32(150)
 
