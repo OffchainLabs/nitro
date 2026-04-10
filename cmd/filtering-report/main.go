@@ -84,6 +84,16 @@ var DefaultFilteringReportConfig = FilteringReportConfig{
 	ReportForwarder: forwarder.DefaultConfig,
 }
 
+func (c *FilteringReportConfig) Validate() error {
+	if err := c.Queue.Validate(); err != nil {
+		return fmt.Errorf("queue config: %w", err)
+	}
+	if err := c.ReportForwarder.Validate(); err != nil {
+		return fmt.Errorf("report-forwarder config: %w", err)
+	}
+	return nil
+}
+
 func addFlags(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	conf.PersistentConfigAddOptions("persistent", f)
@@ -183,18 +193,13 @@ func mainImpl() int {
 		return 1
 	}
 
-	if err := config.Queue.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: queue config validation failed: %v\n", err)
+	if err := config.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
 	queueClient, err := sqsclient.NewQueueClient(ctx, &config.Queue)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
-		return 1
-	}
-
-	if err := config.ReportForwarder.ExternalEndpoint.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: report-forwarder external endpoint config validation failed: %v\n", err)
 		return 1
 	}
 	fwd := forwarder.New(&config.ReportForwarder, queueClient)

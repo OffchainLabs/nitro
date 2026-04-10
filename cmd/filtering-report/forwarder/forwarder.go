@@ -34,6 +34,10 @@ var DefaultConfig = Config{
 	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
 }
 
+func (c *Config) Validate() error {
+	return c.ExternalEndpoint.Validate()
+}
+
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultConfig.Workers, "number of workers")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
