@@ -53,6 +53,12 @@ func createMockExecutionNode(t *testing.T, errToReturn error) *node.Node {
 	return stack
 }
 
+var allSentinels = []error{
+	execution.ResultNotFound,
+	execution.ErrRetrySequencer,
+	execution.ErrSequencerInsertLockTaken,
+}
+
 func TestClientErrorHandling(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -83,6 +89,16 @@ func TestClientErrorHandling(t *testing.T) {
 			serverErr:   fmt.Errorf("rpc context: %w", execution.ErrRetrySequencer),
 			expectedErr: execution.ErrRetrySequencer,
 		},
+		{
+			name:        "ErrSequencerInsertLockTaken",
+			serverErr:   execution.ErrSequencerInsertLockTaken,
+			expectedErr: execution.ErrSequencerInsertLockTaken,
+		},
+		{
+			name:        "ErrSequencerInsertLockTaken wrapped",
+			serverErr:   fmt.Errorf("consensus context: %w", execution.ErrSequencerInsertLockTaken),
+			expectedErr: execution.ErrSequencerInsertLockTaken,
+		},
 	}
 
 	for _, tc := range tests {
@@ -108,5 +124,35 @@ func TestClientErrorHandling(t *testing.T) {
 				t.Errorf("expected %v, got %v", tc.expectedErr, err)
 			}
 		})
+	}
+}
+
+// TestClientErrorNoFalsePositives verifies that a plain server error (which
+// arrives with the default JSON-RPC code -32000) does not match any sentinel.
+func TestClientErrorNoFalsePositives(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	stack := createMockExecutionNode(t, errors.New("some unrelated failure"))
+
+	config := &utilrpc.ClientConfig{
+		URL:     "self",
+		Timeout: 5 * time.Second,
+	}
+	testhelpers.RequireImpl(t, config.Validate())
+
+	client := NewClient(func() *utilrpc.ClientConfig { return config }, stack)
+	testhelpers.RequireImpl(t, client.Start(ctx))
+	defer client.StopAndWait()
+
+	_, err := client.HeadMessageIndex().Await(ctx)
+	if err == nil {
+		t.Fatal("expected an error from server, got nil")
+	}
+	for _, sentinel := range allSentinels {
+		if errors.Is(err, sentinel) {
+			t.Errorf("plain error should not match sentinel %v", sentinel)
+		}
 	}
 }
