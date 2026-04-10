@@ -13,7 +13,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -48,8 +47,8 @@ func convertError(err error) error {
 	errStr := err.Error()
 	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
 		return execution.ErrRetrySequencer
-	} else if strings.Contains(errStr, gethexec.ResultNotFound.Error()) {
-		return gethexec.ResultNotFound
+	} else if strings.Contains(errStr, execution.ResultNotFound.Error()) {
+		return execution.ResultNotFound
 	}
 	return err
 }

@@ -71,7 +71,6 @@ var (
 
 var (
 	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-	ResultNotFound                      = errors.New("result not found")
 	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
 )
 
@@ -1016,7 +1015,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 
 func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
-		return nil, ResultNotFound
+		return nil, execution.ResultNotFound
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{
