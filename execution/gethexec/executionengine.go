@@ -267,6 +267,7 @@ func NewExecutionEngine(
 	exposeMultiGas bool,
 	disableDelayedSequencingFilter bool,
 	addressChecker state.AddressChecker,
+	filteringReportRPCClient *FilteringReportRPCClient,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                             bc,
@@ -277,6 +278,7 @@ func NewExecutionEngine(
 		syncTillBlock:                  syncTillBlock,
 		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 		addressChecker:                 addressChecker,
+		filteringReportRPCClient:       filteringReportRPCClient,
 	}
 }
 
@@ -1244,13 +1246,6 @@ func (s *ExecutionEngine) Start(ctxIn context.Context) error {
 		}
 		s.TrackChild(s.transactionFiltererRPCClient)
 	}
-	if s.filteringReportRPCClient != nil {
-		err := s.filteringReportRPCClient.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to start filtering report RPC client: %w", err)
-		}
-		s.TrackChild(s.filteringReportRPCClient)
-	}
 
 	s.LaunchThread(func(ctx context.Context) {
 		for {
@@ -1366,10 +1361,6 @@ func (s *ExecutionEngine) SetEventFilter(ef *eventfilter.EventFilter) {
 
 func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
 	s.transactionFiltererRPCClient = client
-}
-
-func (s *ExecutionEngine) SetFilteringReportRPCClient(client *FilteringReportRPCClient) {
-	s.filteringReportRPCClient = client
 }
 
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
