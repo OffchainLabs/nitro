@@ -15,7 +15,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	utilrpc "github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -66,13 +65,13 @@ func TestClientErrorHandling(t *testing.T) {
 	}{
 		{
 			name:        "ResultNotFound mapped to sentinel",
-			serverErr:   gethexec.ResultNotFound,
-			expectedErr: gethexec.ResultNotFound,
+			serverErr:   execution.ErrResultNotFound,
+			expectedErr: execution.ErrResultNotFound,
 		},
 		{
 			name:        "ResultNotFound wrapped in longer message mapped to sentinel",
-			serverErr:   fmt.Errorf("execution context: %w", gethexec.ResultNotFound),
-			expectedErr: gethexec.ResultNotFound,
+			serverErr:   fmt.Errorf("execution context: %w", execution.ErrResultNotFound),
+			expectedErr: execution.ErrResultNotFound,
 		},
 		{
 			name:        "ErrRetrySequencer mapped to sentinel",
@@ -111,7 +110,7 @@ func TestClientErrorHandling(t *testing.T) {
 				t.Fatal("expected an error from server, got nil")
 			}
 			switch {
-			case errors.Is(tc.expectedErr, gethexec.ResultNotFound), errors.Is(tc.expectedErr, execution.ErrRetrySequencer):
+			case errors.Is(tc.expectedErr, execution.ErrResultNotFound), errors.Is(tc.expectedErr, execution.ErrRetrySequencer):
 				if !errors.Is(err, tc.expectedErr) {
 					t.Errorf("expected sentinel error %v, got %v", tc.expectedErr, err)
 				}

@@ -14,7 +14,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -32,9 +31,6 @@ var DefaultConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 var TestConsensusExecutionSyncerConfig = ConsensusExecutionSyncerConfig{
 	SyncInterval: TestSyncMonitorConfig.MsgLag / 2,
 }
-
-// We don't define a Test config. For most tests we want the Syncer to behave
-// the same as in production.
 
 func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality and sync data is pushed from consensus to execution")
@@ -108,7 +104,7 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 	}
 	msgIdx := msgCount - 1
 	msgResult, err := c.txStreamer.ResultAtMessageIndex(msgIdx)
-	if errors.Is(err, gethexec.ResultNotFound) {
+	if errors.Is(err, execution.ErrResultNotFound) {
 		log.Debug("Message result not found, node out of sync", "msgIdx", msgIdx, "err", err)
 		return nil, nil
 	} else if err != nil {

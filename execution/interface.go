@@ -44,6 +44,7 @@ type ConsensusSyncData struct {
 
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
+var ErrResultNotFound = errors.New("result not found")
 
 // always needed
 type ExecutionClient interface {
