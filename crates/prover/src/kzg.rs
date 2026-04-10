@@ -4,12 +4,14 @@
 use std::{convert::TryFrom, io::Write};
 
 use arbutil::Bytes32;
+#[cfg(feature = "kzg")]
 use c_kzg::{BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, KzgSettings};
 use eyre::{Result, WrapErr, ensure};
 use num::BigUint;
 use sha2::{Digest, Sha256};
 
 lazy_static::lazy_static! {
+    #[cfg(feature = "kzg")]
     pub static ref ETHEREUM_KZG_SETTINGS: KzgSettings = {
         let trusted_setup = include_str!("kzg-trusted-setup.txt");
         KzgSettings::parse_kzg_trusted_setup(trusted_setup, 0)
@@ -26,6 +28,7 @@ lazy_static::lazy_static! {
 }
 
 /// Creates a KZG preimage proof consumable by the point evaluation precompile.
+#[cfg(feature = "kzg")]
 pub fn prove_kzg_preimage(
     hash: Bytes32,
     preimage: &[u8],
@@ -88,7 +91,7 @@ pub fn prove_kzg_preimage(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "kzg"))]
 #[test]
 fn load_trusted_setup() {
     let _: &KzgSettings = &ETHEREUM_KZG_SETTINGS;

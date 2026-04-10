@@ -29,10 +29,16 @@ unsafe extern "C" {
     ) -> usize;
 }
 
-/// Forces a type to implement [`Sync`].
+/// Forces a type to implement [`Sync`] and [`Send`].
+/// Only used to wrap static dictionary pointers (`*const EncoderPreparedDictionary`)
+/// which point to immutable, process-lifetime data initialized once via `lazy_static`.
 struct ForceSync<T>(T);
 
+// SAFETY: ForceSync only wraps raw pointers to immutable, static dictionary data.
+// The data is initialized once (via lazy_static) and never mutated or freed,
+// so sharing across threads is safe.
 unsafe impl<T> Sync for ForceSync<T> {}
+unsafe impl<T> Send for ForceSync<T> {}
 
 lazy_static! {
     /// Memoizes dictionary preperation.
