@@ -1707,12 +1707,6 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
-	if s.filteringReportRPCClient != nil {
-		if err := s.filteringReportRPCClient.Start(ctxIn); err != nil {
-			return fmt.Errorf("failed to start filtering report RPC client: %w", err)
-		}
-	}
-
 	config := s.config()
 	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
@@ -1802,9 +1796,6 @@ func (s *Sequencer) StopAndWait() {
 	// but stopped here because the Sequencer owns it.
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
-	}
-	if s.filteringReportRPCClient != nil {
-		s.filteringReportRPCClient.StopAndWait()
 	}
 	s.StopWaiter.StopAndWait()
 	if s.txRetryQueue.Len() == 0 &&
