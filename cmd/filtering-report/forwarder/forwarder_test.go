@@ -23,10 +23,10 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-func newTestStack(t *testing.T, sqsMockClient *sqsclient.MockQueueClient) *rpc.Client {
+func newTestStack(t *testing.T, queueClient *sqsclient.MockQueueClient) *rpc.Client {
 	t.Helper()
 	stackConfig := api.DefaultStackConfig
-	stack, err := api.NewStack(&stackConfig, sqsMockClient)
+	stack, err := api.NewStack(&stackConfig, queueClient)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func newTestStack(t *testing.T, sqsMockClient *sqsclient.MockQueueClient) *rpc.C
 	return client
 }
 
-func newTestForwarder(sqsMockClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
+func newTestForwarder(queueClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
 	config := &Config{
 		Workers:         1,
 		PollInterval:    time.Second,
@@ -49,7 +49,7 @@ func newTestForwarder(sqsMockClient *sqsclient.MockQueueClient, endpointURL stri
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 	}
-	return New(config, sqsMockClient)
+	return New(config, queueClient)
 }
 
 func TestForwarder_ForwardsMessages(t *testing.T) {
@@ -69,8 +69,8 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	}))
 	defer externalEndpointServer.Close()
 
-	sqsMockClient := &sqsclient.MockQueueClient{}
-	filteringReportClient := newTestStack(t, sqsMockClient)
+	queueClient := &sqsclient.MockQueueClient{}
+	filteringReportClient := newTestStack(t, queueClient)
 
 	reports := []addressfilter.FilteredTxReport{
 		{
@@ -102,7 +102,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := newTestForwarder(sqsMockClient, externalEndpointServer.URL)
+	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(context.Background())
 	forwarder.pollAndForward(context.Background())
 
@@ -128,7 +128,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 		}
 	}
 
-	deleted := sqsMockClient.DeletedReceiptHandles()
+	deleted := queueClient.DeletedReceiptHandles()
 	if len(deleted) != 2 {
 		t.Fatalf("expected 2 deletes, got %d", len(deleted))
 	}
@@ -140,8 +140,8 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}))
 	defer externalEndpointServer.Close()
 
-	sqsMockClient := &sqsclient.MockQueueClient{}
-	filteringReportClient := newTestStack(t, sqsMockClient)
+	queueClient := &sqsclient.MockQueueClient{}
+	filteringReportClient := newTestStack(t, queueClient)
 
 	reports := []addressfilter.FilteredTxReport{
 		{
@@ -161,10 +161,10 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := newTestForwarder(sqsMockClient, externalEndpointServer.URL)
+	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(context.Background())
 
-	deleted := sqsMockClient.DeletedReceiptHandles()
+	deleted := queueClient.DeletedReceiptHandles()
 	if len(deleted) != 0 {
 		t.Fatalf("expected 0 deletes on endpoint failure, got %d", len(deleted))
 	}
@@ -178,15 +178,15 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 	}))
 	defer externalEndpointServer.Close()
 
-	sqsMockClient := &sqsclient.MockQueueClient{}
+	queueClient := &sqsclient.MockQueueClient{}
 
-	forwarder := newTestForwarder(sqsMockClient, externalEndpointServer.URL)
+	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(context.Background())
 
 	if externalEndpointServerCalled {
 		t.Fatal("expected no HTTP calls on empty queue")
 	}
-	deleted := sqsMockClient.DeletedReceiptHandles()
+	deleted := queueClient.DeletedReceiptHandles()
 	if len(deleted) != 0 {
 		t.Fatalf("expected 0 deletes on empty queue, got %d", len(deleted))
 	}
