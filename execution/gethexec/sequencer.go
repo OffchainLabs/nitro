@@ -433,7 +433,6 @@ type Sequencer struct {
 	eventFilter          *eventfilter.EventFilter
 	addressFilterService *addressfilter.FilterService
 
-	filteringReportRPCClient *FilteringReportRPCClient
 	pendingFilteredTxReports []addressfilter.FilteredTxReport
 }
 
@@ -490,7 +489,7 @@ func (s *Sequencer) FilteringReady() bool {
 }
 
 func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
-	if s.filteringReportRPCClient == nil {
+	if s.execEngine.filteringReportRPCClient == nil {
 		return
 	}
 	txRLP, err := tx.MarshalBinary()
@@ -505,7 +504,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 		FilteredAddresses: filteredAddresses,
 		BlockNumber:       header.Number.Uint64(),
 		ParentBlockHash:   header.ParentHash,
-		PositionInBlock:   uint64(positionInBlock), // #nosec G115
+		PositionInBlock:   positionInBlock, // #nosec G115
 		FilteredAt:        time.Now(),
 		IsDelayed:         false,
 		DelayedReportData: nil,
@@ -1442,11 +1441,11 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		block, err = s.execEngine.SequenceTransactions(header, hooks, timeboostedTxs)
 	}
 
-	if len(s.pendingFilteredTxReports) > 0 && s.filteringReportRPCClient != nil {
+	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
 		s.pendingFilteredTxReports = nil
 		s.LaunchThread(func(ctx context.Context) {
-			if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
 				log.Warn("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
