@@ -249,8 +249,9 @@ func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, m
 			if err != nil {
 				return nil, err
 			}
-			st.EndHistoryRoot = commit.Merkle
-			return st, nil
+			result := *st
+			result.EndHistoryRoot = commit.Merkle
+			return &result, nil
 		}
 		if blocksSincePrevious >= 0 {
 			blocksSincePrevious++
