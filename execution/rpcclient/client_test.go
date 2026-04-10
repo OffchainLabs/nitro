@@ -54,7 +54,7 @@ func createMockExecutionNode(t *testing.T, errToReturn error) *node.Node {
 }
 
 var allSentinels = []error{
-	execution.ResultNotFound,
+	execution.ErrResultNotFound,
 	execution.ErrRetrySequencer,
 	execution.ErrSequencerInsertLockTaken,
 }
@@ -71,13 +71,13 @@ func TestClientErrorHandling(t *testing.T) {
 	}{
 		{
 			name:        "ResultNotFound",
-			serverErr:   execution.ResultNotFound,
-			expectedErr: execution.ResultNotFound,
+			serverErr:   execution.ErrResultNotFound,
+			expectedErr: execution.ErrResultNotFound,
 		},
 		{
 			name:        "ResultNotFound wrapped",
-			serverErr:   fmt.Errorf("execution context: %w", execution.ResultNotFound),
-			expectedErr: execution.ResultNotFound,
+			serverErr:   fmt.Errorf("execution context: %w", execution.ErrResultNotFound),
+			expectedErr: execution.ErrResultNotFound,
 		},
 		{
 			name:        "ErrRetrySequencer",

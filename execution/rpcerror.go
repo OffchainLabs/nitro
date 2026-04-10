@@ -34,7 +34,7 @@ func (e *RPCError) ErrorCode() int { return e.code }
 var (
 	ErrRetrySequencer           = &RPCError{code: ErrCodeRetrySequencer, msg: "please retry transaction"}
 	ErrSequencerInsertLockTaken = &RPCError{code: ErrCodeInsertLockTaken, msg: "insert lock taken"}
-	ResultNotFound              = &RPCError{code: ErrCodeResultNotFound, msg: "result not found"}
+	ErrResultNotFound           = &RPCError{code: ErrCodeResultNotFound, msg: "result not found"}
 )
 
 // Is reports whether target is an RPCError with the same code.

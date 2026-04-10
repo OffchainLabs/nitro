@@ -1015,7 +1015,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 
 func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
-		return nil, execution.ResultNotFound
+		return nil, execution.ErrResultNotFound
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{

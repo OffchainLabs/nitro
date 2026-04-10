@@ -107,7 +107,7 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 	}
 	msgIdx := msgCount - 1
 	msgResult, err := c.txStreamer.ResultAtMessageIndex(msgIdx)
-	if errors.Is(err, execution.ResultNotFound) {
+	if errors.Is(err, execution.ErrResultNotFound) {
 		log.Debug("Message result not found, node out of sync", "msgIdx", msgIdx, "err", err)
 		return nil, nil
 	} else if err != nil {
