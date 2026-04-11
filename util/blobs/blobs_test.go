@@ -52,8 +52,8 @@ outer:
 	}
 }
 
-func TestComputeProofsVersion1(t *testing.T) {
-	testData := []byte("test data for blob proof version 1 with cell proofs")
+func TestComputeProofsVersion0(t *testing.T) {
+	testData := []byte("test data for blob proof version 0 with legacy KZG proofs")
 	blobs, err := EncodeBlobs(testData)
 	if err != nil {
 		t.Fatalf("failed to encode blobs: %v", err)
@@ -68,24 +68,23 @@ func TestComputeProofsVersion1(t *testing.T) {
 
 	proofs, version, err := ComputeProofs(blobs, commitments)
 	if err != nil {
-		t.Fatalf("failed to compute version 1 proofs: %v", err)
+		t.Fatalf("failed to compute version 0 proofs: %v", err)
 	}
 
-	// Check version
-	if version != 1 {
-		t.Errorf("expected version 1, got %d", version)
+	if version != 0 {
+		t.Errorf("expected version 0, got %d", version)
 	}
 
-	// Check proof count: should be CellProofsPerBlob (128) proofs per blob
-	expectedProofCount := len(blobs) * kzg4844.CellProofsPerBlob
-	if len(proofs) != expectedProofCount {
-		t.Errorf("expected %d proofs, got %d", expectedProofCount, len(proofs))
+	// One proof per blob
+	if len(proofs) != len(blobs) {
+		t.Errorf("expected %d proofs, got %d", len(blobs), len(proofs))
 	}
 
-	// Verify the cell proofs are valid
-	err = kzg4844.VerifyCellProofs(blobs, commitments, proofs)
-	if err != nil {
-		t.Errorf("cell proof verification failed: %v", err)
+	// Verify each blob proof
+	for i := range blobs {
+		if err := kzg4844.VerifyBlobProof(&blobs[i], commitments[i], proofs[i]); err != nil {
+			t.Errorf("blob proof verification failed for blob %d: %v", i, err)
+		}
 	}
 }
 
@@ -102,7 +101,7 @@ func TestComputeProofsMismatchedInputs(t *testing.T) {
 	}
 }
 
-func TestComputeProofsMultipleBlobsVersion1(t *testing.T) {
+func TestComputeProofsMultipleBlobsVersion0(t *testing.T) {
 	// Create test data large enough to span multiple blobs
 	testData := make([]byte, bytesEncodedPerBlob*2)
 	for i := range testData {
@@ -126,19 +125,19 @@ func TestComputeProofsMultipleBlobsVersion1(t *testing.T) {
 		t.Fatalf("failed to compute proofs: %v", err)
 	}
 
-	if version != 1 {
-		t.Errorf("expected version 1, got %d", version)
+	if version != 0 {
+		t.Errorf("expected version 0, got %d", version)
 	}
 
-	// Should be CellProofsPerBlob proofs per blob
-	expectedCount := len(multiBlobs) * kzg4844.CellProofsPerBlob
-	if len(proofs) != expectedCount {
-		t.Errorf("expected %d proofs, got %d", expectedCount, len(proofs))
+	// One proof per blob
+	if len(proofs) != len(multiBlobs) {
+		t.Errorf("expected %d proofs, got %d", len(multiBlobs), len(proofs))
 	}
 
-	// Verify all cell proofs
-	err = kzg4844.VerifyCellProofs(multiBlobs, multiCommitments, proofs)
-	if err != nil {
-		t.Errorf("cell proof verification failed: %v", err)
+	// Verify each blob proof
+	for i := range multiBlobs {
+		if err := kzg4844.VerifyBlobProof(&multiBlobs[i], multiCommitments[i], proofs[i]); err != nil {
+			t.Errorf("blob proof verification failed for blob %d: %v", i, err)
+		}
 	}
 }
