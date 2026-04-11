@@ -312,7 +312,7 @@ func newApiClosures(
 						"pages", pages, "open", open, "limit", limit, "contract", actingAddress)
 					return math.MaxUint64
 				}
-				// We already know we're in commit mode from the IsExecutedOnChain() check above.
+				// We know we're in an on-chain execution mode (commit, replay, or recording).
 				// Coinbase == BatchPosterAddress further distinguishes sequencer-posted batches
 				// from delayed inbox messages (see tx_processor.go for the same pattern).
 				// TODO: When NIT-4788 lands and adds something like runCtx.IsDelayedSequencerCommit()
