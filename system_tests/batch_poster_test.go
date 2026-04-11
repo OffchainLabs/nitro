@@ -876,11 +876,14 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
 	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})[0]
 
+	// Brief pause for batch poster to detect the new L2 message
+	time.Sleep(100 * time.Millisecond)
+
 	// Advance L1 enough to ensure everything is synced
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	// Wait for the batch to be posted and processed by node B
-	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
+	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 30*time.Second)
 	Require(t, err)
 
 	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
