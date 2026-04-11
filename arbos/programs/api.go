@@ -4,16 +4,20 @@
 package programs
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -61,6 +65,7 @@ func newApiClosures(
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
+	runCtx *core.MessageRunContext,
 ) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
@@ -295,7 +300,31 @@ func newApiClosures(
 		return evm.StateDB.GetCodeHash(address), cost.SingleGas()
 	}
 	addPages := func(pages uint16) uint64 {
+		// Pages are added to state first; if the limit is exceeded, the tx is either
+		// filtered (commit mode) or effectively OOG'd (non-on-chain), both of which
+		// revert the state change. The defer in programs.go also restores openWasmPages.
 		open, ever := db.AddStylusPages(pages)
+		if limit := db.Database().MaxStylusOpenPages(); limit > 0 {
+			newOpen := arbmath.SaturatingUAdd(open, pages)
+			if newOpen > limit {
+				if runCtx == nil || !runCtx.IsExecutedOnChain() {
+					log.Warn("Stylus program exceeded open pages limit",
+						"pages", pages, "open", open, "limit", limit, "contract", actingAddress)
+					return math.MaxUint64
+				}
+				// We already know we're in commit mode from the IsExecutedOnChain() check above.
+				// Coinbase == BatchPosterAddress further distinguishes sequencer-posted batches
+				// from delayed inbox messages (see tx_processor.go for the same pattern).
+				// TODO: When NIT-4788 lands and adds something like runCtx.IsDelayedSequencerCommit()
+				// to MessageRunContext, this Coinbase check can be swapped out for that cleaner API.
+				if runCtx.IsCommitMode() && evm.Context.Coinbase == l1pricing.BatchPosterAddress {
+					log.Warn("Stylus program exceeded open pages limit, filtering transaction",
+						"pages", pages, "open", open, "limit", limit, "contract", actingAddress)
+					db.FilterTx()
+					return math.MaxUint64
+				}
+			}
+		}
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, open, ever)
 	}
