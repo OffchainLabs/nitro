@@ -510,6 +510,15 @@ impl EvmApi for StylusEvmApi {
             value,
         );
 
+        // Invalidate CLEAN (read-only) storage cache entries after sub-call.
+        // The sub-call may have modified storage (e.g., via DELEGATECALL to our
+        // address), making cached read values stale. Nitro reads from stateDB
+        // which always reflects the latest journal state; our per-call cache
+        // would return stale values otherwise.
+        // Preserve DIRTY entries (pending writes) — they haven't been flushed
+        // to the journal yet and must not be lost.
+        self.storage_cache.slots.retain(|_, entry| entry.dirty());
+
         self.return_data = result.output;
         // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
@@ -562,6 +571,9 @@ impl EvmApi for StylusEvmApi {
             self.call_value, // forward current call value
         );
 
+        // Invalidate storage cache: DELEGATECALL sub-call can write to our storage.
+        self.storage_cache.slots.clear();
+
         self.return_data = result.output;
         // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
@@ -612,6 +624,10 @@ impl EvmApi for StylusEvmApi {
             gas,
             U256::ZERO,
         );
+
+        // Invalidate storage cache: the sub-call may have written to storage
+        // visible to us (e.g., via DELEGATECALL back to our address).
+        self.storage_cache.slots.clear();
 
         self.return_data = result.output;
         // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
