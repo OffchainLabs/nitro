@@ -969,14 +969,6 @@ where
     let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open, pages_ever);
     let total_gas = inputs.gas_limit;
 
-    tracing::warn!(target: "stylus",
-        %code_hash, total_gas, upfront_cost, gas_for_wasm = total_gas.saturating_sub(upfront_cost),
-        footprint = program.footprint, init_cost = program.init_cost, cached_cost = program.cached_cost,
-        cached = program.cached, version = program.version, pages_open,
-        ink_price = params.ink_price, free_pages = params.free_pages, page_gas = params.page_gas,
-        min_init_gas = params.min_init_gas, init_cost_scalar = params.init_cost_scalar,
-        "STYLUS_CALL gas breakdown");
-
     if total_gas < upfront_cost {
         return InterpreterResult::new(InstructionResult::OutOfGas, Bytes::new(), zero_gas());
     }
@@ -1092,7 +1084,6 @@ where
     // memory and must be resolved via the context.
     let calldata_owned: Bytes = inputs.input.bytes(context);
     let calldata: &[u8] = &calldata_owned;
-
     let outcome = match instance.run_main(calldata, stylus_config, ink) {
         Ok(outcome) => outcome,
         Err(e) => {
@@ -1132,11 +1123,6 @@ where
     } else {
         gas_left
     };
-
-    tracing::warn!(target: "stylus",
-        %code_hash, ink_left = ?ink_left, gas_left, total_gas, upfront_cost,
-        output_len = output.len(), outcome = ?outcome,
-        "STYLUS_CALL result");
 
     let mut gas_result = EvmGas::new(gas_left);
     // Propagate SSTORE refunds from Stylus flush to the EVM gas accounting.
@@ -1249,6 +1235,7 @@ fn execute_stylus_call_concrete<DB: Database>(
     }
 
     let result = execute_stylus_program(ctx, inputs, bytecode);
+
     if result.result.is_ok() {
         ctx.journaled_state.inner.checkpoint_commit();
     } else {

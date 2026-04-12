@@ -1841,16 +1841,6 @@ where
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
 
-        if tx_gas_limit > 2_000_000 && tx_gas_limit < 3_000_000 {
-            tracing::warn!(target: "stylus",
-                evm_gas_used, poster_gas, compute_hold_gas,
-                evm_gas_limit = evm_gas_limit_before,
-                tx_gas_limit,
-                gas_deduction = poster_gas.saturating_add(compute_hold_gas),
-                precompile_input_gas = evm_gas_limit_before.saturating_sub(poster_gas).saturating_sub(compute_hold_gas),
-                "ACTIVATE_TX raw EVM gas");
-        }
-
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
         // reported gas_used doesn't include it. Adding it back produces correct
@@ -2011,15 +2001,6 @@ where
         let pending = self.pending_tx.take();
         let gas_used_total = output.result.result.gas_used();
         let success = matches!(&output.result.result, ExecutionResult::Success { .. });
-
-        if let Some(ref p) = pending {
-            if p.poster_gas > 0 || p.evm_gas_used > 1_000_000 {
-                tracing::warn!(target: "stylus",
-                    gas_used_total, evm_gas_used = p.evm_gas_used,
-                    poster_gas = p.poster_gas, tx_gas_limit = p.tx_gas_limit,
-                    "commit_transaction gas debug");
-            }
-        }
 
         // Scan receipt logs for L2→L1 withdrawal events and burn value from ArbSys.
         // Value transferred to the ArbSys address during a withdrawEth call

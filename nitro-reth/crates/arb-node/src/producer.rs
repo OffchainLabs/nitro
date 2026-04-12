@@ -236,8 +236,28 @@ where
             .evm_env(&provisional_header)
             .map_err(|_| BlockProducerError::Execution("evm_env construction failed".into()))?;
 
+        // Collect bytecodes from in-memory blocks that might not be flushed to DB yet.
+        // When a Stylus contract is deployed in a recent block and the flush hasn't
+        // persisted it yet, the DB's Bytecodes table won't have the code. The
+        // State<DB>'s `code_by_hash` with `use_preloaded_bundle` will check the
+        // bundle_state.contracts before falling back to the DB, ensuring all
+        // bytecodes from recent blocks are available during execution.
+        let prestate = {
+            let mut bundle = BundleState::default();
+            if let Some(head_state) = self.in_memory_state.head_state() {
+                for block_state in head_state.chain() {
+                    let exec_output = &block_state.block().execution_output;
+                    for (hash, code) in &exec_output.state.contracts {
+                        bundle.contracts.entry(*hash).or_insert(code.clone());
+                    }
+                }
+            }
+            bundle
+        };
+
         let mut db = StateBuilder::new()
             .with_database(StateProviderDatabase::new(state_provider.as_ref()))
+            .with_bundle_prestate(prestate)
             .with_bundle_update()
             .without_state_clear()
             .build();
@@ -498,6 +518,7 @@ where
 
         db.merge_transitions(BundleRetention::Reverts);
         let mut bundle = db.take_bundle();
+
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
         // Mark per-tx finalise deletions, skipping zombie accounts.
@@ -584,8 +605,10 @@ where
             drop(flushing);
 
             input.append(hashed_state.clone());
+
             let (root, updates) = crate::launcher::compute_parallel_state_root(input)
                 .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+
             acc.append_cached(updates.clone(), hashed_state.clone());
             (root, updates)
         };
@@ -827,6 +850,7 @@ where
 
         // Parse L2 transactions from the message.
         let chain_id = self.chain_spec.chain().id();
+
         let parsed_txs = parse_l2_transactions(
             input.kind,
             input.sender,
