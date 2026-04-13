@@ -24,7 +24,7 @@ type FilteredTxReport struct {
 	FilteredAddresses []filter.FilteredAddressRecord `json:"filteredAddresses"`
 	BlockNumber       uint64                         `json:"blockNumber"`
 	ParentBlockHash   common.Hash                    `json:"parentBlockHash"`
-	PositionInBlock   uint64                         `json:"positionInBlock"`
+	PositionInBlock   int                            `json:"positionInBlock"`
 	FilteredAt        time.Time                      `json:"filteredAt"`
 	IsDelayed         bool                           `json:"isDelayed"`
 	*DelayedReportData
