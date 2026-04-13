@@ -311,6 +311,43 @@ fn nitro_parity_multi_gas_constraints_cant_exceed_limit() {
     );
 }
 
+/// Port of Nitro's `TestGetMultiGasPricingConstraintsOrder`. Verifies
+/// that `getMultiGasPricingConstraints()` returns each constraint's
+/// `Resources` list sorted ascending by resource-kind id, regardless of
+/// the order the caller supplied them.
+#[test]
+fn nitro_parity_multi_gas_pricing_constraints_order() {
+    // Supply resources in deliberately unsorted order.
+    let constraints = vec![(
+        vec![(3u8, 7u64), (0u8, 5u64), (2u8, 3u64), (1u8, 1u64)],
+        1u32,
+        20_000_000u64,
+        800_000u64,
+    )];
+    let set_run = owner_fixture(60).call(
+        &arbowner(),
+        &set_multi_gas_pricing_calldata(&constraints),
+    );
+    let _ = set_run.assert_ok();
+
+    let getter = set_run.continue_into(owner_fixture(60), ARBOS_STATE_ADDRESS);
+    let run = getter.call(
+        &arbgasinfo(),
+        &calldata("getMultiGasPricingConstraints()", &[]),
+    );
+    let got = decode_multi_gas_pricing_constraints(run.output());
+
+    assert_eq!(got.len(), 1);
+    let (resources, _, _, _) = &got[0];
+    let kinds: Vec<u8> = resources.iter().map(|(k, _)| *k).collect();
+    for i in 1..kinds.len() {
+        assert!(
+            kinds[i - 1] < kinds[i],
+            "resources must be sorted by resource kind: got {kinds:?}"
+        );
+    }
+}
+
 /// Port of Nitro's `TestMultiGasConstraintsStorage`. Set two
 /// multi-gas constraints with distinct resource weights and verify the
 /// getter returns them field-by-field.

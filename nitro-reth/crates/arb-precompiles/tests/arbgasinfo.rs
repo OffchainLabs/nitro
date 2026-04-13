@@ -313,6 +313,51 @@ fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
 
 // ── Ported from Nitro ──────────────────────────────────────────────────
 
+/// Nitro-parity value pin for `getPricesInWei()`. Derived directly from
+/// Nitro's `GetPricesInWeiWithAggregator` implementation in
+/// `precompiles/ArbGasInfo.go`:
+///
+///   weiForL1Calldata = l1_price * TxDataNonZeroGas(16)
+///   perL2Tx          = weiForL1Calldata * AssumedSimpleTxSize(140)
+///   perArbGasBase    = min(l2_gas_price, l2_min_base_fee)
+///   perArbGasCong    = l2_gas_price - perArbGasBase
+///   perArbGasTotal   = l2_gas_price
+///   weiForL2Storage  = l2_gas_price * StorageWriteCost(20_000)
+///
+/// Run with Nitro's default `DefaultInitialL1BaseFee` (50 GWei) and a
+/// block basefee of 1005 so the arithmetic matches `getPricesInArbGas`'s
+/// pinned test and proves both functions use the same formula family.
+#[test]
+fn nitro_parity_get_prices_in_wei() {
+    const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000;
+    const STORAGE_WRITE_COST: u64 = 20_000;
+    const TX_DATA_NON_ZERO_GAS: u64 = 16;
+    const ASSUMED_SIMPLE_TX_SIZE: u64 = 140;
+    let basefee: u64 = 1005;
+    let l2_min: u64 = 500; // < basefee so perArbGasCong > 0
+
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(DEFAULT_INITIAL_L1_BASE_FEE));
+    let test = put_l2(test, L2_MIN_BASE_FEE, U256::from(l2_min));
+    let run = test
+        .block_basefee(basefee)
+        .call(&arbgasinfo(), &calldata("getPricesInWei()", &[]));
+    let out = run.output();
+
+    let wei_for_l1_calldata = DEFAULT_INITIAL_L1_BASE_FEE * TX_DATA_NON_ZERO_GAS;
+    let per_l2_tx = wei_for_l1_calldata * ASSUMED_SIMPLE_TX_SIZE;
+    let wei_for_l2_storage = basefee * STORAGE_WRITE_COST;
+    let per_arbgas_base = std::cmp::min(basefee, l2_min);
+    let per_arbgas_cong = basefee - per_arbgas_base;
+    let per_arbgas_total = basefee;
+
+    assert_eq!(decode_word(out, 0), common::word_u64(per_l2_tx));
+    assert_eq!(decode_word(out, 1), common::word_u64(wei_for_l1_calldata));
+    assert_eq!(decode_word(out, 2), common::word_u64(wei_for_l2_storage));
+    assert_eq!(decode_word(out, 3), common::word_u64(per_arbgas_base));
+    assert_eq!(decode_word(out, 4), common::word_u64(per_arbgas_cong));
+    assert_eq!(decode_word(out, 5), common::word_u64(per_arbgas_total));
+}
+
 /// Port of `TestGetPricesInArbGas` in
 /// nitro/precompiles/ArbGasInfo_test.go. Nitro's default L1BaseFee is
 /// `DefaultInitialL1BaseFee = 50 GWei = 50,000,000,000 wei`
