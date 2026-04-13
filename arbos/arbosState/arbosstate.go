@@ -481,15 +481,20 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case params.ArbosVersion_51:
 			// nothing
 
-		case 52, 53, 54, 55, 56, 57, 58, 59:
+		case 52, 53, 54, 55, 56, 57, 58:
 			// these versions are left to Orbit chains for custom upgrades.
+
+		case params.ArbosVersion_59:
+			p, err := state.Programs().Params()
+			ensure(err)
+			ensure(p.UpgradeToVersion(3))
+			ensure(p.Save())
 
 		case params.ArbosVersion_60:
 			// Changes for ArbosVersion_StylusContractLimit
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(p.UpgradeToVersion(3))
 			ensure(p.Save())
 			// Changes for ArbosVersion_TransactionFiltering
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
