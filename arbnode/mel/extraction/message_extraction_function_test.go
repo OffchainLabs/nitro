@@ -464,3 +464,107 @@ func parseReportForSecondBatch(
 ) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
 	return nil, common.Address{}, crypto.Keccak256Hash([]byte("batch1")), 0, nil, 0, nil
 }
+
+// makeDelayedMsg builds a deterministic DelayedInboxMessage for tests.
+func makeDelayedMsg(i uint64) *mel.DelayedInboxMessage {
+	reqID := common.BigToHash(big.NewInt(int64(i)))
+	return &mel.DelayedInboxMessage{
+		Message: &arbostypes.L1IncomingMessage{
+			Header: &arbostypes.L1IncomingMessageHeader{
+				RequestId: &reqID,
+			},
+			L2msg: []byte{byte(i)},
+		},
+	}
+}
+
+func TestMoveUnreadDelayedMessagesToInboxAcc(t *testing.T) {
+	t.Run("happy path rebuilds inbox accumulator", func(t *testing.T) {
+		state := &mel.State{
+			DelayedMessagesRead: 2,
+			DelayedMessagesSeen: 5,
+		}
+		mockDB := &mockDelayedMessageDB{
+			DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
+				2: makeDelayedMsg(2),
+				3: makeDelayedMsg(3),
+				4: makeDelayedMsg(4),
+			},
+		}
+		require.NoError(t, moveUnreadDelayedMessagesToInboxAcc(state, mockDB))
+
+		// Build the expected accumulator independently by running the same
+		// sequence of AccumulateDelayedMessage calls on a fresh state.
+		expected := &mel.State{
+			DelayedMessagesRead: 2,
+			DelayedMessagesSeen: 5,
+		}
+		for i := uint64(2); i < 5; i++ {
+			require.NoError(t, expected.AccumulateDelayedMessage(makeDelayedMsg(i)))
+		}
+		require.Equal(t, expected.DelayedMessageInboxAcc, state.DelayedMessageInboxAcc)
+		require.NotEqual(t, common.Hash{}, state.DelayedMessageInboxAcc)
+		// Outbox is not touched by AccumulateDelayedMessage.
+		require.Equal(t, common.Hash{}, state.DelayedMessageOutboxAcc)
+	})
+
+	t.Run("no unread messages leaves state unchanged", func(t *testing.T) {
+		state := &mel.State{
+			DelayedMessagesRead: 3,
+			DelayedMessagesSeen: 3,
+		}
+		mockDB := &mockDelayedMessageDB{
+			DelayedMessages: map[uint64]*mel.DelayedInboxMessage{},
+		}
+		require.NoError(t, moveUnreadDelayedMessagesToInboxAcc(state, mockDB))
+		require.Equal(t, common.Hash{}, state.DelayedMessageInboxAcc)
+		require.Equal(t, common.Hash{}, state.DelayedMessageOutboxAcc)
+	})
+
+	t.Run("errors when inbox accumulator is non-zero", func(t *testing.T) {
+		preExisting := common.HexToHash("0xdeadbeef")
+		state := &mel.State{
+			DelayedMessagesRead:    0,
+			DelayedMessagesSeen:    1,
+			DelayedMessageInboxAcc: preExisting,
+		}
+		mockDB := &mockDelayedMessageDB{
+			DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
+				0: makeDelayedMsg(0),
+			},
+		}
+		err := moveUnreadDelayedMessagesToInboxAcc(state, mockDB)
+		require.ErrorContains(t, err, "non zero")
+		// State must be unchanged on error.
+		require.Equal(t, preExisting, state.DelayedMessageInboxAcc)
+	})
+
+	t.Run("errors when outbox accumulator is non-zero", func(t *testing.T) {
+		preExisting := common.HexToHash("0xfeedface")
+		state := &mel.State{
+			DelayedMessagesRead:     0,
+			DelayedMessagesSeen:     1,
+			DelayedMessageOutboxAcc: preExisting,
+		}
+		mockDB := &mockDelayedMessageDB{
+			DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
+				0: makeDelayedMsg(0),
+			},
+		}
+		err := moveUnreadDelayedMessagesToInboxAcc(state, mockDB)
+		require.ErrorContains(t, err, "non zero")
+		require.Equal(t, preExisting, state.DelayedMessageOutboxAcc)
+	})
+
+	t.Run("propagates DB read errors", func(t *testing.T) {
+		state := &mel.State{
+			DelayedMessagesRead: 0,
+			DelayedMessagesSeen: 2,
+		}
+		dbErr := errors.New("db read boom")
+		mockDB := &mockDelayedMessageDB{err: dbErr}
+		err := moveUnreadDelayedMessagesToInboxAcc(state, mockDB)
+		require.ErrorIs(t, err, dbErr)
+		require.ErrorContains(t, err, "failed creating delayed msg accumulators")
+	})
+}
