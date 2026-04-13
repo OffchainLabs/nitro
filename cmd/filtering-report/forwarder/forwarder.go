@@ -77,23 +77,12 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 		return r.config.PollInterval
 	}
 	msg := msgs[0]
-	msgID := "<unknown>"
-	if msg.MessageId != nil {
-		msgID = *msg.MessageId
-	}
-	if msg.Body == nil {
-		log.Warn("Received SQS message with nil body, deleting", "messageId", msgID)
-		if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
-			log.Error("Failed to delete nil-body SQS message", "err", err, "messageId", msgID)
-		}
-		return 0
-	}
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-		log.Warn("Failed to forward report to external endpoint", "err", err, "messageId", msgID)
+		log.Warn("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
 		return 0
 	}
 	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
-		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", msgID)
+		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)
 	}
 	return 0
 }
