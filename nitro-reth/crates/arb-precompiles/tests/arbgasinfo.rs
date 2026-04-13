@@ -311,6 +311,93 @@ fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
     assert_eq!(decode_word(out, 1), common::word_u256(expected_calldata));
 }
 
+// ── Ported from Nitro ──────────────────────────────────────────────────
+
+/// Port of `TestGetPricesInArbGas` in
+/// nitro/precompiles/ArbGasInfo_test.go. Nitro's default L1BaseFee is
+/// `DefaultInitialL1BaseFee = 50 GWei = 50,000,000,000 wei`
+/// (arbos/arbostypes/incomingmessage.go:317). With block.basefee = 1005
+/// and AssumedSimpleTxSize = 140, the Nitro test pins the exact three
+/// return values of `getPricesInArbGas()`. Reproducing them here
+/// byte-for-byte proves our integer arithmetic matches Go's big.Int
+/// truncation semantics across multiply-then-divide, which is the
+/// subtle part of the formula.
+#[test]
+fn nitro_parity_get_prices_in_arbgas() {
+    const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000;
+    const STORAGE_WRITE_COST: u64 = 20_000;
+
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(DEFAULT_INITIAL_L1_BASE_FEE));
+    let run = test
+        .block_basefee(1005)
+        .call(&arbgasinfo(), &calldata("getPricesInArbGas()", &[]));
+    let out = run.output();
+
+    // gasPerL2Tx   = (l1_price * 16 * 140) / basefee = 111_442_786_069
+    // gasForL1Cd   = (l1_price * 16)       / basefee =     796_019_900
+    // storageArbGas = StorageWriteCost                =          20_000
+    assert_eq!(decode_word(out, 0), common::word_u64(111_442_786_069));
+    assert_eq!(decode_word(out, 1), common::word_u64(796_019_900));
+    assert_eq!(decode_word(out, 2), common::word_u64(STORAGE_WRITE_COST));
+}
+
+// ── Protocol gas-cost pins ─────────────────────────────────────────────
+//
+// These tests lock in the *exact* gas cost returned by the precompile so
+// that any future refactor of the value source cannot silently drop an
+// SloadGas charge. The expected numbers are derived from Nitro's burn
+// model: OpenArbosState + one SloadGas per storage field read by the
+// method body, plus CopyGas (3) per return word and per input arg word.
+//
+// Regression for commit b627a908 → 984e13c: the switch from storage
+// L2_BASE_FEE to evm.Context.BaseFee correctly removed the storage read,
+// but the gas cost must still cover OpenArbosState + L1_PRICE_PER_UNIT +
+// L2_MIN_BASE_FEE = 3 * 800 = 2400, plus 6 return words * 3 = 18 → 2418.
+// The bug silently reduced this to 2 * 800 + 18 = 1618, causing an
+// 800-gas undercharge per call and a state-root mismatch at block
+// 55,705,814 tx 1 (ERC-4337 handleOps).
+
+const SLOAD_GAS: u64 = 800;
+const COPY_GAS: u64 = 3;
+
+#[test]
+fn get_prices_in_wei_charges_three_sloads_and_six_copy_words() {
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(1u64));
+    let test = put_l2(test, L2_MIN_BASE_FEE, U256::from(1u64));
+    let run = test
+        .block_basefee(100_000_000)
+        .call(&arbgasinfo(), &calldata("getPricesInWei()", &[]));
+    // OpenArbosState(1) + PricePerUnit(1) + MinBaseFeeWei(1) = 3 sloads;
+    // return tuple is 6 * uint256 = 6 words of copy gas.
+    assert_eq!(run.gas_used(), 3 * SLOAD_GAS + 6 * COPY_GAS);
+}
+
+#[test]
+fn get_prices_in_arbgas_charges_two_sloads_and_three_copy_words() {
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(1u64));
+    let run = test
+        .block_basefee(100_000_000)
+        .call(&arbgasinfo(), &calldata("getPricesInArbGas()", &[]));
+    // OpenArbosState(1) + PricePerUnit(1) = 2 sloads; return tuple is
+    // 3 * uint256 = 3 words.
+    assert_eq!(run.gas_used(), 2 * SLOAD_GAS + 3 * COPY_GAS);
+}
+
+#[test]
+fn get_l1_basefee_estimate_charges_two_sloads_and_one_copy_word() {
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(42u64));
+    let run = test.call(&arbgasinfo(), &calldata("getL1BaseFeeEstimate()", &[]));
+    // OpenArbosState(1) + PricePerUnit(1) = 2 sloads; 1 return word.
+    assert_eq!(run.gas_used(), 2 * SLOAD_GAS + COPY_GAS);
+}
+
+#[test]
+fn get_minimum_gas_price_charges_two_sloads_and_one_copy_word() {
+    let test = put_l2(fixture(30), L2_MIN_BASE_FEE, U256::from(42u64));
+    let run = test.call(&arbgasinfo(), &calldata("getMinimumGasPrice()", &[]));
+    assert_eq!(run.gas_used(), 2 * SLOAD_GAS + COPY_GAS);
+}
+
 // ── L1 pricing surplus ─────────────────────────────────────────────────
 
 const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];

@@ -348,8 +348,11 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
+    // OpenArbosState SLOAD + 2 body SLOADs (L1_PRICE_PER_UNIT, L2_MIN_BASE_FEE)
+    // + copy gas for args and 6-word return tuple. l2GasPrice comes from
+    // evm.Context.BaseFee (free). Matches Nitro burn exactly at 2418 gas.
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (2 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
+    let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
@@ -399,8 +402,10 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&gas_for_l1_calldata.to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
+    // OpenArbosState SLOAD + 1 body SLOAD (L1_PRICE_PER_UNIT) + copy gas.
+    // l2GasPrice comes from evm.Context.BaseFee (free).
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
+    let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
