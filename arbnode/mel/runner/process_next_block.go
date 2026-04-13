@@ -74,7 +74,14 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages after reorg: %w", err)
 		}
 		if m.reorgEventsNotifier != nil {
-			m.reorgEventsNotifier <- preState.ParentChainBlockNumber
+			select {
+			case m.reorgEventsNotifier <- preState.ParentChainBlockNumber:
+			case <-ctx.Done():
+				return m.config.RetryInterval, ctx.Err()
+			}
+		}
+		if m.blockValidator != nil {
+			m.blockValidator.ReorgToBatchCount(preState.BatchCount)
 		}
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
@@ -98,7 +105,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
 				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
 			}
-			return 0, nil
+			return m.config.RetryInterval, nil
 		}
 		return m.config.RetryInterval, err
 	}

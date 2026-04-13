@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -46,12 +45,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	var metadata mel.BatchMetadata
-	if builder.L2.ConsensusNode.MessageExtractor != nil {
-		metadata, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchMetadata(1)
-	} else {
-		metadata, err = builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
-	}
+	metadata, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(1)
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
 	if metadata.ParentChainBlock != originalBatchBlock {
@@ -114,25 +108,18 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}
-			metadata, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchMetadata(1)
-			Require(t, err)
-		} else {
-			metadata, err = builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
-			Require(t, err)
 		}
+		metadata, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(1)
+		Require(t, err)
 		if metadata.ParentChainBlock == newBatchBlock {
 			break
 		} else if metadata.ParentChainBlock != originalBatchBlock {
-			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", metadata.ParentChainBlock)
+			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", newBatchBlock)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if builder.L2.ConsensusNode.MessageExtractor != nil {
-		_, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, 1)
-	} else {
-		_, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
-	}
+	_, _, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
 	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)

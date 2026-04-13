@@ -12,6 +12,7 @@ use prover::{
     machine::Machine,
     programs::{STYLUS_ENTRY_POINT, prelude::*},
 };
+use wasmer_types::TrapCode;
 
 use crate::{env::Escape, native::NativeInstance};
 
@@ -93,6 +94,14 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
+                // Detect native stack overflow FIRST — it takes priority because
+                // the DepthChecker counter may also be at zero when SIGSEGV fires,
+                // and we need the Go-side retry logic (handleNativeStackOverflow) to see
+                // NativeStackOverflow.
+                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
+                    return Ok(NativeStackOverflow);
+                }
+
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }

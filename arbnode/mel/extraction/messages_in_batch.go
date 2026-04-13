@@ -30,7 +30,7 @@ func messagesFromBatchSegments(
 	seqMsg *arbstate.SequencerMessage,
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
-	messages := make([]*arbostypes.MessageWithMetadata, 0)
+	messages := make([]*arbostypes.MessageWithMetadata, 0, len(seqMsg.Segments))
 	timestamp := uint64(0)
 	blockNumber := uint64(0)
 	segments := seqMsg.Segments

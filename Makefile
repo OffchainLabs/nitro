@@ -149,8 +149,8 @@ stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
 stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
 stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
-#stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
-#stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
+stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
+stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
 stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
@@ -173,7 +173,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -362,6 +362,9 @@ $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
+
+$(output_root)/bin/filtering-report: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/filtering-report"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
