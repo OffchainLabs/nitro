@@ -947,8 +947,10 @@ impl<'a> FunctionMiddleware<'a> for HeapBoundFn {
 
 // ── Opcode ink costs (matches Nitro pricing_v1) ─────────────────────
 
+/// Per-opcode ink cost. Mirrors Nitro's `prover/programs/meter::pricing_v1`.
+/// Exposed for differential testing against Nitro's pricing table.
 #[rustfmt::skip]
-fn opcode_ink_cost(op: &Operator, sigs: &HashMap<u32, usize>) -> u64 {
+pub fn opcode_ink_cost(op: &Operator, sigs: &HashMap<u32, usize>) -> u64 {
     use Operator::*;
 
     macro_rules! op {

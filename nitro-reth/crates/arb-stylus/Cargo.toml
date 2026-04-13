@@ -34,5 +34,8 @@ parking_lot = { workspace = true }
 lazy_static = { workspace = true }
 eyre = { workspace = true }
 
+[dev-dependencies]
+wat = "1"
+
 [lints]
 workspace = true
