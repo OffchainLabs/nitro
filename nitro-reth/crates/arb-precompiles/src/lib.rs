@@ -63,9 +63,30 @@ use std::cell::Cell;
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
     alloy_primitives::address!("0000000000000000000000000000000000000100");
 
+/// modexp precompile address (0x05).
+const MODEXP_ADDRESS: alloy_primitives::Address =
+    alloy_primitives::address!("0000000000000000000000000000000000000005");
+
+/// BLS12-381 precompile addresses (EIP-2537), enabled by Nitro from ArbOS v50.
+const BLS12_381_ADDRESSES: [alloy_primitives::Address; 7] = [
+    alloy_primitives::address!("000000000000000000000000000000000000000b"),
+    alloy_primitives::address!("000000000000000000000000000000000000000c"),
+    alloy_primitives::address!("000000000000000000000000000000000000000d"),
+    alloy_primitives::address!("000000000000000000000000000000000000000e"),
+    alloy_primitives::address!("000000000000000000000000000000000000000f"),
+    alloy_primitives::address!("0000000000000000000000000000000000000010"),
+    alloy_primitives::address!("0000000000000000000000000000000000000011"),
+];
+
 fn create_p256verify_precompile() -> DynPrecompile {
     DynPrecompile::new(PrecompileId::P256Verify, |input: PrecompileInput<'_>| {
         revm::precompile::secp256r1::p256_verify(input.data, input.gas)
+    })
+}
+
+fn create_modexp_osaka_precompile() -> DynPrecompile {
+    DynPrecompile::new(PrecompileId::ModExp, |input: PrecompileInput<'_>| {
+        revm::precompile::modexp::osaka_run(input.data, input.gas)
     })
 }
 
@@ -420,10 +441,25 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     ]);
 
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {
+        // Nitro keeps the 3450-gas P256VERIFY at all ArbOS versions >= 30,
+        // even after Osaka EVM rules where mainnet would use 6900 gas.
+        // (precompiles/ArbSys.go gethhook adds PrecompiledContractsP256Verify
+        // unconditionally from ArbOS_30 onwards.)
         map.extend_precompiles([(P256VERIFY_ADDRESS, create_p256verify_precompile())]);
     } else {
         map.apply_precompile(&KZG_POINT_EVALUATION_ADDRESS, |_| None);
         map.apply_precompile(&P256VERIFY_ADDRESS, |_| None);
+    }
+
+    if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+        // Nitro adds PrecompiledContractsOsaka starting from ArbOS_50, which
+        // upgrades modexp gas to EIP-7823 + EIP-7883 rules.
+        map.extend_precompiles([(MODEXP_ADDRESS, create_modexp_osaka_precompile())]);
+    } else {
+        // Nitro doesn't add BLS12-381 precompiles until ArbOS_50.
+        for addr in &BLS12_381_ADDRESSES {
+            map.apply_precompile(addr, |_| None);
+        }
     }
 }
 
