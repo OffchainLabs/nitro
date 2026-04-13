@@ -69,7 +69,6 @@ const L1_FEES_AVAILABLE: u64 = 11;
 // L2 pricing field offsets (within L2 pricing subspace).
 const L2_SPEED_LIMIT: u64 = 0;
 const L2_PER_BLOCK_GAS_LIMIT: u64 = 1;
-const L2_BASE_FEE: u64 = 2;
 const L2_MIN_BASE_FEE: u64 = 3;
 const L2_GAS_BACKLOG: u64 = 4;
 const L2_PRICING_INERTIA: u64 = 5;

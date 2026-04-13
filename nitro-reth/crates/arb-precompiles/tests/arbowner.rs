@@ -210,3 +210,149 @@ fn set_max_block_gas_limit_writes_per_block_slot_at_any_version() {
         limit
     );
 }
+
+// ── L2 pricing setters: round-trip into the right L2 pricing slot ────
+
+#[test]
+fn set_l2_base_fee_writes_l2_base_fee_slot() {
+    let value = U256::from(123_u64);
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata("setL2BaseFee(uint256)", &[word_u256(value)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 2)),
+        value
+    );
+}
+
+#[test]
+fn set_minimum_l2_base_fee_writes_min_base_fee_slot() {
+    let value = U256::from(50_000_000_u64);
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata("setMinimumL2BaseFee(uint256)", &[word_u256(value)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 3)),
+        value
+    );
+}
+
+#[test]
+fn set_l2_gas_pricing_inertia_writes_pricing_inertia_slot() {
+    let value = U256::from(1024_u64);
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata("setL2GasPricingInertia(uint64)", &[word_u256(value)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 5)),
+        value
+    );
+}
+
+#[test]
+fn set_l2_gas_pricing_inertia_rejects_zero() {
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata("setL2GasPricingInertia(uint64)", &[word_u256(U256::ZERO)]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted, "zero inertia must revert");
+}
+
+#[test]
+fn set_l2_gas_backlog_tolerance_writes_backlog_tolerance_slot() {
+    let value = U256::from(60_u64);
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata("setL2GasBacklogTolerance(uint64)", &[word_u256(value)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 6)),
+        value
+    );
+}
+
+#[test]
+fn set_gas_backlog_writes_backlog_slot_at_v50_plus() {
+    let value = U256::from(1_000_000_u64);
+    let run = fixture(50).call(
+        &arbowner(),
+        &calldata("setGasBacklog(uint64)", &[word_u256(value)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 4)),
+        value
+    );
+}
+
+#[test]
+fn set_gas_backlog_reverts_below_v50() {
+    let value = U256::from(1_000_000_u64);
+    let run = fixture(49).call(
+        &arbowner(),
+        &calldata("setGasBacklog(uint64)", &[word_u256(value)]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+}
+
+// ── Native token / transaction filterer events ──────────────────────
+
+#[test]
+fn add_native_token_owner_requires_feature_enabled() {
+    // Without the enabled-from time set in the past, AddNativeTokenOwner errors.
+    let new_owner: Address = address!("00000000000000000000000000000000000000ee");
+    let run = fixture(41).call(
+        &arbowner(),
+        &calldata("addNativeTokenOwner(address)", &[word_address(new_owner)]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted, "feature not enabled must revert");
+}
+
+#[test]
+fn set_native_token_management_from_writes_root_field() {
+    let when = U256::from(1_700_000_000_u64);
+    let run = fixture(41).call(
+        &arbowner(),
+        &calldata(
+            "setNativeTokenManagementFrom(uint64)",
+            &[word_u256(when)],
+        ),
+    );
+    // The setFeatureFromTime helper rejects values that aren't at least 7 days
+    // in the future of the current block timestamp; the harness uses
+    // block_timestamp = 1_700_000_000 by default, so a same-time value reverts.
+    let out = run.assert_ok();
+    assert!(out.reverted, "less-than-delay must revert");
+}
+
+#[test]
+fn schedule_arbos_upgrade_writes_version_and_timestamp_slots() {
+    let new_version = U256::from(60_u64);
+    let when = U256::from(1_900_000_000_u64);
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata(
+            "scheduleArbOSUpgrade(uint64,uint64)",
+            &[word_u256(new_version), word_u256(when)],
+        ),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, root_slot(UPGRADE_VERSION_OFFSET)),
+        new_version
+    );
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, root_slot(UPGRADE_TIMESTAMP_OFFSET)),
+        when
+    );
+}

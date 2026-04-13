@@ -208,18 +208,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SCHEDULE_ARBOS_UPGRADE => handle_schedule_upgrade(&mut input),
 
         // ── L2 pricing setters ───────────────────────────────────
-        SET_SPEED_LIMIT => {
-            let val = U256::from_be_slice(
-                input
-                    .data
-                    .get(4..36)
-                    .ok_or_else(|| PrecompileError::other("input too short"))?,
-            );
-            if val.is_zero() {
-                return Err(PrecompileError::other("speed limit must be nonzero"));
+        SET_SPEED_LIMIT => match input.data.get(4..36) {
+            None => Err(PrecompileError::other("input too short")),
+            Some(bytes) if U256::from_be_slice(bytes).is_zero() => {
+                Err(PrecompileError::other("speed limit must be nonzero"))
             }
-            write_l2_field(&mut input, L2_SPEED_LIMIT)
-        }
+            Some(_) => write_l2_field(&mut input, L2_SPEED_LIMIT),
+        },
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
         // Nitro precompiles/ArbOwner.go::SetMaxBlockGasLimit and SetMaxTxGasLimit
@@ -228,18 +223,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // l2pricing offset enum and exist regardless of ArbOS version.
         SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
         SET_MAX_TX_GAS_LIMIT => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
-        SET_L2_GAS_PRICING_INERTIA => {
-            let val = U256::from_be_slice(
-                input
-                    .data
-                    .get(4..36)
-                    .ok_or_else(|| PrecompileError::other("input too short"))?,
-            );
-            if val.is_zero() {
-                return Err(PrecompileError::other("price inertia must be nonzero"));
+        SET_L2_GAS_PRICING_INERTIA => match input.data.get(4..36) {
+            None => Err(PrecompileError::other("input too short")),
+            Some(bytes) if U256::from_be_slice(bytes).is_zero() => {
+                Err(PrecompileError::other("price inertia must be nonzero"))
             }
-            write_l2_field(&mut input, L2_PRICING_INERTIA)
-        }
+            Some(_) => write_l2_field(&mut input, L2_PRICING_INERTIA),
+        },
         SET_L2_GAS_BACKLOG_TOLERANCE => write_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
         // SetGasBacklog: ArbOS >= 50
         SET_GAS_BACKLOG => {
@@ -278,13 +268,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
-            let val = read_u32_param(data)?;
-            if val == 0 || val > 0xFF_FFFF {
-                return Err(PrecompileError::other(
-                    "ink price must be a positive uint24",
-                ));
+            match read_u32_param(data) {
+                Err(e) => Err(e),
+                Ok(val) if val == 0 || val > 0xFF_FFFF => {
+                    Err(PrecompileError::other("ink price must be a positive uint24"))
+                }
+                Ok(val) => write_stylus_param(&mut input, StylusField::InkPrice, val as u64),
             }
-            write_stylus_param(&mut input, StylusField::InkPrice, val as u64)
         }
         SET_WASM_MAX_STACK_DEPTH => {
             if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
