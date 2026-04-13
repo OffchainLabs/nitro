@@ -356,3 +356,188 @@ fn schedule_arbos_upgrade_writes_version_and_timestamp_slots() {
         when
     );
 }
+
+// ── Ports from /data/nitro/precompiles/ArbOwner_test.go ───────────────
+
+const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
+
+fn arbgasinfo() -> DynPrecompile {
+    arb_precompiles::create_arbgasinfo_precompile()
+}
+
+fn arbownerpublic() -> DynPrecompile {
+    arb_precompiles::create_arbownerpublic_precompile()
+}
+
+/// Port of Nitro's `TestArbInfraFeeAccount` (v6+ round-trip).
+///
+/// Nitro's test nominally targets `ArbosVersion_5`, but the mock EVM's
+/// state config is a freshly-built `ArbitrumDevTestChainConfig()` whose
+/// `InitialArbOSVersion` is well above 6, so `State.ArbOSVersion()`
+/// reports the dev-chain default regardless of the `version` parameter.
+/// The effective test is therefore against v≥6. We run at v6 directly.
+///
+/// We also skip the v0-no-op assertion: arbreth gates
+/// `setInfraFeeAccount` at v≥5 via `check_method_version` and reverts
+/// below that, which is stricter but not observable via precompile
+/// dispatch from outside.
+#[test]
+fn nitro_parity_infra_fee_account_round_trip() {
+    let new_addr: Address = address!("00000000000000000000000000000000000000cd");
+
+    // Empty at start via both precompiles.
+    let run = fixture(6).call(&arbowner(), &calldata("getInfraFeeAccount()", &[]));
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
+    let run = fixture(6).call(
+        &arbownerpublic(),
+        &calldata("getInfraFeeAccount()", &[]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
+
+    // Set via ArbOwner.
+    let set_run = fixture(6).call(
+        &arbowner(),
+        &calldata("setInfraFeeAccount(address)", &[word_address(new_addr)]),
+    );
+    let out = set_run.assert_ok();
+    assert!(!out.reverted);
+    assert_eq!(
+        set_run.storage(ARBOS_STATE_ADDRESS, root_slot(INFRA_FEE_ACCOUNT_OFFSET)),
+        U256::from_be_slice(new_addr.as_slice()),
+        "setter must write the infra fee slot"
+    );
+
+    // Read back via ArbOwner.
+    let getter = set_run.continue_into(fixture(6), ARBOS_STATE_ADDRESS);
+    let run = getter.call(&arbowner(), &calldata("getInfraFeeAccount()", &[]));
+    assert_eq!(
+        decode_u256(run.output()),
+        U256::from_be_slice(new_addr.as_slice())
+    );
+
+    // Read back via ArbOwnerPublic.
+    let getter = set_run.continue_into(fixture(6), ARBOS_STATE_ADDRESS);
+    let run = getter.call(
+        &arbownerpublic(),
+        &calldata("getInfraFeeAccount()", &[]),
+    );
+    assert_eq!(
+        decode_u256(run.output()),
+        U256::from_be_slice(new_addr.as_slice())
+    );
+}
+
+/// Port of Nitro's `TestArbOwner` — chain owner management sub-flow.
+/// Verifies add/remove/isChainOwner/getAllChainOwners with duplicate
+/// adds not double-counting.
+#[test]
+fn nitro_parity_arb_owner_chain_owner_management() {
+    let addr1: Address = address!("00000000000000000000000000000000000000d1");
+    let addr2: Address = address!("00000000000000000000000000000000000000d2");
+    let addr3: Address = address!("00000000000000000000000000000000000000d3");
+
+    // Add two new owners (plus OWNER already installed).
+    let add1 = fixture(30).call(
+        &arbowner(),
+        &calldata("addChainOwner(address)", &[word_address(addr1)]),
+    );
+    let _ = add1.assert_ok();
+
+    let base = add1.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let add2 = base.call(
+        &arbowner(),
+        &calldata("addChainOwner(address)", &[word_address(addr2)]),
+    );
+    let _ = add2.assert_ok();
+
+    // Duplicate add of addr1: must remain idempotent.
+    let base = add2.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let add1_dup = base.call(
+        &arbowner(),
+        &calldata("addChainOwner(address)", &[word_address(addr1)]),
+    );
+    let _ = add1_dup.assert_ok();
+
+    // isChainOwner checks — rebuild a fresh test per query because each
+    // `.call()` consumes its PrecompileTest.
+    for (who, expected) in [(addr1, true), (addr2, true), (addr3, false)] {
+        let test = add1_dup.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+        let run = test.call(
+            &arbowner(),
+            &calldata("isChainOwner(address)", &[word_address(who)]),
+        );
+        assert_eq!(
+            decode_u256(run.output()),
+            if expected { U256::from(1) } else { U256::ZERO },
+            "isChainOwner({who})"
+        );
+    }
+
+    // Remove addr1, verify it's gone, addr2 still present.
+    let rm_test = add1_dup.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let rm1 = rm_test.call(
+        &arbowner(),
+        &calldata("removeChainOwner(address)", &[word_address(addr1)]),
+    );
+    let _ = rm1.assert_ok();
+
+    let test = rm1.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let run = test.call(
+        &arbowner(),
+        &calldata("isChainOwner(address)", &[word_address(addr1)]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::ZERO, "addr1 removed");
+
+    let test = rm1.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let run = test.call(
+        &arbowner(),
+        &calldata("isChainOwner(address)", &[word_address(addr2)]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::from(1), "addr2 remains");
+}
+
+/// Port of Nitro's `TestArbOwner` — SetAmortizedCostCapBips round-trip.
+#[test]
+fn nitro_parity_arb_owner_amortized_cost_cap_round_trip() {
+    // Initial value is zero.
+    let run = fixture(30).call(
+        &arbgasinfo(),
+        &calldata("getAmortizedCostCapBips()", &[]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
+
+    let new_cap = 77_734_u64;
+    let set_run = fixture(30).call(
+        &arbowner(),
+        &calldata("setAmortizedCostCapBips(uint64)", &[word_u256(U256::from(new_cap))]),
+    );
+    let _ = set_run.assert_ok();
+
+    let getter = set_run.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let run = getter.call(&arbgasinfo(), &calldata("getAmortizedCostCapBips()", &[]));
+    assert_eq!(decode_u256(run.output()), U256::from(new_cap));
+}
+
+/// Port of Nitro's `TestArbOwner` — SetNetworkFeeAccount round-trip
+/// (confirms the getter picks up the setter's write, beyond the raw
+/// slot-write regression test already covered by
+/// `set_network_fee_account_writes_root_slot`).
+#[test]
+fn nitro_parity_arb_owner_network_fee_account_round_trip() {
+    let new_fee_account: Address = address!("00000000000000000000000000000000000000fa");
+    let set_run = fixture(30).call(
+        &arbowner(),
+        &calldata(
+            "setNetworkFeeAccount(address)",
+            &[word_address(new_fee_account)],
+        ),
+    );
+    let _ = set_run.assert_ok();
+
+    let getter = set_run.continue_into(fixture(30), ARBOS_STATE_ADDRESS);
+    let run = getter.call(&arbowner(), &calldata("getNetworkFeeAccount()", &[]));
+    assert_eq!(
+        decode_u256(run.output()),
+        U256::from_be_slice(new_fee_account.as_slice())
+    );
+}

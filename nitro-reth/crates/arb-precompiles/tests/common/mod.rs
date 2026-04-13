@@ -311,4 +311,31 @@ impl PrecompileRun {
             .map(|a| a.info.balance)
             .unwrap_or(U256::ZERO)
     }
+
+    /// Copy every modified storage slot for `addr` from this run's journal
+    /// state onto a fresh `PrecompileTest`. Lets round-trip tests chain a
+    /// setter call into a subsequent getter call without hand-listing each
+    /// slot the setter touched.
+    ///
+    /// This also carries forward everything that was in the previous run's
+    /// underlying `db` (i.e. state accumulated across prior calls), so a
+    /// chain of three or more runs keeps the cumulative state. Without that,
+    /// only the most-recent run's mutations would be visible, and tests that
+    /// perform several sequential writes would silently lose early ones.
+    pub fn continue_into(&self, base: PrecompileTest, addr: Address) -> PrecompileTest {
+        // Start from the previous run's db (cumulative state), but preserve
+        // the fresh base's knobs (arbos_version, caller, block context, etc).
+        let mut next = PrecompileTest {
+            db: self.db.clone(),
+            ..base
+        };
+        // Layer the journal mutations on top — these are deltas the previous
+        // run made but hasn't been committed to the db yet.
+        if let Some(account) = self.journal_state.get(&addr) {
+            for (slot, entry) in &account.storage {
+                next = next.storage(addr, *slot, entry.present_value);
+            }
+        }
+        next
+    }
 }

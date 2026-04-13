@@ -468,10 +468,21 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         _ => return crate::burn_all_revert(gas_limit),
     };
     // OwnerPrecompile wrapper: all successful calls are free (gas_used = 0).
-    // Emit OwnerActs event on success. In Nitro, this is automatic for all
-    // owner-only calls. For ArbOS < 11: emit for ALL calls (read+write).
-    // For ArbOS >= 11: emit only for write calls (not read-only getters).
+    // Matches Nitro's wrapper.go::OwnerPrecompile.Call which returns
+    // gasLeft = gasSupplied (i.e. no charge) on both success and error.
+    //
+    // On error: do NOT emit the OwnerActs event. Preserve the revert so
+    // that callers can still distinguish a failed owner call from a
+    // successful one — otherwise any invalid-input revert (e.g. bad
+    // gas-pricing constraints) silently turns into a success and diverges
+    // state vs canonical.
+    //
+    // For ArbOS < 11, read-only getters also emit OwnerActs; from v11 on,
+    // only write methods do.
     let result = result.map(|output| {
+        if output.reverted {
+            return PrecompileOutput::new_reverted(0, output.bytes);
+        }
         let arbos_version = crate::get_arbos_version();
         let is_read_only = matches!(
             selector,
@@ -1233,8 +1244,15 @@ fn handle_remove_from_set(
 
 // ── Gas constraint storage helpers ───────────────────────────────────
 
-const GC_KEY: &[u8] = b"gc";
-const MGC_KEY: &[u8] = b"mgc";
+// Matches Nitro's `arbos/l2pricing/l2pricing.go`:
+//   gasConstraintsKey      []byte = []byte{0}
+//   multiGasConstraintsKey []byte = []byte{1}
+// Prior versions of this file used ASCII "gc"/"mgc", which placed the
+// setter's writes in a different substorage than the arbgasinfo getter
+// reads from (storage_slot::GAS_CONSTRAINTS_SUBKEY). That silently broke
+// every `setGasPricingConstraints` round-trip.
+const GC_KEY: &[u8] = &[0];
+const MGC_KEY: &[u8] = &[1];
 const CONSTRAINT_TARGET: u64 = 0;
 const CONSTRAINT_WINDOW: u64 = 1;
 const CONSTRAINT_BACKLOG: u64 = 2;
@@ -1418,7 +1436,24 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
 
 // ── SetMultiGasPricingConstraints ────────────────────────────────────
 
-/// ABI: `setMultiGasPricingConstraints((uint64,uint64,uint64,(uint8,uint64)[])[])`
+/// ABI: `setMultiGasPricingConstraints(((uint8,uint64)[],uint32,uint64,uint64)[])`
+///
+/// Matches Nitro's `MultiGasConstraint` struct declaration in
+/// `precompiles/ArbMultiGasConstraintsTypes.go`:
+///
+///   struct MultiGasConstraint {
+///     Resources             []WeightedResource  // dynamic — offset first
+///     AdjustmentWindowSecs  uint32
+///     TargetPerSec          uint64
+///     Backlog               uint64
+///   }
+///
+/// ABI head layout per struct is therefore four words in field order:
+///
+///   head[0] = offset to Resources (relative to the struct start)
+///   head[1] = AdjustmentWindowSecs
+///   head[2] = TargetPerSec
+///   head[3] = Backlog
 ///
 /// Clears existing multi-gas constraints, then adds each constraint
 /// with per-resource-kind weights. Validates pricing exponents after each add.
@@ -1462,30 +1497,29 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
     let len_slot = vector_length_slot(vector_key);
 
     for (i, &struct_start) in struct_offsets.iter().enumerate() {
-        // Each struct: target(32) + window(32) + backlog(32) + resources_offset(32) = 128 min
+        // Each struct head is 4 words: resources_offset + window + target + backlog.
         if data.len() < struct_start + 128 {
             return crate::burn_all_revert(gas_limit);
         }
 
-        let target: u64 = U256::from_be_slice(&data[struct_start..struct_start + 32])
-            .try_into()
-            .unwrap_or(0);
+        // Field order MUST match Nitro's struct declaration (see doc comment).
+        let resources_offset: usize =
+            U256::from_be_slice(&data[struct_start..struct_start + 32])
+                .try_into()
+                .unwrap_or(0);
         let window: u64 = U256::from_be_slice(&data[struct_start + 32..struct_start + 64])
             .try_into()
             .unwrap_or(0);
-        let backlog: u64 = U256::from_be_slice(&data[struct_start + 64..struct_start + 96])
+        let target: u64 = U256::from_be_slice(&data[struct_start + 64..struct_start + 96])
+            .try_into()
+            .unwrap_or(0);
+        let backlog: u64 = U256::from_be_slice(&data[struct_start + 96..struct_start + 128])
             .try_into()
             .unwrap_or(0);
 
         if target == 0 || window == 0 {
             return Err(PrecompileError::other("invalid constraint parameters"));
         }
-
-        // Parse resources offset (relative to struct start).
-        let resources_offset: usize =
-            U256::from_be_slice(&data[struct_start + 96..struct_start + 128])
-                .try_into()
-                .unwrap_or(0);
         let resources_start = struct_start + resources_offset;
 
         if data.len() < resources_start + 32 {
@@ -1598,11 +1632,21 @@ fn validate_multi_gas_exponents(
             continue;
         }
 
-        // divisor = window * target * max_weight (in bips).
+        // Mirrors Nitro's `L2PricingState::CalcMultiGasConstraintsExponents`
+        // in arbos/l2pricing/model.go:
+        //
+        //   divisor  = SaturatingCastToBips(window * target * maxWeight)
+        //   dividend = NaturalToBips(backlog * weight)  // i.e. *10_000
+        //   exp      = dividend / divisor
+        //
+        // `SaturatingCastToBips` is a plain type wrapper — it does NOT
+        // scale by 10_000. Previously we scaled both divisor and dividend
+        // by 10_000 and cancelled the factor, making every exponent
+        // 10_000× smaller and silently bypassing the MaxPricingExponentBips
+        // cap. See Nitro test `TestMultiGasConstraintsCantExceedLimit`.
         let divisor = (window as u128)
             .saturating_mul(target as u128)
             .saturating_mul(max_weight as u128);
-        let divisor_bips = divisor.saturating_mul(10000);
 
         for (r, exponent) in exponents
             .iter_mut()
@@ -1620,9 +1664,11 @@ fn validate_multi_gas_exponents(
                 continue;
             }
 
-            let dividend = (backlog as u128).saturating_mul(weight as u128) * 10000;
-            let exp = if divisor_bips > 0 {
-                (dividend / divisor_bips) as u64
+            let dividend = (backlog as u128)
+                .saturating_mul(weight as u128)
+                .saturating_mul(10_000);
+            let exp = if divisor > 0 {
+                (dividend / divisor) as u64
             } else {
                 0
             };
