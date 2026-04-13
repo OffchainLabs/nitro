@@ -80,6 +80,7 @@ func (c *HashedAddressChecker) FilterSetID() string {
 }
 
 func (c *HashedAddressChecker) processItem(item workItem) {
+	defer item.state.pending.Done()
 	restricted, filterSetID := c.store.IsRestricted(item.addr.Address)
 	if restricted {
 		record := filter.FilteredAddressRecord{
@@ -88,7 +89,6 @@ func (c *HashedAddressChecker) processItem(item workItem) {
 		}
 		item.state.report(&record)
 	}
-	item.state.pending.Done()
 }
 
 // worker runs for the lifetime of the checker; workChan is never closed.
@@ -103,14 +103,14 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 	}
 }
 
-func (s *HashedAddressCheckerState) TouchAddress(addr filter.FilteredAddressWithReason) {
+func (s *HashedAddressCheckerState) TouchAddress(touched filter.FilteredAddressWithReason) {
 	s.pending.Add(1)
 
 	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
 		record := filter.FilteredAddressRecord{
 			FilterSetID:               s.checker.FilterSetID(),
-			FilteredAddressWithReason: addr,
+			FilteredAddressWithReason: touched,
 		}
 		s.report(&record)
 		s.pending.Done()
@@ -118,20 +118,21 @@ func (s *HashedAddressCheckerState) TouchAddress(addr filter.FilteredAddressWith
 	}
 
 	select {
-	case s.checker.workChan <- workItem{addr: addr, state: s}:
+	case s.checker.workChan <- workItem{addr: touched, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
 		record := filter.FilteredAddressRecord{
 			FilterSetID:               s.checker.FilterSetID(),
-			FilteredAddressWithReason: addr,
+			FilteredAddressWithReason: touched,
 		}
 		s.report(&record)
 		s.pending.Done()
 	}
 }
 
-// report records a filtered address. Must only be called for restricted addresses.
+// report records a filtered address. Called when the address is confirmed
+// restricted, or conservatively during shutdown when restriction cannot be verified.
 func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord) {
 	s.mu.Lock()
 	s.filtered = true
