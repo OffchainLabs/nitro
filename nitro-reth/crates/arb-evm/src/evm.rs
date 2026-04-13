@@ -454,6 +454,7 @@ where
                 output: Vec::new(),
                 gas_cost: 0,
                 success: false,
+                refund: 0,
             };
         }
     }
@@ -504,6 +505,7 @@ where
                 let success = result.result.is_ok();
                 let output = result.output.to_vec();
                 let gas_used = gas.saturating_sub(result.gas.remaining());
+                let refund = result.gas.refunded();
                 if success {
                     context.journaled_state.inner.checkpoint_commit();
                 } else {
@@ -513,6 +515,7 @@ where
                     output,
                     gas_cost: gas_used,
                     success,
+                    refund,
                 };
             }
             Ok(None) => {}
@@ -522,6 +525,7 @@ where
                     output: Vec::new(),
                     gas_cost: 0,
                     success: false,
+                    refund: 0,
                 };
             }
         }
@@ -545,6 +549,7 @@ where
                 output: Vec::new(),
                 gas_cost: 0,
                 success: false,
+                refund: 0,
             };
         }
     };
@@ -555,6 +560,7 @@ where
             output: Vec::new(),
             gas_cost: 0,
             success: true,
+            refund: 0,
         };
     }
 
@@ -571,6 +577,7 @@ where
         let success = result.result.is_ok();
         let output = result.output.to_vec();
         let gas_used = gas.saturating_sub(result.gas.remaining());
+        let refund = result.gas.refunded();
         if success {
             context.journaled_state.inner.checkpoint_commit();
         } else {
@@ -580,6 +587,7 @@ where
             output,
             gas_cost: gas_used,
             success,
+            refund,
         };
     }
 
@@ -587,6 +595,7 @@ where
     let success = result.result.is_ok();
     let output = result.output.to_vec();
     let gas_used = gas.saturating_sub(result.gas.remaining());
+    let refund = result.gas.refunded();
     if success {
         context.journaled_state.inner.checkpoint_commit();
     } else {
@@ -596,6 +605,7 @@ where
         output,
         gas_cost: gas_used,
         success,
+        refund,
     }
 }
 
@@ -902,7 +912,15 @@ where
                 }
 
                 if ins_result.is_ok() {
-                    // No refund tracking for sub-calls in this simple loop
+                    // Propagate the sub-call's SSTORE refund (EIP-3529) up
+                    // through the Stylus -> EVM bytecode -> Stylus call chain.
+                    // Mirrors revm's `EthFrame::return_result` which also does
+                    // `interpreter.gas.record_refund(out_gas.refunded())` on
+                    // success. Without this, a Stylus contract that goes
+                    // through a Solidity intermediary to reach an inner
+                    // contract that clears storage loses the 4800-gas clearing
+                    // refund (block 55,755,413 tx 2).
+                    interpreter.gas.record_refund(sub_result.refund);
                 }
             }
             InterpreterAction::NewFrame(FrameInput::Create(sub_create)) => {
