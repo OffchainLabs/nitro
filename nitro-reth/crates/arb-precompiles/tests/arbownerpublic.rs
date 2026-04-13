@@ -56,11 +56,18 @@ fn get_infra_fee_account_returns_root_field_at_v6() {
 }
 
 #[test]
-fn get_infra_fee_account_gated_below_v5() {
-    let run = fixture(4)
-        .gas(50_000)
+fn get_infra_fee_account_falls_back_to_network_fee_account_below_v6() {
+    // Nitro precompiles/ArbOwnerPublic.go::GetInfraFeeAccount returns
+    // NetworkFeeAccount when ArbOSVersion < 6, not a revert.
+    let network: Address = address!("00000000000000000000000000000000000000bb");
+    let run = fixture(5)
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            root_slot(NETWORK_FEE_ACCOUNT_OFFSET),
+            U256::from_be_slice(network.as_slice()),
+        )
         .call(&arbownerpublic(), &calldata("getInfraFeeAccount()", &[]));
-    assert!(run.assert_ok().reverted);
+    assert_eq!(decode_address(run.output()), network);
 }
 
 #[test]
@@ -79,14 +86,13 @@ fn get_brotli_compression_level_at_v20() {
 }
 
 #[test]
-fn get_brotli_compression_level_gated_below_v20() {
-    let run = fixture(19)
-        .gas(50_000)
-        .call(
-            &arbownerpublic(),
-            &calldata("getBrotliCompressionLevel()", &[]),
-        );
-    assert!(run.assert_ok().reverted);
+fn get_brotli_compression_level_returns_zero_below_v20_when_unset() {
+    // Nitro doesn't gate this; just reads the field, which is 0 if uninit.
+    let run = fixture(19).call(
+        &arbownerpublic(),
+        &calldata("getBrotliCompressionLevel()", &[]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
 #[test]
@@ -131,15 +137,16 @@ fn is_chain_owner_returns_false_for_non_member() {
 }
 
 #[test]
-fn rectify_chain_owner_gated_below_v11() {
+fn rectify_chain_owner_errors_when_caller_not_owner_at_any_version() {
+    // Nitro precompiles/ArbOwnerPublic.go::RectifyChainOwner doesn't gate by
+    // version. It calls ChainOwners().RectifyMapping(addr), which errors with
+    // "RectifyMapping: Address is not an owner" when addr isn't tracked.
     let target: Address = address!("00000000000000000000000000000000000000cc");
-    let run = fixture(10)
-        .gas(50_000)
-        .call(
-            &arbownerpublic(),
-            &calldata("rectifyChainOwner(address)", &[word_address(target)]),
-        );
-    assert!(run.assert_ok().reverted);
+    let run = fixture(10).call(
+        &arbownerpublic(),
+        &calldata("rectifyChainOwner(address)", &[word_address(target)]),
+    );
+    assert!(run.result.is_err(), "non-owner rectify must error");
 }
 
 #[test]
@@ -158,29 +165,32 @@ fn get_parent_gas_floor_per_token_at_v50() {
 }
 
 #[test]
-fn get_parent_gas_floor_per_token_gated_below_v50() {
-    let run = fixture(49).gas(50_000).call(
+fn get_parent_gas_floor_per_token_returns_zero_below_v50_when_unset() {
+    // Nitro precompiles/ArbOwnerPublic.go::GetParentGasFloorPerToken is not
+    // version-gated; it just reads the L1PricingState field. Returning 0 from
+    // an uninitialised field is correct.
+    let run = fixture(49).call(
         &arbownerpublic(),
         &calldata("getParentGasFloorPerToken()", &[]),
     );
-    assert!(run.assert_ok().reverted);
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
 #[test]
-fn is_native_token_owner_gated_below_v41() {
+fn is_native_token_owner_returns_false_below_v41_when_unset() {
     let target: Address = address!("00000000000000000000000000000000000000dd");
-    let run = fixture(40).gas(50_000).call(
+    let run = fixture(40).call(
         &arbownerpublic(),
         &calldata("isNativeTokenOwner(address)", &[word_address(target)]),
     );
-    assert!(run.assert_ok().reverted);
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
 #[test]
-fn get_max_stylus_contract_fragments_gated_below_v60() {
-    let run = fixture(59).gas(50_000).call(
+fn get_max_stylus_contract_fragments_returns_zero_below_v60() {
+    let run = fixture(59).call(
         &arbownerpublic(),
         &calldata("getMaxStylusContractFragments()", &[]),
     );
-    assert!(run.assert_ok().reverted);
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
 }

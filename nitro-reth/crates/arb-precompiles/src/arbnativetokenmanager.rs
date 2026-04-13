@@ -1,11 +1,19 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
     ROOT_STORAGE_KEY,
 };
+
+fn native_token_minted_topic() -> B256 {
+    keccak256("NativeTokenMinted(address,uint256)")
+}
+
+fn native_token_burned_topic() -> B256 {
+    keccak256("NativeTokenBurned(address,uint256)")
+}
 
 /// ArbNativeTokenManager precompile address (0x73).
 pub const ARBNATIVETOKENMANAGER_ADDRESS: Address = Address::new([
@@ -107,6 +115,16 @@ fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .balance_incr(caller, amount)
         .map_err(|e| PrecompileError::other(format!("balance_incr: {e:?}")))?;
 
+    // Emit NativeTokenMinted(address indexed to, uint256 amount).
+    let topic1 = B256::left_padding_from(caller.as_slice());
+    let mut event_data = Vec::with_capacity(32);
+    event_data.extend_from_slice(&amount.to_be_bytes::<32>());
+    input.internals_mut().log(Log::new_unchecked(
+        ARBNATIVETOKENMANAGER_ADDRESS,
+        vec![native_token_minted_topic(), topic1],
+        event_data.into(),
+    ));
+
     let gas_used = (SLOAD_GAS + MINT_BURN_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }
@@ -144,6 +162,16 @@ fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .internals_mut()
         .set_balance(caller, new_balance)
         .map_err(|e| PrecompileError::other(format!("set_balance: {e:?}")))?;
+
+    // Emit NativeTokenBurned(address indexed from, uint256 amount).
+    let topic1 = B256::left_padding_from(caller.as_slice());
+    let mut event_data = Vec::with_capacity(32);
+    event_data.extend_from_slice(&amount.to_be_bytes::<32>());
+    input.internals_mut().log(Log::new_unchecked(
+        ARBNATIVETOKENMANAGER_ADDRESS,
+        vec![native_token_burned_topic(), topic1],
+        event_data.into(),
+    ));
 
     let gas_used = (SLOAD_GAS + MINT_BURN_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_used, vec![].into()))

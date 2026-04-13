@@ -65,89 +65,43 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match selector {
         GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        // GetInfraFeeAccount: ArbOS >= 5
+        // Nitro precompiles/ArbOwnerPublic.go::GetInfraFeeAccount returns
+        // NetworkFeeAccount when ArbOSVersion < 6, otherwise InfraFeeAccount.
         GET_INFRA_FEE_ACCOUNT => {
-            if let Some(r) = crate::check_method_version(gas_limit, 5, 0) {
-                return r;
+            if crate::get_arbos_version() < 6 {
+                read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
+            } else {
+                read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
             }
-            read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
         }
-        // GetBrotliCompressionLevel: ArbOS >= 20
         GET_BROTLI_COMPRESSION_LEVEL => {
-            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
-                return r;
-            }
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
-        // GetScheduledUpgrade: ArbOS >= 20
-        GET_SCHEDULED_UPGRADE => {
-            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
-                return r;
-            }
-            handle_scheduled_upgrade(&mut input)
-        }
+        GET_SCHEDULED_UPGRADE => handle_scheduled_upgrade(&mut input),
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
-        RECTIFY_CHAIN_OWNER => {
-            if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
-                return r;
-            }
-            handle_rectify_chain_owner(&mut input)
-        }
-        // IsNativeTokenOwner: ArbOS >= 41
-        IS_NATIVE_TOKEN_OWNER => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
-                return r;
-            }
-            handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE)
-        }
-        // IsTransactionFilterer: ArbOS >= 60 (TransactionFiltering)
-        IS_TRANSACTION_FILTERER => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
-                return r;
-            }
-            handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
-        }
-        // GetAllNativeTokenOwners: ArbOS >= 41
+        RECTIFY_CHAIN_OWNER => handle_rectify_chain_owner(&mut input),
+        // Nitro precompiles/ArbOwnerPublic.go does NOT version-gate any of the
+        // following; they just call the underlying state, which returns the
+        // zero value when uninitialized.
+        IS_NATIVE_TOKEN_OWNER => handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE),
+        IS_TRANSACTION_FILTERER => handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE),
         GET_ALL_NATIVE_TOKEN_OWNERS => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
-                return r;
-            }
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
-        // GetAllTransactionFilterers: ArbOS >= 60 (TransactionFiltering)
         GET_ALL_TRANSACTION_FILTERERS => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
-                return r;
-            }
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
-        // GetNativeTokenManagementFrom: ArbOS >= 50
         GET_NATIVE_TOKEN_MANAGEMENT_FROM => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
-                return r;
-            }
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
-        // GetTransactionFilteringFrom: ArbOS >= 60 (TransactionFiltering)
         GET_TRANSACTION_FILTERING_FROM => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
-                return r;
-            }
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
-        // GetFilteredFundsRecipient: ArbOS >= 60 (TransactionFiltering)
         GET_FILTERED_FUNDS_RECIPIENT => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
-                return r;
-            }
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
-        // IsCalldataPriceIncreaseEnabled: ArbOS >= 40
         IS_CALLDATA_PRICE_INCREASE_ENABLED => {
-            if let Some(r) = crate::check_method_version(gas_limit, 40, 0) {
-                return r;
-            }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
@@ -160,11 +114,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 enabled.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        // GetParentGasFloorPerToken: ArbOS >= 50
         GET_PARENT_GAS_FLOOR_PER_TOKEN => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
-                return r;
-            }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
@@ -174,11 +124,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        // GetMaxStylusContractFragments: ArbOS >= 60 (StylusContractLimit)
         GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
-                return r;
-            }
             // OAS(800) + Params() burn(100) + resultCost(3).
             let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))

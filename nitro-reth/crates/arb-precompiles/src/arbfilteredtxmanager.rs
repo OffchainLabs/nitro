@@ -1,11 +1,19 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
     ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
 };
+
+fn filtered_added_topic() -> B256 {
+    keccak256("FilteredTransactionAdded(bytes32)")
+}
+
+fn filtered_deleted_topic() -> B256 {
+    keccak256("FilteredTransactionDeleted(bytes32)")
+}
 
 /// ArbFilteredTransactionsManager precompile address (0x74).
 pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
@@ -164,6 +172,12 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let slot = filtered_tx_slot(&tx_hash);
     sstore_filtered(input, slot, PRESENT_VALUE)?;
 
+    input.internals_mut().log(Log::new_unchecked(
+        ARBFILTEREDTXMANAGER_ADDRESS,
+        vec![filtered_added_topic(), tx_hash],
+        Default::default(),
+    ));
+
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -191,6 +205,12 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     let slot = filtered_tx_slot(&tx_hash);
     sstore_filtered(input, slot, U256::ZERO)?;
+
+    input.internals_mut().log(Log::new_unchecked(
+        ARBFILTEREDTXMANAGER_ADDRESS,
+        vec![filtered_deleted_topic(), tx_hash],
+        Default::default(),
+    ));
 
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(

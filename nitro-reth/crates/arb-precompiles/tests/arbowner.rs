@@ -166,3 +166,47 @@ fn version_check_uses_raw_arbos_version_not_plus_55() {
     let added = run.storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(new_owner));
     assert_ne!(added, U256::ZERO);
 }
+
+#[test]
+fn set_max_tx_gas_limit_writes_per_tx_slot_and_leaves_per_block_alone() {
+    // Regression: SetMaxTxGasLimit used to dispatch by ArbOS version and write to
+    // L2_PER_BLOCK_GAS_LIMIT (slot 1) at ArbOS < 50, which corrupted the per-block
+    // gas limit. Nitro precompiles/ArbOwner.go::SetMaxTxGasLimit always calls
+    // L2PricingState.SetMaxPerTxGasLimit, which writes perTxGasLimitOffset (slot 7).
+    let test = fixture(30).storage(
+        ARBOS_STATE_ADDRESS,
+        subspace_slot(L2_PRICING_SUBSPACE, 1 /* L2_PER_BLOCK_GAS_LIMIT */),
+        U256::from(32_000_000_u64),
+    );
+    let limit = U256::from(7_000_000_u64);
+    let run = test.call(
+        &arbowner(),
+        &calldata("setMaxTxGasLimit(uint64)", &[word_u256(limit)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 7)),
+        limit,
+        "must write the per-tx slot"
+    );
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 1)),
+        U256::from(32_000_000_u64),
+        "must NOT have overwritten per-block slot"
+    );
+}
+
+#[test]
+fn set_max_block_gas_limit_writes_per_block_slot_at_any_version() {
+    // Companion: SetMaxBlockGasLimit always writes slot 1 in Nitro, no version gate.
+    let limit = U256::from(40_000_000_u64);
+    let run = fixture(30).call(
+        &arbowner(),
+        &calldata("setMaxBlockGasLimit(uint64)", &[word_u256(limit)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 1)),
+        limit
+    );
+}

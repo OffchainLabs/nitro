@@ -222,25 +222,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
-        // SetMaxBlockGasLimit: ArbOS >= 50
-        SET_MAX_BLOCK_GAS_LIMIT => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
-                return r;
-            }
-            write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
-        }
-        SET_MAX_TX_GAS_LIMIT => {
-            // ArbOS < 50: write to per-block gas limit; >= 50: per-tx gas limit.
-            let version_slot = root_slot(0); // VERSION_OFFSET
-            load_arbos(&mut input)?;
-            let raw_version = sload_field(&mut input, version_slot)?.to::<u64>();
-            let offset = if raw_version < 50 {
-                L2_PER_BLOCK_GAS_LIMIT
-            } else {
-                L2_PER_TX_GAS_LIMIT
-            };
-            write_l2_field(&mut input, offset)
-        }
+        // Nitro precompiles/ArbOwner.go::SetMaxBlockGasLimit and SetMaxTxGasLimit
+        // call L2PricingState.SetMaxPerBlockGasLimit / SetMaxPerTxGasLimit
+        // unconditionally. The fields live at slots 1 and 7 respectively in the
+        // l2pricing offset enum and exist regardless of ArbOS version.
+        SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
+        SET_MAX_TX_GAS_LIMIT => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
         SET_L2_GAS_PRICING_INERTIA => {
             let val = U256::from_be_slice(
                 input
@@ -409,13 +396,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 &mut input,
                 TRANSACTION_FILTERER_SUBSPACE,
                 TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+                Some(b"TransactionFiltererAdded(address)"),
             )
         }
         REMOVE_TRANSACTION_FILTERER => {
             if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
-            handle_remove_from_set(&mut input, TRANSACTION_FILTERER_SUBSPACE)
+            handle_remove_from_set(
+                &mut input,
+                TRANSACTION_FILTERER_SUBSPACE,
+                Some(b"TransactionFiltererRemoved(address)"),
+            )
         }
         SET_TRANSACTION_FILTERING_FROM => {
             if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
@@ -423,12 +415,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             handle_set_feature_time(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
-        // SetFilteredFundsRecipient: ArbOS >= 60
         SET_FILTERED_FUNDS_RECIPIENT => {
             if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
-            write_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
+            handle_set_filtered_funds_recipient(&mut input)
         }
 
         // ── Native token management (all ArbOS >= 41) ─────────────
@@ -446,13 +437,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 &mut input,
                 NATIVE_TOKEN_SUBSPACE,
                 NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+                Some(b"NativeTokenOwnerAdded(address)"),
             )
         }
         REMOVE_NATIVE_TOKEN_OWNER => {
             if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
                 return r;
             }
-            handle_remove_from_set(&mut input, NATIVE_TOKEN_SUBSPACE)
+            handle_remove_from_set(
+                &mut input,
+                NATIVE_TOKEN_SUBSPACE,
+                Some(b"NativeTokenOwnerRemoved(address)"),
+            )
         }
 
         // ── Gas pricing constraints ──────────────────────────────
@@ -580,6 +576,30 @@ fn write_root_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileR
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
     sstore_field(input, root_slot(offset), value)?;
+    Ok(PrecompileOutput::new(
+        (SSTORE_GAS + COPY_GAS).min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
+/// Write FilteredFundsRecipient and emit FilteredFundsRecipientSet(address) event.
+fn handle_set_filtered_funds_recipient(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return crate::burn_all_revert(input.gas);
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    sstore_field(
+        input,
+        root_slot(FILTERED_FUNDS_RECIPIENT_OFFSET),
+        U256::from_be_slice(addr.as_slice()),
+    )?;
+    emit_address_event(
+        input,
+        keccak256("FilteredFundsRecipientSet(address)"),
+        addr,
+    );
     Ok(PrecompileOutput::new(
         (SSTORE_GAS + COPY_GAS).min(gas_limit),
         Vec::new().into(),
@@ -1143,10 +1163,20 @@ fn handle_set_feature_time(input: &mut PrecompileInput<'_>, time_offset: u64) ->
 }
 
 /// Add an address to an AddressSet, requiring that the feature is enabled.
+fn emit_address_event(input: &mut PrecompileInput<'_>, topic0: B256, addr: Address) {
+    let topic1 = B256::left_padding_from(addr.as_slice());
+    input.internals_mut().log(Log::new_unchecked(
+        ARBOWNER_ADDRESS,
+        vec![topic0, topic1],
+        alloy_primitives::Bytes::new(),
+    ));
+}
+
 fn handle_add_to_set_with_feature_check(
     input: &mut PrecompileInput<'_>,
     subspace: &[u8],
     time_offset: u64,
+    event_signature: Option<&[u8]>,
 ) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
@@ -1155,7 +1185,6 @@ fn handle_add_to_set_with_feature_check(
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
 
-    // Check feature is enabled.
     let enabled_time_val = sload_field(input, root_slot(time_offset))?;
     let enabled_time: u64 = enabled_time_val.try_into().unwrap_or(0);
     let now: u64 = input
@@ -1170,6 +1199,10 @@ fn handle_add_to_set_with_feature_check(
 
     address_set_add(input, address_set_key(subspace), addr)?;
 
+    if let Some(sig) = event_signature {
+        emit_address_event(input, keccak256(sig), addr);
+    }
+
     let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -1178,7 +1211,11 @@ fn handle_add_to_set_with_feature_check(
 }
 
 /// Remove an address from an AddressSet.
-fn handle_remove_from_set(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
+fn handle_remove_from_set(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    event_signature: Option<&[u8]>,
+) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
         return crate::burn_all_revert(input.gas);
@@ -1186,13 +1223,16 @@ fn handle_remove_from_set(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> P
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
 
-    // Verify membership first.
     let set_key = address_set_key(subspace);
     if !is_member_of(input, set_key, addr)? {
         return Err(PrecompileError::other("address is not a member"));
     }
 
     address_set_remove(input, set_key, addr)?;
+
+    if let Some(sig) = event_signature {
+        emit_address_event(input, keccak256(sig), addr);
+    }
 
     let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
