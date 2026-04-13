@@ -21,25 +21,25 @@ import (
 )
 
 type Config struct {
-	Workers          uint                         `koanf:"workers"`
-	PollInterval     time.Duration                `koanf:"poll-interval"`
-	WaitTimeSeconds  int32                        `koanf:"wait-time-seconds"`
-	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
+	Workers            uint                         `koanf:"workers"`
+	PollInterval       time.Duration                `koanf:"poll-interval"`
+	SQSWaitTimeSeconds int32                        `koanf:"sqs-wait-time-seconds"`
+	ExternalEndpoint   genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
 var DefaultConfig = Config{
-	Workers:          1,
-	PollInterval:     1 * time.Second,
-	WaitTimeSeconds:  5,
-	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
+	Workers:            1,
+	PollInterval:       1 * time.Second,
+	SQSWaitTimeSeconds: 5,
+	ExternalEndpoint:   genericconf.HTTPClientConfigDefault,
 }
 
 func (c *Config) Validate() error {
 	if c.PollInterval < 0 {
 		return fmt.Errorf("poll-interval must be non-negative, got %s", c.PollInterval)
 	}
-	if c.WaitTimeSeconds < 0 {
-		return fmt.Errorf("wait-time-seconds must be non-negative, got %d", c.WaitTimeSeconds)
+	if c.SQSWaitTimeSeconds < 0 {
+		return fmt.Errorf("sqs-wait-time-seconds must be non-negative, got %d", c.SQSWaitTimeSeconds)
 	}
 	return c.ExternalEndpoint.Validate()
 }
@@ -47,7 +47,7 @@ func (c *Config) Validate() error {
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint(prefix+".workers", DefaultConfig.Workers, "number of workers")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
-	f.Int32(prefix+".wait-time-seconds", DefaultConfig.WaitTimeSeconds, "SQS long polling wait time in seconds")
+	f.Int32(prefix+".sqs-wait-time-seconds", DefaultConfig.SQSWaitTimeSeconds, "SQS long polling wait time in seconds")
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 }
 
@@ -74,7 +74,7 @@ func (r *Forwarder) Start(ctx context.Context) {
 }
 
 func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
-	msgs, err := r.queueClient.Receive(ctx, r.config.WaitTimeSeconds, 1)
+	msgs, err := r.queueClient.Receive(ctx, r.config.SQSWaitTimeSeconds, 1)
 	if err != nil {
 		log.Error("Failed to receive SQS messages", "err", err)
 		return r.config.PollInterval

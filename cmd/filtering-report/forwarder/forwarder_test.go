@@ -40,9 +40,9 @@ func newTestStack(t *testing.T, queueClient *sqsclient.MockQueueClient) *rpc.Cli
 
 func newTestForwarder(queueClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
 	config := &Config{
-		Workers:         1,
-		PollInterval:    time.Second,
-		WaitTimeSeconds: DefaultConfig.WaitTimeSeconds,
+		Workers:            1,
+		PollInterval:       time.Second,
+		SQSWaitTimeSeconds: DefaultConfig.SQSWaitTimeSeconds,
 		ExternalEndpoint: genericconf.HTTPClientConfig{
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
