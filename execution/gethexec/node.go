@@ -54,9 +54,8 @@ func (c *StylusTargetConfig) WasmTargets() []rawdb.WasmTarget {
 }
 
 func (c *StylusTargetConfig) Validate() error {
-	if c.MaxStylusOpenPages > 0 && c.MaxStylusOpenPages < 16 {
-		log.Warn("max-stylus-open-pages is very low; most Stylus programs will be rejected", "value", c.MaxStylusOpenPages)
-	}
+	nodeCfg := programs.StylusNodeConfig{MaxOpenPages: c.MaxStylusOpenPages}
+	nodeCfg.Validate()
 	targetsSet := make(map[rawdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {
 		target := rawdb.WasmTarget(arch)
@@ -85,7 +84,7 @@ var DefaultStylusTargetConfig = StylusTargetConfig{
 	Host:               "",
 	ExtraArchs:         []string{string(rawdb.TargetWavm)},
 	AllowFallback:      true,
-	MaxStylusOpenPages: 128,
+	MaxStylusOpenPages: 128, // 128 pages = 8 MiB per tx; 0 disables the limit
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {

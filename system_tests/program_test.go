@@ -1194,8 +1194,12 @@ func TestProgramMaxStylusOpenPages(t *testing.T) {
 	testMaxStylusOpenPages(t, true)
 }
 
+func TestProgramMaxStylusOpenPagesNative(t *testing.T) {
+	testMaxStylusOpenPages(t, false)
+}
+
 func testMaxStylusOpenPages(t *testing.T, jit bool) {
-	const pageLimit uint16 = 10
+	const pageLimit uint16 = 20
 	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
 		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
 	})
@@ -1208,7 +1212,7 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	memWriteAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/mem-write"))
 
 	underLimitArgs := []byte{5}
-	overLimitArgs := []byte{20}
+	overLimitArgs := []byte{30}
 
 	// eth_call: under limit (5 pages) should succeed
 	msg := ethereum.CallMsg{
@@ -1219,7 +1223,7 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	_, err := l2client.CallContract(ctx, msg, nil)
 	Require(t, err, "eth_call with pages under limit should succeed")
 
-	// eth_call: over limit (20 pages) should fail with out of gas
+	// eth_call: over limit (30 pages) should fail with out of gas
 	msg.Data = overLimitArgs
 	_, err = l2client.CallContract(ctx, msg, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of gas") {
@@ -1235,10 +1239,12 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	// On-chain over limit should fail.
 	// FilterTx() causes the sequencer to reject the tx entirely (not included in a block),
 	// so SendTransaction itself returns an error rather than producing a failed receipt.
+	// We match on state.ErrArbTxFilter.Error() (rather than a literal string) so that
+	// the test tracks the sentinel if it's ever reworded.
 	tx = l2info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, overLimitArgs)
 	err = l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), "internal error") {
-		Fatal(t, "on-chain tx over limit should have been rejected with 'internal error', got:", err)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
 	}
 }
 

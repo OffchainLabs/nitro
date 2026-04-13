@@ -210,7 +210,9 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	s.bc.StateCache().SetMaxStylusOpenPages(targetConfig.MaxStylusOpenPages)
+	s.bc.StateCache().SetStylusNodeConfig(&programs.StylusNodeConfig{
+		MaxOpenPages: targetConfig.MaxStylusOpenPages,
+	})
 	return nil
 }
 

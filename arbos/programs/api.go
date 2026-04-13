@@ -4,6 +4,7 @@
 package programs
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 
@@ -300,33 +301,41 @@ func newApiClosures(
 		return evm.StateDB.GetCodeHash(address), cost.SingleGas()
 	}
 	addPages := func(pages uint16) uint64 {
-		// Pages are added to state first; if the limit is exceeded, the tx is either
-		// filtered (commit mode) or effectively OOG'd (non-on-chain), both of which
-		// revert the state change. The defer in programs.go also restores openWasmPages.
-		open, ever := db.AddStylusPages(pages)
-		if limit := db.Database().MaxStylusOpenPages(); limit > 0 {
-			newOpen := arbmath.SaturatingUAdd(open, pages)
-			if newOpen > limit {
-				if runCtx == nil || !runCtx.IsExecutedOnChain() {
-					log.Warn("Stylus program exceeded open pages limit",
-						"pages", pages, "open", open, "limit", limit, "contract", actingAddress)
-					return math.MaxUint64
-				}
-				// We know we're in an on-chain execution mode (commit, replay, or recording).
-				// Coinbase == BatchPosterAddress further distinguishes sequencer-posted batches
-				// from delayed inbox messages (see tx_processor.go for the same pattern).
-				// TODO: When NIT-4788 lands and adds something like runCtx.IsDelayedSequencerCommit()
-				// to MessageRunContext, this Coinbase check can be swapped out for that cleaner API.
-				if runCtx.IsCommitMode() && evm.Context.Coinbase == l1pricing.BatchPosterAddress {
-					log.Warn("Stylus program exceeded open pages limit, filtering transaction",
-						"pages", pages, "open", open, "limit", limit, "contract", actingAddress)
-					db.FilterTx()
-					return math.MaxUint64
-				}
+		// Pages are added before the limit check. The CallProgram defer in
+		// programs.go restores openWasmPages on frame return.
+		oldOpen, oldEver := db.AddStylusPages(pages)
+		newOpen := db.GetStylusPagesOpen()
+		var limit uint16
+		if raw := db.Database().StylusNodeConfig(); raw != nil {
+			if cfg, ok := raw.(*StylusNodeConfig); ok {
+				limit = cfg.MaxOpenPages
+			} else {
+				// Internal wiring bug — fail-open to preserve pre-feature behavior.
+				log.Error("StylusNodeConfig unexpected type; page limit inactive",
+					"type", fmt.Sprintf("%T", raw))
 			}
 		}
+		if limit > 0 && newOpen > limit && runCtx != nil {
+			if !runCtx.IsExecutedOnChain() {
+				log.Warn("addPages: page limit exceeded",
+					"open", newOpen, "limit", limit, "contract", actingAddress)
+				return math.MaxUint64
+			}
+			// Sequencer-posted batches: filter the tx.
+			// TODO(NIT-4788): replace Coinbase check with runCtx.IsDelayedSequencerCommit().
+			if runCtx.IsCommitMode() && evm.Context.Coinbase == l1pricing.BatchPosterAddress {
+				log.Warn("addPages: page limit exceeded, filtering tx",
+					"open", newOpen, "limit", limit, "contract", actingAddress)
+				db.FilterTx()
+				return math.MaxUint64
+			}
+			// Exempt path (delayed inbox / replay / recording): cannot enforce
+			// post-commitment, charge normal gas instead.
+			log.Info("addPages: page limit exceeded in exempt mode",
+				"open", newOpen, "limit", limit, "contract", actingAddress, "runMode", runCtx.RunModeMetricName())
+		}
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
-		return memoryModel.GasCost(pages, open, ever)
+		return memoryModel.GasCost(pages, oldOpen, oldEver)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {
