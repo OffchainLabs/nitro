@@ -267,3 +267,46 @@ fn get_multi_gas_base_fee_gated_to_v60() {
         .call(&arbgasinfo(), &calldata("getMultiGasBaseFee()", &[]));
     assert!(run.assert_ok().reverted);
 }
+
+#[test]
+fn get_prices_in_wei_uses_block_basefee_not_storage() {
+    // Regression for the wrong-source bug: handle_prices_in_wei used to read
+    // L2_BASE_FEE from storage instead of evm.Context.BaseFee. Set them to
+    // different values to lock the behavior in.
+    let l1_price = U256::from(50_000_000_u64);
+    let stored_l2_base = U256::from(999_999_999_u64); // would-be wrong source
+    let block_basefee = 100_000_000_u64; // the correct source per Nitro
+    let l2_min = U256::from(50_000_000_u64);
+
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, l1_price);
+    let test = put_l2(test, 2 /* L2_BASE_FEE */, stored_l2_base);
+    let test = put_l2(test, L2_MIN_BASE_FEE, l2_min);
+    let run = test
+        .block_basefee(block_basefee)
+        .call(&arbgasinfo(), &calldata("getPricesInWei()", &[]));
+    let out = run.output();
+    // perArbGasTotal (slot 5) should be the block base fee, not the stored value.
+    assert_eq!(decode_word(out, 5), common::word_u64(block_basefee));
+    // perArbGasBase = min(block_basefee, l2_min)
+    let expected_base = std::cmp::min(U256::from(block_basefee), l2_min);
+    assert_eq!(decode_word(out, 3), common::word_u256(expected_base));
+}
+
+#[test]
+fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
+    // Same regression for prices-in-arbgas: Nitro divides wei costs by
+    // evm.Context.BaseFee, not by the stored L2_BASE_FEE field.
+    let l1_price = U256::from(40_000_000_u64);
+    let stored_l2_base = U256::from(1u64); // 1 wei would yield huge wrong values
+    let block_basefee = 200_000_000_u64;
+
+    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, l1_price);
+    let test = put_l2(test, 2 /* L2_BASE_FEE */, stored_l2_base);
+    let run = test
+        .block_basefee(block_basefee)
+        .call(&arbgasinfo(), &calldata("getPricesInArbGas()", &[]));
+    let out = run.output();
+    // gas_for_l1_calldata = (l1_price * 16) / block_basefee
+    let expected_calldata = (l1_price * U256::from(16u64)) / U256::from(block_basefee);
+    assert_eq!(decode_word(out, 1), common::word_u256(expected_calldata));
+}

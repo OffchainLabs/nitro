@@ -1,5 +1,6 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
+use revm::context_interface::block::Block;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
@@ -322,18 +323,23 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
 fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
+
+    // Nitro precompiles/ArbGasInfo.go::GetPricesInWeiWithAggregator reads l2GasPrice from
+    // evm.Context.BaseFee (or BaseFeeInBlock if set). The storage L2_BASE_FEE field is the
+    // *previous* block's base fee — using it here gives the wrong answer mid-block.
+    let l2_gas_price = U256::from(input.internals().block_env().basefee());
+
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let l2_base = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
     let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
-    let per_arbgas_base = l2_base.min(l2_min);
-    let per_arbgas_congestion = l2_base.saturating_sub(per_arbgas_base);
-    let per_arbgas_total = l2_base;
-    let wei_for_l2_storage = l2_base.saturating_mul(U256::from(STORAGE_WRITE_COST));
+    let per_arbgas_base = l2_gas_price.min(l2_min);
+    let per_arbgas_congestion = l2_gas_price.saturating_sub(per_arbgas_base);
+    let per_arbgas_total = l2_gas_price;
+    let wei_for_l2_storage = l2_gas_price.saturating_mul(U256::from(STORAGE_WRITE_COST));
 
     let mut out = Vec::with_capacity(192);
     out.extend_from_slice(&per_l2_tx.to_be_bytes::<32>());
@@ -343,9 +349,8 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    // baseFee is read from evm.Context (free), only 2 body SLOADs (PricePerUnit, MinBaseFee).
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
+    let gas_cost = (2 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
@@ -373,16 +378,19 @@ fn handle_gas_accounting_params(input: &mut PrecompileInput<'_>) -> PrecompileRe
 fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
+
+    // Same fix as handle_prices_in_wei: l2GasPrice comes from evm.Context.BaseFee.
+    let l2_gas_price = U256::from(input.internals().block_env().basefee());
+
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let l2_base = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
 
-    let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_base > U256::ZERO {
-        (wei_for_l1_calldata / l2_base, wei_per_l2_tx / l2_base)
+    let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_gas_price > U256::ZERO {
+        (wei_for_l1_calldata / l2_gas_price, wei_per_l2_tx / l2_gas_price)
     } else {
         (U256::ZERO, U256::ZERO)
     };
@@ -392,9 +400,8 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&gas_for_l1_calldata.to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
-    // baseFee is read from evm.Context (free), only 1 body SLOAD (PricePerUnit).
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
+    let gas_cost = (SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 

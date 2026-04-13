@@ -88,6 +88,7 @@ pub struct PrecompileTest {
     gas_limit: u64,
     evm_depth: usize,
     tx_is_aliased: bool,
+    block_basefee: u64,
 }
 
 impl Default for PrecompileTest {
@@ -107,6 +108,7 @@ impl Default for PrecompileTest {
             gas_limit: 1_000_000,
             evm_depth: 1,
             tx_is_aliased: false,
+            block_basefee: 100_000_000, // 0.1 gwei, typical Arbitrum L2 base fee
         }
     }
 }
@@ -170,6 +172,10 @@ impl PrecompileTest {
         self.tx_is_aliased = a;
         self
     }
+    pub fn block_basefee(mut self, fee: u64) -> Self {
+        self.block_basefee = fee;
+        self
+    }
 
     pub fn account(mut self, addr: Address, info: AccountInfo) -> Self {
         self.db.insert_account_info(addr, info);
@@ -230,6 +236,7 @@ impl PrecompileTest {
         ctx.cfg.chain_id = self.chain_id;
         ctx.block.number = U256::from(self.block_number);
         ctx.block.timestamp = U256::from(self.block_timestamp);
+        ctx.block.basefee = self.block_basefee;
         ctx.tx.caller = self.caller;
 
         let result = {
