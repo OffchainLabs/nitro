@@ -207,6 +207,9 @@ func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
 		}
 		p.MaxWasmSize = initialMaxWasmSize
 	case params.ArbosVersion_StylusContractLimit:
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d while stylus version %d", newArbosVersion, p.Version)
+		}
 		p.MaxFragmentCount = initialMaxFragmentCount
 	}
 
