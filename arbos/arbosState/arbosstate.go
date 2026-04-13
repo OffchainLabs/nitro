@@ -489,6 +489,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(p.UpgradeToVersion(3))
 			ensure(p.Save())
 			// Changes for ArbosVersion_TransactionFiltering
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))

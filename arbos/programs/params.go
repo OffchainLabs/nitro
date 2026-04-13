@@ -180,8 +180,14 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 		p.Version = 2
 		p.MinInitGas = v2MinInitGas
 		return nil
+	case 3:
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 3
+		return nil
 	default:
-		return fmt.Errorf("unsupported upgrade to %d. Only 2 is supported", version)
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 and 3 are supported", version)
 	}
 }
 
