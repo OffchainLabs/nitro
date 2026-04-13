@@ -637,4 +637,25 @@ mod test {
         assert!(activate_with_stylus_version(2).is_ok());
         assert!(activate_with_stylus_version(1).is_ok());
     }
+
+    #[test]
+    fn test_recompile_allows_multi_value_at_stylus_v3() {
+        // Recompilation of an already-active contract (arbos_version == 0) must accept
+        // multi-value even when the chain is at Stylus V3, because the contract was
+        // legitimately activated pre-V3 and its wasm cannot change.
+        let wasm = multi_value_stylus_wasm();
+        let mut gas = u64::MAX;
+        assert!(
+            Module::activate(
+                &wasm[..],
+                &Bytes32([0u8; 32]),
+                3,
+                0, // arbos_version == 0 signals recompilation
+                128,
+                false,
+                &mut gas,
+            )
+            .is_ok()
+        );
+    }
 }

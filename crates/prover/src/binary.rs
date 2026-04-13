@@ -667,7 +667,11 @@ impl<'a> WasmBinary<'a> {
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse_with_version(wasm, Path::new("user"), stylus_version)?;
+        // When recompiling an already-active contract (arbos_version_for_activation == 0) the
+        // original activation version is unknown, so we cannot apply version-gated restrictions.
+        // Pass 0 so that pre-V3 contracts with multi-value WASM can still be recompiled.
+        let validation_version = if arbos_version_for_activation == 0 { 0 } else { stylus_version };
+        let mut bin = parse_with_version(wasm, Path::new("user"), validation_version)?;
 
         let stylus_data = bin.instrument(compile, codehash)?;
 
