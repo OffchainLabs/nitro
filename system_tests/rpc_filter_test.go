@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -246,7 +247,7 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 	Require(t, err)
 	redeemData, err := arbRetryableABI.Pack("redeem", ticketId)
 	Require(t, err)
-	arbRetryableAddr := common.HexToAddress("0x6e")
+	arbRetryableAddr := types.ArbRetryableTxAddress
 
 	callMsg := ethereum.CallMsg{
 		From: userAddr,
