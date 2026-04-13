@@ -558,6 +558,31 @@ where
         };
     }
 
+    // Stylus → Stylus call: detect the Stylus discriminant on the loaded
+    // bytecode and dispatch through the WASM runtime instead of running the
+    // bytes as raw EVM. Without this branch, the inner call hits 0xef on the
+    // very first byte and aborts with OpcodeNotFound. Block 55755413's failing
+    // tx tripped this when a Solidity contract called a Stylus token's
+    // `transferFrom` from inside a Stylus → EVM CALL chain.
+    if arb_precompiles::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+        && arb_stylus::is_stylus_program(&bytecode)
+    {
+        let result = execute_stylus_program(context, &sub_inputs, &bytecode);
+        let success = result.result.is_ok();
+        let output = result.output.to_vec();
+        let gas_used = gas.saturating_sub(result.gas.remaining());
+        if success {
+            context.journaled_state.inner.checkpoint_commit();
+        } else {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+        }
+        return SubCallResult {
+            output,
+            gas_cost: gas_used,
+            success,
+        };
+    }
+
     let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
@@ -758,7 +783,16 @@ where
         gas_limit,
     );
 
-    // Build instruction table with our custom opcodes (BLOBBASEFEE, SELFDESTRUCT)
+    // Build instruction table with our custom Arbitrum opcode handlers.
+    // This MUST install the same set as the outer ArbEvmFactory (search for
+    // `instruction.insert_instruction` further down in this file). When a
+    // Stylus contract calls into an EVM contract via stylus_call_trampoline,
+    // the new EVM frame goes through this code path. Without these handlers,
+    // sub-frame NUMBER returns the L2 block number instead of the L1 block
+    // number Arbitrum exposes — which silently breaks any EIP-712 signature
+    // derivation that includes block.number in its digest. Block 55755413's
+    // failing tx reproduced this as an `InvalidSignature()` revert deep
+    // inside a Stylus -> EVM CALL chain.
     type Ctx<B, T, C, D, Ch> = revm::Context<B, T, C, D, revm::Journal<D>, Ch>;
     let mut instructions = EthInstructions::<
         EthInterpreter,
@@ -771,6 +805,22 @@ where
     instructions.insert_instruction(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
+    );
+    instructions.insert_instruction(
+        NUMBER_OPCODE,
+        revm::interpreter::Instruction::new(arb_number, 2),
+    );
+    instructions.insert_instruction(
+        BLOCKHASH_OPCODE,
+        revm::interpreter::Instruction::new(arb_blockhash, 20),
+    );
+    instructions.insert_instruction(
+        BALANCE_OPCODE,
+        revm::interpreter::Instruction::new(arb_balance, 0),
+    );
+    instructions.insert_instruction(
+        SELFBALANCE_OPCODE,
+        revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
 
     // Run the interpreter in a loop, handling nested calls/creates
@@ -786,7 +836,23 @@ where
                 // For DELEGATECALL, target_address is the storage context (preserved
                 // from parent), and caller is the msg.sender (preserved). For
                 // CALL/STATICCALL, target_address == bytecode_address.
-                let resolved_input: Bytes = sub_call.input.bytes(context);
+                //
+                // Resolve `sub_call.input` against the *interpreter's* SharedMemory.
+                // We can't use `sub_call.input.bytes(context)` because that reads
+                // from `context.local()` — the global context's local memory —
+                // whereas this frame's CALL/STATICCALL was issued against the
+                // private SharedMemory we created at the top of this function.
+                // Reading from the wrong memory returns garbage and silently
+                // corrupts the input to ecrecover, transferFrom, etc.
+                let resolved_input: Bytes = match &sub_call.input {
+                    revm::interpreter::CallInput::Bytes(b) => b.clone(),
+                    revm::interpreter::CallInput::SharedBuffer(range) => {
+                        // The range was computed by call_helpers as
+                        //   range.start = relative_offset + local_memory_offset()
+                        // i.e. an absolute offset into the SharedMemory buffer.
+                        Bytes::from(interpreter.memory.global_slice_range(range.clone()).to_vec())
+                    }
+                };
                 let bytecode_address = sub_call.bytecode_address;
                 let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),

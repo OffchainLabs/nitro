@@ -44,7 +44,8 @@ pub fn write_result<E: EvmApi>(
 }
 
 /// Exit the program early with a status code.
-pub fn exit_early<E: EvmApi>(_env: FunctionEnvMut<'_, WasmEnv<E>>, status: u32) -> MaybeEscape {
+pub fn exit_early<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, status: u32) -> MaybeEscape {
+    let _info = hostio!(&mut env);
     Err(Escape::Exit(status))
 }
 

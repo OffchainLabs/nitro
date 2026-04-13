@@ -510,14 +510,14 @@ impl EvmApi for StylusEvmApi {
             value,
         );
 
-        // Invalidate CLEAN (read-only) storage cache entries after sub-call.
-        // The sub-call may have modified storage (e.g., via DELEGATECALL to our
-        // address), making cached read values stale. Nitro reads from stateDB
-        // which always reflects the latest journal state; our per-call cache
-        // would return stale values otherwise.
-        // Preserve DIRTY entries (pending writes) — they haven't been flushed
-        // to the journal yet and must not be lost.
-        self.storage_cache.slots.retain(|_, entry| entry.dirty());
+        // Do NOT invalidate the per-call storage cache after a CALL.
+        // Nitro's `EvmApiRequestor` (crates/arbutil/src/evm/req.rs) does not
+        // invalidate either, and matching that behavior is required to keep
+        // gas accounting in lockstep — invalidating clean entries forces the
+        // next read of the same slot to pay full SLOAD + EVM_API_INK
+        // (~60k gas legacy) instead of the cache-hit cost (0/2/10 gas).
+        // CALL targets a different contract anyway, so its storage writes
+        // can't affect this contract's cache.
 
         self.return_data = result.output;
         // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
