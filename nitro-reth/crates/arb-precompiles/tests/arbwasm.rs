@@ -391,3 +391,149 @@ fn program_memory_footprint_returns_packed_value() {
     );
     assert_eq!(decode_u256(run.output()), U256::from(7u64));
 }
+
+// ── More query coverage ──────────────────────────────────────────────
+
+/// Pack a Program word with explicit init_cost and cached_cost fields.
+fn pack_program_full(
+    version: u16,
+    init_cost: u16,
+    cached_cost: u16,
+    footprint: u16,
+    activated_at_hours: u32,
+    asm_estimate_kb: u32,
+) -> U256 {
+    let mut buf = [0u8; 32];
+    buf[0..2].copy_from_slice(&version.to_be_bytes());
+    buf[2..4].copy_from_slice(&init_cost.to_be_bytes());
+    buf[4..6].copy_from_slice(&cached_cost.to_be_bytes());
+    buf[6..8].copy_from_slice(&footprint.to_be_bytes());
+    buf[8] = (activated_at_hours >> 16) as u8;
+    buf[9] = (activated_at_hours >> 8) as u8;
+    buf[10] = activated_at_hours as u8;
+    buf[11] = (asm_estimate_kb >> 16) as u8;
+    buf[12] = (asm_estimate_kb >> 8) as u8;
+    buf[13] = asm_estimate_kb as u8;
+    U256::from_be_bytes(buf)
+}
+
+#[test]
+fn program_init_gas_returns_init_and_cached_costs() {
+    // Mirrors Nitro Programs.ProgramInitGas:
+    //   init   = init_cost * scalar * 2 / 100 + min_init_gas * 128
+    //   cached = cached_cost * cached_scalar * 2 / 100 + min_cached * 32
+    //   if params.Version > 1 { init += cached }
+    let codehash = B256::from_slice(&[0xc1u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program_full(
+        default_params().version, // 2
+        100,                      // init_cost
+        50,                       // cached_cost
+        3,                        // footprint
+        hours_since_start(now),
+        0,
+    );
+    let prog_addr = address!("00000000000000000000000000000000000000bc");
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .account(
+            prog_addr,
+            AccountInfo {
+                code_hash: codehash,
+                ..Default::default()
+            },
+        )
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("programInitGas(address)", &[word_address(prog_addr)]),
+    );
+    let out = run.output();
+
+    // default_params(): min_init_gas=69, min_cached_init_gas=11,
+    // init_cost_scalar=50, cached_cost_scalar=50.
+    let init_base = 69u64 * 128;
+    let init_dyno = 100u64 * 50 * 2; // = 10_000
+    let init_dyno_div_ceil = init_dyno.div_ceil(100); // = 100
+    let cached_base = 11u64 * 32;
+    let cached_dyno = 50u64 * 50 * 2; // = 5_000
+    let cached_dyno_div_ceil = cached_dyno.div_ceil(100); // = 50
+    let cached = cached_base + cached_dyno_div_ceil;
+    let init = init_base + init_dyno_div_ceil + cached; // version > 1, so + cached
+
+    assert_eq!(decode_word(out, 0), common::word_u64(init));
+    assert_eq!(decode_word(out, 1), common::word_u64(cached));
+}
+
+#[test]
+fn codehash_asm_size_returns_kb_times_1024() {
+    let codehash = B256::from_slice(&[0xc2u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program_full(
+        default_params().version,
+        0,
+        0,
+        0,
+        hours_since_start(now),
+        7, // asm_estimate_kb
+    );
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashAsmSize(bytes32)", &[codehash]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::from(7u64 * 1024));
+}
+
+#[test]
+fn program_time_left_returns_expiry_seconds_minus_age() {
+    // Use hour-aligned timestamps so hours_to_age math is lossless, then we can
+    // compute the exact expected time_left.
+    let codehash = B256::from_slice(&[0xc3u8; 32]);
+    let activated_hours: u32 = 1_000_000;
+    let activated_unix = ARBITRUM_START_TIME + (activated_hours as u64) * 3600;
+    let now = activated_unix + 24 * 3600; // exactly 1 day later
+    let prog_word = pack_program(default_params().version, 3, activated_hours);
+    let prog_addr = address!("00000000000000000000000000000000000000c3");
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .account(
+            prog_addr,
+            AccountInfo {
+                code_hash: codehash,
+                ..Default::default()
+            },
+        )
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("programTimeLeft(address)", &[word_address(prog_addr)]),
+    );
+    let expected = 365u64 * 86_400 - 86_400;
+    assert_eq!(decode_u256(run.output()), U256::from(expected));
+}
+
+#[test]
+fn program_version_returns_program_version_for_fresh_program() {
+    let codehash = B256::from_slice(&[0xc4u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program(default_params().version, 1, hours_since_start(now));
+    let prog_addr = address!("00000000000000000000000000000000000000c4");
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .account(
+            prog_addr,
+            AccountInfo {
+                code_hash: codehash,
+                ..Default::default()
+            },
+        )
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("programVersion(address)", &[word_address(prog_addr)]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::from(default_params().version));
+}

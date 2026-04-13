@@ -310,3 +310,82 @@ fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
     let expected_calldata = (l1_price * U256::from(16u64)) / U256::from(block_basefee);
     assert_eq!(decode_word(out, 1), common::word_u256(expected_calldata));
 }
+
+// ── L1 pricing surplus ─────────────────────────────────────────────────
+
+const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
+const TOTAL_FUNDS_DUE_OFFSET: u64 = 0;
+
+const L1_PRICER_FUNDS_POOL: Address = address!("a4b05fffffffffffffffffffffffffffffffffff");
+
+fn batch_poster_total_funds_due_slot() -> U256 {
+    use arb_precompiles::storage_slot::derive_subspace_key;
+    let l1_key = derive_subspace_key(arb_precompiles::storage_slot::ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
+    let bpt_key = derive_subspace_key(l1_key.as_slice(), BATCH_POSTER_TABLE_KEY);
+    arb_precompiles::storage_slot::map_slot(bpt_key.as_slice(), TOTAL_FUNDS_DUE_OFFSET)
+}
+
+#[test]
+fn get_l1_pricing_surplus_pre_v10_uses_pool_balance() {
+    // Pre-v10: surplus = poolBalance - (totalFundsDue + fundsDueForRewards).
+    let pool_balance = U256::from(1_000_000_u64);
+    let total_due = U256::from(300_000_u64);
+    let funds_due_rewards = U256::from(200_000_u64);
+    let test = fixture(9)
+        .balance(L1_PRICER_FUNDS_POOL, pool_balance)
+        .storage(ARBOS_STATE_ADDRESS, batch_poster_total_funds_due_slot(), total_due);
+    let test = put_l1(test, L1_FUNDS_DUE_FOR_REWARDS, funds_due_rewards);
+    let run = test.call(&arbgasinfo(), &calldata("getL1PricingSurplus()", &[]));
+    let want = pool_balance - total_due - funds_due_rewards;
+    assert_eq!(decode_u256(run.output()), want);
+}
+
+#[test]
+fn get_l1_pricing_surplus_v10_plus_uses_stored_field() {
+    // v10+: surplus = L1FeesAvailable - (totalFundsDue + fundsDueForRewards).
+    let stored_available = U256::from(2_000_000_u64);
+    let total_due = U256::from(500_000_u64);
+    let funds_due_rewards = U256::from(100_000_u64);
+    let test = fixture(10)
+        .storage(ARBOS_STATE_ADDRESS, batch_poster_total_funds_due_slot(), total_due);
+    let test = put_l1(test, L1_FUNDS_DUE_FOR_REWARDS, funds_due_rewards);
+    let test = put_l1(test, L1_FEES_AVAILABLE, stored_available);
+    let run = test.call(&arbgasinfo(), &calldata("getL1PricingSurplus()", &[]));
+    let want = stored_available - total_due - funds_due_rewards;
+    assert_eq!(decode_u256(run.output()), want);
+}
+
+#[test]
+fn get_l1_pricing_surplus_returns_negative_two_complement_when_deficit() {
+    // L1FeesAvailable smaller than need → surplus is negative; encoded as
+    // two's complement in U256.
+    let stored_available = U256::from(100_u64);
+    let total_due = U256::from(500_u64);
+    let funds_due_rewards = U256::from(50_u64);
+    let deficit = total_due + funds_due_rewards - stored_available;
+    let test = fixture(10)
+        .storage(ARBOS_STATE_ADDRESS, batch_poster_total_funds_due_slot(), total_due);
+    let test = put_l1(test, L1_FUNDS_DUE_FOR_REWARDS, funds_due_rewards);
+    let test = put_l1(test, L1_FEES_AVAILABLE, stored_available);
+    let run = test.call(&arbgasinfo(), &calldata("getL1PricingSurplus()", &[]));
+    // Expected: -deficit in 256-bit two's complement.
+    let want = U256::ZERO.wrapping_sub(deficit);
+    assert_eq!(decode_u256(run.output()), want);
+}
+
+#[test]
+fn get_gas_accounting_params_layout_is_three_words() {
+    let speed = U256::from(7_000_000_u64);
+    let block_lim = U256::from(32_000_000_u64);
+    let test = put_l2(fixture(30), L2_SPEED_LIMIT, speed);
+    let test = put_l2(test, L2_PER_BLOCK_GAS_LIMIT, block_lim);
+    let run = test.call(
+        &arbgasinfo(),
+        &calldata("getGasAccountingParams()", &[]),
+    );
+    let out = run.output();
+    assert_eq!(out.len(), 96);
+    assert_eq!(decode_word(out, 0), common::word_u256(speed));
+    assert_eq!(decode_word(out, 1), common::word_u256(block_lim));
+    assert_eq!(decode_word(out, 2), common::word_u256(block_lim));
+}
