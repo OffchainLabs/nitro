@@ -430,6 +430,7 @@ impl Module {
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(
             wasm,
+            stylus_version,
             arbos_version_for_activation,
             page_limit,
             &compile,
@@ -496,15 +497,13 @@ impl Module {
 mod test {
     use std::path::Path;
 
-    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
-
     use super::*;
     use crate::binary;
 
-    // Parse at the threshold version so multi-value is rejected by the validator.
+    // Parse at the Stylus V3 version so multi-value is rejected by the validator.
     fn parse_at_threshold(wat: &str) -> Result<WasmBinary<'static>> {
         let wasm: &'static [u8] = Box::leak(wat::parse_str(wat).unwrap().into_boxed_slice());
-        binary::parse_with_version(wasm, Path::new("test"), ARBOS_VERSION_STYLUS_NO_MULTI_VALUE)
+        binary::parse_with_version(wasm, Path::new("test"), 3)
     }
 
     #[test]
@@ -612,14 +611,14 @@ mod test {
         .unwrap()
     }
 
-    fn activate_with_version(arbos_version: u64) -> Result<(Module, StylusData)> {
+    fn activate_with_stylus_version(stylus_version: u16) -> Result<(Module, StylusData)> {
         let wasm = multi_value_stylus_wasm();
         let mut gas = u64::MAX;
         Module::activate(
             &wasm[..],
             &Bytes32([0u8; 32]),
-            1,
-            arbos_version,
+            stylus_version,
+            1, // non-zero arbos_version (new activation, not recompilation)
             128,
             false,
             &mut gas,
@@ -627,21 +626,15 @@ mod test {
     }
 
     #[test]
-    fn test_activate_rejects_multi_value_at_threshold() {
-        // At the threshold version the validator rejects multi-value wasm.
-        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE).is_err());
+    fn test_activate_rejects_multi_value_at_stylus_v3() {
+        // Stylus V3 and above must reject multi-value wasm.
+        assert!(activate_with_stylus_version(3).is_err());
     }
 
     #[test]
-    fn test_activate_allows_multi_value_below_threshold() {
-        // One version below the threshold: gate must not fire, activation succeeds.
-        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1).is_ok());
-    }
-
-    #[test]
-    fn test_activate_allows_multi_value_at_zero() {
-        // Version 0 is the recompilation path for already-active contracts.
-        // Multi-value must be accepted and activation must succeed.
-        assert!(activate_with_version(0).is_ok());
+    fn test_activate_allows_multi_value_below_stylus_v3() {
+        // Stylus V1 and V2 must still accept multi-value wasm.
+        assert!(activate_with_stylus_version(2).is_ok());
+        assert!(activate_with_stylus_version(1).is_ok());
     }
 }
