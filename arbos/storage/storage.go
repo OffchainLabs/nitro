@@ -115,7 +115,7 @@ func (s *Storage) mapAddress(key common.Hash) common.Hash {
 	return common.BytesToHash(mapped)
 }
 
-func writeCost(value common.Hash) uint64 {
+func WriteCost(value common.Hash) uint64 {
 	if value == (common.Hash{}) {
 		return StorageWriteZeroCost
 	}
@@ -164,7 +164,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := s.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
+	err := s.burner.Burn(multigas.ResourceKindStorageAccess, WriteCost(value))
 	if err != nil {
 		return err
 	}
@@ -389,7 +389,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
+	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, WriteCost(value))
 	if err != nil {
 		return err
 	}

@@ -291,7 +291,7 @@ func TestArbInfraFeeAccount(t *testing.T) {
 func setupArbOwnerTestWithRunMode(t *testing.T, runCtx *core.MessageRunContext) (*vm.EVM, *arbosState.ArbosState, *Context, *ArbOwner) {
 	t.Helper()
 	evm := newMockEVMForTestingWithVersionAndRunMode(nil, runCtx)
-	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	caller := testhelpers.RandomAddress()
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	Require(t, err)
@@ -300,15 +300,15 @@ func setupArbOwnerTestWithRunMode(t *testing.T, runCtx *core.MessageRunContext) 
 	return evm, state, callCtx, &ArbOwner{}
 }
 
-func TestSaveReallyStoreTrue(t *testing.T) {
-	// When reallyStore=true, Save should actually persist params to storage
+func TestSavePersistToStorageTrue(t *testing.T) {
+	// When persistToStorage=true, Save should actually persist params to storage
 	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageCommitContext(nil))
 
 	p, err := state.Programs().Params()
 	Require(t, err)
 	originalInkPrice := p.InkPrice
 
-	// Modify and save with reallyStore=true
+	// Modify and save with persistToStorage=true
 	newInkPrice := originalInkPrice + 1000
 	p.InkPrice = newInkPrice
 	Require(t, p.Save(true))
@@ -321,15 +321,15 @@ func TestSaveReallyStoreTrue(t *testing.T) {
 	}
 }
 
-func TestSaveReallyStoreFalse(t *testing.T) {
-	// When reallyStore=false, Save should NOT persist params, but should not error
-	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
+func TestSavePersistToStorageFalse(t *testing.T) {
+	// When persistToStorage=false, Save should NOT persist params, but should not error
+	_, state, _, _ := setupArbOwnerTestWithRunMode(t, nil)
 
 	p, err := state.Programs().Params()
 	Require(t, err)
 	originalInkPrice := p.InkPrice
 
-	// Modify and save with reallyStore=false
+	// Modify and save with persistToStorage=false
 	p.InkPrice = originalInkPrice + 5000
 	Require(t, p.Save(false))
 
@@ -341,7 +341,7 @@ func TestSaveReallyStoreFalse(t *testing.T) {
 	}
 }
 
-func TestSaveReallyStoreFalseMultipleFields(t *testing.T) {
+func TestSavePersistToStorageFalseMultipleFields(t *testing.T) {
 	// Verify that Save(false) does not persist any field changes
 	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
 
@@ -379,6 +379,30 @@ func TestSaveReallyStoreFalseMultipleFields(t *testing.T) {
 	}
 	if p2.ExpiryDays != origExpiryDays {
 		Fail(t, "ExpiryDays changed: expected", origExpiryDays, "got", p2.ExpiryDays)
+	}
+}
+
+func TestSavePersistToStorageGasParity(t *testing.T) {
+	// Save(false) (simulation) must charge the same gas as Save(true) (persist),
+	// so eth_call / gas-estimate against ArbOwner setters returns accurate gas.
+	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+
+	before := state.Burner.Burned()
+	Require(t, p.Save(false))
+	deltaSim := state.Burner.Burned() - before
+
+	before = state.Burner.Burned()
+	Require(t, p.Save(true))
+	deltaPersist := state.Burner.Burned() - before
+
+	if deltaSim == 0 {
+		Fail(t, "Save(false) charged no gas")
+	}
+	if deltaSim != deltaPersist {
+		Fail(t, "gas mismatch between Save(false) and Save(true):", deltaSim, "vs", deltaPersist)
 	}
 }
 
@@ -526,6 +550,15 @@ func TestArbOwnerSettersPersistedOnChain(t *testing.T) {
 	}
 	if after.PageLimit != 256 {
 		Fail(t, "PageLimit not persisted on-chain: got", after.PageLimit)
+	}
+	if after.MinInitGas != 157 { // ceil(20000 / MinInitGasUnits=128)
+		Fail(t, "MinInitGas not persisted on-chain: got", after.MinInitGas)
+	}
+	if after.MinCachedInitGas != 32 { // ceil(1000 / MinCachedGasUnits=32)
+		Fail(t, "MinCachedInitGas not persisted on-chain: got", after.MinCachedInitGas)
+	}
+	if after.InitCostScalar != 40 { // ceil(80 / CostScalarPercent=2)
+		Fail(t, "InitCostScalar not persisted on-chain: got", after.InitCostScalar)
 	}
 	if after.ExpiryDays != 730 {
 		Fail(t, "ExpiryDays not persisted on-chain: got", after.ExpiryDays)
