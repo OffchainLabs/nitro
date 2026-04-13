@@ -26,10 +26,12 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
 				FilterSetID: testFilterSetID,
-				Address:     common.HexToAddress("0xdead"),
-				FilterReason: filter.FilterReason{
-					Reason:         filter.ReasonFrom,
-					EventRuleMatch: nil,
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xdead"),
+					FilterReason: filter.FilterReason{
+						Reason:         filter.ReasonFrom,
+						EventRuleMatch: nil,
+					},
 				},
 			},
 		},
@@ -78,10 +80,12 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
 				FilterSetID: testFilterSetID,
-				Address:     common.HexToAddress("0xdead"),
-				FilterReason: filter.FilterReason{
-					Reason:         filter.ReasonDealiasedFrom,
-					EventRuleMatch: nil,
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xdead"),
+					FilterReason: filter.FilterReason{
+						Reason:         filter.ReasonDealiasedFrom,
+						EventRuleMatch: nil,
+					},
 				},
 			},
 		},
@@ -132,20 +136,22 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
 				FilterSetID: testFilterSetID,
-				Address:     common.HexToAddress("0xbeef"),
-				FilterReason: filter.FilterReason{
-					Reason: filter.ReasonEventRule,
-					EventRuleMatch: &filter.EventRuleMatch{
-						MatchedEvent:      "Transfer(address,address,uint256)",
-						MatchedTopicIndex: 2,
-						RawLog: &filter.RawLog{
-							Address: common.HexToAddress("0xdead"),
-							Topics: []common.Hash{
-								common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),
-								common.HexToHash("0x000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-								common.HexToHash("0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"),
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xbeef"),
+					FilterReason: filter.FilterReason{
+						Reason: filter.ReasonEventRule,
+						EventRuleMatch: &filter.EventRuleMatch{
+							MatchedEvent:      "Transfer(address,address,uint256)",
+							MatchedTopicIndex: 2,
+							RawLog: &filter.RawLog{
+								Address: common.HexToAddress("0xdead"),
+								Topics: []common.Hash{
+									common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),
+									common.HexToHash("0x000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+									common.HexToHash("0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"),
+								},
+								Data: hexutil.Bytes{0x00, 0x00},
 							},
-							Data: hexutil.Bytes{0x00, 0x00},
 						},
 					},
 				},

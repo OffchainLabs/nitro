@@ -36,8 +36,8 @@ type HashedAddressCheckerState struct {
 }
 
 type workItem struct {
-	record *filter.FilteredAddressRecord
-	state  *HashedAddressCheckerState
+	addr  filter.FilteredAddressWithReason
+	state *HashedAddressCheckerState
 }
 
 // NewHashedAddressChecker constructs a new checker backed by a HashStore.
@@ -79,11 +79,16 @@ func (c *HashedAddressChecker) FilterSetID() string {
 	return c.store.ID().String()
 }
 
-func (c *HashedAddressChecker) processRecord(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
-	restricted, filterSetID := c.store.IsRestricted(record.Address)
-	// Override with the ID from the same snapshot as the restriction check.
-	record.FilterSetID = filterSetID.String()
-	state.report(record, restricted)
+func (c *HashedAddressChecker) processItem(item workItem) {
+	restricted, filterSetID := c.store.IsRestricted(item.addr.Address)
+	if restricted {
+		record := filter.FilteredAddressRecord{
+			FilterSetID:               filterSetID.String(),
+			FilteredAddressWithReason: item.addr,
+		}
+		item.state.report(&record)
+	}
+	item.state.pending.Done()
 }
 
 // worker runs for the lifetime of the checker; workChan is never closed.
@@ -93,39 +98,45 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case item := <-c.workChan:
-			c.processRecord(item.record, item.state)
+			c.processItem(item)
 		}
 	}
 }
 
-func (s *HashedAddressCheckerState) TouchAddress(record *filter.FilteredAddressRecord) {
+func (s *HashedAddressCheckerState) TouchAddress(addr filter.FilteredAddressWithReason) {
 	s.pending.Add(1)
 
 	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
-		s.report(nil, true)
+		record := filter.FilteredAddressRecord{
+			FilterSetID:               s.checker.FilterSetID(),
+			FilteredAddressWithReason: addr,
+		}
+		s.report(&record)
+		s.pending.Done()
 		return
 	}
 
 	select {
-	case s.checker.workChan <- workItem{record: record, state: s}:
+	case s.checker.workChan <- workItem{addr: addr, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
-		s.report(nil, true)
+		record := filter.FilteredAddressRecord{
+			FilterSetID:               s.checker.FilterSetID(),
+			FilteredAddressWithReason: addr,
+		}
+		s.report(&record)
+		s.pending.Done()
 	}
 }
 
-func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord, filtered bool) {
-	if filtered {
-		s.mu.Lock()
-		s.filtered = true
-		if record != nil {
-			s.filteredAddresses = append(s.filteredAddresses, *record)
-		}
-		s.mu.Unlock()
-	}
-	s.pending.Done()
+// report records a filtered address. Must only be called for restricted addresses.
+func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord) {
+	s.mu.Lock()
+	s.filtered = true
+	s.filteredAddresses = append(s.filteredAddresses, *record)
+	s.mu.Unlock()
 }
 
 func (s *HashedAddressCheckerState) IsFiltered() (bool, []filter.FilteredAddressRecord) {

@@ -123,7 +123,6 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 }
 
 func TestExtractAddresses_EdgeCases(t *testing.T) {
-	filterSetID := "test-filter-set-id"
 	event := "Transfer(address,address,uint256)"
 	selector, _, err := CanonicalSelectorFromEvent(event)
 	if err != nil {
@@ -187,7 +186,7 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.AddressesForFiltering(tt.topics, tt.data, common.Address{}, filterSetID)
+			result := filter.AddressesForFiltering(tt.topics, tt.data, common.Address{})
 			if len(result) != tt.expected {
 				t.Errorf("expected %d addresses, got %d", tt.expected, len(result))
 			}
@@ -196,7 +195,6 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 }
 
 func TestExtractAddresses_TransferRules(t *testing.T) {
-	filterSetID := "test-filter-set-id"
 	rulesJSON := `{
 		"rules": [
 			{
@@ -295,7 +293,7 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.AddressesForFiltering(tt.topics, nil, common.Address{}, filterSetID)
+			result := filter.AddressesForFiltering(tt.topics, nil, common.Address{})
 
 			if len(result) != len(tt.wantAddrs) {
 				t.Errorf("expected %d addresses, got %d", len(tt.wantAddrs), len(result))

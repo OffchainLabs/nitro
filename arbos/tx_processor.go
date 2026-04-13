@@ -82,17 +82,8 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	}
 
 	// Record touched addresses for tx filtering
-	filterSetID := p.evm.StateDB.FilterSetID()
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
-		FilterSetID:  filterSetID,
-		Address:      contract.Address(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil},
-	})
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
-		FilterSetID:  filterSetID,
-		Address:      contract.Caller(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil},
-	})
+	p.evm.StateDB.TouchAddress(filter.FilteredAddressWithReason{Address: contract.Address(), FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil}})
+	p.evm.StateDB.TouchAddress(filter.FilteredAddressWithReason{Address: contract.Caller(), FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil}})
 }
 
 func (p *TxProcessor) PopContract() {
