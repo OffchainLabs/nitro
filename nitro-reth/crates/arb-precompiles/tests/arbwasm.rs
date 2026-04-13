@@ -1,15 +1,16 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::U256;
+use alloy_primitives::{address, B256, U256};
 use arb_precompiles::{
     create_arbwasm_precompile,
     storage_slot::{
-        derive_subspace_key, map_slot, ARBOS_STATE_ADDRESS, PROGRAMS_PARAMS_KEY,
-        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
+        PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
 };
-use common::{calldata, decode_u256, decode_word, PrecompileTest};
+use common::{calldata, decode_u256, decode_word, word_address, PrecompileTest};
+use revm::state::AccountInfo;
 
 const ARBOS_V30: u64 = 30;
 const ARBOS_V32: u64 = 32; // StylusChargingFixes
@@ -261,4 +262,132 @@ fn full_round_trip_packs_and_unpacks_all_fields() {
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u64(0x61_u64 * 128));
     assert_eq!(decode_word(out, 1), common::word_u64(0x71_u64 * 32));
+}
+
+// ── validate_active_program error paths (Nitro programs.go::getActiveProgram) ──
+
+const ARBITRUM_START_TIME: u64 = 1_421_388_000;
+
+fn hours_since_start(time: u64) -> u32 {
+    ((time.saturating_sub(ARBITRUM_START_TIME)) / 3600) as u32
+}
+
+/// Pack a Program word matching `programs.go::setProgram`:
+///   [0..2]  version       uint16
+///   [2..4]  init_cost     uint16
+///   [4..6]  cached_cost   uint16
+///   [6..8]  footprint     uint16
+///   [8..11] activated_at  uint24 (hours since Arbitrum epoch)
+///   [11..14] asm_estimate_kb uint24
+///   [14]    cached        bool
+fn pack_program(version: u16, footprint: u16, activated_at_hours: u32) -> U256 {
+    let mut buf = [0u8; 32];
+    buf[0..2].copy_from_slice(&version.to_be_bytes());
+    buf[6..8].copy_from_slice(&footprint.to_be_bytes());
+    buf[8] = (activated_at_hours >> 16) as u8;
+    buf[9] = (activated_at_hours >> 8) as u8;
+    buf[10] = activated_at_hours as u8;
+    U256::from_be_bytes(buf)
+}
+
+fn program_data_slot(codehash: B256) -> U256 {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
+    map_slot_b256(data_key.as_slice(), &codehash)
+}
+
+#[test]
+fn codehash_version_reverts_program_not_activated_for_unset_program() {
+    let codehash = B256::from_slice(&[0x42u8; 32]);
+    let run = test_with(default_params(), ARBOS_V32).call(
+        &arbwasm(),
+        &calldata("codehashVersion(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+}
+
+#[test]
+fn codehash_version_reverts_program_needs_upgrade_for_stale_version() {
+    // Params at v=2, program at v=1 -> ProgramNeedsUpgrade(1, 2).
+    let codehash = B256::from_slice(&[0x33u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program(1, 3, hours_since_start(now));
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashVersion(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted, "must revert");
+    let sel = alloy_primitives::keccak256(b"ProgramNeedsUpgrade(uint16,uint16)");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+    let prog_v = U256::from_be_slice(&out.bytes[4..36]);
+    let params_v = U256::from_be_slice(&out.bytes[36..68]);
+    assert_eq!(prog_v, U256::from(1u64));
+    assert_eq!(params_v, U256::from(default_params().version));
+}
+
+#[test]
+fn codehash_version_reverts_program_expired_after_expiry() {
+    // expiry_days default 365 -> 31_536_000 seconds.
+    // Activate at hour 0 since the Arbitrum epoch and run 366 days later.
+    let codehash = B256::from_slice(&[0x77u8; 32]);
+    let now = ARBITRUM_START_TIME + 366 * 86_400;
+    let prog_word = pack_program(default_params().version, 3, 0);
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashVersion(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    let sel = alloy_primitives::keccak256(b"ProgramExpired(uint64)");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+    let age = U256::from_be_slice(&out.bytes[4..36]);
+    assert_eq!(age, U256::from(366u64 * 86_400));
+}
+
+#[test]
+fn codehash_version_returns_active_version_for_fresh_program() {
+    let codehash = B256::from_slice(&[0xa1u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program(default_params().version, 5, hours_since_start(now - 86_400));
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashVersion(bytes32)", &[codehash]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::from(default_params().version));
+}
+
+#[test]
+fn program_memory_footprint_returns_packed_value() {
+    let codehash = B256::from_slice(&[0xb2u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program(default_params().version, 7, hours_since_start(now));
+    let prog_addr = address!("00000000000000000000000000000000000000aa");
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .account(
+            prog_addr,
+            AccountInfo {
+                code_hash: codehash,
+                ..Default::default()
+            },
+        )
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        &arbwasm(),
+        &calldata("programMemoryFootprint(address)", &[word_address(prog_addr)]),
+    );
+    assert_eq!(decode_u256(run.output()), U256::from(7u64));
 }

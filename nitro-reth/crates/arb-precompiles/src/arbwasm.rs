@@ -47,14 +47,36 @@ const MIN_INIT_GAS_UNITS: u64 = 128;
 const MIN_CACHED_GAS_UNITS: u64 = 32;
 const COST_SCALAR_PERCENT: u64 = 2;
 
-fn program_not_activated_selector() -> [u8; 4] {
-    let hash = alloy_primitives::keccak256(b"ProgramNotActivated()");
-    [hash[0], hash[1], hash[2], hash[3]]
+fn selector_for(sig: &[u8]) -> [u8; 4] {
+    let h = alloy_primitives::keccak256(sig);
+    [h[0], h[1], h[2], h[3]]
 }
 
+fn program_not_activated_selector() -> [u8; 4] {
+    selector_for(b"ProgramNotActivated()")
+}
+
+#[allow(dead_code)]
 fn program_up_to_date_selector() -> [u8; 4] {
-    let hash = alloy_primitives::keccak256(b"ProgramUpToDate()");
-    [hash[0], hash[1], hash[2], hash[3]]
+    selector_for(b"ProgramUpToDate()")
+}
+
+fn program_needs_upgrade_selector() -> [u8; 4] {
+    selector_for(b"ProgramNeedsUpgrade(uint16,uint16)")
+}
+
+fn program_expired_selector() -> [u8; 4] {
+    selector_for(b"ProgramExpired(uint64)")
+}
+
+#[allow(dead_code)]
+fn program_keepalive_too_soon_selector() -> [u8; 4] {
+    selector_for(b"ProgramKeepaliveTooSoon(uint64)")
+}
+
+#[allow(dead_code)]
+fn program_insufficient_value_selector() -> [u8; 4] {
+    selector_for(b"ProgramInsufficientValue(uint256,uint256)")
 }
 
 pub fn create_arbwasm_precompile() -> DynPrecompile {
@@ -166,8 +188,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let codehash = extract_bytes32(input.data)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
+            let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
-            if let Err(r) = validate_active_program(&program, params_version, input.gas) {
+            if let Err(r) =
+                validate_active_program(&program, params_version, expiry_days, input.gas)
+            {
                 return r;
             }
             ok_u256(2 * SLOAD_GAS + COPY_GAS, U256::from(program.version))
@@ -176,8 +201,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let codehash = extract_bytes32(input.data)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
+            let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
-            if let Err(r) = validate_active_program(&program, params_version, input.gas) {
+            if let Err(r) =
+                validate_active_program(&program, params_version, expiry_days, input.gas)
+            {
                 return r;
             }
             let asm_size = program.asm_estimate_kb.saturating_mul(1024);
@@ -189,8 +217,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
+            let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
-            if let Err(r) = validate_active_program(&program, params_version, input.gas) {
+            if let Err(r) =
+                validate_active_program(&program, params_version, expiry_days, input.gas)
+            {
                 return r;
             }
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(program.version))
@@ -200,8 +231,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
+            let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
-            if let Err(r) = validate_active_program(&program, params_version, input.gas) {
+            if let Err(r) =
+                validate_active_program(&program, params_version, expiry_days, input.gas)
+            {
                 return r;
             }
 
@@ -235,8 +269,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
+            let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
-            if let Err(r) = validate_active_program(&program, params_version, input.gas) {
+            if let Err(r) =
+                validate_active_program(&program, params_version, expiry_days, input.gas)
+            {
                 return r;
             }
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(program.footprint))
@@ -246,12 +283,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
+            let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
-            if let Err(r) = validate_active_program(&program, params_version, input.gas) {
+            if let Err(r) =
+                validate_active_program(&program, params_version, expiry_days, input.gas)
+            {
                 return r;
             }
 
-            let expiry_days = u16::from_be_bytes([params_word[19], params_word[20]]);
             let expiry_seconds = (expiry_days as u64) * 24 * 3600;
             let time_left = expiry_seconds.saturating_sub(program.age_seconds);
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(time_left))
@@ -263,6 +302,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+fn params_expiry_days(params_word: &[u8; 32]) -> u16 {
+    u16::from_be_bytes([params_word[19], params_word[20]])
+}
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
     input
@@ -371,17 +414,39 @@ fn hours_to_age(time: u64, hours: u32) -> u64 {
     time.saturating_sub(activated_at)
 }
 
-/// Validate that a program is active (version matches and not expired).
+/// Mirrors Nitro's `Programs.getActiveProgram` (programs.go:466):
+/// returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
+/// or ProgramExpired(ageSeconds) in that exact order.
 fn validate_active_program(
     program: &ProgramInfo,
     params_version: u16,
+    expiry_days: u16,
     gas_limit: u64,
 ) -> Result<(), PrecompileResult> {
     if program.version == 0 {
-        return Err(crate::sol_error_revert(program_not_activated_selector(), gas_limit));
+        return Err(crate::sol_error_revert(
+            program_not_activated_selector(),
+            gas_limit,
+        ));
     }
     if program.version != params_version {
-        return Err(crate::sol_error_revert(program_up_to_date_selector(), gas_limit));
+        let mut args = Vec::with_capacity(64);
+        args.extend_from_slice(&crate::abi_word_u16(program.version));
+        args.extend_from_slice(&crate::abi_word_u16(params_version));
+        return Err(crate::sol_error_revert_with_args(
+            program_needs_upgrade_selector(),
+            &args,
+            gas_limit,
+        ));
+    }
+    let expiry_seconds = (expiry_days as u64).saturating_mul(86_400);
+    if program.age_seconds > expiry_seconds {
+        let args = crate::abi_word_u64(program.age_seconds);
+        return Err(crate::sol_error_revert_with_args(
+            program_expired_selector(),
+            &args,
+            gas_limit,
+        ));
     }
     Ok(())
 }

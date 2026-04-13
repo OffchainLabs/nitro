@@ -82,6 +82,16 @@ pub fn redeem_scheduled_topic() -> B256 {
     keccak256("RedeemScheduled(bytes32,bytes32,uint64,uint64,address,uint256,uint256)")
 }
 
+/// LifetimeExtended event topic0. keccak256("LifetimeExtended(bytes32,uint256)")
+pub fn lifetime_extended_topic() -> B256 {
+    keccak256("LifetimeExtended(bytes32,uint256)")
+}
+
+/// Canceled event topic0. keccak256("Canceled(bytes32)")
+pub fn canceled_topic() -> B256 {
+    keccak256("Canceled(bytes32)")
+}
+
 pub fn create_arbretryabletx_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbretryabletx"), handler)
 }
@@ -200,6 +210,11 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let gas_limit = input.gas;
     let ticket_id = B256::from_slice(&data[4..36]);
+    let current_timestamp: u64 = input
+        .internals()
+        .block_timestamp()
+        .try_into()
+        .unwrap_or(u64::MAX);
 
     load_arbos(input)?;
 
@@ -209,7 +224,8 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let timeout = sload_field(input, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
-    if timeout_u64 == 0 {
+    // Match Nitro: OpenRetryable returns nil if timeout == 0 OR timeout < currentTime.
+    if timeout_u64 == 0 || timeout_u64 < current_timestamp {
         return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
     }
 
@@ -498,6 +514,16 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let new_timeout = effective_timeout + RETRYABLE_LIFETIME_SECONDS;
 
+    // Emit LifetimeExtended(bytes32 indexed ticketId, uint256 newTimeout).
+    let topic0 = lifetime_extended_topic();
+    let mut event_data = Vec::with_capacity(32);
+    event_data.extend_from_slice(&U256::from(new_timeout).to_be_bytes::<32>());
+    input.internals_mut().log(Log::new_unchecked(
+        ARBRETRYABLETX_ADDRESS,
+        vec![topic0, ticket_id],
+        event_data.into(),
+    ));
+
     // 8 SLOADs + 3 SSTOREs + argsCost(3) + updateCost + event(1381)
     // + RetryableReapPrice(58000) + resultCost(3).
     // updateCost = WordsForBytes(nbytes) * SstoreSetGas/100, where
@@ -586,10 +612,15 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         sstore_field(input, calldata_size_slot, U256::ZERO)?;
     }
 
+    // Emit Canceled(bytes32 indexed ticketId).
+    input.internals_mut().log(Log::new_unchecked(
+        ARBRETRYABLETX_ADDRESS,
+        vec![canceled_topic(), ticket_id],
+        Default::default(),
+    ));
+
     // 6 SLOADs + 7 × ClearByUint64(5000) + ClearBytes(variable)
     // + Canceled event (LOG2: 375+2*375=1125) + argsCost(3).
-    // DeleteRetryable SLOADs: timeout(1) + beneficiary(1) + ClearBytes size(1) = 3
-    // Total SLOADs: OAS(1) + OpenRetryable(1) + beneficiary(1) + DeleteRetryable(3) = 6
     let clear_bytes_cost = if calldata_size_u64 > 0 {
         (calldata_words + 1) * SSTORE_ZERO_GAS
     } else {
