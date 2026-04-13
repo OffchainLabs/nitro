@@ -986,7 +986,7 @@ func TestRetryableFilteringAutoRedeemCascadeWithCallValue(t *testing.T) {
 
 	callValue := big.NewInt(1e7)
 
-	// Submit B (gasLimit=0, callValue=1e6, data=callTarget(filteredTarget)). Process.
+	// Submit B (gasLimit=0, callValue=1e7, data=callTarget(filteredTarget)). Process.
 	bRetryData, err := callerABI.Pack("callTarget", filteredTarget)
 	require.NoError(t, err)
 	_, ticketIdB := submitRetryableNoAutoRedeem(

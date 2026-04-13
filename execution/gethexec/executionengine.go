@@ -32,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -101,8 +100,9 @@ var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 // caller checks pendingFilteredTxReports and returns ErrFilteredDelayedMessage if any.
 type DelayedFilteringSequencingHooks struct {
 	arbos.NoopSequencingHooks
-	pendingFilteredTxReports []addressfilter.FilteredTxReport
-	eventFilter              *eventfilter.EventFilter
+	pendingFilteredTxReports        []addressfilter.FilteredTxReport
+	eventFilter                     *eventfilter.EventFilter
+	pendingCascadingRedeemAddresses []filter.FilteredAddressRecord
 }
 
 func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter) *DelayedFilteringSequencingHooks {
@@ -144,6 +144,10 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		// trigger a group rollback. The originating tx hash will be
 		// collected in TxFailed.
 		if tx.Type() == types.ArbitrumRetryTxType {
+			// Stash filtered addresses so TxFailed can populate them on
+			// the cascading redeem report — the statedb will be reverted
+			// before TxFailed runs.
+			f.pendingCascadingRedeemAddresses = filteredAddresses
 			return state.ErrArbTxFilter
 		}
 		// If the STF already handled this tx via the onchain filter mechanism,
@@ -162,11 +166,11 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		report := addressfilter.FilteredTxReport{
 			ID:                uuid.NewString(),
 			TxHash:            tx.Hash(),
-			TxRLP:             hexutil.Bytes(txRLP),
+			TxRLP:             txRLP,
 			FilteredAddresses: filteredAddresses,
 			BlockNumber:       header.Number.Uint64(),
 			ParentBlockHash:   header.ParentHash,
-			PositionInBlock:   0,
+			PositionInBlock:   db.TxIndex(),
 			FilteredAt:        time.Now(),
 			IsDelayed:         true,
 			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
@@ -186,25 +190,25 @@ func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return 
 func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	var cascadingErr *arbos.ErrFilteredCascadingRedeem
 	if errors.As(err, &cascadingErr) {
-		// After group rollback, the statedb is reverted so we don't have
-		// the tx object or filtered addresses. Build a minimal report with
-		// the originating tx hash. The report service can correlate with
-		// the redeem report appended in PostTxFilter.
+		// FilteredAddresses were stashed in PostTxFilter before the
+		// statedb was reverted. TxRLP and block metadata are populated
+		// later in createBlockFromNextMessage.
 		report := addressfilter.FilteredTxReport{
 			ID:                uuid.NewString(),
 			TxHash:            cascadingErr.OriginatingTxHash,
+			FilteredAddresses: f.pendingCascadingRedeemAddresses,
 			FilteredAt:        time.Now(),
 			IsDelayed:         true,
 			PositionInBlock:   0,
 			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
 
-			// Dummy values for fields not available
-			TxRLP:             nil,
-			FilteredAddresses: nil,
-			BlockNumber:       0,
-			ParentBlockHash:   common.Hash{},
+			// Populated later in createBlockFromNextMessage where txes and block are available
+			TxRLP:           nil,
+			BlockNumber:     0,
+			ParentBlockHash: common.Hash{},
 		}
 		f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
+		f.pendingCascadingRedeemAddresses = nil
 	}
 }
 
@@ -992,15 +996,15 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			for i := range filteringHooks.pendingFilteredTxReports {
 				report := &filteringHooks.pendingFilteredTxReports[i]
 
-				// Enrich TxFailed reports (identified by empty TxRLP) with
+				// Enrich TxFailed reports (identified by BlockNumber = 0) with
 				// data not available after group rollback.
-				if len(report.TxRLP) == 0 {
+				if report.BlockNumber == 0 {
 					if tx, ok := txByHash[report.TxHash]; ok {
 						txRLP, err := tx.MarshalBinary()
 						if err != nil {
 							log.Error("error marshalling filtered delayed tx to RLP", "txHash", report.TxHash, "err", err)
 						} else {
-							report.TxRLP = hexutil.Bytes(txRLP)
+							report.TxRLP = txRLP
 						}
 					}
 					if block != nil {
