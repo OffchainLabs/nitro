@@ -426,7 +426,7 @@ impl Module {
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) =
-            WasmBinary::parse_user(wasm, arbos_version_for_gas, page_limit, &compile, codehash)
+            WasmBinary::parse_user(wasm, stylus_version, arbos_version_for_gas, page_limit, &compile, codehash)
                 .wrap_err("failed to parse wasm")?;
 
         if arbos_version_for_gas > 0 {
