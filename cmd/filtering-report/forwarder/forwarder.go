@@ -35,6 +35,12 @@ var DefaultConfig = Config{
 }
 
 func (c *Config) Validate() error {
+	if c.PollInterval < 0 {
+		return fmt.Errorf("poll-interval must be non-negative, got %s", c.PollInterval)
+	}
+	if c.WaitTimeSeconds < 0 {
+		return fmt.Errorf("wait-time-seconds must be non-negative, got %d", c.WaitTimeSeconds)
+	}
 	return c.ExternalEndpoint.Validate()
 }
 
