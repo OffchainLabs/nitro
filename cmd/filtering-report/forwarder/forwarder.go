@@ -21,7 +21,7 @@ import (
 )
 
 type Config struct {
-	Workers          int                          `koanf:"workers"`
+	Workers          uint                         `koanf:"workers"`
 	PollInterval     time.Duration                `koanf:"poll-interval"`
 	WaitTimeSeconds  int32                        `koanf:"wait-time-seconds"`
 	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
@@ -39,7 +39,7 @@ func (c *Config) Validate() error {
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Int(prefix+".workers", DefaultConfig.Workers, "number of workers")
+	f.Uint(prefix+".workers", DefaultConfig.Workers, "number of workers")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
 	f.Int32(prefix+".wait-time-seconds", DefaultConfig.WaitTimeSeconds, "SQS long polling wait time in seconds")
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
@@ -62,7 +62,7 @@ func New(config *Config, queueClient sqsclient.QueueClient) *Forwarder {
 
 func (r *Forwarder) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
-	for i := 0; i < r.config.Workers; i++ {
+	for i := uint(0); i < r.config.Workers; i++ {
 		r.CallIteratively(r.pollAndForward)
 	}
 }
