@@ -11,6 +11,10 @@
         ;;
         ;; only the low 8 bits (0x00) should be used, so memory must be all zeros
         (memory.fill (i32.const 0xaaa) (i32.const 0x100) (i32.const 10)))
+    (func (export "run_nonzero")
+        ;; fill 10 bytes at offset 0xbbb with value 0x1ab (low 8 bits = 0xab)
+        ;; verifies the fix preserves non-zero low bits, not just zero-fills everything
+        (memory.fill (i32.const 0xbbb) (i32.const 0x1ab) (i32.const 10)))
     (func (export "user_entrypoint") (param $args_len i32) (result i32)
         (i32.const 0))
     (memory (export "memory") 1 1))

@@ -64,10 +64,29 @@ fn test_memory_fill_value_overflow() -> Result<()> {
     let machine_data = run_machine_read_memory(filename, &compile, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
 
+    // V2 is the last buggy version; the gate is version >= 3
+    let compile_v2 = CompileConfig::version(2, true);
+    let machine_v2_data = run_machine_read_memory(filename, &compile_v2, "run", ink, 0xaaa, 10)?;
+    assert_eq!(machine_v2_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
+
     // V3 (fixed): WAVM correctly masks value to 8 bits: 0x100 & 0xff = 0x00
     let compile_v3 = CompileConfig::version(3, true);
     let machine_v3_data = run_machine_read_memory(filename, &compile_v3, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_v3_data, vec![0u8; 10]);
+
+    Ok(())
+}
+
+#[test]
+fn test_memory_fill_value_overflow_nonzero() -> Result<()> {
+    // Verifies that V3 preserves non-zero low bits, not just zero-fills everything.
+    // Uses value 0x1ab (low 8 bits = 0xab); all filled bytes must be 0xab.
+    let filename = "../prover/test-cases/memory-fill-overflow.wat";
+    let (_, _, ink) = test_configs();
+    let compile_v3 = CompileConfig::version(3, true);
+
+    let machine_data = run_machine_read_memory(filename, &compile_v3, "run_nonzero", ink, 0xbbb, 10)?;
+    assert_eq!(machine_data, vec![0xab_u8; 10]);
 
     Ok(())
 }
