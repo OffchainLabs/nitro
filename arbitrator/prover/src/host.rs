@@ -436,7 +436,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
+pub fn new_internal_funcs(stylus_data: Option<StylusData>, version: u16) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -479,7 +479,12 @@ pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
     add_op_func(MemoryStore { ty: I32, bytes: 1 }, WavmCallerStore8);
     add_op_func(MemoryStore { ty: I32, bytes: 4 }, WavmCallerStore32);
 
-    let [memory_fill, memory_copy] = (*BULK_MEMORY_FUNCS).clone();
+    let memory_fill = if version >= 3 {
+        (*BULK_MEMORY_FILL_V2).clone()
+    } else {
+        (*BULK_MEMORY_FUNCS)[0].clone()
+    };
+    let memory_copy = (*BULK_MEMORY_FUNCS)[1].clone();
     add_func(memory_fill, MemoryFill);
     add_func(memory_copy, MemoryCopy);
 
@@ -543,5 +548,35 @@ lazy_static! {
             );
             func.expect("failed to create bulk memory func")
         })
+    };
+
+    static ref BULK_MEMORY_FILL_V2: Function = {
+        use host::InternalFunc::*;
+
+        let data = include_bytes!("bulk_memory_v2.wat");
+        let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory_v2.wat");
+        let bin = binary::parse(&wasm, Path::new("internal")).expect("failed to parse bulk_memory_v2.wasm");
+        let ty = MemoryFill.ty();
+
+        let code = &bin.codes[0];
+        let name = bin.names.functions.get(&0).unwrap();
+        assert_eq!(&bin.types[bin.functions[0] as usize], &ty);
+        assert_eq!(name, "memory_fill");
+
+        Function::new(
+            &code.locals,
+            |wasm| wasm_to_wavm(
+                &code.expr,
+                wasm,
+                &HashMap::default(),      // impls don't use floating point
+                &[],                      // impls don't make calls
+                std::slice::from_ref(&ty), // only type needed is the func itself
+                0,                        // -----------------------------------
+                0,                        // impls don't use other internals
+                &bin.names.module,
+            ),
+            ty.clone(),
+            &[], // impls don't make calls
+        ).expect("failed to create v2 memory_fill func")
     };
 }
