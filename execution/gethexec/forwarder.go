@@ -97,13 +97,8 @@ func NewForwarder(targets []string, config *ForwarderConfig) *TxForwarder {
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			// For tcp connections, prefer IPv4 over IPv6
 			if network == "tcp" {
-				conn, err := dialer.DialContext(ctx, "tcp4", addr)
-				if err == nil {
-					return conn, nil
-				}
-				return dialer.DialContext(ctx, "tcp6", addr)
+				return dialer.DialContext(ctx, "tcp4", addr)
 			}
 			return dialer.DialContext(ctx, network, addr)
 		},

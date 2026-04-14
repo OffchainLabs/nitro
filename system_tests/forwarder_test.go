@@ -225,7 +225,7 @@ func TestRedisForwarder(t *testing.T) {
 	var seqClients []*ethclient.Client
 	for _, path := range nodePaths {
 		testClientSeq, cleanupTestSeq := createSequencer(t, builder, path, redisUrl)
-		defer cleanupTestSeq()
+		t.Cleanup(cleanupTestSeq)
 		seqNodes = append(seqNodes, testClientSeq.ConsensusNode)
 		seqClients = append(seqClients, testClientSeq.Client)
 	}
