@@ -5,7 +5,7 @@ use super::test_configs;
 use crate::{
     env::{Escape, MaybeEscape},
     native::NativeInstance,
-    test::{check_instrumentation, new_test_machine},
+    test::{check_instrumentation, new_test_machine, run_machine_read_memory},
 };
 use eyre::Result;
 use prover::programs::{prelude::*, start::StartMover};
@@ -60,19 +60,13 @@ fn test_memory_fill_value_overflow() -> Result<()> {
     let native_data = native.read_slice("memory", 0xaaa, 10)?;
     assert_eq!(native_data, vec![0u8; 10]);
 
-    let mut machine = new_test_machine(filename, &compile)?;
-    let module = machine.find_module("user")?;
-    machine.call_user_func("run", vec![], ink)?;
-
-    let machine_data = machine.read_memory(module, 0xaaa, 10)?;
+    // V1/V2 WAVM: buggy — value not masked to 8 bits
+    let machine_data = run_machine_read_memory(filename, &compile, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
 
     // V3 (fixed): WAVM correctly masks value to 8 bits: 0x100 & 0xff = 0x00
     let compile_v3 = CompileConfig::version(3, true);
-    let mut machine_v3 = new_test_machine(filename, &compile_v3)?;
-    let module_v3 = machine_v3.find_module("user")?;
-    machine_v3.call_user_func("run", vec![], ink)?;
-    let machine_v3_data = machine_v3.read_memory(module_v3, 0xaaa, 10)?;
+    let machine_v3_data = run_machine_read_memory(filename, &compile_v3, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_v3_data, vec![0u8; 10]);
 
     Ok(())

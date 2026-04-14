@@ -174,6 +174,20 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
     Ok(mach)
 }
 
+fn run_machine_read_memory(
+    path: &str,
+    compile: &CompileConfig,
+    func: &str,
+    ink: Ink,
+    addr: u32,
+    len: u32,
+) -> Result<Vec<u8>> {
+    let mut machine = new_test_machine(path, compile)?;
+    let module = machine.find_module("user")?;
+    machine.call_user_func(func, vec![], ink)?;
+    machine.read_memory(module, addr, len).map(|s| s.to_vec())
+}
+
 fn run_native(native: &mut TestInstance, args: &[u8], ink: Ink) -> Result<Vec<u8>> {
     let config = native.env().config.expect("no config");
     match native.run_main(args, config, ink)? {
