@@ -526,7 +526,9 @@ fn load_bulk_func(
         .unwrap_or_else(|_| panic!("failed to parse {wat_name}"));
 
     let code = &bin.codes[index];
-    let name = bin.names.functions.get(&(index as u32)).unwrap();
+    let name = bin.names.functions
+        .get(&(index as u32))
+        .unwrap_or_else(|| panic!("no name found for function at index {index} in {wat_name}"));
     let ty = &bin.types[bin.functions[index] as usize];
     assert_eq!(ty, &expected_ty);
     assert_eq!(name, expected_name);
