@@ -54,7 +54,7 @@ func (c *StylusTargetConfig) WasmTargets() []rawdb.WasmTarget {
 }
 
 func (c *StylusTargetConfig) Validate() error {
-	nodeCfg := programs.StylusNodeConfig{MaxOpenPages: c.MaxStylusOpenPages}
+	nodeCfg := programs.ArbNodeConfig{MaxOpenPages: c.MaxStylusOpenPages}
 	nodeCfg.Validate()
 	targetsSet := make(map[rawdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {

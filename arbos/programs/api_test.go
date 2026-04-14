@@ -52,7 +52,7 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 func newTestHandler(t *testing.T, coinbase common.Address, runCtx *core.MessageRunContext, maxPages uint16) (RequestHandler, vm.StateDB, *MemoryModel) {
 	t.Helper()
 	db := state.NewDatabaseForTesting()
-	db.SetStylusNodeConfig(&StylusNodeConfig{MaxOpenPages: maxPages})
+	db.SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
 	statedb, _ := state.New(types.EmptyRootHash, db)
 	evm := vm.NewEVM(vm.BlockContext{Coinbase: coinbase}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}
@@ -225,7 +225,7 @@ func TestAddPages_NestedFrameRollback(t *testing.T) {
 }
 
 // TestAddPages_WrongConfigTypeFailsOpen covers the defensive else branch in
-// addPages: if geth's `any` slot ever holds a non-*StylusNodeConfig value
+// addPages: if geth's `any` slot ever holds a non-*ArbNodeConfig value
 // (a Nitro-internal wiring bug), addPages must fall through and charge normal
 // gas rather than panicking or returning OOG. This preserves the pre-feature
 // behavior (no limit) — the comment at the call site calls this fail-open.
@@ -234,9 +234,9 @@ func TestAddPages_NestedFrameRollback(t *testing.T) {
 func TestAddPages_WrongConfigTypeFailsOpen(t *testing.T) {
 	db := state.NewDatabaseForTesting()
 	// Stuff a value of the wrong concrete type through the any slot. The type
-	// assertion in addPages (raw.(*StylusNodeConfig)) will fail, triggering the
+	// assertion in addPages (raw.(*ArbNodeConfig)) will fail, triggering the
 	// fail-open branch.
-	db.SetStylusNodeConfig("not a *StylusNodeConfig")
+	db.SetArbNodeConfig("not a *ArbNodeConfig")
 	statedb, _ := state.New(types.EmptyRootHash, db)
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}

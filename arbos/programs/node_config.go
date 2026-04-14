@@ -12,20 +12,19 @@ import (
 // are unusually low and may cause most Stylus transactions to be rejected.
 const WarnStylusOpenPagesThreshold uint16 = 4
 
-// StylusNodeConfig carries Nitro-defined, node-level Stylus configuration through
-// the geth state.Database boundary. Geth stores it as `any` (see
-// state.Database.StylusNodeConfig); Nitro reads it back via a type assertion at the
-// hostio call site. Add new node-level Stylus knobs as fields here rather than
-// growing the geth interface.
-type StylusNodeConfig struct {
+// ArbNodeConfig carries Nitro-defined, node-level configuration through the geth
+// state.Database boundary. Geth stores it as `any` (see state.Database.ArbNodeConfig);
+// Nitro reads it back via a type assertion at the call site. Add new node-level
+// knobs as fields here rather than growing the geth interface.
+type ArbNodeConfig struct {
 	// MaxOpenPages is the per-transaction limit on open Stylus WASM pages.
 	// 0 disables the limit.
 	MaxOpenPages uint16
 }
 
-// Validate checks StylusNodeConfig fields and logs a warning if the configured
+// Validate checks ArbNodeConfig fields and logs a warning if the configured
 // limit is unusually low.
-func (c *StylusNodeConfig) Validate() {
+func (c *ArbNodeConfig) Validate() {
 	if c.MaxOpenPages > 0 && c.MaxOpenPages < WarnStylusOpenPagesThreshold {
 		log.Warn("max-stylus-open-pages is very low; most Stylus transactions may be rejected",
 			"value", c.MaxOpenPages, "threshold", WarnStylusOpenPagesThreshold)

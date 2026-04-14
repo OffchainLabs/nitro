@@ -306,12 +306,12 @@ func newApiClosures(
 		oldOpen, oldEver := db.AddStylusPages(pages)
 		newOpen := db.GetStylusPagesOpen()
 		var limit uint16
-		if raw := db.Database().StylusNodeConfig(); raw != nil {
-			if cfg, ok := raw.(*StylusNodeConfig); ok {
+		if raw := db.Database().ArbNodeConfig(); raw != nil {
+			if cfg, ok := raw.(*ArbNodeConfig); ok {
 				limit = cfg.MaxOpenPages
 			} else {
 				// Internal wiring bug — fail-open to preserve pre-feature behavior.
-				log.Error("StylusNodeConfig unexpected type; page limit inactive",
+				log.Error("ArbNodeConfig unexpected type; page limit inactive",
 					"type", fmt.Sprintf("%T", raw))
 			}
 		}
