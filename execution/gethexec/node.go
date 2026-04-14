@@ -84,7 +84,7 @@ var DefaultStylusTargetConfig = StylusTargetConfig{
 	Host:               "",
 	ExtraArchs:         []string{string(rawdb.TargetWavm)},
 	AllowFallback:      true,
-	MaxStylusOpenPages: 128, // 128 pages = 8 MiB per tx; 0 disables the limit
+	MaxStylusOpenPages: 128, // fits the default stylus pageLimit; 0 disables the limit
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {

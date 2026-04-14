@@ -317,20 +317,16 @@ func newApiClosures(
 		}
 		if limit > 0 && newOpen > limit && runCtx != nil {
 			if !runCtx.IsExecutedOnChain() {
-				log.Warn("addPages: page limit exceeded",
+				log.Info("addPages: page limit exceeded",
 					"open", newOpen, "limit", limit, "contract", actingAddress)
 				return math.MaxUint64
 			}
-			// Sequencer-posted batches: filter the tx.
-			// TODO(NIT-4788): replace Coinbase check with runCtx.IsDelayedSequencerCommit().
 			if runCtx.IsCommitMode() && evm.Context.Coinbase == l1pricing.BatchPosterAddress {
-				log.Warn("addPages: page limit exceeded, filtering tx",
+				log.Info("addPages: page limit exceeded, filtering tx",
 					"open", newOpen, "limit", limit, "contract", actingAddress)
 				db.FilterTx()
 				return math.MaxUint64
 			}
-			// Exempt path (delayed inbox / replay / recording): cannot enforce
-			// post-commitment, charge normal gas instead.
 			log.Info("addPages: page limit exceeded in exempt mode",
 				"open", newOpen, "limit", limit, "contract", actingAddress, "runMode", runCtx.RunModeMetricName())
 		}
