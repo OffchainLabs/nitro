@@ -26,6 +26,7 @@ jobs:
     name: Aggregate test results
     runs-on: ubuntu-4
     permissions:
+      contents: read
       pull-requests: write
 
     steps:
