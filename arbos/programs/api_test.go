@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -109,9 +108,8 @@ func TestAddPages_ExceedsLimit_GasEstimation(t *testing.T) {
 }
 
 func TestAddPages_ExceedsLimit_SequencerCommit(t *testing.T) {
-	runCtx := core.NewMessageCommitContext(nil)
-	// BatchPosterAddress as coinbase means regular sequencing (not delayed inbox)
-	handler, statedb, _ := newTestHandler(t, l1pricing.BatchPosterAddress, runCtx, 10)
+	runCtx := core.NewMessageSequencingContext(nil)
+	handler, statedb, _ := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
 	require.Equal(t, uint64(math.MaxUint64), cost, "sequencer commit should return MaxUint64 when over limit")
 	require.True(t, statedb.IsTxFiltered(), "sequencer commit should call FilterTx when over limit")
@@ -119,9 +117,7 @@ func TestAddPages_ExceedsLimit_SequencerCommit(t *testing.T) {
 
 func TestAddPages_ExceedsLimit_DelayedInbox(t *testing.T) {
 	runCtx := core.NewMessageCommitContext(nil)
-	// Non-BatchPosterAddress coinbase means delayed inbox
-	delayedCoinbase := common.HexToAddress("0xdeadbeef")
-	handler, statedb, model := newTestHandler(t, delayedCoinbase, runCtx, 10)
+	handler, statedb, model := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
 	require.Equal(t, model.GasCost(20, 0, 0), cost, "delayed inbox should return normal gas cost even when over limit")
 	require.False(t, statedb.IsTxFiltered(), "delayed inbox should not call FilterTx")
