@@ -467,7 +467,7 @@ func parseReportForSecondBatch(
 
 // makeDelayedMsg builds a deterministic DelayedInboxMessage for tests.
 func makeDelayedMsg(i uint64) *mel.DelayedInboxMessage {
-	reqID := common.BigToHash(big.NewInt(int64(i)))
+	reqID := common.BigToHash(big.NewInt(int64(i))) // #nosec G115
 	return &mel.DelayedInboxMessage{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
