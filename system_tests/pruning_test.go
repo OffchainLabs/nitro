@@ -80,7 +80,7 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 	Require(t, err)
 
 	l2cleanupDone = true
-	builder.L2.cleanup()
+	builder.StopL2ForRestart(ctx)
 	t.Log("stopped l2 node")
 
 	func() {
@@ -259,7 +259,7 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	}
 
 	l2cleanupDone = true
-	builder.L2.cleanup()
+	builder.StopL2ForRestart(ctx)
 	t.Log("stopped l2 node")
 
 	func() {

@@ -97,9 +97,10 @@ func TestOverflowAssertions(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
 	Require(t, err)
+	pcds := l2node.GetParentChainDataSource()
 	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
+		pcds,
+		pcds,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
 		l2node.ConsensusDB,
@@ -114,7 +115,7 @@ func TestOverflowAssertions(t *testing.T) {
 
 	blockValidator, err := staker.NewBlockValidator(
 		stateless,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -133,9 +134,9 @@ func TestOverflowAssertions(t *testing.T) {
 			CheckBatchFinality:     false,
 		},
 		goodDir,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
-		l2node.InboxReader,
+		pcds,
 		nil,
 	)
 	Require(t, err)
@@ -177,9 +178,9 @@ func TestOverflowAssertions(t *testing.T) {
 	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
-	bc, err := l2node.InboxTracker.GetBatchCount()
+	bc, err := l2node.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	msgs, err := l2node.InboxTracker.GetBatchMessageCount(bc - 1)
+	msgs, err := l2node.GetParentChainDataSource().GetBatchMessageCount(bc - 1)
 	Require(t, err)
 
 	t.Logf("Node batch count %d, msgs %d", bc, msgs)

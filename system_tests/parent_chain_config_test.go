@@ -90,9 +90,13 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 
 	// Create a custom L1 chain config: all forks active at genesis except BPO1
 	// far in the future. The pointer is shared with the geth node's config so we
-	// can mutate it later to simulate a fork activation without restarting the node
+	// can mutate it later to simulate a fork activation without restarting the node.
+	// Start with BPO1 very far in the future; we'll adjust after setup when we
+	// know the current L1 block timestamp (setup creates many L1 blocks, each
+	// advancing the timestamp by at least 1 second, so a small offset gets
+	// exceeded before phase 1 even runs).
 	// #nosec G115
-	farFuture := uint64(time.Now().Unix()) + 60
+	farFuture := uint64(time.Now().Unix()) + 1_000_000
 	l1ChainConfig := *params.AllDevChainProtocolChanges
 	l1ChainConfig.BPO1Time = &farFuture
 	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
@@ -105,6 +109,13 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithL1ChainConfig(&l1ChainConfig)
 	cleanup := builder.Build(t)
 	defer cleanup()
+
+	// Now that setup is done, set BPO1 activation to a time reachable by
+	// keepChainMoving (each block advances the timestamp by at least 1s)
+	// but far enough that phase 1 polling won't trigger it.
+	latestBlock, err := builder.L1.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+	farFuture = latestBlock.Time() + 150
 
 	// Create a header reader connected to the L1
 	l1Client := builder.L1.Client
@@ -156,7 +167,7 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	}
 
 	var blobConfigPhase2 *params.BlobConfig
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(200 * time.Millisecond)
 		blobConfigPhase2 = pc.CachedBlobConfig()
