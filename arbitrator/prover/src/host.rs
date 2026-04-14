@@ -482,9 +482,9 @@ pub fn new_internal_funcs(stylus_data: Option<StylusData>, version: u16) -> Vec<
     let memory_fill = if version >= 3 {
         (*BULK_MEMORY_FILL_V2).clone()
     } else {
-        (*BULK_MEMORY_FUNCS)[0].clone()
+        (*BULK_MEMORY_FILL_V1).clone()
     };
-    let memory_copy = (*BULK_MEMORY_FUNCS)[1].clone();
+    let memory_copy = (*BULK_MEMORY_COPY).clone();
     add_func(memory_fill, MemoryFill);
     add_func(memory_copy, MemoryCopy);
 
@@ -556,22 +556,21 @@ fn load_bulk_func(
 }
 
 lazy_static! {
-    static ref BULK_MEMORY_FUNCS: [Function; 2] = [
-        load_bulk_func(
-            include_bytes!("bulk_memory.wat"),
-            "bulk_memory.wat",
-            0,
-            "memory_fill",
-            InternalFunc::MemoryFill.ty(),
-        ),
-        load_bulk_func(
-            include_bytes!("bulk_memory.wat"),
-            "bulk_memory.wat",
-            1,
-            "memory_copy",
-            InternalFunc::MemoryCopy.ty(),
-        ),
-    ];
+    static ref BULK_MEMORY_FILL_V1: Function = load_bulk_func(
+        include_bytes!("bulk_memory.wat"),
+        "bulk_memory.wat",
+        0,
+        "memory_fill",
+        InternalFunc::MemoryFill.ty(),
+    );
+
+    static ref BULK_MEMORY_COPY: Function = load_bulk_func(
+        include_bytes!("bulk_memory.wat"),
+        "bulk_memory.wat",
+        1,
+        "memory_copy",
+        InternalFunc::MemoryCopy.ty(),
+    );
 
     static ref BULK_MEMORY_FILL_V2: Function = load_bulk_func(
         include_bytes!("bulk_memory_v2.wat"),
