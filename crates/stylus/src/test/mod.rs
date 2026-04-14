@@ -117,18 +117,18 @@ fn expensive_add(op: &Operator, _tys: &SigMap) -> u64 {
 }
 
 pub fn random_ink(min: u64) -> Ink {
-    Ink(rand::thread_rng().gen_range(min..=u64::MAX))
+    Ink(rand::rng().random_range(min..=u64::MAX))
 }
 
 pub fn random_bytes20() -> Bytes20 {
     let mut data = [0; 20];
-    rand::thread_rng().fill_bytes(&mut data);
+    rand::rng().fill_bytes(&mut data);
     data.into()
 }
 
 fn random_bytes32() -> Bytes32 {
     let mut data = [0; 32];
-    rand::thread_rng().fill_bytes(&mut data);
+    rand::rng().fill_bytes(&mut data);
     data.into()
 }
 
