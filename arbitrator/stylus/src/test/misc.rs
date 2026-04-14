@@ -45,6 +45,34 @@ fn test_bulk_memory() -> Result<()> {
 }
 
 #[test]
+fn test_memory_fill_value_overflow() -> Result<()> {
+    // Demonstrates the problem in the WAVM memory.fill implementation:
+    // the value argument is not masked to 8 bits before building the 8-byte fill pattern,
+    // so memory.fill(dest, 0x100, n) incorrectly writes 0x01 bytes instead of all zeros.
+    let (compile, _, ink) = test_configs();
+    let filename = "../prover/test-cases/memory-fill-overflow.wat";
+
+    let mut native = NativeInstance::new_test(filename, compile.clone())?;
+    let run = native.instance.exports.get_typed_function::<(), ()>(&native.store, "run")?;
+    native.call_func(run, ink)?;
+
+    // native (Wasmer) correctly uses only the low 8 bits: 0x100 & 0xff = 0x00
+    let native_data = native.read_slice("memory", 0xaaa, 8)?;
+    assert_eq!(native_data, vec![0u8; 8]);
+
+    let mut machine = new_test_machine(filename, &compile)?;
+    let module = machine.find_module("user")?;
+    machine.call_user_func("run", vec![], ink)?;
+
+    // WAVM uses the full value without masking, so bytes at non-zero positions within
+    // each 8-byte chunk are 0x01.
+    let machine_data = machine.read_memory(module, 0xaaa, 8)?;
+    assert_eq!(machine_data, [0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
+
+    Ok(())
+}
+
+#[test]
 fn test_bulk_memory_oob() -> Result<()> {
     let filename = "tests/bulk-memory-oob.wat";
     let (compile, _, ink) = test_configs();
