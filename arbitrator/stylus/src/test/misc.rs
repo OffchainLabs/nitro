@@ -51,7 +51,9 @@ fn test_memory_fill_value_overflow() -> Result<()> {
     let filename = "../prover/test-cases/memory-fill-overflow.wat";
     let (_, _, ink) = test_configs();
 
-    // V2 is the last buggy version: upper bits of value leak into the fill pattern
+    // V2 is the last buggy version: upper bits of value leak into the fill pattern.
+    // value=0x100 produces a fill pattern of 0x0101_0101_0101_0100 (little-endian i64.store),
+    // so the first 3 bytes written are 0x00 and the remaining 7 are 0x01.
     let compile_v2 = CompileConfig::version(2, true);
     let machine_v2_data = run_machine_read_memory(filename, &compile_v2, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_v2_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
