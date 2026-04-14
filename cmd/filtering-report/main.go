@@ -166,7 +166,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, err := api.NewStack(&stackConf)
+	stack, _, err := api.NewStack(&stackConf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

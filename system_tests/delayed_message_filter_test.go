@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	filteringReportAPI "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -153,6 +154,23 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	return transactionFiltererAPI
 }
 
+// createFilteringReportService starts a local filtering-report RPC server and
+// configures the builder to send reports to it. Must be called BEFORE builder.Build.
+func createFilteringReportService(t *testing.T, builder *NodeBuilder) *filteringReportAPI.FilteringReportAPI {
+	t.Helper()
+	stackConf := filteringReportAPI.DefaultStackConfig
+	stackConf.HTTPPort = 0
+	stackConf.WSPort = 0
+	stackConf.AuthPort = 0
+	stack, reportAPI, err := filteringReportAPI.NewStack(&stackConf)
+	require.NoError(t, err)
+	err = stack.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { stack.Close() })
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = stack.HTTPEndpoint()
+	return reportAPI
+}
+
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
 func addTxHashToOnChainFilter(t *testing.T, ctx context.Context, builder *NodeBuilder, txHash common.Hash, filtererName string) {
 	t.Helper()
@@ -241,6 +259,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	reportAPI := createFilteringReportService(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -274,6 +293,25 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, finalBalance, "filtered address balance should not change")
+
+	// Verify filtering-report service received the report
+	require.Eventually(t, func() bool {
+		return len(reportAPI.ReceivedReports()) > 0
+	}, 5*time.Second, 100*time.Millisecond, "filtering-report should receive reports")
+
+	reports := reportAPI.ReceivedReports()
+	require.Len(t, reports, 1)
+	require.Equal(t, txHash, reports[0].TxHash)
+	require.True(t, reports[0].IsDelayed)
+	require.NotEmpty(t, reports[0].FilteredAddresses)
+	foundFiltered := false
+	for _, addr := range reports[0].FilteredAddresses {
+		if addr.Address == filteredAddr {
+			foundFiltered = true
+			break
+		}
+	}
+	require.True(t, foundFiltered, "report should contain the filtered address")
 }
 
 // TestDelayedMessageFilterBypass verifies that adding tx hash to onchain filter allows tx to proceed.

@@ -5,15 +5,20 @@ package api
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 )
 
-type FilteringReportAPI struct{}
+type FilteringReportAPI struct {
+	mu              sync.Mutex
+	receivedReports []addressfilter.FilteredTxReport
+}
 
 var DefaultStackConfig = node.Config{
 	DataDir:             "", // ephemeral
@@ -36,16 +41,17 @@ var DefaultStackConfig = node.Config{
 	},
 }
 
-func NewStack(stackConfig *node.Config) (*node.Node, error) {
+func NewStack(stackConfig *node.Config) (*node.Node, *FilteringReportAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	reportAPI := &FilteringReportAPI{}
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,
 		Version:   "1.0",
-		Service:   &FilteringReportAPI{},
+		Service:   reportAPI,
 		Public:    true,
 	}}
 	stack.RegisterAPIs(apis)
@@ -57,5 +63,5 @@ func NewStack(stackConfig *node.Config) (*node.Node, error) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	return stack, nil
+	return stack, reportAPI, nil
 }
