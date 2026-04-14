@@ -24,14 +24,7 @@ func (f *txFilterer) Setup(statedb *state.StateDB) {
 	statedb.SetTxContext(common.Hash{}, 0)
 }
 
-func (f *txFilterer) TouchFromTo(statedb *state.StateDB, from common.Address, to *common.Address) {
-	statedb.TouchAddress(from)
-	if to != nil {
-		statedb.TouchAddress(*to)
-	}
-}
-
-func (f *txFilterer) TouchScheduledTxAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {
+func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {
 	touchAddresses(statedb, tx, sender)
 }
 

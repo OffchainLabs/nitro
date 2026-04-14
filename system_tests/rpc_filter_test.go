@@ -22,9 +22,9 @@ import (
 
 // buildRPCFilterNode creates a single sequencer node with RPC filtering
 // enabled or disabled. The txFilterer is wired into the backend at construction time.
-func buildRPCFilterNode(t *testing.T, ctx context.Context, enableETHCallFilter bool) (builder *NodeBuilder, cleanup func()) {
+func buildRPCFilterNode(t *testing.T, ctx context.Context, enableETHCallFilter bool, withL1 bool) (builder *NodeBuilder, cleanup func()) {
 	t.Helper()
-	builder = NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder = NewNodeBuilder(ctx).DefaultConfig(t, withL1)
 	builder.isSequencer = true
 	builder.execConfig.TransactionFiltering.EnableETHCallFilter = enableETHCallFilter
 	cleanup = builder.Build(t)
@@ -37,7 +37,7 @@ func TestEstimateGasFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := buildRPCFilterNode(t, ctx, true)
+	builder, cleanup := buildRPCFilterNode(t, ctx, true, false)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -85,7 +85,7 @@ func TestEstimateGasFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := buildRPCFilterNode(t, ctx, false)
+	builder, cleanup := buildRPCFilterNode(t, ctx, false, false)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -113,7 +113,7 @@ func TestEthCallFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := buildRPCFilterNode(t, ctx, true)
+	builder, cleanup := buildRPCFilterNode(t, ctx, true, false)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -170,7 +170,7 @@ func TestEthCallFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := buildRPCFilterNode(t, ctx, false)
+	builder, cleanup := buildRPCFilterNode(t, ctx, false, false)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -199,11 +199,7 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Build node with L1 and filtering enabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.isSequencer = true
-	builder.execConfig.TransactionFiltering.EnableETHCallFilter = true
-	cleanup := builder.Build(t)
+	builder, cleanup := buildRPCFilterNode(t, ctx, true, true)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User")
@@ -255,8 +251,13 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 		Data: redeemData,
 	}
 
+	// Pin all eth_calls to the same block to avoid flakiness from state changes
+	blockNum, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	block := new(big.Int).SetUint64(blockNum)
+
 	// eth_call without address checker
-	resultWithoutChecker, err := builder.L2.Client.CallContract(ctx, callMsg, nil)
+	resultWithoutChecker, err := builder.L2.Client.CallContract(ctx, callMsg, block)
 	Require(t, err)
 
 	// Set address checker with an unrelated address (not involved in the call)
@@ -264,12 +265,21 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// eth_call with address checker
-	resultWithChecker, err := builder.L2.Client.CallContract(ctx, callMsg, nil)
+	resultWithChecker, err := builder.L2.Client.CallContract(ctx, callMsg, block)
 	Require(t, err)
 
 	// Results must be identical — filtering must not alter the return value
 	if !bytes.Equal(resultWithoutChecker, resultWithChecker) {
 		t.Fatalf("eth_call results differ with filtering active:\n  without checker: %x\n  with checker:    %x",
 			resultWithoutChecker, resultWithChecker)
+	}
+
+	// Set address checker to filter userAddr
+	filter = newHashedChecker([]common.Address{userAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	_, err = builder.L2.Client.CallContract(ctx, callMsg, block)
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error for eth_call with filtered retryable address, got: %v", err)
 	}
 }
