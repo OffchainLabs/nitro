@@ -786,7 +786,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 			Accounts: accounts,
 		})
-		chainConfig = gen.Config
+		chainConfig, err = gen.GetConfig()
+		if err != nil {
+			return nil, nil, err
+		}
 		genesisArbOSInit = gen.ArbOSInit
 	}
 
