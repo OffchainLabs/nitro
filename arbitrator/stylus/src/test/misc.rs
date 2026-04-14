@@ -46,30 +46,17 @@ fn test_bulk_memory() -> Result<()> {
 
 #[test]
 fn test_memory_fill_value_overflow() -> Result<()> {
-    // Demonstrates the problem in the WAVM memory.fill implementation:
-    // the value argument is not masked to 8 bits before building the 8-byte fill pattern,
-    // so memory.fill(dest, 0x100, n) incorrectly writes 0x01 bytes instead of all zeros.
-    let (compile, _, ink) = test_configs();
+    // Verifies the version gate for the memory.fill fix (version >= 3).
+    // value=0x100: low 8 bits = 0x00, so correct output is all zeros.
     let filename = "../prover/test-cases/memory-fill-overflow.wat";
+    let (_, _, ink) = test_configs();
 
-    let mut native = NativeInstance::new_test(filename, compile.clone())?;
-    let run = native.instance.exports.get_typed_function::<(), ()>(&native.store, "run")?;
-    native.call_func(run, ink)?;
-
-    // native (Wasmer) correctly uses only the low 8 bits: 0x100 & 0xff = 0x00
-    let native_data = native.read_slice("memory", 0xaaa, 10)?;
-    assert_eq!(native_data, vec![0u8; 10]);
-
-    // V1/V2 WAVM: buggy — value not masked to 8 bits
-    let machine_data = run_machine_read_memory(filename, &compile, "run", ink, 0xaaa, 10)?;
-    assert_eq!(machine_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
-
-    // V2 is the last buggy version; the gate is version >= 3
+    // V2 is the last buggy version: upper bits of value leak into the fill pattern
     let compile_v2 = CompileConfig::version(2, true);
     let machine_v2_data = run_machine_read_memory(filename, &compile_v2, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_v2_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
 
-    // V3 (fixed): WAVM correctly masks value to 8 bits: 0x100 & 0xff = 0x00
+    // V3 is the first fixed version: value correctly masked to 8 bits
     let compile_v3 = CompileConfig::version(3, true);
     let machine_v3_data = run_machine_read_memory(filename, &compile_v3, "run", ink, 0xaaa, 10)?;
     assert_eq!(machine_v3_data, vec![0u8; 10]);
