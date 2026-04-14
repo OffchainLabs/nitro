@@ -173,8 +173,8 @@ mod tests {
     };
 
     use anyhow::{Result, anyhow};
-    use rand::Rng;
     use arbutil::Bytes32;
+    use rand::Rng;
 
     use crate::engine::{
         ModuleRoot,
