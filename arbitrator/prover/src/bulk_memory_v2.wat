@@ -29,9 +29,8 @@
 
         ;; create an 8-byte value for chunked filling
         ;; mask to 8 bits first so upper bits of $value don't leak into the pattern
-        (local.tee $value64 (i64.and
-            (i64.extend_i32_u (local.get $value))
-            (i64.const 0xff)))
+        (local.tee $value64
+            (i64.extend_i32_u (i32.and (local.get $value) (i32.const 0xff))))
         (i64.shl (i64.const 8))
         (i64.or (local.get $value64))
         (i64.shl (i64.const 8))
@@ -81,9 +80,9 @@
             local.get $dest
             i32.add
 
-            ;; write the value (use value64 which already has the low 8 bits masked)
-            local.get $value64
-            i64.store8
+            ;; i32.store8 naturally truncates to the low 8 bits
+            local.get $value
+            i32.store8
             br $loop
         )
     )
