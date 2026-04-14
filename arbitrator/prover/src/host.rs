@@ -521,9 +521,9 @@ fn load_bulk_func(
     expected_name: &str,
     expected_ty: FunctionType,
 ) -> Function {
-    let wasm = wat::parse_bytes(data).unwrap_or_else(|_| panic!("failed to parse {wat_name}"));
+    let wasm = wat::parse_bytes(data).unwrap_or_else(|e| panic!("failed to parse {wat_name}: {e}"));
     let bin = binary::parse(&wasm, Path::new("internal"))
-        .unwrap_or_else(|_| panic!("failed to parse {wat_name}"));
+        .unwrap_or_else(|e| panic!("failed to parse {wat_name}: {e}"));
 
     let code = &bin.codes[index];
     let name = bin.names.functions
@@ -548,7 +548,7 @@ fn load_bulk_func(
         ty.clone(),
         &[], // impls don't make calls
     )
-    .unwrap_or_else(|_| panic!("failed to compile {expected_name} from {wat_name}"))
+    .unwrap_or_else(|e| panic!("failed to compile {expected_name} from {wat_name}: {e}"))
 }
 
 lazy_static! {
