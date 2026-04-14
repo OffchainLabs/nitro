@@ -1,6 +1,6 @@
 # Architecture
 
-ArbReth is organized as a Cargo workspace of focused, independently consumable crates. The architecture follows a clear layering: node infrastructure at the top, execution in the middle, and core primitives at the bottom.
+Arbitrum Reth is organized as a Cargo workspace of focused, independently consumable crates. The architecture follows a clear layering: node infrastructure at the top, execution in the middle, and core primitives at the bottom.
 
 ## Crate Map
 
@@ -40,9 +40,9 @@ The crates form three layers with one-way dependencies flowing downward:
 
 ## Key Traits
 
-ArbReth integrates with reth through its standard trait system:
+Arbitrum Reth integrates with reth through its standard trait system:
 
-| reth Trait | ArbReth Implementation | Purpose |
+| reth Trait | Arbitrum Reth Implementation | Purpose |
 |------------|----------------------|---------|
 | `BlockExecutor` | `ArbBlockExecutor` | Executes transactions within a block |
 | `EvmConfig` | `ArbEvmConfig` | Configures the EVM environment per block |
@@ -61,7 +61,7 @@ When the Nitro consensus node sends a message via `nitroexecution_digestMessage`
 
 ## External Dependencies
 
-ArbReth builds on several foundational Rust projects:
+Arbitrum Reth builds on several foundational Rust projects:
 
 - [**reth**](https://github.com/paradigmxyz/reth) - node framework, database, networking, and RPC infrastructure
 - [**revm**](https://github.com/bluealloy/revm) - EVM interpreter for transaction execution

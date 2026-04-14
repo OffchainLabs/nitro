@@ -3,7 +3,7 @@ target/
 .idea/
 .vscode/
 .claude/
-arbreth-data/
+arbitrum-reth-data/
 nitro-data/
 scripts/
 *.md

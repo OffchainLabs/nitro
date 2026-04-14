@@ -2,7 +2,7 @@ import { defineConfig } from "vocs";
 import React from "react";
 
 export default defineConfig({
-  title: "ArbReth",
+  title: "Arbitrum Reth",
   description: "A modular, Rust-native execution client for Arbitrum",
   logoUrl: "/logo.png",
   iconUrl: "/favicon.png",
@@ -18,7 +18,7 @@ export default defineConfig({
     },
     {
       text: "GitHub",
-      link: "https://github.com/0xBloctopus/arbreth",
+      link: "https://github.com/0xBloctopus/arbitrum-reth",
     },
   ],
   sidebar: [
@@ -56,7 +56,7 @@ export default defineConfig({
   ],
   editLink: {
     pattern:
-      "https://github.com/0xBloctopus/arbreth/edit/master/docs/docs/pages/:path",
+      "https://github.com/0xBloctopus/arbitrum-reth/edit/master/docs/docs/pages/:path",
     text: "Edit on GitHub",
   },
 });

@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in ArbReth, please report it responsibly. Do **not** file a public issue.
+If you discover a security vulnerability in Arbitrum Reth, please report it responsibly. Do **not** file a public issue.
 
 **Email:** [til@bloctopus.io](mailto:til@bloctopus.io)
 

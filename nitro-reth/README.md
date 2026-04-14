@@ -1,18 +1,18 @@
-# ArbReth
+# Arbitrum Reth
 
 [![license](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE.md)
-[![lint](https://github.com/0xBloctopus/arbreth/actions/workflows/lint.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/lint.yml)
-[![test](https://github.com/0xBloctopus/arbreth/actions/workflows/test.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/test.yml)
-[![build](https://github.com/0xBloctopus/arbreth/actions/workflows/build.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/build.yml)
-[![DeepWiki](https://img.shields.io/badge/DeepWiki-0xBloctopus%2Farbreth-blue.svg?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNUEyLjUgMi41IDAgMCAxIDYuNSAxN0gyMCI+PC9wYXRoPjxwYXRoIGQ9Ik02LjUgMkgyMHYyMEg2LjVBMi41IDIuNSAwIDAgMSA0IDE5LjVWNC41QTIuNSAyLjUgMCAwIDEgNi41IDJ6Ij48L3BhdGg+PC9zdmc+)](https://deepwiki.com/0xBloctopus/arbreth)
+[![lint](https://github.com/0xBloctopus/arbitrum-reth/actions/workflows/lint.yml/badge.svg)](https://github.com/0xBloctopus/arbitrum-reth/actions/workflows/lint.yml)
+[![test](https://github.com/0xBloctopus/arbitrum-reth/actions/workflows/test.yml/badge.svg)](https://github.com/0xBloctopus/arbitrum-reth/actions/workflows/test.yml)
+[![build](https://github.com/0xBloctopus/arbitrum-reth/actions/workflows/build.yml/badge.svg)](https://github.com/0xBloctopus/arbitrum-reth/actions/workflows/build.yml)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-0xBloctopus%2Farbitrum-reth-blue.svg?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNUEyLjUgMi41IDAgMCAxIDYuNSAxN0gyMCI+PC9wYXRoPjxwYXRoIGQ9Ik02LjUgMkgyMHYyMEg2LjVBMi41IDIuNSAwIDAgMSA0IDE5LjVWNC41QTIuNSAyLjUgMCAwIDEgNi41IDJ6Ij48L3BhdGg+PC9zdmc+)](https://deepwiki.com/0xBloctopus/arbitrum-reth)
 
 A modular, Rust-native execution client for Arbitrum, built on [reth](https://github.com/paradigmxyz/reth).
 
-## What is ArbReth?
+## What is Arbitrum Reth?
 
-ArbReth is a ground-up Rust implementation of [Arbitrum Nitro](https://github.com/OffchainLabs/nitro)'s execution layer. It replaces Nitro's embedded Geth fork with [reth](https://github.com/paradigmxyz/reth), delivering the same state-transition logic through a modular crate architecture designed for extensibility.
+Arbitrum Reth is a ground-up Rust implementation of [Arbitrum Nitro](https://github.com/OffchainLabs/nitro)'s execution layer. It replaces Nitro's embedded Geth fork with [reth](https://github.com/paradigmxyz/reth), delivering the same state-transition logic through a modular crate architecture designed for extensibility.
 
-Each component (ArbOS state management, L1/L2 pricing, precompiles, Stylus WASM execution) lives in its own crate and builds on reth's trait system (`BlockExecutor`, `StateProvider`, `EvmConfig`). This makes ArbReth usable both as a full node and as an SDK for building Arbitrum-compatible tooling and infrastructure.
+Each component (ArbOS state management, L1/L2 pricing, precompiles, Stylus WASM execution) lives in its own crate and builds on reth's trait system (`BlockExecutor`, `StateProvider`, `EvmConfig`). This makes Arbitrum Reth usable both as a full node and as an SDK for building Arbitrum-compatible tooling and infrastructure.
 
 **Supported networks:** Arbitrum Sepolia (421614)
 
@@ -56,7 +56,7 @@ See [`.env.example`](.env.example) for all configuration options.
 
 ## Architecture
 
-ArbReth is organized as a Cargo workspace of focused, independently consumable crates:
+Arbitrum Reth is organized as a Cargo workspace of focused, independently consumable crates:
 
 ```
 crates/
@@ -82,8 +82,8 @@ All crates integrate with the reth ecosystem through its standard traits and can
 ## Contributing
 
 ```bash
-git clone https://github.com/0xBloctopus/arbreth.git
-cd arbreth
+git clone https://github.com/0xBloctopus/arbitrum-reth.git
+cd arbitrum-reth
 cargo check
 cargo test
 ```
@@ -96,9 +96,9 @@ Licensed under the [Business Source License 1.1](LICENSE.md), consistent with th
 
 ## Acknowledgements
 
-ArbReth builds on the work of several projects:
+Arbitrum Reth builds on the work of several projects:
 
-- [**reth**](https://github.com/paradigmxyz/reth) by Paradigm, the modular Ethereum execution client that provides the node framework, trait system, and database infrastructure that ArbReth extends.
-- [**Arbitrum Nitro**](https://github.com/OffchainLabs/nitro) by Offchain Labs, the Arbitrum node implementation that ArbReth is derived from.
+- [**reth**](https://github.com/paradigmxyz/reth) by Paradigm, the modular Ethereum execution client that provides the node framework, trait system, and database infrastructure that Arbitrum Reth extends.
+- [**Arbitrum Nitro**](https://github.com/OffchainLabs/nitro) by Offchain Labs, the Arbitrum node implementation that Arbitrum Reth is derived from.
 - [**revm**](https://github.com/bluealloy/revm), the Rust EVM that powers transaction execution.
 - [**alloy**](https://github.com/alloy-rs/alloy), Rust types and primitives for the Ethereum ecosystem.

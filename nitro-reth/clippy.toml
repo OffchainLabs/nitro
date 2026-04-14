@@ -1,7 +1,7 @@
 too-large-for-stack = 128
 doc-valid-idents = [
     "ArbOS",
-    "ArbReth",
+    "ArbitrumReth",
     "EVM",
     "WASM",
     "RPC",

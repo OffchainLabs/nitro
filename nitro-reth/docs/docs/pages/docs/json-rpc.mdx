@@ -1,10 +1,10 @@
 # JSON-RPC API
 
-ArbReth serves three RPC namespaces: the standard `eth_` namespace (with Arbitrum extensions), the `arb_` namespace for Arbitrum-specific queries, and the `nitroexecution_` namespace for consensus-layer communication.
+Arbitrum Reth serves three RPC namespaces: the standard `eth_` namespace (with Arbitrum extensions), the `arb_` namespace for Arbitrum-specific queries, and the `nitroexecution_` namespace for consensus-layer communication.
 
 ## eth_ Namespace
 
-ArbReth supports the full standard `eth_` namespace inherited from reth. The key difference is gas estimation:
+Arbitrum Reth supports the full standard `eth_` namespace inherited from reth. The key difference is gas estimation:
 
 ### Gas Estimation
 
@@ -55,11 +55,11 @@ Health check endpoint (returns null on success).
 
 ## nitroexecution_ Namespace
 
-The interface between the Nitro consensus node and ArbReth. These methods are called by the consensus layer to drive block production and are exposed on the authenticated Engine API port (8551).
+The interface between the Nitro consensus node and Arbitrum Reth. These methods are called by the consensus layer to drive block production and are exposed on the authenticated Engine API port (8551).
 
 ### `nitroexecution_digestMessage`
 
-The primary block production method. The consensus node sends an ordered L1-to-L2 message, and ArbReth produces a block from it.
+The primary block production method. The consensus node sends an ordered L1-to-L2 message, and Arbitrum Reth produces a block from it.
 
 ```
 digestMessage(msgIdx, message, messageForPrefetch?) -> MessageResult

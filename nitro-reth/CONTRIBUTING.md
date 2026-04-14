@@ -1,12 +1,12 @@
-# Contributing to ArbReth
+# Contributing to Arbitrum Reth
 
-Thanks for your interest in contributing to ArbReth.
+Thanks for your interest in contributing to Arbitrum Reth.
 
 ## Getting Started
 
 ```bash
-git clone https://github.com/0xBloctopus/arbreth.git
-cd arbreth
+git clone https://github.com/0xBloctopus/arbitrum-reth.git
+cd arbitrum-reth
 cargo check
 cargo test
 ```

@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in ArbReth
+description: Report a bug in Arbitrum Reth
 labels: ["bug"]
 body:
   - type: textarea
@@ -29,7 +29,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: ArbReth Version
+      label: Arbitrum Reth Version
       description: Output of `arb-reth --version` or git commit hash.
     validations:
       required: true

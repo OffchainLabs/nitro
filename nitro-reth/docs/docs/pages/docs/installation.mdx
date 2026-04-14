@@ -2,11 +2,11 @@
 
 ## Docker (recommended)
 
-The simplest way to run ArbReth is with Docker Compose, which starts both the execution client and the Nitro consensus node.
+The simplest way to run Arbitrum Reth is with Docker Compose, which starts both the execution client and the Nitro consensus node.
 
 ```bash
-git clone https://github.com/0xBloctopus/arbreth.git
-cd arbreth
+git clone https://github.com/0xBloctopus/arbitrum-reth.git
+cd arbitrum-reth
 cp .env.example .env
 ```
 
@@ -23,7 +23,7 @@ Start the stack:
 docker compose up -d
 ```
 
-ArbReth will start syncing Arbitrum Sepolia. The Nitro consensus node waits for ArbReth to pass its healthcheck before starting.
+Arbitrum Reth will start syncing Arbitrum Sepolia. The Nitro consensus node waits for Arbitrum Reth to pass its healthcheck before starting.
 
 ### Verify sync progress
 
@@ -36,7 +36,7 @@ curl -s -X POST http://localhost:8545 \
 ### View logs
 
 ```bash
-docker compose logs -f arbreth    # execution client
+docker compose logs -f arbitrum-reth    # execution client
 docker compose logs -f nitro      # consensus node
 ```
 
@@ -46,7 +46,7 @@ docker compose logs -f nitro      # consensus node
 docker compose down
 ```
 
-Data is persisted in Docker named volumes (`arbreth-data`, `nitro-data`) and survives restarts.
+Data is persisted in Docker named volumes (`arbitrum-reth-data`, `nitro-data`) and survives restarts.
 
 ## Build from Source
 
@@ -59,8 +59,8 @@ Data is persisted in Docker named volumes (`arbreth-data`, `nitro-data`) and sur
 ### Build
 
 ```bash
-git clone https://github.com/0xBloctopus/arbreth.git
-cd arbreth
+git clone https://github.com/0xBloctopus/arbitrum-reth.git
+cd arbitrum-reth
 cargo build --release -p arb-reth
 ```
 
@@ -68,7 +68,7 @@ The binary is at `./target/release/arb-reth`.
 
 ### Run
 
-ArbReth requires a JWT secret for the Engine API connection with the Nitro consensus node:
+Arbitrum Reth requires a JWT secret for the Engine API connection with the Nitro consensus node:
 
 ```bash
 openssl rand -hex 32 > /path/to/jwt.hex
@@ -98,7 +98,7 @@ The Nitro consensus node connects to port 8551 using the shared JWT secret.
 
 ## Running the Consensus Node
 
-ArbReth is an execution client only. It needs the Nitro consensus node to receive L1 messages and drive block production. You can run Nitro separately:
+Arbitrum Reth is an execution client only. It needs the Nitro consensus node to receive L1 messages and drive block production. You can run Nitro separately:
 
 ```bash
 docker run offchainlabs/nitro-node:v3.10.0-rc.2-746bda2 \

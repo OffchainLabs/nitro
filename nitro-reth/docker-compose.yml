@@ -1,15 +1,15 @@
 services:
-  arbreth:
+  arbitrum-reth:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: arbreth
+    container_name: arbitrum-reth
     restart: "no"
     ports:
       - "8545:8545"
       - "8551:8551"
     volumes:
-      - ${DATA_DIR:-arbreth-data}:/data
+      - ${DATA_DIR:-arbitrum-reth-data}:/data
     environment:
       - RUST_LOG=${RUST_LOG:-warn}
       - ARB_BLOCK_BUFFER_SIZE=${ARB_BLOCK_BUFFER_SIZE:-128}
@@ -47,12 +47,12 @@ services:
     user: root
     entrypoint: /usr/local/bin/nitro
     depends_on:
-      arbreth:
+      arbitrum-reth:
         condition: service_healthy
     restart: "no"
     volumes:
       - ${NITRO_DATA_DIR:-nitro-data}:/tmp/nitro-data
-      - ${DATA_DIR:-arbreth-data}:/arbreth-data:ro
+      - ${DATA_DIR:-arbitrum-reth-data}:/arbitrum-reth-data:ro
     command:
       - --init.empty=true
       - --init.validate-genesis-assertion=false
@@ -62,15 +62,15 @@ services:
       - --chain.id=${CHAIN_ID:-421614}
       - --execution.forwarding-target=null
       - --log-level=${LOG_LEVEL:-WARN}
-      - --node.execution-rpc-client.url=http://arbreth:8551
-      - --node.execution-rpc-client.jwtsecret=/arbreth-data/jwt.hex
+      - --node.execution-rpc-client.url=http://arbitrum-reth:8551
+      - --node.execution-rpc-client.jwtsecret=/arbitrum-reth-data/jwt.hex
       - --node.sequencer=false
       - --node.feed.input.url=${FEED_URL:-wss://sepolia-rollup.arbitrum.io/feed}
     networks:
       - arb-network
 
 volumes:
-  arbreth-data:
+  arbitrum-reth-data:
   nitro-data:
 
 networks:

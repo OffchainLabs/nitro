@@ -36,7 +36,7 @@ docker-compose*.yml
 !docker-compose.yml
 
 # Docker data volumes
-arbreth-data/
+arbitrum-reth-data/
 nitro-data/
 
 # MCP config
