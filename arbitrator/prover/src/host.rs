@@ -4,7 +4,7 @@
 #![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
 use crate::{
-    binary, host,
+    binary,
     machine::{Function, InboxIdentifier},
     programs::StylusData,
     utils,
@@ -514,69 +514,64 @@ pub fn new_internal_funcs(stylus_data: Option<StylusData>, version: u16) -> Vec<
     funcs
 }
 
+fn load_bulk_func(
+    data: &[u8],
+    wat_name: &str,
+    index: usize,
+    expected_name: &str,
+    expected_ty: FunctionType,
+) -> Function {
+    let wasm = wat::parse_bytes(data).unwrap_or_else(|_| panic!("failed to parse {wat_name}"));
+    let bin = binary::parse(&wasm, Path::new("internal"))
+        .unwrap_or_else(|_| panic!("failed to parse {wat_name}"));
+
+    let code = &bin.codes[index];
+    let name = bin.names.functions.get(&(index as u32)).unwrap();
+    let ty = &bin.types[bin.functions[index] as usize];
+    assert_eq!(ty, &expected_ty);
+    assert_eq!(name, expected_name);
+
+    Function::new(
+        &code.locals,
+        |wasm| wasm_to_wavm(
+            &code.expr,
+            wasm,
+            &HashMap::default(),      // impls don't use floating point
+            &[],                      // impls don't make calls
+            std::slice::from_ref(ty), // only type needed is the func itself
+            0,                        // -----------------------------------
+            0,                        // impls don't use other internals
+            &bin.names.module,
+        ),
+        ty.clone(),
+        &[], // impls don't make calls
+    )
+    .unwrap_or_else(|_| panic!("failed to compile {expected_name} from {wat_name}"))
+}
+
 lazy_static! {
-    static ref BULK_MEMORY_FUNCS: [Function; 2] = {
-        use host::InternalFunc::*;
+    static ref BULK_MEMORY_FUNCS: [Function; 2] = [
+        load_bulk_func(
+            include_bytes!("bulk_memory.wat"),
+            "bulk_memory.wat",
+            0,
+            "memory_fill",
+            InternalFunc::MemoryFill.ty(),
+        ),
+        load_bulk_func(
+            include_bytes!("bulk_memory.wat"),
+            "bulk_memory.wat",
+            1,
+            "memory_copy",
+            InternalFunc::MemoryCopy.ty(),
+        ),
+    ];
 
-        let data = include_bytes!("bulk_memory.wat");
-        let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory.wat");
-        let bin = binary::parse(&wasm, Path::new("internal")).expect("failed to parse bulk_memory.wasm");
-        let types = [MemoryFill.ty(), MemoryCopy.ty()];
-        let names = ["memory_fill", "memory_copy"];
-
-        [0, 1].map(|i| {
-            let code = &bin.codes[i];
-            let name = bin.names.functions.get(&(i as u32)).unwrap();
-            let ty = &bin.types[bin.functions[i] as usize];
-            assert_eq!(ty, &types[i]);
-            assert_eq!(name, names[i]);
-
-            let func = Function::new(
-                &code.locals,
-                |wasm| wasm_to_wavm(
-                    &code.expr,
-                    wasm,
-                    &HashMap::default(),      // impls don't use floating point
-                    &[],                      // impls don't make calls
-                    std::slice::from_ref(ty), // only type needed is the func itself
-                    0,                        // -----------------------------------
-                    0,                        // impls don't use other internals
-                    &bin.names.module,
-                ),
-                ty.clone(),
-                &[] // impls don't make calls
-            );
-            func.expect("failed to create bulk memory func")
-        })
-    };
-
-    static ref BULK_MEMORY_FILL_V2: Function = {
-        use host::InternalFunc::*;
-
-        let data = include_bytes!("bulk_memory_v2.wat");
-        let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory_v2.wat");
-        let bin = binary::parse(&wasm, Path::new("internal")).expect("failed to parse bulk_memory_v2.wasm");
-        let ty = MemoryFill.ty();
-
-        let code = &bin.codes[0];
-        let name = bin.names.functions.get(&0).unwrap();
-        assert_eq!(&bin.types[bin.functions[0] as usize], &ty);
-        assert_eq!(name, "memory_fill");
-
-        Function::new(
-            &code.locals,
-            |wasm| wasm_to_wavm(
-                &code.expr,
-                wasm,
-                &HashMap::default(),      // impls don't use floating point
-                &[],                      // impls don't make calls
-                std::slice::from_ref(&ty), // only type needed is the func itself
-                0,                        // -----------------------------------
-                0,                        // impls don't use other internals
-                &bin.names.module,
-            ),
-            ty.clone(),
-            &[], // impls don't make calls
-        ).expect("failed to create v2 memory_fill func")
-    };
+    static ref BULK_MEMORY_FILL_V2: Function = load_bulk_func(
+        include_bytes!("bulk_memory_v2.wat"),
+        "bulk_memory_v2.wat",
+        0,
+        "memory_fill",
+        InternalFunc::MemoryFill.ty(),
+    );
 }
