@@ -438,20 +438,62 @@ func TestArbOwnerSetInkPriceEthCall(t *testing.T) {
 }
 
 func TestArbOwnerSetInkPriceGasEstimation(t *testing.T) {
-	// When executed via gas estimation, SetInkPrice should NOT persist the change
+	// When executed via gas estimation, ALL ArbOwner Stylus setters should NOT persist
 	evm, state, callCtx, prec := setupArbOwnerTestWithRunMode(t, core.NewMessageGasEstimationContext())
 
-	p, err := state.Programs().Params()
+	// Get original params
+	orig, err := state.Programs().Params()
 	Require(t, err)
-	originalInkPrice := p.InkPrice
 
+	// Call all setters with new values
 	Require(t, prec.SetInkPrice(callCtx, evm, 20000))
+	Require(t, prec.SetWasmMaxStackDepth(callCtx, evm, 999999))
+	Require(t, prec.SetWasmFreePages(callCtx, evm, 10))
+	Require(t, prec.SetWasmPageGas(callCtx, evm, 5000))
+	Require(t, prec.SetWasmPageLimit(callCtx, evm, 256))
+	Require(t, prec.SetWasmMinInitGas(callCtx, evm, 20000, 1000))
+	Require(t, prec.SetWasmInitCostScalar(callCtx, evm, 80))
+	Require(t, prec.SetWasmExpiryDays(callCtx, evm, 730))
+	Require(t, prec.SetWasmKeepaliveDays(callCtx, evm, 60))
+	Require(t, prec.SetWasmBlockCacheSize(callCtx, evm, 64))
+	Require(t, prec.SetWasmMaxSize(callCtx, evm, 256*1024))
 
-	// Ink price should NOT have been persisted
-	p2, err := state.Programs().Params()
+	// All params should still be at original values
+	after, err := state.Programs().Params()
 	Require(t, err)
-	if p2.InkPrice != originalInkPrice {
-		Fail(t, "InkPrice should not change during gas estimation: expected", originalInkPrice, "got", p2.InkPrice)
+
+	if after.InkPrice != orig.InkPrice {
+		Fail(t, "InkPrice changed during gas estimation")
+	}
+	if after.MaxStackDepth != orig.MaxStackDepth {
+		Fail(t, "MaxStackDepth changed during gas estimation")
+	}
+	if after.FreePages != orig.FreePages {
+		Fail(t, "FreePages changed during gas estimation")
+	}
+	if after.PageGas != orig.PageGas {
+		Fail(t, "PageGas changed during gas estimation")
+	}
+	if after.PageLimit != orig.PageLimit {
+		Fail(t, "PageLimit changed during gas estimation")
+	}
+	if after.MinInitGas != orig.MinInitGas {
+		Fail(t, "MinInitGas changed during gas estimation")
+	}
+	if after.InitCostScalar != orig.InitCostScalar {
+		Fail(t, "InitCostScalar changed during gas estimation")
+	}
+	if after.ExpiryDays != orig.ExpiryDays {
+		Fail(t, "ExpiryDays changed during gas estimation")
+	}
+	if after.KeepaliveDays != orig.KeepaliveDays {
+		Fail(t, "KeepaliveDays changed during gas estimation")
+	}
+	if after.BlockCacheSize != orig.BlockCacheSize {
+		Fail(t, "BlockCacheSize changed during gas estimation")
+	}
+	if after.MaxWasmSize != orig.MaxWasmSize {
+		Fail(t, "MaxWasmSize changed during gas estimation")
 	}
 }
 

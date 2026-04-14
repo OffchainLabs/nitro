@@ -449,7 +449,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToVersion(3))
-			ensure(p.Save())
+			ensure(p.Save(true))
 
 		default:
 			return fmt.Errorf(
