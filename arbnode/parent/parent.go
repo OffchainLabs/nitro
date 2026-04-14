@@ -165,6 +165,11 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 	if resp.Current == nil {
 		return fmt.Errorf("eth_config returned nil current config")
 	}
+	if resp.Current.ChainId == nil {
+		return fmt.Errorf("eth_config response missing chainId, cannot validate against expected chain %s", p.ChainID)
+	} else if resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
+		return fmt.Errorf("chain ID mismatch: expected %s, got %s", p.ChainID, resp.Current.ChainId.ToInt())
+	}
 	if resp.Current.BlobSchedule == nil {
 		count := p.consecutiveNilBlobSchedule.Add(1)
 		if count >= nilBlobScheduleErrorThreshold {
@@ -175,11 +180,6 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 				"chainID", p.ChainID, "consecutiveNilPolls", count)
 		}
 		return nil
-	}
-	if resp.Current.ChainId == nil {
-		return fmt.Errorf("eth_config response missing chainId, cannot validate against expected chain %s", p.ChainID)
-	} else if resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
-		return fmt.Errorf("chain ID mismatch: expected %s, got %s", p.ChainID, resp.Current.ChainId.ToInt())
 	}
 
 	if resp.Next != nil {

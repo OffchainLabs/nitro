@@ -332,8 +332,14 @@ func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 			return fmt.Errorf("unsupported stylus target: %v", target)
 		}
 		isNative := target == localTarget
-		err := programs.SetTarget(target, effectiveStylusTarget, isNative)
-		if err != nil {
+		// Register both cranelift and non-cranelift variants so that
+		// compileNative can look up either name in the Rust target cache.
+		if craneliftTarget, err := rawdb.CraneliftTarget(target); err == nil {
+			if err := programs.SetTarget(craneliftTarget, effectiveStylusTarget, isNative); err != nil {
+				return fmt.Errorf("failed to set stylus cranelift target: %w", err)
+			}
+		}
+		if err := programs.SetTarget(target, effectiveStylusTarget, isNative); err != nil {
 			return fmt.Errorf("failed to set stylus target: %w", err)
 		}
 		nativeSet = nativeSet || isNative
@@ -353,6 +359,8 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
+	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
 }
 
