@@ -17,6 +17,9 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
 
+      - name: Build
+        run: make -j8 build test-go-deps
+
       - name: run challenge tests
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
