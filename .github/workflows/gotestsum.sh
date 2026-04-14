@@ -148,7 +148,8 @@ if [ "$cover" == true ]; then
   if [ "$coverprofile" == "" ]; then
     coverprofile="coverage.txt"
   fi
-  cmd="$cmd -coverprofile=$coverprofile -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+  printf -v escaped_coverprofile '%q' "$coverprofile"
+  cmd="$cmd -coverprofile=$escaped_coverprofile -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
 if [ "$reduce_parallelism" == true ]; then
