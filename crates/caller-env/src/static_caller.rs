@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use alloc::vec::Vec;
+
 use rand::Rng;
 use spin::{Lazy, Mutex, MutexGuard};
 

@@ -2,9 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use std::mem::{self, MaybeUninit};
-use rand::Rng;
+
 use arbutil::{Bytes20, Bytes32};
 use caller_env::{ExecEnv, GuestPtr, MemAccess, wavmio::WavmIo};
+use rand::Rng;
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
 use crate::machine::{WasmEnv, WasmEnvMut};
