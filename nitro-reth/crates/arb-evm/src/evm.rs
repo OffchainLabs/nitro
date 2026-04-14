@@ -1230,7 +1230,7 @@ where
             InterpreterResult::new(InstructionResult::CallTooDeep, Bytes::new(), zero_gas())
         }
         UserOutcome::Failure => {
-            InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas())
+            InterpreterResult::new(InstructionResult::Revert, Bytes::new(), gas_result)
         }
     }
 }
