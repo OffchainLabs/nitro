@@ -1530,6 +1530,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool) (
 
 	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
 	Require(t, err)
+	Require(t, simBeacon.Initialize(context.Background()))
 	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
 	stack.RegisterLifecycle(simBeacon)
 
