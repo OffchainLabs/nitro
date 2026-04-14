@@ -67,6 +67,14 @@ fn test_memory_fill_value_overflow() -> Result<()> {
     let machine_data = machine.read_memory(module, 0xaaa, 10)?;
     assert_eq!(machine_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
 
+    // V3 (fixed): WAVM correctly masks value to 8 bits: 0x100 & 0xff = 0x00
+    let compile_v3 = CompileConfig::version(3, true);
+    let mut machine_v3 = new_test_machine(filename, &compile_v3)?;
+    let module_v3 = machine_v3.find_module("user")?;
+    machine_v3.call_user_func("run", vec![], ink)?;
+    let machine_v3_data = machine_v3.read_memory(module_v3, 0xaaa, 10)?;
+    assert_eq!(machine_v3_data, vec![0u8; 10]);
+
     Ok(())
 }
 
