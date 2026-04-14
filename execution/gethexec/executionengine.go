@@ -171,7 +171,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 			BlockNumber:       header.Number.Uint64(),
 			ParentBlockHash:   header.ParentHash,
 			PositionInBlock:   positionInBlock,
-			FilteredAt:        time.Now(),
+			FilteredAt:        time.Now().UTC(),
 			IsDelayed:         true,
 			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
 		}
@@ -197,7 +197,7 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 			ID:                uuid.Must(uuid.NewV7()).String(),
 			TxHash:            cascadingErr.OriginatingTxHash,
 			FilteredAddresses: f.pendingCascadingRedeemAddresses,
-			FilteredAt:        time.Now(),
+			FilteredAt:        time.Now().UTC(),
 			IsDelayed:         true,
 			PositionInBlock:   0,
 			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
