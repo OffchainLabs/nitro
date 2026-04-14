@@ -876,11 +876,28 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
 	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})[0]
 
-	// Advance L1 enough to ensure everything is synced
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	// Brief pause for batch poster to detect the new L2 message
+	time.Sleep(100 * time.Millisecond)
 
-	// Wait for the batch to be posted and processed by node B
-	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
+	// Advance L1 one block at a time until the batch is posted, so that
+	// subsequent blocks remain for node B's inbox reader to pick it up.
+	initialBatchCount := GetBatchCount(t, builder)
+	batchPosted := false
+	for i := 0; i < 30; i++ {
+		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+		time.Sleep(100 * time.Millisecond)
+		if GetBatchCount(t, builder) > initialBatchCount {
+			batchPosted = true
+			break
+		}
+	}
+	require.True(t, batchPosted, "batch was not posted to L1 after 30 blocks")
+
+	// Advance a few more L1 blocks so node B's inbox reader picks up the batch
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 10)
+
+	// Wait for node B to process the batch
+	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 30*time.Second)
 	Require(t, err)
 
 	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
