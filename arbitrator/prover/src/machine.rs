@@ -1258,7 +1258,7 @@ impl Machine {
             inbox_contents,
             preimage_resolver,
             None,
-            0,
+            0, // version only applies to user (Stylus) modules, not system libraries
         )
     }
 
@@ -1384,7 +1384,7 @@ impl Machine {
                 true,
                 debug_funcs,
                 None,
-                0,
+                0, // version only applies to user (Stylus) modules, not system libraries
             )?;
             for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
