@@ -1291,6 +1291,10 @@ where
         }
 
         // --- RetryTx pre-processing: escrow transfer and prepaid gas ---
+        // Track retry pre-exec state so we can undo it if the inner execution
+        // errors out before state_transition can revert. Nitro uses a snapshot
+        // in block_processor.go that reverts automatically.
+        let mut retry_pre_exec_undo: Option<(Address, U256, Address, U256)> = None;
         let mut retry_context = None;
         if is_retry_tx {
             if let Some(info) = recovered.tx().retry_tx_info() {
@@ -1370,6 +1374,7 @@ where
                                 .basefee
                                 .saturating_mul(U256::from(tx_gas_limit));
                             mint_balance(db, sender, prepaid);
+                            retry_pre_exec_undo = Some((sender, prepaid, escrow, value));
 
                             // Set retry context for end-tx processing.
                             if let Some(hooks) = self.arb_hooks.as_mut() {
@@ -1746,7 +1751,10 @@ where
         }
 
         // Helper: roll back pre-execution state writes when a tx is rejected.
-        // Clears scratch slots and undoes calldata units addition.
+        // Clears scratch slots, undoes calldata units addition, and for retry
+        // txs undoes the prepaid gas mint + escrow callvalue transfer that
+        // happened during the retry pre-exec block.
+        let retry_undo = retry_pre_exec_undo;
         let rollback_pre_exec_state = |this: &mut Self, units: u64| {
             use arb_precompiles::storage_slot::{
                 current_redeemer_slot, current_retryable_slot, current_tx_poster_fee_slot,
@@ -1761,6 +1769,14 @@ where
                     let _ = arb_state
                         .l1_pricing_state
                         .subtract_from_units_since_update(units);
+                }
+            }
+            if let Some((retry_sender, prepaid, escrow, escrow_value)) = retry_undo {
+                if !prepaid.is_zero() {
+                    burn_balance(db, retry_sender, prepaid);
+                }
+                if !escrow_value.is_zero() {
+                    let _ = try_transfer_balance(db, retry_sender, escrow, escrow_value);
                 }
             }
         };
