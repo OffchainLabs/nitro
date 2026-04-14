@@ -498,7 +498,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 		return
 	}
 	report := addressfilter.FilteredTxReport{
-		ID:                uuid.NewString(),
+		ID:                uuid.Must(uuid.NewV7()).String(),
 		TxHash:            tx.Hash(),
 		TxRLP:             txRLP,
 		FilteredAddresses: filteredAddresses,
@@ -750,8 +750,12 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	}
 
 	touchAddresses(statedb, tx, sender)
+	if statedb.IsTxFiltered() {
+		return state.ErrArbTxFilter
+	}
+
 	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
-	if statedb.IsTxFiltered() || addressFiltered {
+	if addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
 		return state.ErrArbTxFilter
 	}
@@ -767,8 +771,10 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 			}
 		}
 	}
-
-	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
+	if statedb.IsTxFiltered() {
+		return state.ErrArbTxFilter
+	}
+	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
 		return state.ErrArbTxFilter
 	}
@@ -1446,7 +1452,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.pendingFilteredTxReports = nil
 		s.LaunchThread(func(ctx context.Context) {
 			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
-				log.Warn("failed to report filtered transactions", "count", len(reports), "err", err)
+				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
 	}
