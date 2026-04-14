@@ -48,6 +48,9 @@ func legacyFetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.Delay
 func legacyGetDelayedMessageAndParentChainBlockNumber(db ethdb.KeyValueStore, index uint64) (*arbostypes.L1IncomingMessage, uint64, error) {
 	msg, _, err := legacyGetDelayedMessageFromRlpPrefix(db, index)
 	if err != nil {
+		if !rawdb.IsDbErrNotFound(err) {
+			return nil, 0, err
+		}
 		// Fall back to legacy "d" prefix
 		msg, _, err = legacyGetDelayedMessageFromLegacyPrefix(db, index)
 		if err != nil {
