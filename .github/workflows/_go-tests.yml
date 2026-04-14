@@ -95,14 +95,14 @@ jobs:
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --test_state_scheme hash
           --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
 
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
       
       - name: run redis tests
