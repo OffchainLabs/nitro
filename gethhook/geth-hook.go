@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -66,7 +65,9 @@ func init() {
 		}
 	}
 
-	// process arbos precompiles
+	// Register each Arbitrum precompile at its declared ArbosVersion
+	// so CALLs on pre-activation blocks fall through to account
+	// dispatch, matching consensus.
 	precompileErrors := make(map[[4]byte]abi.Error)
 	arbosPrecompiles := precompiles.Precompiles()
 	if ownerPC, ok := arbosPrecompiles[types.ArbOwnerAddress].(*precompiles.OwnerPrecompile); ok {
@@ -78,24 +79,18 @@ func init() {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
-
-		// Arbos is a special case, Arbos handles versioning of precompiles internally, versioning of Ethereum/non-Arbos precompiles must be handled externally
-		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
-		vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
-		vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
+		wrapped := ArbosPrecompileWrapper{inner: precompile}
+		registerArbOSPrecompile(precompile.Precompile().ArbosVersion(), addr, wrapped)
 	}
 
-	// process Ethereum precompiles for respective arbos versions
-	addPrecompiles(vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
-	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
-	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsP256Verify)
-	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
+	// List + activation versions live in ethereum_precompile_sets.go;
+	// TestAllUpstreamPrecompileSetsCataloged catches any upstream set
+	// we forgot to catalog.
+	registerAllEthereumPrecompileSets()
 
-	// process addresses for respective arbos version precompile maps
-	addAddresses(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30)
-	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30)
-	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50)
+	// Single authoritative install site; vm.SetArbOSPrecompileResolver
+	// panics on a second call.
+	vm.SetArbOSPrecompileResolver(arbOSPrecompilesFor)
 
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
@@ -113,18 +108,6 @@ func init() {
 			return nil
 		}
 		return errors.New(rendered)
-	}
-}
-
-func addPrecompiles(contracts map[common.Address]vm.PrecompiledContract, toAdd map[common.Address]vm.PrecompiledContract) {
-	for addr, precompile := range toAdd {
-		contracts[addr] = precompile
-	}
-}
-
-func addAddresses(addresses *[]common.Address, toAdd map[common.Address]vm.PrecompiledContract) {
-	for addr := range toAdd {
-		*addresses = append(*addresses, addr)
 	}
 }
 

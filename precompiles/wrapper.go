@@ -168,6 +168,17 @@ func (wrapper *FreeAccessPrecompile) Call(
 ) ([]byte, uint64, multigas.MultiGas, error) {
 	con := wrapper.precompile
 
+	// Short-circuit before the precompile is active. Mirrors the version check
+	// in Precompile.Call so that on historical blocks (where this address was
+	// not yet a precompile) we don't burn gas on the filterer lookup below.
+	// Without this, the state reads that determine whether the caller is a
+	// filterer charge gas and cause total CALL cost to diverge from the
+	// canonical chain, which at those blocks treated the address as an
+	// empty account with a cold access cost.
+	if arbosState.ArbOSVersion(evm.StateDB) < wrapper.precompile.Precompile().ArbosVersion() {
+		return []byte{}, gasSupplied, multigas.ZeroGas(), nil
+	}
+
 	burner := &Context{
 		gasSupplied: gasSupplied,
 		gasUsed:     multigas.ZeroGas(),
