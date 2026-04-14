@@ -2541,7 +2541,12 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
 
 /// Mint balance to an address in the EVM state.
 /// Modifies cache directly; net effect captured by augment_bundle_from_cache.
+/// Zero-amount is a no-op to match geth's AddBalance which skips zero amounts
+/// without creating or touching the account.
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
+    if amount.is_zero() {
+        return;
+    }
     let _ = state.load_cache_account(address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
@@ -2560,7 +2565,11 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 
 /// Burn balance from an address in the EVM state.
 /// Modifies cache directly; net effect captured by augment_bundle_from_cache.
+/// Zero-amount is a no-op to match geth's SubBalance.
 fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
+    if amount.is_zero() {
+        return;
+    }
     let _ = state.load_cache_account(address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
@@ -2590,10 +2599,13 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
 }
 
 /// Transfer balance between two addresses. Atomic: skipped on insufficient funds.
+///
+/// Matches Nitro's `util.TransferBalance`: at ArbOS >= Stylus a zero-amount call is
+/// a complete no-op (geth's SubBalance/AddBalance skip zero amounts without touching
+/// the account). Pre-Stylus callers that need the zombie-deleted semantics must use
+/// a dedicated helper or call `create_zombie_if_deleted` directly.
 fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Address, amount: U256) {
     if amount.is_zero() {
-        ensure_account_exists(state, from);
-        ensure_account_exists(state, to);
         return;
     }
     // No from == to early return — Go always does SubBalance + AddBalance
@@ -2612,20 +2624,6 @@ fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Addr
     mint_balance(state, to, amount);
 }
 
-/// Ensure an account exists in the state cache, creating an empty one if needed.
-/// Matches Go's `getOrNewStateObject` — guarantees the account is dirty in cache.
-fn ensure_account_exists<DB: Database>(state: &mut State<DB>, addr: Address) {
-    let _ = state.load_cache_account(addr);
-    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
-        if cached.account.is_none() {
-            cached.account = Some(revm_database::states::plain_account::PlainAccount {
-                info: revm_state::AccountInfo::default(),
-                storage: Default::default(),
-            });
-            cached.status = revm_database::AccountStatus::InMemoryChange;
-        }
-    }
-}
 
 /// Re-create an empty account that was deleted by per-tx Finalise.
 /// Matches Go's `CreateZombieIfDeleted`: if `addr` was removed by Finalise
@@ -2659,7 +2657,8 @@ fn create_zombie_if_deleted<DB: Database>(
 }
 
 /// Transfer balance with balance check. Returns false if sender has
-/// insufficient funds (no state changes in that case).
+/// insufficient funds (no state changes in that case). Zero-amount is a no-op
+/// at ArbOS >= Stylus, mirroring `util.TransferBalance` in Nitro.
 fn try_transfer_balance<DB: Database>(
     state: &mut State<DB>,
     from: Address,
@@ -2667,8 +2666,6 @@ fn try_transfer_balance<DB: Database>(
     amount: U256,
 ) -> bool {
     if amount.is_zero() {
-        ensure_account_exists(state, from);
-        ensure_account_exists(state, to);
         return true;
     }
     if get_balance(state, from) < amount {
