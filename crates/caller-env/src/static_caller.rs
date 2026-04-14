@@ -2,8 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use alloc::vec::Vec;
-
-use rand::RngCore;
+use rand::Rng;
 use spin::{Lazy, Mutex, MutexGuard};
 
 use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
