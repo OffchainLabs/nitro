@@ -532,7 +532,8 @@ fn load_bulk_func(
         .unwrap_or_else(|| panic!("no name found for function at index {index} in {wat_name}"));
     let func_type_idx = bin.functions.get(index).copied()
         .unwrap_or_else(|| panic!("{wat_name} functions list has {} entries but index {index} was requested", bin.functions.len()));
-    let ty = &bin.types[func_type_idx as usize];
+    let ty = bin.types.get(func_type_idx as usize)
+        .unwrap_or_else(|| panic!("{wat_name} types list has {} entries but index {func_type_idx} was requested", bin.types.len()));
     assert_eq!(ty, &expected_ty);
     assert_eq!(name, expected_name);
 
