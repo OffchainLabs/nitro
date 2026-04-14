@@ -525,11 +525,14 @@ fn load_bulk_func(
     let bin = binary::parse(&wasm, Path::new("internal"))
         .unwrap_or_else(|e| panic!("failed to parse {wat_name}: {e}"));
 
-    let code = &bin.codes[index];
+    let code = bin.codes.get(index)
+        .unwrap_or_else(|| panic!("{wat_name} has {} function(s) but index {index} was requested", bin.codes.len()));
     let name = bin.names.functions
         .get(&(index as u32))
         .unwrap_or_else(|| panic!("no name found for function at index {index} in {wat_name}"));
-    let ty = &bin.types[bin.functions[index] as usize];
+    let func_type_idx = bin.functions.get(index).copied()
+        .unwrap_or_else(|| panic!("{wat_name} functions list has {} entries but index {index} was requested", bin.functions.len()));
+    let ty = &bin.types[func_type_idx as usize];
     assert_eq!(ty, &expected_ty);
     assert_eq!(name, expected_name);
 
