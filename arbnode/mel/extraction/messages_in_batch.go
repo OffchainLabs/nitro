@@ -33,7 +33,11 @@ func messagesFromBatchSegments(
 	messages := make([]*arbostypes.MessageWithMetadata, 0, len(seqMsg.Segments))
 	timestamp := uint64(0)
 	blockNumber := uint64(0)
-	for idx, segment := range seqMsg.Segments {
+	segments := seqMsg.Segments
+	if len(segments) == 0 {
+		segments = [][]byte{{arbstate.BatchSegmentKindDelayedMessages}}
+	}
+	for idx, segment := range segments {
 		msg, newBlockNumber, newTimestamp, err := messageFromSegment(
 			ctx,
 			melState,
@@ -204,7 +208,7 @@ func extractDelayedMessageFromSegment(
 		return nil, err
 	}
 	if delayed == nil {
-		log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead)
+		log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead, "delayedMessagesSeen", melState.DelayedMessagesSeen)
 		return nil, fmt.Errorf("no more delayed messages in db")
 	}
 
