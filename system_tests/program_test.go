@@ -273,7 +273,7 @@ func TestStylusUpgrade(t *testing.T) {
 }
 
 func testStylusUpgrade(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
 	defer cleanup()
 
 	ctx := builder.ctx
@@ -292,6 +292,8 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
 	ensure(arbOwner.SetInkPrice(&auth, 1))
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	keccakAddr := deployContract(t, ctx, auth, l2client, wasm)
@@ -339,28 +341,73 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 		return receipt.BlockNumber.Uint64()
 	}
 
+	checkStylusVersion := func(wantStylusVersion uint16) {
+		t.Helper()
+
+		stylusVersion, err := arbWasm.StylusVersion(nil)
+		Require(t, err)
+		if stylusVersion != wantStylusVersion {
+			Fatal(t, "unexpected stylus version", "got", stylusVersion, "want", wantStylusVersion)
+		}
+	}
+
+	checkProgramVersion := func(wantProgramVersion uint16) {
+		t.Helper()
+
+		programVersion, err := arbWasm.ProgramVersion(nil, keccakAddr)
+		Require(t, err)
+		if programVersion != wantProgramVersion {
+			Fatal(t, "unexpected program version", "got", programVersion, "want", wantProgramVersion)
+		}
+	}
+
 	// Calling the contract pre-activation should fail.
 	blockFail1 := checkFailWith("ProgramNotActivated")
+	checkStylusVersion(1)
 
 	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+	checkStylusVersion(1)
+	checkProgramVersion(1)
 
 	blockSuccess1 := checkSucceeds()
 
-	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 31, 0)
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, params.ArbosVersion_31, 0)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// generate traffic to perform the upgrade
 	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+	checkArbOSVersion(t, builder.L2, params.ArbosVersion_31, "after ArbOS 31 upgrade")
+	checkStylusVersion(2)
 
 	blockFail2 := checkFailWith("ProgramNeedsUpgrade")
 
 	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+	checkStylusVersion(2)
+	checkProgramVersion(2)
 
 	blockSuccess2 := checkSucceeds()
 
-	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
+	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, params.ArbosVersion_59, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate traffic to perform the upgrade
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+	checkArbOSVersion(t, builder.L2, params.ArbosVersion_59, "after ArbOS 59 upgrade")
+	checkStylusVersion(3)
+
+	blockFail3 := checkFailWith("ProgramNeedsUpgrade")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+	checkStylusVersion(3)
+	checkProgramVersion(3)
+
+	blockSuccess3 := checkSucceeds()
+
+	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2, blockFail3, blockSuccess3}, jit, builder)
 }
 
 func TestProgramErrors(t *testing.T) {
