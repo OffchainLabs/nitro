@@ -6,42 +6,22 @@ use brotli::Dictionary;
 use eyre::Result;
 use std::path::Path;
 
-fn multi_value_wasm() -> Vec<u8> {
-    as_wasm(
+#[test]
+fn test_multi_value_gate() {
+    // Multi-value wasm is allowed for Stylus V1/V2 and rejected from V3 onward.
+    // During recompilation Go passes the stored per-contract version, so a V2 contract
+    // recompiled after the V3 upgrade still arrives here as stylus_version=2.
+    let wasm = as_wasm(
         r#"(module
             (memory (export "memory") 1 1)
-            (func (result i32 i32)
-                i32.const 1
-                i32.const 2
-            )
-            (func (export "user_entrypoint") (param i32) (result i32)
-                i32.const 0
-            )
+            (func (result i32 i32) i32.const 1 i32.const 2)
+            (func (export "user_entrypoint") (param i32) (result i32) i32.const 0)
         )"#,
-    )
-}
-
-#[test]
-fn test_multi_value_rejected_at_stylus_v3() {
-    // New activations at Stylus V3 must reject multi-value wasm.
-    let wasm = multi_value_wasm();
-    binary::parse_with_stylus_version(&wasm, Path::new("test"), 3).unwrap_err();
-}
-
-#[test]
-fn test_multi_value_allowed_below_stylus_v3() {
-    // V1 and V2 activations must still accept multi-value wasm.
-    let wasm = multi_value_wasm();
-    binary::parse_with_stylus_version(&wasm, Path::new("test"), 1).unwrap();
-    binary::parse_with_stylus_version(&wasm, Path::new("test"), 2).unwrap();
-}
-
-#[test]
-fn test_multi_value_allowed_on_recompile() {
-    // Version 0 is the recompilation path: multi-value must be accepted even at V3,
-    // because the contract was legitimately activated pre-V3 and its wasm cannot change.
-    let wasm = multi_value_wasm();
-    binary::parse_with_stylus_version(&wasm, Path::new("test"), 0).unwrap();
+    );
+    for (version, allowed) in [(1, true), (2, true), (3, false), (4, false)] {
+        let result = binary::parse_with_stylus_version(&wasm, Path::new("test"), version);
+        assert_eq!(result.is_ok(), allowed, "stylus_version={version}");
+    }
 }
 
 fn as_wasm(wat: &str) -> Vec<u8> {
