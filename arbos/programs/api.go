@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -321,7 +320,7 @@ func newApiClosures(
 					"open", newOpen, "limit", limit, "contract", actingAddress)
 				return math.MaxUint64
 			}
-			if runCtx.IsCommitMode() && evm.Context.Coinbase == l1pricing.BatchPosterAddress {
+			if runCtx.IsSequencing() {
 				log.Info("addPages: page limit exceeded, filtering tx",
 					"open", newOpen, "limit", limit, "contract", actingAddress)
 				db.FilterTx()
