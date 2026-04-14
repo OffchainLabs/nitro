@@ -10,8 +10,8 @@ import (
 
 type bidCache struct {
 	auctionContractDomainSeparator [32]byte
-	sync.RWMutex
-	bidsByBidder map[common.Address]*ValidatedBid
+	mu                             sync.RWMutex
+	bidsByBidder                   map[common.Address]*ValidatedBid
 }
 
 func newBidCache(auctionContractDomainSeparator [32]byte) *bidCache {
@@ -22,29 +22,62 @@ func newBidCache(auctionContractDomainSeparator [32]byte) *bidCache {
 }
 
 func (bc *bidCache) add(bid *ValidatedBid) {
-	bc.Lock()
-	defer bc.Unlock()
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
 	bc.bidsByBidder[bid.Bidder] = bid
 }
 
-// TwoTopBids returns the top two bids for the given chain ID and round
 type auctionResult struct {
 	firstPlace  *ValidatedBid
 	secondPlace *ValidatedBid
 }
 
+func (bc *bidCache) clear() {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	bc.bidsByBidder = make(map[common.Address]*ValidatedBid)
+}
+
 func (bc *bidCache) size() int {
-	bc.RLock()
-	defer bc.RUnlock()
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
 	return len(bc.bidsByBidder)
 }
 
-// topTwoBids returns the top two bids in the cache.
-func (bc *bidCache) topTwoBids() *auctionResult {
-	bc.RLock()
-	defer bc.RUnlock()
+func (bc *bidCache) getBid(bidder common.Address) *ValidatedBid {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	return bc.bidsByBidder[bidder]
+}
 
+// topTwoBids returns the top two bids without modifying the cache.
+func (bc *bidCache) topTwoBids() *auctionResult {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	return bc.computeTopTwo()
+}
+
+// topTwoBidsAndClear atomically reads the top two bids and clears the cache,
+// so a bid is never silently dropped between read and clear.
+func (bc *bidCache) topTwoBidsAndClear() *auctionResult {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	result := bc.computeTopTwo()
+	bc.bidsByBidder = make(map[common.Address]*ValidatedBid)
+	return result
+}
+
+// computeTopTwo returns the highest and second-highest bids. When amounts are
+// equal, ties are broken by comparing BigIntHash (a deterministic hash of the
+// bid) — the higher hash wins, ensuring fair tiebreaking independent of map
+// iteration order.
+func (bc *bidCache) computeTopTwo() *auctionResult {
 	result := &auctionResult{}
+
+	// hashBeats returns true if a's BigIntHash is greater than b's.
+	hashBeats := func(a, b *ValidatedBid) bool {
+		return a.BigIntHash(bc.auctionContractDomainSeparator).Cmp(b.BigIntHash(bc.auctionContractDomainSeparator)) > 0
+	}
 
 	for _, bid := range bc.bidsByBidder {
 		if result.firstPlace == nil {
@@ -53,16 +86,16 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
 		} else if bid.Amount.Cmp(result.firstPlace.Amount) == 0 {
-			if bid.BigIntHash(bc.auctionContractDomainSeparator).Cmp(result.firstPlace.BigIntHash(bc.auctionContractDomainSeparator)) > 0 {
+			if hashBeats(bid, result.firstPlace) {
 				result.secondPlace = result.firstPlace
 				result.firstPlace = bid
-			} else if result.secondPlace == nil || bid.BigIntHash(bc.auctionContractDomainSeparator).Cmp(result.secondPlace.BigIntHash(bc.auctionContractDomainSeparator)) > 0 {
+			} else if result.secondPlace == nil || hashBeats(bid, result.secondPlace) {
 				result.secondPlace = bid
 			}
 		} else if result.secondPlace == nil || bid.Amount.Cmp(result.secondPlace.Amount) > 0 {
 			result.secondPlace = bid
 		} else if bid.Amount.Cmp(result.secondPlace.Amount) == 0 {
-			if bid.BigIntHash(bc.auctionContractDomainSeparator).Cmp(result.secondPlace.BigIntHash(bc.auctionContractDomainSeparator)) > 0 {
+			if hashBeats(bid, result.secondPlace) {
 				result.secondPlace = bid
 			}
 		}

@@ -226,6 +226,59 @@ func TestConsumeNextBid_Direct(t *testing.T) {
 	})
 }
 
+func TestConsumeNextBid_ContextCancellationWhenBidsReceiverFull(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	redisURL, testSetup, auctioneer := setupAuctioneerServer(t, ctx, pubsub.TestConsumerConfig, "")
+	auctioneer.isPrimary.Store(true)
+	// Replace bidsReceiver with a size-1 channel and fill it so the send blocks.
+	auctioneer.bidsReceiver = make(chan *JsonValidatedBid, 1)
+	auctioneer.bidsReceiver <- &JsonValidatedBid{}
+
+	redisClient, err := redisutil.RedisClientFromURL(redisURL)
+	require.NoError(t, err)
+	err = pubsub.CreateStream(ctx, validatedBidsRedisStream, redisClient)
+	require.NoError(t, err)
+
+	auctioneer.consumer.Start(ctx)
+	defer auctioneer.consumer.StopAndWait()
+
+	producer, err := pubsub.NewProducer[*JsonValidatedBid, error](
+		redisClient, validatedBidsRedisStream, &pubsub.TestProducerConfig,
+	)
+	require.NoError(t, err)
+	producer.Start(ctx)
+	defer producer.StopAndWait()
+
+	helper := newAuctioneerTestHelper(ctx, auctioneer, producer, testSetup)
+
+	// Produce a valid bid so Consume returns a real message.
+	validBid := helper.createValidBid(100, 1)
+	_, err = helper.produceBid(validBid)
+	require.NoError(t, err)
+
+	// Use a live context for Consume to succeed, then cancel it while
+	// consumeNextBid is blocked trying to send on the full bidsReceiver.
+	consumeCtx, consumeCancel := context.WithCancel(ctx)
+
+	done := make(chan time.Duration, 1)
+	go func() {
+		done <- auctioneer.consumeNextBid(consumeCtx)
+	}()
+
+	// Give consumeNextBid time to pass Consume and block on bidsReceiver send.
+	time.Sleep(500 * time.Millisecond)
+	consumeCancel()
+
+	select {
+	case d := <-done:
+		assert.Equal(t, time.Duration(0), d)
+	case <-time.After(2 * time.Second):
+		t.Fatal("consumeNextBid blocked on full bidsReceiver channel instead of responding to context cancellation")
+	}
+}
+
 func TestConsumeNextBid_DuplicateHandling(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -357,6 +410,131 @@ func TestConsumeNextBid_MultipleValidBids(t *testing.T) {
 	assert.Equal(t, 0, helper.getUnackedBidsCount(), "unackedBids should be empty, all bids were acknowledged")
 }
 
+func TestConsumeNextBid_BackoffOnConsumeError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _, auctioneer := setupAuctioneerServer(t, ctx, pubsub.TestConsumerConfig, "")
+	auctioneer.isPrimary.Store(true)
+
+	// Close the Redis client to force Consume errors.
+	auctioneer.redisClient.Close()
+
+	// First error: returns initial backoff (defaultConsumeInterval).
+	d := auctioneer.consumeNextBid(ctx)
+	require.Equal(t, defaultConsumeInterval, d)
+
+	// Second error: doubled.
+	d = auctioneer.consumeNextBid(ctx)
+	require.Equal(t, defaultConsumeInterval*2, d)
+
+	// Third error: doubled again.
+	d = auctioneer.consumeNextBid(ctx)
+	require.Equal(t, defaultConsumeInterval*4, d)
+
+	// Run many errors to reach the cap.
+	for range 20 {
+		auctioneer.consumeNextBid(ctx)
+	}
+	d = auctioneer.consumeNextBid(ctx)
+	require.Equal(t, maxConsumeBackoff, d)
+
+	// Becoming non-primary resets backoff.
+	auctioneer.isPrimary.Store(false)
+	d = auctioneer.consumeNextBid(ctx)
+	require.Equal(t, defaultConsumeInterval, d)
+	require.Equal(t, defaultConsumeInterval, auctioneer.consumeBackoff)
+}
+
+func TestAcknowledgeAllBids_ShutdownSkipsSetResult(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	redisURL, testSetup, auctioneer := setupAuctioneerServer(t, ctx, pubsub.TestConsumerConfig, "")
+	auctioneer.isPrimary.Store(true)
+
+	redisClient, err := redisutil.RedisClientFromURL(redisURL)
+	require.NoError(t, err)
+	err = pubsub.CreateStream(ctx, validatedBidsRedisStream, redisClient)
+	require.NoError(t, err)
+
+	auctioneer.consumer.Start(ctx)
+	defer auctioneer.consumer.StopAndWait()
+
+	producer, err := pubsub.NewProducer[*JsonValidatedBid, error](
+		redisClient, validatedBidsRedisStream, &pubsub.TestProducerConfig,
+	)
+	require.NoError(t, err)
+	producer.Start(ctx)
+	defer producer.StopAndWait()
+
+	helper := newAuctioneerTestHelper(ctx, auctioneer, producer, testSetup)
+	helper.resetState()
+
+	// Produce and consume a bid so it lands in unackedBids.
+	validBid := helper.createValidBid(100, 1)
+	_, err = helper.produceBid(validBid)
+	require.NoError(t, err)
+	helper.consumeAndVerifyBid(t, validBid)
+	require.Equal(t, 1, helper.getUnackedBidsCount())
+
+	// Call acknowledgeAllBids with a cancelled context (simulating shutdown).
+	// With a cancelled context, it should call Ack() (stop heartbeats) but
+	// skip SetResult (leave bids in Redis for re-consumption on restart).
+	cancelledCtx, cancelFn := context.WithCancel(ctx)
+	cancelFn()
+	nextRound := auctioneer.roundTimingInfo.RoundNumber() + 1
+	auctioneer.acknowledgeAllBids(cancelledCtx, nextRound)
+
+	// The bid should be removed from unackedBids (Ack called to stop heartbeat).
+	require.Equal(t, 0, helper.getUnackedBidsCount(), "bid should be removed from unackedBids on shutdown")
+
+	// Verify the message was NOT deleted from Redis (SetResult was skipped).
+	// The stream should still have the message since only Ack (heartbeat stop)
+	// was called, not SetResult (which calls XAck + XDel).
+	streamLen, err := redisClient.XLen(ctx, validatedBidsRedisStream).Result()
+	require.NoError(t, err)
+	require.Greater(t, streamLen, int64(0), "message should remain in Redis stream for re-consumption")
+}
+
+func TestCoordinationInterval_BackoffAndReset(t *testing.T) {
+	t.Parallel()
+
+	auctioneer := &AuctioneerServer{
+		auctioneerLivenessTimeout: 30 * time.Second,
+	}
+	baseInterval := auctioneer.auctioneerLivenessTimeout / 6 // 5s
+
+	// No error: returns base interval, backoff stays at 0.
+	d := auctioneer.coordinationInterval(false)
+	require.Equal(t, baseInterval, d)
+	require.Equal(t, time.Duration(0), auctioneer.coordinationBackoff)
+
+	// First error: returns base interval (no penalty on first failure),
+	// stores 2*baseInterval for next time.
+	d = auctioneer.coordinationInterval(true)
+	require.Equal(t, baseInterval, d)
+	require.Equal(t, baseInterval*2, auctioneer.coordinationBackoff)
+
+	// Second error: returns 2*baseInterval, stores 4*baseInterval.
+	d = auctioneer.coordinationInterval(true)
+	require.Equal(t, baseInterval*2, d)
+	require.Equal(t, baseInterval*4, auctioneer.coordinationBackoff)
+
+	// Keep erroring until we hit the cap.
+	for range 20 {
+		auctioneer.coordinationInterval(true)
+	}
+	d = auctioneer.coordinationInterval(true)
+	require.Equal(t, auctioneer.auctioneerLivenessTimeout, d, "backoff should be capped at liveness timeout")
+
+	// Success resets backoff.
+	d = auctioneer.coordinationInterval(false)
+	require.Equal(t, baseInterval, d)
+	require.Equal(t, time.Duration(0), auctioneer.coordinationBackoff)
+}
+
 func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pubsub.ConsumerConfig, reserveOriginatorAddr string) (string, *auctionSetup, *AuctioneerServer) {
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
@@ -374,6 +552,7 @@ func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pub
 			AuctionContractAddress:   testSetup.expressLaneAuctionAddr.Hex(),
 			DbDirectory:              tmpDir,
 			ConsumerConfig:           consumerConfig,
+			StreamTimeout:            time.Minute,
 			ReserveOriginatorAddress: reserveOriginatorAddr,
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
@@ -392,45 +571,45 @@ func TestResolveAuction_ReserveOriginator(t *testing.T) {
 
 	// Account index 1's address will be the ReserveOriginator
 	testSetup := setupAuctionTest(t, ctx)
-	bidFloorAddr := testSetup.accounts[1].accountAddr
+	reserveOriginatorAddr := testSetup.accounts[1].accountAddr
 
 	_, _, auctioneer := setupAuctioneerServer(
-		t, ctx, pubsub.TestConsumerConfig, bidFloorAddr.Hex(),
+		t, ctx, pubsub.TestConsumerConfig, reserveOriginatorAddr.Hex(),
 	)
 
 	t.Run("ReserveOriginator wins alone - skip resolution", func(t *testing.T) {
 		// Only ReserveOriginator bid in cache
-		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
+		auctioneer.bidCache.clear()
 		auctioneer.bidCache.add(&ValidatedBid{
-			Bidder:                bidFloorAddr,
-			ExpressLaneController: bidFloorAddr,
+			Bidder:                reserveOriginatorAddr,
+			ExpressLaneController: reserveOriginatorAddr,
 			Amount:                big.NewInt(100),
 		})
 
-		err := auctioneer.resolveAuction(ctx)
+		err := auctioneer.resolveAuction(ctx, auctioneer.roundTimingInfo.RoundNumber()+1)
 		require.NoError(t, err)
 		// No on-chain call made, no error → ReserveOriginator path hit
 	})
 
 	t.Run("Spoofed ExpressLaneController does not skip resolution", func(t *testing.T) {
-		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
+		auctioneer.bidCache.clear()
 		otherAddr := testSetup.accounts[3].accountAddr
 		auctioneer.bidCache.add(&ValidatedBid{
 			Bidder:                otherAddr,
-			ExpressLaneController: bidFloorAddr,
+			ExpressLaneController: reserveOriginatorAddr,
 			Amount:                big.NewInt(200),
 		})
 
-		err := auctioneer.resolveAuction(ctx)
+		err := auctioneer.resolveAuction(ctx, auctioneer.roundTimingInfo.RoundNumber()+1)
 		require.Error(t, err)
 	})
 
 	t.Run("ReserveOriginator wins with second place - skip resolution", func(t *testing.T) {
-		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
+		auctioneer.bidCache.clear()
 		otherAddr := testSetup.accounts[2].accountAddr
 		auctioneer.bidCache.add(&ValidatedBid{
-			Bidder:                bidFloorAddr,
-			ExpressLaneController: bidFloorAddr,
+			Bidder:                reserveOriginatorAddr,
+			ExpressLaneController: reserveOriginatorAddr,
 			Amount:                big.NewInt(200),
 		})
 		auctioneer.bidCache.add(&ValidatedBid{
@@ -439,17 +618,17 @@ func TestResolveAuction_ReserveOriginator(t *testing.T) {
 			Amount:                big.NewInt(100),
 		})
 
-		err := auctioneer.resolveAuction(ctx)
+		err := auctioneer.resolveAuction(ctx, auctioneer.roundTimingInfo.RoundNumber()+1)
 		require.NoError(t, err)
 		// ReserveOriginator is first place → skips on-chain, returns nil
 	})
 
 	t.Run("ReserveOriginator loses - normal resolution attempted", func(t *testing.T) {
-		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
+		auctioneer.bidCache.clear()
 		otherAddr := testSetup.accounts[2].accountAddr
 		auctioneer.bidCache.add(&ValidatedBid{
-			Bidder:                bidFloorAddr,
-			ExpressLaneController: bidFloorAddr,
+			Bidder:                reserveOriginatorAddr,
+			ExpressLaneController: reserveOriginatorAddr,
 			Amount:                big.NewInt(50),
 		})
 		auctioneer.bidCache.add(&ValidatedBid{
@@ -458,7 +637,7 @@ func TestResolveAuction_ReserveOriginator(t *testing.T) {
 			Amount:                big.NewInt(200),
 		})
 
-		err := auctioneer.resolveAuction(ctx)
+		err := auctioneer.resolveAuction(ctx, auctioneer.roundTimingInfo.RoundNumber()+1)
 		// This will attempt on-chain resolution (may error in test env
 		// since there's no real sequencer — the important thing is it
 		// did NOT return nil early via the ReserveOriginator path)
@@ -472,8 +651,8 @@ func TestResolveAuction_ReserveOriginator(t *testing.T) {
 		)
 		otherAddr := testSetup.accounts[2].accountAddr
 		auctioneerNoBFA.bidCache.add(&ValidatedBid{
-			Bidder:                bidFloorAddr,
-			ExpressLaneController: bidFloorAddr,
+			Bidder:                reserveOriginatorAddr,
+			ExpressLaneController: reserveOriginatorAddr,
 			Amount:                big.NewInt(200),
 		})
 		auctioneerNoBFA.bidCache.add(&ValidatedBid{
@@ -482,7 +661,7 @@ func TestResolveAuction_ReserveOriginator(t *testing.T) {
 			Amount:                big.NewInt(100),
 		})
 
-		err := auctioneerNoBFA.resolveAuction(ctx)
+		err := auctioneerNoBFA.resolveAuction(ctx, auctioneerNoBFA.roundTimingInfo.RoundNumber()+1)
 		// Without ReserveOriginator configured, even if same address wins,
 		// it proceeds to on-chain resolution (which errors in test env)
 		require.Error(t, err)
