@@ -57,17 +57,15 @@ fn test_memory_fill_value_overflow() -> Result<()> {
     native.call_func(run, ink)?;
 
     // native (Wasmer) correctly uses only the low 8 bits: 0x100 & 0xff = 0x00
-    let native_data = native.read_slice("memory", 0xaaa, 8)?;
-    assert_eq!(native_data, vec![0u8; 8]);
+    let native_data = native.read_slice("memory", 0xaaa, 10)?;
+    assert_eq!(native_data, vec![0u8; 10]);
 
     let mut machine = new_test_machine(filename, &compile)?;
     let module = machine.find_module("user")?;
     machine.call_user_func("run", vec![], ink)?;
 
-    // WAVM uses the full value without masking, so bytes at non-zero positions within
-    // each 8-byte chunk are 0x01.
-    let machine_data = machine.read_memory(module, 0xaaa, 8)?;
-    assert_eq!(machine_data, [0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
+    let machine_data = machine.read_memory(module, 0xaaa, 10)?;
+    assert_eq!(machine_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
 
     Ok(())
 }

@@ -6,9 +6,11 @@
 
 (module
     (func (export "run")
-        ;; fill 8 bytes at offset 0xaaa with value 0x100
+        ;; fill 10 bytes at offset 0xaaa with value 0x100 - important to fill space
+        ;; of length non-divisible by 8 to test if the final partial chunk is filled correctly
+        ;;
         ;; only the low 8 bits (0x00) should be used, so memory must be all zeros
-        (memory.fill (i32.const 0xaaa) (i32.const 0x100) (i32.const 8)))
+        (memory.fill (i32.const 0xaaa) (i32.const 0x100) (i32.const 10)))
     (func (export "user_entrypoint") (param $args_len i32) (result i32)
         (i32.const 0))
     (memory (export "memory") 1 1))
