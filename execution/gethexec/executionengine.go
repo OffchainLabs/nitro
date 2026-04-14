@@ -132,7 +132,7 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 // Builds a FilteredTxReport and returns ErrArbTxFilter for filtered txs.
 // For redeems, returns ErrArbTxFilter without a report (originating tx is
 // collected in TxFailed after group rollback).
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if tx.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
@@ -164,13 +164,13 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 			txRLP = nil
 		}
 		report := addressfilter.FilteredTxReport{
-			ID:                uuid.NewString(),
+			ID:                uuid.Must(uuid.NewV7()).String(),
 			TxHash:            tx.Hash(),
 			TxRLP:             txRLP,
 			FilteredAddresses: filteredAddresses,
 			BlockNumber:       header.Number.Uint64(),
 			ParentBlockHash:   header.ParentHash,
-			PositionInBlock:   db.TxIndex(),
+			PositionInBlock:   positionInBlock,
 			FilteredAt:        time.Now(),
 			IsDelayed:         true,
 			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
@@ -194,7 +194,7 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 		// statedb was reverted. TxRLP and block metadata are populated
 		// later in createBlockFromNextMessage.
 		report := addressfilter.FilteredTxReport{
-			ID:                uuid.NewString(),
+			ID:                uuid.Must(uuid.NewV7()).String(),
 			TxHash:            cascadingErr.OriginatingTxHash,
 			FilteredAddresses: f.pendingCascadingRedeemAddresses,
 			FilteredAt:        time.Now(),
@@ -1041,11 +1041,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			}
 
 			// Report structured reports to filtering-report service (non-blocking)
-			if s.filteringReportRPCClient != nil {
+			if s.filteringReportRPCClient != nil && len(filteringHooks.pendingFilteredTxReports) > 0 {
 				reports := filteringHooks.pendingFilteredTxReports
 				s.LaunchThread(func(ctx context.Context) {
 					if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
-						log.Warn("error reporting filtered delayed txs to filtering-report", "count", len(reports), "err", err)
+						log.Error("error reporting filtered delayed txs to filtering-report", "count", len(reports), "err", err)
 					}
 				})
 			}
