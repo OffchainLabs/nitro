@@ -527,30 +527,46 @@ fn load_bulk_func(
     let bin = binary::parse(&wasm, Path::new("internal"))
         .unwrap_or_else(|e| panic!("failed to parse {wat_name}: {e}"));
 
-    let code = bin.codes.get(index)
-        .unwrap_or_else(|| panic!("{wat_name} has {} function(s) but index {index} was requested", bin.codes.len()));
-    let name = bin.names.functions
+    let code = bin.codes.get(index).unwrap_or_else(|| {
+        panic!(
+            "{wat_name} has {} function(s) but index {index} was requested",
+            bin.codes.len()
+        )
+    });
+    let name = bin
+        .names
+        .functions
         .get(&(index as u32))
         .unwrap_or_else(|| panic!("no name found for function at index {index} in {wat_name}"));
-    let func_type_idx = bin.functions.get(index).copied()
-        .unwrap_or_else(|| panic!("{wat_name} functions list has {} entries but index {index} was requested", bin.functions.len()));
-    let ty = bin.types.get(func_type_idx as usize)
-        .unwrap_or_else(|| panic!("{wat_name} types list has {} entries but index {func_type_idx} was requested", bin.types.len()));
+    let func_type_idx = bin.functions.get(index).copied().unwrap_or_else(|| {
+        panic!(
+            "{wat_name} functions list has {} entries but index {index} was requested",
+            bin.functions.len()
+        )
+    });
+    let ty = bin.types.get(func_type_idx as usize).unwrap_or_else(|| {
+        panic!(
+            "{wat_name} types list has {} entries but index {func_type_idx} was requested",
+            bin.types.len()
+        )
+    });
     assert_eq!(ty, &expected_ty);
     assert_eq!(name, expected_name);
 
     Function::new(
         &code.locals,
-        |wasm| wasm_to_wavm(
-            &code.expr,
-            wasm,
-            &HashMap::default(),      // impls don't use floating point
-            &[],                      // impls don't make calls
-            std::slice::from_ref(ty), // only type needed is the func itself
-            0,                        // -----------------------------------
-            0,                        // impls don't use other internals
-            &bin.names.module,
-        ),
+        |wasm| {
+            wasm_to_wavm(
+                &code.expr,
+                wasm,
+                &HashMap::default(),      // impls don't use floating point
+                &[],                      // impls don't make calls
+                std::slice::from_ref(ty), // only type needed is the func itself
+                0,                        // -----------------------------------
+                0,                        // impls don't use other internals
+                &bin.names.module,
+            )
+        },
         ty.clone(),
         &[], // impls don't make calls
     )
@@ -565,7 +581,6 @@ lazy_static! {
         "memory_fill",
         InternalFunc::MemoryFill.ty(),
     );
-
     static ref BULK_MEMORY_COPY: Function = load_bulk_func(
         include_bytes!("bulk_memory.wat"),
         "bulk_memory.wat",
@@ -573,7 +588,6 @@ lazy_static! {
         "memory_copy",
         InternalFunc::MemoryCopy.ty(),
     );
-
     static ref BULK_MEMORY_FILL_V2: Function = load_bulk_func(
         include_bytes!("bulk_memory_v2.wat"),
         "bulk_memory_v2.wat",

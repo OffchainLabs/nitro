@@ -56,7 +56,10 @@ fn test_memory_fill_value_overflow() -> Result<()> {
     // so the first 3 bytes written are 0x00 and the remaining 7 are 0x01.
     let compile_v2 = CompileConfig::version(2, true);
     let machine_v2_data = run_machine_read_memory(filename, &compile_v2, "run", ink, 0xaaa, 10)?;
-    assert_eq!(machine_v2_data, [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]);
+    assert_eq!(
+        machine_v2_data,
+        [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]
+    );
 
     // V3 is the first fixed version: value correctly masked to 8 bits
     let compile_v3 = CompileConfig::version(3, true);
@@ -74,7 +77,8 @@ fn test_memory_fill_value_overflow_nonzero() -> Result<()> {
     let (_, _, ink) = test_configs();
     let compile_v3 = CompileConfig::version(3, true);
 
-    let machine_data = run_machine_read_memory(filename, &compile_v3, "run_nonzero", ink, 0xbbb, 10)?;
+    let machine_data =
+        run_machine_read_memory(filename, &compile_v3, "run_nonzero", ink, 0xbbb, 10)?;
     assert_eq!(machine_data, vec![0xab_u8; 10]);
 
     Ok(())

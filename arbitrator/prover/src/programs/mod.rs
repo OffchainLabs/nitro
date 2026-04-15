@@ -483,8 +483,13 @@ impl Module {
             pay!(code.saturating_mul(535) / 1_000);
         }
 
-        let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data), compile.version)
-            .wrap_err("failed to build user module")?;
+        let module = Self::from_user_binary(
+            &bin,
+            compile.debug.debug_funcs,
+            Some(stylus_data),
+            compile.version,
+        )
+        .wrap_err("failed to build user module")?;
 
         Ok((module, stylus_data))
     }
