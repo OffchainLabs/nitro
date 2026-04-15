@@ -1,7 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -10,6 +9,7 @@ use std::{
 };
 
 use arbutil::Color;
+use caller_env::{GuestPtr, MemAccess};
 use validation::transfer::receive_validation_input;
 
 use crate::{

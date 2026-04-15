@@ -120,7 +120,6 @@ func TestOverflowAssertions(t *testing.T) {
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
 		nil,
-		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidator.Initialize(ctx))
