@@ -39,7 +39,7 @@ jobs:
         run: make build test-go-deps -j
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
       - name: Lint
         uses: golangci/golangci-lint-action@v9
