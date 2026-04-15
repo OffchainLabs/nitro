@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 )
 
 func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {

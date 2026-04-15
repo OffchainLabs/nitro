@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
@@ -368,7 +368,7 @@ func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 // GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not m.GetContext())
 // because it is called from FinalizedDelayedMessageAtPosition, which receives its
 // context from the DelayedSequencer — a running component that supplies a valid context.
-func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(parentChainBlockNum uint64) (uint64, error) {
+func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
 	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
 		return 0, err
@@ -429,7 +429,7 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	if err != nil {
 		return nil, common.Hash{}, 0, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
 	}
-	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(finalizedBlock)
+	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedBlock)
 	if err != nil {
 		if rawdb.IsDbErrNotFound(err) {
 			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedBlock)

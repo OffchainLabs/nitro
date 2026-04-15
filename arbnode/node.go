@@ -1502,6 +1502,10 @@ func createNodeImpl(
 		}
 	}
 
+	melValidator, err := getMELValidator(ctx, config, configFetcher, consensusDB, deployInfo, l1client, stack, messageExtractor, dapRegistry, latestWasmModuleRoot, melReorgDetector)
+	if err != nil {
+		return nil, err
+	}
 	var batchDataProvider BatchDataProvider
 	if inboxReader != nil && inboxTracker != nil {
 		batchDataProvider = inboxReader.GetParentChainDataSource()
@@ -1530,11 +1534,6 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	melValidator, err := getMELValidator(ctx, config, configFetcher, consensusDB, deployInfo, l1client, stack, messageExtractor, dapRegistry, latestWasmModuleRoot, melReorgDetector)
-	if err != nil {
-		return nil, err
-	}
-
 	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, validatorInboxTracker, melValidator, txStreamer, fatalErrChan)
 	if err != nil {
 		return nil, err
@@ -1542,7 +1541,6 @@ func createNodeImpl(
 	if inboxTracker != nil {
 		inboxTracker.SetBlockValidator(blockValidator)
 	}
-
 	var batchMetaFetcher BatchMetadataFetcher
 	if inboxTracker != nil {
 		batchMetaFetcher = inboxTracker
