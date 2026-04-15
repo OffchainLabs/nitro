@@ -210,6 +210,9 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
+		MaxOpenPages: targetConfig.MaxStylusOpenPages,
+	})
 	return nil
 }
 
@@ -556,7 +559,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageCommitContext(s.wasmTargets),
+		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -667,7 +670,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -712,7 +715,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -747,7 +750,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isMsgForPrefetch {
+	if isSequencing {
+		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
+	} else if isMsgForPrefetch {
 		runCtx = core.NewMessagePrefetchContext()
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
@@ -947,14 +952,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
 		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false, false)
 	if err != nil {
 		return nil, err
 	}

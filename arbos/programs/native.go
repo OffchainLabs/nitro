@@ -380,7 +380,7 @@ func callProgram(
 		}
 	}
 
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx)
 	defer evmApi.drop()
 
 	output := &rustBytes{}
