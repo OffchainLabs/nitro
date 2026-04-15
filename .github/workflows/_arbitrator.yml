@@ -51,7 +51,7 @@ jobs:
           EOF
 
       - name: Make arbitrator libraries
-        run: make -j wasm-ci-build
+        run: make -j8 wasm-ci-build
 
       - name: Clippy check
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
@@ -87,7 +87,7 @@ jobs:
         run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
 
       - name: Make proofs from test cases
-        run: make -j test-gen-proofs
+        run: make -j8 test-gen-proofs
 
       - name: Start geth server
         run: |
