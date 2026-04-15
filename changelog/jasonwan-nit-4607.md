@@ -1,0 +1,13 @@
+### Changed
+- Improved error messages and log clarity for better node operator UX:
+  - `databaseVersion: <nil>` now displays as `not set (new or uninitialized database)`
+  - `no --init.* mode supplied` error now lists available init modes with docs link
+  - `recreate-missing-state-from` error explains archive-only requirement and suggests alternatives
+  - Added mutual exclusion validation for `--init.latest` and `--init.prune`
+  - Added pruning startup banner with mode info and snapshot alternative tip
+  - Updated pruning duration comment from "2 hours" to "several days for large databases"
+  - Added explicit `log.Error` before fatal feed connection shutdown
+  - Compression not negotiated warning now notes it is non-critical
+  - "Unindexing transactions" log now clarifies it is normal maintenance on first occurrence
+  - Added startup info log when no memory free limit is configured
+  - Clarified `--conf.s3.*` flag descriptions to indicate they configure S3-based node configuration file loading
