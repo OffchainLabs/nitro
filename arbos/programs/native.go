@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -397,6 +398,12 @@ func callProgram(
 
 	depth := evm.Depth()
 	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
+	if err != nil && strings.Contains(msg, "memory.grow pages exceed u16") {
+		log.Error("memory.grow pages overflow triggered")
+		if evmData.arbosVersion < 59 {
+			evm.StateDB.FilterTx()
+		}
+	}
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
