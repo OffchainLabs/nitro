@@ -715,7 +715,11 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+//
+// isDelayedSequencing indicates the sequencer is actively building a block from
+// a delayed-inbox message (called by sequenceDelayedMessageWithBlockMutex).
+// Regular live sequencing of batch-posted txs does not go through this function
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isDelayedSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -750,11 +754,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isSequencing {
-		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
-	} else if isMsgForPrefetch {
+	switch {
+	case isDelayedSequencing:
+		runCtx = core.NewMessageDelayedSequencingContext(s.wasmTargets)
+	case isMsgForPrefetch:
 		runCtx = core.NewMessagePrefetchContext()
-	} else {
+	default:
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(

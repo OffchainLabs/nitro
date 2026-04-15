@@ -107,20 +107,30 @@ func TestAddPages_ExceedsLimit_GasEstimation(t *testing.T) {
 	require.False(t, statedb.IsTxFiltered(), "gas estimation should not call FilterTx")
 }
 
-func TestAddPages_ExceedsLimit_SequencerCommit(t *testing.T) {
+func TestAddPages_ExceedsLimit_Sequencing(t *testing.T) {
 	runCtx := core.NewMessageSequencingContext(nil)
 	handler, statedb, _ := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
-	require.Equal(t, uint64(math.MaxUint64), cost, "sequencer commit should return MaxUint64 when over limit")
-	require.True(t, statedb.IsTxFiltered(), "sequencer commit should call FilterTx when over limit")
+	require.Equal(t, uint64(math.MaxUint64), cost, "regular sequencing should return MaxUint64 when over limit")
+	require.True(t, statedb.IsTxFiltered(), "regular sequencing should call FilterTx when over limit")
 }
 
-func TestAddPages_ExceedsLimit_DelayedInbox(t *testing.T) {
+func TestAddPages_ExceedsLimit_DelayedSequencing(t *testing.T) {
+	// Delayed-inbox sequencing must never trigger FilterTx (censorship resistance):
+	// falls through to the "exempt mode" branch and charges normal gas.
+	runCtx := core.NewMessageDelayedSequencingContext(nil)
+	handler, statedb, model := newTestHandler(t, common.Address{}, runCtx, 10)
+	cost := callAddPages(handler, 20)
+	require.Equal(t, model.GasCost(20, 0, 0), cost, "delayed sequencing should return normal gas cost even when over limit")
+	require.False(t, statedb.IsTxFiltered(), "delayed sequencing must not call FilterTx")
+}
+
+func TestAddPages_ExceedsLimit_Commit(t *testing.T) {
 	runCtx := core.NewMessageCommitContext(nil)
 	handler, statedb, model := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
-	require.Equal(t, model.GasCost(20, 0, 0), cost, "delayed inbox should return normal gas cost even when over limit")
-	require.False(t, statedb.IsTxFiltered(), "delayed inbox should not call FilterTx")
+	require.Equal(t, model.GasCost(20, 0, 0), cost, "commit (replay/digest) should return normal gas cost even when over limit")
+	require.False(t, statedb.IsTxFiltered(), "commit (replay/digest) should not call FilterTx")
 }
 
 func TestAddPages_ExceedsLimit_Replay(t *testing.T) {
