@@ -58,6 +58,7 @@ type InboxTrackerInterface interface {
 	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchCount() (uint64, error)
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
 

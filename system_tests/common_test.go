@@ -229,6 +229,7 @@ func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
 }
 
 func (tc *TestClient) RecalibrateNonce(t *testing.T, lInfo info) {
+	t.Helper()
 	for account, accInfo := range lInfo.Accounts {
 		if accInfo.PrivateKey != nil {
 			currNonce, err := tc.Client.PendingNonceAt(tc.ctx, lInfo.GetAddress(account))
@@ -778,7 +779,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig)
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig, b.l1ChainConfig)
 	var locator *server_common.MachineLocator
 	if b.nodeConfig.UseUnifiedModuleRoot() {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())

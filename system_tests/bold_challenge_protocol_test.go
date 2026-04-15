@@ -216,7 +216,6 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
 		nil,
-		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidatorA.Initialize(ctx))
@@ -227,7 +226,6 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		pcdsB,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
-		nil,
 		nil,
 		nil,
 	)

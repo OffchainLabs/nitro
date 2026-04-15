@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -120,8 +119,6 @@ type MessageExtractor struct {
 	reorgEventsNotifier      chan uint64
 	seqBatchCounter          SequencerBatchCountFetcher
 	l1Reader                 *headerreader.HeaderReader
-
-	blockValidator *staker.BlockValidator // TODO: remove post MEL block validation
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -256,13 +253,6 @@ func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum r
 		return nil, err
 	}
 	return state, nil
-}
-
-func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) {
-	if m.Started() {
-		panic("cannot set block validator after start")
-	}
-	m.blockValidator = blockValidator
 }
 
 func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {

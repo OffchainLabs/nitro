@@ -96,7 +96,6 @@ func TestPeekFromAccumulatorSingleItem(t *testing.T) {
 	acc := buildAccumulator(t, items, preimages)
 
 	resolver := melreplay.NewTypeBasedPreimageResolver(arbutil.Keccak256PreimageType, preimages)
-	result, err := melreplay.PeekFromAccumulator[testItem](resolver, acc, 1)
 	result, err := melreplay.PeekFromAccumulator[testItem](context.Background(), resolver, acc, 1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(42), result.Value)

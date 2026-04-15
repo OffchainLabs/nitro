@@ -828,6 +828,8 @@ impl From<GlobalState> for validation::GoGlobalState {
         Self {
             block_hash: gs.bytes32_vals[0],
             send_root: gs.bytes32_vals[1],
+            mel_state_hash: gs.bytes32_vals[2],
+            mel_msg_hash: gs.bytes32_vals[3],
             batch: gs.u64_vals[0],
             pos_in_batch: gs.u64_vals[1],
         }
@@ -869,7 +871,7 @@ impl GlobalState {
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, &val)| val != Bytes32::default())
+            .find(|&(_, &val)| val != Bytes32::default())
             .map(|(i, _)| i);
 
         match last_non_zero_idx {
