@@ -3,9 +3,14 @@
 
 use crate::{
     programs::{
-        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData, STYLUS_ENTRY_POINT,
+        config::{CompileConfig, MULTI_VALUE_DISABLED_VERSION},
+        counter::Counter,
+        depth::DepthChecker,
+        dynamic::DynamicMeter,
+        heap::HeapBound,
+        meter::Meter,
+        start::StartMover,
+        FuncMiddleware, Middleware, ModuleMod, StylusData, STYLUS_ENTRY_POINT,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -314,7 +319,7 @@ pub fn parse_with_stylus_version<'a>(
         saturating_float_to_int: true,
         sign_extension: true,
         reference_types: false,
-        multi_value: stylus_version < 3,
+        multi_value: stylus_version < MULTI_VALUE_DISABLED_VERSION,
         bulk_memory: true, // not all ops supported yet
         simd: false,
         relaxed_simd: false,

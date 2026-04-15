@@ -22,6 +22,13 @@ use {
     wasmer_compiler_singlepass::Singlepass,
 };
 
+/// Minimum Stylus version that uses the spec-compliant `memory.fill` implementation.
+/// Prior versions built the 64-bit fill pattern without masking the value to 8 bits.
+pub const FIXED_MEMORY_FILL_VERSION: u16 = 3;
+
+/// Minimum Stylus version that disables multi-value returns (not supported by the prover).
+pub const MULTI_VALUE_DISABLED_VERSION: u16 = 3;
+
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct StylusConfig {
