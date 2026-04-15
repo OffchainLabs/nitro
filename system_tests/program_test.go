@@ -1295,6 +1295,47 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	}
 }
 
+func TestProgramDelayedInboxPageLimitBypass(t *testing.T) {
+	testDelayedInboxPageLimitBypass(t, true)
+}
+
+func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
+	testDelayedInboxPageLimitBypass(t, false)
+}
+
+// testDelayedInboxPageLimitBypass verifies that a Stylus call which would
+// exceed MaxStylusOpenPages lands on-chain when delivered via the delayed
+// inbox (censorship resistance). Delayed-inbox messages cannot be filtered
+// post-commitment, so addPages must skip FilterTx for them.
+//
+// This exercises the wiring in executionengine.createBlockFromNextMessage:
+// sequenceDelayedMessageWithBlockMutex passes isDelayedSequencing=true,
+// producing a MessageRunContext where IsSequencing() is false, which causes
+// addPages to fall through to the exempt branch. If that wiring regresses
+// (e.g. back to NewMessageSequencingContext), FilterTx fires inside
+// ProduceBlock, block production fails with ErrArbTxFilter, the delayed
+// message never lands, and EnsureTxSucceeded below times out.
+func testDelayedInboxPageLimitBypass(t *testing.T, jit bool) {
+	const pageLimit uint16 = 20
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	defer cleanup()
+
+	// mem-write grows 1 + (arg[0]-1) pages. 21 > 20 so it exceeds the limit,
+	// but only by one page so normal-gas execution fits comfortably in 1e9.
+	memWriteAddr := deployWasm(t, ctx, auth, builder.L2.Client, watFile("grow/mem-write"))
+	overLimitArgs := []byte{21}
+
+	delayedTx := builder.L2Info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, overLimitArgs)
+	// SendSignedTxViaL1 posts delayedTx to the delayed inbox on L1, advances
+	// L1 to trigger delayed-message sequencing on L2, and asserts the L2 tx
+	// succeeded. With the fix, it lands and runs normally; without the fix,
+	// block production would stall on ErrArbTxFilter and this would fail.
+	builder.L1.SendSignedTx(t, builder.L2.Client, delayedTx, builder.L1Info)
+}
+
 func TestProgramActivateFails(t *testing.T) {
 	testActivateFails(t, true)
 }

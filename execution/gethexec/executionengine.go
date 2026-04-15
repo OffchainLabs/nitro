@@ -718,7 +718,8 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 //
 // isDelayedSequencing indicates the sequencer is actively building a block from
 // a delayed-inbox message (called by sequenceDelayedMessageWithBlockMutex).
-// Regular live sequencing of batch-posted txs does not go through this function
+// Regular live sequencing of directly-received L2 transactions (which happens
+// in sequenceTransactionsWithBlockMutex) does not go through this function.
 func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isDelayedSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {

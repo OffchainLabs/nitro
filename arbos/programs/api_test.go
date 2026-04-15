@@ -116,8 +116,9 @@ func TestAddPages_ExceedsLimit_Sequencing(t *testing.T) {
 }
 
 func TestAddPages_ExceedsLimit_DelayedSequencing(t *testing.T) {
-	// Delayed-inbox sequencing must never trigger FilterTx (censorship resistance):
-	// falls through to the "exempt mode" branch and charges normal gas.
+	// Delayed-inbox sequencing must never trigger FilterTx (censorship resistance).
+	// Because IsSequencing() returns false for delayed contexts, addPages skips the
+	// FilterTx branch and charges normal gas.
 	runCtx := core.NewMessageDelayedSequencingContext(nil)
 	handler, statedb, model := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
