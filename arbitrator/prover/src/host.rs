@@ -6,7 +6,7 @@
 use crate::{
     binary,
     machine::{Function, InboxIdentifier},
-    programs::StylusData,
+    programs::{config::FIXED_MEMORY_FILL_VERSION, StylusData},
     utils,
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
@@ -437,7 +437,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
 /// `version` is the Stylus version of the program being compiled; it selects version-specific
-/// implementations (e.g. the fixed `memory.fill` is used for version >= 3).
+/// implementations (e.g. the fixed `memory.fill` is used for version >= [`FIXED_MEMORY_FILL_VERSION`]).
 pub fn new_internal_funcs(stylus_data: Option<StylusData>, version: u16) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
@@ -481,7 +481,7 @@ pub fn new_internal_funcs(stylus_data: Option<StylusData>, version: u16) -> Vec<
     add_op_func(MemoryStore { ty: I32, bytes: 1 }, WavmCallerStore8);
     add_op_func(MemoryStore { ty: I32, bytes: 4 }, WavmCallerStore32);
 
-    let memory_fill = if version >= 3 {
+    let memory_fill = if version >= FIXED_MEMORY_FILL_VERSION {
         (*BULK_MEMORY_FILL_V2).clone()
     } else {
         (*BULK_MEMORY_FILL_V1).clone()
