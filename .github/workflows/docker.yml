@@ -42,6 +42,7 @@ jobs:
           restore-keys: ${{ runner.os }}-buildx-
 
       - name: Build nitro-node docker
+        id: build-nitro-node
         uses: docker/build-push-action@v6
         with:
           target: nitro-node
@@ -52,6 +53,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: Build nitro-node-dev docker
+        id: build-nitro-node-dev
         uses: docker/build-push-action@v6
         with:
           target: nitro-node-dev
@@ -110,8 +112,12 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: Clear cache on failure
-        if: failure()
+      - name: Clear cache on build failure
+        if: |
+          failure() && (
+            steps.build-nitro-node.outcome == 'failure' ||
+            steps.build-nitro-node-dev.outcome == 'failure'
+          )
         run: |
           keys=(${{ runner.os }}-buildx- ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }})
           for key in "${keys[@]}"; do
