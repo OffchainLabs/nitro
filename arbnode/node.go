@@ -1534,28 +1534,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, messageExtractor, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
-	if err != nil {
-		return nil, err
-	}
-	melValidator, err := getMELValidator(ctx, config, configFetcher, consensusDB, deployInfo, l1client, stack, messageExtractor, dapRegistry, latestWasmModuleRoot, melReorgDetector)
-	if err != nil {
-		return nil, err
-	}
-
 	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, validatorInboxTracker, melValidator, txStreamer, fatalErrChan)
-	if err != nil {
-		return nil, err
-	}
-
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
 	if err != nil {
 		return nil, err
 	}
 	if inboxTracker != nil {
 		inboxTracker.SetBlockValidator(blockValidator)
 	}
-
 	var batchMetaFetcher BatchMetadataFetcher
 	if inboxTracker != nil {
 		batchMetaFetcher = inboxTracker
