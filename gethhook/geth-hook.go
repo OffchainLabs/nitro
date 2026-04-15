@@ -98,11 +98,13 @@ func init() {
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsP256Verify)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS60, vm.PrecompiledContractsOsaka)
 
 	// process addresses for respective arbos version precompile maps
 	addAddresses(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50)
+	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS60, vm.PrecompiledContractsStartingFromArbOS60)
 
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
