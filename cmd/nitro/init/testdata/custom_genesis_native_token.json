@@ -1,0 +1,32 @@
+{
+  "serializedChainConfig": "{\"chainId\":412346,\"homesteadBlock\":0,\"daoForkBlock\":null,\"daoForkSupport\":true,\"eip150Block\":0,\"eip150Hash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"eip155Block\":0,\"eip158Block\":0,\"byzantiumBlock\":0,\"constantinopleBlock\":0,\"petersburgBlock\":0,\"istanbulBlock\":0,\"muirGlacierBlock\":0,\"berlinBlock\":0,\"londonBlock\":0,\"clique\":{\"period\":0,\"epoch\":0},\"arbitrum\":{\"EnableArbOS\":true,\"AllowDebugPrecompiles\":true,\"DataAvailabilityCommittee\":false,\"InitialArbOSVersion\":51,\"InitialChainOwner\":\"0x0000000000000000000000000000000000000000\",\"GenesisBlockNum\":0}}",
+  "arbOSInit": {
+    "nativeTokenSupplyManagementEnabled": true
+  },
+  "nonce": "0x0",
+  "timestamp": "0x0",
+  "extraData": "0x",
+  "gasLimit": "0x11E1A300",
+  "difficulty": "0x1",
+  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "alloc": {
+    "aaaa000000000000000000000000000000000001": {
+      "balance": "0xDE0B6B3A7640000"
+    },
+    "cccc000000000000000000000000000000000001": {
+      "code": "0x60015460005260206000f3",
+      "storage": {
+        "0x0000000000000000000000000000000000000000000000000000000000000001": "0x00000000000000000000000000000000000000000000000000000000deadbeef"
+      },
+      "balance": "0x1",
+      "nonce": "0x1"
+    }
+  },
+  "number": "0x0",
+  "gasUsed": "0x0",
+  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "baseFeePerGas": "0x3B9ACA00",
+  "excessBlobGas": null,
+  "blobGasUsed": null
+}

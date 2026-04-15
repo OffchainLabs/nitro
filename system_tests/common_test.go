@@ -342,6 +342,10 @@ type NodeBuilder struct {
 	// If true, calls prestate tracer check AutomatedPrestateTracerTest on L2 cleanup
 	WithPrestateTracerChecks bool
 
+	// Accounts parsed from a custom genesis JSON file via WithGenesisFile.
+	// Merged into ArbInitData.Accounts during Build.
+	genesisAccounts []statetransfer.AccountInitializationInfo
+
 	// ReferenceDA server (created if withReferenceDAProvider is true)
 	referenceDAServer *http.Server
 	referenceDAURL    string
@@ -583,6 +587,49 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 
 func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	b.takeOwnership = takeOwnership
+	return b
+}
+
+// WithGenesisFile parses a custom genesis JSON file and configures the builder
+// to initialize the L2 chain with its chain config, ArbOS init params, and
+// alloc accounts (wallets, contracts with code and storage).
+func (b *NodeBuilder) WithGenesisFile(t *testing.T, path string) *NodeBuilder {
+	t.Helper()
+	genesisJSON, err := os.ReadFile(path)
+	Require(t, err)
+	var gen core.Genesis
+	err = json.Unmarshal(genesisJSON, &gen)
+	Require(t, err)
+
+	chainConfig, err := gen.GetConfig()
+	Require(t, err)
+	b.chainConfig = chainConfig
+
+	if gen.ArbOSInit != nil {
+		b.arbOSInit = gen.ArbOSInit
+	}
+
+	for addr, account := range gen.Alloc {
+		ethBalance := new(big.Int)
+		if account.Balance != nil {
+			ethBalance.Set(account.Balance)
+		}
+		info := statetransfer.AccountInitializationInfo{
+			Addr:       addr,
+			EthBalance: ethBalance,
+			Nonce:      account.Nonce,
+		}
+		if len(account.Code) > 0 || len(account.Storage) > 0 {
+			info.ContractInfo = &statetransfer.AccountInitContractInfo{
+				Code:            account.Code,
+				ContractStorage: account.Storage,
+			}
+		}
+		b.genesisAccounts = append(b.genesisAccounts, info)
+	}
+
+	// Reset L2Info so it gets recreated with the genesis chain ID.
+	b.L2Info = nil
 	return b
 }
 
@@ -960,6 +1007,11 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
 
+	// Merge genesis file accounts into ArbInitData before chain creation.
+	if len(b.genesisAccounts) > 0 {
+		b.L2Info.ArbInitData.Accounts = append(b.L2Info.ArbInitData.Accounts, b.genesisAccounts...)
+	}
+
 	b.L2 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -1068,6 +1120,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2 = NewTestClient(b.ctx)
 
 	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+
+	// Merge genesis file accounts into ArbInitData before chain creation.
+	if len(b.genesisAccounts) > 0 {
+		b.L2Info.ArbInitData.Accounts = append(b.L2Info.ArbInitData.Accounts, b.genesisAccounts...)
+	}
 
 	var executionDB ethdb.Database
 	var consensusDB ethdb.Database
