@@ -81,16 +81,16 @@ func init() {
 		}
 
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
-		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_30 {
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_30 {
+			vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
+		}
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_50 {
 			vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
 		}
-		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_50 {
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_60 {
 			vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
 		}
-		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_60 {
-			vm.PrecompiledContractsStartingFromArbOS60[addr] = wrapped
-		}
+		vm.PrecompiledContractsStartingFromArbOS60[addr] = wrapped
 	}
 
 	// process Ethereum precompiles for respective arbos versions
