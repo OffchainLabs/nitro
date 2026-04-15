@@ -163,11 +163,12 @@ pub struct SubCreateResult {
 
 /// Type-erased function pointer for executing sub-calls from Stylus.
 ///
-/// Parameters: (ctx_ptr, call_type, contract, caller, storage_addr, input, gas, value)
+/// Parameters: `(ctx_ptr, call_type, contract, caller, storage_addr, input, gas, value)`.
+///
+/// - `call_type`: `0=CALL`, `1=DELEGATECALL`, `2=STATICCALL`
 /// - `caller`: msg.sender for the new frame (preserved for DELEGATECALL)
 /// - `storage_addr`: address whose storage the new frame uses (= current contract for
 ///   CALL/STATICCALL, = preserved storage context for DELEGATECALL)
-/// call_type: 0=CALL, 1=DELEGATECALL, 2=STATICCALL
 pub type DoCallFn = fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
@@ -197,7 +198,7 @@ impl StorageCacheEntry {
     }
 
     fn dirty(&self) -> bool {
-        self.known.map_or(true, |k| k != self.value)
+        self.known != Some(self.value)
     }
 }
 

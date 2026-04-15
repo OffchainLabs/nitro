@@ -1028,11 +1028,11 @@ where
     };
     let effective_cached = program.cached || recent_wasms_hit;
     let effective_program = if effective_cached != program.cached {
-        let mut p = program.clone();
+        let mut p = program;
         p.cached = effective_cached;
         p
     } else {
-        program.clone()
+        program
     };
     let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open, pages_ever);
     let total_gas = inputs.gas_limit;

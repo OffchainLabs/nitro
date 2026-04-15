@@ -13,6 +13,7 @@
 // `arb-reth/src/main.rs` provides the same shim for the production binary.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{collections::HashMap, sync::Arc};

@@ -1175,7 +1175,7 @@ mod tests {
         }
 
         // Check: is gasBacklog still readable?
-        let backlog_check =
+        let _backlog_check =
             arb_storage::read_storage_at(unsafe { &mut *state_ptr }, arbos, gas_backlog_slot);
 
         // Clear scratch
@@ -1334,7 +1334,7 @@ mod tests {
         let _mid_bundle = state.take_bundle();
 
         // Check: is transition_state None?
-        let ts_is_none = state.transition_state.is_none();
+        let _ts_is_none = state.transition_state.is_none();
 
         // TX2: grow_backlog — the write goes to cache but transition is dropped
         {
@@ -1342,11 +1342,11 @@ mod tests {
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
-            let backlog_before = l2_pricing.gas_backlog().unwrap();
+            let _backlog_before = l2_pricing.gas_backlog().unwrap();
 
             let _ = l2_pricing.grow_backlog(357_751, MultiGas::default());
 
-            let backlog_after = l2_pricing.gas_backlog().unwrap();
+            let _backlog_after = l2_pricing.gas_backlog().unwrap();
         }
 
         // End of block: merge_transitions again
@@ -1354,7 +1354,7 @@ mod tests {
         let mut bundle = state.take_bundle();
 
         // Check: is gasBacklog in the bundle?
-        let in_bundle = bundle
+        let _in_bundle = bundle
             .state
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1364,7 +1364,7 @@ mod tests {
         // The bundle from the 2nd merge would NOT have the gasBacklog.
         // Now simulate augment_bundle_from_cache which should rescue it from cache.
         {
-            let cache_val = state
+            let _cache_val = state
                 .cache
                 .accounts
                 .get(&arbos)
@@ -1428,7 +1428,7 @@ mod tests {
             }
         }
 
-        let after_augment = bundle
+        let _after_augment = bundle
             .state
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1512,7 +1512,7 @@ mod tests {
             state.commit(empty_state);
 
             // Check cache after commit
-            let cache_val = state
+            let _cache_val = state
                 .cache
                 .accounts
                 .get(&ARBOS_STATE_ADDRESS)
@@ -1529,7 +1529,7 @@ mod tests {
             assert_eq!(after_grow, 552756 + 357751, "backlog should be sum");
 
             // Check cache after grow
-            let cache_val2 = state
+            let _cache_val2 = state
                 .cache
                 .accounts
                 .get(&ARBOS_STATE_ADDRESS)
@@ -1541,7 +1541,7 @@ mod tests {
             let mut bundle = state.take_bundle();
 
             // Check bundle before augment
-            let bundle_has_slot = bundle
+            let _bundle_has_slot = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1614,7 +1614,7 @@ mod tests {
                 }
             }
 
-            let bundle_after_augment = bundle
+            let _bundle_after_augment = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1663,16 +1663,7 @@ mod tests {
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             l2_pricing.set_gas_backlog(552756).unwrap();
             l2_pricing.update_pricing_model(0, 10).unwrap();
-            let before_commit = l2_pricing.gas_backlog().unwrap();
-
-            // Count cache slots before commit
-            let cache_slots_before = state
-                .cache
-                .accounts
-                .get(&ARBOS_STATE_ADDRESS)
-                .and_then(|ca| ca.account.as_ref())
-                .map(|a| a.storage.len())
-                .unwrap_or(0);
+            let _before_commit = l2_pricing.gas_backlog().unwrap();
 
             // EVM commit with ArbOS account TOUCHED but no storage changes
             // This simulates what happens when EVM executes a precompile that
@@ -1696,36 +1687,18 @@ mod tests {
             evm_changes.insert(ARBOS_STATE_ADDRESS, arbos_evm_account);
             state.commit(evm_changes);
 
-            // Check cache after commit — this is the critical check!
-            let cache_slots_after = state
-                .cache
-                .accounts
-                .get(&ARBOS_STATE_ADDRESS)
-                .and_then(|ca| ca.account.as_ref())
-                .map(|a| a.storage.len())
-                .unwrap_or(0);
-
-            let cache_val = state
-                .cache
-                .accounts
-                .get(&ARBOS_STATE_ADDRESS)
-                .and_then(|ca| ca.account.as_ref())
-                .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-
-            if cache_slots_after < cache_slots_before {}
-
             // Now grow_backlog AFTER the EVM commit
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let read_before_grow = l2_pricing2.gas_backlog().unwrap();
+            let _read_before_grow = l2_pricing2.gas_backlog().unwrap();
 
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
-            let after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog().unwrap();
 
             // Check cache after grow
-            let cache_val2 = state
+            let _cache_val2 = state
                 .cache
                 .accounts
                 .get(&ARBOS_STATE_ADDRESS)
@@ -1736,7 +1709,7 @@ mod tests {
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
 
-            let bundle_pre = bundle
+            let _bundle_pre = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1773,7 +1746,7 @@ mod tests {
                 }
             }
 
-            let bundle_post = bundle
+            let _bundle_post = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1826,14 +1799,6 @@ mod tests {
             l2_pricing.set_gas_backlog(552756).unwrap();
             l2_pricing.update_pricing_model(0, 10).unwrap();
 
-            let cache_slots_before = state
-                .cache
-                .accounts
-                .get(&ARBOS_STATE_ADDRESS)
-                .and_then(|ca| ca.account.as_ref())
-                .map(|a| a.storage.len())
-                .unwrap_or(0);
-
             // EVM commit with ArbOS account touched AND a storage slot that was
             // read but not written (EvmStorageSlot with original_value == present_value).
             let _ = state.load_cache_account(ARBOS_STATE_ADDRESS);
@@ -1862,38 +1827,21 @@ mod tests {
             evm_changes.insert(ARBOS_STATE_ADDRESS, arbos_evm_account);
             state.commit(evm_changes);
 
-            let cache_slots_after = state
-                .cache
-                .accounts
-                .get(&ARBOS_STATE_ADDRESS)
-                .and_then(|ca| ca.account.as_ref())
-                .map(|a| a.storage.len())
-                .unwrap_or(0);
-
-            let cache_val = state
-                .cache
-                .accounts
-                .get(&ARBOS_STATE_ADDRESS)
-                .and_then(|ca| ca.account.as_ref())
-                .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-
-            if cache_slots_after < cache_slots_before {}
-
             // grow_backlog after commit
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let read_before_grow = l2_pricing2.gas_backlog().unwrap();
+            let _read_before_grow = l2_pricing2.gas_backlog().unwrap();
 
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
-            let after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog().unwrap();
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
 
-            let bundle_pre = bundle
+            let _bundle_pre = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -1930,7 +1878,7 @@ mod tests {
                 }
             }
 
-            let bundle_post = bundle
+            let _bundle_post = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -2009,7 +1957,7 @@ mod tests {
             state.commit(user_changes);
 
             // Check cache
-            let cache_val_after_user = state
+            let _cache_val_after_user = state
                 .cache
                 .accounts
                 .get(&ARBOS_STATE_ADDRESS)
@@ -2020,7 +1968,7 @@ mod tests {
             // commit_transaction)
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let read_val = l2_pricing2.gas_backlog().unwrap();
+            let _read_val = l2_pricing2.gas_backlog().unwrap();
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
@@ -2031,7 +1979,7 @@ mod tests {
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
 
-            let bundle_pre = bundle
+            let _bundle_pre = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -2099,7 +2047,7 @@ mod tests {
                 }
             }
 
-            let bundle_post = bundle
+            let _bundle_post = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -2199,7 +2147,7 @@ mod tests {
 
             // Simulate StartBlock: update_pricing_model(time_passed=0)
             l2_pricing.update_pricing_model(0, 10).unwrap();
-            let after_start = l2_pricing.gas_backlog().unwrap();
+            let _after_start = l2_pricing.gas_backlog().unwrap();
 
             // EVM commit: empty (StartBlock internal tx)
             {
@@ -2229,15 +2177,15 @@ mod tests {
             // Post-commit: grow_backlog
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let read_before = l2_pricing2.gas_backlog().unwrap();
+            let _read_before = l2_pricing2.gas_backlog().unwrap();
 
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
-            let after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog().unwrap();
 
             // Check cache
-            let cache_val = state
+            let _cache_val = state
                 .cache
                 .accounts
                 .get(&ARBOS_STATE_ADDRESS)
@@ -2248,7 +2196,7 @@ mod tests {
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
 
-            let bundle_pre = bundle
+            let _bundle_pre = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -2328,7 +2276,7 @@ mod tests {
                 }
             }
 
-            let bundle_post = bundle
+            let _bundle_post = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -2429,12 +2377,12 @@ mod tests {
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
-            let initial = l2_pricing.gas_backlog().unwrap();
+            let _initial = l2_pricing.gas_backlog().unwrap();
 
             // StartBlock with time_passed=1 → drain = 1 * 7_000_000 = 7M
             // 552756 - 7M = 0 (saturating sub)
             l2_pricing.update_pricing_model(1, 10).unwrap();
-            let after_drain = l2_pricing.gas_backlog().unwrap();
+            let _after_drain = l2_pricing.gas_backlog().unwrap();
 
             // EVM commit
             {
@@ -2448,13 +2396,13 @@ mod tests {
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
-            let after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog().unwrap();
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
 
-            let bundle_pre = bundle
+            let _bundle_pre = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
@@ -2556,7 +2504,7 @@ mod tests {
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
-            let initial = l2_pricing.gas_backlog().unwrap();
+            let _initial = l2_pricing.gas_backlog().unwrap();
 
             // Drain with time_passed=1 → 552756 - 7M = 0
             l2_pricing.update_pricing_model(1, 10).unwrap();
@@ -2567,7 +2515,7 @@ mod tests {
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
 
-            let pre_filter = bundle
+            let _pre_filter = bundle
                 .state
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))

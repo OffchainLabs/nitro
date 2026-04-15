@@ -37,7 +37,6 @@ const PROGRAM_TIME_LEFT: [u8; 4] = [0xc7, 0x75, 0xa6, 0x2a]; // programTimeLeft(
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
-const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 
 /// Initial page ramp constant (not stored in packed params).

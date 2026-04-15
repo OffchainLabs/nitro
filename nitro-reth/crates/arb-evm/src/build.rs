@@ -213,7 +213,6 @@ where
 /// Captured per-transaction state for fee distribution in `commit_transaction`.
 struct PendingArbTx {
     sender: Address,
-    tx_value: U256,
     tx_gas_limit: u64,
     arb_tx_type: Option<ArbTxType>,
     has_poster_costs: bool,
@@ -517,7 +516,6 @@ where
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
-                tx_value: U256::ZERO,
                 tx_gas_limit: user_gas,
                 arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
                 has_poster_costs: false,
@@ -589,7 +587,6 @@ where
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
-                tx_value: U256::ZERO,
                 tx_gas_limit: user_gas,
                 arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
                 has_poster_costs: false,
@@ -789,7 +786,6 @@ where
         let gas_used = if fees.can_pay_for_gas { user_gas } else { 0 };
         self.pending_tx = Some(PendingArbTx {
             sender,
-            tx_value: U256::ZERO,
             tx_gas_limit: user_gas,
             arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
             has_poster_costs: false, // No poster costs for submit retryable
@@ -1129,7 +1125,6 @@ where
             // Internal txs end immediately — no EVM execution.
             self.pending_tx = Some(PendingArbTx {
                 sender,
-                tx_value: U256::ZERO,
                 tx_gas_limit: 0,
                 arb_tx_type: Some(ArbTxType::ArbitrumInternalTx),
                 has_poster_costs: false,
@@ -1208,7 +1203,6 @@ where
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
-                tx_value: U256::ZERO,
                 tx_gas_limit: 0,
                 arb_tx_type: Some(ArbTxType::ArbitrumDepositTx),
                 has_poster_costs: false,
@@ -1303,7 +1297,6 @@ where
                                 let tx_type = recovered.tx().tx_type();
                                 self.pending_tx = Some(PendingArbTx {
                                     sender,
-                                    tx_value: U256::ZERO,
                                     tx_gas_limit: 0,
                                     arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                     has_poster_costs: false,
@@ -1365,7 +1358,6 @@ where
                             let tx_type = recovered.tx().tx_type();
                             self.pending_tx = Some(PendingArbTx {
                                 sender,
-                                tx_value: U256::ZERO,
                                 tx_gas_limit: 0,
                                 arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                 has_poster_costs: false,
@@ -1395,7 +1387,6 @@ where
                             let tx_type = recovered.tx().tx_type();
                             self.pending_tx = Some(PendingArbTx {
                                 sender,
-                                tx_value: U256::ZERO,
                                 tx_gas_limit: 0,
                                 arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                 has_poster_costs: false,
@@ -1567,7 +1558,6 @@ where
                             .saturating_add(MultiGas::computation_gas(gas_to_consume));
                         self.pending_tx = Some(PendingArbTx {
                             sender,
-                            tx_value: U256::ZERO,
                             tx_gas_limit,
                             arb_tx_type,
                             has_poster_costs,
@@ -1603,7 +1593,6 @@ where
                             .saturating_add(MultiGas::computation_gas(gas_remaining));
                         self.pending_tx = Some(PendingArbTx {
                             sender,
-                            tx_value: U256::ZERO,
                             tx_gas_limit,
                             arb_tx_type,
                             has_poster_costs,
@@ -1951,7 +1940,6 @@ where
 
         self.pending_tx = Some(PendingArbTx {
             sender,
-            tx_value,
             tx_gas_limit,
             arb_tx_type,
             has_poster_costs,

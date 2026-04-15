@@ -95,7 +95,7 @@ fn set_multi_gas_pricing_calldata(
     ));
 
     // Outer array offset (always 0x20 since it's the only top-level arg).
-    let mut push_word = |buf: &mut Vec<u8>, v: U256| buf.extend_from_slice(&v.to_be_bytes::<32>());
+    let push_word = |buf: &mut Vec<u8>, v: U256| buf.extend_from_slice(&v.to_be_bytes::<32>());
     push_word(&mut buf, U256::from(32u64));
     push_word(&mut buf, U256::from(constraints.len() as u64));
 

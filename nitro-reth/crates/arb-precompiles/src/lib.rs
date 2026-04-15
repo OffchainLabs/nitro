@@ -128,10 +128,10 @@ thread_local! {
 use std::cell::RefCell;
 
 thread_local! {
-    static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = RefCell::new(Vec::new());
+    static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
     /// Per-block LRU of recently invoked Stylus program codehashes. Used by
     /// ArbOS v60+ pricing; capacity set per-block from `params.BlockCacheSize`.
-    static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = RefCell::new((Vec::new(), 0));
+    static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = const { RefCell::new((Vec::new(), 0)) };
 }
 
 /// Reset the recent WASMs cache for a new block, with the given capacity.

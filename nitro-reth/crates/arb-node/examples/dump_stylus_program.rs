@@ -20,6 +20,7 @@
 
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{path::PathBuf, sync::Arc};
@@ -28,10 +29,7 @@ use alloy_primitives::{Address, B256, U256};
 use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
-use reth_provider::{
-    providers::{ProviderFactoryBuilder, ReadOnlyConfig},
-    StateProviderFactory,
-};
+use reth_provider::providers::{ProviderFactoryBuilder, ReadOnlyConfig};
 use reth_storage_api::StateProvider;
 
 use arb_precompiles::storage_slot::{
@@ -71,7 +69,7 @@ fn parse_addr(s: &str) -> eyre::Result<Address> {
 }
 
 fn hex_decode(s: &str) -> eyre::Result<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         eyre::bail!("odd hex length");
     }
     (0..s.len())
@@ -109,6 +107,7 @@ fn programs_params_slot() -> U256 {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Program {
     version: u16,
     init_cost: u16,
