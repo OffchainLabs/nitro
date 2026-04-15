@@ -154,7 +154,7 @@ func callProgram(
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
-	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel)
+	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)
 	scope.Contract.Gas = gasLeft
 	return retData, err
