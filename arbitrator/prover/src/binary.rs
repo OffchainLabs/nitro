@@ -301,12 +301,20 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
+    parse_with_stylus_version(input, path, 0)
+}
+
+pub fn parse_with_stylus_version<'a>(
+    input: &'a [u8],
+    path: &'_ Path,
+    stylus_version: u16,
+) -> Result<WasmBinary<'a>> {
     let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
         sign_extension: true,
         reference_types: false,
-        multi_value: true,
+        multi_value: stylus_version < 3,
         bulk_memory: true, // not all ops supported yet
         simd: false,
         relaxed_simd: false,
@@ -643,12 +651,13 @@ impl<'a> WasmBinary<'a> {
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
+        stylus_version: u16,
         arbos_version_for_gas: u64,
         page_limit: u16,
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse(wasm, Path::new("user"))?;
+        let mut bin = parse_with_stylus_version(wasm, Path::new("user"), stylus_version)?;
         let stylus_data = bin.instrument(compile, codehash)?;
 
         let Some(memory) = bin.memories.first() else {
