@@ -276,7 +276,7 @@ func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
 		return errors.New("ink price must be a positive uint24")
 	}
 	params.InkPrice = ink
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
@@ -286,7 +286,7 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 		return err
 	}
 	params.MaxStackDepth = depth
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Gets the number of free wasm pages a tx gets
@@ -296,7 +296,7 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 		return err
 	}
 	params.FreePages = pages
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the base cost of each additional wasm page
@@ -306,7 +306,7 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 		return err
 	}
 	params.PageGas = gas
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the initial number of pages a wasm may allocate
@@ -316,7 +316,7 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 		return err
 	}
 	params.PageLimit = limit
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the minimum costs to invoke a program
@@ -327,7 +327,7 @@ func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
 	}
 	params.MinInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(gas, programs.MinInitGasUnits))
 	params.MinCachedInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(cached, programs.MinCachedGasUnits))
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the linear adjustment made to program init costs
@@ -337,7 +337,7 @@ func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
 		return err
 	}
 	params.InitCostScalar = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(percent, programs.CostScalarPercent))
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the number of days after which programs deactivate
@@ -347,7 +347,7 @@ func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
 		return err
 	}
 	params.ExpiryDays = days
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the age a program must be to perform a keepalive
@@ -357,7 +357,7 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 		return err
 	}
 	params.KeepaliveDays = days
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the number of extra programs ArbOS caches during a given block
@@ -367,7 +367,7 @@ func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 		return err
 	}
 	params.BlockCacheSize = count
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // SetMaxWasmSize sets the maximum size the wasm code can be in bytes after
@@ -378,7 +378,7 @@ func (con ArbOwner) SetWasmMaxSize(c ctx, _ mech, maxWasmSize uint32) error {
 		return err
 	}
 	params.MaxWasmSize = maxWasmSize
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Adds account as a wasm cache manager
