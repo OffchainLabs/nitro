@@ -1340,6 +1340,57 @@ func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
 	}
 }
 
+func TestProgramMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprintConsensus(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintConsensusNative(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprintConsensus(t, false)
+}
+
+func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool) {
+	// Exercises the chain-level consensus cap (StylusParams.PageLimit, ArbOS >= 59)
+	// at the CallProgram-entry path. grow-120.wat has a fixed 120-page footprint
+	// and no memory.grow, so the addPages hostio never fires. The node-level
+	// MaxOpenPages cap is left at its default (0 = disabled), isolating the
+	// consensus check.
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_59)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Deploy at the default PageLimit (128); 120-page footprint activates.
+	fixed120Addr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+
+	// Lower PageLimit below the footprint via ArbOwner so subsequent calls
+	// trip the consensus cap at CallProgram entry.
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetWasmPageLimit(&auth, 50)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// eth_call: 120 > 50 → consensus cap OOGs at CallProgram entry.
+	msg := ethereum.CallMsg{To: &fixed120Addr, Gas: 32000000}
+	_, err = l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call over consensus PageLimit should have failed with 'out of gas', got:", err)
+	}
+
+	// Sequenced tx: the consensus cap OOGs WITHOUT calling FilterTx, so the
+	// sequencer must include the tx and produce a failed receipt (every replay
+	// node will reach the same OOG). This is the key behavioral distinction
+	// from the node-level MaxOpenPages sequencer path, which does FilterTx and
+	// rejects before inclusion.
+	tx2 := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
+	Require(t, l2client.SendTransaction(ctx, tx2))
+	EnsureTxFailed(t, ctx, l2client, tx2)
+}
+
 func TestProgramActivateFails(t *testing.T) {
 	testActivateFails(t, true)
 }

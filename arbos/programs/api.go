@@ -305,17 +305,7 @@ func newApiClosures(
 		// programs.go restores openWasmPages on frame return.
 		oldOpen, oldEver := db.AddStylusPages(pages)
 		newOpen := db.GetStylusPagesOpen()
-
-		// Chain-level consensus page limit check (ArbOS >= 59).
-		// stylusParams is nil only in unit tests that do not exercise the
-		// consensus check; the ArbOS gate itself protects pre-59 chains.
-		if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && stylusParams != nil && stylusParams.PageLimit > 0 && newOpen > stylusParams.PageLimit {
-			log.Debug("addPages: stylus params page limit exceeded",
-				"open", newOpen, "limit", stylusParams.PageLimit, "contract", actingAddress)
-			return math.MaxUint64
-		}
-
-		if penalty := enforceStylusPageLimit(db, runCtx, newOpen, actingAddress, pageLimitAddPages); penalty > 0 {
+		if penalty := enforceStylusPageLimit(evm, db, runCtx, newOpen, actingAddress, stylusParams, pageLimitAddPages); penalty > 0 {
 			return penalty
 		}
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
@@ -493,27 +483,32 @@ const (
 	pageLimitCallProgram pageLimitLocation = "CallProgram"
 )
 
-// enforceStylusPageLimit applies the per-node open-page cap configured via
-// ArbNodeConfig.MaxOpenPages (flag: --execution.stylus-target.max-stylus-open-pages).
+// enforceStylusPageLimit applies two independent Stylus open-page caps and
+// returns 0 (allow) or math.MaxUint64 (reject). Callers burn the return value
+// via BurnGas (or return it directly from a hostio) to produce vm.ErrOutOfGas.
 //
-// It returns a uint64 penalty gas amount for the caller to charge/burn:
-//   - 0: either the limit is disabled (MaxOpenPages == 0), newOpen is under the
-//     limit, runCtx is nil, or we are in an on-chain run mode other than
-//     sequencing (commit/replay/recording). In these cases the caller proceeds
-//     normally.
-//   - math.MaxUint64: the limit is exceeded on a path where we should reject —
-//     either an off-chain path (eth_call, gas estimation) or the sequencer.
-//     The caller should use this value as gas-to-burn so BurnGas fails with
-//     vm.ErrOutOfGas (or return it directly from a hostio callback).
+// Cap 1 — consensus (StylusParams.PageLimit, ArbOS >= 59): runs first,
+// runCtx-independent (identical OOG on every replay). No FilterTx; the tx
+// must land as an OOG'd tx so consensus agrees. Disabled if stylusParams is
+// nil (test-only) or PageLimit == 0.
 //
-// Side effects: when sequencing and over-limit, calls statedb.FilterTx() so
-// the sequencer drops the tx rather than committing a reverted one. In all
-// over-limit cases (including the exempt on-chain modes, where we only log)
-// an info log is emitted; the `location` argument identifies the call site.
+// Cap 2 — node-level policy (ArbNodeConfig.MaxOpenPages, flag
+// --execution.stylus-target.max-stylus-open-pages). runCtx-dependent:
+//   - off-chain (eth_call, gas estimation): OOG.
+//   - sequencing: OOG + statedb.FilterTx() (drop before inclusion).
+//   - exempt on-chain (commit, replay, recording): log only, so policy never
+//     affects consensus.
 //
-// A type-assertion failure reading ArbNodeConfig fails open (no enforcement)
-// so an internal wiring bug cannot brick the node.
-func enforceStylusPageLimit(statedb vm.StateDB, runCtx *core.MessageRunContext, newOpen uint16, contract common.Address, location pageLimitLocation) uint64 {
+// Disabled on MaxOpenPages == 0, nil runCtx, or a wrong-type ArbNodeConfig
+// value — fail-open so an internal wiring bug cannot brick the node.
+func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.MessageRunContext, newOpen uint16, contract common.Address, stylusParams *StylusParams, location pageLimitLocation) uint64 {
+	// Chain-level consensus page limit check (ArbOS >= 59).
+	if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && stylusParams != nil && stylusParams.PageLimit > 0 && newOpen > stylusParams.PageLimit {
+		log.Debug("stylus params page limit exceeded", "location", location,
+			"open", newOpen, "limit", stylusParams.PageLimit, "contract", contract)
+		return math.MaxUint64
+	}
+
 	var limit uint16
 	if raw := statedb.Database().ArbNodeConfig(); raw != nil {
 		if cfg, ok := raw.(*ArbNodeConfig); ok {
