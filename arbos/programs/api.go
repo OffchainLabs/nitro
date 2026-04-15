@@ -4,14 +4,18 @@
 package programs
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -61,6 +65,7 @@ func newApiClosures(
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
+	runCtx *core.MessageRunContext,
 ) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
@@ -295,9 +300,37 @@ func newApiClosures(
 		return evm.StateDB.GetCodeHash(address), cost.SingleGas()
 	}
 	addPages := func(pages uint16) uint64 {
-		open, ever := db.AddStylusPages(pages)
+		// Pages are added before the limit check. The CallProgram defer in
+		// programs.go restores openWasmPages on frame return.
+		oldOpen, oldEver := db.AddStylusPages(pages)
+		newOpen := db.GetStylusPagesOpen()
+		var limit uint16
+		if raw := db.Database().ArbNodeConfig(); raw != nil {
+			if cfg, ok := raw.(*ArbNodeConfig); ok {
+				limit = cfg.MaxOpenPages
+			} else {
+				// Internal wiring bug — fail-open to preserve pre-feature behavior.
+				log.Error("ArbNodeConfig unexpected type; page limit inactive",
+					"type", fmt.Sprintf("%T", raw))
+			}
+		}
+		if limit > 0 && newOpen > limit && runCtx != nil {
+			if !runCtx.IsExecutedOnChain() {
+				log.Info("addPages: page limit exceeded",
+					"open", newOpen, "limit", limit, "contract", actingAddress)
+				return math.MaxUint64
+			}
+			if runCtx.IsSequencing() {
+				log.Info("addPages: page limit exceeded, filtering tx",
+					"open", newOpen, "limit", limit, "contract", actingAddress)
+				db.FilterTx()
+				return math.MaxUint64
+			}
+			log.Info("addPages: page limit exceeded in exempt mode",
+				"open", newOpen, "limit", limit, "contract", actingAddress, "runMode", runCtx.RunModeMetricName())
+		}
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
-		return memoryModel.GasCost(pages, open, ever)
+		return memoryModel.GasCost(pages, oldOpen, oldEver)
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		if tracingInfo.Tracer != nil && tracingInfo.Tracer.CaptureStylusHostio != nil {
