@@ -34,7 +34,7 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 	scope := &vm.ScopeContext{Contract: contract}
 
 	// Execute handler to update contract multi-gas usage
-	handler := newApiClosures(evm, nil, scope, &MemoryModel{}, nil, 0)
+	handler := newApiClosures(evm, nil, scope, &MemoryModel{}, nil, nil)
 	_, _, expectedCost := handler(GetBytes32, key[:])
 
 	statedb_testing, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
@@ -64,7 +64,8 @@ func buildAddPagesTestHandler(t *testing.T, coinbase common.Address, runCtx *cor
 	contract := vm.NewContract(caller, acting, new(uint256.Int), 1_000_000, nil)
 	scope := &vm.ScopeContext{Contract: contract}
 	model := NewMemoryModel(InitialFreePages, InitialPageGas)
-	handler := newApiClosures(evm, nil, scope, model, runCtx, pageLimit)
+	stylusParams := &StylusParams{PageLimit: pageLimit}
+	handler := newApiClosures(evm, nil, scope, model, runCtx, stylusParams)
 	return handler, statedb, model
 }
 
@@ -261,7 +262,7 @@ func TestAddPages_WrongConfigTypeFailsOpen(t *testing.T) {
 	model := NewMemoryModel(InitialFreePages, InitialPageGas)
 	// Use an eth_call runCtx so that if the limit *were* enforced, we'd expect
 	// MaxUint64. The test asserts the limit is NOT enforced (fail-open).
-	handler := newApiClosures(evm, nil, scope, model, core.NewMessageEthcallContext(), 0)
+	handler := newApiClosures(evm, nil, scope, model, core.NewMessageEthcallContext(), nil)
 
 	// Request 100 pages — well over any realistic limit. Because limit stays 0
 	// (fail-open), this should return normal gas cost, not MaxUint64.

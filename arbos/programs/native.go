@@ -359,13 +359,13 @@ func callProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	evmData *EvmData,
-	stylusParams *ProgParams,
+	progParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
-	pageLimit uint16,
+	stylusParams *StylusParams,
 ) ([]byte, error) {
 	db := evm.StateDB
-	debug := stylusParams.DebugMode
+	debug := progParams.DebugMode
 
 	if len(localAsm) == 0 {
 		log.Error("missing asm", "program", address, "module", moduleHash)
@@ -381,14 +381,14 @@ func callProgram(
 		}
 	}
 
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx, pageLimit)
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
 	defer evmApi.drop()
 
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
 		goSlice(localAsm),
 		goSlice(calldata),
-		stylusParams.encode(),
+		progParams.encode(),
 		evmApi.cNative,
 		evmData.encode(),
 		cbool(debug),

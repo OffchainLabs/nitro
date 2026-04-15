@@ -150,13 +150,13 @@ func callProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	evmData *EvmData,
-	params *ProgParams,
+	progParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
-	pageLimit uint16,
+	stylusParams *StylusParams,
 ) ([]byte, error) {
-	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, pageLimit)
-	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)
+	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
+	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, progParams, reqHandler)
 	scope.Contract.Gas = gasLeft
 	return retData, err
 }

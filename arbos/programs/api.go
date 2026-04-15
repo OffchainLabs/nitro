@@ -66,7 +66,7 @@ func newApiClosures(
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
-	pageLimit uint16,
+	stylusParams *StylusParams,
 ) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
@@ -307,9 +307,11 @@ func newApiClosures(
 		newOpen := db.GetStylusPagesOpen()
 
 		// Chain-level consensus page limit check (ArbOS >= 59).
-		if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && pageLimit > 0 && newOpen > pageLimit {
-			log.Info("addPages: stylus params page limit exceeded",
-				"open", newOpen, "limit", pageLimit, "contract", actingAddress)
+		// stylusParams is nil only in unit tests that do not exercise the
+		// consensus check; the ArbOS gate itself protects pre-59 chains.
+		if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && stylusParams != nil && stylusParams.PageLimit > 0 && newOpen > stylusParams.PageLimit {
+			log.Debug("addPages: stylus params page limit exceeded",
+				"open", newOpen, "limit", stylusParams.PageLimit, "contract", actingAddress)
 			return math.MaxUint64
 		}
 

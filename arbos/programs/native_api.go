@@ -50,9 +50,9 @@ func newApi(
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
-	pageLimit uint16,
+	stylusParams *StylusParams,
 ) NativeApi {
-	handler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, pageLimit)
+	handler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
 	apiId := apiIds.Add(1)
 	id := usize(apiId)
 	api := NativeApi{
