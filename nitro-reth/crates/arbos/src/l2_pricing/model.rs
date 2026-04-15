@@ -747,7 +747,6 @@ mod tests {
         let empty_changes: HashMap<Address, revm::state::Account> = Default::default();
         state.commit(empty_changes);
 
-
         // ================================================================
         // TX1: SubmitRetryable — writes many ArbOS storage slots
         // ================================================================
@@ -814,7 +813,6 @@ mod tests {
                 U256::ZERO,
             );
         }
-
 
         // ================================================================
         // TX2: RetryTx — complex EVM commit, then grow_backlog
@@ -891,7 +889,6 @@ mod tests {
             state.commit(evm_changes);
         }
 
-
         // Clear scratch slots
         {
             let scratch_slot_1 = arb_storage::storage_key_map(&[], 5);
@@ -944,7 +941,6 @@ mod tests {
                 "gasBacklog should be 910507 after grow"
             );
         }
-
 
         // ================================================================
         // Post-block: merge transitions and verify bundle
@@ -1178,7 +1174,6 @@ mod tests {
             state.commit(evm_changes);
         }
 
-
         // Check: is gasBacklog still readable?
         let backlog_check =
             arb_storage::read_storage_at(unsafe { &mut *state_ptr }, arbos, gas_backlog_slot);
@@ -1246,7 +1241,6 @@ mod tests {
             Some(U256::from(910_507u64)),
             "gasBacklog should survive filter when ArbOS is in EVM commit"
         );
-
     }
 
     /// When `transition_state` is None (already consumed by a prior
@@ -1458,7 +1452,6 @@ mod tests {
             Some(U256::from(910_507u64)),
             "gasBacklog MUST survive even when transition_state was consumed mid-block"
         );
-
     }
 
     /// Simulates the full production flow step-by-step to find why
@@ -1479,7 +1472,6 @@ mod tests {
         let l2_base = keccak256([1u8]); // open_sub_storage([1]) from root
         let gas_backlog_offset: u64 = 4;
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), gas_backlog_offset);
-
 
         // ===== VARIANT A: EVM commit with EMPTY HashMap (no ArbOS account touched) =====
         {
@@ -1720,8 +1712,7 @@ mod tests {
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
 
-            if cache_slots_after < cache_slots_before {
-            }
+            if cache_slots_after < cache_slots_before {}
 
             // Now grow_backlog AFTER the EVM commit
             let l2_pricing2 =
@@ -1886,8 +1877,7 @@ mod tests {
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
 
-            if cache_slots_after < cache_slots_before {
-            }
+            if cache_slots_after < cache_slots_before {}
 
             // grow_backlog after commit
             let l2_pricing2 =
@@ -2235,7 +2225,6 @@ mod tests {
                 user_changes.insert(sender, sender_acct);
                 state.commit(user_changes);
             }
-
 
             // Post-commit: grow_backlog
             let l2_pricing2 =
@@ -2603,6 +2592,5 @@ mod tests {
                 "VARIANT G FAILED: drain-to-0 write was lost!"
             );
         }
-
     }
 }

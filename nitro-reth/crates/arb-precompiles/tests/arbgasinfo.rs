@@ -4,9 +4,7 @@ use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, U256};
 use arb_precompiles::{
     create_arbgasinfo_precompile,
-    storage_slot::{
-        subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
+    storage_slot::{subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
 };
 use common::{calldata, decode_address, decode_u256, decode_word, PrecompileTest};
 
@@ -42,11 +40,19 @@ fn fixture(arbos_version: u64) -> PrecompileTest {
 }
 
 fn put_l1(test: PrecompileTest, offset: u64, value: U256) -> PrecompileTest {
-    test.storage(ARBOS_STATE_ADDRESS, subspace_slot(L1_PRICING_SUBSPACE, offset), value)
+    test.storage(
+        ARBOS_STATE_ADDRESS,
+        subspace_slot(L1_PRICING_SUBSPACE, offset),
+        value,
+    )
 }
 
 fn put_l2(test: PrecompileTest, offset: u64, value: U256) -> PrecompileTest {
-    test.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, offset), value)
+    test.storage(
+        ARBOS_STATE_ADDRESS,
+        subspace_slot(L2_PRICING_SUBSPACE, offset),
+        value,
+    )
 }
 
 #[test]
@@ -77,8 +83,12 @@ fn get_minimum_gas_price_returns_l2_min_base_fee() {
 fn get_gas_accounting_params_returns_speed_block_block() {
     let speed = U256::from(1_000_000_u64);
     let block_limit = U256::from(32_000_000_u64);
-    let run = put_l2(put_l2(fixture(30), L2_SPEED_LIMIT, speed), L2_PER_BLOCK_GAS_LIMIT, block_limit)
-        .call(&arbgasinfo(), &calldata("getGasAccountingParams()", &[]));
+    let run = put_l2(
+        put_l2(fixture(30), L2_SPEED_LIMIT, speed),
+        L2_PER_BLOCK_GAS_LIMIT,
+        block_limit,
+    )
+    .call(&arbgasinfo(), &calldata("getGasAccountingParams()", &[]));
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u256(speed));
     assert_eq!(decode_word(out, 1), common::word_u256(block_limit));
@@ -112,8 +122,10 @@ fn get_gas_backlog_tolerance_returns_l2_field() {
 #[test]
 fn get_l1_basefee_estimate_inertia_returns_l1_field() {
     let val = U256::from(10_u64);
-    let run = put_l1(fixture(30), L1_INERTIA, val)
-        .call(&arbgasinfo(), &calldata("getL1BaseFeeEstimateInertia()", &[]));
+    let run = put_l1(fixture(30), L1_INERTIA, val).call(
+        &arbgasinfo(),
+        &calldata("getL1BaseFeeEstimateInertia()", &[]),
+    );
     assert_eq!(decode_u256(run.output()), val);
 }
 
@@ -177,49 +189,55 @@ fn get_l1_reward_recipient_returns_address_at_v11() {
 
 #[test]
 fn get_l1_pricing_equilibration_units_gated_to_v20() {
-    let run = put_l1(fixture(19).gas(50_000), L1_EQUILIBRATION_UNITS, U256::from(1_000_000))
-        .call(
-            &arbgasinfo(),
-            &calldata("getL1PricingEquilibrationUnits()", &[]),
-        );
+    let run = put_l1(
+        fixture(19).gas(50_000),
+        L1_EQUILIBRATION_UNITS,
+        U256::from(1_000_000),
+    )
+    .call(
+        &arbgasinfo(),
+        &calldata("getL1PricingEquilibrationUnits()", &[]),
+    );
     assert!(run.assert_ok().reverted);
 }
 
 #[test]
 fn get_l1_pricing_equilibration_units_returns_field_at_v20() {
     let val = U256::from(1_000_000_u64);
-    let run = put_l1(fixture(20), L1_EQUILIBRATION_UNITS, val)
-        .call(
-            &arbgasinfo(),
-            &calldata("getL1PricingEquilibrationUnits()", &[]),
-        );
+    let run = put_l1(fixture(20), L1_EQUILIBRATION_UNITS, val).call(
+        &arbgasinfo(),
+        &calldata("getL1PricingEquilibrationUnits()", &[]),
+    );
     assert_eq!(decode_u256(run.output()), val);
 }
 
 #[test]
 fn get_last_l1_pricing_update_time_at_v20() {
     let val = U256::from(1_700_000_000_u64);
-    let run = put_l1(fixture(20), L1_LAST_UPDATE_TIME, val)
-        .call(&arbgasinfo(), &calldata("getLastL1PricingUpdateTime()", &[]));
+    let run = put_l1(fixture(20), L1_LAST_UPDATE_TIME, val).call(
+        &arbgasinfo(),
+        &calldata("getLastL1PricingUpdateTime()", &[]),
+    );
     assert_eq!(decode_u256(run.output()), val);
 }
 
 #[test]
 fn get_l1_pricing_funds_due_for_rewards_at_v20() {
     let val = U256::from(123_u64);
-    let run = put_l1(fixture(20), L1_FUNDS_DUE_FOR_REWARDS, val)
-        .call(
-            &arbgasinfo(),
-            &calldata("getL1PricingFundsDueForRewards()", &[]),
-        );
+    let run = put_l1(fixture(20), L1_FUNDS_DUE_FOR_REWARDS, val).call(
+        &arbgasinfo(),
+        &calldata("getL1PricingFundsDueForRewards()", &[]),
+    );
     assert_eq!(decode_u256(run.output()), val);
 }
 
 #[test]
 fn get_l1_pricing_units_since_update_at_v20() {
     let val = U256::from(456_u64);
-    let run = put_l1(fixture(20), L1_UNITS_SINCE, val)
-        .call(&arbgasinfo(), &calldata("getL1PricingUnitsSinceUpdate()", &[]));
+    let run = put_l1(fixture(20), L1_UNITS_SINCE, val).call(
+        &arbgasinfo(),
+        &calldata("getL1PricingUnitsSinceUpdate()", &[]),
+    );
     assert_eq!(decode_u256(run.output()), val);
 }
 
@@ -233,8 +251,12 @@ fn get_last_l1_pricing_surplus_at_v20() {
 
 #[test]
 fn get_max_block_gas_limit_gated_to_v50() {
-    let run = put_l2(fixture(49).gas(50_000), L2_PER_BLOCK_GAS_LIMIT, U256::from(32_000_000))
-        .call(&arbgasinfo(), &calldata("getMaxBlockGasLimit()", &[]));
+    let run = put_l2(
+        fixture(49).gas(50_000),
+        L2_PER_BLOCK_GAS_LIMIT,
+        U256::from(32_000_000),
+    )
+    .call(&arbgasinfo(), &calldata("getMaxBlockGasLimit()", &[]));
     assert!(run.assert_ok().reverted);
 }
 
@@ -256,14 +278,17 @@ fn get_max_tx_gas_limit_returns_field_at_v50() {
 
 #[test]
 fn get_multi_gas_pricing_constraints_gated_to_v60() {
-    let run = fixture(59).gas(50_000)
-        .call(&arbgasinfo(), &calldata("getMultiGasPricingConstraints()", &[]));
+    let run = fixture(59).gas(50_000).call(
+        &arbgasinfo(),
+        &calldata("getMultiGasPricingConstraints()", &[]),
+    );
     assert!(run.assert_ok().reverted);
 }
 
 #[test]
 fn get_multi_gas_base_fee_gated_to_v60() {
-    let run = fixture(59).gas(50_000)
+    let run = fixture(59)
+        .gas(50_000)
         .call(&arbgasinfo(), &calldata("getMultiGasBaseFee()", &[]));
     assert!(run.assert_ok().reverted);
 }
@@ -336,7 +361,11 @@ fn nitro_parity_get_prices_in_wei() {
     let basefee: u64 = 1005;
     let l2_min: u64 = 500; // < basefee so perArbGasCong > 0
 
-    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(DEFAULT_INITIAL_L1_BASE_FEE));
+    let test = put_l1(
+        fixture(30),
+        L1_PRICE_PER_UNIT,
+        U256::from(DEFAULT_INITIAL_L1_BASE_FEE),
+    );
     let test = put_l2(test, L2_MIN_BASE_FEE, U256::from(l2_min));
     let run = test
         .block_basefee(basefee)
@@ -372,7 +401,11 @@ fn nitro_parity_get_prices_in_arbgas() {
     const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000;
     const STORAGE_WRITE_COST: u64 = 20_000;
 
-    let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, U256::from(DEFAULT_INITIAL_L1_BASE_FEE));
+    let test = put_l1(
+        fixture(30),
+        L1_PRICE_PER_UNIT,
+        U256::from(DEFAULT_INITIAL_L1_BASE_FEE),
+    );
     let run = test
         .block_basefee(1005)
         .call(&arbgasinfo(), &calldata("getPricesInArbGas()", &[]));
@@ -452,7 +485,10 @@ const L1_PRICER_FUNDS_POOL: Address = address!("a4b05fffffffffffffffffffffffffff
 
 fn batch_poster_total_funds_due_slot() -> U256 {
     use arb_precompiles::storage_slot::derive_subspace_key;
-    let l1_key = derive_subspace_key(arb_precompiles::storage_slot::ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
+    let l1_key = derive_subspace_key(
+        arb_precompiles::storage_slot::ROOT_STORAGE_KEY,
+        L1_PRICING_SUBSPACE,
+    );
     let bpt_key = derive_subspace_key(l1_key.as_slice(), BATCH_POSTER_TABLE_KEY);
     arb_precompiles::storage_slot::map_slot(bpt_key.as_slice(), TOTAL_FUNDS_DUE_OFFSET)
 }
@@ -465,7 +501,11 @@ fn get_l1_pricing_surplus_pre_v10_uses_pool_balance() {
     let funds_due_rewards = U256::from(200_000_u64);
     let test = fixture(9)
         .balance(L1_PRICER_FUNDS_POOL, pool_balance)
-        .storage(ARBOS_STATE_ADDRESS, batch_poster_total_funds_due_slot(), total_due);
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            batch_poster_total_funds_due_slot(),
+            total_due,
+        );
     let test = put_l1(test, L1_FUNDS_DUE_FOR_REWARDS, funds_due_rewards);
     let run = test.call(&arbgasinfo(), &calldata("getL1PricingSurplus()", &[]));
     let want = pool_balance - total_due - funds_due_rewards;
@@ -478,8 +518,11 @@ fn get_l1_pricing_surplus_v10_plus_uses_stored_field() {
     let stored_available = U256::from(2_000_000_u64);
     let total_due = U256::from(500_000_u64);
     let funds_due_rewards = U256::from(100_000_u64);
-    let test = fixture(10)
-        .storage(ARBOS_STATE_ADDRESS, batch_poster_total_funds_due_slot(), total_due);
+    let test = fixture(10).storage(
+        ARBOS_STATE_ADDRESS,
+        batch_poster_total_funds_due_slot(),
+        total_due,
+    );
     let test = put_l1(test, L1_FUNDS_DUE_FOR_REWARDS, funds_due_rewards);
     let test = put_l1(test, L1_FEES_AVAILABLE, stored_available);
     let run = test.call(&arbgasinfo(), &calldata("getL1PricingSurplus()", &[]));
@@ -495,8 +538,11 @@ fn get_l1_pricing_surplus_returns_negative_two_complement_when_deficit() {
     let total_due = U256::from(500_u64);
     let funds_due_rewards = U256::from(50_u64);
     let deficit = total_due + funds_due_rewards - stored_available;
-    let test = fixture(10)
-        .storage(ARBOS_STATE_ADDRESS, batch_poster_total_funds_due_slot(), total_due);
+    let test = fixture(10).storage(
+        ARBOS_STATE_ADDRESS,
+        batch_poster_total_funds_due_slot(),
+        total_due,
+    );
     let test = put_l1(test, L1_FUNDS_DUE_FOR_REWARDS, funds_due_rewards);
     let test = put_l1(test, L1_FEES_AVAILABLE, stored_available);
     let run = test.call(&arbgasinfo(), &calldata("getL1PricingSurplus()", &[]));
@@ -511,10 +557,7 @@ fn get_gas_accounting_params_layout_is_three_words() {
     let block_lim = U256::from(32_000_000_u64);
     let test = put_l2(fixture(30), L2_SPEED_LIMIT, speed);
     let test = put_l2(test, L2_PER_BLOCK_GAS_LIMIT, block_lim);
-    let run = test.call(
-        &arbgasinfo(),
-        &calldata("getGasAccountingParams()", &[]),
-    );
+    let run = test.call(&arbgasinfo(), &calldata("getGasAccountingParams()", &[]));
     let out = run.output();
     assert_eq!(out.len(), 96);
     assert_eq!(decode_word(out, 0), common::word_u256(speed));

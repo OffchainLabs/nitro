@@ -348,20 +348,19 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let timeout_val = sload_field(input, timeout_slot)?;
     let timeout_u64: u64 = timeout_val.try_into().unwrap_or(0);
 
-    let (_calldata_words, write_bytes, calldata_raw_size) = if timeout_u64 == 0
-        || timeout_u64 < current_timestamp
-    {
-        (0u64, 0u64, 0u64)
-    } else {
-        let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
-        let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
-        let calldata_size = sload_field(input, calldata_size_slot)?;
-        let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
-        let cw = calldata_size_u64.div_ceil(32);
-        let nbytes = 6 * 32 + 32 + 32 * cw;
-        let wb = nbytes.div_ceil(32);
-        (cw, wb, calldata_size_u64)
-    };
+    let (_calldata_words, write_bytes, calldata_raw_size) =
+        if timeout_u64 == 0 || timeout_u64 < current_timestamp {
+            (0u64, 0u64, 0u64)
+        } else {
+            let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
+            let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
+            let calldata_size = sload_field(input, calldata_size_slot)?;
+            let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
+            let cw = calldata_size_u64.div_ceil(32);
+            let nbytes = 6 * 32 + 32 + 32 * cw;
+            let wb = nbytes.div_ceil(32);
+            (cw, wb, calldata_size_u64)
+        };
 
     const PARAMS_SLOAD_GAS: u64 = 50;
     let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);

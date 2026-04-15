@@ -27,13 +27,10 @@ fn owner_member_slot(addr: Address) -> U256 {
 #[test]
 fn precompile_gated_below_v41() {
     let amount = word_u256(U256::from(1_000_000));
-    let run = PrecompileTest::new()
-        .arbos_version(40)
-        .arbos_state()
-        .call(
-            &arbnativetokenmanager(),
-            &calldata("mintNativeToken(uint256)", &[amount]),
-        );
+    let run = PrecompileTest::new().arbos_version(40).arbos_state().call(
+        &arbnativetokenmanager(),
+        &calldata("mintNativeToken(uint256)", &[amount]),
+    );
     let out = run.assert_ok();
     assert!(out.bytes.is_empty());
 }

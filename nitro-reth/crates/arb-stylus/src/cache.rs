@@ -134,9 +134,7 @@ impl CompileConfig {
         if self.pricing.ink_header_cost > 0 {
             // Middleware order:
             //   StartMover -> InkMeter -> DynamicMeter -> DepthChecker -> HeapBound
-            cranelift.push_middleware(Arc::new(middleware::StartMover::new(
-                self.debug.debug_info,
-            )));
+            cranelift.push_middleware(Arc::new(middleware::StartMover::new(self.debug.debug_info)));
             cranelift.push_middleware(Arc::new(middleware::InkMeter::new(
                 self.pricing.ink_header_cost,
             )));

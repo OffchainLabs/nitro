@@ -165,11 +165,10 @@ pub struct SubCreateResult {
 ///
 /// Parameters: (ctx_ptr, call_type, contract, caller, storage_addr, input, gas, value)
 /// - `caller`: msg.sender for the new frame (preserved for DELEGATECALL)
-/// - `storage_addr`: address whose storage the new frame uses
-///   (= current contract for CALL/STATICCALL, = preserved storage context for DELEGATECALL)
+/// - `storage_addr`: address whose storage the new frame uses (= current contract for
+///   CALL/STATICCALL, = preserved storage context for DELEGATECALL)
 /// call_type: 0=CALL, 1=DELEGATECALL, 2=STATICCALL
-pub type DoCallFn =
-    fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256) -> SubCallResult;
+pub type DoCallFn = fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
 ///
@@ -194,10 +193,7 @@ impl StorageCacheEntry {
     }
 
     fn unknown(value: B256) -> Self {
-        Self {
-            value,
-            known: None,
-        }
+        Self { value, known: None }
     }
 
     fn dirty(&self) -> bool {
@@ -367,7 +363,10 @@ impl EvmApi for StylusEvmApi {
             } else {
                 WARM_STORAGE_READ_COST
             };
-            cost = Gas(cost.0.saturating_add(sload_cost).saturating_add(evm_api_gas_to_use.0));
+            cost = Gas(cost
+                .0
+                .saturating_add(sload_cost)
+                .saturating_add(evm_api_gas_to_use.0));
 
             self.storage_cache
                 .slots
@@ -574,8 +573,9 @@ impl EvmApi for StylusEvmApi {
             self.ctx_ptr,
             1, // DELEGATECALL
             contract,
-            self.caller,  // caller = preserved msg.sender
-            self.address, // storage_addr = current contract (DELEGATECALL preserves storage context)
+            self.caller, // caller = preserved msg.sender
+            self.address, /* storage_addr = current contract (DELEGATECALL preserves storage
+                          * context) */
             calldata,
             gas,
             self.call_value, // forward current call value
@@ -1070,8 +1070,9 @@ mod sstore_parity_tests {
         assert_eq!(sstore_refund(&info(5, 10, 0, false)), 4_800);
     }
 
-    /// Case 2.2.2.1 (restore to inexistent original): `original == 0`, `value == 0`, `current != 0`.
-    /// Expected: 100 gas, refund `SstoreSetGasEIP2200 - WarmStorageReadCostEIP2929 = 19_900`.
+    /// Case 2.2.2.1 (restore to inexistent original): `original == 0`, `value == 0`, `current !=
+    /// 0`. Expected: 100 gas, refund `SstoreSetGasEIP2200 - WarmStorageReadCostEIP2929 =
+    /// 19_900`.
     #[test]
     fn case_2_2_2_1_restore_to_zero_original() {
         assert_eq!(sstore_gas_cost(&info(0, 5, 0, false)), 100);

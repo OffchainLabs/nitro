@@ -1939,7 +1939,8 @@ where
                 for (address, topics, data) in pending_logs {
                     logs.push(Log {
                         address,
-                        data: alloy_primitives::LogData::new(topics, data.into()).unwrap_or_default(),
+                        data: alloy_primitives::LogData::new(topics, data.into())
+                            .unwrap_or_default(),
                     });
                 }
             }
@@ -2026,7 +2027,6 @@ where
             self.touched_accounts
                 .insert(arb_precompiles::ARBSYS_ADDRESS);
         }
-
 
         // Track poster gas and multi-gas for this receipt (parallel to receipts vector).
         let poster_gas_for_receipt = pending.as_ref().map_or(0, |p| p.poster_gas);
@@ -2585,7 +2585,6 @@ fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Addr
     burn_balance(state, from, amount);
     mint_balance(state, to, amount);
 }
-
 
 /// Re-create an empty account that was deleted by per-tx Finalise.
 /// Matches Go's `CreateZombieIfDeleted`: if `addr` was removed by Finalise

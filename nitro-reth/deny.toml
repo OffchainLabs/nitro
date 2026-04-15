@@ -19,6 +19,11 @@ ignore = [
     "RUSTSEC-2026-0049", # rustls-webpki CRL - transitive via reth
     "RUSTSEC-2026-0067", # tar unpack_in symlink - transitive via reth
     "RUSTSEC-2026-0068", # tar PAX size headers - transitive via reth
+    "RUSTSEC-2021-0139", # ansi_term unmaintained - transitive via vendored wasmer
+    "RUSTSEC-2024-0375", # atty unmaintained - transitive via vendored wasmer
+    "RUSTSEC-2020-0168", # mach unmaintained - transitive via vendored wasmer
+    "RUSTSEC-2026-0098", # rustls-webpki URI name constraints - transitive via reth
+    "RUSTSEC-2026-0099", # rustls-webpki wildcard name constraints - transitive via reth
 ]
 
 [licenses]

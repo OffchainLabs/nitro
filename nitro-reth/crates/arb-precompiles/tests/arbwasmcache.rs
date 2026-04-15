@@ -29,13 +29,10 @@ fn cache_manager_member_slot(addr: Address) -> U256 {
 #[test]
 fn is_cache_manager_returns_false_for_unregistered() {
     let probe: Address = address!("00000000000000000000000000000000000000aa");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbwasmcache(),
-            &calldata("isCacheManager(address)", &[word_address(probe)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbwasmcache(),
+        &calldata("isCacheManager(address)", &[word_address(probe)]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -45,7 +42,11 @@ fn is_cache_manager_returns_true_for_member() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, cache_manager_member_slot(probe), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            cache_manager_member_slot(probe),
+            U256::from(1),
+        )
         .call(
             &arbwasmcache(),
             &calldata("isCacheManager(address)", &[word_address(probe)]),
@@ -75,13 +76,10 @@ fn codehash_is_cached_reads_program_word_byte_14() {
 #[test]
 fn codehash_is_cached_returns_false_when_byte_14_zero() {
     let codehash = B256::from([0x55; 32]);
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbwasmcache(),
-            &calldata("codehashIsCached(bytes32)", &[codehash]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbwasmcache(),
+        &calldata("codehashIsCached(bytes32)", &[codehash]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -163,9 +161,17 @@ fn cache_codehash_succeeds_for_chain_owner_and_sets_cached_byte() {
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, programs_params_slot(), pack_params(2, 365))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            programs_params_slot(),
+            pack_params(2, 365),
+        )
         .storage(ARBOS_STATE_ADDRESS, program_slot(codehash), program_word)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1));
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        );
 
     let run = test.call(
         &arbwasmcache(),
@@ -192,9 +198,17 @@ fn cache_codehash_no_op_when_already_cached() {
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, programs_params_slot(), pack_params(2, 365))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            programs_params_slot(),
+            pack_params(2, 365),
+        )
         .storage(ARBOS_STATE_ADDRESS, program_slot(codehash), program_word)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        )
         .call(
             &arbwasmcache(),
             &calldata("cacheCodehash(bytes32)", &[codehash]),
@@ -219,9 +233,17 @@ fn cache_codehash_reverts_program_needs_upgrade_for_stale_version() {
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, programs_params_slot(), pack_params(3, 365))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            programs_params_slot(),
+            pack_params(3, 365),
+        )
         .storage(ARBOS_STATE_ADDRESS, program_slot(codehash), program_word)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        )
         .call(
             &arbwasmcache(),
             &calldata("cacheCodehash(bytes32)", &[codehash]),
@@ -245,9 +267,17 @@ fn cache_codehash_reverts_program_expired() {
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, programs_params_slot(), pack_params(2, 1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            programs_params_slot(),
+            pack_params(2, 1),
+        )
         .storage(ARBOS_STATE_ADDRESS, program_slot(codehash), program_word)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        )
         .call(
             &arbwasmcache(),
             &calldata("cacheCodehash(bytes32)", &[codehash]),
@@ -272,9 +302,17 @@ fn evict_codehash_clears_cached_byte() {
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, programs_params_slot(), pack_params(2, 365))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            programs_params_slot(),
+            pack_params(2, 365),
+        )
         .storage(ARBOS_STATE_ADDRESS, program_slot(codehash), program_word)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        )
         .call(
             &arbwasmcache(),
             &calldata("evictCodehash(bytes32)", &[codehash]),
@@ -306,9 +344,17 @@ fn cache_program_resolves_address_to_codehash() {
                 ..Default::default()
             },
         )
-        .storage(ARBOS_STATE_ADDRESS, programs_params_slot(), pack_params(2, 365))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            programs_params_slot(),
+            pack_params(2, 365),
+        )
         .storage(ARBOS_STATE_ADDRESS, program_slot(codehash), program_word)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        )
         .call(
             &arbwasmcache(),
             &calldata("cacheProgram(address)", &[word_address(prog_addr)]),

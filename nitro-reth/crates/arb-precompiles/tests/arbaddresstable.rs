@@ -5,8 +5,8 @@ use alloy_primitives::{address, Address, B256, U256};
 use arb_precompiles::{
     create_arbaddresstable_precompile,
     storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE,
-        ARBOS_STATE_ADDRESS, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ARBOS_STATE_ADDRESS,
+        ROOT_STORAGE_KEY,
     },
 };
 use common::{calldata, decode_u256, word_address, PrecompileTest};
@@ -53,13 +53,10 @@ fn size_returns_stored_value() {
 #[test]
 fn address_exists_returns_false_for_unregistered() {
     let addr: Address = address!("00000000000000000000000000000000000000aa");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaddresstable(),
-            &calldata("addressExists(address)", &[word_address(addr)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaddresstable(),
+        &calldata("addressExists(address)", &[word_address(addr)]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -89,29 +86,23 @@ fn decode_dynamic_bytes(out: &alloy_primitives::Bytes) -> Vec<u8> {
 fn lookup_unregistered_address_reverts() {
     // gas_check converts PrecompileError::Other to a reverted output at ArbOS >= 11.
     let addr: Address = address!("00000000000000000000000000000000000000bb");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaddresstable(),
-            &calldata("lookup(address)", &[word_address(addr)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaddresstable(),
+        &calldata("lookup(address)", &[word_address(addr)]),
+    );
     let out = run.assert_ok();
     assert!(out.reverted, "lookup of unregistered must revert");
 }
 
 #[test]
 fn lookup_index_zero_in_empty_table_reverts() {
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaddresstable(),
-            &calldata(
-                "lookupIndex(uint256)",
-                &[B256::from(U256::ZERO.to_be_bytes::<32>())],
-            ),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaddresstable(),
+        &calldata(
+            "lookupIndex(uint256)",
+            &[B256::from(U256::ZERO.to_be_bytes::<32>())],
+        ),
+    );
     let out = run.assert_ok();
     assert!(out.reverted, "lookupIndex into empty table must revert");
 }
@@ -121,13 +112,10 @@ fn register_returns_zero_for_first_address_and_increments_size() {
     // Mirrors Nitro TestAddressTable1: registering the first address yields
     // slot index 0 and increments size to 1.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaddresstable(),
-            &calldata("register(address)", &[word_address(addr)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaddresstable(),
+        &calldata("register(address)", &[word_address(addr)]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
     assert_eq!(
         run.storage(ARBOS_STATE_ADDRESS, size_slot()),
@@ -140,13 +128,10 @@ fn compress_unregistered_returns_21_byte_raw_format() {
     // Mirrors Nitro TestAddressTableCompressNotInTable: unknown addresses
     // round-trip via the 21-byte RLP raw format.
     let addr: Address = address!("0123456789abcdef0123456789abcdef01234567");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaddresstable(),
-            &calldata("compress(address)", &[word_address(addr)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaddresstable(),
+        &calldata("compress(address)", &[word_address(addr)]),
+    );
     let body = decode_dynamic_bytes(run.output());
     assert_eq!(body.len(), 21, "unknown addr compresses to 21 bytes");
     // The first byte is the RLP "20-byte string" tag (0x80 + 20 = 0x94).

@@ -8,9 +8,7 @@
 use alloy_evm::precompiles::PrecompilesMap;
 use alloy_primitives::{address, Address};
 use arb_precompiles::register_arb_precompiles;
-use revm::handler::EthPrecompiles;
-use revm::precompile::Precompiles;
-use revm::primitives::hardfork::SpecId;
+use revm::{handler::EthPrecompiles, precompile::Precompiles, primitives::hardfork::SpecId};
 
 fn enabled_eth_addresses(map: &PrecompilesMap) -> Vec<Address> {
     let mut out: Vec<Address> = map
@@ -57,9 +55,18 @@ fn pre_arbos_30_excludes_kzg_and_p256_and_bls() {
         "P256VERIFY must not exist before ArbOS 30"
     );
     for bls in [
-        BLS_G1_ADD, BLS_G1_MSM, BLS_G2_ADD, BLS_G2_MSM, BLS_PAIRING, BLS_MAP_FP, BLS_MAP_FP2,
+        BLS_G1_ADD,
+        BLS_G1_MSM,
+        BLS_G2_ADD,
+        BLS_G2_MSM,
+        BLS_PAIRING,
+        BLS_MAP_FP,
+        BLS_MAP_FP2,
     ] {
-        assert!(!addrs.contains(&bls), "BLS {bls} must not exist before ArbOS 50");
+        assert!(
+            !addrs.contains(&bls),
+            "BLS {bls} must not exist before ArbOS 50"
+        );
     }
 }
 
@@ -68,11 +75,23 @@ fn arbos_30_to_49_has_kzg_and_p256_no_bls() {
     let map = build_map(SpecId::PRAGUE, 30);
     let addrs = enabled_eth_addresses(&map);
     assert!(addrs.contains(&KZG), "KZG required from ArbOS 30");
-    assert!(addrs.contains(&P256VERIFY), "P256VERIFY required from ArbOS 30");
+    assert!(
+        addrs.contains(&P256VERIFY),
+        "P256VERIFY required from ArbOS 30"
+    );
     for bls in [
-        BLS_G1_ADD, BLS_G1_MSM, BLS_G2_ADD, BLS_G2_MSM, BLS_PAIRING, BLS_MAP_FP, BLS_MAP_FP2,
+        BLS_G1_ADD,
+        BLS_G1_MSM,
+        BLS_G2_ADD,
+        BLS_G2_MSM,
+        BLS_PAIRING,
+        BLS_MAP_FP,
+        BLS_MAP_FP2,
     ] {
-        assert!(!addrs.contains(&bls), "BLS {bls} must not exist before ArbOS 50");
+        assert!(
+            !addrs.contains(&bls),
+            "BLS {bls} must not exist before ArbOS 50"
+        );
     }
 }
 
@@ -83,7 +102,13 @@ fn arbos_50_plus_has_kzg_p256_and_bls() {
     assert!(addrs.contains(&KZG));
     assert!(addrs.contains(&P256VERIFY));
     for bls in [
-        BLS_G1_ADD, BLS_G1_MSM, BLS_G2_ADD, BLS_G2_MSM, BLS_PAIRING, BLS_MAP_FP, BLS_MAP_FP2,
+        BLS_G1_ADD,
+        BLS_G1_MSM,
+        BLS_G2_ADD,
+        BLS_G2_MSM,
+        BLS_PAIRING,
+        BLS_MAP_FP,
+        BLS_MAP_FP2,
     ] {
         assert!(addrs.contains(&bls), "BLS {bls} required from ArbOS 50");
     }

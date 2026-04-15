@@ -35,25 +35,22 @@ fn nitro_genesis_block_returns_root_field() {
 #[test]
 fn block_l1_num_returns_cached_value() {
     set_cached_l1_block_number(99, 7_777_777);
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &nodeinterface(),
-            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &nodeinterface(),
+        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
+    );
     assert_eq!(decode_u256(run.output()), U256::from(7_777_777_u64));
 }
 
 #[test]
 fn block_l1_num_returns_zero_for_unknown_l2_block() {
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &nodeinterface(),
-            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99_999_999_u64))]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &nodeinterface(),
+        &calldata(
+            "blockL1Num(uint64)",
+            &[word_u256(U256::from(99_999_999_u64))],
+        ),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -76,10 +73,7 @@ fn gas_estimate_components_returns_basefee_and_l1_price() {
         )
         .call(
             &nodeinterface(),
-            &calldata(
-                "gasEstimateComponents(address,bool,bytes)",
-                &[],
-            ),
+            &calldata("gasEstimateComponents(address,bool,bytes)", &[]),
         );
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u256(U256::ZERO));
@@ -126,9 +120,6 @@ fn rpc_only_methods_return_revert() {
             .arbos_version(30)
             .arbos_state()
             .call(&nodeinterface(), &calldata(sig, &[word_u256(U256::ZERO)]));
-        assert!(
-            run.assert_ok().reverted,
-            "{sig} must revert (RPC-only)",
-        );
+        assert!(run.assert_ok().reverted, "{sig} must revert (RPC-only)",);
     }
 }

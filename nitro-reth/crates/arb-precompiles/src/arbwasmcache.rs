@@ -164,10 +164,7 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(out.len() as u64);
     let total = SLOAD_GAS + sloads * SLOAD_GAS + args_cost + result_cost;
-    Ok(PrecompileOutput::new(
-        total.min(input.gas),
-        out.into(),
-    ))
+    Ok(PrecompileOutput::new(total.min(input.gas), out.into()))
 }
 
 /// Check if a program codehash is cached.

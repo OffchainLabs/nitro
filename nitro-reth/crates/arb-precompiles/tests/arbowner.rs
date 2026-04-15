@@ -28,7 +28,11 @@ fn chain_owner_member_slot(owner: Address) -> U256 {
 }
 
 fn install_owner(test: PrecompileTest, owner: Address) -> PrecompileTest {
-    test.storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+    test.storage(
+        ARBOS_STATE_ADDRESS,
+        chain_owner_member_slot(owner),
+        U256::from(1),
+    )
 }
 
 const OWNER: Address = address!("00000000000000000000000000000000000000aa");
@@ -60,7 +64,11 @@ fn allows_owner_to_read_network_fee_account() {
     let fee_account: Address = address!("00000000000000000000000000000000000000ff");
     let val = U256::from_be_slice(fee_account.as_slice());
     let run = fixture(30)
-        .storage(ARBOS_STATE_ADDRESS, root_slot(NETWORK_FEE_ACCOUNT_OFFSET), val)
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            root_slot(NETWORK_FEE_ACCOUNT_OFFSET),
+            val,
+        )
         .call(&arbowner(), &calldata("getNetworkFeeAccount()", &[]));
     assert_eq!(decode_u256(run.output()), val);
 }
@@ -88,7 +96,10 @@ fn set_network_fee_account_writes_root_slot() {
     let new_account: Address = address!("00000000000000000000000000000000000000cc");
     let run = fixture(30).call(
         &arbowner(),
-        &calldata("setNetworkFeeAccount(address)", &[word_address(new_account)]),
+        &calldata(
+            "setNetworkFeeAccount(address)",
+            &[word_address(new_account)],
+        ),
     );
     let _ = run.assert_ok();
     let stored = run.storage(ARBOS_STATE_ADDRESS, root_slot(NETWORK_FEE_ACCOUNT_OFFSET));
@@ -101,7 +112,10 @@ fn schedule_arbos_upgrade_writes_version_and_timestamp() {
         &arbowner(),
         &calldata(
             "scheduleArbOSUpgrade(uint64,uint64)",
-            &[word_u256(U256::from(60)), word_u256(U256::from(1_800_000_000))],
+            &[
+                word_u256(U256::from(60)),
+                word_u256(U256::from(1_800_000_000)),
+            ],
         ),
     );
     let _ = run.assert_ok();
@@ -123,7 +137,10 @@ fn set_speed_limit_writes_l2_pricing_field() {
     );
     let _ = run.assert_ok();
     assert_eq!(
-        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, L2_SPEED_LIMIT)),
+        run.storage(
+            ARBOS_STATE_ADDRESS,
+            subspace_slot(L2_PRICING_SUBSPACE, L2_SPEED_LIMIT)
+        ),
         U256::from(2_000_000_u64)
     );
 }
@@ -323,10 +340,7 @@ fn set_native_token_management_from_writes_root_field() {
     let when = U256::from(1_700_000_000_u64);
     let run = fixture(41).call(
         &arbowner(),
-        &calldata(
-            "setNativeTokenManagementFrom(uint64)",
-            &[word_u256(when)],
-        ),
+        &calldata("setNativeTokenManagementFrom(uint64)", &[word_u256(when)]),
     );
     // The setFeatureFromTime helper rejects values that aren't at least 7 days
     // in the future of the current block timestamp; the harness uses
@@ -388,10 +402,7 @@ fn nitro_parity_infra_fee_account_round_trip() {
     // Empty at start via both precompiles.
     let run = fixture(6).call(&arbowner(), &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
-    let run = fixture(6).call(
-        &arbownerpublic(),
-        &calldata("getInfraFeeAccount()", &[]),
-    );
+    let run = fixture(6).call(&arbownerpublic(), &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 
     // Set via ArbOwner.
@@ -417,10 +428,7 @@ fn nitro_parity_infra_fee_account_round_trip() {
 
     // Read back via ArbOwnerPublic.
     let getter = set_run.continue_into(fixture(6), ARBOS_STATE_ADDRESS);
-    let run = getter.call(
-        &arbownerpublic(),
-        &calldata("getInfraFeeAccount()", &[]),
-    );
+    let run = getter.call(&arbownerpublic(), &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(
         decode_u256(run.output()),
         U256::from_be_slice(new_addr.as_slice())
@@ -500,16 +508,16 @@ fn nitro_parity_arb_owner_chain_owner_management() {
 #[test]
 fn nitro_parity_arb_owner_amortized_cost_cap_round_trip() {
     // Initial value is zero.
-    let run = fixture(30).call(
-        &arbgasinfo(),
-        &calldata("getAmortizedCostCapBips()", &[]),
-    );
+    let run = fixture(30).call(&arbgasinfo(), &calldata("getAmortizedCostCapBips()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 
     let new_cap = 77_734_u64;
     let set_run = fixture(30).call(
         &arbowner(),
-        &calldata("setAmortizedCostCapBips(uint64)", &[word_u256(U256::from(new_cap))]),
+        &calldata(
+            "setAmortizedCostCapBips(uint64)",
+            &[word_u256(U256::from(new_cap))],
+        ),
     );
     let _ = set_run.assert_ok();
 

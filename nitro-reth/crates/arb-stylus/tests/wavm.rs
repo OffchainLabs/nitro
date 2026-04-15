@@ -15,16 +15,12 @@
 #[no_mangle]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use arb_stylus::config::CompileConfig;
-use arb_stylus::middleware::opcode_ink_cost;
-use wasmer::sys::EngineBuilder;
-use wasmer::wasmparser::Operator;
+use arb_stylus::{config::CompileConfig, middleware::opcode_ink_cost};
 use wasmer::{
-    imports, CompilerConfig, Cranelift, CraneliftOptLevel, Function, Imports, Instance, Module,
-    Store, Value,
+    imports, sys::EngineBuilder, wasmparser::Operator, CompilerConfig, Cranelift,
+    CraneliftOptLevel, Function, Imports, Instance, Module, Store, Value,
 };
 
 // ── Test fixtures (verbatim from Nitro's crates/stylus/tests/) ─────
@@ -414,9 +410,27 @@ fn opcode_ink_cost_matches_nitro_pricing_v1() {
         (Operator::GlobalGet { global_index: 0 }, 225),
         (Operator::GlobalSet { global_index: 0 }, 575),
         // Memory
-        (Operator::MemorySize { mem: 0, mem_byte: 0 }, 3000),
-        (Operator::MemoryGrow { mem: 0, mem_byte: 0 }, 8050),
-        (Operator::MemoryCopy { dst_mem: 0, src_mem: 0 }, 950),
+        (
+            Operator::MemorySize {
+                mem: 0,
+                mem_byte: 0,
+            },
+            3000,
+        ),
+        (
+            Operator::MemoryGrow {
+                mem: 0,
+                mem_byte: 0,
+            },
+            8050,
+        ),
+        (
+            Operator::MemoryCopy {
+                dst_mem: 0,
+                src_mem: 0,
+            },
+            950,
+        ),
         (Operator::MemoryFill { mem: 0 }, 950),
         // i32 comparisons
         (Operator::I32Eqz, 170),

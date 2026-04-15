@@ -19,9 +19,9 @@ pub unsafe extern "C" fn __rust_probestack() {}
 use std::sync::Arc;
 
 use arb_stylus::config::CompileConfig;
-use wasmer::sys::EngineBuilder;
 use wasmer::{
-    imports, CompilerConfig, Cranelift, CraneliftOptLevel, Imports, Instance, Module, Store, Value,
+    imports, sys::EngineBuilder, CompilerConfig, Cranelift, CraneliftOptLevel, Imports, Instance,
+    Module, Store, Value,
 };
 
 // ── Shared helpers (kept identical to wavm.rs on purpose) ──────────
@@ -150,10 +150,10 @@ fn call_indirect_dispatches_to_correct_function() {
 
     // (idx, arg) -> expected
     let cases = [
-        (0_i32, 7_i32, 14),  // double
-        (1, 7, 21),          // triple
-        (2, 7, 49),          // square
-        (3, 7, -7),          // negate
+        (0_i32, 7_i32, 14), // double
+        (1, 7, 21),         // triple
+        (2, 7, 49),         // square
+        (3, 7, -7),         // negate
         (0, 0, 0),
         (2, 9, 81),
     ];
@@ -234,8 +234,7 @@ fn serialize_deserialize_round_trip_matches_fresh_compile() {
     let serialized = module_a.serialize().expect("serialize");
 
     let mut store_b = make_store();
-    let module_b =
-        unsafe { Module::deserialize(&store_b, serialized).expect("deserialize") };
+    let module_b = unsafe { Module::deserialize(&store_b, serialized).expect("deserialize") };
     let instance_b = Instance::new(&mut store_b, &module_b, &imports! {}).unwrap();
     seed_meter(&instance_b, &mut store_b);
     let (compute_b, data_b) = run_compute_and_read(&mut store_b, &instance_b);
@@ -334,13 +333,8 @@ fn activate_test_wat() -> arbos::programs::types::ActivationResult {
     let codehash = [0x42_u8; 32];
     let mut gas = u64::MAX;
     arb_stylus::activate_program(
-        &wasm,
-        &codehash,
-        /* stylus_version */ 1,
-        /* arbos_version */ 30,
-        /* page_limit */ 128,
-        /* debug */ false,
-        &mut gas,
+        &wasm, &codehash, /* stylus_version */ 1, /* arbos_version */ 30,
+        /* page_limit */ 128, /* debug */ false, &mut gas,
     )
     .expect("activation")
 }

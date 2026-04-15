@@ -153,7 +153,11 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
     Ok(val.data)
 }
 
-fn sstore_field(input: &mut PrecompileInput<'_>, slot: U256, value: U256) -> Result<(), PrecompileError> {
+fn sstore_field(
+    input: &mut PrecompileInput<'_>,
+    slot: U256,
+    value: U256,
+) -> Result<(), PrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
@@ -241,16 +245,22 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResu
 
     // Emit ChainOwnerRectified(address) event
     let topic0 = alloy_primitives::keccak256("ChainOwnerRectified(address)");
-    input.internals_mut().log(alloy_primitives::Log::new_unchecked(
-        ARBOWNERPUBLIC_ADDRESS,
-        vec![topic0],
-        addr_hash.0.to_vec().into(),
-    ));
+    input
+        .internals_mut()
+        .log(alloy_primitives::Log::new_unchecked(
+            ARBOWNERPUBLIC_ADDRESS,
+            vec![topic0],
+            addr_hash.0.to_vec().into(),
+        ));
 
     const SSTORE_ZERO_GAS: u64 = 5_000;
     const RECTIFY_EVENT_GAS: u64 = 1_006; // LOG1 + 32 bytes data
-    let gas_used = SLOAD_GAS + 7 * SLOAD_GAS + SSTORE_ZERO_GAS + 3 * SSTORE_GAS + RECTIFY_EVENT_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+    let gas_used =
+        SLOAD_GAS + 7 * SLOAD_GAS + SSTORE_ZERO_GAS + 3 * SSTORE_GAS + RECTIFY_EVENT_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        Vec::new().into(),
+    ))
 }
 
 fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {

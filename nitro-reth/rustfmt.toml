@@ -4,3 +4,4 @@ wrap_comments = true
 comment_width = 100
 format_code_in_doc_comments = true
 trailing_comma = "Vertical"
+ignore = ["vendor"]

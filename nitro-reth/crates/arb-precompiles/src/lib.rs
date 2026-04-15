@@ -336,13 +336,22 @@ pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
     })
 }
 
-pub fn emit_log(address: alloy_primitives::Address, topics: &[alloy_primitives::B256], data: &[u8]) {
+pub fn emit_log(
+    address: alloy_primitives::Address,
+    topics: &[alloy_primitives::B256],
+    data: &[u8],
+) {
     PENDING_PRECOMPILE_LOGS.with(|logs| {
-        logs.borrow_mut().push((address, topics.to_vec(), data.to_vec()));
+        logs.borrow_mut()
+            .push((address, topics.to_vec(), data.to_vec()));
     });
 }
 
-pub fn take_pending_precompile_logs() -> Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)> {
+pub fn take_pending_precompile_logs() -> Vec<(
+    alloy_primitives::Address,
+    Vec<alloy_primitives::B256>,
+    Vec<u8>,
+)> {
     PENDING_PRECOMPILE_LOGS.with(|logs| std::mem::take(&mut *logs.borrow_mut()))
 }
 
@@ -356,7 +365,10 @@ fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
 
 /// Pre-dispatch error: consumes all supplied gas and reverts.
 fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
-    Ok(PrecompileOutput::new_reverted(gas_limit, Default::default()))
+    Ok(PrecompileOutput::new_reverted(
+        gas_limit,
+        Default::default(),
+    ))
 }
 
 /// SolError revert: accumulated gas + result-cost, with the error selector.
@@ -404,12 +416,9 @@ fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
     reset_precompile_gas();
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
-        Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => {
-            Ok(PrecompileOutput::new_reverted(
-                accumulated_gas.min(gas_limit),
-                Default::default(),
-            ))
-        }
+        Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => Ok(
+            PrecompileOutput::new_reverted(accumulated_gas.min(gas_limit), Default::default()),
+        ),
         other => other,
     }
 }
@@ -486,7 +495,6 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     }
 }
 
-
 #[cfg(test)]
 mod selector_audit {
     #[test]
@@ -497,18 +505,21 @@ mod selector_audit {
             assert_eq!(actual, *expected, "selector mismatch for {sig}: expected 0x{:02x}{:02x}{:02x}{:02x} got 0x{:02x}{:02x}{:02x}{:02x}",
                 expected[0], expected[1], expected[2], expected[3], actual[0], actual[1], actual[2], actual[3]);
         }
-        check("rectifyChainOwner(address)", &[0x6f,0xe8,0x63,0x73]);
-        check("addChainOwner(address)", &[0x48,0x1f,0x8d,0xbf]);
-        check("removeChainOwner(address)", &[0x87,0x92,0x70,0x1a]);
-        check("releaseL1PricerSurplusFunds(uint256)", &[0x31,0x4b,0xcf,0x05]);
-        check("withdrawEth(address)", &[0x25,0xe1,0x60,0x63]);
-        check("sendTxToL1(address,bytes)", &[0x92,0x8c,0x16,0x9a]);
-        check("arbBlockNumber()", &[0xa3,0xb1,0xb3,0x1d]);
-        check("arbBlockHash(uint256)", &[0x2b,0x40,0x7a,0x82]);
-        check("arbChainID()", &[0xd1,0x27,0xf5,0x4a]);
-        check("isTopLevelCall()", &[0x08,0xbd,0x62,0x4c]);
+        check("rectifyChainOwner(address)", &[0x6f, 0xe8, 0x63, 0x73]);
+        check("addChainOwner(address)", &[0x48, 0x1f, 0x8d, 0xbf]);
+        check("removeChainOwner(address)", &[0x87, 0x92, 0x70, 0x1a]);
+        check(
+            "releaseL1PricerSurplusFunds(uint256)",
+            &[0x31, 0x4b, 0xcf, 0x05],
+        );
+        check("withdrawEth(address)", &[0x25, 0xe1, 0x60, 0x63]);
+        check("sendTxToL1(address,bytes)", &[0x92, 0x8c, 0x16, 0x9a]);
+        check("arbBlockNumber()", &[0xa3, 0xb1, 0xb3, 0x1d]);
+        check("arbBlockHash(uint256)", &[0x2b, 0x40, 0x7a, 0x82]);
+        check("arbChainID()", &[0xd1, 0x27, 0xf5, 0x4a]);
+        check("isTopLevelCall()", &[0x08, 0xbd, 0x62, 0x4c]);
         // ArbWasm selectors
-        check("activateProgram(address)", &[0x58,0xc7,0x80,0xc2]);
-        check("codehashKeepalive(bytes32)", &[0xc6,0x89,0xba,0xd5]);
+        check("activateProgram(address)", &[0x58, 0xc7, 0x80, 0xc2]);
+        check("codehashKeepalive(bytes32)", &[0xc6, 0x89, 0xba, 0xd5]);
     }
 }

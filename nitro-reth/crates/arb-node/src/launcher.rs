@@ -343,9 +343,7 @@ impl ArbEngineLauncher {
                             provider_rw
                                 .save_blocks(req.blocks, SaveBlocksMode::Full)
                                 .map_err(|e| format!("save_blocks: {e}"))?;
-                            provider_rw
-                                .commit()
-                                .map_err(|e| format!("commit: {e}"))?;
+                            provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
                             Ok(())
                         })();
 
@@ -384,7 +382,8 @@ impl ArbEngineLauncher {
         {
             use alloy_primitives::B256;
             use alloy_rlp::{BufMut, Encodable};
-            use reth_provider::DatabaseProviderFactory;
+            use reth_provider::{DatabaseProviderFactory, StorageSettingsCache};
+            use reth_storage_api::DBProvider;
             use reth_trie::{
                 hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
                 node_iter::{TrieElement, TrieNodeIter},
@@ -395,11 +394,9 @@ impl ArbEngineLauncher {
             };
             use reth_trie_common::TrieInputSorted;
             use reth_trie_db::{
-                DatabaseTrieCursorFactory, DatabaseHashedCursorFactory,
-                PackedKeyAdapter, LegacyKeyAdapter,
+                DatabaseHashedCursorFactory, DatabaseTrieCursorFactory, LegacyKeyAdapter,
+                PackedKeyAdapter,
             };
-            use reth_provider::StorageSettingsCache;
-            use reth_storage_api::DBProvider;
             use reth_trie_parallel::StorageRootTargets;
 
             let pf = ctx.provider_factory().clone();
@@ -452,7 +449,10 @@ impl ArbEngineLauncher {
                                 state2.as_ref(),
                             );
                             StorageRoot::new_hashed(
-                                trie_cursor, hashed_cursor, hashed_address, prefix_set,
+                                trie_cursor,
+                                hashed_cursor,
+                                hashed_address,
+                                prefix_set,
                                 Default::default(),
                             )
                             .calculate(true)
@@ -477,42 +477,49 @@ impl ArbEngineLauncher {
                 );
 
                 let walker = TrieWalker::<_>::state_trie(
-                    trie_cursor.account_trie_cursor().map_err(|e| format!("trie cursor: {e}"))?,
+                    trie_cursor
+                        .account_trie_cursor()
+                        .map_err(|e| format!("trie cursor: {e}"))?,
                     prefix_sets_frozen.account_prefix_set,
                 )
                 .with_deletions_retained(true);
                 let mut account_node_iter = TrieNodeIter::state_trie(
                     walker,
-                    hashed_cursor.hashed_account_cursor().map_err(|e| format!("hashed cursor: {e}"))?,
+                    hashed_cursor
+                        .hashed_account_cursor()
+                        .map_err(|e| format!("hashed cursor: {e}"))?,
                 );
 
                 let mut hash_builder = HashBuilder::default().with_updates(true);
                 let mut trie_updates = TrieUpdates::default();
                 let mut account_rlp = Vec::with_capacity(TRIE_ACCOUNT_RLP_MAX_SIZE);
 
-                while let Some(node) =
-                    account_node_iter.try_next().map_err(|e| format!("node iter: {e}"))?
+                while let Some(node) = account_node_iter
+                    .try_next()
+                    .map_err(|e| format!("node iter: {e}"))?
                 {
                     match node {
                         TrieElement::Branch(node) => {
-                            hash_builder.add_branch(node.key, node.value, node.children_are_in_trie);
+                            hash_builder.add_branch(
+                                node.key,
+                                node.value,
+                                node.children_are_in_trie,
+                            );
                         }
                         TrieElement::Leaf(hashed_address, account) => {
                             let storage_root_result = match storage_roots.remove(&hashed_address) {
-                                Some(rx) => rx
-                                    .recv()
-                                    .map_err(|_| format!("channel closed for {hashed_address}"))??,
-                                None => {
-                                    StorageRoot::new_hashed(
-                                        trie_cursor.clone(),
-                                        hashed_cursor.clone(),
-                                        hashed_address,
-                                        Default::default(),
-                                        Default::default(),
-                                    )
-                                    .calculate(true)
-                                    .map_err(|e| format!("storage root: {e}"))?
-                                }
+                                Some(rx) => rx.recv().map_err(|_| {
+                                    format!("channel closed for {hashed_address}")
+                                })??,
+                                None => StorageRoot::new_hashed(
+                                    trie_cursor.clone(),
+                                    hashed_cursor.clone(),
+                                    hashed_address,
+                                    Default::default(),
+                                    Default::default(),
+                                )
+                                .calculate(true)
+                                .map_err(|e| format!("storage root: {e}"))?,
                             };
 
                             let (storage_root, _, updates) = match storage_root_result {

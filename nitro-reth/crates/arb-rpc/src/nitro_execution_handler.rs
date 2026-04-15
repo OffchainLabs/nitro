@@ -192,7 +192,6 @@ where
         // Decode the L2 message bytes
         let l2_msg = decode_l2_msg(&message.message.l2_msg).map_err(internal_error)?;
 
-
         // Build batch data stats if present
         let batch_data_stats = message
             .message

@@ -31,13 +31,10 @@ fn filtered_tx_slot(tx_hash: &B256) -> U256 {
 #[test]
 fn precompile_gated_below_v60() {
     let tx = B256::from([0x42; 32]);
-    let run = PrecompileTest::new()
-        .arbos_version(59)
-        .arbos_state()
-        .call(
-            &arbfilteredtxmanager(),
-            &calldata("isTransactionFiltered(bytes32)", &[tx]),
-        );
+    let run = PrecompileTest::new().arbos_version(59).arbos_state().call(
+        &arbfilteredtxmanager(),
+        &calldata("isTransactionFiltered(bytes32)", &[tx]),
+    );
     let out = run.assert_ok();
     assert!(out.bytes.is_empty());
 }
@@ -45,13 +42,10 @@ fn precompile_gated_below_v60() {
 #[test]
 fn is_filtered_returns_false_for_unknown_tx() {
     let tx = B256::from([0x33; 32]);
-    let run = PrecompileTest::new()
-        .arbos_version(60)
-        .arbos_state()
-        .call(
-            &arbfilteredtxmanager(),
-            &calldata("isTransactionFiltered(bytes32)", &[tx]),
-        );
+    let run = PrecompileTest::new().arbos_version(60).arbos_state().call(
+        &arbfilteredtxmanager(),
+        &calldata("isTransactionFiltered(bytes32)", &[tx]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -61,7 +55,11 @@ fn is_filtered_returns_true_for_known_tx() {
     let run = PrecompileTest::new()
         .arbos_version(60)
         .arbos_state()
-        .storage(FILTERED_TX_STATE_ADDRESS, filtered_tx_slot(&tx), U256::from(1))
+        .storage(
+            FILTERED_TX_STATE_ADDRESS,
+            filtered_tx_slot(&tx),
+            U256::from(1),
+        )
         .call(
             &arbfilteredtxmanager(),
             &calldata("isTransactionFiltered(bytes32)", &[tx]),
@@ -92,7 +90,11 @@ fn add_succeeds_for_authorized_filterer() {
         .arbos_version(60)
         .caller(filterer)
         .arbos_state()
-        .storage(ARBOS_STATE_ADDRESS, filterer_member_slot(filterer), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            filterer_member_slot(filterer),
+            U256::from(1),
+        )
         .call(
             &arbfilteredtxmanager(),
             &calldata("addFilteredTransaction(bytes32)", &[tx]),
@@ -108,14 +110,21 @@ fn add_succeeds_for_authorized_filterer() {
 #[test]
 fn nitro_parity_add_delete_round_trip_for_filterer() {
     let filterer: Address = address!("00000000000000000000000000000000000000aa");
-    let tx_hash = B256::from([5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let tx_hash = B256::from([
+        5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0,
+    ]);
 
     let base = || {
         PrecompileTest::new()
             .arbos_version(60)
             .caller(filterer)
             .arbos_state()
-            .storage(ARBOS_STATE_ADDRESS, filterer_member_slot(filterer), U256::from(1))
+            .storage(
+                ARBOS_STATE_ADDRESS,
+                filterer_member_slot(filterer),
+                U256::from(1),
+            )
     };
 
     // Add: must succeed, must write the filtered-tx slot.

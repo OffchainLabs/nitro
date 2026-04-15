@@ -20,13 +20,10 @@ const BATCH_POSTER: Address = address!("a4b000000000000000000073657175656e636572
 #[test]
 fn get_preferred_aggregator_returns_address_then_bool() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaggregator(),
-            &calldata("getPreferredAggregator(address)", &[word_address(probe)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaggregator(),
+        &calldata("getPreferredAggregator(address)", &[word_address(probe)]),
+    );
     let out = run.output();
     assert_eq!(out.len(), 64);
     let addr = decode_address(out);
@@ -46,13 +43,10 @@ fn get_default_aggregator_returns_batch_poster() {
 #[test]
 fn get_tx_base_fee_returns_zero() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaggregator(),
-            &calldata("getTxBaseFee(address)", &[word_address(probe)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaggregator(),
+        &calldata("getTxBaseFee(address)", &[word_address(probe)]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -210,25 +204,22 @@ fn set_fee_collector_rejects_unauthorised_caller() {
 #[test]
 fn set_tx_base_fee_is_a_noop_returning_no_data() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaggregator(),
-            &calldata(
-                "setTxBaseFee(address,uint256)",
-                &[word_address(probe), B256::from(U256::from(973).to_be_bytes::<32>())],
-            ),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaggregator(),
+        &calldata(
+            "setTxBaseFee(address,uint256)",
+            &[
+                word_address(probe),
+                B256::from(U256::from(973).to_be_bytes::<32>()),
+            ],
+        ),
+    );
     let out = run.assert_ok();
     assert!(out.bytes.is_empty(), "setTxBaseFee returns no data");
     // Verify a follow-up getter still returns 0.
-    let run2 = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbaggregator(),
-            &calldata("getTxBaseFee(address)", &[word_address(probe)]),
-        );
+    let run2 = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbaggregator(),
+        &calldata("getTxBaseFee(address)", &[word_address(probe)]),
+    );
     assert_eq!(decode_u256(run2.output()), U256::ZERO);
 }

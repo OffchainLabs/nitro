@@ -270,9 +270,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             match read_u32_param(data) {
                 Err(e) => Err(e),
-                Ok(val) if val == 0 || val > 0xFF_FFFF => {
-                    Err(PrecompileError::other("ink price must be a positive uint24"))
-                }
+                Ok(val) if val == 0 || val > 0xFF_FFFF => Err(PrecompileError::other(
+                    "ink price must be a positive uint24",
+                )),
                 Ok(val) => write_stylus_param(&mut input, StylusField::InkPrice, val as u64),
             }
         }
@@ -588,11 +588,7 @@ fn handle_set_filtered_funds_recipient(input: &mut PrecompileInput<'_>) -> Preco
         root_slot(FILTERED_FUNDS_RECIPIENT_OFFSET),
         U256::from_be_slice(addr.as_slice()),
     )?;
-    emit_address_event(
-        input,
-        keccak256("FilteredFundsRecipientSet(address)"),
-        addr,
-    );
+    emit_address_event(input, keccak256("FilteredFundsRecipientSet(address)"), addr);
     Ok(PrecompileOutput::new(
         (SSTORE_GAS + COPY_GAS).min(gas_limit),
         Vec::new().into(),
@@ -1468,10 +1464,9 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
             return crate::burn_all_revert(gas_limit);
         }
 
-        let resources_offset: usize =
-            U256::from_be_slice(&data[struct_start..struct_start + 32])
-                .try_into()
-                .unwrap_or(0);
+        let resources_offset: usize = U256::from_be_slice(&data[struct_start..struct_start + 32])
+            .try_into()
+            .unwrap_or(0);
         let window: u64 = U256::from_be_slice(&data[struct_start + 32..struct_start + 64])
             .try_into()
             .unwrap_or(0);

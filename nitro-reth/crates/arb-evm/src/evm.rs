@@ -20,12 +20,10 @@ use revm::{
         ContextTr, JournalTr,
     },
     handler::{
-        instructions::EthInstructions,
-        EthFrame, EvmTr, FrameResult, Handler, ItemOrResult, MainnetHandler,
-        PrecompileProvider,
+        instructions::EthInstructions, EthFrame, EvmTr, FrameResult, Handler, ItemOrResult,
+        MainnetHandler, PrecompileProvider,
     },
-    inspector::InspectorHandler,
-    inspector::NoOpInspector,
+    inspector::{InspectorHandler, NoOpInspector},
     interpreter::{
         interpreter::EthInterpreter,
         interpreter_action::FrameInit,
@@ -842,7 +840,12 @@ where
                         // The range was computed by call_helpers as
                         //   range.start = relative_offset + local_memory_offset()
                         // i.e. an absolute offset into the SharedMemory buffer.
-                        Bytes::from(interpreter.memory.global_slice_range(range.clone()).to_vec())
+                        Bytes::from(
+                            interpreter
+                                .memory
+                                .global_slice_range(range.clone())
+                                .to_vec(),
+                        )
                     }
                 };
                 let bytecode_address = sub_call.bytecode_address;
@@ -1059,8 +1062,8 @@ where
     // Read the activation-time module hash from storage. This differs from
     // code_hash (which is keccak256 of the bytecode); it is the hash of the
     // compiled module computed during activateProgram.
-    let module_hash = read_module_hash(&mut context.journaled_state, code_hash)
-        .unwrap_or(code_hash);
+    let module_hash =
+        read_module_hash(&mut context.journaled_state, code_hash).unwrap_or(code_hash);
 
     // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
@@ -1283,11 +1286,10 @@ fn execute_stylus_call_concrete<DB: Database>(
 ) -> FrameResult {
     // Handle value transfer for non-delegate calls (matches EthFrame::make_call_frame).
     if let revm::interpreter::CallValue::Transfer(value) = inputs.value {
-        if let Some(i) = ctx.journal_mut().transfer_loaded(
-            inputs.caller,
-            inputs.target_address,
-            value,
-        ) {
+        if let Some(i) =
+            ctx.journal_mut()
+                .transfer_loaded(inputs.caller, inputs.target_address, value)
+        {
             let gas = EvmGas::new(inputs.gas_limit);
             ctx.journaled_state.inner.checkpoint_revert(checkpoint);
             return FrameResult::Call(CallOutcome {
@@ -1373,9 +1375,7 @@ where
                             inputs.bytecode_address,
                         )
                         .ok()
-                        .and_then(|acc| {
-                            acc.data.info.code.as_ref().map(|c| c.original_bytes())
-                        })
+                        .and_then(|acc| acc.data.info.code.as_ref().map(|c| c.original_bytes()))
                 });
 
             if let Some(bytecode) = bytecode {
@@ -1536,8 +1536,10 @@ where
     #[inline]
     fn frame_run(
         &mut self,
-    ) -> Result<ItemOrResult<FrameInit, FrameResult>, revm::handler::evm::ContextDbError<Self::Context>>
-    {
+    ) -> Result<
+        ItemOrResult<FrameInit, FrameResult>,
+        revm::handler::evm::ContextDbError<Self::Context>,
+    > {
         self.inner.frame_run()
     }
 
@@ -1602,11 +1604,13 @@ where
         data: Bytes,
     ) -> Result<Self::ExecutionResult, Self::Error> {
         use revm::handler::system_call::SystemCallTx;
-        self.inner.ctx.set_tx(revm::context::TxEnv::new_system_tx_with_caller(
-            caller,
-            system_contract_address,
-            data,
-        ));
+        self.inner
+            .ctx
+            .set_tx(revm::context::TxEnv::new_system_tx_with_caller(
+                caller,
+                system_contract_address,
+                data,
+            ));
         MainnetHandler::default().run_system_call(self)
     }
 }
@@ -1719,7 +1723,12 @@ where
     }
 
     fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>) {
-        let revm::Context { block: block_env, cfg: cfg_env, journaled_state, .. } = self.inner.ctx;
+        let revm::Context {
+            block: block_env,
+            cfg: cfg_env,
+            journaled_state,
+            ..
+        } = self.inner.ctx;
         (journaled_state.database, EvmEnv { block_env, cfg_env })
     }
 

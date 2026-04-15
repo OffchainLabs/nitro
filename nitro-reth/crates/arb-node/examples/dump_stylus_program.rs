@@ -22,15 +22,16 @@
 #[no_mangle]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use alloy_primitives::{Address, B256, U256};
 use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
-use reth_provider::providers::{ProviderFactoryBuilder, ReadOnlyConfig};
-use reth_provider::StateProviderFactory;
+use reth_provider::{
+    providers::{ProviderFactoryBuilder, ReadOnlyConfig},
+    StateProviderFactory,
+};
 use reth_storage_api::StateProvider;
 
 use arb_precompiles::storage_slot::{
@@ -283,8 +284,8 @@ fn main() -> eyre::Result<()> {
     // recovery, then drop and re-open read-only.
     {
         let db_dir = args.datadir.join("db");
-        let _recovery = reth_db::open_db(&db_dir, Default::default())
-            .wrap_err("open_db RW for recovery")?;
+        let _recovery =
+            reth_db::open_db(&db_dir, Default::default()).wrap_err("open_db RW for recovery")?;
         println!("mdbx recovery pass complete");
     }
 

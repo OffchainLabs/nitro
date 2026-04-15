@@ -40,7 +40,11 @@ fn get_network_fee_account_returns_root_field() {
     let fee: Address = address!("00000000000000000000000000000000000000ff");
     let val = U256::from_be_slice(fee.as_slice());
     let run = fixture(30)
-        .storage(ARBOS_STATE_ADDRESS, root_slot(NETWORK_FEE_ACCOUNT_OFFSET), val)
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            root_slot(NETWORK_FEE_ACCOUNT_OFFSET),
+            val,
+        )
         .call(&arbownerpublic(), &calldata("getNetworkFeeAccount()", &[]));
     assert_eq!(decode_address(run.output()), fee);
 }
@@ -50,7 +54,11 @@ fn get_infra_fee_account_returns_root_field_at_v6() {
     let fee: Address = address!("00000000000000000000000000000000000000fe");
     let val = U256::from_be_slice(fee.as_slice());
     let run = fixture(6)
-        .storage(ARBOS_STATE_ADDRESS, root_slot(INFRA_FEE_ACCOUNT_OFFSET), val)
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            root_slot(INFRA_FEE_ACCOUNT_OFFSET),
+            val,
+        )
         .call(&arbownerpublic(), &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(decode_address(run.output()), fee);
 }
@@ -118,7 +126,11 @@ fn get_scheduled_upgrade_at_v20_returns_pair() {
 fn is_chain_owner_returns_true_for_member() {
     let owner: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture(30)
-        .storage(ARBOS_STATE_ADDRESS, chain_owner_member_slot(owner), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            chain_owner_member_slot(owner),
+            U256::from(1),
+        )
         .call(
             &arbownerpublic(),
             &calldata("isChainOwner(address)", &[word_address(owner)]),

@@ -1,7 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
-use revm::context_interface::block::Block;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::{
+    context_interface::block::Block,
+    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+};
 
 use crate::storage_slot::{
     derive_subspace_key, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
@@ -392,7 +394,10 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
 
     let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_gas_price > U256::ZERO {
-        (wei_for_l1_calldata / l2_gas_price, wei_per_l2_tx / l2_gas_price)
+        (
+            wei_for_l1_calldata / l2_gas_price,
+            wei_per_l2_tx / l2_gas_price,
+        )
     } else {
         (U256::ZERO, U256::ZERO)
     };

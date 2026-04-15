@@ -537,7 +537,9 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
             .to_vec()
     };
 
-    if code_bytes.is_empty() || !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version()) {
+    if code_bytes.is_empty()
+        || !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version())
+    {
         return Err(PrecompileError::other("ProgramNotWasm()"));
     }
 
@@ -551,8 +553,11 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
         let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
         let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
         let slot = map_slot(params_key.as_slice(), 0);
-        let val = input.internals_mut().sload(ARBOS_STATE_ADDRESS, slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?.data;
+        let val = input
+            .internals_mut()
+            .sload(ARBOS_STATE_ADDRESS, slot)
+            .map_err(|_| PrecompileError::other("sload failed"))?
+            .data;
         val.to_be_bytes::<32>()
     };
     let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -569,8 +574,9 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let was_cached = existing_bytes[14] != 0;
 
     if existing_version == params_version {
-        let activated_at =
-            (existing_bytes[8] as u32) << 16 | (existing_bytes[9] as u32) << 8 | existing_bytes[10] as u32;
+        let activated_at = (existing_bytes[8] as u32) << 16
+            | (existing_bytes[9] as u32) << 8
+            | existing_bytes[10] as u32;
         let age = hours_to_age(time, activated_at);
         let expiry_days = u16::from_be_bytes([params_word[19], params_word[20]]);
         if age <= (expiry_days as u64) * 86400 {
@@ -612,30 +618,55 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let module_hash_slot = map_slot_b256(module_hashes_key.as_slice(), &code_hash);
     input
         .internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, module_hash_slot, U256::from_be_bytes(info.module_hash.0))
+        .sstore(
+            ARBOS_STATE_ADDRESS,
+            module_hash_slot,
+            U256::from_be_bytes(info.module_hash.0),
+        )
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
     let data_pricer_key = derive_subspace_key(programs_key.as_slice(), &[3]);
-    let demand: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 0))?.to::<u64>() as u32;
-    let bps: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 1))?.to::<u64>() as u32;
-    let last_update: u64 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 2))?.to::<u64>();
-    let min_price: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 3))?.to::<u64>() as u32;
-    let inertia: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 4))?.to::<u64>() as u32;
+    let demand: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 0))?.to::<u64>() as u32;
+    let bps: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 1))?.to::<u64>() as u32;
+    let last_update: u64 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 2))?.to::<u64>();
+    let min_price: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 3))?.to::<u64>() as u32;
+    let inertia: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 4))?.to::<u64>() as u32;
 
     let passed = (time.saturating_sub(last_update)) as u32;
     let credit = bps.saturating_mul(passed);
-    let new_demand = demand.saturating_sub(credit).saturating_add(info.asm_estimate);
+    let new_demand = demand
+        .saturating_sub(credit)
+        .saturating_add(info.asm_estimate);
 
-    input.internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, map_slot(data_pricer_key.as_slice(), 0), U256::from(new_demand))
+    input
+        .internals_mut()
+        .sstore(
+            ARBOS_STATE_ADDRESS,
+            map_slot(data_pricer_key.as_slice(), 0),
+            U256::from(new_demand),
+        )
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
-    input.internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, map_slot(data_pricer_key.as_slice(), 2), U256::from(time))
+    input
+        .internals_mut()
+        .sstore(
+            ARBOS_STATE_ADDRESS,
+            map_slot(data_pricer_key.as_slice(), 2),
+            U256::from(time),
+        )
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    let exponent = if inertia > 0 { 10_000u64 * (new_demand as u64) / (inertia as u64) } else { 0 };
+    let exponent = if inertia > 0 {
+        10_000u64 * (new_demand as u64) / (inertia as u64)
+    } else {
+        0
+    };
     let multiplier = approx_exp_basis_points(exponent);
     let cost_per_byte = (min_price as u64).saturating_mul(multiplier) / 10_000;
     let data_fee = U256::from(cost_per_byte.saturating_mul(info.asm_estimate as u64));
@@ -656,7 +687,8 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     pd[13] = estimate_kb as u8;
     pd[14] = was_cached as u8;
 
-    input.internals_mut()
+    input
+        .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, program_slot, U256::from_be_bytes(pd))
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
@@ -668,10 +700,10 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     crate::set_stylus_activation_request(Some(program_address));
     crate::set_stylus_activation_data_fee(data_fee);
 
-    // Emit ProgramActivated(bytes32 codehash, bytes32 moduleHash, address program, uint256 dataFee, uint16 version)
-    let event_topic = alloy_primitives::keccak256(
-        b"ProgramActivated(bytes32,bytes32,address,uint256,uint16)",
-    );
+    // Emit ProgramActivated(bytes32 codehash, bytes32 moduleHash, address program, uint256 dataFee,
+    // uint16 version)
+    let event_topic =
+        alloy_primitives::keccak256(b"ProgramActivated(bytes32,bytes32,address,uint256,uint16)");
     let mut event_data = Vec::with_capacity(128);
     event_data.extend_from_slice(&info.module_hash.0);
     event_data.extend_from_slice(&[0u8; 12]);
@@ -727,7 +759,10 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>) -> PrecompileResult
     if program.version == 0 {
         return Err(PrecompileError::other("ProgramNotActivated()"));
     }
-    let age = hours_to_age(time, program_bytes[8] as u32 * 65536 + program_bytes[9] as u32 * 256 + program_bytes[10] as u32);
+    let age = hours_to_age(
+        time,
+        program_bytes[8] as u32 * 65536 + program_bytes[9] as u32 * 256 + program_bytes[10] as u32,
+    );
     if age > (expiry_days as u64) * 86400 {
         return Err(PrecompileError::other("ProgramExpired()"));
     }
@@ -742,26 +777,45 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>) -> PrecompileResult
 
     // Update data pricer
     let data_pricer_key = derive_subspace_key(programs_key.as_slice(), &[3]);
-    let demand: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 0))?.to::<u64>() as u32;
-    let bps: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 1))?.to::<u64>() as u32;
-    let last_update: u64 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 2))?.to::<u64>();
-    let min_price: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 3))?.to::<u64>() as u32;
-    let inertia: u32 = sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 4))?.to::<u64>() as u32;
+    let demand: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 0))?.to::<u64>() as u32;
+    let bps: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 1))?.to::<u64>() as u32;
+    let last_update: u64 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 2))?.to::<u64>();
+    let min_price: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 3))?.to::<u64>() as u32;
+    let inertia: u32 =
+        sload_field(&mut input, map_slot(data_pricer_key.as_slice(), 4))?.to::<u64>() as u32;
 
     let passed = (time.saturating_sub(last_update)) as u32;
     let credit = bps.saturating_mul(passed);
     let new_demand = demand.saturating_sub(credit).saturating_add(asm_size);
 
-    input.internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, map_slot(data_pricer_key.as_slice(), 0), U256::from(new_demand))
+    input
+        .internals_mut()
+        .sstore(
+            ARBOS_STATE_ADDRESS,
+            map_slot(data_pricer_key.as_slice(), 0),
+            U256::from(new_demand),
+        )
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
-    input.internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, map_slot(data_pricer_key.as_slice(), 2), U256::from(time))
+    input
+        .internals_mut()
+        .sstore(
+            ARBOS_STATE_ADDRESS,
+            map_slot(data_pricer_key.as_slice(), 2),
+            U256::from(time),
+        )
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    let exponent = if inertia > 0 { 10_000u64 * (new_demand as u64) / (inertia as u64) } else { 0 };
+    let exponent = if inertia > 0 {
+        10_000u64 * (new_demand as u64) / (inertia as u64)
+    } else {
+        0
+    };
     let multiplier = approx_exp_basis_points(exponent);
     let cost_per_byte = (min_price as u64).saturating_mul(multiplier) / 10_000;
     let data_fee = U256::from(cost_per_byte.saturating_mul(asm_size as u64));
@@ -773,7 +827,8 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>) -> PrecompileResult
     pd[9] = (hours >> 8) as u8;
     pd[10] = hours as u8;
 
-    input.internals_mut()
+    input
+        .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, program_slot, U256::from_be_bytes(pd))
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
@@ -786,9 +841,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>) -> PrecompileResult
     crate::set_stylus_activation_data_fee(data_fee);
 
     // Emit ProgramLifetimeExtended(bytes32 codehash, uint256 dataFee)
-    let event_topic = alloy_primitives::keccak256(
-        b"ProgramLifetimeExtended(bytes32,uint256)",
-    );
+    let event_topic = alloy_primitives::keccak256(b"ProgramLifetimeExtended(bytes32,uint256)");
     let mut event_data = Vec::with_capacity(32);
     event_data.extend_from_slice(&data_fee.to_be_bytes::<32>());
     let event_gas = 375 + 2 * 375 + 8 * event_data.len() as u64;

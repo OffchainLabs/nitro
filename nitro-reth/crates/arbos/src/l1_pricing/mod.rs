@@ -646,7 +646,6 @@ pub fn poster_units_from_bytes(tx_bytes: &[u8], brotli_compression_level: u64) -
 const BROTLI_DEFAULT_WINDOW_SIZE: i32 = 22;
 
 /// Computes the brotli-compressed size at a given compression level.
-///
 pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
     use std::{ffi::c_int, os::raw::c_void, ptr};
 

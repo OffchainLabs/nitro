@@ -79,10 +79,7 @@ fn get_timeout_unknown_ticket_reverts_with_no_ticket() {
         .arbos_state()
         .call(
             &arbretryabletx(),
-            &calldata(
-                "getTimeout(bytes32)",
-                &[B256::from(ticket_id)],
-            ),
+            &calldata("getTimeout(bytes32)", &[B256::from(ticket_id)]),
         );
     let out = run.assert_ok();
     assert!(out.reverted);
@@ -320,10 +317,7 @@ fn cancel_emits_canceled_event_and_clears_storage() {
     let _ = run.assert_ok();
     // After cancel, the timeout must be cleared.
     assert_eq!(
-        run.storage(
-            ARBOS_STATE_ADDRESS,
-            map_slot(ticket_key.as_slice(), 5),
-        ),
+        run.storage(ARBOS_STATE_ADDRESS, map_slot(ticket_key.as_slice(), 5),),
         U256::ZERO,
         "timeout must be cleared after cancel"
     );
@@ -358,10 +352,7 @@ fn keepalive_extends_timeout_window_and_records_storage() {
     let _ = run.assert_ok();
     // windows_left should now be 1.
     assert_eq!(
-        run.storage(
-            ARBOS_STATE_ADDRESS,
-            map_slot(ticket_key.as_slice(), 6),
-        ),
+        run.storage(ARBOS_STATE_ADDRESS, map_slot(ticket_key.as_slice(), 6),),
         U256::from(1u64),
         "keepalive should have incremented timeout_windows_left"
     );

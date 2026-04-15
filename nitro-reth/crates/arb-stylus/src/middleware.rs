@@ -40,9 +40,7 @@ impl ModuleMiddleware for StartMover {
 
         let had_start = if let Some(start) = info.start_function.take() {
             if info.exports.contains_key(STYLUS_START) {
-                return Err(mw_err(format!(
-                    "function {STYLUS_START} already exists"
-                )));
+                return Err(mw_err(format!("function {STYLUS_START} already exists")));
             }
             info.exports
                 .insert(STYLUS_START.to_owned(), ExportIndex::Function(start));
@@ -72,7 +70,10 @@ impl ModuleMiddleware for StartMover {
         Ok(())
     }
 
-    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
+    fn generate_function_middleware<'a>(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         Box::new(NoopFunctionMiddleware)
     }
 }
@@ -147,7 +148,10 @@ impl ModuleMiddleware for InkMeter {
         Ok(())
     }
 
-    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
+    fn generate_function_middleware<'a>(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let [ink, status] = self.globals();
         let sigs = self.sigs.read().expect("ink sigs lock poisoned").clone();
         Box::new(InkMeterFn {
@@ -289,7 +293,10 @@ impl ModuleMiddleware for DynamicMeter {
         Ok(())
     }
 
-    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
+    fn generate_function_middleware<'a>(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let globals = self
             .globals
             .read()
@@ -798,8 +805,7 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
         let last = self.scopes == 0 && matches!(op, Operator::End);
 
         // SAFETY: Operator variants we support contain no borrowed data.
-        let op_static =
-            unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
+        let op_static = unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
         self.code.push(op_static);
 
         if !last {
@@ -819,9 +825,7 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
         // Prologue: check and deduct depth budget
         state.extend([
             Operator::GlobalGet { global_index: g },
-            Operator::I32Const {
-                value: size as i32,
-            },
+            Operator::I32Const { value: size as i32 },
             Operator::I32LeU,
             Operator::If {
                 blockty: BlockType::Empty,
@@ -831,9 +835,7 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
             Operator::Unreachable,
             Operator::End,
             Operator::GlobalGet { global_index: g },
-            Operator::I32Const {
-                value: size as i32,
-            },
+            Operator::I32Const { value: size as i32 },
             Operator::I32Sub,
             Operator::GlobalSet { global_index: g },
         ]);
@@ -849,15 +851,12 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
             if is_return {
                 state.extend([
                     Operator::GlobalGet { global_index: g },
-                    Operator::I32Const {
-                        value: size as i32,
-                    },
+                    Operator::I32Const { value: size as i32 },
                     Operator::I32Add,
                     Operator::GlobalSet { global_index: g },
                 ]);
             }
-            let op_a =
-                unsafe { std::mem::transmute::<Operator<'static>, Operator<'a>>(op_s) };
+            let op_a = unsafe { std::mem::transmute::<Operator<'static>, Operator<'a>>(op_s) };
             state.push_operator(op_a);
         }
 
@@ -905,7 +904,10 @@ impl ModuleMiddleware for HeapBound {
         Ok(())
     }
 
-    fn generate_function_middleware<'a>(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware<'a> + 'a> {
+    fn generate_function_middleware<'a>(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let (scratch, pay_func) = self
             .globals
             .read()
@@ -1008,4 +1010,3 @@ pub fn opcode_ink_cost(op: &Operator, sigs: &HashMap<u32, usize>) -> u64 {
         _ => u64::MAX,
     }
 }
-

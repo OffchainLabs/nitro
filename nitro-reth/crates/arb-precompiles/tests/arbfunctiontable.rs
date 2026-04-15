@@ -25,28 +25,22 @@ fn upload_is_noop() {
 #[test]
 fn size_returns_zero() {
     let probe: Address = address!("00000000000000000000000000000000000000aa");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbfunctiontable(),
-            &calldata("size(address)", &[word_address(probe)]),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbfunctiontable(),
+        &calldata("size(address)", &[word_address(probe)]),
+    );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
 #[test]
 fn get_reverts_table_empty() {
     let probe: Address = address!("00000000000000000000000000000000000000aa");
-    let run = PrecompileTest::new()
-        .arbos_version(30)
-        .arbos_state()
-        .call(
-            &arbfunctiontable(),
-            &calldata(
-                "get(address,uint256)",
-                &[word_address(probe), word_u256(U256::ZERO)],
-            ),
-        );
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        &arbfunctiontable(),
+        &calldata(
+            "get(address,uint256)",
+            &[word_address(probe), word_u256(U256::ZERO)],
+        ),
+    );
     assert!(run.assert_ok().reverted);
 }

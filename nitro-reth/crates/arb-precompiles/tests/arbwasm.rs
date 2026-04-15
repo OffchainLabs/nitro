@@ -150,8 +150,7 @@ fn page_gas_returns_packed_field() {
 
 #[test]
 fn page_ramp_returns_initial_constant() {
-    let run =
-        test_with(default_params(), ARBOS_V30).call(&arbwasm(), &calldata("pageRamp()", &[]));
+    let run = test_with(default_params(), ARBOS_V30).call(&arbwasm(), &calldata("pageRamp()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(620_674_314_u64));
 }
 
@@ -366,7 +365,10 @@ fn codehash_version_returns_active_version_for_fresh_program() {
         &arbwasm(),
         &calldata("codehashVersion(bytes32)", &[codehash]),
     );
-    assert_eq!(decode_u256(run.output()), U256::from(default_params().version));
+    assert_eq!(
+        decode_u256(run.output()),
+        U256::from(default_params().version)
+    );
 }
 
 #[test]
@@ -387,7 +389,10 @@ fn program_memory_footprint_returns_packed_value() {
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
     let run = test.call(
         &arbwasm(),
-        &calldata("programMemoryFootprint(address)", &[word_address(prog_addr)]),
+        &calldata(
+            "programMemoryFootprint(address)",
+            &[word_address(prog_addr)],
+        ),
     );
     assert_eq!(decode_u256(run.output()), U256::from(7u64));
 }
@@ -535,5 +540,8 @@ fn program_version_returns_program_version_for_fresh_program() {
         &arbwasm(),
         &calldata("programVersion(address)", &[word_address(prog_addr)]),
     );
-    assert_eq!(decode_u256(run.output()), U256::from(default_params().version));
+    assert_eq!(
+        decode_u256(run.output()),
+        U256::from(default_params().version)
+    );
 }

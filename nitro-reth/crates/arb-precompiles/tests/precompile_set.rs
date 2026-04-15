@@ -39,11 +39,20 @@ fn contains(map: &PrecompilesMap, addr: &Address) -> bool {
 #[test]
 fn arbos_29_excludes_bls_kzg_p256() {
     let map = build(SpecId::SHANGHAI, 29);
-    for addr in [ECRECOVER, SHA256, RIPEMD, IDENTITY, MODEXP, BN_ADD, BN_MUL, BN_PAIR, BLAKE2F] {
+    for addr in [
+        ECRECOVER, SHA256, RIPEMD, IDENTITY, MODEXP, BN_ADD, BN_MUL, BN_PAIR, BLAKE2F,
+    ] {
         assert!(contains(&map, &addr), "expected {addr} for ArbOS 29");
     }
     for addr in [
-        KZG, BLS_G1_ADD, BLS_G1_MSM, BLS_G2_ADD, BLS_G2_MSM, BLS_PAIRING, BLS_MAP_FP, BLS_MAP_FP2,
+        KZG,
+        BLS_G1_ADD,
+        BLS_G1_MSM,
+        BLS_G2_ADD,
+        BLS_G2_MSM,
+        BLS_PAIRING,
+        BLS_MAP_FP,
+        BLS_MAP_FP2,
         P256VERIFY,
     ] {
         assert!(!contains(&map, &addr), "did not expect {addr} for ArbOS 29");
@@ -60,7 +69,13 @@ fn arbos_30_includes_p256_and_kzg_excludes_bls() {
         assert!(contains(&map, &addr), "expected {addr} for ArbOS 30");
     }
     for addr in [
-        BLS_G1_ADD, BLS_G1_MSM, BLS_G2_ADD, BLS_G2_MSM, BLS_PAIRING, BLS_MAP_FP, BLS_MAP_FP2,
+        BLS_G1_ADD,
+        BLS_G1_MSM,
+        BLS_G2_ADD,
+        BLS_G2_MSM,
+        BLS_PAIRING,
+        BLS_MAP_FP,
+        BLS_MAP_FP2,
     ] {
         assert!(!contains(&map, &addr), "did not expect {addr} for ArbOS 30");
     }

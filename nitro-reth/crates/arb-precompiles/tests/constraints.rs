@@ -137,9 +137,7 @@ fn set_multi_gas_pricing_calldata(
 
 /// Decode `MultiGasConstraint[]` as returned by `getMultiGasPricingConstraints()`.
 /// Returns `(resources, window, target, backlog)` per struct in the outer array.
-fn decode_multi_gas_pricing_constraints(
-    out: &[u8],
-) -> Vec<(Vec<(u8, u64)>, u32, u64, u64)> {
+fn decode_multi_gas_pricing_constraints(out: &[u8]) -> Vec<(Vec<(u8, u64)>, u32, u64, u64)> {
     // Layout: outer offset(32) | length(32) | offset[](n) | struct bodies
     assert!(out.len() >= 64);
     let length = U256::from_be_slice(&out[32..64]).to::<u64>() as usize;
@@ -147,16 +145,13 @@ fn decode_multi_gas_pricing_constraints(
     let mut result = Vec::with_capacity(length);
     for i in 0..length {
         let offset_pos = offsets_base + i * 32;
-        let offset =
-            U256::from_be_slice(&out[offset_pos..offset_pos + 32]).to::<u64>() as usize;
+        let offset = U256::from_be_slice(&out[offset_pos..offset_pos + 32]).to::<u64>() as usize;
         // struct start is relative to the start of the offsets area
         let struct_start = offsets_base + offset;
-        let window = U256::from_be_slice(&out[struct_start + 32..struct_start + 64]).to::<u64>()
-            as u32;
-        let target =
-            U256::from_be_slice(&out[struct_start + 64..struct_start + 96]).to::<u64>();
-        let backlog =
-            U256::from_be_slice(&out[struct_start + 96..struct_start + 128]).to::<u64>();
+        let window =
+            U256::from_be_slice(&out[struct_start + 32..struct_start + 64]).to::<u64>() as u32;
+        let target = U256::from_be_slice(&out[struct_start + 64..struct_start + 96]).to::<u64>();
+        let backlog = U256::from_be_slice(&out[struct_start + 96..struct_start + 128]).to::<u64>();
         let resources_offset =
             U256::from_be_slice(&out[struct_start..struct_start + 32]).to::<u64>() as usize;
         let resources_start = struct_start + resources_offset;
@@ -201,10 +196,7 @@ fn decode_gas_pricing_constraints(out: &[u8]) -> Vec<[u64; 3]> {
 #[test]
 fn nitro_parity_fail_to_set_invalid_constraints() {
     // Zero target.
-    let run = owner_fixture(50).call(
-        &arbowner(),
-        &set_gas_pricing_calldata(&[[0, 17, 1000]]),
-    );
+    let run = owner_fixture(50).call(&arbowner(), &set_gas_pricing_calldata(&[[0, 17, 1000]]));
     let out = run.result.as_ref().expect("should return Ok(reverted)");
     assert!(out.reverted, "zero target should revert");
 
@@ -222,13 +214,14 @@ fn nitro_parity_fail_to_set_invalid_constraints() {
 #[test]
 fn nitro_parity_set_legacy_backlog_round_trip() {
     // Initially zero.
-    let run = owner_fixture(50)
-        .call(&arbgasinfo(), &calldata("getGasBacklog()", &[]));
+    let run = owner_fixture(50).call(&arbgasinfo(), &calldata("getGasBacklog()", &[]));
     assert_eq!(U256::from_be_slice(run.output()), U256::ZERO);
 
     // Set to 80_000.
-    let run = owner_fixture(50)
-        .call(&arbowner(), &calldata("setGasBacklog(uint64)", &[word_u64(80_000)]));
+    let run = owner_fixture(50).call(
+        &arbowner(),
+        &calldata("setGasBacklog(uint64)", &[word_u64(80_000)]),
+    );
     let _ = run.assert_ok();
 
     // Read back through a fresh GetInfo call that inherits the setter's
@@ -244,8 +237,7 @@ fn nitro_parity_set_legacy_backlog_round_trip() {
 #[test]
 fn nitro_parity_constraints_storage_round_trip_two_constraints() {
     let constraints = [[30_000_000, 1, 800_000], [15_000_000, 102, 1_600_000]];
-    let set_run = owner_fixture(50)
-        .call(&arbowner(), &set_gas_pricing_calldata(&constraints));
+    let set_run = owner_fixture(50).call(&arbowner(), &set_gas_pricing_calldata(&constraints));
     let _ = set_run.assert_ok();
 
     let getter = set_run.continue_into(owner_fixture(50), ARBOS_STATE_ADDRESS);
@@ -262,7 +254,8 @@ fn nitro_parity_constraints_storage_round_trip_two_constraints() {
 ///
 /// We can't call `state.L2PricingState().OpenGasConstraintAt(i).SetBacklog()`
 /// from the test (no ArbosState bindings in Rust), so we mutate the raw
-/// slot directly in the continued fixture. Slot layout is `vector_element_field(vec, i, CONSTRAINT_BACKLOG=2)`.
+/// slot directly in the continued fixture. Slot layout is `vector_element_field(vec, i,
+/// CONSTRAINT_BACKLOG=2)`.
 #[test]
 fn nitro_parity_constraints_backlog_update() {
     use arb_precompiles::storage_slot::{gas_constraints_vec_key, vector_element_field};
@@ -280,14 +273,28 @@ fn nitro_parity_constraints_backlog_update() {
 
     let base = set_run
         .continue_into(owner_fixture(50), ARBOS_STATE_ADDRESS)
-        .storage(ARBOS_STATE_ADDRESS, backlog_slot_0, U256::from(5_000_000_u64))
-        .storage(ARBOS_STATE_ADDRESS, backlog_slot_1, U256::from(10_000_000_u64));
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            backlog_slot_0,
+            U256::from(5_000_000_u64),
+        )
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            backlog_slot_1,
+            U256::from(10_000_000_u64),
+        );
 
     let run = base.call(&arbgasinfo(), &calldata("getGasPricingConstraints()", &[]));
     let got = decode_gas_pricing_constraints(run.output());
     assert_eq!(got.len(), 2);
-    assert_eq!(got[0][2], 5_000_000, "backlog for element 0 must reflect update");
-    assert_eq!(got[1][2], 10_000_000, "backlog for element 1 must reflect update");
+    assert_eq!(
+        got[0][2], 5_000_000,
+        "backlog for element 0 must reflect update"
+    );
+    assert_eq!(
+        got[1][2], 10_000_000,
+        "backlog for element 1 must reflect update"
+    );
 }
 
 /// Port of Nitro's `TestMultiGasConstraintsCantExceedLimit`. A single
@@ -324,10 +331,8 @@ fn nitro_parity_multi_gas_pricing_constraints_order() {
         20_000_000u64,
         800_000u64,
     )];
-    let set_run = owner_fixture(60).call(
-        &arbowner(),
-        &set_multi_gas_pricing_calldata(&constraints),
-    );
+    let set_run =
+        owner_fixture(60).call(&arbowner(), &set_multi_gas_pricing_calldata(&constraints));
     let _ = set_run.assert_ok();
 
     let getter = set_run.continue_into(owner_fixture(60), ARBOS_STATE_ADDRESS);
@@ -354,14 +359,25 @@ fn nitro_parity_multi_gas_pricing_constraints_order() {
 #[test]
 fn nitro_parity_multi_gas_constraints_storage_round_trip() {
     let constraints = vec![
-        (vec![(0u8, 1u64), (1u8, 2u64)], 1u32, 30_000_000u64, 800_000u64),
-        (vec![(0u8, 2u64), (1u8, 3u64)], 102u32, 15_000_000u64, 1_600_000u64),
+        (
+            vec![(0u8, 1u64), (1u8, 2u64)],
+            1u32,
+            30_000_000u64,
+            800_000u64,
+        ),
+        (
+            vec![(0u8, 2u64), (1u8, 3u64)],
+            102u32,
+            15_000_000u64,
+            1_600_000u64,
+        ),
     ];
-    let set_run = owner_fixture(60).call(
-        &arbowner(),
-        &set_multi_gas_pricing_calldata(&constraints),
-    );
-    let out = set_run.result.as_ref().expect("setter should not hard-error");
+    let set_run =
+        owner_fixture(60).call(&arbowner(), &set_multi_gas_pricing_calldata(&constraints));
+    let out = set_run
+        .result
+        .as_ref()
+        .expect("setter should not hard-error");
     assert!(!out.reverted, "setter unexpectedly reverted: {:?}", out);
 
     let getter = set_run.continue_into(owner_fixture(60), ARBOS_STATE_ADDRESS);
