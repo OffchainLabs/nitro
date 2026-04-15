@@ -99,7 +99,7 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 	}
 }
 
-func (s *HashedAddressCheckerState) TouchAddress(touched filter.FilteredAddressWithReason) {
+func (s *HashedAddressCheckerState) TouchAddress(touched *filter.FilteredAddressWithReason) {
 	s.pending.Add(1)
 
 	// If the checker is stopped, conservatively mark filtered
@@ -110,7 +110,7 @@ func (s *HashedAddressCheckerState) TouchAddress(touched filter.FilteredAddressW
 	}
 
 	select {
-	case s.checker.workChan <- workItem{addr: &touched, state: s}:
+	case s.checker.workChan <- workItem{addr: touched, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
