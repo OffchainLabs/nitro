@@ -432,7 +432,7 @@ pub fn module(
             "tx_gas_price" => stub!(|_: u32|),
             "tx_ink_price" => stub!(u32 <- ||),
             "tx_origin" => stub!(|_: u32|),
-            "pay_for_memory_grow" => stub!(|_: u16|),
+            "pay_for_memory_grow" => stub!(|_: u32|),
             "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
         },
     };
