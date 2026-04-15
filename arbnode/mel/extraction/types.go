@@ -82,3 +82,12 @@ type batchMsgExtractionFunc func(
 type batchPostingReportParserFunc func(
 	rd io.Reader,
 ) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
+
+// Defines a function that can lookup a MEL config event from a parent chain block.
+// See: ParseMELConfigFromBlock.
+type melConfigLookupFunc func(
+	ctx context.Context,
+	parentChainHeader *types.Header,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) (*mel.MELConfig, error)

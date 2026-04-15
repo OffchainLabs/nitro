@@ -457,7 +457,7 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 
 func (m *MessageExtractor) GetSequencerMessageBytesForParentBlock(ctx context.Context, seqNum uint64, parentChainBlock uint64) ([]byte, common.Hash, error) {
 	// No need to specify a max headers to fetch, as we are using the logs fetcher only, so we can pass in a 0.
-	logsFetcher := newLogsAndHeadersFetcher(m.parentChainReader, 0)
+	logsFetcher := newLogsAndHeadersFetcher(m.parentChainReader, 0, m.addrs.Rollup)
 	if err := logsFetcher.fetchSequencerBatchLogs(ctx, parentChainBlock, parentChainBlock); err != nil {
 		return nil, common.Hash{}, err
 	}
