@@ -910,7 +910,33 @@ func TestMELMigrationFromLegacyNode(t *testing.T) {
 	// Send delayed messages via L1 and wait for inbox reader to process them
 	delayedInboxContract, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
 	Require(t, err)
+	// Capture streamer message count before sending delayed messages so we can
+	// detect when the delayed sequencer has processed them.
+	preBatchMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
 	sendDelayedMessagesViaL1(t, ctx, builder, delayedInboxContract, 5)
+
+	// Wait for the delayed sequencer to process the delayed messages into L2 messages
+	// in the streamer. sendDelayedMessagesViaL1 only waits for the inbox tracker to see
+	// them, not for the delayed sequencer to sequence them.
+	{
+		timeout := time.NewTimer(30 * time.Second)
+		defer timeout.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+			Require(t, err)
+			if msgCount > preBatchMsgCount {
+				break
+			}
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				t.Fatalf("timed out waiting for delayed messages to be sequenced into streamer: msgCount=%d, preBatchMsgCount=%d", msgCount, preBatchMsgCount)
+			}
+		}
+	}
 
 	// Post a batch to consume some of these delayed messages
 	forceBatchPost(t, ctx, builder)

@@ -74,10 +74,13 @@ func (d *Database) SaveInitialMelState(initialState *mel.State) error {
 	if err := d.setHeadMelStateBlockNum(dbBatch, initialState.ParentChainBlockNumber); err != nil {
 		return err
 	}
+	if err := dbBatch.Write(); err != nil {
+		return err
+	}
 	d.hasInitialState = true
 	d.initialDelayedCount = initialState.DelayedMessagesSeen
 	d.initialBatchCount = initialState.BatchCount
-	return dbBatch.Write()
+	return nil
 }
 
 func (d *Database) GetHeadMelState() (*mel.State, error) {
