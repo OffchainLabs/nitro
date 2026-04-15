@@ -1,29 +1,30 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    binary::{ExportKind, WasmBinary},
-    machine::Module,
-    programs::config::CompileConfig,
-    value::{FunctionType as ArbFunctionType, Value},
-};
-use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
-use eyre::{bail, eyre, Report, Result, WrapErr};
-use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
+
+use arbutil::{Bytes32, Color, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum};
+use eyre::{Report, Result, WrapErr, bail, eyre};
+use fnv::FnvHashMap as HashMap;
 use wasmer_types::{
-    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
-    SignatureIndex, Type,
+    FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex, SignatureIndex, Type,
+    entity::EntityRef,
 };
 use wasmparser::{Operator, ValType};
-
-use crate::memory_type::MemoryType;
 #[cfg(feature = "native")]
 use {
     super::value,
     std::marker::PhantomData,
     wasmer::sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
     wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability},
+};
+
+use crate::{
+    binary::{ExportKind, WasmBinary},
+    machine::Module,
+    memory_type::MemoryType,
+    programs::config::CompileConfig,
+    value::{FunctionType as ArbFunctionType, Value},
 };
 
 pub mod config;
@@ -447,7 +448,7 @@ impl Module {
             };
 
             macro_rules! pay {
-                ($us:expr) => {
+                ($us:expr_2021) => {
                     let amount = us_to_gas($us);
                     if *gas < amount {
                         *gas = 0;
@@ -493,10 +494,12 @@ impl Module {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
+    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
+
     use super::*;
     use crate::binary;
-    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
-    use std::path::Path;
 
     // Parse at the threshold version so multi-value is rejected by the validator.
     fn parse_at_threshold(wat: &str) -> Result<WasmBinary<'static>> {
@@ -507,66 +510,75 @@ mod test {
     #[test]
     fn test_no_multi_value() {
         // Single-value wasm is accepted at and above the threshold.
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                 )
             )"#,
-        )
-        .is_ok());
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_function() {
         // Function type with two return values.
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (result i32 i32)
                     i32.const 1
                     i32.const 2
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_block() {
         // (block (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (block (result i32) local.get 0)
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                     (block (param i32) (result i32))
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_loop() {
         // (loop (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (loop  local.get 0  ...)  with value produced inside.
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                     (loop (param i32) (result i32))
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_if() {
         // (if (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (if (result i32) (then local.get 0) (else i32.const 0))
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32 i32) (result i32)
                     local.get 0
                     local.get 1
@@ -576,8 +588,9 @@ mod test {
                     )
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     // A minimal valid Stylus wasm that contains a multi-value function type.

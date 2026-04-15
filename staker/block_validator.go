@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -375,7 +374,6 @@ func NewBlockValidator(
 	streamer TransactionStreamerInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
-	messageExtractor *melrunner.MessageExtractor,
 	melValidator MELValidatorInterface,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
@@ -423,11 +421,7 @@ func NewBlockValidator(
 	}
 	ret.streamer = streamer
 	streamer.SetBlockValidator(ret)
-	if messageExtractor != nil {
-		ret.inboxTracker = messageExtractor
-	} else {
-		ret.inboxTracker = inbox
-	}
+	ret.inboxTracker = inbox
 	if config().MemoryFreeLimit != "" {
 		limitchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
 		if err != nil {
@@ -1063,7 +1057,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		for _, moduleRoot := range wasmRoots {
 			v.chosenValidator[moduleRoot].Throttler.Acquire()
 		}
-		var runs []validator.ValidationRun
+		runs := make([]validator.ValidationRun, 0, len(wasmRoots))
 		for _, moduleRoot := range wasmRoots {
 			throttledSpawner := v.chosenValidator[moduleRoot]
 			input, err := validationStatus.Entry.ToInput(throttledSpawner.Spawner.StylusArchs())

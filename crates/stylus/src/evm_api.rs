@@ -1,13 +1,15 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::GoSliceData;
 use arbutil::evm::{
-    api::{EvmApiMethod, Gas, EVM_API_METHOD_REQ_OFFSET},
+    api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas},
     req::RequestHandler,
 };
-use prover::RustSlice;
+use prover_ffi::RustSlice;
 
+use crate::GoSliceData;
+
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct NativeRequestHandler {
     pub handle_request_fptr: unsafe extern "C" fn(
@@ -22,7 +24,7 @@ pub struct NativeRequestHandler {
 }
 
 macro_rules! ptr {
-    ($expr:expr) => {
+    ($expr:expr_2021) => {
         &mut $expr as *mut _
     };
 }

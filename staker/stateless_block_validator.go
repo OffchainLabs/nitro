@@ -58,6 +58,7 @@ type InboxTrackerInterface interface {
 	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchCount() (uint64, error)
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
 
@@ -558,7 +559,9 @@ func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos ar
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
-	return *server_api.ValidationInputToJson(input), nil
+	result := server_api.ValidationInputToJson(input)
+	result.ExpectedEndState = &entry.End
+	return *result, nil
 }
 
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {

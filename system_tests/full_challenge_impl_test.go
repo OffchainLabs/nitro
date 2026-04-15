@@ -172,7 +172,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
-	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	_, err = l2Node.GetParentChainDataSource().GetBatchMetadata(0)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 
@@ -381,7 +381,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec, asserterL2.ConsensusDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
+	asserterPcds := asserterL2.GetParentChainDataSource()
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterPcds, asserterPcds, asserterL2.TxStreamer, asserterExec, asserterL2.ConsensusDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -394,11 +395,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer asserterValidator.Stop()
-	asserterManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0, asserterL2.InboxTracker, asserterL2.TxStreamer)
+	asserterManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0, asserterPcds, asserterL2.TxStreamer)
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec, challengerL2.ConsensusDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
+	challengerPcds := challengerL2.GetParentChainDataSource()
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerPcds, challengerPcds, challengerL2.TxStreamer, challengerExec, challengerL2.ConsensusDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -411,7 +413,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		Fatal(t, err)
 	}
 	defer challengerValidator.Stop()
-	challengerManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0, challengerL2.InboxTracker, challengerL2.TxStreamer)
+	challengerManager, err := legacystaker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0, challengerPcds, challengerL2.TxStreamer)
 	if err != nil {
 		Fatal(t, err)
 	}

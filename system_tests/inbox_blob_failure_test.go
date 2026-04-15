@@ -86,39 +86,16 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, txReceipt.BlockHash)
 	Require(t, err)
 
-	var batchNum uint64
-	for i := 0; i < 30; i++ {
-		var found bool
-		if builder.L2.ConsensusNode.MessageExtractor != nil {
-			batchNum, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		} else {
-			batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		}
-		Require(t, err)
-		if found {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()), 3*time.Second, 100*time.Millisecond)
 
 	// Advance L1 more for batch-posting-report finality
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 	time.Sleep(time.Second)
 
 	// Record sequencer state before starting follower
-	var seqDelayed uint64
-	if builder.L2.ConsensusNode.MessageExtractor != nil {
-		seqDelayed, err = builder.L2.ConsensusNode.MessageExtractor.GetDelayedCount()
-	} else {
-		seqDelayed, err = builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
-	}
+	seqDelayed, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetDelayedCount()
 	Require(t, err)
-	var seqBatch uint64
-	if builder.L2.ConsensusNode.MessageExtractor != nil {
-		seqBatch, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
-	} else {
-		seqBatch, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-	}
+	seqBatch, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
 
 	// Build follower with failing blob reader
@@ -138,19 +115,9 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Check if follower is out of sync
-	var follDelayed uint64
-	if testClientB.ConsensusNode.MessageExtractor != nil {
-		follDelayed, err = testClientB.ConsensusNode.MessageExtractor.GetDelayedCount()
-	} else {
-		follDelayed, err = testClientB.ConsensusNode.InboxTracker.GetDelayedCount()
-	}
+	follDelayed, err := testClientB.ConsensusNode.GetParentChainDataSource().GetDelayedCount()
 	Require(t, err)
-	var follBatch uint64
-	if testClientB.ConsensusNode.MessageExtractor != nil {
-		follBatch, err = testClientB.ConsensusNode.MessageExtractor.GetBatchCount()
-	} else {
-		follBatch, err = testClientB.ConsensusNode.InboxTracker.GetBatchCount()
-	}
+	follBatch, err := testClientB.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
 
 	if follDelayed == seqDelayed && follBatch < seqBatch {
@@ -194,18 +161,9 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 					t.Logf("  Batch-posting-report for batch %d", batchNum)
 
 					// Check if this batch exists in our database
-					if testClientB.ConsensusNode.MessageExtractor != nil {
-						_, err := testClientB.ConsensusNode.MessageExtractor.GetBatchMetadata(batchNum)
-						if err != nil {
-							// TODO After we have fixed the issue, this can be changed back to log.Fatalf
-							t.Logf("CORRUPTION DETECTED: Delayed message %d is a batch-posting-report for batch %d, but batch %d doesn't exist in database! Error: %v", i, batchNum, batchNum, err)
-						}
-					} else {
-						_, err := testClientB.ConsensusNode.InboxTracker.GetBatchMetadata(batchNum)
-						if err != nil {
-							// TODO After we have fixed the issue, this can be changed back to log.Fatalf
-							t.Logf("CORRUPTION DETECTED: Delayed message %d is a batch-posting-report for batch %d, but batch %d doesn't exist in database! Error: %v", i, batchNum, batchNum, err)
-						}
+					if _, err := testClientB.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(batchNum); err != nil {
+						// TODO After we have fixed the issue, this can be changed back to log.Fatalf
+						t.Logf("CORRUPTION DETECTED: Delayed message %d is a batch-posting-report for batch %d, but batch %d doesn't exist in database! Error: %v", i, batchNum, batchNum, err)
 					}
 				}
 			}
@@ -221,29 +179,16 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	verifyTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(2e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, verifyTx)
 	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(verifyTx)
+	verifyReceipt, err := builder.L2.EnsureTxSucceeded(verifyTx)
 	Require(t, err)
 
 	// Advance L1 to post batch
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	// Wait for batch and advance for finality
-	for i := 0; i < 30; i++ {
-		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
-		if verifyReceipt != nil {
-			verifyBlock, _ := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
-			var found bool
-			if builder.L2.ConsensusNode.MessageExtractor != nil {
-				_, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
-			} else {
-				_, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
-			}
-			if err == nil && found {
-				break
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	// Wait for the verify transaction's batch to be tracked.
+	verifyBlock, err := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
+	Require(t, err)
+	waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(verifyBlock.NumberU64()), 30*time.Second, 100*time.Millisecond)
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Check if follower synced the new transaction
@@ -276,10 +221,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	t.Logf("Final block numbers: sequencer=%d follower=%d", seqBlockNum, follBlockNum)
 
 	// Compare the highest common block
-	checkBlockNum := follBlockNum
-	if seqBlockNum < follBlockNum {
-		checkBlockNum = seqBlockNum
-	}
+	checkBlockNum := min(seqBlockNum, follBlockNum)
 
 	// #nosec G115
 	seqBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(checkBlockNum)))
@@ -302,8 +244,6 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		t.Logf("PASS: Follower is fully synced")
 	}
 
-	// Prevent unused variable warning
-	_ = batchNum
 }
 
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
@@ -346,7 +286,7 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 	var cleanup func()
 	testClient := NewTestClient(b.ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L2.ExecNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader)
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L2.ExecNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader, b.L2.ConsensusNode.ParentChain)
 	testClient.cleanup = cleanup
 	testClient.L1BlobReader = blobReader
 

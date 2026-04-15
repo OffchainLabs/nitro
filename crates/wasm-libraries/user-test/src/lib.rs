@@ -3,7 +3,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use arbutil::{evm::EvmData, Bytes32};
+use arbutil::{Bytes32, evm::EvmData};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
@@ -29,7 +29,7 @@ lazy_static! {
     static ref GLOBAL_STATE: Mutex<GlobalState> = Default::default();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_test__prepare(
     len: usize,
     version: u16,
@@ -43,19 +43,19 @@ pub unsafe extern "C" fn user_test__prepare(
     gs.args.as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_test__set_pages(pages: u16) {
     let mut gs = GLOBAL_STATE.lock();
     gs.open_pages = gs.open_pages.saturating_add(pages);
     gs.ever_pages = gs.ever_pages.max(gs.open_pages);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_test__get_outs_ptr() -> *const u8 {
     GLOBAL_STATE.lock().outs.as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_test__get_outs_len() -> usize {
     GLOBAL_STATE.lock().outs.len()
 }

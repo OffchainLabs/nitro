@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
@@ -73,8 +74,8 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	secondNodeTestClient, cleanupL3SecondNode := builder.Build2ndNodeOnL3(t, &SecondNodeParams{nodeConfig: secondNodeNodeConfig})
 	defer cleanupL3SecondNode()
 
-	go keepChainMoving(t, ctx, builder.L1Info, builder.L1.Client) // Advance L1.
-	go keepChainMoving(t, ctx, builder.L2Info, builder.L2.Client) // Advance L2.
+	go keepChainMoving(t, 3*time.Second, ctx, builder.L1Info, builder.L1.Client) // Advance L1.
+	go keepChainMoving(t, 3*time.Second, ctx, builder.L2Info, builder.L2.Client) // Advance L2.
 
 	builder.L2Info.GenerateAccount("HonestAsserter")
 	fundL3Staker(t, ctx, builder, builder.L2.Client, "HonestAsserter")
@@ -211,9 +212,9 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
-		node.ConsensusNode.InboxTracker,
+		node.ConsensusNode.GetParentChainDataSource(),
 		node.ConsensusNode.TxStreamer,
-		node.ConsensusNode.InboxReader,
+		node.ConsensusNode.GetParentChainDataSource(),
 		nil,
 	)
 	Require(t, err)
@@ -251,7 +252,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
-		builder.L2Info.Signer.ChainID(),
+		parent.NewParentChain(ctx, builder.L2Info.Signer.ChainID(), builder.L3.ConsensusNode.L1Reader),
 	)
 	Require(t, err)
 

@@ -1,0 +1,2 @@
+### Changed
+ - Update the delayed msgs accumulation from merkle tree to a hash-chain based accumulation (Inbox-Outbox) and implement recording of their preimages and subsequently reading them using preimages

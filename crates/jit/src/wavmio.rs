@@ -1,11 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    caller_env::JitEnv,
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-};
-use arbutil::Color;
 use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
@@ -13,7 +8,14 @@ use std::{
     net::TcpStream,
     time::Instant,
 };
+
+use arbutil::Color;
 use validation::transfer::receive_validation_input;
+
+use crate::{
+    caller_env::JitEnv,
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+};
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
