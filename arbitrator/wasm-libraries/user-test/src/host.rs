@@ -251,6 +251,6 @@ pub unsafe extern "C" fn vm_hooks__tx_origin(ptr: GuestPtr) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__pay_for_memory_grow(pages: u16) {
+pub unsafe extern "C" fn vm_hooks__pay_for_memory_grow(pages: u32) {
     hostio!(pay_for_memory_grow(pages))
 }
