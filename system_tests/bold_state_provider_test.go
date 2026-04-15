@@ -404,7 +404,6 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
 		nil,
-		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidator.Initialize(ctx))
