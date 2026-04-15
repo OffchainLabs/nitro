@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/retryables"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -65,10 +68,11 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc                 *core.BlockChain
-	config             TxPreCheckerConfigFetcher
-	expressLaneTracker *timeboost.ExpressLaneTracker
-	backend            core.NodeInterfaceBackendAPI
+	bc                       *core.BlockChain
+	config                   TxPreCheckerConfigFetcher
+	expressLaneTracker       *timeboost.ExpressLaneTracker
+	backend                  core.NodeInterfaceBackendAPI
+	filteringReportRPCClient *FilteringReportRPCClient
 }
 
 func NewTxPreChecker(
@@ -84,6 +88,10 @@ func NewTxPreChecker(
 
 func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {
 	c.backend = backend
+}
+
+func (c *TxPreChecker) SetFilteringReportRPCClient(client *FilteringReportRPCClient) {
+	c.filteringReportRPCClient = client
 }
 
 type NonceError struct {
@@ -324,9 +332,42 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
+		if reportErr := c.reportFilteredTransaction(tx, header, err); reportErr != nil {
+			log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
+		}
 		return err
 	}
 	// Other execution errors are ignored since the pre-check is only concerned
 	// with address filtering results, not with exact execution results.
+	return nil
+}
+
+func (c *TxPreChecker) reportFilteredTransaction(tx *types.Transaction, header *types.Header, filterErr error) error {
+	if c.filteringReportRPCClient == nil {
+		return nil
+	}
+	var addrErr *ErrAddressFiltered
+	var records []filter.FilteredAddressRecord
+	if errors.As(filterErr, &addrErr) {
+		records = addrErr.Records
+	}
+	txRLP, err := tx.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal filtered tx: %w", err)
+	}
+	report := addressfilter.FilteredTxReport{
+		ID:                uuid.Must(uuid.NewV7()).String(),
+		TxHash:            tx.Hash(),
+		TxRLP:             txRLP,
+		FilteredAddresses: records,
+		BlockNumber:       header.Number.Uint64(),
+		ParentBlockHash:   header.ParentHash,
+		PositionInBlock:   0,
+		FilteredAt:        time.Now(),
+		IsDelayed:         false,
+		DelayedReportData: nil,
+	}
+	// Non-blocking: ReportFilteredTransactions uses LaunchPromiseThread internally.
+	c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
 	return nil
 }

@@ -439,6 +439,9 @@ func CreateExecutionNode(
 		return nil, err
 	}
 	txPreChecker.SetAPIBackend(backend.APIBackend())
+	if filteringReportRPCClient != nil {
+		txPreChecker.SetFilteringReportRPCClient(filteringReportRPCClient)
+	}
 
 	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 
