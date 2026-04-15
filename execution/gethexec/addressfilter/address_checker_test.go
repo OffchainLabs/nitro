@@ -69,6 +69,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	require.Len(t, records3, 1)
 	assert.Equal(t, addrFiltered, records3[0].Address)
 	assert.Equal(t, filter.ReasonTo, records3[0].Reason)
+	assert.Equal(t, filterSetID.String(), records3[0].FilterSetID)
 
 	// Tx 4: multiple filtered addresses
 	state4 := mustState(t, checker.NewTxState())
@@ -83,7 +84,9 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 		recordsByAddr[r.Address] = r
 	}
 	assert.Equal(t, filter.ReasonFrom, recordsByAddr[addrFiltered].Reason)
+	assert.Equal(t, filterSetID.String(), recordsByAddr[addrFiltered].FilterSetID)
 	assert.Equal(t, filter.ReasonContractAddress, recordsByAddr[addrFiltered2].Reason)
+	assert.Equal(t, filterSetID.String(), recordsByAddr[addrFiltered2].FilterSetID)
 
 	// Tx 5: reuse HashStore cache across txs
 	state5 := mustState(t, checker.NewTxState())

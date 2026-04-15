@@ -36,7 +36,7 @@ type HashedAddressCheckerState struct {
 }
 
 type workItem struct {
-	addr  filter.FilteredAddressWithReason
+	addr  *filter.FilteredAddressWithReason
 	state *HashedAddressCheckerState
 }
 
@@ -75,17 +75,13 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
-func (c *HashedAddressChecker) FilterSetID() string {
-	return c.store.ID().String()
-}
-
 func (c *HashedAddressChecker) processItem(item workItem) {
 	defer item.state.pending.Done()
 	restricted, filterSetID := c.store.IsRestricted(item.addr.Address)
 	if restricted {
 		record := filter.FilteredAddressRecord{
 			FilterSetID:               filterSetID.String(),
-			FilteredAddressWithReason: item.addr,
+			FilteredAddressWithReason: *item.addr,
 		}
 		item.state.report(&record)
 	}
@@ -108,35 +104,30 @@ func (s *HashedAddressCheckerState) TouchAddress(touched filter.FilteredAddressW
 
 	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
-		record := filter.FilteredAddressRecord{
-			FilterSetID:               s.checker.FilterSetID(),
-			FilteredAddressWithReason: touched,
-		}
-		s.report(&record)
+		s.report(nil)
 		s.pending.Done()
 		return
 	}
 
 	select {
-	case s.checker.workChan <- workItem{addr: touched, state: s}:
+	case s.checker.workChan <- workItem{addr: &touched, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
-		record := filter.FilteredAddressRecord{
-			FilterSetID:               s.checker.FilterSetID(),
-			FilteredAddressWithReason: touched,
-		}
-		s.report(&record)
+		s.report(nil)
 		s.pending.Done()
 	}
 }
 
 // report records a filtered address. Called when the address is confirmed
 // restricted, or conservatively during shutdown when restriction cannot be verified.
+// record may be nil when the restriction status is unknown (e.g. during shutdown).
 func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord) {
 	s.mu.Lock()
 	s.filtered = true
-	s.filteredAddresses = append(s.filteredAddresses, *record)
+	if record != nil {
+		s.filteredAddresses = append(s.filteredAddresses, *record)
+	}
 	s.mu.Unlock()
 }
 

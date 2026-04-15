@@ -25,8 +25,12 @@ func TestHashStore_IsRestricted(t *testing.T) {
 
 	// Test empty store
 	addr := common.HexToAddress("0xddfAbCdc4D8FfC6d5beaf154f18B778f892A0740")
-	if restricted, _ := store.IsRestricted(addr); restricted {
+	restricted, returnedID := store.IsRestricted(addr)
+	if restricted {
 		t.Error("empty store should not restrict any address")
+	}
+	if returnedID != uuid.Nil {
+		t.Errorf("empty store: expected nil filter set ID, got %s", returnedID)
 	}
 
 	// Create test data
@@ -47,19 +51,28 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	}
 
 	// Store the hashes
-	store.Store(uuid.New(), salt, hashes, "test-etag")
+	filterSetID := uuid.New()
+	store.Store(filterSetID, salt, hashes, "test-etag")
 
 	// Test restricted addresses
 	for _, addr := range addresses {
-		if restricted, _ := store.IsRestricted(addr); !restricted {
+		restricted, returnedID := store.IsRestricted(addr)
+		if !restricted {
 			t.Errorf("address %s should be restricted", addr.Hex())
+		}
+		if returnedID != filterSetID {
+			t.Errorf("address %s: expected filter set ID %s, got %s", addr.Hex(), filterSetID, returnedID)
 		}
 	}
 
 	// Test non-restricted address
 	nonRestrictedAddr := common.HexToAddress("0x4444444444444444444444444444444444444444")
-	if restricted, _ := store.IsRestricted(nonRestrictedAddr); restricted {
+	restricted, returnedID = store.IsRestricted(nonRestrictedAddr)
+	if restricted {
 		t.Errorf("address %s should not be restricted", nonRestrictedAddr.Hex())
+	}
+	if returnedID != filterSetID {
+		t.Errorf("non-restricted address: expected filter set ID %s, got %s", filterSetID, returnedID)
 	}
 
 	// Test metadata
@@ -79,9 +92,14 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	hash1 := HashWithPrefix(GetHashInputPrefix(salt1), addr1)
 
 	// Store first set
-	store.Store(uuid.New(), salt1, []common.Hash{hash1}, "etag1")
-	if restricted, _ := store.IsRestricted(addr1); !restricted {
+	filterSetID1 := uuid.New()
+	store.Store(filterSetID1, salt1, []common.Hash{hash1}, "etag1")
+	restricted, returnedID := store.IsRestricted(addr1)
+	if !restricted {
 		t.Error("addr1 should be restricted after first load")
+	}
+	if returnedID != filterSetID1 {
+		t.Errorf("expected filter set ID %s, got %s", filterSetID1, returnedID)
 	}
 
 	// Store second set with different salt (simulating hourly rotation)
@@ -89,15 +107,24 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
 	hash2 := HashWithPrefix(GetHashInputPrefix(salt2), addr2)
 
-	store.Store(uuid.New(), salt2, []common.Hash{hash2}, "etag2")
+	filterSetID2 := uuid.New()
+	store.Store(filterSetID2, salt2, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
-	if restricted, _ := store.IsRestricted(addr1); restricted {
+	restricted, returnedID = store.IsRestricted(addr1)
+	if restricted {
 		t.Error("addr1 should not be restricted after swap (salt changed)")
 	}
+	if returnedID != filterSetID2 {
+		t.Errorf("expected filter set ID %s after swap, got %s", filterSetID2, returnedID)
+	}
 	// addr2 should now be restricted
-	if restricted, _ := store.IsRestricted(addr2); !restricted {
+	restricted, returnedID = store.IsRestricted(addr2)
+	if !restricted {
 		t.Error("addr2 should be restricted after swap")
+	}
+	if returnedID != filterSetID2 {
+		t.Errorf("expected filter set ID %s, got %s", filterSetID2, returnedID)
 	}
 	if store.Digest() != "etag2" {
 		t.Errorf("expected etag 'etag2', got '%s'", store.Digest())

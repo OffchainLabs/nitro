@@ -93,11 +93,6 @@ func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {
 	return restricted, data.id
 }
 
-// ID returns the UUID of the currently loaded filter set.
-func (h *HashStore) ID() uuid.UUID {
-	return h.data.Load().id
-}
-
 // Digest Return the digest of the current loaded hashstore.
 func (h *HashStore) Digest() string {
 	return h.data.Load().digest
