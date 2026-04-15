@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
 use core::{mem::MaybeUninit, slice};
+
+use crate::{BrotliStatus, DEFAULT_WINDOW_SIZE, Dictionary};
 
 /// Mechanism for passing data between Go and Rust where Rust can specify the initialized length.
 #[derive(Clone, Copy)]
@@ -10,7 +11,8 @@ use core::{mem::MaybeUninit, slice};
 pub struct BrotliBuffer {
     /// Points to data owned by Go.
     ptr: *mut u8,
-    /// The length in bytes. Rust may mutate this value to indicate the number of bytes initialized.
+    /// The length in bytes. Rust may mutate this value to indicate the number of bytes
+    /// initialized.
     len: *mut usize,
 }
 
@@ -35,7 +37,7 @@ impl BrotliBuffer {
 }
 
 /// Brotli compresses the given Go data into a buffer of limited capacity.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn brotli_compress(
     input: BrotliBuffer,
     mut output: BrotliBuffer,
@@ -52,7 +54,7 @@ pub extern "C" fn brotli_compress(
 }
 
 /// Brotli decompresses the given Go data into a buffer of limited capacity.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn brotli_decompress(
     input: BrotliBuffer,
     mut output: BrotliBuffer,

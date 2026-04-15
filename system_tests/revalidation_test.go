@@ -43,6 +43,7 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeBStack.DBEngine = databaseEngine
 	nodeBConfig := builder.nodeConfig
+	nodeBConfig.BlockValidator.Enable = false
 	nodeBConfig.BatchPoster.Enable = false
 	nodeBParams := &SecondNodeParams{
 		stackConfig: nodeBStack,
@@ -65,6 +66,7 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	// Cleanup the 2nd node to release the database lock
 	cleanupB()
 	// New node with revalidation range, and the same database directory as the 2nd node.
+	nodeConfig.BlockValidator.Enable = true
 	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: nodeConfig})
 	defer cleanupC()
 
@@ -110,7 +112,7 @@ func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder 
 		Require(t, err)
 		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
-		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		count, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
 		if count > finalCount {
 			return

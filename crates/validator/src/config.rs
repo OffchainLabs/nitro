@@ -7,19 +7,25 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
+use std::{
+    collections::HashMap,
+    env,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
+
 use alloy_rpc_types_engine::JwtSecret;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use clap::{Parser, ValueEnum};
-use std::collections::HashMap;
-use std::env;
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::engine::machine::JitProcessManager;
-use crate::engine::machine_locator::MachineLocator;
-use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
-use crate::jwt;
+use crate::{
+    engine::{
+        DEFAULT_JIT_CRANELIFT, ModuleRoot, machine::JitProcessManager,
+        machine_locator::MachineLocator, replay_binary,
+    },
+    jwt,
+};
 
 /// Mode-specific execution state, built at startup.
 pub enum ExecutionMode {
@@ -160,7 +166,9 @@ impl ServerConfig {
             let workers = match std::thread::available_parallelism() {
                 Ok(count) => count.get(),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    warn!(
+                        "Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}."
+                    );
                     DEFAULT_NUM_WORKERS
                 }
                 Err(e) => return Err(e.into()),
@@ -176,7 +184,8 @@ pub fn get_jit_path() -> Result<PathBuf> {
     let is_test_env = current_exe.to_string_lossy().contains("deps");
 
     let candidate = if is_test_env {
-        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the grandparent
+        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the
+        // grandparent
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
             grandparent.join("target").join("bin").join("jit")
@@ -216,7 +225,7 @@ pub fn get_jit_path() -> Result<PathBuf> {
 mod tests {
     use clap::Parser;
 
-    use crate::config::{get_jit_path, ServerConfig};
+    use crate::config::{ServerConfig, get_jit_path};
 
     #[test]
     fn verify_cli() {

@@ -1063,7 +1063,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		for _, moduleRoot := range wasmRoots {
 			v.chosenValidator[moduleRoot].Throttler.Acquire()
 		}
-		var runs []validator.ValidationRun
+		runs := make([]validator.ValidationRun, 0, len(wasmRoots))
 		for _, moduleRoot := range wasmRoots {
 			throttledSpawner := v.chosenValidator[moduleRoot]
 			input, err := validationStatus.Entry.ToInput(throttledSpawner.Spawner.StylusArchs())

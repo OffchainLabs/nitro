@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::scenarios::data_type::{DataType, Rand};
 use std::io::Write;
+
+use crate::scenarios::data_type::{DataType, Rand};
 
 pub fn write_specific_exported_func_beginning(wat: &mut Vec<u8>) {
     wat.write_all(b"        (local $var i32)\n").unwrap();
@@ -13,7 +14,7 @@ pub fn write_wat_ops(wat: &mut Vec<u8>, number_of_loop_iterations: usize) {
         wat.write_all(
             format!(
                 "            (local.set $var (i32.const {}))\n",
-                DataType::I32.gen()
+                DataType::I32.r#gen()
             )
             .as_bytes(),
         )

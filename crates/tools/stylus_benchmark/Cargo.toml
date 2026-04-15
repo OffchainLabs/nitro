@@ -1,7 +1,7 @@
 [package]
 name = "stylus_benchmark"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 eyre = "0.6.12"
@@ -14,4 +14,4 @@ stylus = { path = "../../stylus/", default-features = false }
 clap = { version = "4.4.8", features = ["derive"] }
 strum = "0.26"
 strum_macros = "0.26"
-rand = "0.8.5"
+rand = { version = "0.10.1" }

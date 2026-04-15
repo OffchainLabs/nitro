@@ -88,7 +88,8 @@ rust_arbutil_files = $(wildcard crates/arbutil/src/*.* crates/arbutil/src/*/*.* 
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_dir = crates/prover/
-rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
+prover_ffi_dir = crates/prover-ffi/
+rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(wildcard $(prover_ffi_dir)/src/*.rs $(prover_ffi_dir)/*.toml) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
 
 wasm_lib = crates/wasm-libraries
 wasm_lib_cargo = $(wasm_lib)/.cargo/config.toml
@@ -124,7 +125,7 @@ stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
 stylus_lang_bf   = $(wildcard crates/langs/bf/src/*.* crates/langs/bf/src/*.toml)
 
-get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
+get_stylus_test_wasm = $(stylus_test_dir)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
 stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
@@ -149,8 +150,8 @@ stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
 stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
 stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
-#stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
-#stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
+stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
+stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
 stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
@@ -173,7 +174,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -300,7 +301,7 @@ clean:
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f crates/wasm-libraries/forward/*.wat
-	rm -rf crates/stylus/tests/*/target/ crates/stylus/tests/*/*.wasm
+	rm -rf crates/stylus/tests/target/ crates/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache
@@ -369,6 +370,9 @@ $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
+
+$(output_root)/bin/filtering-report: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/filtering-report"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
@@ -626,8 +630,8 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint fmt
-	cargo fmt -p arbutil -p prover -p jit -p stylus -- --check
-	cargo fmt --all --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
+	cargo +nightly fmt -- --check
+	cargo +nightly fmt --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
 	forge fmt --root contracts-local
 	@touch $@
 

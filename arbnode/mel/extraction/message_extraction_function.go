@@ -220,6 +220,11 @@ func extractMessagesImpl(
 
 	// Extract L2 messages from batches
 	for i, batch := range batches {
+		// #nosec G115
+		expectedBatchSeqNum := batches[0].SequenceNumber + uint64(i)
+		if batch.SequenceNumber != expectedBatchSeqNum {
+			return nil, nil, nil, nil, fmt.Errorf("unexpected batch sequence number %v expected %v", batch.SequenceNumber, expectedBatchSeqNum)
+		}
 		serialized := serializedBatches[i]
 		rawSequencerMsg, err := parseSequencerMessage(
 			ctx,
@@ -253,10 +258,14 @@ func extractMessagesImpl(
 		}
 		state.BatchCount += 1
 		batchMetas = append(batchMetas, &mel.BatchMetadata{
+			Accumulator:         batch.AfterInboxAcc,
 			MessageCount:        arbutil.MessageIndex(state.MsgCount),
-			DelayedMessageCount: state.DelayedMessagesRead,
-			ParentChainBlock:    state.ParentChainBlockNumber,
+			DelayedMessageCount: batch.AfterDelayedCount,
+			ParentChainBlock:    batch.ParentChainBlockNumber,
 		})
+		if batch.AfterDelayedCount != state.DelayedMessagesRead {
+			return nil, nil, nil, nil, fmt.Errorf("batch AfterDelayedCount: %d and MEL state DelayedMessagesRead: %d mismatch", batch.AfterDelayedCount, state.DelayedMessagesRead)
+		}
 	}
 	return state, messages, delayedMessages, batchMetas, nil
 }

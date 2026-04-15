@@ -1,8 +1,9 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{Bytes20, Bytes32};
 use api::Gas;
+
+use crate::{Bytes20, Bytes32};
 
 pub mod api;
 pub mod req;

@@ -1,38 +1,36 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{borrow::Cow, fmt::Display, time::Instant};
+
 use arbutil::{
+    Bytes20, Bytes32,
     benchmark::Benchmark,
     crypto,
     evm::{
-        self,
+        self, ARBOS_VERSION_STYLUS_CHARGING_FIXES, EvmData,
         api::{CreateRespone, DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
         user::UserOutcomeKind,
-        EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
-    pricing::{hostio, EVM_API_INK},
-    Bytes20, Bytes32,
+    pricing::{EVM_API_INK, hostio},
 };
 pub use caller_env::GuestPtr;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use prover::{
     programs::{meter::OutOfInkError, prelude::*},
     value::Value,
 };
 use ruint2::Uint;
-use std::borrow::Cow;
-use std::fmt::Display;
-use std::time::Instant;
 
 macro_rules! be {
-    ($int:expr) => {
+    ($int:expr_2021) => {
         $int.to_be_bytes()
     };
 }
 
 macro_rules! trace {
-    ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], [$($outs:expr_2021),+], $ret:expr_2021) => {{
         if $env.evm_data().tracing {
             let end_ink = $env.ink_ready()?;
             let mut args = vec![];
@@ -43,16 +41,16 @@ macro_rules! trace {
         }
         Ok($ret)
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr) => {{
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], $outs:expr_2021) => {{
         trace!($name, $env, [$($args),+], $outs, ())
     }};
-    ($name:expr, $env:expr, $args:expr, $outs:expr) => {{
+    ($name:expr_2021, $env:expr_2021, $args:expr_2021, $outs:expr_2021) => {{
         trace!($name, $env, $args, $outs, ())
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr, $ret:expr) => {
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], $outs:expr_2021, $ret:expr_2021) => {
         trace!($name, $env, [$($args),+], [$outs], $ret)
     };
-    ($name:expr, $env:expr, $args:expr, $outs:expr, $ret:expr) => {
+    ($name:expr_2021, $env:expr_2021, $args:expr_2021, $outs:expr_2021, $ret:expr_2021) => {
         trace!($name, $env, [$args], [$outs], $ret)
     };
 }
@@ -174,8 +172,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// value stored in the EVM state trie at offset `key`, which will be `0` when not previously
     /// set. The semantics, then, are equivalent to that of the EVM's [`SLOAD`] opcode.
     ///
-    /// Note: the Stylus VM implements storage caching. This means that repeated calls to the same key
-    /// will cost less than in the EVM.
+    /// Note: the Stylus VM implements storage caching. This means that repeated calls to the same
+    /// key will cost less than in the EVM.
     ///
     /// [`SLOAD`]: https://www.evm.codes/#54
     fn storage_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
@@ -199,15 +197,17 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("storage_load_bytes32", self, key, value)
     }
 
-    /// Writes a 32-byte value to the permanent storage cache. Stylus's storage format is identical to that
-    /// of the EVM. This means that, under the hood, this hostio represents storing a 32-byte value into
-    /// the EVM state trie at offset `key`. Refunds are tabulated exactly as in the EVM. The semantics, then,
-    /// are equivalent to that of the EVM's [`SSTORE`] opcode.
+    /// Writes a 32-byte value to the permanent storage cache. Stylus's storage format is identical
+    /// to that of the EVM. This means that, under the hood, this hostio represents storing a
+    /// 32-byte value into the EVM state trie at offset `key`. Refunds are tabulated exactly as
+    /// in the EVM. The semantics, then, are equivalent to that of the EVM's [`SSTORE`] opcode.
     ///
-    /// Note: because this value is cached, one must call `storage_flush_cache` to persist the value.
+    /// Note: because this value is cached, one must call `storage_flush_cache` to persist the
+    /// value.
     ///
-    /// Auditor's note: we require the [`SSTORE`] sentry per EVM rules. The `gas_cost` returned by the EVM API
-    /// may exceed this amount, but that's ok because the predominant cost is due to state bloat concerns.
+    /// Auditor's note: we require the [`SSTORE`] sentry per EVM rules. The `gas_cost` returned by
+    /// the EVM API may exceed this amount, but that's ok because the predominant cost is due to
+    /// state bloat concerns.
     ///
     /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_cache_bytes32(&mut self, key: GuestPtr, value: GuestPtr) -> Result<(), Self::Err> {
@@ -222,8 +222,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("storage_cache_bytes32", self, [key, value], &[])
     }
 
-    /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache entirely if requested.
-    /// Analogous to repeated invocations of [`SSTORE`].
+    /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache
+    /// entirely if requested. Analogous to repeated invocations of [`SSTORE`].
     ///
     /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_flush_cache(&mut self, clear: bool) -> Result<(), Self::Err> {
@@ -245,8 +245,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
     /// Reads a 32-byte value from transient storage. Stylus's storage format is identical to
     /// that of the EVM. This means that, under the hood, this hostio is accessing the 32-byte
-    /// value stored in the EVM's transient state trie at offset `key`, which will be `0` when not previously
-    /// set. The semantics, then, are equivalent to that of the EVM's [`TLOAD`] opcode.
+    /// value stored in the EVM's transient state trie at offset `key`, which will be `0` when not
+    /// previously set. The semantics, then, are equivalent to that of the EVM's [`TLOAD`]
+    /// opcode.
     ///
     /// [`TLOAD`]: https://www.evm.codes/#5c
     fn transient_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
@@ -260,9 +261,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     /// Writes a 32-byte value to transient storage. Stylus's storage format is identical to that
-    /// of the EVM. This means that, under the hood, this hostio represents storing a 32-byte value into
-    /// the EVM's transient state trie at offset `key`. The semantics, then, are equivalent to that of the
-    /// EVM's [`TSTORE`] opcode.
+    /// of the EVM. This means that, under the hood, this hostio represents storing a 32-byte value
+    /// into the EVM's transient state trie at offset `key`. The semantics, then, are equivalent
+    /// to that of the EVM's [`TSTORE`] opcode.
     ///
     /// [`TSTORE`]: https://www.evm.codes/#5d
     fn transient_store_bytes32(&mut self, key: GuestPtr, value: GuestPtr) -> Result<(), Self::Err> {
@@ -647,10 +648,11 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("account_balance", self, address, balance)
     }
 
-    /// Gets a subset of the code from the account at the given address. The semantics are identical to that
-    /// of the EVM's [`EXT_CODE_COPY`] opcode, aside from one small detail: the write to the buffer `dest` will
-    /// stop after the last byte is written. This is unlike the EVM, which right pads with zeros in this scenario.
-    /// The return value is the number of bytes written, which allows the caller to detect if this has occured.
+    /// Gets a subset of the code from the account at the given address. The semantics are identical
+    /// to that of the EVM's [`EXT_CODE_COPY`] opcode, aside from one small detail: the write to
+    /// the buffer `dest` will stop after the last byte is written. This is unlike the EVM,
+    /// which right pads with zeros in this scenario. The return value is the number of bytes
+    /// written, which allows the caller to detect if this has occured.
     ///
     /// [`EXT_CODE_COPY`]: https://www.evm.codes/#3C
     fn account_code(
@@ -828,8 +830,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     /// Computes `value ÷ exponent` using 256-bit math, writing the result to the first.
-    /// The semantics are equivalent to that of the EVM's [`DIV`] opcode, which means that a `divisor` of `0`
-    /// writes `0` to `value`.
+    /// The semantics are equivalent to that of the EVM's [`DIV`] opcode, which means that a
+    /// `divisor` of `0` writes `0` to `value`.
     ///
     /// [`DIV`]: https://www.evm.codes/#04
     fn math_div(&mut self, value: GuestPtr, divisor: GuestPtr) -> Result<(), Self::Err> {
@@ -843,8 +845,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     /// Computes `value % exponent` using 256-bit math, writing the result to the first.
-    /// The semantics are equivalent to that of the EVM's [`MOD`] opcode, which means that a `modulus` of `0`
-    /// writes `0` to `value`.
+    /// The semantics are equivalent to that of the EVM's [`MOD`] opcode, which means that a
+    /// `modulus` of `0` writes `0` to `value`.
     ///
     /// [`MOD`]: https://www.evm.codes/#06
     fn math_mod(&mut self, value: GuestPtr, modulus: GuestPtr) -> Result<(), Self::Err> {
@@ -873,8 +875,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     }
 
     /// Computes `(value + addend) % modulus` using 256-bit math, writing the result to the first.
-    /// The semantics are equivalent to that of the EVM's [`ADDMOD`] opcode, which means that a `modulus` of `0`
-    /// writes `0` to `value`.
+    /// The semantics are equivalent to that of the EVM's [`ADDMOD`] opcode, which means that a
+    /// `modulus` of `0` writes `0` to `value`.
     ///
     /// [`ADDMOD`]: https://www.evm.codes/#08
     fn math_add_mod(
@@ -893,9 +895,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("math_add_mod", self, [a32, b32, c32], result)
     }
 
-    /// Computes `(value * multiplier) % modulus` using 256-bit math, writing the result to the first.
-    /// The semantics are equivalent to that of the EVM's [`MULMOD`] opcode, which means that a `modulus` of `0`
-    /// writes `0` to `value`.
+    /// Computes `(value * multiplier) % modulus` using 256-bit math, writing the result to the
+    /// first. The semantics are equivalent to that of the EVM's [`MULMOD`] opcode, which means
+    /// that a `modulus` of `0` writes `0` to `value`.
     ///
     /// [`MULMOD`]: https://www.evm.codes/#09
     fn math_mul_mod(

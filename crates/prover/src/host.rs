@@ -3,19 +3,21 @@
 
 #![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
-use crate::internal_func::InternalFunc;
+use std::{collections::HashMap, path::Path, str::FromStr};
+
+use arbutil::{Color, PreimageType, evm::user::UserOutcomeKind};
+use eyre::{ErrReport, Result, bail};
+use lazy_static::lazy_static;
+
 use crate::{
     binary, host,
+    internal_func::InternalFunc,
     machine::{Function, InboxIdentifier},
     programs::StylusData,
     utils,
     value::{ArbValueType, FunctionType},
-    wavm::{wasm_to_wavm, Instruction, Opcode},
+    wavm::{Instruction, Opcode, wasm_to_wavm},
 };
-use arbutil::{evm::user::UserOutcomeKind, Color, PreimageType};
-use eyre::{bail, ErrReport, Result};
-use lazy_static::lazy_static;
-use std::{collections::HashMap, path::Path, str::FromStr};
 
 /// Represents the internal hostio functions a module may have.
 pub enum Hostio {
@@ -123,10 +125,10 @@ impl Hostio {
             () => {
                 FunctionType::default()
             };
-            ([$($args:expr),*]) => {
+            ([$($args:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![])
             };
-            ([$($args:expr),*], [$($outs:expr),*]) => {
+            ([$($args:expr_2021),*], [$($outs:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![$($outs),*])
             };
         }
@@ -181,10 +183,10 @@ impl Hostio {
         let mut body = vec![];
 
         macro_rules! opcode {
-            ($opcode:expr) => {
+            ($opcode:expr_2021) => {
                 body.push(Instruction::simple($opcode))
             };
-            ($opcode:expr, $value:expr) => {
+            ($opcode:expr_2021, $value:expr_2021) => {
                 body.push(Instruction::with_data($opcode, $value as u64))
             };
         }
