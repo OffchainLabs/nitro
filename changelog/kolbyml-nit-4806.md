@@ -1,2 +1,2 @@
 ### Changed
-- Pin `emsdk` in the Dockerfile to the `3.1.47` commit hash before installing and activating that version
+- Pin the Dockerfile `emsdk` clone to the `3.1.46` commit while continuing to install and activate `3.1.7`
