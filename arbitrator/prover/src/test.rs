@@ -6,6 +6,24 @@ use brotli::Dictionary;
 use eyre::Result;
 use std::path::Path;
 
+#[test]
+fn test_multi_value_gate() {
+    // Multi-value wasm is allowed for Stylus V1/V2 and rejected from V3 onward.
+    // During recompilation Go passes the stored per-contract version, so a V2 contract
+    // recompiled after the V3 upgrade still arrives here as stylus_version=2.
+    let wasm = as_wasm(
+        r#"(module
+            (memory (export "memory") 1 1)
+            (func (result i32 i32) i32.const 1 i32.const 2)
+            (func (export "user_entrypoint") (param i32) (result i32) i32.const 0)
+        )"#,
+    );
+    for (version, allowed) in [(1, true), (2, true), (3, false), (4, false)] {
+        let result = binary::parse_with_stylus_version(&wasm, Path::new("test"), version);
+        assert_eq!(result.is_ok(), allowed, "stylus_version={version}");
+    }
+}
+
 fn as_wasm(wat: &str) -> Vec<u8> {
     let wasm = wasmer::wat2wasm(wat.as_bytes());
     wasm.unwrap().to_vec()
