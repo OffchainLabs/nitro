@@ -488,14 +488,13 @@ func (s *Sequencer) FilteringReady() bool {
 	return !s.addressFilterService.GetLoadedAt().IsZero()
 }
 
-func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
+func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) error {
 	if s.execEngine.filteringReportRPCClient == nil {
-		return
+		return nil
 	}
 	txRLP, err := tx.MarshalBinary()
 	if err != nil {
-		log.Error("failed to marshal filtered tx RLP", "txHash", tx.Hash(), "err", err)
-		return
+		return err
 	}
 	report := addressfilter.FilteredTxReport{
 		ID:                uuid.Must(uuid.NewV7()).String(),
@@ -510,6 +509,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 		DelayedReportData: nil,
 	}
 	s.pendingFilteredTxReports = append(s.pendingFilteredTxReports, report)
+	return nil
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -756,7 +756,9 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 
 	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
 	if addressFiltered {
-		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
+		if err := s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock); err != nil {
+			return err
+		}
 		return state.ErrArbTxFilter
 	}
 	return nil
@@ -775,7 +777,9 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		return state.ErrArbTxFilter
 	}
 	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
-		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
+		if err := s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock); err != nil {
+			return err
+		}
 		return state.ErrArbTxFilter
 	}
 
@@ -1449,13 +1453,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
-		s.pendingFilteredTxReports = nil
 		s.LaunchThread(func(ctx context.Context) {
 			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
 				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
 	}
+	s.pendingFilteredTxReports = nil
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed.Nanoseconds())
 	if elapsed >= time.Second*5 {
