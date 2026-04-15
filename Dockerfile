@@ -2,10 +2,14 @@ FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
-    git clone https://github.com/emscripten-core/emsdk.git && \
+    mkdir emsdk && \
+    git -C emsdk init && \
+    git -C emsdk remote add origin https://github.com/emscripten-core/emsdk.git && \
+    git -C emsdk fetch --depth 1 origin 37b85e9eaee5be090569d018cca77a15cacc11b7 && \
+    git -C emsdk checkout --detach 37b85e9eaee5be090569d018cca77a15cacc11b7 && \
     cd emsdk && \
-    ./emsdk install 3.1.7 && \
-    ./emsdk activate 3.1.7
+    ./emsdk install 3.1.47 && \
+    ./emsdk activate 3.1.47
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
