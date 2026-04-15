@@ -85,10 +85,10 @@ func init() {
 		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_30 {
 			vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
 		}
-		if precompile.Precompile().ArbosVersion() >= params.ArbosVerison_50 {
+		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_50 {
 			vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
 		}
-		if precompile.Precompile().ArbosVersion() >= params.ArbosVerison_60 {
+		if precompile.Precompile().ArbosVersion() >= params.ArbosVersion_60 {
 			vm.PrecompiledContractsStartingFromArbOS60[addr] = wrapped
 		}
 	}
