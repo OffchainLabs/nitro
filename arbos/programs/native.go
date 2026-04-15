@@ -362,6 +362,7 @@ func callProgram(
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
+	pageLimit uint16,
 ) ([]byte, error) {
 	db := evm.StateDB
 	debug := stylusParams.DebugMode
@@ -380,7 +381,7 @@ func callProgram(
 		}
 	}
 
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx)
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx, pageLimit)
 	defer evmApi.drop()
 
 	output := &rustBytes{}

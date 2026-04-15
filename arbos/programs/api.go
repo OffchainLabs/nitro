@@ -66,6 +66,7 @@ func newApiClosures(
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
+	pageLimit uint16,
 ) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
@@ -304,6 +305,14 @@ func newApiClosures(
 		// programs.go restores openWasmPages on frame return.
 		oldOpen, oldEver := db.AddStylusPages(pages)
 		newOpen := db.GetStylusPagesOpen()
+
+		// Chain-level consensus page limit check (ArbOS >= 59).
+		if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && pageLimit > 0 && newOpen > pageLimit {
+			log.Info("addPages: stylus params page limit exceeded",
+				"open", newOpen, "limit", pageLimit, "contract", actingAddress)
+			return math.MaxUint64
+		}
+
 		var limit uint16
 		if raw := db.Database().ArbNodeConfig(); raw != nil {
 			if cfg, ok := raw.(*ArbNodeConfig); ok {
