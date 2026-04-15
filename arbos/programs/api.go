@@ -304,30 +304,8 @@ func newApiClosures(
 		// programs.go restores openWasmPages on frame return.
 		oldOpen, oldEver := db.AddStylusPages(pages)
 		newOpen := db.GetStylusPagesOpen()
-		var limit uint16
-		if raw := db.Database().ArbNodeConfig(); raw != nil {
-			if cfg, ok := raw.(*ArbNodeConfig); ok {
-				limit = cfg.MaxOpenPages
-			} else {
-				// Internal wiring bug — fail-open to preserve pre-feature behavior.
-				log.Error("ArbNodeConfig unexpected type; page limit inactive",
-					"type", fmt.Sprintf("%T", raw))
-			}
-		}
-		if limit > 0 && newOpen > limit && runCtx != nil {
-			if !runCtx.IsExecutedOnChain() {
-				log.Info("addPages: page limit exceeded",
-					"open", newOpen, "limit", limit, "contract", actingAddress)
-				return math.MaxUint64
-			}
-			if runCtx.IsSequencing() {
-				log.Info("addPages: page limit exceeded, filtering tx",
-					"open", newOpen, "limit", limit, "contract", actingAddress)
-				db.FilterTx()
-				return math.MaxUint64
-			}
-			log.Info("addPages: page limit exceeded in exempt mode",
-				"open", newOpen, "limit", limit, "contract", actingAddress, "runMode", runCtx.RunModeMetricName())
+		if penalty := enforceStylusPageLimit(db, runCtx, newOpen, actingAddress, pageLimitAddPages); penalty > 0 {
+			return penalty
 		}
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, oldOpen, oldEver)
@@ -494,4 +472,61 @@ func newApiClosures(
 			panic("unsupported call type: " + strconv.Itoa(int(req)))
 		}
 	}
+}
+
+// pageLimitLocation identifies the call site invoking enforceStylusPageLimit.
+type pageLimitLocation string
+
+const (
+	pageLimitAddPages    pageLimitLocation = "addPages"
+	pageLimitCallProgram pageLimitLocation = "CallProgram"
+)
+
+// enforceStylusPageLimit applies the per-node open-page cap configured via
+// ArbNodeConfig.MaxOpenPages (flag: --execution.stylus-target.max-stylus-open-pages).
+//
+// It returns a uint64 penalty gas amount for the caller to charge/burn:
+//   - 0: either the limit is disabled (MaxOpenPages == 0), newOpen is under the
+//     limit, runCtx is nil, or we are in an on-chain run mode other than
+//     sequencing (commit/replay/recording). In these cases the caller proceeds
+//     normally.
+//   - math.MaxUint64: the limit is exceeded on a path where we should reject —
+//     either an off-chain path (eth_call, gas estimation) or the sequencer.
+//     The caller should use this value as gas-to-burn so BurnGas fails with
+//     vm.ErrOutOfGas (or return it directly from a hostio callback).
+//
+// Side effects: when sequencing and over-limit, calls statedb.FilterTx() so
+// the sequencer drops the tx rather than committing a reverted one. In all
+// over-limit cases (including the exempt on-chain modes, where we only log)
+// an info log is emitted; the `location` argument identifies the call site.
+//
+// A type-assertion failure reading ArbNodeConfig fails open (no enforcement)
+// so an internal wiring bug cannot brick the node.
+func enforceStylusPageLimit(statedb vm.StateDB, runCtx *core.MessageRunContext, newOpen uint16, contract common.Address, location pageLimitLocation) uint64 {
+	var limit uint16
+	if raw := statedb.Database().ArbNodeConfig(); raw != nil {
+		if cfg, ok := raw.(*ArbNodeConfig); ok {
+			limit = cfg.MaxOpenPages
+		} else {
+			// Internal wiring bug — fail-open to preserve pre-feature behavior.
+			log.Error("ArbNodeConfig unexpected type; page limit inactive",
+				"type", fmt.Sprintf("%T", raw))
+		}
+	}
+	if limit > 0 && newOpen > limit && runCtx != nil {
+		if !runCtx.IsExecutedOnChain() {
+			log.Info("page limit exceeded", "location", location,
+				"open", newOpen, "limit", limit, "contract", contract)
+			return math.MaxUint64
+		}
+		if runCtx.IsSequencing() {
+			log.Info("page limit exceeded, filtering tx", "location", location,
+				"open", newOpen, "limit", limit, "contract", contract)
+			statedb.FilterTx()
+			return math.MaxUint64
+		}
+		log.Info("page limit exceeded in exempt mode", "location", location,
+			"open", newOpen, "limit", limit, "contract", contract, "runMode", runCtx.RunModeMetricName())
+	}
+	return 0
 }

@@ -214,6 +214,13 @@ func (p Programs) CallProgram(
 	if !cached {
 		callCost = arbmath.SaturatingUAdd(callCost, program.initGas(params))
 	}
+	// Gate the per-node open-page cap before BurnGas. The helper returns
+	// math.MaxUint64 (its only non-zero return) when over-limit, which
+	// overrides callCost so BurnGas below fails with vm.ErrOutOfGas.
+	newOpen := arbmath.SaturatingUAdd(open, program.footprint)
+	if penalty := enforceStylusPageLimit(statedb, runCtx, newOpen, contract.Address(), pageLimitCallProgram); penalty > 0 {
+		callCost = penalty
+	}
 	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
 	}

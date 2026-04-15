@@ -1295,6 +1295,51 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	}
 }
 
+func TestProgramMaxStylusOpenPagesInitialFootprint(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprint(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintNative(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprint(t, false)
+}
+
+func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
+	// grow-120.wat has a fixed 120-page initial footprint and does NOT call
+	// memory.grow at runtime, so the addPages hostio in api.go never fires.
+	// This isolates the CallProgram-entry page-limit check in
+	// arbos/programs/programs.go.
+	const pageLimit uint16 = 50
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Activation uses params.PageLimit (default 128) against 0 open pages, so
+	// a 120-page footprint deploys successfully; the node-level 50-page
+	// MaxOpenPages gate only applies at CallProgram entry.
+	fixed120Addr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+
+	// eth_call: 120-page footprint > 50-page limit, off-chain branch → OOG.
+	msg := ethereum.CallMsg{
+		To:  &fixed120Addr,
+		Gas: 32000000,
+	}
+	_, err := l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call with initial footprint over limit should have failed with 'out of gas', got:", err)
+	}
+
+	// Sequenced tx: sequencing branch → FilterTx, sequencer rejects before inclusion.
+	tx := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
+	err = l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	}
+}
+
 func TestProgramActivateFails(t *testing.T) {
 	testActivateFails(t, true)
 }
