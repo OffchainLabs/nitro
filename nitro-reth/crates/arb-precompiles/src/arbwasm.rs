@@ -98,7 +98,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    // State-modifying methods handle their own gas to match Nitro's framework.
+    // State-modifying methods handle their own gas.
     match selector {
         ACTIVATE_PROGRAM => return handle_activate_program(input),
         CODEHASH_KEEPALIVE => return handle_codehash_keepalive(input),
@@ -379,7 +379,6 @@ struct ProgramInfo {
 }
 
 /// Arbitrum start time (epoch for encoding hours in program data).
-/// Matches Nitro's ArbitrumStartTime constant in data_pricer.go.
 const ARBITRUM_START_TIME: u64 = 1421388000;
 
 fn parse_program(data: &[u8; 32], params_word: &[u8; 32]) -> ProgramInfo {
@@ -414,9 +413,8 @@ fn hours_to_age(time: u64, hours: u32) -> u64 {
     time.saturating_sub(activated_at)
 }
 
-/// Mirrors Nitro's `Programs.getActiveProgram` (programs.go:466):
-/// returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
-/// or ProgramExpired(ageSeconds) in that exact order.
+/// Returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
+/// or ProgramExpired(ageSeconds), in that order.
 fn validate_active_program(
     program: &ProgramInfo,
     params_version: u16,
@@ -495,8 +493,8 @@ fn hours_since_arbitrum(time: u64) -> u32 {
     (elapsed / 3600) as u32
 }
 
-/// Approximates b * e^(x/b) where b = 10000 (basis points), using Horner's
-/// method with accuracy=12. Matches Nitro's `arbmath.ApproxExpBasisPoints(x, 12)`.
+/// Approximates `b * e^(x/b)` where `b = 10_000` (basis points), via Horner's
+/// method with accuracy=12.
 fn approx_exp_basis_points(x: u64) -> u64 {
     let b = 10_000u64;
     let accuracy = 12u64;
@@ -546,7 +544,7 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let wasm = arb_stylus::decompress_wasm(&code_bytes)
         .map_err(|e| PrecompileError::other(format!("ProgramNotWasm: {e}")))?;
 
-    // Params: charge WarmStorageReadCost (100) like Nitro, then read free.
+    // Params: charge WarmStorageReadCost (100), subsequent reads are free.
     load_arbos(&mut input)?;
     crate::charge_precompile_gas(100); // WarmStorageReadCostEIP2929
     let params_word = {

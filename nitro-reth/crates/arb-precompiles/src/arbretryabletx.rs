@@ -367,7 +367,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);
     crate::charge_precompile_gas(retryable_size_gas);
 
-    // OpenRetryable reads timeout again (second sload, matching Nitro's flow).
+    // OpenRetryable reads timeout again (second sload).
     let timeout_val2 = sload_field(input, timeout_slot)?;
     let timeout_u64_2: u64 = timeout_val2.try_into().unwrap_or(0);
     if timeout_u64_2 == 0 || timeout_u64_2 < current_timestamp {

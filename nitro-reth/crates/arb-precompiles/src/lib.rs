@@ -67,7 +67,7 @@ pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
 const MODEXP_ADDRESS: alloy_primitives::Address =
     alloy_primitives::address!("0000000000000000000000000000000000000005");
 
-/// BLS12-381 precompile addresses (EIP-2537), enabled by Nitro from ArbOS v50.
+/// BLS12-381 precompile addresses (EIP-2537), enabled from ArbOS v50.
 const BLS12_381_ADDRESSES: [alloy_primitives::Address; 7] = [
     alloy_primitives::address!("000000000000000000000000000000000000000b"),
     alloy_primitives::address!("000000000000000000000000000000000000000c"),
@@ -129,9 +129,8 @@ use std::cell::RefCell;
 
 thread_local! {
     static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = RefCell::new(Vec::new());
-    /// Per-block cache of recently invoked Stylus program codehashes (LRU).
-    /// Mirrors Nitro's `statedb.GetRecentWasms()` for ArbOS v60+.
-    /// Capacity is set per-block from `params.BlockCacheSize`.
+    /// Per-block LRU of recently invoked Stylus program codehashes. Used by
+    /// ArbOS v60+ pricing; capacity set per-block from `params.BlockCacheSize`.
     static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = RefCell::new((Vec::new(), 0));
 }
 
@@ -146,7 +145,6 @@ pub fn reset_recent_wasms(capacity: usize) {
 
 /// Insert a Stylus program codehash into the recent WASMs cache.
 /// Returns `true` if the codehash was already present (cache hit).
-/// Mirrors Nitro's `RecentWasms.Insert(codeHash, blockCacheSize)`.
 pub fn insert_recent_wasm(hash: alloy_primitives::B256) -> bool {
     RECENT_WASMS.with(|c| {
         let mut cache = c.borrow_mut();
@@ -361,15 +359,14 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
     Ok(PrecompileOutput::new_reverted(gas_limit, Default::default()))
 }
 
-/// SolError revert: returns accumulated gas + resultCost with the error selector.
-/// Always reverts regardless of ArbOS version, matching Nitro's SolError handling.
+/// SolError revert: accumulated gas + result-cost, with the error selector.
 pub fn sol_error_revert(error_selector: [u8; 4], gas_limit: u64) -> PrecompileResult {
     sol_error_revert_with_args(error_selector, &[], gas_limit)
 }
 
 /// SolError revert with ABI-encoded arguments. `args` is the already-encoded
-/// argument tail (one 32-byte word per static parameter, head-then-tail layout for
-/// dynamic types). Mirrors Nitro precompile error returns from `precompile.go`.
+/// argument tail (one 32-byte word per static parameter, head-then-tail layout
+/// for dynamic types).
 pub fn sol_error_revert_with_args(
     error_selector: [u8; 4],
     args: &[u8],
@@ -470,10 +467,8 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     ]);
 
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {
-        // Nitro keeps the 3450-gas P256VERIFY at all ArbOS versions >= 30,
-        // even after Osaka EVM rules where mainnet would use 6900 gas.
-        // (precompiles/ArbSys.go gethhook adds PrecompiledContractsP256Verify
-        // unconditionally from ArbOS_30 onwards.)
+        // P256VERIFY stays at 3450 gas on Arbitrum for all ArbOS >= 30,
+        // regardless of the underlying EVM spec's Osaka rules.
         map.extend_precompiles([(P256VERIFY_ADDRESS, create_p256verify_precompile())]);
     } else {
         map.apply_precompile(&KZG_POINT_EVALUATION_ADDRESS, |_| None);
@@ -481,11 +476,10 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     }
 
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_50 {
-        // Nitro adds PrecompiledContractsOsaka starting from ArbOS_50, which
-        // upgrades modexp gas to EIP-7823 + EIP-7883 rules.
+        // ArbOS 50+ switches modexp to the EIP-7823 + EIP-7883 gas schedule.
         map.extend_precompiles([(MODEXP_ADDRESS, create_modexp_osaka_precompile())]);
     } else {
-        // Nitro doesn't add BLS12-381 precompiles until ArbOS_50.
+        // BLS12-381 precompiles are not available before ArbOS 50.
         for addr in &BLS12_381_ADDRESSES {
             map.apply_precompile(addr, |_| None);
         }

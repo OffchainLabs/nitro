@@ -502,14 +502,6 @@ where
 
         let fees = compute_submit_retryable_fees(&params);
 
-        tracing::debug!(
-            target: "arb::executor",
-            can_pay = fees.can_pay_for_gas,
-            has_error = fees.error.is_some(),
-            submission_fee = %fees.submission_fee,
-            "submit retryable fee computation"
-        );
-
         let user_gas = info.gas;
 
         // Fee validation errors end the transaction immediately with zero gas.
@@ -552,19 +544,6 @@ where
         }
 
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-
-        tracing::debug!(
-            target: "arb::executor",
-            %ticket_id,
-            %sender,
-            fee_refund = %info.fee_refund_addr,
-            deposit = %info.deposit_value,
-            retry_value = %info.retry_value,
-            submission_fee = %fees.submission_fee,
-            escrow = %fees.escrow,
-            can_pay = fees.can_pay_for_gas,
-            "SubmitRetryable fee breakdown"
-        );
 
         // 3. Transfer submission fee to network fee account.
         if !fees.submission_fee.is_zero() {
@@ -689,16 +668,10 @@ where
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(info.fee_refund_addr);
 
-            // For filtered retryables, skip auto-redeem scheduling.
-            tracing::debug!(
-                target: "arb::executor",
-                filtered = is_filtered,
-                "auto-redeem: checking is_filtered"
-            );
+            // Filtered retryables do not get an auto-redeem scheduled.
             if !is_filtered {
-                // Schedule auto-redeem: use make_tx to construct from stored
-                // retryable fields (via MakeTx), then
-                // increment num_tries.
+                // Schedule auto-redeem: reconstruct the retry tx from stored
+                // fields and bump num_tries.
                 let state_ptr2: *mut State<DB> = db as *mut State<DB>;
                 match ArbosState::open(state_ptr2, SystemBurner::new(None, false)) {
                     Ok(arb_state) => {
@@ -762,11 +735,6 @@ where
                                             let mut encoded = Vec::new();
                                             encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
                                             alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
-                                            tracing::debug!(
-                                                target: "arb::executor",
-                                                encoded_len = encoded.len(),
-                                                "Scheduling auto-redeem retry tx"
-                                            );
                                             hooks.tx_proc.scheduled_txs.push(encoded);
                                         } else {
                                             tracing::warn!(
@@ -1481,17 +1449,6 @@ where
                 poster_gas = hooks.tx_proc.poster_gas;
             }
 
-            if tx_gas_limit > 2_000_000 && tx_gas_limit < 3_000_000 {
-                let compressed_len = l1_pricing::byte_count_after_brotli_level(
-                    &tx_bytes, self.arb_ctx.brotli_compression_level);
-                let tx_hash = recovered.tx().trie_hash();
-                tracing::warn!(target: "stylus",
-                    tx_bytes_len = tx_bytes.len(), compressed_len,
-                    poster_gas, units, brotli_level = self.arb_ctx.brotli_compression_level,
-                    %tx_hash,
-                    "POSTER_DIAG");
-            }
-
             units
         } else {
             0
@@ -1551,11 +1508,10 @@ where
 
         // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
         // poster_gas is subtracted here so that BuyGas charges
-        // (gas_limit - poster_gas - compute_hold_gas) * baseFee. This means the
-        // sender's mid-execution BALANCE is higher than Nitro by poster_gas * baseFee
-        // (because Nitro's BuyGas charges the full gas_limit). This difference is
-        // corrected in the BALANCE opcode handler via a thread-local poster fee
-        // adjustment.
+        // (gas_limit - poster_gas - compute_hold_gas) * baseFee. The resulting
+        // balance overshoots the protocol's "full gas_limit charge" BALANCE by
+        // `poster_gas * baseFee`; the custom BALANCE opcode handler subtracts
+        // this correction via a thread-local.
         let mut tx_env = tx_env;
         let gas_deduction = poster_gas.saturating_add(compute_hold_gas);
         let evm_gas_limit_before = revm::context_interface::Transaction::gas_limit(&tx_env);
@@ -1563,10 +1519,10 @@ where
             tx_env.set_gas_limit(evm_gas_limit_before.saturating_sub(gas_deduction));
         }
 
-        // Set balance correction for BALANCE/SELFBALANCE opcode adjustment.
-        // Nitro's BuyGas charges gas_limit * baseFee. Our reduced gas_limit
-        // charges (posterGas + computeHoldGas) * baseFee less. The custom
-        // BALANCE handler subtracts this correction when querying the sender.
+        // BALANCE/SELFBALANCE correction: the reduced gas_limit above makes
+        // BuyGas charge `(posterGas + computeHoldGas) * baseFee` less than the
+        // protocol requires, so the BALANCE handler subtracts this correction
+        // whenever it queries the sender's balance.
         {
             let correction = self
                 .arb_ctx
@@ -1700,14 +1656,13 @@ where
             }
         }
 
-        // Set the address aliasing flag for L1→L2 message types. Nitro's
-        // StartTxHook sets this based on the tx type; ArbSys.wasMyCallersAddressAliased()
-        // and myCallersAddressWithoutAliasing() read it.
+        // Set the address aliasing flag for L1→L2 message types so that
+        // ArbSys.wasMyCallersAddressAliased() and myCallersAddressWithoutAliasing()
+        // observe it during this tx.
         arb_precompiles::set_tx_is_aliased(arbos::util::does_tx_type_alias(tx_type_raw));
 
-        // Write the poster fee to a scratch storage slot AND set the thread-local
-        // so ArbGasInfo.getCurrentTxL1GasFees can return it without storage reads
-        // (matching Nitro's c.txProcessor.PosterFee pattern).
+        // Publish the poster fee via a scratch storage slot and thread-local
+        // so ArbGasInfo.getCurrentTxL1GasFees can return it without a storage read.
         {
             use arb_precompiles::storage_slot::current_tx_poster_fee_slot;
             let poster_fee_val = self
@@ -1838,7 +1793,6 @@ where
             };
             if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) && tx_value > U256::ZERO {
                 tx_env.set_value(U256::ZERO);
-                tracing::warn!(target: "stylus", %tx_value, new_value = %revm::context_interface::Transaction::value(&tx_env), "ZEROED tx value for ArbWasm payable call");
             }
         }
 
@@ -1871,9 +1825,8 @@ where
         // The ArbRetryableTx.Redeem precompile emits this event; we discover it
         // here and schedule the retry tx via the ScheduledTxes() mechanism.
         //
-        // The precompile emits a placeholder retry tx hash (keccak256(ticket_id||nonce)).
-        // We replace it with the actual EIP-2718 encoded tx hash to match Nitro,
-        // which computes types.NewTx(retryTxInner).Hash() inside the precompile.
+        // The precompile emits a placeholder retry-tx hash (keccak256(ticket_id||nonce)).
+        // Replace it with the real EIP-2718 encoded tx hash.
         let mut total_donated_gas = 0u64;
         // Collect (log_index, correct_hash) for patching logs before commit.
         let mut retry_tx_hash_fixes: Vec<(usize, B256)> = Vec::new();
@@ -2196,12 +2149,6 @@ where
                 });
 
                 if let Some(ref result) = result {
-                    tracing::debug!(
-                        target: "arb::executor",
-                        ticket_id = %retry_ctx.ticket_id,
-                        should_delete = result.should_delete_retryable,
-                        "Retry EndTxHook result"
-                    );
                     if result.should_delete_retryable {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         if let Ok(arb_state) =
@@ -2286,8 +2233,8 @@ where
                     }
                 }
             } else if pending.has_poster_costs {
-                // Normal tx: fee distribution (includes UnsignedTx/ContractTx
-                // which have has_poster_costs=true matching Nitro's EndTxHook).
+                // Normal tx: fee distribution. Includes UnsignedTx / ContractTx,
+                // which also carry poster costs.
                 let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
 
                 let fee_dist = self.arb_hooks.as_ref().map(|hooks| {
@@ -2614,12 +2561,11 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
     }
 }
 
-/// Transfer balance between two addresses. Atomic: skipped on insufficient funds.
+/// Transfer balance between two addresses. Skipped on insufficient funds.
 ///
-/// Matches Nitro's `util.TransferBalance`: at ArbOS >= Stylus a zero-amount call is
-/// a complete no-op (geth's SubBalance/AddBalance skip zero amounts without touching
-/// the account). Pre-Stylus callers that need the zombie-deleted semantics must use
-/// a dedicated helper or call `create_zombie_if_deleted` directly.
+/// At ArbOS >= Stylus a zero-amount call is a complete no-op. Pre-Stylus
+/// callers that need the zombie-deleted semantics must use a dedicated
+/// helper or call `create_zombie_if_deleted` directly.
 fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Address, amount: U256) {
     if amount.is_zero() {
         return;

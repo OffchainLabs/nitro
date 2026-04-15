@@ -54,12 +54,7 @@ const BLOCKHASH_OPCODE: u8 = 0x40;
 /// BALANCE opcode (0x31).
 const BALANCE_OPCODE: u8 = 0x31;
 
-/// Arbitrum NUMBER: returns the L1 block number from ArbOS state.
-///
-/// Nitro's NUMBER reads from `ProcessingHook.L1BlockNumber()` which returns
-/// the value stored by `record_new_l1_block` during StartBlock. The mixHash
-/// L1 block number in the header can differ from this value, so we read from
-/// the thread-local set after StartBlock processing.
+/// Arbitrum NUMBER: returns the L1 block number recorded during StartBlock.
 fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     let l1_block = arb_precompiles::get_l1_block_number_for_evm();
     if !ctx.interpreter.stack.push(U256::from(l1_block)) {
@@ -116,11 +111,9 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionConte
 
 // SHA3 tracer removed — can't easily wrap standard handler
 
-/// Arbitrum BALANCE: adjusts the sender's balance by the poster fee correction.
-///
-/// Nitro's BuyGas charges gas_limit * baseFee, but our reduced gas_limit
-/// charges posterGas * baseFee less. When a contract checks BALANCE(sender),
-/// we subtract the correction from the result to match Nitro.
+/// Arbitrum BALANCE: subtracts the poster-fee correction when a contract
+/// reads the transaction sender's balance, so that the observed value matches
+/// a full-`gas_limit * basefee` buy-gas charge.
 fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     // Pop address from stack
     let addr_u256 = match ctx.interpreter.stack.pop() {
@@ -349,7 +342,7 @@ fn read_program_word<DB: Database>(
 }
 
 /// Read the activation-time module hash for a Stylus program by code hash.
-/// Stored at programs subspace key [2] (mirroring Nitro's `moduleHashesKey`).
+/// Read the activation-time module hash stored at programs subspace key [2].
 fn read_module_hash<DB: Database>(
     journal: &mut revm::Journal<DB>,
     code_hash: B256,
@@ -361,7 +354,6 @@ fn read_module_hash<DB: Database>(
 }
 
 /// Parse essential StylusParams fields from the packed storage word.
-/// This mirrors `StylusParams::load()` but works with raw bytes from journal sload.
 fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
     StylusParams {
         arbos_version,
@@ -564,12 +556,8 @@ where
         };
     }
 
-    // Stylus → Stylus call: detect the Stylus discriminant on the loaded
-    // bytecode and dispatch through the WASM runtime instead of running the
-    // bytes as raw EVM. Without this branch, the inner call hits 0xef on the
-    // very first byte and aborts with OpcodeNotFound. Block 55755413's failing
-    // tx tripped this when a Solidity contract called a Stylus token's
-    // `transferFrom` from inside a Stylus → EVM CALL chain.
+    // If the loaded bytecode carries the Stylus discriminant, dispatch it
+    // through the WASM runtime instead of the EVM interpreter.
     if arb_precompiles::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
         && arb_stylus::is_stylus_program(&bytecode)
     {
@@ -793,16 +781,10 @@ where
         gas_limit,
     );
 
-    // Build instruction table with our custom Arbitrum opcode handlers.
-    // This MUST install the same set as the outer ArbEvmFactory (search for
-    // `instruction.insert_instruction` further down in this file). When a
-    // Stylus contract calls into an EVM contract via stylus_call_trampoline,
-    // the new EVM frame goes through this code path. Without these handlers,
-    // sub-frame NUMBER returns the L2 block number instead of the L1 block
-    // number Arbitrum exposes — which silently breaks any EIP-712 signature
-    // derivation that includes block.number in its digest. Block 55755413's
-    // failing tx reproduced this as an `InvalidSignature()` revert deep
-    // inside a Stylus -> EVM CALL chain.
+    // Install the Arbitrum opcode overrides on every sub-frame. The outer
+    // factory does the same; this path is taken when a Stylus contract
+    // re-enters EVM bytecode and must see identical semantics (notably NUMBER
+    // returning the L1 block number that EIP-712 signatures depend on).
     type Ctx<B, T, C, D, Ch> = revm::Context<B, T, C, D, revm::Journal<D>, Ch>;
     let mut instructions = EthInstructions::<
         EthInterpreter,
@@ -1035,8 +1017,7 @@ where
 
     // ── Compute and deduct upfront gas costs ────────────────────────
     let (pages_open, pages_ever) = get_stylus_pages();
-    // ArbOS v60+: recent WASMs cache hit makes the program count as cached
-    // for the purposes of gas pricing (mirrors Nitro's GetRecentWasms.Insert).
+    // ArbOS v60+: a recent-wasms cache hit counts as cached for pricing.
     let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
         arb_precompiles::insert_recent_wasm(code_hash)
     } else {

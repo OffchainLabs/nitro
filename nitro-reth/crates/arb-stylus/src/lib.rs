@@ -110,9 +110,10 @@ pub fn decompress_wasm(bytecode: &[u8]) -> eyre::Result<Vec<u8>> {
         .map_err(|e| eyre::eyre!("brotli decompression failed: {e:?}"))
 }
 
-/// Activate a Stylus program using the official Nitro prover.
+/// Activate a Stylus program.
+///
 /// `wasm` must be the decompressed WASM bytes (call `decompress_wasm` first).
-/// The `gas` parameter is decremented by the activation cost.
+/// `gas` is decremented by the activation cost.
 pub fn activate_program(
     wasm: &[u8],
     codehash: &[u8; 32],

@@ -631,20 +631,12 @@ mod tests {
         );
     }
 
-    /// Reproduces the exact block 616862 Arbitrum Sepolia divergence scenario.
-    ///
-    /// Block 616862 contains:
-    ///   TX0: StartBlock internal (drain=0 because time_passed=0)
-    ///   TX1: SubmitRetryable (writes many ArbOS retryable storage slots, empty EVM commit)
-    ///   TX2: RetryTx auto-redeem (complex EVM commit with many accounts, then grow_backlog)
-    ///
-    /// The gasBacklog starts at 552,756 (pre-block state). After grow_backlog(357,751),
-    /// it should be 910,507. The bug: this write is lost from the bundle.
-    ///
-    /// This test uses a PreloadedDb so that write_storage_at sees the correct
-    /// `original_value` from the database (matching production behavior).
+    /// A 3-tx block pattern that previously lost a `grow_backlog` write from
+    /// the bundle: StartBlock with drain=0, then a SubmitRetryable, then an
+    /// auto-redeem RetryTx. Starting backlog 552_756, after `grow_backlog(357_751)`
+    /// must equal 910_507 in the bundle.
     #[test]
-    fn test_block_616862_backlog_survives_full_flow() {
+    fn grow_backlog_survives_submit_retryable_then_retry_tx_flow() {
         use alloy_primitives::map::HashMap;
         use revm::{database::states::bundle_state::BundleRetention, DatabaseCommit};
 
@@ -712,7 +704,7 @@ mod tests {
 
         let arbos = ARBOS_STATE_ADDRESS;
 
-        // Pre-block state matching Arbitrum Sepolia at block 616861
+        // Pre-block state for the scenario under test.
         let mut db = PreloadedDb::new();
         db.set(arbos, gas_backlog_slot, U256::from(552_756u64));
         db.set(arbos, speed_limit_slot, U256::from(7_000_000u64));
@@ -755,7 +747,6 @@ mod tests {
         let empty_changes: HashMap<Address, revm::state::Account> = Default::default();
         state.commit(empty_changes);
 
-        eprintln!("[TX0] After StartBlock commit");
 
         // ================================================================
         // TX1: SubmitRetryable — writes many ArbOS storage slots
@@ -824,7 +815,6 @@ mod tests {
             );
         }
 
-        eprintln!("[TX1] After SubmitRetryable commit + scratch clear");
 
         // ================================================================
         // TX2: RetryTx — complex EVM commit, then grow_backlog
@@ -855,8 +845,9 @@ mod tests {
             );
         }
 
-        // Simulate complex EVM execution touching MANY accounts (11 logs, 7+ contracts)
-        // This is the key difference from block 616861 (which had only 2 logs)
+        // Simulate an EVM transaction that touches many accounts and emits
+        // many logs — the regression needed ~11 logs across 7+ contracts to
+        // reproduce.
         {
             let mut evm_changes: HashMap<Address, revm::state::Account> = Default::default();
 
@@ -900,7 +891,6 @@ mod tests {
             state.commit(evm_changes);
         }
 
-        eprintln!("[TX2] After RetryTx EVM commit ({} accounts)", 8);
 
         // Clear scratch slots
         {
@@ -940,7 +930,6 @@ mod tests {
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
             let backlog_before = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[TX2] gasBacklog BEFORE grow: {}", backlog_before);
             assert_eq!(
                 backlog_before, 552_756,
                 "gasBacklog should still be 552756 before grow"
@@ -950,14 +939,12 @@ mod tests {
             assert!(result.is_ok(), "grow_backlog should succeed");
 
             let backlog_after = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[TX2] gasBacklog AFTER grow: {}", backlog_after);
             assert_eq!(
                 backlog_after, 910_507,
                 "gasBacklog should be 910507 after grow"
             );
         }
 
-        eprintln!("[FINAL] Checking bundle...");
 
         // ================================================================
         // Post-block: merge transitions and verify bundle
@@ -971,7 +958,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.present_value);
-        eprintln!("[BUNDLE] Pre-filter gasBacklog: {:?}", pre_filter_backlog);
         assert_eq!(
             pre_filter_backlog,
             Some(U256::from(910_507u64)),
@@ -991,7 +977,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.present_value);
-        eprintln!("[BUNDLE] Post-filter gasBacklog: {:?}", post_filter_backlog);
         assert_eq!(
             post_filter_backlog,
             Some(U256::from(910_507u64)),
@@ -1004,7 +989,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.previous_or_original_value);
-        eprintln!("[BUNDLE] gasBacklog original_value: {:?}", original);
         assert_eq!(
             original,
             Some(U256::from(552_756u64)),
@@ -1020,21 +1004,17 @@ mod tests {
             .get(&arbos)
             .and_then(|ca| ca.account.as_ref())
             .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-        eprintln!("[CACHE] gasBacklog in cache: {:?}", cache_backlog);
         assert_eq!(
             cache_backlog,
             Some(U256::from(910_507u64)),
             "gasBacklog should be in cache with value 910507"
         );
-
-        eprintln!("[PASS] Block 616862 flow: gasBacklog correctly persisted as 910507");
     }
 
-    /// Same as test_block_616862 but the EVM commit INCLUDES the ArbOS account.
-    /// This simulates the case where a precompile or SLOAD caused the EVM to
-    /// "touch" the ArbOS account during the RetryTx execution.
+    /// Same flow as above but the EVM commit touches the ArbOS account
+    /// directly, simulating a precompile SLOAD during the RetryTx.
     #[test]
-    fn test_block_616862_with_arbos_in_evm_commit() {
+    fn grow_backlog_with_arbos_in_evm_commit() {
         use alloy_primitives::map::HashMap;
         use revm::{database::states::bundle_state::BundleRetention, DatabaseCommit};
 
@@ -1198,12 +1178,10 @@ mod tests {
             state.commit(evm_changes);
         }
 
-        eprintln!("[VARIANT] After EVM commit with ArbOS account included");
 
         // Check: is gasBacklog still readable?
         let backlog_check =
             arb_storage::read_storage_at(unsafe { &mut *state_ptr }, arbos, gas_backlog_slot);
-        eprintln!("[VARIANT] gasBacklog after EVM commit: {}", backlog_check);
 
         // Clear scratch
         arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_1, U256::ZERO);
@@ -1225,7 +1203,6 @@ mod tests {
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
             let backlog_before = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[VARIANT] gasBacklog BEFORE grow: {}", backlog_before);
             assert_eq!(
                 backlog_before, 552_756,
                 "gasBacklog should be 552756 before grow"
@@ -1234,7 +1211,6 @@ mod tests {
             let _ = l2_pricing.grow_backlog(357_751, MultiGas::default());
 
             let backlog_after = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[VARIANT] gasBacklog AFTER grow: {}", backlog_after);
             assert_eq!(backlog_after, 910_507, "gasBacklog should be 910507");
         }
 
@@ -1247,7 +1223,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| (s.present_value, s.previous_or_original_value));
-        eprintln!("[VARIANT] Pre-filter gasBacklog: {:?}", pre_filter);
         assert_eq!(
             pre_filter.map(|p| p.0),
             Some(U256::from(910_507u64)),
@@ -1266,22 +1241,19 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.present_value);
-        eprintln!("[VARIANT] Post-filter gasBacklog: {:?}", post_filter);
         assert_eq!(
             post_filter,
             Some(U256::from(910_507u64)),
             "gasBacklog should survive filter when ArbOS is in EVM commit"
         );
 
-        eprintln!("[PASS] Variant with ArbOS in EVM commit: gasBacklog correctly persisted");
     }
 
-    /// Test what happens when transition_state is None (already consumed by
-    /// a prior merge_transitions). This simulates a bug where merge_transitions
-    /// is called mid-block, causing subsequent write_storage_at transitions to
-    /// be silently dropped.
+    /// When `transition_state` is None (already consumed by a prior
+    /// `merge_transitions`), later `write_storage_at` calls must still end up
+    /// in the bundle rather than being silently dropped.
     #[test]
-    fn test_block_616862_transition_state_consumed() {
+    fn grow_backlog_with_transition_state_consumed() {
         use alloy_primitives::map::HashMap;
         use revm::{
             database::states::{bundle_state::BundleRetention, plain_account::StorageSlot},
@@ -1366,11 +1338,9 @@ mod tests {
         // transitions SILENTLY DROPPED.
         state.merge_transitions(BundleRetention::Reverts);
         let _mid_bundle = state.take_bundle();
-        eprintln!("[BUG-SIM] transition_state consumed mid-block!");
 
         // Check: is transition_state None?
         let ts_is_none = state.transition_state.is_none();
-        eprintln!("[BUG-SIM] transition_state is None: {}", ts_is_none);
 
         // TX2: grow_backlog — the write goes to cache but transition is dropped
         {
@@ -1379,15 +1349,10 @@ mod tests {
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
             let backlog_before = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[BUG-SIM] gasBacklog before grow: {}", backlog_before);
 
             let _ = l2_pricing.grow_backlog(357_751, MultiGas::default());
 
             let backlog_after = l2_pricing.gas_backlog().unwrap();
-            eprintln!(
-                "[BUG-SIM] gasBacklog after grow: {} (from cache)",
-                backlog_after
-            );
         }
 
         // End of block: merge_transitions again
@@ -1400,10 +1365,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.present_value);
-        eprintln!(
-            "[BUG-SIM] gasBacklog in bundle after 2nd merge: {:?}",
-            in_bundle
-        );
 
         // If transition_state was None, the gasBacklog transition was dropped.
         // The bundle from the 2nd merge would NOT have the gasBacklog.
@@ -1415,7 +1376,6 @@ mod tests {
                 .get(&arbos)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!("[BUG-SIM] gasBacklog in cache: {:?}", cache_val);
 
             // Inline augment_bundle_from_cache for ArbOS account
             if let Some(bundle_acct) = bundle.state.get_mut(&arbos) {
@@ -1479,7 +1439,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.present_value);
-        eprintln!("[BUG-SIM] gasBacklog after augment: {:?}", after_augment);
 
         // filter_unchanged_storage
         for (_addr, account) in bundle.state.iter_mut() {
@@ -1493,7 +1452,6 @@ mod tests {
             .get(&arbos)
             .and_then(|a| a.storage.get(&gas_backlog_slot))
             .map(|s| s.present_value);
-        eprintln!("[BUG-SIM] gasBacklog after filter: {:?}", after_filter);
 
         assert_eq!(
             after_filter,
@@ -1501,7 +1459,6 @@ mod tests {
             "gasBacklog MUST survive even when transition_state was consumed mid-block"
         );
 
-        eprintln!("[PASS] Bug simulation: augment_bundle_from_cache rescued gasBacklog");
     }
 
     /// Simulates the full production flow step-by-step to find why
@@ -1523,10 +1480,8 @@ mod tests {
         let gas_backlog_offset: u64 = 4;
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), gas_backlog_offset);
 
-        eprintln!("[TEST] gas_backlog_slot = {:?}", gas_backlog_slot);
 
         // ===== VARIANT A: EVM commit with EMPTY HashMap (no ArbOS account touched) =====
-        eprintln!("\n===== VARIANT A: Empty EVM commit =====");
         {
             let mut state = StateBuilder::new()
                 .with_database(EmptyDb)
@@ -1550,15 +1505,10 @@ mod tests {
             l2_pricing.set_gas_backlog(552756).unwrap();
             let pre_start = l2_pricing.gas_backlog().unwrap();
             assert_eq!(pre_start, 552756, "Pre-existing backlog should be 552756");
-            eprintln!("[A] Step 3: gas_backlog set to {}", pre_start);
 
             // Step 4: Simulate StartBlock: update_pricing_model(time_passed=0)
             l2_pricing.update_pricing_model(0, 10).unwrap();
             let after_start = l2_pricing.gas_backlog().unwrap();
-            eprintln!(
-                "[A] Step 4: after update_pricing_model(0): gas_backlog={}",
-                after_start
-            );
             assert_eq!(
                 after_start, 552756,
                 "time_passed=0 should not change backlog"
@@ -1568,7 +1518,6 @@ mod tests {
             let empty_state: alloy_primitives::map::HashMap<Address, revm::state::Account> =
                 Default::default();
             state.commit(empty_state);
-            eprintln!("[A] Step 5: committed empty EVM state");
 
             // Check cache after commit
             let cache_val = state
@@ -1577,10 +1526,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!(
-                "[A] Step 5 cache check: gas_backlog in cache = {:?}",
-                cache_val
-            );
 
             // Step 6: grow_backlog(357751)
             let l2_pricing2 =
@@ -1589,10 +1534,6 @@ mod tests {
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
             let after_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!(
-                "[A] Step 6: after grow_backlog(357751): gas_backlog={}",
-                after_grow
-            );
             assert_eq!(after_grow, 552756 + 357751, "backlog should be sum");
 
             // Check cache after grow
@@ -1602,15 +1543,10 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!(
-                "[A] Step 6 cache check: gas_backlog in cache = {:?}",
-                cache_val2
-            );
 
             // Step 7: merge_transitions + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
             let mut bundle = state.take_bundle();
-            eprintln!("[A] Step 7: bundle has {} accounts", bundle.state.len());
 
             // Check bundle before augment
             let bundle_has_slot = bundle
@@ -1618,10 +1554,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| s.present_value);
-            eprintln!(
-                "[A] Step 7 bundle pre-augment: gas_backlog = {:?}",
-                bundle_has_slot
-            );
 
             // Step 8: Simulate augment_bundle_from_cache (inline replication)
             // In production, this is called on the same state after take_bundle
@@ -1695,10 +1627,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!(
-                "[A] Step 8 bundle post-augment: gas_backlog = {:?}",
-                bundle_after_augment
-            );
 
             // Step 9: filter_unchanged_storage
             for (_addr, account) in bundle.state.iter_mut() {
@@ -1712,7 +1640,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| s.present_value);
-            eprintln!("[A] Step 9 FINAL: gas_backlog in bundle = {:?}", final_slot);
             assert!(
                 final_slot.is_some(),
                 "VARIANT A FAILED: gas_backlog slot MISSING from bundle after empty EVM commit"
@@ -1725,7 +1652,6 @@ mod tests {
         }
 
         // ===== VARIANT B: EVM commit WITH ArbOS account touched (simulates precompile read) =====
-        eprintln!("\n===== VARIANT B: EVM commit with ArbOS account touched =====");
         {
             let mut state = StateBuilder::new()
                 .with_database(EmptyDb)
@@ -1746,7 +1672,6 @@ mod tests {
             l2_pricing.set_gas_backlog(552756).unwrap();
             l2_pricing.update_pricing_model(0, 10).unwrap();
             let before_commit = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[B] Pre-commit: gas_backlog={}", before_commit);
 
             // Count cache slots before commit
             let cache_slots_before = state
@@ -1756,7 +1681,6 @@ mod tests {
                 .and_then(|ca| ca.account.as_ref())
                 .map(|a| a.storage.len())
                 .unwrap_or(0);
-            eprintln!("[B] Cache slots before EVM commit: {}", cache_slots_before);
 
             // EVM commit with ArbOS account TOUCHED but no storage changes
             // This simulates what happens when EVM executes a precompile that
@@ -1779,7 +1703,6 @@ mod tests {
                 Default::default();
             evm_changes.insert(ARBOS_STATE_ADDRESS, arbos_evm_account);
             state.commit(evm_changes);
-            eprintln!("[B] Committed EVM state with ArbOS account touched");
 
             // Check cache after commit — this is the critical check!
             let cache_slots_after = state
@@ -1789,10 +1712,6 @@ mod tests {
                 .and_then(|ca| ca.account.as_ref())
                 .map(|a| a.storage.len())
                 .unwrap_or(0);
-            eprintln!(
-                "[B] Cache slots AFTER EVM commit: {} (was {})",
-                cache_slots_after, cache_slots_before
-            );
 
             let cache_val = state
                 .cache
@@ -1800,26 +1719,19 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!("[B] gas_backlog in cache after EVM commit: {:?}", cache_val);
 
             if cache_slots_after < cache_slots_before {
-                eprintln!(
-                    "[B] !!! CACHE SLOTS WERE LOST BY EVM COMMIT !!! ({} -> {})",
-                    cache_slots_before, cache_slots_after
-                );
             }
 
             // Now grow_backlog AFTER the EVM commit
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             let read_before_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[B] gas_backlog read before grow: {}", read_before_grow);
 
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
             let after_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[B] gas_backlog after grow: {}", after_grow);
 
             // Check cache after grow
             let cache_val2 = state
@@ -1828,7 +1740,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!("[B] gas_backlog in cache after grow: {:?}", cache_val2);
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
@@ -1839,7 +1750,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[B] Bundle pre-augment: gas_backlog = {:?}", bundle_pre);
 
             // augment_bundle_from_cache (inline)
             for (addr, cache_acct) in &state.cache.accounts {
@@ -1877,7 +1787,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[B] Bundle post-augment: gas_backlog = {:?}", bundle_post);
 
             // filter_unchanged_storage
             for (_addr, account) in bundle.state.iter_mut() {
@@ -1891,7 +1800,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| s.present_value);
-            eprintln!("[B] FINAL: gas_backlog in bundle = {:?}", final_slot);
             assert!(
                 final_slot.is_some(),
                 "VARIANT B FAILED: gas_backlog slot MISSING from bundle after EVM commit with ArbOS touched"
@@ -1907,7 +1815,6 @@ mod tests {
         // This simulates the most realistic case: EVM reads gasBacklog slot during
         // execution (e.g., GetPricesInWei precompile reads ArbOS state), and the
         // slot appears in EVM output with is_changed()=false but present in Account.storage
-        eprintln!("\n===== VARIANT C: EVM commit with ArbOS storage slot read (unchanged) =====");
         {
             let mut state = StateBuilder::new()
                 .with_database(EmptyDb)
@@ -1927,10 +1834,6 @@ mod tests {
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             l2_pricing.set_gas_backlog(552756).unwrap();
             l2_pricing.update_pricing_model(0, 10).unwrap();
-            eprintln!(
-                "[C] Pre-commit: gas_backlog={}",
-                l2_pricing.gas_backlog().unwrap()
-            );
 
             let cache_slots_before = state
                 .cache
@@ -1939,7 +1842,6 @@ mod tests {
                 .and_then(|ca| ca.account.as_ref())
                 .map(|a| a.storage.len())
                 .unwrap_or(0);
-            eprintln!("[C] Cache slots before: {}", cache_slots_before);
 
             // EVM commit with ArbOS account touched AND a storage slot that was
             // read but not written (EvmStorageSlot with original_value == present_value).
@@ -1968,7 +1870,6 @@ mod tests {
                 Default::default();
             evm_changes.insert(ARBOS_STATE_ADDRESS, arbos_evm_account);
             state.commit(evm_changes);
-            eprintln!("[C] Committed EVM state with ArbOS + read-only storage slot");
 
             let cache_slots_after = state
                 .cache
@@ -1977,10 +1878,6 @@ mod tests {
                 .and_then(|ca| ca.account.as_ref())
                 .map(|a| a.storage.len())
                 .unwrap_or(0);
-            eprintln!(
-                "[C] Cache slots AFTER: {} (was {})",
-                cache_slots_after, cache_slots_before
-            );
 
             let cache_val = state
                 .cache
@@ -1988,29 +1885,19 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!("[C] gas_backlog in cache after commit: {:?}", cache_val);
 
             if cache_slots_after < cache_slots_before {
-                eprintln!(
-                    "[C] !!! CACHE SLOTS LOST !!! {} -> {}",
-                    cache_slots_before, cache_slots_after
-                );
             }
 
             // grow_backlog after commit
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             let read_before_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!(
-                "[C] gas_backlog read before grow: {} (expect 552756)",
-                read_before_grow
-            );
 
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
             let after_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[C] gas_backlog after grow: {} (expect 910507)", after_grow);
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
@@ -2021,7 +1908,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[C] Bundle pre-augment: gas_backlog = {:?}", bundle_pre);
 
             // augment (inline)
             for (addr, cache_acct) in &state.cache.accounts {
@@ -2059,7 +1945,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[C] Bundle post-augment: gas_backlog = {:?}", bundle_post);
 
             // filter_unchanged_storage
             for (_addr, account) in bundle.state.iter_mut() {
@@ -2073,7 +1958,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| s.present_value);
-            eprintln!("[C] FINAL: gas_backlog in bundle = {:?}", final_slot);
             assert!(
                 final_slot.is_some(),
                 "VARIANT C FAILED: gas_backlog slot MISSING from bundle after EVM commit with ArbOS storage read"
@@ -2087,7 +1971,6 @@ mod tests {
 
         // ===== VARIANT D: Two EVM commits (StartBlock + user tx) then grow_backlog =====
         // Most realistic production sequence
-        eprintln!("\n===== VARIANT D: Two EVM commits then grow_backlog =====");
         {
             let mut state = StateBuilder::new()
                 .with_database(EmptyDb)
@@ -2110,14 +1993,9 @@ mod tests {
 
             // Simulate StartBlock: update_pricing_model writes base_fee
             l2_pricing.update_pricing_model(0, 10).unwrap();
-            eprintln!(
-                "[D] After StartBlock: backlog={}",
-                l2_pricing.gas_backlog().unwrap()
-            );
 
             // First EVM commit (StartBlock internal tx - empty output)
             state.commit(Default::default());
-            eprintln!("[D] Committed StartBlock (empty)");
 
             // Second EVM commit (user tx - touches sender + receiver, NOT ArbOS)
             let sender = address!("1111111111111111111111111111111111111111");
@@ -2139,7 +2017,6 @@ mod tests {
             user_changes.insert(receiver, receiver_acct);
 
             state.commit(user_changes);
-            eprintln!("[D] Committed user tx (sender+receiver)");
 
             // Check cache
             let cache_val_after_user = state
@@ -2148,22 +2025,16 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!(
-                "[D] gas_backlog in cache after user tx commit: {:?}",
-                cache_val_after_user
-            );
 
             // Post-commit: grow_backlog (this is what happens in production after
             // commit_transaction)
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             let read_val = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[D] gas_backlog read before grow: {}", read_val);
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
             let after_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[D] gas_backlog after grow: {}", after_grow);
             assert_eq!(after_grow, 552756 + 357751, "backlog should be sum");
 
             // merge + take_bundle
@@ -2175,7 +2046,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[D] Bundle pre-augment: gas_backlog = {:?}", bundle_pre);
 
             // augment (inline)
             for (addr, cache_acct) in &state.cache.accounts {
@@ -2244,7 +2114,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[D] Bundle post-augment: gas_backlog = {:?}", bundle_post);
 
             // filter
             for (_addr, account) in bundle.state.iter_mut() {
@@ -2258,7 +2127,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| s.present_value);
-            eprintln!("[D] FINAL: gas_backlog in bundle = {:?}", final_slot);
             assert!(
                 final_slot.is_some(),
                 "VARIANT D FAILED: gas_backlog slot MISSING from bundle"
@@ -2275,7 +2143,6 @@ mod tests {
         // write_storage_at reads original_value from DB. If the DB already has the
         // value, the transition's original_value matches, and filter_unchanged_storage
         // may remove it.
-        eprintln!("\n===== VARIANT E: Pre-existing DB state =====");
         {
             // Create a DB that returns the pre-existing backlog value
             struct PrePopulatedDb {
@@ -2338,16 +2205,11 @@ mod tests {
 
             // Read current backlog — should come from DB
             let current = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[E] Initial gas_backlog (from DB): {}", current);
             assert_eq!(current, 552756, "Should read from DB");
 
             // Simulate StartBlock: update_pricing_model(time_passed=0)
             l2_pricing.update_pricing_model(0, 10).unwrap();
             let after_start = l2_pricing.gas_backlog().unwrap();
-            eprintln!(
-                "[E] After StartBlock (time_passed=0): gas_backlog={}",
-                after_start
-            );
 
             // EVM commit: empty (StartBlock internal tx)
             {
@@ -2374,23 +2236,16 @@ mod tests {
                 state.commit(user_changes);
             }
 
-            eprintln!("[E] After two EVM commits");
 
             // Post-commit: grow_backlog
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             let read_before = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[E] gas_backlog before grow: {}", read_before);
 
             l2_pricing2
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
             let after_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!(
-                "[E] gas_backlog after grow: {} (expect {})",
-                after_grow,
-                552756 + 357751
-            );
 
             // Check cache
             let cache_val = state
@@ -2399,7 +2254,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|ca| ca.account.as_ref())
                 .and_then(|a| a.storage.get(&gas_backlog_slot).copied());
-            eprintln!("[E] gas_backlog in cache: {:?}", cache_val);
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
@@ -2410,7 +2264,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[E] Bundle pre-augment: gas_backlog = {:?}", bundle_pre);
 
             // augment (inline) — for PrePopulatedDb, original values come from DB
             for (addr, cache_acct) in &state.cache.accounts {
@@ -2491,7 +2344,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[E] Bundle post-augment: gas_backlog = {:?}", bundle_post);
 
             // filter_unchanged_storage
             for (_addr, account) in bundle.state.iter_mut() {
@@ -2505,7 +2357,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| s.present_value);
-            eprintln!("[E] FINAL: gas_backlog in bundle = {:?}", final_slot);
             assert!(
                 final_slot.is_some(),
                 "VARIANT E FAILED: gas_backlog slot MISSING from bundle (pre-populated DB)"
@@ -2526,7 +2377,6 @@ mod tests {
         // BUT: what if drain writes backlog=552756 (no change from DB) and the
         // transition records original_value=552756? Then grow writes 910507 with
         // original_value=552756. This should still work. Let's verify.
-        eprintln!("\n===== VARIANT F: Pre-existing DB + StartBlock drain + grow =====");
         {
             struct PrePopulatedDb2 {
                 gas_backlog_slot: U256,
@@ -2591,16 +2441,11 @@ mod tests {
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
             let initial = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[F] Initial gas_backlog: {}", initial);
 
             // StartBlock with time_passed=1 → drain = 1 * 7_000_000 = 7M
             // 552756 - 7M = 0 (saturating sub)
             l2_pricing.update_pricing_model(1, 10).unwrap();
             let after_drain = l2_pricing.gas_backlog().unwrap();
-            eprintln!(
-                "[F] After drain (time_passed=1, speed=7M): gas_backlog={} (was {})",
-                after_drain, initial
-            );
 
             // EVM commit
             {
@@ -2615,7 +2460,6 @@ mod tests {
                 .grow_backlog(357751, MultiGas::default())
                 .unwrap();
             let after_grow = l2_pricing2.gas_backlog().unwrap();
-            eprintln!("[F] After grow(357751): gas_backlog={}", after_grow);
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
@@ -2626,7 +2470,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[F] Bundle pre-filter: gas_backlog = {:?}", bundle_pre);
 
             // Note: In this variant we skip augment since all writes go through
             // write_storage_at which creates transitions. The bundle should
@@ -2644,7 +2487,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[F] FINAL: gas_backlog = {:?}", final_slot);
 
             // Drain brought it to 0, grow added 357751 → final = 357751
             // original from DB = 552756
@@ -2668,7 +2510,6 @@ mod tests {
         // write_storage_at's no-op check sees value=0 and prev_value=0?
         // This would happen if the cache already has backlog=0 from a previous
         // write... Let's check.
-        eprintln!("\n===== VARIANT G: Drain to 0 (no grow) - write not lost? =====");
         {
             struct PrePopDb3 {
                 gas_backlog_slot: U256,
@@ -2727,12 +2568,10 @@ mod tests {
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
             let initial = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[G] Initial gas_backlog: {}", initial);
 
             // Drain with time_passed=1 → 552756 - 7M = 0
             l2_pricing.update_pricing_model(1, 10).unwrap();
             let after_drain = l2_pricing.gas_backlog().unwrap();
-            eprintln!("[G] After drain: gas_backlog={}", after_drain);
             assert_eq!(after_drain, 0);
 
             // merge + take_bundle
@@ -2744,7 +2583,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[G] Bundle pre-filter: gas_backlog = {:?}", pre_filter);
 
             // filter
             for (_addr, account) in bundle.state.iter_mut() {
@@ -2758,7 +2596,6 @@ mod tests {
                 .get(&ARBOS_STATE_ADDRESS)
                 .and_then(|a| a.storage.get(&gas_backlog_slot))
                 .map(|s| (s.present_value, s.previous_or_original_value));
-            eprintln!("[G] FINAL after filter: gas_backlog = {:?}", final_slot);
 
             // present=0, original=552756 → different → should survive
             assert!(
@@ -2767,6 +2604,5 @@ mod tests {
             );
         }
 
-        eprintln!("\n===== ALL VARIANTS PASSED =====");
     }
 }

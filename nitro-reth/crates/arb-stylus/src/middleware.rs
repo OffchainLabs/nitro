@@ -17,12 +17,10 @@ fn mw_err(msg: impl Into<String>) -> MiddlewareError {
 
 // ── StartMover ──────────────────────────────────────────────────────
 //
-// Renames the WASM start function to "stylus_start" so it doesn't run
-// automatically at module instantiation, then drops all exports except the
-// allowed whitelist. Mirrors Nitro's `start::StartMover`. Must run BEFORE
-// the metering middleware so the meter sees the modified module.
+// Renames the WASM start function to "stylus_start" so it doesn't run at
+// module instantiation, then drops all exports except the allowed whitelist.
+// Must run before the metering middleware.
 
-/// Name the start function is renamed to (matches Nitro).
 const STYLUS_START: &str = "stylus_start";
 
 #[derive(Debug)]
@@ -40,7 +38,6 @@ impl ModuleMiddleware for StartMover {
     fn transform_module_info(&self, info: &mut ModuleInfo) -> Result<(), MiddlewareError> {
         let exports_before = info.exports.len();
 
-        // Move the start function to a named export, mirroring Nitro.
         let had_start = if let Some(start) = info.start_function.take() {
             if info.exports.contains_key(STYLUS_START) {
                 return Err(mw_err(format!(
@@ -945,10 +942,9 @@ impl<'a> FunctionMiddleware<'a> for HeapBoundFn {
     }
 }
 
-// ── Opcode ink costs (matches Nitro pricing_v1) ─────────────────────
+// ── Opcode ink costs ────────────────────────────────────────────────
 
-/// Per-opcode ink cost. Mirrors Nitro's `prover/programs/meter::pricing_v1`.
-/// Exposed for differential testing against Nitro's pricing table.
+/// Per-opcode ink cost used by the ink meter middleware.
 #[rustfmt::skip]
 pub fn opcode_ink_cost(op: &Operator, sigs: &HashMap<u32, usize>) -> u64 {
     use Operator::*;

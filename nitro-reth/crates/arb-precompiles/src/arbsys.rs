@@ -246,7 +246,7 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // Nitro's arbOSVersion() returns 55 + raw stored version (precompiles/ArbSys.go:67).
+    // User-visible version = 55 + raw stored value.
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
@@ -423,15 +423,12 @@ fn do_send_tx_to_l1(
 ) -> PrecompileResult {
     let caller = input.caller;
     let value = input.value;
-    // Use the L1 block number from ArbOS state (set by StartBlock), not from
-    // block_env.number (mix_hash). These can differ — the mix_hash value is the
-    // header's L1 block number, while ArbOS state holds the value updated during
-    // StartBlock which is what Nitro's evm.Context.BlockNumber returns.
+    // Read the L1 block number recorded by StartBlock. `block_env.number` holds
+    // the header's mix_hash L1 value, which can lag the StartBlock-updated one.
     let l1_block_number = U256::from(crate::get_l1_block_number_for_evm());
     let l2_block_number = U256::from(get_current_l2_block());
     let timestamp = input.internals().block_timestamp();
 
-    // Gas tracking: match the precompile framework burn pattern.
     let mut gas_used = 0u64;
     // Argument copy cost.
     gas_used += COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);

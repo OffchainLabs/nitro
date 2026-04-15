@@ -177,7 +177,7 @@ pub type DoCallFn =
 /// salt=None for CREATE, Some for CREATE2.
 pub type DoCreateFn = fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
 
-/// Per-call storage cache entry, mirroring Nitro's `StorageWord`.
+/// Per-call storage cache entry.
 struct StorageCacheEntry {
     /// Current value (may be dirty from a write).
     value: B256,
@@ -205,9 +205,8 @@ impl StorageCacheEntry {
     }
 }
 
-/// Per-call storage cache matching Nitro's Rust-side cache.
-/// Provides O(1) lookups to avoid redundant journal accesses and
-/// correctly mirrors Nitro's gas charging (only charge evm_api_gas on miss).
+/// Per-call storage cache: avoids repeat journal hits and charges the
+/// `evm_api_gas` surcharge only on the first miss per slot.
 struct StorageCache {
     slots: HashMap<B256, StorageCacheEntry>,
     reads: u32,
@@ -262,7 +261,7 @@ pub struct StylusEvmApi {
     caller: Address,
     /// Value of the current call (needed for DELEGATECALL forwarding).
     call_value: U256,
-    /// Per-call storage cache matching Nitro's Rust-side cache.
+    /// Per-call storage cache.
     storage_cache: StorageCache,
     /// Accumulated SSTORE refund (EIP-3529) from flush operations.
     sstore_refund: i64,
@@ -522,22 +521,16 @@ impl EvmApi for StylusEvmApi {
             value,
         );
 
-        // Do NOT invalidate the per-call storage cache after a CALL.
-        // Nitro's `EvmApiRequestor` (crates/arbutil/src/evm/req.rs) does not
-        // invalidate either, and matching that behavior is required to keep
-        // gas accounting in lockstep — invalidating clean entries forces the
-        // next read of the same slot to pay full SLOAD + EVM_API_INK
-        // (~60k gas legacy) instead of the cache-hit cost (0/2/10 gas).
-        // CALL targets a different contract anyway, so its storage writes
-        // can't affect this contract's cache.
+        // Preserve the per-call storage cache across CALL: the sub-call
+        // targets a different contract's storage, so its writes cannot affect
+        // our cached entries, and invalidation would re-charge the full
+        // cold-miss cost on subsequent reads.
 
         self.return_data = result.output;
-        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
 
-        // Propagate the sub-call's accumulated SSTORE refund so it survives
-        // the flatten into SubCallResult. Dropping this was the root cause
-        // of the 4800-gas overcharge at block 55,755,413.
+        // Propagate the sub-call's accumulated SSTORE refund into our own
+        // accumulator so it survives the flatten into `SubCallResult`.
         self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
@@ -588,11 +581,12 @@ impl EvmApi for StylusEvmApi {
             self.call_value, // forward current call value
         );
 
-        // Invalidate storage cache: DELEGATECALL sub-call can write to our storage.
+        // A DELEGATECALL child shares our storage context, so any writes it
+        // made may have changed slots we had cached. Drop the per-call
+        // storage cache so the next access re-reads from the journal.
         self.storage_cache.slots.clear();
 
         self.return_data = result.output;
-        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
 
         // Propagate sub-call SSTORE refund (see contract_call).
@@ -645,18 +639,16 @@ impl EvmApi for StylusEvmApi {
             U256::ZERO,
         );
 
-        // Invalidate storage cache: the sub-call may have written to storage
-        // visible to us (e.g., via DELEGATECALL back to our address).
+        // STATICCALL is nominally read-only, but a sub-call it performs may
+        // transitively DELEGATECALL back into our storage context. Drop the
+        // cache to be safe.
         self.storage_cache.slots.clear();
 
         self.return_data = result.output;
-        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
 
-        // Propagate sub-call SSTORE refund (see contract_call). STATICCALL
-        // cannot modify storage itself, but a STATICCALL to a contract that
-        // itself CALLs further can still produce refunds on its inner path,
-        // so we still need to carry the value upwards.
+        // A STATICCALL target can still internally CALL another contract and
+        // accumulate refunds on that path, so we carry the value upwards.
         self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
@@ -1002,21 +994,8 @@ fn sstore_gas_cost(info: &SStoreInfo) -> u64 {
     base + cold_cost
 }
 
-// ───────────────────────────────────────────────────────────────────────
-// SSTORE gas + refund parity tests against Nitro / EIP-2200 / EIP-3529
-// ───────────────────────────────────────────────────────────────────────
-//
-// Mirrors the 9 canonical EIP-2200 cases plus the EIP-3529 refund schedule.
-// Each case is derived from a first-principles read of
-// `/data/nitro/go-ethereum/core/vm/operations_acl_arbitrum.go::WasmStateStoreCost`
-// so any divergence fails at test time instead of block-replay time.
-//
-// Motivation: block 55,789,370 tx 1 OOGs our `storage_flush_cache` while
-// Nitro's does not. The gas-accounting primitives here are on the path of
-// every SSTORE we make during a Stylus flush, so a bug in either function
-// would drop the contract out of gas 3–5k short in exactly the pattern we
-// observe. These tests pin the primitives so that when porting a fix for
-// the wider divergence we can rule out this layer.
+// SSTORE gas + refund parity tests for the 9 canonical EIP-2200 cases
+// plus the EIP-3529 refund schedule.
 #[cfg(test)]
 mod sstore_parity_tests {
     use super::{sstore_gas_cost, sstore_refund, SStoreInfo};
@@ -1033,24 +1012,24 @@ mod sstore_parity_tests {
 
     // ── EIP-2200 base costs (warm-access, EIP-2929/3529 adjusted) ─────
 
-    /// Case 1 (noop on untouched slot): current == value, original == current.
-    /// Nitro returns `WarmStorageReadCostEIP2929 = 100`.
+    /// Case 1 (noop on untouched slot): `current == value`, `original == current`.
+    /// Expected: `WarmStorageReadCostEIP2929 = 100`.
     #[test]
     fn case_1_noop_untouched_warm() {
         assert_eq!(sstore_gas_cost(&info(5, 5, 5, false)), 100);
         assert_eq!(sstore_refund(&info(5, 5, 5, false)), 0);
     }
 
-    /// Case 2.1.1 (create slot): original == current == 0, value != 0.
-    /// Nitro returns `SstoreSetGasEIP2200 = 20_000`.
+    /// Case 2.1.1 (create slot): `original == current == 0`, `value != 0`.
+    /// Expected: `SstoreSetGasEIP2200 = 20_000`.
     #[test]
     fn case_2_1_1_create_slot() {
         assert_eq!(sstore_gas_cost(&info(0, 0, 5, false)), 20_000);
         assert_eq!(sstore_refund(&info(0, 0, 5, false)), 0);
     }
 
-    /// Case 2.1.2 (update clean): original == current != 0, value != 0, value != original.
-    /// Nitro returns `SstoreResetGasEIP2200 - ColdSloadCostEIP2929 = 2_900`.
+    /// Case 2.1.2 (update clean): `original == current != 0`, `value != 0`, `value != original`.
+    /// Expected: `SstoreResetGasEIP2200 - ColdSloadCostEIP2929 = 2_900`.
     #[test]
     fn case_2_1_2_update_clean() {
         assert_eq!(sstore_gas_cost(&info(5, 5, 10, false)), 2_900);
@@ -1065,8 +1044,8 @@ mod sstore_parity_tests {
         assert_eq!(sstore_refund(&info(5, 5, 0, false)), 4_800);
     }
 
-    /// Case 2.2 (dirty update, no restore): original != current, value doesn't
-    /// equal original or produce a clearing pattern. Nitro returns 100.
+    /// Case 2.2 (dirty update, no restore): `original != current`, `value`
+    /// matches neither original nor a clearing pattern. Expected: 100.
     #[test]
     fn case_2_2_dirty_update() {
         // original=5, current=10, new=15 — pure dirty update
@@ -1074,16 +1053,16 @@ mod sstore_parity_tests {
         assert_eq!(sstore_refund(&info(5, 10, 15, false)), 0);
     }
 
-    /// Case 2.2.1.1 (un-clear): original != 0, current == 0, value != 0.
-    /// Nitro applies `SubRefund(clearingRefund)` and returns 100.
+    /// Case 2.2.1.1 (un-clear): `original != 0`, `current == 0`, `value != 0`.
+    /// Expected: 100 gas, `-clearingRefund` (−4_800).
     #[test]
     fn case_2_2_1_1_un_clear_dirty() {
         assert_eq!(sstore_gas_cost(&info(5, 0, 10, false)), 100);
         assert_eq!(sstore_refund(&info(5, 0, 10, false)), -4_800);
     }
 
-    /// Case 2.2.1.2 (clear dirty): original != 0, current != 0, value == 0.
-    /// Nitro applies `AddRefund(clearingRefund)` and returns 100.
+    /// Case 2.2.1.2 (clear dirty): `original != 0`, `current != 0`, `value == 0`.
+    /// Expected: 100 gas, `+clearingRefund` (+4_800).
     #[test]
     fn case_2_2_1_2_clear_dirty() {
         // original=5, present=10, new=0 — value becomes zero from a dirty state
@@ -1091,19 +1070,18 @@ mod sstore_parity_tests {
         assert_eq!(sstore_refund(&info(5, 10, 0, false)), 4_800);
     }
 
-    /// Case 2.2.2.1 (restore to inexistent original): original == 0, value == 0, current != 0.
-    /// Nitro applies `AddRefund(SstoreSetGasEIP2200 - WarmStorageReadCostEIP2929 = 19_900)`.
+    /// Case 2.2.2.1 (restore to inexistent original): `original == 0`, `value == 0`, `current != 0`.
+    /// Expected: 100 gas, refund `SstoreSetGasEIP2200 - WarmStorageReadCostEIP2929 = 19_900`.
     #[test]
     fn case_2_2_2_1_restore_to_zero_original() {
         assert_eq!(sstore_gas_cost(&info(0, 5, 0, false)), 100);
         assert_eq!(sstore_refund(&info(0, 5, 0, false)), 19_900);
     }
 
-    /// Case 2.2.2.2 (restore to non-zero original): original != 0, value == original, current != value, current != 0.
-    /// Nitro applies `AddRefund(SstoreResetGasEIP2200 - ColdSloadCostEIP2929 - WarmStorageReadCostEIP2929 = 2_800)`.
-    ///
-    /// THIS is the exact pattern observed in block 55,789,370 tx 1 slot
-    /// 0xaf2afaf...: original=0x7e51, present=0x2160, new=0x7e51.
+    /// Case 2.2.2.2 (restore to non-zero original): `original != 0`,
+    /// `value == original`, `current != value`, `current != 0`.
+    /// Expected: 100 gas, refund
+    /// `SstoreResetGasEIP2200 - ColdSloadCostEIP2929 - WarmStorageReadCostEIP2929 = 2_800`.
     #[test]
     fn case_2_2_2_2_restore_to_nonzero_original() {
         assert_eq!(sstore_gas_cost(&info(5, 10, 5, false)), 100);
@@ -1123,10 +1101,9 @@ mod sstore_parity_tests {
 
     // ── Combined refund patterns (step 4 + step 5 can stack) ────────
 
-    /// original != 0, current == 0 (un-clear refund of -4_800), AND value == original
-    /// (restore refund of +2_800). Nitro's code applies both in sequence,
-    /// netting -2_000. Observable if an SSTORE clears then restores a slot
-    /// within one transaction.
+    /// `original != 0`, `current == 0` (un-clear refund of −4_800) AND
+    /// `value == original` (restore refund of +2_800) stack, netting −2_000.
+    /// Observable if an SSTORE clears then restores a slot within one tx.
     #[test]
     fn un_clear_plus_restore_stacks() {
         // original=5, current=0, new=5 — effectively restoring after a delete
@@ -1142,33 +1119,21 @@ mod sstore_parity_tests {
         assert_eq!(sstore_refund(&info(5, 10, 0, false)), 4_800);
     }
 
-    // ── The specific 8-slot pattern we observed at block 55,789,370 ──
+    // ── Multi-slot flush totals ──────────────────────────────────────
 
-    /// The failing flush had this sequence; totals must match the Nitro
-    /// reference for the whole-flush sum to be identical.
-    ///
-    /// Slot semantics inferred from the live diagnostic dump:
-    ///   1. slot 0x00        dirty update  (prev != orig, new != orig)   100
-    ///   2. slot 0x31ff…     clean reset   (orig == prev, orig != 0)   2_900
-    ///   3. slot 0xd6e7…     clean reset                                2_900
-    ///   4. slot 0xdad2…     create slot   (orig == prev == 0)        20_000
-    ///   5. slot 0x68fb…     clean reset                                2_900
-    ///   6. slot 0x02d9…     clean reset                                2_900
-    ///   7. slot 0xaf2a…     restore-to-original                         100  (refund 2_800)
-    ///   8. slot 0x0002      clean reset                                2_900
-    ///
-    /// Expected total: 34_700 gas, with 2_800 refund.
+    /// An 8-slot flush exercising every case above: the gas + refund totals
+    /// must equal the sum of per-case expectations.
     #[test]
-    fn block_55_789_370_flush2_eight_slot_total() {
+    fn mixed_eight_slot_flush_totals() {
         let slots = [
-            info(0x12e, 0x12f, 0x130, false), // slot 0x00, dirty update
-            info(0x880f, 0x880f, 0x23b5, false), // slot 0x31ff..., reset clean
-            info(0x10906e, 0x10906e, 0x275b, false), // slot 0xd6e7..., reset clean
-            info(0, 0, 1, false),             // slot 0xdad2..., create
-            info(0x2fea, 0x2fea, 0xf8e2, false), // slot 0x68fb..., reset clean
-            info(0x26658a, 0x26658a, 0x27bd, false), // slot 0x02d9..., reset clean
-            info(0x7e51, 0x2160, 0x7e51, false), // slot 0xaf2a..., restore
-            info(0x1a5f, 0x1a5f, 0x1c50, false), // slot 0x0002, reset clean
+            info(0x12e, 0x12f, 0x130, false),        // dirty update
+            info(0x880f, 0x880f, 0x23b5, false),     // reset clean
+            info(0x10906e, 0x10906e, 0x275b, false), // reset clean
+            info(0, 0, 1, false),                    // create
+            info(0x2fea, 0x2fea, 0xf8e2, false),     // reset clean
+            info(0x26658a, 0x26658a, 0x27bd, false), // reset clean
+            info(0x7e51, 0x2160, 0x7e51, false),     // restore to original
+            info(0x1a5f, 0x1a5f, 0x1c50, false),     // reset clean
         ];
         let total_cost: u64 = slots.iter().map(sstore_gas_cost).sum();
         let total_refund: i64 = slots.iter().map(sstore_refund).sum();
