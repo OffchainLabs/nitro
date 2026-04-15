@@ -341,7 +341,6 @@ impl TxProcessor {
         let gas_left = params.gas_left;
         let gas_used = params.gas_used;
 
-        // Undo geth's gas refund to From.
         let gas_refund_amount = effective_base_fee.saturating_mul(U256::from(gas_left));
         burn_fn(params.from, gas_refund_amount);
 
@@ -350,7 +349,6 @@ impl TxProcessor {
         let mut max_refund = params.max_refund;
 
         if params.success {
-            // Refund submission fee from network account.
             refund_with_pool(
                 params.network_fee_account,
                 params.submission_fee_refund,
@@ -360,14 +358,11 @@ impl TxProcessor {
                 &mut transfer_fn,
             );
         } else {
-            // Submission fee taken but not refunded on failure.
             take_funds(&mut max_refund, params.submission_fee_refund);
         }
 
-        // Gas cost conceptually taken from the L1 deposit pool.
         take_funds(&mut max_refund, single_gas_cost);
 
-        // Refund unused gas.
         let mut network_refund = gas_refund_amount;
 
         if params.arbos_version >= arb_ver::ARBOS_VERSION_11

@@ -99,8 +99,14 @@ where
             prevrandao: Some(prevrandao),
             gas_limit: header.gas_limit(),
             basefee: header.base_fee_per_gas().unwrap_or_default(),
-            // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
-            blob_excess_gas_and_price: None,
+            blob_excess_gas_and_price: if spec.is_enabled_in(SpecId::CANCUN) {
+                Some(revm::context_interface::block::BlobExcessGasAndPrice {
+                    excess_blob_gas: 0,
+                    blob_gasprice: 0,
+                })
+            } else {
+                None
+            },
         };
 
         Ok(EvmEnv { cfg_env, block_env })
@@ -128,8 +134,14 @@ where
             prevrandao: Some(prevrandao),
             gas_limit: attributes.gas_limit,
             basefee: parent.base_fee_per_gas().unwrap_or_default(),
-            // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
-            blob_excess_gas_and_price: None,
+            blob_excess_gas_and_price: if spec.is_enabled_in(SpecId::CANCUN) {
+                Some(revm::context_interface::block::BlobExcessGasAndPrice {
+                    excess_blob_gas: 0,
+                    blob_gasprice: 0,
+                })
+            } else {
+                None
+            },
         };
 
         Ok(EvmEnv { cfg_env, block_env })
@@ -194,8 +206,14 @@ where
             prevrandao: Some(prevrandao),
             gas_limit: payload.payload.gas_limit(),
             basefee: payload.payload.saturated_base_fee_per_gas(),
-            // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
-            blob_excess_gas_and_price: None,
+            blob_excess_gas_and_price: if spec.is_enabled_in(SpecId::CANCUN) {
+                Some(revm::context_interface::block::BlobExcessGasAndPrice {
+                    excess_blob_gas: 0,
+                    blob_gasprice: 0,
+                })
+            } else {
+                None
+            },
         };
 
         Ok(EvmEnv { cfg_env, block_env })

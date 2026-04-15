@@ -81,7 +81,7 @@ pub mod evm_gas {
     /// params.LogDataGas
     pub const LOG_DATA_GAS: u64 = 8;
     /// Minimum gas the cache requires for SSTORE operations.
-    pub const STORAGE_CACHE_REQUIRED_ACCESS_GAS: u64 = 100;
+    pub const STORAGE_CACHE_REQUIRED_ACCESS_GAS: u64 = 10;
 }
 
 /// Cost to read `bytes` from WASM memory.

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use arbos::programs::types::EvmData;
-use wasmer::{FunctionEnvMut, Memory, MemoryView, Pages, StoreMut};
+use wasmer::{FunctionEnvMut, Global, Memory, MemoryView, Pages, StoreMut, Value};
 
 use crate::{
     config::{CompileConfig, StylusConfig},
@@ -37,6 +37,10 @@ pub struct WasmEnv<E: EvmApi> {
     pub compile: CompileConfig,
     /// Runtime configuration (set when running).
     pub config: Option<StylusConfig>,
+    /// WASM global for ink metering (set after instantiation).
+    pub ink_global: Option<Global>,
+    /// WASM global for ink status (set after instantiation).
+    pub ink_status_global: Option<Global>,
     _phantom: PhantomData<E>,
 }
 
@@ -56,6 +60,8 @@ impl<E: EvmApi> WasmEnv<E> {
             outs: vec![],
             memory: None,
             meter: None,
+            ink_global: None,
+            ink_status_global: None,
             evm_return_data_len: 0,
             _phantom: PhantomData,
         }
@@ -195,9 +201,54 @@ impl<E: EvmApi> MeteredMachine for HostioInfo<'_, E> {
     }
 
     fn set_meter(&mut self, meter: MachineMeter) {
+        // Write to WASM globals so middleware sees hostio gas charges.
+        if let Some(ref g) = self.env.ink_global {
+            let _ = g.set(&mut self.store, Value::I64(meter.ink().0 as i64));
+        }
+        if let Some(ref g) = self.env.ink_status_global {
+            let _ = g.set(&mut self.store, Value::I32(meter.status() as i32));
+        }
+        // Also update MeterData.
         let vm = self.env.meter_mut();
         vm.set_ink(meter.ink());
         vm.set_status(meter.status());
+    }
+
+    // Override buy_ink to read current value from WASM globals first,
+    // then deduct and write back to both globals and MeterData.
+    fn buy_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+        // Read current ink from WASM globals (reflects middleware charges).
+        let current = if let Some(ref g) = self.env.ink_global {
+            if let Value::I64(v) = g.get(&mut self.store) {
+                Ink(v as u64)
+            } else {
+                self.ink_ready()?
+            }
+        } else {
+            self.ink_ready()?
+        };
+        if current < ink {
+            self.set_meter(MachineMeter::Exhausted);
+            return Escape::out_of_ink();
+        }
+        self.set_meter(MachineMeter::Ready(current - ink));
+        Ok(())
+    }
+
+    fn require_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+        let current = if let Some(ref g) = self.env.ink_global {
+            if let Value::I64(v) = g.get(&mut self.store) {
+                Ink(v as u64)
+            } else {
+                self.ink_ready()?
+            }
+        } else {
+            self.ink_ready()?
+        };
+        if current < ink {
+            return Escape::out_of_ink();
+        }
+        Ok(())
     }
 }
 

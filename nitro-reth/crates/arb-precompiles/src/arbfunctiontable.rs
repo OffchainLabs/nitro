@@ -8,9 +8,9 @@ pub const ARBFUNCTIONTABLE_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x68,
 ]);
 
-const UPLOAD: [u8; 4] = [0x88, 0x3c, 0x9d, 0x6b]; // upload(bytes)
-const SIZE: [u8; 4] = [0x17, 0x24, 0x56, 0x7f]; // size(address)
-const GET: [u8; 4] = [0xa0, 0x69, 0xee, 0x85]; // get(address,uint256)
+const UPLOAD: [u8; 4] = [0xce, 0x2a, 0xe1, 0x59]; // upload(bytes)
+const SIZE: [u8; 4] = [0x88, 0x98, 0x70, 0x68]; // size(address)
+const GET: [u8; 4] = [0xb4, 0x64, 0x63, 0x1b]; // get(address,uint256)
 
 const COPY_GAS: u64 = 3;
 
@@ -23,10 +23,12 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
 
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         UPLOAD => {
@@ -43,7 +45,7 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         GET => Err(PrecompileError::other("table is empty")),
-        _ => Err(PrecompileError::other("unknown ArbFunctionTable selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }

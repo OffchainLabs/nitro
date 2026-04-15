@@ -1,6 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::{
+    context_interface::block::Block,
+    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+};
 
 use crate::storage_slot::{
     derive_subspace_key, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
@@ -68,7 +71,6 @@ const L1_FEES_AVAILABLE: u64 = 11;
 // L2 pricing field offsets (within L2 pricing subspace).
 const L2_SPEED_LIMIT: u64 = 0;
 const L2_PER_BLOCK_GAS_LIMIT: u64 = 1;
-const L2_BASE_FEE: u64 = 2;
 const L2_MIN_BASE_FEE: u64 = 3;
 const L2_GAS_BACKLOG: u64 = 4;
 const L2_PRICING_INERTIA: u64 = 5;
@@ -98,10 +100,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         GET_L1_BASEFEE_ESTIMATE | GET_L1_GAS_PRICE_ESTIMATE => {
@@ -132,96 +136,96 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_AMORTIZED_COST_CAP_BIPS => read_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
         // GetL1FeesAvailable: ArbOS >= 10
         GET_L1_FEES_AVAILABLE => {
-            if let Some(r) = crate::check_method_version(10, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 10, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_FEES_AVAILABLE)
         }
         // GetL1RewardRate: ArbOS >= 11
         GET_L1_REWARD_RATE => {
-            if let Some(r) = crate::check_method_version(11, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_PER_UNIT_REWARD)
         }
         // GetL1RewardRecipient: ArbOS >= 11
         GET_L1_REWARD_RECIPIENT => {
-            if let Some(r) = crate::check_method_version(11, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_PAY_REWARDS_TO)
         }
         // GetL1PricingEquilibrationUnits: ArbOS >= 20
         GET_L1_PRICING_EQUILIBRATION_UNITS => {
-            if let Some(r) = crate::check_method_version(20, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_EQUILIBRATION_UNITS)
         }
         // GetLastL1PricingUpdateTime: ArbOS >= 20
         GET_LAST_L1_PRICING_UPDATE_TIME => {
-            if let Some(r) = crate::check_method_version(20, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_LAST_UPDATE_TIME)
         }
         // GetL1PricingFundsDueForRewards: ArbOS >= 20
         GET_L1_PRICING_FUNDS_DUE_FOR_REWARDS => {
-            if let Some(r) = crate::check_method_version(20, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_FUNDS_DUE_FOR_REWARDS)
         }
         // GetL1PricingUnitsSinceUpdate: ArbOS >= 20
         GET_L1_PRICING_UNITS_SINCE_UPDATE => {
-            if let Some(r) = crate::check_method_version(20, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_UNITS_SINCE)
         }
         // GetLastL1PricingSurplus: ArbOS >= 20
         GET_LAST_L1_PRICING_SURPLUS => {
-            if let Some(r) = crate::check_method_version(20, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_LAST_SURPLUS)
         }
         // GetMaxBlockGasLimit: ArbOS >= 50
         GET_MAX_BLOCK_GAS_LIMIT => {
-            if let Some(r) = crate::check_method_version(50, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             read_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
         }
         // GetMaxTxGasLimit: ArbOS >= 50
         GET_MAX_TX_GAS_LIMIT => {
-            if let Some(r) = crate::check_method_version(50, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             read_l2_field(&mut input, L2_PER_TX_GAS_LIMIT)
         }
         // GetGasPricingConstraints: ArbOS >= 50
         GET_GAS_PRICING_CONSTRAINTS => {
-            if let Some(r) = crate::check_method_version(50, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             handle_gas_pricing_constraints(&mut input)
         }
         // GetMultiGasPricingConstraints: ArbOS >= 60
         GET_MULTI_GAS_PRICING_CONSTRAINTS => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_multi_gas_pricing_constraints(&mut input)
         }
         // GetMultiGasBaseFee: ArbOS >= 60
         GET_MULTI_GAS_BASE_FEE => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_multi_gas_base_fee(&mut input)
         }
-        _ => Err(PrecompileError::other("unknown selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -241,6 +245,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -319,18 +324,23 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
 fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
+
+    // Nitro precompiles/ArbGasInfo.go::GetPricesInWeiWithAggregator reads l2GasPrice from
+    // evm.Context.BaseFee (or BaseFeeInBlock if set). The storage L2_BASE_FEE field is the
+    // *previous* block's base fee — using it here gives the wrong answer mid-block.
+    let l2_gas_price = U256::from(input.internals().block_env().basefee());
+
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let l2_base = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
     let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
-    let per_arbgas_base = l2_base.min(l2_min);
-    let per_arbgas_congestion = l2_base.saturating_sub(per_arbgas_base);
-    let per_arbgas_total = l2_base;
-    let wei_for_l2_storage = l2_base.saturating_mul(U256::from(STORAGE_WRITE_COST));
+    let per_arbgas_base = l2_gas_price.min(l2_min);
+    let per_arbgas_congestion = l2_gas_price.saturating_sub(per_arbgas_base);
+    let per_arbgas_total = l2_gas_price;
+    let wei_for_l2_storage = l2_gas_price.saturating_mul(U256::from(STORAGE_WRITE_COST));
 
     let mut out = Vec::with_capacity(192);
     out.extend_from_slice(&per_l2_tx.to_be_bytes::<32>());
@@ -340,7 +350,9 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    // baseFee is read from evm.Context (free), only 2 body SLOADs (PricePerUnit, MinBaseFee).
+    // OpenArbosState SLOAD + 2 body SLOADs (L1_PRICE_PER_UNIT, L2_MIN_BASE_FEE)
+    // + copy gas for args and 6-word return tuple. l2GasPrice comes from
+    // evm.Context.BaseFee (free). Matches Nitro burn exactly at 2418 gas.
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
@@ -370,16 +382,22 @@ fn handle_gas_accounting_params(input: &mut PrecompileInput<'_>) -> PrecompileRe
 fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
+
+    // Same fix as handle_prices_in_wei: l2GasPrice comes from evm.Context.BaseFee.
+    let l2_gas_price = U256::from(input.internals().block_env().basefee());
+
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let l2_base = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
 
-    let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_base > U256::ZERO {
-        (wei_for_l1_calldata / l2_base, wei_per_l2_tx / l2_base)
+    let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_gas_price > U256::ZERO {
+        (
+            wei_for_l1_calldata / l2_gas_price,
+            wei_per_l2_tx / l2_gas_price,
+        )
     } else {
         (U256::ZERO, U256::ZERO)
     };
@@ -389,7 +407,8 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&gas_for_l1_calldata.to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
-    // baseFee is read from evm.Context (free), only 1 body SLOAD (PricePerUnit).
+    // OpenArbosState SLOAD + 1 body SLOAD (L1_PRICE_PER_UNIT) + copy gas.
+    // l2GasPrice comes from evm.Context.BaseFee (free).
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))

@@ -10,20 +10,29 @@ use arb_stylus::{
 use arbos::programs::types::EvmData;
 use core::fmt::Debug;
 use revm::{
-    context::result::EVMError,
+    context::{
+        result::{EVMError, ExecutionResult, InvalidTransaction},
+        ContextSetters, Evm as RevmEvm, FrameStack,
+    },
     context_interface::{
         host::LoadError,
         result::{HaltReason, ResultAndState},
+        ContextTr, JournalTr,
     },
-    handler::{instructions::EthInstructions, EthFrame, PrecompileProvider},
-    inspector::NoOpInspector,
+    handler::{
+        instructions::EthInstructions, EthFrame, EvmTr, FrameResult, Handler, ItemOrResult,
+        MainnetHandler, PrecompileProvider,
+    },
+    inspector::{InspectorHandler, NoOpInspector},
     interpreter::{
         interpreter::EthInterpreter,
+        interpreter_action::FrameInit,
         interpreter_types::{InputsTr, ReturnData, RuntimeFlag, StackTr},
-        CallInput, CallInputs, CallScheme, Gas as EvmGas, Host, InstructionContext,
-        InstructionResult, InterpreterResult, InterpreterTypes,
+        CallInput, CallInputs, CallOutcome, CallScheme, FrameInput, Gas as EvmGas, Host,
+        InstructionContext, InstructionResult, InterpreterResult, InterpreterTypes,
     },
     primitives::hardfork::SpecId,
+    ExecuteEvm, InspectEvm, Inspector, SystemCallEvm,
 };
 
 use crate::transaction::ArbTransaction;
@@ -43,12 +52,7 @@ const BLOCKHASH_OPCODE: u8 = 0x40;
 /// BALANCE opcode (0x31).
 const BALANCE_OPCODE: u8 = 0x31;
 
-/// Arbitrum NUMBER: returns the L1 block number from ArbOS state.
-///
-/// Nitro's NUMBER reads from `ProcessingHook.L1BlockNumber()` which returns
-/// the value stored by `record_new_l1_block` during StartBlock. The mixHash
-/// L1 block number in the header can differ from this value, so we read from
-/// the thread-local set after StartBlock processing.
+/// Arbitrum NUMBER: returns the L1 block number recorded during StartBlock.
 fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     let l1_block = arb_precompiles::get_l1_block_number_for_evm();
     if !ctx.interpreter.stack.push(U256::from(l1_block)) {
@@ -105,11 +109,9 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionConte
 
 // SHA3 tracer removed — can't easily wrap standard handler
 
-/// Arbitrum BALANCE: adjusts the sender's balance by the poster fee correction.
-///
-/// Nitro's BuyGas charges gas_limit * baseFee, but our reduced gas_limit
-/// charges posterGas * baseFee less. When a contract checks BALANCE(sender),
-/// we subtract the correction from the result to match Nitro.
+/// Arbitrum BALANCE: subtracts the poster-fee correction when a contract
+/// reads the transaction sender's balance, so that the observed value matches
+/// a full-`gas_limit * basefee` buy-gas charge.
 fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     // Pop address from stack
     let addr_u256 = match ctx.interpreter.stack.pop() {
@@ -293,8 +295,8 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
 // both arb-evm (dispatch) and arb-stylus (EvmApi add_pages) can access it.
 
 pub use arb_stylus::pages::{
-    add_stylus_pages, get_stylus_pages, pop_stylus_program, push_stylus_program,
-    reset_stylus_pages, set_stylus_pages_open,
+    add_stylus_pages, get_stylus_pages, get_stylus_program_count, pop_stylus_program,
+    push_stylus_program, reset_stylus_pages, set_stylus_pages_open,
 };
 
 // ── Stylus storage helpers ───────────────────────────────────────────
@@ -337,8 +339,19 @@ fn read_program_word<DB: Database>(
     sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
 }
 
+/// Read the activation-time module hash for a Stylus program by code hash.
+/// Read the activation-time module hash stored at programs subspace key [2].
+fn read_module_hash<DB: Database>(
+    journal: &mut revm::Journal<DB>,
+    code_hash: B256,
+) -> Option<B256> {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let module_hashes_key = derive_subspace_key(programs_key.as_slice(), &[2]);
+    let slot = map_slot_b256(module_hashes_key.as_slice(), &code_hash);
+    sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
+}
+
 /// Parse essential StylusParams fields from the packed storage word.
-/// This mirrors `StylusParams::load()` but works with raw bytes from journal sload.
 fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
     StylusParams {
         arbos_version,
@@ -363,9 +376,14 @@ fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
 }
 
 /// Compute upfront gas cost for a Stylus call, per `Programs.CallProgram`.
-fn stylus_call_gas_cost(params: &StylusParams, program: &Program, pages_open: u16) -> u64 {
+fn stylus_call_gas_cost(
+    params: &StylusParams,
+    program: &Program,
+    pages_open: u16,
+    pages_ever: u16,
+) -> u64 {
     let model = MemoryModel::new(params.free_pages, params.page_gas);
-    let mut cost = model.gas_cost(program.footprint, pages_open, pages_open);
+    let mut cost = model.gas_cost(program.footprint, pages_open, pages_ever);
 
     let cached = program.cached;
     if cached || program.version > 1 {
@@ -391,6 +409,7 @@ fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     call_type: u8,
     contract: Address,
     caller: Address,
+    storage_addr: Address,
     input: &[u8],
     gas: u64,
     value: U256,
@@ -425,50 +444,15 @@ where
                 output: Vec::new(),
                 gas_cost: 0,
                 success: false,
+                refund: 0,
             };
         }
     }
 
-    // Determine the code address (same as contract for CALL/STATICCALL, target for DELEGATE)
     let code_address = contract;
+    let target_address = storage_addr;
+    let _ = is_delegate;
 
-    // Load the target's bytecode
-    let bytecode = match context
-        .journaled_state
-        .inner
-        .load_code(&mut context.journaled_state.database, code_address)
-    {
-        Ok(acc) => acc
-            .data
-            .info
-            .code
-            .as_ref()
-            .map(|c| c.original_bytes())
-            .unwrap_or_default(),
-        Err(_) => {
-            context.journaled_state.inner.checkpoint_revert(checkpoint);
-            return SubCallResult {
-                output: Vec::new(),
-                gas_cost: 0,
-                success: false,
-            };
-        }
-    };
-
-    // Empty code — just a value transfer, already done above
-    if bytecode.is_empty() {
-        context.journaled_state.inner.checkpoint_commit();
-        return SubCallResult {
-            output: Vec::new(),
-            gas_cost: 0,
-            success: true,
-        };
-    }
-
-    // Determine target address (for DELEGATECALL, execution happens at caller's address)
-    let target_address = if is_delegate { caller } else { contract };
-
-    // Build CallInputs for dispatch
     let call_scheme = match call_type {
         0 => CallScheme::Call,
         1 => CallScheme::DelegateCall,
@@ -495,14 +479,12 @@ where
         known_bytecode: None,
     };
 
-    // Dispatch through ArbPrecompilesMap (handles precompiles + Stylus)
     {
         arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
-        let mut precompiles = alloy_evm::precompiles::PrecompilesMap::new(Default::default());
-        <alloy_evm::precompiles::PrecompilesMap as PrecompileProvider<
-            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::set_spec(&mut precompiles, context.cfg.spec());
-        register_arb_precompiles(&mut precompiles);
+        let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
+        let mut precompiles =
+            alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
+        register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
         let mut arb_map = ArbPrecompilesMap(precompiles);
         let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
@@ -513,6 +495,7 @@ where
                 let success = result.result.is_ok();
                 let output = result.output.to_vec();
                 let gas_used = gas.saturating_sub(result.gas.remaining());
+                let refund = result.gas.refunded();
                 if success {
                     context.journaled_state.inner.checkpoint_commit();
                 } else {
@@ -522,27 +505,83 @@ where
                     output,
                     gas_cost: gas_used,
                     success,
+                    refund,
                 };
             }
-            Ok(None) => {
-                // Not a precompile or Stylus — fall through to EVM
-            }
+            Ok(None) => {}
             Err(_) => {
                 context.journaled_state.inner.checkpoint_revert(checkpoint);
                 return SubCallResult {
                     output: Vec::new(),
                     gas_cost: 0,
                     success: false,
+                    refund: 0,
                 };
             }
         }
     }
 
-    // EVM bytecode execution — ArbPrecompilesMap didn't handle it
+    let bytecode = match context
+        .journaled_state
+        .inner
+        .load_code(&mut context.journaled_state.database, code_address)
+    {
+        Ok(acc) => acc
+            .data
+            .info
+            .code
+            .as_ref()
+            .map(|c| c.original_bytes())
+            .unwrap_or_default(),
+        Err(_) => {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCallResult {
+                output: Vec::new(),
+                gas_cost: 0,
+                success: false,
+                refund: 0,
+            };
+        }
+    };
+
+    if bytecode.is_empty() {
+        context.journaled_state.inner.checkpoint_commit();
+        return SubCallResult {
+            output: Vec::new(),
+            gas_cost: 0,
+            success: true,
+            refund: 0,
+        };
+    }
+
+    // If the loaded bytecode carries the Stylus discriminant, dispatch it
+    // through the WASM runtime instead of the EVM interpreter.
+    if arb_precompiles::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+        && arb_stylus::is_stylus_program(&bytecode)
+    {
+        let result = execute_stylus_program(context, &sub_inputs, &bytecode);
+        let success = result.result.is_ok();
+        let output = result.output.to_vec();
+        let gas_used = gas.saturating_sub(result.gas.remaining());
+        let refund = result.gas.refunded();
+        if success {
+            context.journaled_state.inner.checkpoint_commit();
+        } else {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+        }
+        return SubCallResult {
+            output,
+            gas_cost: gas_used,
+            success,
+            refund,
+        };
+    }
+
     let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
     let gas_used = gas.saturating_sub(result.gas.remaining());
+    let refund = result.gas.refunded();
     if success {
         context.journaled_state.inner.checkpoint_commit();
     } else {
@@ -552,6 +591,7 @@ where
         output,
         gas_cost: gas_used,
         success,
+        refund,
     }
 }
 
@@ -739,7 +779,10 @@ where
         gas_limit,
     );
 
-    // Build instruction table with our custom opcodes (BLOBBASEFEE, SELFDESTRUCT)
+    // Install the Arbitrum opcode overrides on every sub-frame. The outer
+    // factory does the same; this path is taken when a Stylus contract
+    // re-enters EVM bytecode and must see identical semantics (notably NUMBER
+    // returning the L1 block number that EIP-712 signatures depend on).
     type Ctx<B, T, C, D, Ch> = revm::Context<B, T, C, D, revm::Journal<D>, Ch>;
     let mut instructions = EthInstructions::<
         EthInterpreter,
@@ -753,6 +796,22 @@ where
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
     );
+    instructions.insert_instruction(
+        NUMBER_OPCODE,
+        revm::interpreter::Instruction::new(arb_number, 2),
+    );
+    instructions.insert_instruction(
+        BLOCKHASH_OPCODE,
+        revm::interpreter::Instruction::new(arb_blockhash, 20),
+    );
+    instructions.insert_instruction(
+        BALANCE_OPCODE,
+        revm::interpreter::Instruction::new(arb_balance, 0),
+    );
+    instructions.insert_instruction(
+        SELFBALANCE_OPCODE,
+        revm::interpreter::Instruction::new(arb_selfbalance, 5),
+    );
 
     // Run the interpreter in a loop, handling nested calls/creates
     loop {
@@ -763,7 +822,33 @@ where
                 return result;
             }
             InterpreterAction::NewFrame(FrameInput::Call(sub_call)) => {
-                // Dispatch nested call through our trampoline
+                // Dispatch nested call through our trampoline.
+                // For DELEGATECALL, target_address is the storage context (preserved
+                // from parent), and caller is the msg.sender (preserved). For
+                // CALL/STATICCALL, target_address == bytecode_address.
+                //
+                // Resolve `sub_call.input` against the *interpreter's* SharedMemory.
+                // We can't use `sub_call.input.bytes(context)` because that reads
+                // from `context.local()` — the global context's local memory —
+                // whereas this frame's CALL/STATICCALL was issued against the
+                // private SharedMemory we created at the top of this function.
+                // Reading from the wrong memory returns garbage and silently
+                // corrupts the input to ecrecover, transferFrom, etc.
+                let resolved_input: Bytes = match &sub_call.input {
+                    revm::interpreter::CallInput::Bytes(b) => b.clone(),
+                    revm::interpreter::CallInput::SharedBuffer(range) => {
+                        // The range was computed by call_helpers as
+                        //   range.start = relative_offset + local_memory_offset()
+                        // i.e. an absolute offset into the SharedMemory buffer.
+                        Bytes::from(
+                            interpreter
+                                .memory
+                                .global_slice_range(range.clone())
+                                .to_vec(),
+                        )
+                    }
+                };
+                let bytecode_address = sub_call.bytecode_address;
                 let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
                     match sub_call.scheme {
@@ -771,12 +856,10 @@ where
                         CallScheme::DelegateCall => 1,
                         CallScheme::StaticCall => 2,
                     },
-                    sub_call.target_address,
+                    bytecode_address,
                     sub_call.caller,
-                    match &sub_call.input {
-                        CallInput::Bytes(b) => b,
-                        CallInput::SharedBuffer(_) => &[],
-                    },
+                    sub_call.target_address,
+                    &resolved_input,
                     sub_call.gas_limit,
                     sub_call.value.get(),
                 );
@@ -814,7 +897,15 @@ where
                 }
 
                 if ins_result.is_ok() {
-                    // No refund tracking for sub-calls in this simple loop
+                    // Propagate the sub-call's SSTORE refund (EIP-3529) up
+                    // through the Stylus -> EVM bytecode -> Stylus call chain.
+                    // Mirrors revm's `EthFrame::return_result` which also does
+                    // `interpreter.gas.record_refund(out_gas.refunded())` on
+                    // success. Without this, a Stylus contract that goes
+                    // through a Solidity intermediary to reach an inner
+                    // contract that clears storage loses the 4800-gas clearing
+                    // refund (block 55,755,413 tx 2).
+                    interpreter.gas.record_refund(sub_result.refund);
                 }
             }
             InterpreterAction::NewFrame(FrameInput::Create(sub_create)) => {
@@ -893,14 +984,6 @@ where
 
     let zero_gas = || EvmGas::new(0);
 
-    // Strip the 4-byte Stylus prefix to get the serialized module.
-    let (module_bytes, _version_byte) = match arb_stylus::strip_stylus_prefix(bytecode) {
-        Ok(v) => v,
-        Err(_) => {
-            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
-        }
-    };
-
     let code_hash = alloy_primitives::keccak256(bytecode);
     let arbos_version = arb_precompiles::get_arbos_version();
     let block_timestamp = arb_precompiles::get_block_timestamp();
@@ -936,8 +1019,22 @@ where
     }
 
     // ── Compute and deduct upfront gas costs ────────────────────────
-    let (pages_open, _pages_ever) = get_stylus_pages();
-    let upfront_cost = stylus_call_gas_cost(&params, &program, pages_open);
+    let (pages_open, pages_ever) = get_stylus_pages();
+    // ArbOS v60+: a recent-wasms cache hit counts as cached for pricing.
+    let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+        arb_precompiles::insert_recent_wasm(code_hash)
+    } else {
+        false
+    };
+    let effective_cached = program.cached || recent_wasms_hit;
+    let effective_program = if effective_cached != program.cached {
+        let mut p = program;
+        p.cached = effective_cached;
+        p
+    } else {
+        program
+    };
+    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open, pages_ever);
     let total_gas = inputs.gas_limit;
 
     if total_gas < upfront_cost {
@@ -953,17 +1050,26 @@ where
         inputs.scheme,
         CallScheme::DelegateCall | CallScheme::CallCode
     );
+    // Only non-delegate-non-callcode calls increment the reentrancy counter.
+    // Delegate and callcode frames check the counter without bumping it, so an
+    // actual re-entry into the same storage context reports `reentrant=true`.
     let reentrant = if !is_delegate {
         push_stylus_program(target_addr)
     } else {
-        false
+        get_stylus_program_count(target_addr) > 1
     };
+
+    // Read the activation-time module hash from storage. This differs from
+    // code_hash (which is keccak256 of the bytecode); it is the hash of the
+    // compiled module computed during activateProgram.
+    let module_hash =
+        read_module_hash(&mut context.journaled_state, code_hash).unwrap_or(code_hash);
 
     // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
     evm_data.reentrant = reentrant as u32;
-    evm_data.cached = program.cached;
-    evm_data.module_hash = code_hash;
+    evm_data.cached = effective_program.cached;
+    evm_data.module_hash = module_hash;
 
     // Track pages — add this program's footprint.
     let (prev_open, _prev_ever) = add_stylus_pages(program.footprint);
@@ -1008,10 +1114,20 @@ where
             }
         }
     } else {
-        // Compile from WASM source.
+        let decompressed = match arb_stylus::decompress_wasm(bytecode) {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
+                set_stylus_pages_open(prev_open);
+                if !is_delegate {
+                    pop_stylus_program(target_addr);
+                }
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
+        };
         let compile = arb_stylus::CompileConfig::version(params.version, false);
         match arb_stylus::NativeInstance::from_bytes(
-            module_bytes,
+            &decompressed,
             evm_api,
             evm_data,
             &compile,
@@ -1032,13 +1148,10 @@ where
     // Convert EVM gas (after upfront deduction) to ink.
     let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas_for_wasm));
 
-    // Get calldata from CallInput enum.
-    let calldata: &[u8] = match &inputs.input {
-        CallInput::Bytes(bytes) => bytes,
-        CallInput::SharedBuffer(_) => &[],
-    };
-
-    // Execute the WASM program.
+    // Get calldata from CallInput enum. SharedBuffer references parent's
+    // memory and must be resolved via the context.
+    let calldata_owned: Bytes = inputs.input.bytes(context);
+    let calldata: &[u8] = &calldata_owned;
     let outcome = match instance.run_main(calldata, stylus_config, ink) {
         Ok(outcome) => outcome,
         Err(e) => {
@@ -1079,7 +1192,12 @@ where
         gas_left
     };
 
-    let gas_result = EvmGas::new(gas_left);
+    let mut gas_result = EvmGas::new(gas_left);
+    // Propagate SSTORE refunds from Stylus flush to the EVM gas accounting.
+    let sstore_refund = instance.env().evm_api.sstore_refund();
+    if sstore_refund != 0 {
+        gas_result.record_refund(sstore_refund);
+    }
 
     // Map UserOutcome to InterpreterResult.
     match outcome {
@@ -1096,7 +1214,7 @@ where
             InterpreterResult::new(InstructionResult::CallTooDeep, Bytes::new(), zero_gas())
         }
         UserOutcome::Failure => {
-            InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas())
+            InterpreterResult::new(InstructionResult::Revert, Bytes::new(), gas_result)
         }
     }
 }
@@ -1116,13 +1234,17 @@ where
     let gas_price = U256::from(context.tx.gas_price());
     let value = inputs.value.get();
 
+    // Stylus's block.number must be the L1 block number, not the L2 block number.
+    // Nitro uses `evm.ProcessingHook.L1BlockNumber(evm.Context)` for this field.
+    let l1_block_number = arb_precompiles::get_l1_block_number_for_evm();
+
     EvmData {
         arbos_version: arb_precompiles::get_arbos_version(),
         block_basefee: B256::from(basefee.to_be_bytes()),
         chain_id: context.cfg.chain_id(),
         block_coinbase: context.block.beneficiary(),
         block_gas_limit: context.block.gas_limit(),
-        block_number: context.block.number().saturating_to(),
+        block_number: l1_block_number,
         block_timestamp: context.block.timestamp().saturating_to(),
         contract_address: inputs.target_address,
         module_hash: alloy_primitives::keccak256(b""),
@@ -1134,6 +1256,64 @@ where
         cached: false,
         tracing: false,
     }
+}
+
+// ── Stylus frame-level intercept ──────────────────────────────────
+
+/// Check if a `FrameInit` targets a Stylus WASM program via `known_bytecode`.
+fn is_stylus_call(frame_init: &FrameInit) -> Option<Bytes> {
+    if arb_precompiles::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
+        return None;
+    }
+    if let FrameInput::Call(ref inputs) = frame_init.frame_input {
+        if let Some((_, ref code)) = inputs.known_bytecode {
+            let raw = code.original_bytes();
+            if arb_stylus::is_stylus_program(&raw) {
+                return Some(raw);
+            }
+        }
+    }
+    None
+}
+
+/// Execute a Stylus call and return the appropriate `FrameResult`, handling
+/// journal checkpoint commit/revert.
+fn execute_stylus_call_concrete<DB: Database>(
+    ctx: &mut EthEvmContext<DB>,
+    inputs: &CallInputs,
+    bytecode: &[u8],
+    checkpoint: revm::context_interface::journaled_state::JournalCheckpoint,
+) -> FrameResult {
+    // Handle value transfer for non-delegate calls (matches EthFrame::make_call_frame).
+    if let revm::interpreter::CallValue::Transfer(value) = inputs.value {
+        if let Some(i) =
+            ctx.journal_mut()
+                .transfer_loaded(inputs.caller, inputs.target_address, value)
+        {
+            let gas = EvmGas::new(inputs.gas_limit);
+            ctx.journaled_state.inner.checkpoint_revert(checkpoint);
+            return FrameResult::Call(CallOutcome {
+                result: InterpreterResult::new(i.into(), Bytes::new(), gas),
+                memory_offset: inputs.return_memory_offset.clone(),
+                was_precompile_called: false,
+                precompile_call_logs: Vec::new(),
+            });
+        }
+    }
+
+    let result = execute_stylus_program(ctx, inputs, bytecode);
+
+    if result.result.is_ok() {
+        ctx.journaled_state.inner.checkpoint_commit();
+    } else {
+        ctx.journaled_state.inner.checkpoint_revert(checkpoint);
+    }
+    FrameResult::Call(CallOutcome {
+        result,
+        memory_offset: inputs.return_memory_offset.clone(),
+        was_precompile_called: false,
+        precompile_call_logs: Vec::new(),
+    })
 }
 
 // ── Depth-tracking precompile provider ─────────────────────────────
@@ -1180,18 +1360,25 @@ where
         // Check for Stylus WASM programs (active at ArbOS v31+).
         let arbos_version = arb_precompiles::get_arbos_version();
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
-            // Load code for the target address
-            let code_opt = context
-                .journaled_state
-                .inner
-                .load_code(
-                    &mut context.journaled_state.database,
-                    inputs.bytecode_address,
-                )
-                .ok()
-                .and_then(|acc| acc.data.info.code.as_ref().map(|c| c.original_bytes()));
+            // Use known_bytecode from CallInputs if available (already loaded by
+            // revm's CALL handler), otherwise load from journal.
+            let bytecode = inputs
+                .known_bytecode
+                .as_ref()
+                .map(|(_, code)| code.original_bytes())
+                .or_else(|| {
+                    context
+                        .journaled_state
+                        .inner
+                        .load_code(
+                            &mut context.journaled_state.database,
+                            inputs.bytecode_address,
+                        )
+                        .ok()
+                        .and_then(|acc| acc.data.info.code.as_ref().map(|c| c.original_bytes()))
+                });
 
-            if let Some(bytecode) = code_opt {
+            if let Some(bytecode) = bytecode {
                 if arb_stylus::is_stylus_program(&bytecode) {
                     return Ok(Some(execute_stylus_program(context, inputs, &bytecode)));
                 }
@@ -1216,28 +1403,287 @@ where
 
 // ── ArbEvm ─────────────────────────────────────────────────────────
 
-/// Arbitrum EVM wrapper with depth-tracking precompiles and custom opcodes.
+type InnerRevmEvm<DB, I> = RevmEvm<
+    EthEvmContext<DB>,
+    I,
+    EthInstructions<EthInterpreter, EthEvmContext<DB>>,
+    ArbPrecompilesMap,
+    EthFrame,
+>;
+
+/// Arbitrum EVM with frame-level Stylus dispatch and custom opcodes.
+///
+/// Implements [`EvmTr`] directly to intercept Stylus WASM calls in
+/// `frame_init` before they reach the precompile provider.
 pub struct ArbEvm<DB: Database, I> {
-    inner: alloy_evm::EthEvm<DB, I, ArbPrecompilesMap>,
+    inner: InnerRevmEvm<DB, I>,
+    inspect: bool,
 }
 
 impl<DB, I> ArbEvm<DB, I>
 where
     DB: Database,
 {
-    pub fn new(inner: alloy_evm::EthEvm<DB, I, ArbPrecompilesMap>) -> Self {
-        Self { inner }
+    pub fn new(inner: InnerRevmEvm<DB, I>, inspect: bool) -> Self {
+        Self { inner, inspect }
     }
 
-    pub fn into_inner(self) -> alloy_evm::EthEvm<DB, I, ArbPrecompilesMap> {
+    pub fn into_inner(self) -> InnerRevmEvm<DB, I> {
         self.inner
     }
+
+    pub fn ctx(&self) -> &EthEvmContext<DB> {
+        &self.inner.ctx
+    }
+
+    pub fn ctx_mut(&mut self) -> &mut EthEvmContext<DB> {
+        &mut self.inner.ctx
+    }
+
+    pub fn precompiles_mut(&mut self) -> &mut ArbPrecompilesMap {
+        &mut self.inner.precompiles
+    }
 }
+
+impl<DB: Database, I> core::ops::Deref for ArbEvm<DB, I> {
+    type Target = EthEvmContext<DB>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner.ctx
+    }
+}
+
+impl<DB: Database, I> core::ops::DerefMut for ArbEvm<DB, I> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner.ctx
+    }
+}
+
+// ── EvmTr for ArbEvm ─────────────────────────────────────────────
+
+impl<DB, I> EvmTr for ArbEvm<DB, I>
+where
+    DB: Database,
+    I: Inspector<EthEvmContext<DB>, EthInterpreter>,
+{
+    type Context = EthEvmContext<DB>;
+    type Instructions = EthInstructions<EthInterpreter, EthEvmContext<DB>>;
+    type Precompiles = ArbPrecompilesMap;
+    type Frame = EthFrame<EthInterpreter>;
+
+    #[inline]
+    fn all(
+        &self,
+    ) -> (
+        &Self::Context,
+        &Self::Instructions,
+        &Self::Precompiles,
+        &FrameStack<Self::Frame>,
+    ) {
+        self.inner.all()
+    }
+
+    #[inline]
+    fn all_mut(
+        &mut self,
+    ) -> (
+        &mut Self::Context,
+        &mut Self::Instructions,
+        &mut Self::Precompiles,
+        &mut FrameStack<Self::Frame>,
+    ) {
+        self.inner.all_mut()
+    }
+
+    #[inline]
+    fn frame_init(
+        &mut self,
+        frame_input: FrameInit,
+    ) -> Result<
+        ItemOrResult<&mut Self::Frame, FrameResult>,
+        revm::handler::evm::ContextDbError<Self::Context>,
+    > {
+        // Intercept Stylus WASM calls before they reach EthFrame/precompiles.
+        if let Some(bytecode) = is_stylus_call(&frame_input) {
+            if let FrameInput::Call(ref inputs) = frame_input.frame_input {
+                if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
+                    let gas = EvmGas::new(inputs.gas_limit);
+                    return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
+                        result: InterpreterResult::new(
+                            InstructionResult::CallTooDeep,
+                            Bytes::new(),
+                            gas,
+                        ),
+                        memory_offset: inputs.return_memory_offset.clone(),
+                        was_precompile_called: false,
+                        precompile_call_logs: Vec::new(),
+                    })));
+                }
+                let checkpoint = self.inner.ctx.journal_mut().checkpoint();
+                let result = execute_stylus_call_concrete(
+                    &mut self.inner.ctx,
+                    inputs,
+                    &bytecode,
+                    checkpoint,
+                );
+                return Ok(ItemOrResult::Result(result));
+            }
+        }
+
+        // Non-Stylus: delegate to the inner RevmEvm's EvmTr implementation.
+        self.inner.frame_init(frame_input)
+    }
+
+    #[inline]
+    fn frame_run(
+        &mut self,
+    ) -> Result<
+        ItemOrResult<FrameInit, FrameResult>,
+        revm::handler::evm::ContextDbError<Self::Context>,
+    > {
+        self.inner.frame_run()
+    }
+
+    #[inline]
+    fn frame_return_result(
+        &mut self,
+        result: FrameResult,
+    ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
+        self.inner.frame_return_result(result)
+    }
+}
+
+// ── ExecuteEvm for ArbEvm ────────────────────────────────────────
+
+impl<DB, I> ExecuteEvm for ArbEvm<DB, I>
+where
+    DB: Database,
+    I: Inspector<EthEvmContext<DB>, EthInterpreter>,
+{
+    type ExecutionResult = ExecutionResult<HaltReason>;
+    type State = revm::state::EvmState;
+    type Error = EVMError<<DB as revm::Database>::Error, InvalidTransaction>;
+    type Tx = revm::context::TxEnv;
+    type Block = revm::context::BlockEnv;
+
+    #[inline]
+    fn transact_one(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
+        self.inner.ctx.set_tx(tx);
+        MainnetHandler::default().run(self)
+    }
+
+    #[inline]
+    fn finalize(&mut self) -> Self::State {
+        self.inner.ctx.journal_mut().finalize()
+    }
+
+    #[inline]
+    fn set_block(&mut self, block: Self::Block) {
+        self.inner.ctx.set_block(block);
+    }
+
+    #[inline]
+    fn replay(&mut self) -> Result<ResultAndState<HaltReason>, Self::Error> {
+        MainnetHandler::default().run(self).map(|result| {
+            let state = self.finalize();
+            ResultAndState::new(result, state)
+        })
+    }
+}
+
+// ── SystemCallEvm for ArbEvm ─────────────────────────────────────
+
+impl<DB, I> SystemCallEvm for ArbEvm<DB, I>
+where
+    DB: Database,
+    I: Inspector<EthEvmContext<DB>, EthInterpreter>,
+{
+    fn system_call_one_with_caller(
+        &mut self,
+        caller: Address,
+        system_contract_address: Address,
+        data: Bytes,
+    ) -> Result<Self::ExecutionResult, Self::Error> {
+        use revm::handler::system_call::SystemCallTx;
+        self.inner
+            .ctx
+            .set_tx(revm::context::TxEnv::new_system_tx_with_caller(
+                caller,
+                system_contract_address,
+                data,
+            ));
+        MainnetHandler::default().run_system_call(self)
+    }
+}
+
+// ── InspectorEvmTr for ArbEvm ────────────────────────────────────
+
+impl<DB, I> revm::inspector::InspectorEvmTr for ArbEvm<DB, I>
+where
+    DB: Database,
+    I: Inspector<EthEvmContext<DB>, EthInterpreter>,
+    revm::Journal<DB>: revm::inspector::JournalExt,
+{
+    type Inspector = I;
+
+    fn all_inspector(
+        &self,
+    ) -> (
+        &Self::Context,
+        &Self::Instructions,
+        &Self::Precompiles,
+        &FrameStack<Self::Frame>,
+        &Self::Inspector,
+    ) {
+        let (ctx, inst, pre, fs) = self.inner.all();
+        (ctx, inst, pre, fs, &self.inner.inspector)
+    }
+
+    fn all_mut_inspector(
+        &mut self,
+    ) -> (
+        &mut Self::Context,
+        &mut Self::Instructions,
+        &mut Self::Precompiles,
+        &mut FrameStack<Self::Frame>,
+        &mut Self::Inspector,
+    ) {
+        (
+            &mut self.inner.ctx,
+            &mut self.inner.instruction,
+            &mut self.inner.precompiles,
+            &mut self.inner.frame_stack,
+            &mut self.inner.inspector,
+        )
+    }
+}
+
+// ── InspectEvm for ArbEvm ────────────────────────────────────────
+
+impl<DB, I> InspectEvm for ArbEvm<DB, I>
+where
+    DB: Database,
+    I: Inspector<EthEvmContext<DB>, EthInterpreter>,
+    revm::Journal<DB>: revm::inspector::JournalExt,
+{
+    type Inspector = I;
+
+    fn set_inspector(&mut self, inspector: Self::Inspector) {
+        self.inner.inspector = inspector;
+    }
+
+    fn inspect_one_tx(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
+        self.inner.ctx.set_tx(tx);
+        MainnetHandler::default().inspect_run(self)
+    }
+}
+
+// ── alloy_evm::Evm for ArbEvm ───────────────────────────────────
 
 impl<DB, I> Evm for ArbEvm<DB, I>
 where
     DB: Database,
-    I: revm::inspector::Inspector<EthEvmContext<DB>>,
+    I: Inspector<EthEvmContext<DB>, EthInterpreter>,
+    revm::Journal<DB>: revm::inspector::JournalExt,
 {
     type DB = DB;
     type Tx = ArbTransaction;
@@ -1249,18 +1695,22 @@ where
     type BlockEnv = revm::context::BlockEnv;
 
     fn block(&self) -> &revm::context::BlockEnv {
-        self.inner.block()
+        &self.inner.ctx.block
     }
 
     fn chain_id(&self) -> u64 {
-        self.inner.chain_id()
+        self.inner.ctx.cfg.chain_id
     }
 
     fn transact_raw(
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        self.inner.transact_raw(tx.into_inner())
+        if self.inspect {
+            InspectEvm::inspect_tx(self, tx.into_inner())
+        } else {
+            ExecuteEvm::transact(self, tx.into_inner())
+        }
     }
 
     fn transact_system_call(
@@ -1269,25 +1719,37 @@ where
         contract: Address,
         data: Bytes,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        self.inner.transact_system_call(caller, contract, data)
+        SystemCallEvm::system_call_with_caller(self, caller, contract, data)
     }
 
     fn finish(self) -> (Self::DB, EvmEnv<Self::Spec>) {
-        self.inner.finish()
+        let revm::Context {
+            block: block_env,
+            cfg: cfg_env,
+            journaled_state,
+            ..
+        } = self.inner.ctx;
+        (journaled_state.database, EvmEnv { block_env, cfg_env })
     }
 
     fn set_inspector_enabled(&mut self, enabled: bool) {
-        self.inner.set_inspector_enabled(enabled)
+        self.inspect = enabled;
     }
 
     fn components(&self) -> (&Self::DB, &Self::Inspector, &Self::Precompiles) {
-        let (db, inspector, arb_precompiles) = self.inner.components();
-        (db, inspector, &arb_precompiles.0)
+        (
+            &self.inner.ctx.journaled_state.database,
+            &self.inner.inspector,
+            &self.inner.precompiles.0,
+        )
     }
 
     fn components_mut(&mut self) -> (&mut Self::DB, &mut Self::Inspector, &mut Self::Precompiles) {
-        let (db, inspector, arb_precompiles) = self.inner.components_mut();
-        (db, inspector, &mut arb_precompiles.0)
+        (
+            &mut self.inner.ctx.journaled_state.database,
+            &mut self.inner.inspector,
+            &mut self.inner.precompiles.0,
+        )
     }
 }
 
@@ -1304,7 +1766,7 @@ impl ArbEvmFactory {
 }
 
 fn build_arb_evm<DB: Database, I>(
-    inner: revm::context::Evm<
+    inner: RevmEvm<
         EthEvmContext<DB>,
         I,
         EthInstructions<EthInterpreter, EthEvmContext<DB>>,
@@ -1313,7 +1775,7 @@ fn build_arb_evm<DB: Database, I>(
     >,
     inspect: bool,
 ) -> ArbEvm<DB, I> {
-    let revm::context::Evm {
+    let RevmEvm {
         ctx,
         inspector,
         mut instruction,
@@ -1329,22 +1791,14 @@ fn build_arb_evm<DB: Database, I>(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
     );
-    // NUMBER returns L1 block number from ArbOS state (updated by StartBlock),
-    // not the mixHash L1 block number which can differ.
     instruction.insert_instruction(
         NUMBER_OPCODE,
         revm::interpreter::Instruction::new(arb_number, 2),
     );
-    // BLOCKHASH uses L1 block number for the 256-block range check,
-    // matching Nitro where block.number IS the L1 block number.
     instruction.insert_instruction(
         BLOCKHASH_OPCODE,
         revm::interpreter::Instruction::new(arb_blockhash, 20),
     );
-    // BALANCE adjusts the sender's balance by the poster fee correction,
-    // matching Nitro's BuyGas which charges the full gas_limit.
-    // BALANCE/SELFBALANCE adjust sender's balance by the poster fee correction
-    // to match Nitro's BuyGas which charges the full gas_limit.
     instruction.insert_instruction(
         BALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_balance, 0),
@@ -1353,17 +1807,15 @@ fn build_arb_evm<DB: Database, I>(
         SELFBALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
-    register_arb_precompiles(&mut precompiles);
+    register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 
-    let revm_evm =
-        revm::context::Evm::new_with_inspector(ctx, inspector, instruction, arb_precompiles);
-    let eth_evm = alloy_evm::eth::EthEvm::new(revm_evm, inspect);
-    ArbEvm::new(eth_evm)
+    let revm_evm = RevmEvm::new_with_inspector(ctx, inspector, instruction, arb_precompiles);
+    ArbEvm::new(revm_evm, inspect)
 }
 
 impl EvmFactory for ArbEvmFactory {
-    type Evm<DB: Database, I: revm::inspector::Inspector<EthEvmContext<DB>>> = ArbEvm<DB, I>;
+    type Evm<DB: Database, I: Inspector<EthEvmContext<DB>, EthInterpreter>> = ArbEvm<DB, I>;
     type Context<DB: Database> = EthEvmContext<DB>;
     type Tx = ArbTransaction;
     type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError>;
@@ -1381,7 +1833,7 @@ impl EvmFactory for ArbEvmFactory {
         build_arb_evm(eth_evm.into_inner(), false)
     }
 
-    fn create_evm_with_inspector<DB: Database, I: revm::inspector::Inspector<Self::Context<DB>>>(
+    fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>, EthInterpreter>>(
         &self,
         db: DB,
         input: EvmEnv<Self::Spec>,

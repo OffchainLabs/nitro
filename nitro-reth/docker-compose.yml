@@ -13,6 +13,7 @@ services:
     environment:
       - RUST_LOG=${RUST_LOG:-warn}
       - ARB_BLOCK_BUFFER_SIZE=${ARB_BLOCK_BUFFER_SIZE:-128}
+      - ARB_FLUSH_INTERVAL=${ARB_FLUSH_INTERVAL:-128}
     command:
       - node
       - --chain=/genesis/arbitrum-sepolia.json

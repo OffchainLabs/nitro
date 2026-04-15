@@ -55,9 +55,40 @@ pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
 pub use nodeinterface::{create_nodeinterface_precompile, NODE_INTERFACE_ADDRESS};
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
-use alloy_evm::precompiles::PrecompilesMap;
-use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
+use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
+use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 use std::cell::Cell;
+
+/// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
+pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
+    alloy_primitives::address!("0000000000000000000000000000000000000100");
+
+/// modexp precompile address (0x05).
+const MODEXP_ADDRESS: alloy_primitives::Address =
+    alloy_primitives::address!("0000000000000000000000000000000000000005");
+
+/// BLS12-381 precompile addresses (EIP-2537), enabled from ArbOS v50.
+const BLS12_381_ADDRESSES: [alloy_primitives::Address; 7] = [
+    alloy_primitives::address!("000000000000000000000000000000000000000b"),
+    alloy_primitives::address!("000000000000000000000000000000000000000c"),
+    alloy_primitives::address!("000000000000000000000000000000000000000d"),
+    alloy_primitives::address!("000000000000000000000000000000000000000e"),
+    alloy_primitives::address!("000000000000000000000000000000000000000f"),
+    alloy_primitives::address!("0000000000000000000000000000000000000010"),
+    alloy_primitives::address!("0000000000000000000000000000000000000011"),
+];
+
+fn create_p256verify_precompile() -> DynPrecompile {
+    DynPrecompile::new(PrecompileId::P256Verify, |input: PrecompileInput<'_>| {
+        revm::precompile::secp256r1::p256_verify(input.data, input.gas)
+    })
+}
+
+fn create_modexp_osaka_precompile() -> DynPrecompile {
+    DynPrecompile::new(PrecompileId::ModExp, |input: PrecompileInput<'_>| {
+        revm::precompile::modexp::osaka_run(input.data, input.gas)
+    })
+}
 
 // ── ArbOS version thread-local ──────────────────────────────────────
 
@@ -76,6 +107,8 @@ thread_local! {
     /// Current gas backlog value, set by executor before each tx.
     /// Used by Redeem precompile to determine ShrinkBacklog write cost.
     static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
+    /// Gas consumed by precompile operations before an error.
+    static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
     /// Current tx poster fee (wei), set by executor before each tx.
     /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
     static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
@@ -87,6 +120,47 @@ thread_local! {
     /// Current transaction sender address (first 20 bytes as u128 + extra Cell).
     static TX_SENDER_LO: Cell<u128> = const { Cell::new(0) };
     static TX_SENDER_HI: Cell<u32> = const { Cell::new(0) };
+    static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
+    static STYLUS_KEEPALIVE_HASH: Cell<Option<[u8; 32]>> = const { Cell::new(None) };
+    static STYLUS_ACTIVATION_DATA_FEE: Cell<u128> = const { Cell::new(0) };
+}
+
+use std::cell::RefCell;
+
+thread_local! {
+    static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
+    /// Per-block LRU of recently invoked Stylus program codehashes. Used by
+    /// ArbOS v60+ pricing; capacity set per-block from `params.BlockCacheSize`.
+    static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = const { RefCell::new((Vec::new(), 0)) };
+}
+
+/// Reset the recent WASMs cache for a new block, with the given capacity.
+pub fn reset_recent_wasms(capacity: usize) {
+    RECENT_WASMS.with(|c| {
+        let mut cache = c.borrow_mut();
+        cache.0.clear();
+        cache.1 = capacity;
+    });
+}
+
+/// Insert a Stylus program codehash into the recent WASMs cache.
+/// Returns `true` if the codehash was already present (cache hit).
+pub fn insert_recent_wasm(hash: alloy_primitives::B256) -> bool {
+    RECENT_WASMS.with(|c| {
+        let mut cache = c.borrow_mut();
+        let was_present = if let Some(pos) = cache.0.iter().position(|h| *h == hash) {
+            cache.0.remove(pos);
+            true
+        } else {
+            false
+        };
+        cache.0.push(hash);
+        let max = cache.1;
+        if max > 0 && cache.0.len() > max {
+            cache.0.remove(0);
+        }
+        was_present
+    })
 }
 
 use std::sync::Mutex as StdMutex;
@@ -143,6 +217,26 @@ pub fn set_current_gas_backlog(backlog: u64) {
 /// Get the current gas backlog value.
 pub fn get_current_gas_backlog() -> u64 {
     CURRENT_GAS_BACKLOG.with(|v| v.get())
+}
+
+pub fn reset_precompile_gas() {
+    PRECOMPILE_GAS_USED.with(|v| v.set(0));
+}
+
+pub fn charge_precompile_gas(gas: u64) {
+    PRECOMPILE_GAS_USED.with(|v| v.set(v.get() + gas));
+}
+
+pub fn get_precompile_gas() -> u64 {
+    PRECOMPILE_GAS_USED.with(|v| v.get())
+}
+
+/// Initialize gas tracking for a precompile call: reset accumulator, charge
+/// argsCost (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
+pub fn init_precompile_gas(input_len: usize) {
+    reset_precompile_gas();
+    let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
+    charge_precompile_gas(args_cost + 800);
 }
 
 /// Set the current tx poster fee for ArbGasInfo.getCurrentTxL1GasFees.
@@ -206,9 +300,61 @@ pub fn get_block_timestamp() -> u64 {
     BLOCK_TIMESTAMP.with(|v| v.get())
 }
 
-/// Check precompile-level version gate. If the current ArbOS version is below
-/// `min_version`, the precompile is not yet active and we return success with
-/// empty bytes (as if calling a contract that doesn't exist).
+pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
+    STYLUS_ACTIVATION_ADDR.with(|v| v.set(addr.map(|a| *a.as_ref())));
+}
+
+pub fn take_stylus_activation_request() -> Option<alloy_primitives::Address> {
+    STYLUS_ACTIVATION_ADDR.with(|v| {
+        let val = v.get();
+        v.set(None);
+        val.map(alloy_primitives::Address::from)
+    })
+}
+
+pub fn set_stylus_keepalive_request(hash: Option<alloy_primitives::B256>) {
+    STYLUS_KEEPALIVE_HASH.with(|v| v.set(hash.map(|h| h.0)));
+}
+
+pub fn take_stylus_keepalive_request() -> Option<alloy_primitives::B256> {
+    STYLUS_KEEPALIVE_HASH.with(|v| {
+        let val = v.get();
+        v.set(None);
+        val.map(alloy_primitives::B256::from)
+    })
+}
+
+pub fn set_stylus_activation_data_fee(fee: alloy_primitives::U256) {
+    STYLUS_ACTIVATION_DATA_FEE.with(|v| v.set(fee.try_into().unwrap_or(u128::MAX)));
+}
+
+pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
+    STYLUS_ACTIVATION_DATA_FEE.with(|v| {
+        let val = v.get();
+        v.set(0);
+        alloy_primitives::U256::from(val)
+    })
+}
+
+pub fn emit_log(
+    address: alloy_primitives::Address,
+    topics: &[alloy_primitives::B256],
+    data: &[u8],
+) {
+    PENDING_PRECOMPILE_LOGS.with(|logs| {
+        logs.borrow_mut()
+            .push((address, topics.to_vec(), data.to_vec()));
+    });
+}
+
+pub fn take_pending_precompile_logs() -> Vec<(
+    alloy_primitives::Address,
+    Vec<alloy_primitives::B256>,
+    Vec<u8>,
+)> {
+    PENDING_PRECOMPILE_LOGS.with(|logs| std::mem::take(&mut *logs.borrow_mut()))
+}
+
 fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
     if get_arbos_version() < min_version {
         Some(Ok(PrecompileOutput::new(0, Default::default())))
@@ -217,30 +363,88 @@ fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
     }
 }
 
-/// Ensure precompile gas_used does not exceed the gas limit.
-/// Returns `OutOfGas` if it does, preventing an assertion panic in alloy-evm.
+/// Pre-dispatch error: consumes all supplied gas and reverts.
+fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
+    Ok(PrecompileOutput::new_reverted(
+        gas_limit,
+        Default::default(),
+    ))
+}
+
+/// SolError revert: accumulated gas + result-cost, with the error selector.
+pub fn sol_error_revert(error_selector: [u8; 4], gas_limit: u64) -> PrecompileResult {
+    sol_error_revert_with_args(error_selector, &[], gas_limit)
+}
+
+/// SolError revert with ABI-encoded arguments. `args` is the already-encoded
+/// argument tail (one 32-byte word per static parameter, head-then-tail layout
+/// for dynamic types).
+pub fn sol_error_revert_with_args(
+    error_selector: [u8; 4],
+    args: &[u8],
+    gas_limit: u64,
+) -> PrecompileResult {
+    let mut payload = Vec::with_capacity(4 + args.len());
+    payload.extend_from_slice(&error_selector);
+    payload.extend_from_slice(args);
+
+    let result_cost = 3u64 * (payload.len() as u64).div_ceil(32); // CopyGas * words
+    charge_precompile_gas(result_cost);
+    let gas = get_precompile_gas();
+    Ok(PrecompileOutput::new_reverted(
+        gas.min(gas_limit),
+        payload.into(),
+    ))
+}
+
+/// ABI-encode a u64 as a 32-byte right-aligned word.
+pub fn abi_word_u64(v: u64) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[24..].copy_from_slice(&v.to_be_bytes());
+    out
+}
+
+/// ABI-encode a u16 as a 32-byte right-aligned word.
+pub fn abi_word_u16(v: u16) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[30..].copy_from_slice(&v.to_be_bytes());
+    out
+}
+
 fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
+    let accumulated_gas = get_precompile_gas();
+    reset_precompile_gas();
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
+        Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => Ok(
+            PrecompileOutput::new_reverted(accumulated_gas.min(gas_limit), Default::default()),
+        ),
         other => other,
     }
 }
 
-/// Check method-level version gate. If the current ArbOS version is below
-/// `min_version` or above `max_version` (when non-zero), the method reverts.
-fn check_method_version(min_version: u64, max_version: u64) -> Option<PrecompileResult> {
+/// Returns a revert that consumes the full `gas_limit` if the current ArbOS
+/// version is outside `[min_version, max_version]`. `max_version == 0` is
+/// unbounded.
+fn check_method_version(
+    gas_limit: u64,
+    min_version: u64,
+    max_version: u64,
+) -> Option<PrecompileResult> {
     let v = get_arbos_version();
     if v < min_version || (max_version > 0 && v > max_version) {
-        Some(Err(PrecompileError::other(
-            "method not available at this ArbOS version",
-        )))
+        Some(burn_all_revert(gas_limit))
     } else {
         None
     }
 }
 
-/// Register all Arbitrum precompiles into a [`PrecompilesMap`].
-pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
+const KZG_POINT_EVALUATION_ADDRESS: alloy_primitives::Address =
+    alloy_primitives::address!("000000000000000000000000000000000000000a");
+
+/// Registers Arbitrum precompiles into `map` and applies the per-ArbOS-version
+/// adjustments to the standard Ethereum precompile set.
+pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     map.extend_precompiles([
         (ARBSYS_ADDRESS, create_arbsys_precompile()),
         (ARBGASINFO_ADDRESS, create_arbgasinfo_precompile()),
@@ -270,4 +474,52 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
         ),
         (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
     ]);
+
+    if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {
+        // P256VERIFY stays at 3450 gas on Arbitrum for all ArbOS >= 30,
+        // regardless of the underlying EVM spec's Osaka rules.
+        map.extend_precompiles([(P256VERIFY_ADDRESS, create_p256verify_precompile())]);
+    } else {
+        map.apply_precompile(&KZG_POINT_EVALUATION_ADDRESS, |_| None);
+        map.apply_precompile(&P256VERIFY_ADDRESS, |_| None);
+    }
+
+    if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+        // ArbOS 50+ switches modexp to the EIP-7823 + EIP-7883 gas schedule.
+        map.extend_precompiles([(MODEXP_ADDRESS, create_modexp_osaka_precompile())]);
+    } else {
+        // BLS12-381 precompiles are not available before ArbOS 50.
+        for addr in &BLS12_381_ADDRESSES {
+            map.apply_precompile(addr, |_| None);
+        }
+    }
+}
+
+#[cfg(test)]
+mod selector_audit {
+    #[test]
+    fn verify_selectors() {
+        fn check(sig: &str, expected: &[u8; 4]) {
+            let h = alloy_primitives::keccak256(sig.as_bytes());
+            let actual = [h[0], h[1], h[2], h[3]];
+            assert_eq!(actual, *expected, "selector mismatch for {sig}: expected 0x{:02x}{:02x}{:02x}{:02x} got 0x{:02x}{:02x}{:02x}{:02x}",
+                expected[0], expected[1], expected[2], expected[3], actual[0], actual[1], actual[2], actual[3]);
+        }
+        check("rectifyChainOwner(address)", &[0x6f, 0xe8, 0x63, 0x73]);
+        check("addChainOwner(address)", &[0x48, 0x1f, 0x8d, 0xbf]);
+        check("removeChainOwner(address)", &[0x87, 0x92, 0x70, 0x1a]);
+        check(
+            "releaseL1PricerSurplusFunds(uint256)",
+            &[0x31, 0x4b, 0xcf, 0x05],
+        );
+        check("withdrawEth(address)", &[0x25, 0xe1, 0x60, 0x63]);
+        check("sendTxToL1(address,bytes)", &[0x92, 0x8c, 0x16, 0x9a]);
+        check("arbBlockNumber()", &[0xa3, 0xb1, 0xb3, 0x1d]);
+        check("arbBlockHash(uint256)", &[0x2b, 0x40, 0x7a, 0x82]);
+        check("arbChainID()", &[0xd1, 0x27, 0xf5, 0x4a]);
+        check("isTopLevelCall()", &[0x08, 0xbd, 0x62, 0x4c]);
+        // ArbWasm selectors
+        check("activateProgram(address)", &[0x58, 0xc7, 0x80, 0xc2]);
+        check("codehashKeepalive(bytes32)", &[0xc6, 0x89, 0xba, 0xd5]);
+    }
 }

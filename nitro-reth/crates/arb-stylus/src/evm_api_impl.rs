@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use alloy_primitives::{Address, Log, B256, U256};
 use arbos::programs::memory::MemoryModel;
 use revm::Database;
@@ -141,6 +143,15 @@ pub struct SubCallResult {
     pub output: Vec<u8>,
     pub gas_cost: u64,
     pub success: bool,
+    /// Gas refund accumulated during the sub-call (EIP-3529 SSTORE refunds).
+    ///
+    /// The inner `InterpreterResult` carries a `Gas` struct whose `refunded`
+    /// field holds any SSTORE clear/restore refunds that happened inside the
+    /// sub-call. We must propagate this to the outer Stylus program's
+    /// accounting so that the final tx-level refund reflects all nested
+    /// refund activity — otherwise every Stylus -> sub-call clearing refund
+    /// is silently dropped and the tx overcharges by ~4800 gas per clear.
+    pub refund: i64,
 }
 
 /// Result from a CREATE/CREATE2 operation.
@@ -152,15 +163,80 @@ pub struct SubCreateResult {
 
 /// Type-erased function pointer for executing sub-calls from Stylus.
 ///
-/// Parameters: (ctx_ptr, call_type, contract, caller, input, gas, value)
-/// call_type: 0=CALL, 1=DELEGATECALL, 2=STATICCALL
-pub type DoCallFn = fn(*mut (), u8, Address, Address, &[u8], u64, U256) -> SubCallResult;
+/// Parameters: `(ctx_ptr, call_type, contract, caller, storage_addr, input, gas, value)`.
+///
+/// - `call_type`: `0=CALL`, `1=DELEGATECALL`, `2=STATICCALL`
+/// - `caller`: msg.sender for the new frame (preserved for DELEGATECALL)
+/// - `storage_addr`: address whose storage the new frame uses (= current contract for
+///   CALL/STATICCALL, = preserved storage context for DELEGATECALL)
+pub type DoCallFn = fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
 ///
 /// Parameters: (ctx_ptr, caller, code, gas, endowment, salt)
 /// salt=None for CREATE, Some for CREATE2.
 pub type DoCreateFn = fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
+
+/// Per-call storage cache entry.
+struct StorageCacheEntry {
+    /// Current value (may be dirty from a write).
+    value: B256,
+    /// Original value from the journal (None = written before first read).
+    known: Option<B256>,
+}
+
+impl StorageCacheEntry {
+    fn known(value: B256) -> Self {
+        Self {
+            value,
+            known: Some(value),
+        }
+    }
+
+    fn unknown(value: B256) -> Self {
+        Self { value, known: None }
+    }
+
+    fn dirty(&self) -> bool {
+        self.known != Some(self.value)
+    }
+}
+
+/// Per-call storage cache: avoids repeat journal hits and charges the
+/// `evm_api_gas` surcharge only on the first miss per slot.
+struct StorageCache {
+    slots: HashMap<B256, StorageCacheEntry>,
+    reads: u32,
+    writes: u32,
+}
+
+impl StorageCache {
+    fn new() -> Self {
+        Self {
+            slots: HashMap::new(),
+            reads: 0,
+            writes: 0,
+        }
+    }
+
+    fn read_gas(&mut self) -> Gas {
+        self.reads += 1;
+        match self.reads {
+            0..=32 => Gas(0),
+            33..=128 => Gas(2),
+            _ => Gas(10),
+        }
+    }
+
+    fn write_gas(&mut self) -> Gas {
+        self.writes += 1;
+        match self.writes {
+            0..=8 => Gas(0),
+            9..=64 => Gas(7),
+            _ => Gas(10),
+        }
+    }
+}
 
 /// Concrete [`EvmApi`] bridging WASM host function calls to revm's journaled state.
 ///
@@ -182,8 +258,10 @@ pub struct StylusEvmApi {
     caller: Address,
     /// Value of the current call (needed for DELEGATECALL forwarding).
     call_value: U256,
-    /// Cached storage writes (key, value pairs), flushed on demand.
-    storage_cache: Vec<(B256, B256)>,
+    /// Per-call storage cache.
+    storage_cache: StorageCache,
+    /// Accumulated SSTORE refund (EIP-3529) from flush operations.
+    sstore_refund: i64,
     /// Return data from the last sub-call.
     return_data: Vec<u8>,
     /// Whether the current execution context is read-only (STATICCALL).
@@ -236,7 +314,8 @@ impl StylusEvmApi {
             address,
             caller,
             call_value,
-            storage_cache: Vec::new(),
+            storage_cache: StorageCache::new(),
+            sstore_refund: 0,
             return_data: Vec::new(),
             read_only,
             free_pages,
@@ -251,6 +330,11 @@ impl StylusEvmApi {
     fn journal(&mut self) -> &mut dyn JournalAccess {
         unsafe { &mut *self.journal }
     }
+
+    /// Return the accumulated SSTORE refund from flush operations.
+    pub fn sstore_refund(&self) -> i64 {
+        self.sstore_refund
+    }
 }
 
 impl std::fmt::Debug for StylusEvmApi {
@@ -258,28 +342,53 @@ impl std::fmt::Debug for StylusEvmApi {
         f.debug_struct("StylusEvmApi")
             .field("address", &self.address)
             .field("read_only", &self.read_only)
-            .field("cache_size", &self.storage_cache.len())
+            .field("cache_size", &self.storage_cache.slots.len())
             .finish()
     }
 }
 
 impl EvmApi for StylusEvmApi {
-    fn get_bytes32(&mut self, key: B256, _evm_api_gas_to_use: Gas) -> eyre::Result<(B256, Gas)> {
-        let storage_key = U256::from_be_bytes(key.0);
-        let addr = self.address;
-        let (value_u256, is_cold) = self.journal().sload(addr, storage_key)?;
-        let value = B256::from(value_u256.to_be_bytes());
-        let gas_cost = if is_cold {
-            COLD_SLOAD_COST
+    fn get_bytes32(&mut self, key: B256, evm_api_gas_to_use: Gas) -> eyre::Result<(B256, Gas)> {
+        let mut cost = self.storage_cache.read_gas();
+
+        let value = if let Some(entry) = self.storage_cache.slots.get(&key) {
+            entry.value
         } else {
-            WARM_STORAGE_READ_COST
+            let storage_key = U256::from_be_bytes(key.0);
+            let addr = self.address;
+            let (value_u256, is_cold) = self.journal().sload(addr, storage_key)?;
+            let value = B256::from(value_u256.to_be_bytes());
+
+            let sload_cost = if is_cold {
+                COLD_SLOAD_COST
+            } else {
+                WARM_STORAGE_READ_COST
+            };
+            cost = Gas(cost
+                .0
+                .saturating_add(sload_cost)
+                .saturating_add(evm_api_gas_to_use.0));
+
+            self.storage_cache
+                .slots
+                .insert(key, StorageCacheEntry::known(value));
+            value
         };
-        Ok((value, Gas(gas_cost)))
+
+        Ok((value, cost))
     }
 
     fn cache_bytes32(&mut self, key: B256, value: B256) -> eyre::Result<Gas> {
-        self.storage_cache.push((key, value));
-        Ok(Gas(0))
+        let cost = self.storage_cache.write_gas();
+        match self.storage_cache.slots.get_mut(&key) {
+            Some(entry) => entry.value = value,
+            None => {
+                self.storage_cache
+                    .slots
+                    .insert(key, StorageCacheEntry::unknown(value));
+            }
+        }
+        Ok(cost)
     }
 
     fn flush_storage_cache(
@@ -287,20 +396,36 @@ impl EvmApi for StylusEvmApi {
         clear: bool,
         gas_left: Gas,
     ) -> eyre::Result<(Gas, UserOutcomeKind)> {
-        let entries: Vec<(B256, B256)> = if clear {
-            std::mem::take(&mut self.storage_cache)
-        } else {
-            self.storage_cache.clone()
-        };
+        // Collect dirty entries
+        let dirty: Vec<(B256, B256)> = self
+            .storage_cache
+            .slots
+            .iter()
+            .filter(|(_, v)| v.dirty())
+            .map(|(k, v)| (*k, v.value))
+            .collect();
 
-        if self.read_only && !entries.is_empty() {
+        if clear {
+            self.storage_cache.slots.clear();
+        } else {
+            // Mark all entries as known (clean)
+            for entry in self.storage_cache.slots.values_mut() {
+                entry.known = Some(entry.value);
+            }
+        }
+
+        if dirty.is_empty() {
+            return Ok((Gas(0), UserOutcomeKind::Success));
+        }
+
+        if self.read_only {
             return Ok((Gas(0), UserOutcomeKind::Failure));
         }
 
         let mut total_gas = 0u64;
         let mut remaining = gas_left.0;
 
-        for (key, value) in &entries {
+        for (key, value) in &dirty {
             let storage_key = U256::from_be_bytes(key.0);
             let storage_value = U256::from_be_bytes(value.0);
 
@@ -313,6 +438,12 @@ impl EvmApi for StylusEvmApi {
             }
             remaining -= sstore_cost;
             total_gas += sstore_cost;
+
+            // Track SSTORE refunds (EIP-3529). Important: these refunds must
+            // also be propagated up through SubCallResult.refund in any
+            // nested Stylus sub-call, otherwise clearing refunds generated
+            // inside an inner Stylus program are silently lost.
+            self.sstore_refund += sstore_refund(&info);
         }
 
         Ok((Gas(total_gas), UserOutcomeKind::Success))
@@ -384,14 +515,23 @@ impl EvmApi for StylusEvmApi {
             0, // CALL
             contract,
             self.address, // caller = current contract
+            contract,     // storage_addr = target contract (CALL semantics)
             calldata,
             gas,
             value,
         );
 
+        // Preserve the per-call storage cache across CALL: the sub-call
+        // targets a different contract's storage, so its writes cannot affect
+        // our cached entries, and invalidation would re-charge the full
+        // cold-miss cost on subsequent reads.
+
         self.return_data = result.output;
-        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
+
+        // Propagate the sub-call's accumulated SSTORE refund into our own
+        // accumulator so it survives the flatten into `SubCallResult`.
+        self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
             UserOutcomeKind::Success
@@ -434,15 +574,24 @@ impl EvmApi for StylusEvmApi {
             self.ctx_ptr,
             1, // DELEGATECALL
             contract,
-            self.caller, // original caller
+            self.caller, // caller = preserved msg.sender
+            self.address, /* storage_addr = current contract (DELEGATECALL preserves storage
+                          * context) */
             calldata,
             gas,
             self.call_value, // forward current call value
         );
 
+        // A DELEGATECALL child shares our storage context, so any writes it
+        // made may have changed slots we had cached. Drop the per-call
+        // storage cache so the next access re-reads from the journal.
+        self.storage_cache.slots.clear();
+
         self.return_data = result.output;
-        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
+
+        // Propagate sub-call SSTORE refund (see contract_call).
+        self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
             UserOutcomeKind::Success
@@ -484,15 +633,24 @@ impl EvmApi for StylusEvmApi {
             self.ctx_ptr,
             2, // STATICCALL
             contract,
-            self.address,
+            self.address, // caller = current contract
+            contract,     // storage_addr = target contract (STATICCALL semantics)
             calldata,
             gas,
             U256::ZERO,
         );
 
+        // STATICCALL is nominally read-only, but a sub-call it performs may
+        // transitively DELEGATECALL back into our storage context. Drop the
+        // cache to be safe.
+        self.storage_cache.slots.clear();
+
         self.return_data = result.output;
-        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
         let cost = base_cost.saturating_add(result.gas_cost);
+
+        // A STATICCALL target can still internally CALL another contract and
+        // accumulate refunds on that path, so we carry the value upwards.
+        self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
             UserOutcomeKind::Success
@@ -773,6 +931,52 @@ fn wasm_call_cost(
     (total, false)
 }
 
+/// EIP-3529 SSTORE refund constants (post-London).
+const SSTORE_CLEARS_SCHEDULE: i64 = 4_800; // WARM_SSTORE_RESET(2900) + ACCESS_LIST_STORAGE_KEY(1900)
+const SSTORE_SET_REFUND: i64 = 19_900; // SSTORE_SET(20000) - WARM_STORAGE_READ(100)
+const SSTORE_RESET_REFUND: i64 = 2_800; // WARM_SSTORE_RESET(2900) - WARM_STORAGE_READ(100)
+
+/// Compute SSTORE refund following revm's `sstore_refund` formula (Istanbul+/EIP-3529).
+fn sstore_refund(info: &SStoreInfo) -> i64 {
+    let original = info.original_value;
+    let present = info.present_value;
+    let new = info.new_value;
+
+    // No-op: new equals current value
+    if new == present {
+        return 0;
+    }
+
+    // Refund for clearing on first write to a slot whose original is non-zero
+    if original == present && new.is_zero() {
+        return SSTORE_CLEARS_SCHEDULE;
+    }
+
+    let mut refund: i64 = 0;
+
+    // If original is non-zero, track clearing/un-clearing of the slot
+    if !original.is_zero() {
+        if present.is_zero() {
+            // Slot was previously cleared in this tx; un-clear it now
+            refund -= SSTORE_CLEARS_SCHEDULE;
+        } else if new.is_zero() {
+            // Now clearing a previously non-zero slot
+            refund += SSTORE_CLEARS_SCHEDULE;
+        }
+    }
+
+    // Refund for restoring the slot to its original value
+    if original == new {
+        if original.is_zero() {
+            refund += SSTORE_SET_REFUND;
+        } else {
+            refund += SSTORE_RESET_REFUND;
+        }
+    }
+
+    refund
+}
+
 /// Compute SSTORE gas cost following EIP-2929 + EIP-3529 (post-London).
 fn sstore_gas_cost(info: &SStoreInfo) -> u64 {
     let base = if info.original_value == info.new_value {
@@ -789,4 +993,154 @@ fn sstore_gas_cost(info: &SStoreInfo) -> u64 {
 
     let cold_cost = if info.is_cold { COLD_SLOAD_COST } else { 0 };
     base + cold_cost
+}
+
+// SSTORE gas + refund parity tests for the 9 canonical EIP-2200 cases
+// plus the EIP-3529 refund schedule.
+#[cfg(test)]
+mod sstore_parity_tests {
+    use super::{sstore_gas_cost, sstore_refund, SStoreInfo};
+    use alloy_primitives::U256;
+
+    fn info(original: u64, present: u64, new: u64, is_cold: bool) -> SStoreInfo {
+        SStoreInfo {
+            is_cold,
+            original_value: U256::from(original),
+            present_value: U256::from(present),
+            new_value: U256::from(new),
+        }
+    }
+
+    // ── EIP-2200 base costs (warm-access, EIP-2929/3529 adjusted) ─────
+
+    /// Case 1 (noop on untouched slot): `current == value`, `original == current`.
+    /// Expected: `WarmStorageReadCostEIP2929 = 100`.
+    #[test]
+    fn case_1_noop_untouched_warm() {
+        assert_eq!(sstore_gas_cost(&info(5, 5, 5, false)), 100);
+        assert_eq!(sstore_refund(&info(5, 5, 5, false)), 0);
+    }
+
+    /// Case 2.1.1 (create slot): `original == current == 0`, `value != 0`.
+    /// Expected: `SstoreSetGasEIP2200 = 20_000`.
+    #[test]
+    fn case_2_1_1_create_slot() {
+        assert_eq!(sstore_gas_cost(&info(0, 0, 5, false)), 20_000);
+        assert_eq!(sstore_refund(&info(0, 0, 5, false)), 0);
+    }
+
+    /// Case 2.1.2 (update clean): `original == current != 0`, `value != 0`, `value != original`.
+    /// Expected: `SstoreResetGasEIP2200 - ColdSloadCostEIP2929 = 2_900`.
+    #[test]
+    fn case_2_1_2_update_clean() {
+        assert_eq!(sstore_gas_cost(&info(5, 5, 10, false)), 2_900);
+        assert_eq!(sstore_refund(&info(5, 5, 10, false)), 0);
+    }
+
+    /// Case 2.1.2b (delete clean): original == current != 0, value == 0.
+    /// Same base cost as 2.1.2 plus an EIP-3529 `SstoreClearsScheduleRefundEIP3529 = 4_800` refund.
+    #[test]
+    fn case_2_1_2b_delete_clean() {
+        assert_eq!(sstore_gas_cost(&info(5, 5, 0, false)), 2_900);
+        assert_eq!(sstore_refund(&info(5, 5, 0, false)), 4_800);
+    }
+
+    /// Case 2.2 (dirty update, no restore): `original != current`, `value`
+    /// matches neither original nor a clearing pattern. Expected: 100.
+    #[test]
+    fn case_2_2_dirty_update() {
+        // original=5, current=10, new=15 — pure dirty update
+        assert_eq!(sstore_gas_cost(&info(5, 10, 15, false)), 100);
+        assert_eq!(sstore_refund(&info(5, 10, 15, false)), 0);
+    }
+
+    /// Case 2.2.1.1 (un-clear): `original != 0`, `current == 0`, `value != 0`.
+    /// Expected: 100 gas, `-clearingRefund` (−4_800).
+    #[test]
+    fn case_2_2_1_1_un_clear_dirty() {
+        assert_eq!(sstore_gas_cost(&info(5, 0, 10, false)), 100);
+        assert_eq!(sstore_refund(&info(5, 0, 10, false)), -4_800);
+    }
+
+    /// Case 2.2.1.2 (clear dirty): `original != 0`, `current != 0`, `value == 0`.
+    /// Expected: 100 gas, `+clearingRefund` (+4_800).
+    #[test]
+    fn case_2_2_1_2_clear_dirty() {
+        // original=5, present=10, new=0 — value becomes zero from a dirty state
+        assert_eq!(sstore_gas_cost(&info(5, 10, 0, false)), 100);
+        assert_eq!(sstore_refund(&info(5, 10, 0, false)), 4_800);
+    }
+
+    /// Case 2.2.2.1 (restore to inexistent original): `original == 0`, `value == 0`, `current !=
+    /// 0`. Expected: 100 gas, refund `SstoreSetGasEIP2200 - WarmStorageReadCostEIP2929 =
+    /// 19_900`.
+    #[test]
+    fn case_2_2_2_1_restore_to_zero_original() {
+        assert_eq!(sstore_gas_cost(&info(0, 5, 0, false)), 100);
+        assert_eq!(sstore_refund(&info(0, 5, 0, false)), 19_900);
+    }
+
+    /// Case 2.2.2.2 (restore to non-zero original): `original != 0`,
+    /// `value == original`, `current != value`, `current != 0`.
+    /// Expected: 100 gas, refund
+    /// `SstoreResetGasEIP2200 - ColdSloadCostEIP2929 - WarmStorageReadCostEIP2929 = 2_800`.
+    #[test]
+    fn case_2_2_2_2_restore_to_nonzero_original() {
+        assert_eq!(sstore_gas_cost(&info(5, 10, 5, false)), 100);
+        assert_eq!(sstore_refund(&info(5, 10, 5, false)), 2_800);
+    }
+
+    // ── Cold-access surcharge (EIP-2929) ─────────────────────────────
+
+    /// Cold slot access adds `ColdSloadCostEIP2929 = 2_100` to the base.
+    #[test]
+    fn cold_access_adds_2100() {
+        assert_eq!(sstore_gas_cost(&info(5, 5, 5, true)), 100 + 2_100);
+        assert_eq!(sstore_gas_cost(&info(5, 5, 10, true)), 2_900 + 2_100);
+        assert_eq!(sstore_gas_cost(&info(0, 0, 5, true)), 20_000 + 2_100);
+        assert_eq!(sstore_gas_cost(&info(5, 10, 0, true)), 100 + 2_100);
+    }
+
+    // ── Combined refund patterns (step 4 + step 5 can stack) ────────
+
+    /// `original != 0`, `current == 0` (un-clear refund of −4_800) AND
+    /// `value == original` (restore refund of +2_800) stack, netting −2_000.
+    /// Observable if an SSTORE clears then restores a slot within one tx.
+    #[test]
+    fn un_clear_plus_restore_stacks() {
+        // original=5, current=0, new=5 — effectively restoring after a delete
+        assert_eq!(sstore_gas_cost(&info(5, 0, 5, false)), 100);
+        assert_eq!(sstore_refund(&info(5, 0, 5, false)), -4_800 + 2_800);
+    }
+
+    /// original != 0, current != 0, value == 0 (clear refund of +4_800),
+    /// AND NOT value == original (so no restore refund).
+    #[test]
+    fn clear_dirty_without_restore() {
+        // original=5, current=10, new=0 — plain clear from a dirty state
+        assert_eq!(sstore_refund(&info(5, 10, 0, false)), 4_800);
+    }
+
+    // ── Multi-slot flush totals ──────────────────────────────────────
+
+    /// An 8-slot flush exercising every case above: the gas + refund totals
+    /// must equal the sum of per-case expectations.
+    #[test]
+    fn mixed_eight_slot_flush_totals() {
+        let slots = [
+            info(0x12e, 0x12f, 0x130, false),        // dirty update
+            info(0x880f, 0x880f, 0x23b5, false),     // reset clean
+            info(0x10906e, 0x10906e, 0x275b, false), // reset clean
+            info(0, 0, 1, false),                    // create
+            info(0x2fea, 0x2fea, 0xf8e2, false),     // reset clean
+            info(0x26658a, 0x26658a, 0x27bd, false), // reset clean
+            info(0x7e51, 0x2160, 0x7e51, false),     // restore to original
+            info(0x1a5f, 0x1a5f, 0x1c50, false),     // reset clean
+        ];
+        let total_cost: u64 = slots.iter().map(sstore_gas_cost).sum();
+        let total_refund: i64 = slots.iter().map(sstore_refund).sum();
+        assert_eq!(total_cost, 100 + 2_900 * 5 + 20_000 + 100);
+        assert_eq!(total_cost, 34_700);
+        assert_eq!(total_refund, 2_800);
+    }
 }

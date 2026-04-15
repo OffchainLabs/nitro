@@ -13,9 +13,13 @@ arb-evm = { workspace = true }
 arb-storage = { workspace = true }
 arb-payload = { workspace = true }
 arb-rpc = { workspace = true }
+arb-stylus = { workspace = true }
 arb-txpool = { workspace = true }
 arbos = { workspace = true }
+alloy-genesis = { workspace = true }
+serde_json = { workspace = true }
 alloy-consensus = { workspace = true }
+alloy-rlp = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -24,6 +28,7 @@ alloy-rpc-types-eth = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-chain-state = { workspace = true }
 reth-consensus = { workspace = true }
+reth-db = { workspace = true }
 reth-db-api = { workspace = true }
 reth-engine-primitives = { workspace = true }
 reth-engine-tree = { workspace = true }
@@ -57,6 +62,7 @@ reth-stages-api = { workspace = true }
 reth-tasks = { workspace = true }
 reth-transaction-pool = { workspace = true }
 reth-trie-db = { workspace = true }
+reth-trie-parallel = { workspace = true }
 async-trait = { workspace = true }
 crossbeam-channel = { workspace = true }
 eyre = { workspace = true }

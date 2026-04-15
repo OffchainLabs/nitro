@@ -1,0 +1,62 @@
+[package]
+name = "alloy-eip7702"
+description = "Implementation of EIP-7702 type definitions"
+
+version = "0.6.3"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+    "-Zunstable-options",
+    "--generate-link-to-definition",
+    "--show-type-layout",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+
+# serde
+serde = { workspace = true, optional = true }
+serde_with = { version = "3", optional = true, default-features = false, features = [
+    "macros",
+] }
+
+# borsh
+borsh = { workspace = true, optional = true, features = ["derive"] }
+
+# arbitrary
+arbitrary = { workspace = true, features = ["derive"], optional = true }
+
+# for signed authorization list arbitrary
+k256 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+# derive_more
+thiserror.workspace = true
+
+[dev-dependencies]
+bincode = "1.3"
+rand = "0.8"
+serde_json.workspace = true
+
+[features]
+default = ["std"]
+std = ["alloy-primitives/std", "alloy-rlp/std", "serde?/std", "thiserror/std", "borsh?/std"]
+serde = ["dep:serde", "alloy-primitives/serde"]
+serde-bincode-compat = ["serde_with"]
+arbitrary = ["std", "dep:arbitrary", "dep:rand", "alloy-primitives/arbitrary"]
+k256 = ["alloy-primitives/k256", "dep:k256"]
+borsh = [
+	"dep:borsh",
+    "alloy-primitives/borsh",
+]

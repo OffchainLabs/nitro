@@ -6,7 +6,7 @@ use arb_storage::Storage;
 /// ArbOS version constants for feature gating.
 pub const ARBOS_VERSION_40: u64 = 40;
 pub const ARBOS_VERSION_50: u64 = 50;
-pub const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 41;
+pub const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 60;
 
 // Initial parameter values.
 const INITIAL_MAX_WASM_SIZE: u32 = 128 * 1024;

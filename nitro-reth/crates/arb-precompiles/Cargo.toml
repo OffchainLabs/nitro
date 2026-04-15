@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
+arb-stylus = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 alloy-sol-types = { workspace = true }
 alloy-evm = { workspace = true }
@@ -16,6 +17,11 @@ revm = { workspace = true }
 revm-primitives = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+rstest = { workspace = true }
+tiny-keccak = { workspace = true }
 
 [lints]
 workspace = true

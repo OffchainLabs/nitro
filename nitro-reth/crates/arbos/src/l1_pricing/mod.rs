@@ -646,32 +646,70 @@ pub fn poster_units_from_bytes(tx_bytes: &[u8], brotli_compression_level: u64) -
 const BROTLI_DEFAULT_WINDOW_SIZE: i32 = 22;
 
 /// Computes the brotli-compressed size at a given compression level.
-///
-/// Uses `BrotliCompressCustomAlloc` with a full-size input buffer to process
-/// the entire input in a single shot. The standard `BrotliCompress` uses a
-/// 4096-byte chunked input buffer which produces different output for inputs
-/// exceeding that size.
 pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
-    let quality = level.min(11) as i32;
-    let params = brotli::enc::BrotliEncoderParams {
-        quality,
-        lgwin: BROTLI_DEFAULT_WINDOW_SIZE,
-        ..Default::default()
-    };
+    use std::{ffi::c_int, os::raw::c_void, ptr};
 
-    let mut compressed = Vec::new();
-    let mut input_buffer = data.to_vec();
-    let mut output_buffer = vec![0u8; data.len() + 1024];
+    type BrotliBool = c_int;
+    const BROTLI_PARAM_QUALITY: u32 = 1;
+    const BROTLI_PARAM_LGWIN: u32 = 2;
+    const BROTLI_OPERATION_FINISH: u32 = 2;
 
-    match brotli::BrotliCompressCustomAlloc(
-        &mut std::io::Cursor::new(data),
-        &mut compressed,
-        &mut input_buffer[..],
-        &mut output_buffer[..],
-        &params,
-        brotli::enc::StandardAlloc::default(),
-    ) {
-        Ok(_) => compressed.len() as u64,
-        Err(_) => data.len() as u64,
+    extern "C" {
+        fn BrotliEncoderCreateInstance(
+            alloc: Option<extern "C" fn(*mut c_void, usize) -> *mut c_void>,
+            free: Option<extern "C" fn(*mut c_void, *mut c_void)>,
+            opaque: *mut c_void,
+        ) -> *mut c_void;
+        fn BrotliEncoderSetParameter(state: *mut c_void, param: u32, value: u32) -> BrotliBool;
+        fn BrotliEncoderCompressStream(
+            state: *mut c_void,
+            op: u32,
+            available_in: *mut usize,
+            next_in: *mut *const u8,
+            available_out: *mut usize,
+            next_out: *mut *mut u8,
+            total_out: *mut usize,
+        ) -> BrotliBool;
+        fn BrotliEncoderIsFinished(state: *const c_void) -> BrotliBool;
+        fn BrotliEncoderDestroyInstance(state: *mut c_void);
+        fn BrotliEncoderMaxCompressedSize(input_size: usize) -> usize;
+    }
+
+    unsafe {
+        let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
+        if state.is_null() {
+            return data.len() as u64;
+        }
+
+        BrotliEncoderSetParameter(state, BROTLI_PARAM_QUALITY, level.min(11) as u32);
+        BrotliEncoderSetParameter(state, BROTLI_PARAM_LGWIN, BROTLI_DEFAULT_WINDOW_SIZE as u32);
+
+        let max_size = BrotliEncoderMaxCompressedSize(data.len());
+        let max_size = max_size.max(data.len() + (data.len() >> 10) * 8 + 64);
+        let mut output = vec![0u8; max_size];
+
+        let mut in_len = data.len();
+        let mut in_ptr = data.as_ptr();
+        let mut out_left = output.len();
+        let mut out_ptr = output.as_mut_ptr();
+        let mut out_len = 0usize;
+
+        let ok = BrotliEncoderCompressStream(
+            state,
+            BROTLI_OPERATION_FINISH,
+            &mut in_len,
+            &mut in_ptr,
+            &mut out_left,
+            &mut out_ptr,
+            &mut out_len,
+        );
+        let finished = BrotliEncoderIsFinished(state);
+        BrotliEncoderDestroyInstance(state);
+
+        if ok != 0 && finished != 0 {
+            out_len as u64
+        } else {
+            data.len() as u64
+        }
     }
 }

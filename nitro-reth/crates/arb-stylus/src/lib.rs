@@ -56,3 +56,89 @@ pub fn strip_stylus_prefix(bytecode: &[u8]) -> Result<(&[u8], u8), &'static str>
     let version = bytecode[3];
     Ok((&bytecode[4..], version))
 }
+
+/// Root Stylus program prefix: `[0xEF, 0xF0, 0x02]`.
+pub const STYLUS_ROOT_DISCRIMINANT: [u8; 3] = [0xEF, 0xF0, 0x02];
+
+/// Fragment prefix: `[0xEF, 0xF0, 0x01]`.
+pub const STYLUS_FRAGMENT_DISCRIMINANT: [u8; 3] = [0xEF, 0xF0, 0x01];
+
+/// Returns `true` if the bytecode is a classic Stylus program (`[0xEF, 0xF0, 0x00, ...]`).
+pub fn is_stylus_classic(bytecode: &[u8]) -> bool {
+    bytecode.len() > 3 && bytecode[..3] == STYLUS_DISCRIMINANT
+}
+
+/// Returns `true` if the bytecode is a Stylus root program (`[0xEF, 0xF0, 0x02, ...]`).
+pub fn is_stylus_root(bytecode: &[u8]) -> bool {
+    bytecode.len() > 3 && bytecode[..3] == STYLUS_ROOT_DISCRIMINANT
+}
+
+/// Returns `true` if the bytecode is a Stylus fragment (`[0xEF, 0xF0, 0x01, ...]`).
+pub fn is_stylus_fragment(bytecode: &[u8]) -> bool {
+    bytecode.len() > 3 && bytecode[..3] == STYLUS_FRAGMENT_DISCRIMINANT
+}
+
+/// Returns `true` if the bytecode is a deployable Stylus program.
+pub fn is_stylus_deployable(bytecode: &[u8], arbos_version: u64) -> bool {
+    use arb_chainspec::arbos_version as av;
+    if arbos_version < av::ARBOS_VERSION_STYLUS {
+        return false;
+    }
+    if arbos_version < av::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
+        return is_stylus_classic(bytecode);
+    }
+    is_stylus_classic(bytecode) || is_stylus_root(bytecode)
+}
+
+/// Decompress a Stylus WASM program from its contract bytecode.
+/// The bytecode format is `[0xEF, 0xF0, 0x00, dict_byte, ...compressed_wasm]`.
+/// Returns the decompressed WASM bytes.
+pub fn decompress_wasm(bytecode: &[u8]) -> eyre::Result<Vec<u8>> {
+    if bytecode.len() < 4 || bytecode[..3] != STYLUS_DISCRIMINANT {
+        eyre::bail!("not a Stylus program");
+    }
+    let dict_byte = bytecode[3];
+    let compressed = &bytecode[4..];
+
+    let dict = match dict_byte {
+        0 => nitro_brotli::Dictionary::Empty,
+        1 => nitro_brotli::Dictionary::StylusProgram,
+        _ => eyre::bail!("unsupported dictionary type: {dict_byte}"),
+    };
+
+    nitro_brotli::decompress(compressed, dict)
+        .map_err(|e| eyre::eyre!("brotli decompression failed: {e:?}"))
+}
+
+/// Activate a Stylus program.
+///
+/// `wasm` must be the decompressed WASM bytes (call `decompress_wasm` first).
+/// `gas` is decremented by the activation cost.
+pub fn activate_program(
+    wasm: &[u8],
+    codehash: &[u8; 32],
+    stylus_version: u16,
+    arbos_version: u64,
+    page_limit: u16,
+    debug: bool,
+    gas: &mut u64,
+) -> eyre::Result<arbos::programs::types::ActivationResult> {
+    let codehash_bytes32 = nitro_arbutil::Bytes32(*codehash);
+    let (_module, stylus_data) = nitro_prover::machine::Module::activate(
+        wasm,
+        &codehash_bytes32,
+        stylus_version,
+        arbos_version,
+        page_limit,
+        debug,
+        gas,
+    )?;
+
+    Ok(arbos::programs::types::ActivationResult {
+        module_hash: alloy_primitives::B256::from(_module.hash().0),
+        init_gas: stylus_data.init_cost,
+        cached_init_gas: stylus_data.cached_init_cost,
+        asm_estimate: stylus_data.asm_estimate,
+        footprint: stylus_data.footprint,
+    })
+}

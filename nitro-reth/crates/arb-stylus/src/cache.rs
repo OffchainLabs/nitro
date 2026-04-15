@@ -132,6 +132,9 @@ impl CompileConfig {
         cranelift.canonicalize_nans(true);
 
         if self.pricing.ink_header_cost > 0 {
+            // Middleware order:
+            //   StartMover -> InkMeter -> DynamicMeter -> DepthChecker -> HeapBound
+            cranelift.push_middleware(Arc::new(middleware::StartMover::new(self.debug.debug_info)));
             cranelift.push_middleware(Arc::new(middleware::InkMeter::new(
                 self.pricing.ink_header_cost,
             )));
@@ -141,6 +144,7 @@ impl CompileConfig {
             )));
             cranelift.push_middleware(Arc::new(middleware::DepthChecker::new(
                 self.bounds.max_frame_size,
+                self.bounds.max_frame_contention,
             )));
             cranelift.push_middleware(Arc::new(middleware::HeapBound::new()));
         }

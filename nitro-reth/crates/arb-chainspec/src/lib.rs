@@ -70,8 +70,8 @@ pub trait ArbitrumChainSpec {
 
 /// Map ArbOS version to the appropriate SpecId.
 pub fn spec_id_by_arbos_version(arbos_version: u64) -> SpecId {
-    if arbos_version >= arbos_version::ARBOS_VERSION_40 {
-        SpecId::PRAGUE
+    if arbos_version >= arbos_version::ARBOS_VERSION_50 {
+        SpecId::OSAKA
     } else if arbos_version >= arbos_version::ARBOS_VERSION_20 {
         SpecId::CANCUN
     } else if arbos_version >= arbos_version::ARBOS_VERSION_11 {

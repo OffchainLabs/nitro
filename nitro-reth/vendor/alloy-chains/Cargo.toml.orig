@@ -1,0 +1,49 @@
+[package]
+name = "alloy-chains"
+description = "Canonical type definitions for EIP-155 chains"
+version = "0.2.30"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Alloy Contributors"]
+license = "MIT OR Apache-2.0"
+keywords = ["ethers", "primitives", "ethereum", "revm", "reth"]
+categories = ["no-std", "data-structures", "cryptography::cryptocurrencies"]
+homepage = "https://github.com/alloy-rs/chains"
+repository = "https://github.com/alloy-rs/chains"
+
+[dependencies]
+num_enum = { version = "0.7", default-features = false }
+strum = { version = "0.27", default-features = false, features = ["derive"] }
+alloy-primitives = { version = "1.0", default-features = false }
+
+# serde
+serde = { version = "1.0", default-features = false, features = [
+    "derive",
+    "alloc",
+], optional = true }
+
+# rlp
+alloy-rlp = { version = "0.3", default-features = false, features = [
+    "derive",
+], optional = true }
+
+# arbitrary
+arbitrary = { version = "1.3", default-features = false, optional = true }
+proptest = { version = "1.5", default-features = false, features = [
+    "alloc",
+], optional = true }
+
+# schema
+schemars = { version = "0.8", optional = true }
+
+[dev-dependencies]
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+
+[features]
+default = ["std"]
+std = ["strum/std", "serde?/std", "alloy-primitives/std"]
+serde = ["dep:serde", "alloy-primitives/serde"]
+rlp = ["dep:alloy-rlp", "alloy-primitives/rlp"]
+arbitrary = ["dep:arbitrary", "dep:proptest", "alloy-primitives/arbitrary"]
+
+schema = ["std", "dep:schemars"]

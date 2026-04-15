@@ -14,6 +14,7 @@ members = [
     "bin/arb-reth",
     "bin/gen-genesis",
 ]
+exclude = ["vendor"]
 resolver = "2"
 
 [workspace.package]
@@ -94,6 +95,8 @@ reth-tokio-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cf
 reth-prune = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-stages-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie-parallel = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
 alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }
@@ -153,13 +156,25 @@ parking_lot = "0.12"
 lazy_static = "1"
 num = "0.4"
 hex = "0.4"
-brotli = "8"
+cc = "1"
 sha2 = "0.10"
 jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"
 dyn-clone = "1"
-wasmer = { version = "4.4", default-features = false, features = ["sys", "cranelift"] }
+wasmer = { path = "vendor/wasmer/lib/api", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
+
+# Nitro Stylus crates (vendored from OffchainLabs/nitro @ d7fe12c77)
+nitro-prover = { package = "prover", path = "vendor/nitro-crates/prover", default-features = false }
+nitro-arbutil = { package = "arbutil", path = "vendor/nitro-crates/arbutil" }
+
+# Transitive deps for Nitro crates
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+wasmparser = "0.121"
+ruint2 = "1.9.0"
+
+# Test deps
+rstest = "0.26"
 
 [workspace.lints.rust]
 unused_must_use = "deny"

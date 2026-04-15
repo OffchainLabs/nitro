@@ -22,76 +22,64 @@ pub const ARBOWNER_ADDRESS: Address = Address::new([
 // ── Selectors ────────────────────────────────────────────────────────
 
 // Getters (also on ArbOwner in Go, though most are on ArbOwnerPublic)
-const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x3e, 0x7a, 0x47, 0xb1];
-const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x74, 0x33, 0x16, 0x04];
-const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x69, 0x9d];
-const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0xaf, 0x03];
-
-// Chain owner management
+const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x2d, 0x91, 0x25, 0xe9];
+const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0xee, 0x95, 0xa8, 0x24];
+const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x7f, 0x68];
+const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0x4e, 0x0f];
 const ADD_CHAIN_OWNER: [u8; 4] = [0x48, 0x1f, 0x8d, 0xbf];
 const REMOVE_CHAIN_OWNER: [u8; 4] = [0x87, 0x92, 0x70, 0x1a];
-
-// Setters — ArbOS root state
-const SET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0xe1, 0xa3, 0x5b, 0x12];
-const SET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x0b, 0x6c, 0xf6, 0x99];
+const SET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0xfc, 0xdd, 0xe2, 0xb4];
+const SET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x57, 0xf5, 0x85, 0xdb];
 const SCHEDULE_ARBOS_UPGRADE: [u8; 4] = [0xe3, 0x88, 0xb3, 0x81];
-const SET_BROTLI_COMPRESSION_LEVEL: [u8; 4] = [0x86, 0x47, 0x23, 0x97];
-const SET_CHAIN_CONFIG: [u8; 4] = [0xf5, 0xb7, 0x78, 0x63];
-
-// Setters — L2 pricing
-const SET_SPEED_LIMIT: [u8; 4] = [0x2e, 0x09, 0xca, 0x2e];
-const SET_L2_BASE_FEE: [u8; 4] = [0x72, 0xbc, 0x8c, 0x42];
-const SET_MINIMUM_L2_BASE_FEE: [u8; 4] = [0xa7, 0x47, 0x14, 0x0c];
-const SET_MAX_BLOCK_GAS_LIMIT: [u8; 4] = [0x20, 0x2c, 0xbf, 0xbd];
-const SET_MAX_TX_GAS_LIMIT: [u8; 4] = [0xa3, 0xb1, 0xb3, 0x1d];
-const SET_L2_GAS_PRICING_INERTIA: [u8; 4] = [0x08, 0x88, 0x56, 0x1e];
-const SET_L2_GAS_BACKLOG_TOLERANCE: [u8; 4] = [0x1e, 0xda, 0xbd, 0xa6];
-const SET_GAS_BACKLOG: [u8; 4] = [0x50, 0x52, 0x48, 0x93];
-const SET_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0xea, 0xe0, 0x29, 0x95];
-const SET_MULTI_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0x9c, 0x04, 0x2d, 0x8e];
-
-// Setters — L1 pricing
-const SET_L1_PRICING_EQUILIBRATION_UNITS: [u8; 4] = [0x69, 0x2c, 0xeb, 0x1e];
-const SET_L1_PRICING_INERTIA: [u8; 4] = [0x77, 0x6d, 0xbb, 0x4e];
-const SET_L1_PRICING_REWARD_RECIPIENT: [u8; 4] = [0xca, 0x27, 0x9e, 0x4e];
-const SET_L1_PRICING_REWARD_RATE: [u8; 4] = [0xee, 0x65, 0x86, 0xc6];
-const SET_L1_PRICE_PER_UNIT: [u8; 4] = [0x63, 0xbe, 0x3f, 0x93];
-const SET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0x07, 0x71, 0xbb, 0xc7];
-const SET_PER_BATCH_GAS_CHARGE: [u8; 4] = [0x8f, 0x69, 0xb8, 0x12];
-const SET_AMORTIZED_COST_CAP_BIPS: [u8; 4] = [0xa4, 0xb8, 0xdb, 0x1e];
-const RELEASE_L1_PRICER_SURPLUS_FUNDS: [u8; 4] = [0xbf, 0xc5, 0x21, 0xee];
-const SET_L1_BASEFEE_ESTIMATE_INERTIA: [u8; 4] = [0x11, 0xc4, 0x8a, 0x7e];
-
-// Setters — Stylus/Wasm
-const SET_INK_PRICE: [u8; 4] = [0x8a, 0x0c, 0x4b, 0x6d];
-const SET_WASM_MAX_STACK_DEPTH: [u8; 4] = [0xf2, 0x41, 0x05, 0xca];
-const SET_WASM_FREE_PAGES: [u8; 4] = [0x53, 0x09, 0xac, 0xc8];
-const SET_WASM_PAGE_GAS: [u8; 4] = [0x82, 0x0b, 0x2b, 0x3d];
-const SET_WASM_PAGE_LIMIT: [u8; 4] = [0x30, 0xc3, 0xb8, 0x41];
-const SET_WASM_MIN_INIT_GAS: [u8; 4] = [0xd2, 0x56, 0x91, 0x32];
-const SET_WASM_INIT_COST_SCALAR: [u8; 4] = [0x7a, 0xaf, 0x8c, 0xa6];
-const SET_WASM_EXPIRY_DAYS: [u8; 4] = [0xd9, 0x13, 0xea, 0x35];
-const SET_WASM_KEEPALIVE_DAYS: [u8; 4] = [0x15, 0x8c, 0x34, 0x18];
-const SET_WASM_BLOCK_CACHE_SIZE: [u8; 4] = [0xce, 0x6e, 0x7e, 0x24];
-const SET_WASM_MAX_SIZE: [u8; 4] = [0x67, 0x00, 0xbb, 0x59];
-const ADD_WASM_CACHE_MANAGER: [u8; 4] = [0x48, 0x28, 0x2e, 0xaf];
-const REMOVE_WASM_CACHE_MANAGER: [u8; 4] = [0x1e, 0xc8, 0xd5, 0x8e];
-const SET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0x79, 0xaf, 0xf2, 0x99];
-const SET_CALLDATA_PRICE_INCREASE: [u8; 4] = [0x03, 0x27, 0x40, 0x3c];
-
-// Transaction filtering / native token
-const ADD_TRANSACTION_FILTERER: [u8; 4] = [0x84, 0x36, 0x3d, 0xbf];
-const REMOVE_TRANSACTION_FILTERER: [u8; 4] = [0xd8, 0x60, 0xf6, 0xc5];
-const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x3d, 0xbb, 0x43, 0x98];
-const IS_TRANSACTION_FILTERER: [u8; 4] = [0xa5, 0x3f, 0xef, 0x64];
-const SET_TRANSACTION_FILTERING_FROM: [u8; 4] = [0x08, 0x36, 0x96, 0x1e];
-const SET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x4a, 0xc0, 0xa0, 0x45];
-const GET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x8b, 0x00, 0x16, 0x72];
-const SET_NATIVE_TOKEN_MANAGEMENT_FROM: [u8; 4] = [0x1b, 0x25, 0x67, 0xaa];
-const ADD_NATIVE_TOKEN_OWNER: [u8; 4] = [0xc2, 0x5d, 0xfe, 0xbb];
-const REMOVE_NATIVE_TOKEN_OWNER: [u8; 4] = [0x52, 0x2e, 0xf9, 0xad];
-const GET_ALL_NATIVE_TOKEN_OWNERS: [u8; 4] = [0xf5, 0xc8, 0x16, 0x7a];
-const IS_NATIVE_TOKEN_OWNER: [u8; 4] = [0x40, 0xb6, 0x62, 0x08];
+const SET_BROTLI_COMPRESSION_LEVEL: [u8; 4] = [0x53, 0x99, 0x12, 0x6f];
+const SET_CHAIN_CONFIG: [u8; 4] = [0xed, 0xa7, 0x32, 0x12];
+const SET_SPEED_LIMIT: [u8; 4] = [0x4d, 0x7a, 0x06, 0x0d];
+const SET_L2_BASE_FEE: [u8; 4] = [0xd9, 0x9b, 0xc8, 0x0e];
+const SET_MINIMUM_L2_BASE_FEE: [u8; 4] = [0xa0, 0x18, 0x8c, 0xdb];
+const SET_MAX_BLOCK_GAS_LIMIT: [u8; 4] = [0xae, 0x10, 0x5c, 0x80];
+const SET_MAX_TX_GAS_LIMIT: [u8; 4] = [0x39, 0x67, 0x36, 0x11];
+const SET_L2_GAS_PRICING_INERTIA: [u8; 4] = [0x3f, 0xd6, 0x2a, 0x29];
+const SET_L2_GAS_BACKLOG_TOLERANCE: [u8; 4] = [0x19, 0x8e, 0x71, 0x57];
+const SET_GAS_BACKLOG: [u8; 4] = [0x68, 0xfc, 0x80, 0x8a];
+const SET_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0xcc, 0x0d, 0x55, 0x6a]; // setGasPricingConstraints(uint64[3][])
+const SET_MULTI_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0x2b, 0x05, 0xbb, 0x39]; // setMultiGasPricingConstraints(((uint8,uint64)[],uint32,uint64,uint64)[])
+const SET_L1_PRICING_EQUILIBRATION_UNITS: [u8; 4] = [0x15, 0x2d, 0xb6, 0x96];
+const SET_L1_PRICING_INERTIA: [u8; 4] = [0x77, 0x5a, 0x82, 0xe9];
+const SET_L1_PRICING_REWARD_RECIPIENT: [u8; 4] = [0x93, 0x4b, 0xe0, 0x7d];
+const SET_L1_PRICING_REWARD_RATE: [u8; 4] = [0xf6, 0x73, 0x95, 0x00];
+const SET_L1_PRICE_PER_UNIT: [u8; 4] = [0x2b, 0x35, 0x2f, 0xae];
+const SET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0x3a, 0x93, 0x0b, 0x0b];
+const SET_PER_BATCH_GAS_CHARGE: [u8; 4] = [0xfa, 0xd7, 0xf2, 0x0b];
+const SET_AMORTIZED_COST_CAP_BIPS: [u8; 4] = [0x56, 0x19, 0x1c, 0xc3];
+const RELEASE_L1_PRICER_SURPLUS_FUNDS: [u8; 4] = [0x31, 0x4b, 0xcf, 0x05];
+const SET_L1_BASEFEE_ESTIMATE_INERTIA: [u8; 4] = [0x71, 0x8f, 0x78, 0x05];
+const SET_INK_PRICE: [u8; 4] = [0x8c, 0x1d, 0x4f, 0xda];
+const SET_WASM_MAX_STACK_DEPTH: [u8; 4] = [0x45, 0x67, 0xcc, 0x8e];
+const SET_WASM_FREE_PAGES: [u8; 4] = [0x3f, 0x37, 0xa8, 0x46];
+const SET_WASM_PAGE_GAS: [u8; 4] = [0xaa, 0xa6, 0x19, 0xe0];
+const SET_WASM_PAGE_LIMIT: [u8; 4] = [0x65, 0x95, 0x38, 0x1a];
+const SET_WASM_MIN_INIT_GAS: [u8; 4] = [0x82, 0x93, 0x40, 0x5e]; // setWasmMinInitGas(uint8,uint16)
+const SET_WASM_INIT_COST_SCALAR: [u8; 4] = [0x67, 0xe0, 0x71, 0x8f];
+const SET_WASM_EXPIRY_DAYS: [u8; 4] = [0xaa, 0xc6, 0x80, 0x18];
+const SET_WASM_KEEPALIVE_DAYS: [u8; 4] = [0x2a, 0x9c, 0xbe, 0x3e];
+const SET_WASM_BLOCK_CACHE_SIZE: [u8; 4] = [0x38, 0x0f, 0x14, 0x57];
+const SET_WASM_MAX_SIZE: [u8; 4] = [0x45, 0x5e, 0xc2, 0xeb];
+const ADD_WASM_CACHE_MANAGER: [u8; 4] = [0xff, 0xdc, 0xa5, 0x15];
+const REMOVE_WASM_CACHE_MANAGER: [u8; 4] = [0xbf, 0x19, 0x73, 0x22];
+const SET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xf1, 0xfe, 0x1a, 0x70];
+const SET_CALLDATA_PRICE_INCREASE: [u8; 4] = [0x8e, 0xb9, 0x11, 0xd9]; // setCalldataPriceIncrease(bool)
+const ADD_TRANSACTION_FILTERER: [u8; 4] = [0x59, 0xc8, 0x7a, 0xcc]; // addTransactionFilterer(address)
+const REMOVE_TRANSACTION_FILTERER: [u8; 4] = [0x67, 0xad, 0xa0, 0x89]; // removeTransactionFilterer(address)
+const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x59, 0x5f, 0xbb, 0x5a]; // getAllTransactionFilterers()
+const IS_TRANSACTION_FILTERER: [u8; 4] = [0xb3, 0x23, 0x52, 0xc3]; // isTransactionFilterer(address)
+const SET_TRANSACTION_FILTERING_FROM: [u8; 4] = [0x46, 0x06, 0x6e, 0x45]; // setTransactionFilteringFrom(uint64)
+const SET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0xb7, 0x9d, 0xa0, 0xe9]; // setFilteredFundsRecipient(address)
+const GET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x3c, 0xaa, 0x5f, 0x12]; // getFilteredFundsRecipient()
+const SET_NATIVE_TOKEN_MANAGEMENT_FROM: [u8; 4] = [0xbd, 0xb8, 0xf7, 0x07]; // setNativeTokenManagementFrom(uint64)
+const ADD_NATIVE_TOKEN_OWNER: [u8; 4] = [0xae, 0xb3, 0xa4, 0x64]; // addNativeTokenOwner(address)
+const REMOVE_NATIVE_TOKEN_OWNER: [u8; 4] = [0x96, 0xa3, 0x75, 0x1d]; // removeNativeTokenOwner(address)
+const GET_ALL_NATIVE_TOKEN_OWNERS: [u8; 4] = [0x3f, 0x86, 0x01, 0xe4]; // getAllNativeTokenOwners()
+const IS_NATIVE_TOKEN_OWNER: [u8; 4] = [0xc6, 0x86, 0xf4, 0xdb]; // isNativeTokenOwner(address)
 
 // ArbOS state offsets
 const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
@@ -139,7 +127,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     // Verify the caller is a chain owner.
@@ -147,19 +135,21 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
+    crate::init_precompile_gas(data.len());
+
     let result = match selector {
         // ── Getters ──────────────────────────────────────────────
         GET_NETWORK_FEE_ACCOUNT => read_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         // GetInfraFeeAccount: ArbOS >= 5
         GET_INFRA_FEE_ACCOUNT => {
-            if let Some(r) = crate::check_method_version(5, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 5, 0) {
                 return r;
             }
             read_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
         }
         // GetFilteredFundsRecipient: ArbOS >= 60
         GET_FILTERED_FUNDS_RECIPIENT => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             read_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
@@ -168,28 +158,28 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_ALL_CHAIN_OWNERS => handle_get_all_chain_owners(&mut input),
         // GetAllTransactionFilterers: ArbOS >= 60
         GET_ALL_TRANSACTION_FILTERERS => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_get_all_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         // GetAllNativeTokenOwners: ArbOS >= 41
         GET_ALL_NATIVE_TOKEN_OWNERS => {
-            if let Some(r) = crate::check_method_version(41, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
                 return r;
             }
             handle_get_all_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
         // IsTransactionFilterer: ArbOS >= 60
         IS_TRANSACTION_FILTERER => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_is_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         // IsNativeTokenOwner: ArbOS >= 41
         IS_NATIVE_TOKEN_OWNER => {
-            if let Some(r) = crate::check_method_version(41, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
                 return r;
             }
             handle_is_member(&mut input, NATIVE_TOKEN_SUBSPACE)
@@ -203,14 +193,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_NETWORK_FEE_ACCOUNT => write_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         // SetInfraFeeAccount: ArbOS >= 5
         SET_INFRA_FEE_ACCOUNT => {
-            if let Some(r) = crate::check_method_version(5, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 5, 0) {
                 return r;
             }
             write_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
         }
         // SetBrotliCompressionLevel: ArbOS >= 20
         SET_BROTLI_COMPRESSION_LEVEL => {
-            if let Some(r) = crate::check_method_version(20, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             write_root_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
@@ -218,56 +208,32 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SCHEDULE_ARBOS_UPGRADE => handle_schedule_upgrade(&mut input),
 
         // ── L2 pricing setters ───────────────────────────────────
-        SET_SPEED_LIMIT => {
-            let val = U256::from_be_slice(
-                input
-                    .data
-                    .get(4..36)
-                    .ok_or_else(|| PrecompileError::other("input too short"))?,
-            );
-            if val.is_zero() {
-                return Err(PrecompileError::other("speed limit must be nonzero"));
+        SET_SPEED_LIMIT => match input.data.get(4..36) {
+            None => Err(PrecompileError::other("input too short")),
+            Some(bytes) if U256::from_be_slice(bytes).is_zero() => {
+                Err(PrecompileError::other("speed limit must be nonzero"))
             }
-            write_l2_field(&mut input, L2_SPEED_LIMIT)
-        }
+            Some(_) => write_l2_field(&mut input, L2_SPEED_LIMIT),
+        },
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
-        // SetMaxBlockGasLimit: ArbOS >= 50
-        SET_MAX_BLOCK_GAS_LIMIT => {
-            if let Some(r) = crate::check_method_version(50, 0) {
-                return r;
+        // Nitro precompiles/ArbOwner.go::SetMaxBlockGasLimit and SetMaxTxGasLimit
+        // call L2PricingState.SetMaxPerBlockGasLimit / SetMaxPerTxGasLimit
+        // unconditionally. The fields live at slots 1 and 7 respectively in the
+        // l2pricing offset enum and exist regardless of ArbOS version.
+        SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
+        SET_MAX_TX_GAS_LIMIT => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
+        SET_L2_GAS_PRICING_INERTIA => match input.data.get(4..36) {
+            None => Err(PrecompileError::other("input too short")),
+            Some(bytes) if U256::from_be_slice(bytes).is_zero() => {
+                Err(PrecompileError::other("price inertia must be nonzero"))
             }
-            write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
-        }
-        SET_MAX_TX_GAS_LIMIT => {
-            // ArbOS < 50: write to per-block gas limit; >= 50: per-tx gas limit.
-            let version_slot = root_slot(0); // VERSION_OFFSET
-            load_arbos(&mut input)?;
-            let raw_version = sload_field(&mut input, version_slot)?.to::<u64>();
-            let arbos_version = raw_version + 55;
-            let offset = if arbos_version < 50 {
-                L2_PER_BLOCK_GAS_LIMIT
-            } else {
-                L2_PER_TX_GAS_LIMIT
-            };
-            write_l2_field(&mut input, offset)
-        }
-        SET_L2_GAS_PRICING_INERTIA => {
-            let val = U256::from_be_slice(
-                input
-                    .data
-                    .get(4..36)
-                    .ok_or_else(|| PrecompileError::other("input too short"))?,
-            );
-            if val.is_zero() {
-                return Err(PrecompileError::other("price inertia must be nonzero"));
-            }
-            write_l2_field(&mut input, L2_PRICING_INERTIA)
-        }
+            Some(_) => write_l2_field(&mut input, L2_PRICING_INERTIA),
+        },
         SET_L2_GAS_BACKLOG_TOLERANCE => write_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
         // SetGasBacklog: ArbOS >= 50
         SET_GAS_BACKLOG => {
-            if let Some(r) = crate::check_method_version(50, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             write_l2_field(&mut input, L2_GAS_BACKLOG)
@@ -281,7 +247,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_L1_PRICE_PER_UNIT => write_l1_field(&mut input, L1_PRICE_PER_UNIT),
         // SetParentGasFloorPerToken: ArbOS >= 50
         SET_PARENT_GAS_FLOOR_PER_TOKEN => {
-            if let Some(r) = crate::check_method_version(50, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             write_l1_field(&mut input, L1_GAS_FLOOR_PER_TOKEN)
@@ -291,7 +257,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_L1_BASEFEE_ESTIMATE_INERTIA => write_l1_field(&mut input, L1_INERTIA),
         // ReleaseL1PricerSurplusFunds: ArbOS >= 10
         RELEASE_L1_PRICER_SURPLUS_FUNDS => {
-            if let Some(r) = crate::check_method_version(10, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 10, 0) {
                 return r;
             }
             handle_release_l1_pricer_surplus_funds(&mut input)
@@ -299,75 +265,75 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // ── Stylus/Wasm parameter setters (all require ArbOS >= 30) ──
         SET_INK_PRICE => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
-            let val = read_u32_param(data)?;
-            if val == 0 || val > 0xFF_FFFF {
-                return Err(PrecompileError::other(
+            match read_u32_param(data) {
+                Err(e) => Err(e),
+                Ok(val) if val == 0 || val > 0xFF_FFFF => Err(PrecompileError::other(
                     "ink price must be a positive uint24",
-                ));
+                )),
+                Ok(val) => write_stylus_param(&mut input, StylusField::InkPrice, val as u64),
             }
-            write_stylus_param(&mut input, StylusField::InkPrice, val as u64)
         }
         SET_WASM_MAX_STACK_DEPTH => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MaxStackDepth, val as u64)
         }
         SET_WASM_FREE_PAGES => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::FreePages, val as u64)
         }
         SET_WASM_PAGE_GAS => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::PageGas, val as u64)
         }
         SET_WASM_PAGE_LIMIT => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::PageLimit, val as u64)
         }
         SET_WASM_MIN_INIT_GAS => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MinInitGas, val as u64)
         }
         SET_WASM_INIT_COST_SCALAR => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::InitCostScalar, val as u64)
         }
         SET_WASM_EXPIRY_DAYS => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::ExpiryDays, val as u64)
         }
         SET_WASM_KEEPALIVE_DAYS => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::KeepaliveDays, val as u64)
         }
         SET_WASM_BLOCK_CACHE_SIZE => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
@@ -375,7 +341,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // SetWasmMaxSize: ArbOS >= 40
         SET_WASM_MAX_SIZE => {
-            if let Some(r) = crate::check_method_version(40, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 40, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
@@ -383,7 +349,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // SetMaxStylusContractFragments: ArbOS >= 60
         SET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             let val = read_u32_param(data)?;
@@ -391,21 +357,21 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // AddWasmCacheManager: ArbOS >= 30
         ADD_WASM_CACHE_MANAGER => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             handle_add_cache_manager(&mut input)
         }
         // RemoveWasmCacheManager: ArbOS >= 30
         REMOVE_WASM_CACHE_MANAGER => {
-            if let Some(r) = crate::check_method_version(30, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
                 return r;
             }
             handle_remove_cache_manager(&mut input)
         }
         // SetCalldataPriceIncrease: ArbOS >= 40
         SET_CALLDATA_PRICE_INCREASE => {
-            if let Some(r) = crate::check_method_version(40, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 40, 0) {
                 return r;
             }
             handle_set_calldata_price_increase(&mut input)
@@ -413,70 +379,79 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // ── Transaction filtering (all ArbOS >= 60) ──────────────
         ADD_TRANSACTION_FILTERER => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_add_to_set_with_feature_check(
                 &mut input,
                 TRANSACTION_FILTERER_SUBSPACE,
                 TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+                Some(b"TransactionFiltererAdded(address)"),
             )
         }
         REMOVE_TRANSACTION_FILTERER => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
-            handle_remove_from_set(&mut input, TRANSACTION_FILTERER_SUBSPACE)
+            handle_remove_from_set(
+                &mut input,
+                TRANSACTION_FILTERER_SUBSPACE,
+                Some(b"TransactionFiltererRemoved(address)"),
+            )
         }
         SET_TRANSACTION_FILTERING_FROM => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_set_feature_time(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
-        // SetFilteredFundsRecipient: ArbOS >= 60
         SET_FILTERED_FUNDS_RECIPIENT => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
-            write_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
+            handle_set_filtered_funds_recipient(&mut input)
         }
 
         // ── Native token management (all ArbOS >= 41) ─────────────
         SET_NATIVE_TOKEN_MANAGEMENT_FROM => {
-            if let Some(r) = crate::check_method_version(41, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
                 return r;
             }
             handle_set_feature_time(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
         ADD_NATIVE_TOKEN_OWNER => {
-            if let Some(r) = crate::check_method_version(41, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
                 return r;
             }
             handle_add_to_set_with_feature_check(
                 &mut input,
                 NATIVE_TOKEN_SUBSPACE,
                 NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+                Some(b"NativeTokenOwnerAdded(address)"),
             )
         }
         REMOVE_NATIVE_TOKEN_OWNER => {
-            if let Some(r) = crate::check_method_version(41, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
                 return r;
             }
-            handle_remove_from_set(&mut input, NATIVE_TOKEN_SUBSPACE)
+            handle_remove_from_set(
+                &mut input,
+                NATIVE_TOKEN_SUBSPACE,
+                Some(b"NativeTokenOwnerRemoved(address)"),
+            )
         }
 
         // ── Gas pricing constraints ──────────────────────────────
         // SetGasPricingConstraints: ArbOS >= 50
         SET_GAS_PRICING_CONSTRAINTS => {
-            if let Some(r) = crate::check_method_version(50, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             handle_set_gas_pricing_constraints(&mut input)
         }
         // SetMultiGasPricingConstraints: ArbOS >= 60
         SET_MULTI_GAS_PRICING_CONSTRAINTS => {
-            if let Some(r) = crate::check_method_version(60, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_set_multi_gas_pricing_constraints(&mut input)
@@ -484,19 +459,22 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // ── Chain config (ArbOS >= 11) ──────────────────────────
         SET_CHAIN_CONFIG => {
-            if let Some(r) = crate::check_method_version(11, 0) {
+            if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
                 return r;
             }
             handle_set_chain_config(&mut input)
         }
 
-        _ => Err(PrecompileError::other("unknown ArbOwner selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
-    // OwnerPrecompile wrapper: all successful calls are free (gas_used = 0).
-    // Emit OwnerActs event on success. In Nitro, this is automatic for all
-    // owner-only calls. For ArbOS < 11: emit for ALL calls (read+write).
-    // For ArbOS >= 11: emit only for write calls (not read-only getters).
+    // Owner-precompile calls are free (gas_used = 0) regardless of outcome.
+    // Reverts must be preserved so bad input is reported, not silently accepted.
+    // ArbOS < 11 emits OwnerActs on read-only getters too; from v11 on, only
+    // write methods do.
     let result = result.map(|output| {
+        if output.reverted {
+            return PrecompileOutput::new_reverted(0, output.bytes);
+        }
         let arbos_version = crate::get_arbos_version();
         let is_read_only = matches!(
             selector,
@@ -533,6 +511,7 @@ fn verify_owner(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> 
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
     let value = sload_field(input, member_slot)?;
+    crate::charge_precompile_gas(800); // IsMember sload
     if value == U256::ZERO {
         return Err(PrecompileError::other(
             "ArbOwner: caller is not a chain owner",
@@ -556,6 +535,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -568,6 +548,7 @@ fn sstore_field(
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
+    crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
 
@@ -583,7 +564,7 @@ fn read_root_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileRe
 fn write_root_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
@@ -594,10 +575,30 @@ fn write_root_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileR
     ))
 }
 
+/// Write FilteredFundsRecipient and emit FilteredFundsRecipientSet(address) event.
+fn handle_set_filtered_funds_recipient(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return crate::burn_all_revert(input.gas);
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    sstore_field(
+        input,
+        root_slot(FILTERED_FUNDS_RECIPIENT_OFFSET),
+        U256::from_be_slice(addr.as_slice()),
+    )?;
+    emit_address_event(input, keccak256("FilteredFundsRecipientSet(address)"), addr);
+    Ok(PrecompileOutput::new(
+        (SSTORE_GAS + COPY_GAS).min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
 fn write_l1_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
@@ -612,7 +613,7 @@ fn write_l1_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileRes
 fn write_l2_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
@@ -627,7 +628,7 @@ fn write_l2_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileRes
 fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 68 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let new_version = U256::from_be_slice(&data[4..36]);
@@ -641,7 +642,6 @@ fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 }
 
 /// Emit the OwnerActs event: OwnerActs(bytes4 method, address owner, bytes data).
-/// Matches Nitro's automatic OwnerActs emission for all owner-only calls.
 fn emit_owner_acts(input: &mut PrecompileInput<'_>, selector: &[u8; 4], calldata: &[u8]) {
     use alloy_primitives::{keccak256, Log, B256};
 
@@ -684,7 +684,7 @@ fn handle_get_all_chain_owners(input: &mut PrecompileInput<'_>) -> PrecompileRes
 fn handle_add_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
@@ -692,7 +692,7 @@ fn handle_add_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     address_set_add(input, address_set_key(CHAIN_OWNER_SUBSPACE), addr)?;
 
     // Emit ChainOwnerAdded event for ArbOS >= 60.
-    let arbos_version = read_arbos_version(input)? + 55;
+    let arbos_version = read_arbos_version(input)?;
     if arbos_version >= 60 {
         let topic0 = keccak256("ChainOwnerAdded(address)");
         let topic1 = B256::left_padding_from(addr.as_slice());
@@ -714,7 +714,7 @@ fn handle_add_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_remove_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
@@ -726,7 +726,7 @@ fn handle_remove_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
     address_set_remove(input, set_key, addr)?;
 
     // Emit ChainOwnerRemoved event for ArbOS >= 60.
-    let arbos_version = read_arbos_version(input)? + 55;
+    let arbos_version = read_arbos_version(input)?;
     if arbos_version >= 60 {
         let topic0 = keccak256("ChainOwnerRemoved(address)");
         let topic1 = B256::left_padding_from(addr.as_slice());
@@ -751,7 +751,7 @@ fn handle_remove_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
 fn handle_release_l1_pricer_surplus_funds(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let max_wei = U256::from_be_slice(&data[4..36]);
@@ -816,7 +816,7 @@ fn is_member_of(
 fn handle_is_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
@@ -1067,7 +1067,7 @@ fn cache_managers_set_key() -> B256 {
 fn handle_add_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
@@ -1082,7 +1082,7 @@ fn handle_add_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult
 fn handle_remove_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
@@ -1105,7 +1105,7 @@ const FEATURE_ENABLE_DELAY: u64 = 7 * 24 * 60 * 60;
 fn handle_set_feature_time(input: &mut PrecompileInput<'_>, time_offset: u64) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let timestamp: u64 = U256::from_be_slice(&data[4..36])
@@ -1151,19 +1151,28 @@ fn handle_set_feature_time(input: &mut PrecompileInput<'_>, time_offset: u64) ->
 }
 
 /// Add an address to an AddressSet, requiring that the feature is enabled.
+fn emit_address_event(input: &mut PrecompileInput<'_>, topic0: B256, addr: Address) {
+    let topic1 = B256::left_padding_from(addr.as_slice());
+    input.internals_mut().log(Log::new_unchecked(
+        ARBOWNER_ADDRESS,
+        vec![topic0, topic1],
+        alloy_primitives::Bytes::new(),
+    ));
+}
+
 fn handle_add_to_set_with_feature_check(
     input: &mut PrecompileInput<'_>,
     subspace: &[u8],
     time_offset: u64,
+    event_signature: Option<&[u8]>,
 ) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
 
-    // Check feature is enabled.
     let enabled_time_val = sload_field(input, root_slot(time_offset))?;
     let enabled_time: u64 = enabled_time_val.try_into().unwrap_or(0);
     let now: u64 = input
@@ -1178,6 +1187,10 @@ fn handle_add_to_set_with_feature_check(
 
     address_set_add(input, address_set_key(subspace), addr)?;
 
+    if let Some(sig) = event_signature {
+        emit_address_event(input, keccak256(sig), addr);
+    }
+
     let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -1186,21 +1199,28 @@ fn handle_add_to_set_with_feature_check(
 }
 
 /// Remove an address from an AddressSet.
-fn handle_remove_from_set(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
+fn handle_remove_from_set(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    event_signature: Option<&[u8]>,
+) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
 
-    // Verify membership first.
     let set_key = address_set_key(subspace);
     if !is_member_of(input, set_key, addr)? {
         return Err(PrecompileError::other("address is not a member"));
     }
 
     address_set_remove(input, set_key, addr)?;
+
+    if let Some(sig) = event_signature {
+        emit_address_event(input, keccak256(sig), addr);
+    }
 
     let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
@@ -1211,8 +1231,9 @@ fn handle_remove_from_set(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> P
 
 // ── Gas constraint storage helpers ───────────────────────────────────
 
-const GC_KEY: &[u8] = b"gc";
-const MGC_KEY: &[u8] = b"mgc";
+// Sub-keys under the L2 pricing subspace for gas constraints storage.
+const GC_KEY: &[u8] = &[0];
+const MGC_KEY: &[u8] = &[1];
 const CONSTRAINT_TARGET: u64 = 0;
 const CONSTRAINT_WINDOW: u64 = 1;
 const CONSTRAINT_BACKLOG: u64 = 2;
@@ -1318,7 +1339,7 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
     let data = input.data;
     // Minimum: selector(4) + offset(32) + length(32) = 68 bytes
     if data.len() < 68 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
 
@@ -1330,7 +1351,7 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
     // Each element is 3 × 32 bytes = 96 bytes.
     let expected_len = 68 + (count as usize) * 96;
     if data.len() < expected_len {
-        return Err(PrecompileError::other("input too short for constraints"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     // Clear existing constraints.
@@ -1396,14 +1417,12 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
 
 // ── SetMultiGasPricingConstraints ────────────────────────────────────
 
-/// ABI: `setMultiGasPricingConstraints((uint64,uint64,uint64,(uint8,uint64)[])[])`
-///
-/// Clears existing multi-gas constraints, then adds each constraint
-/// with per-resource-kind weights. Validates pricing exponents after each add.
+/// ABI: `setMultiGasPricingConstraints(((uint8,uint64)[],uint32,uint64,uint64)[])`.
+/// Each struct has head layout: [resources offset, window_secs, target, backlog].
 fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 68 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
 
@@ -1427,7 +1446,7 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
     for i in 0..count as usize {
         let offset_pos = array_data_start + i * 32;
         if data.len() < offset_pos + 32 {
-            return Err(PrecompileError::other("input too short for struct offsets"));
+            return crate::burn_all_revert(gas_limit);
         }
         let offset: usize = U256::from_be_slice(&data[offset_pos..offset_pos + 32])
             .try_into()
@@ -1440,38 +1459,31 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
     let len_slot = vector_length_slot(vector_key);
 
     for (i, &struct_start) in struct_offsets.iter().enumerate() {
-        // Each struct: target(32) + window(32) + backlog(32) + resources_offset(32) = 128 min
+        // Each struct head is 4 words: resources_offset + window + target + backlog.
         if data.len() < struct_start + 128 {
-            return Err(PrecompileError::other(
-                "input too short for constraint struct",
-            ));
+            return crate::burn_all_revert(gas_limit);
         }
 
-        let target: u64 = U256::from_be_slice(&data[struct_start..struct_start + 32])
+        let resources_offset: usize = U256::from_be_slice(&data[struct_start..struct_start + 32])
             .try_into()
             .unwrap_or(0);
         let window: u64 = U256::from_be_slice(&data[struct_start + 32..struct_start + 64])
             .try_into()
             .unwrap_or(0);
-        let backlog: u64 = U256::from_be_slice(&data[struct_start + 64..struct_start + 96])
+        let target: u64 = U256::from_be_slice(&data[struct_start + 64..struct_start + 96])
+            .try_into()
+            .unwrap_or(0);
+        let backlog: u64 = U256::from_be_slice(&data[struct_start + 96..struct_start + 128])
             .try_into()
             .unwrap_or(0);
 
         if target == 0 || window == 0 {
             return Err(PrecompileError::other("invalid constraint parameters"));
         }
-
-        // Parse resources offset (relative to struct start).
-        let resources_offset: usize =
-            U256::from_be_slice(&data[struct_start + 96..struct_start + 128])
-                .try_into()
-                .unwrap_or(0);
         let resources_start = struct_start + resources_offset;
 
         if data.len() < resources_start + 32 {
-            return Err(PrecompileError::other(
-                "input too short for resources array",
-            ));
+            return crate::burn_all_revert(gas_limit);
         }
 
         let num_resources: usize =
@@ -1485,9 +1497,7 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
         for r in 0..num_resources {
             let r_start = resources_start + 32 + r * 64;
             if data.len() < r_start + 64 {
-                return Err(PrecompileError::other(
-                    "input too short for resource weight",
-                ));
+                return crate::burn_all_revert(gas_limit);
             }
             let resource: u8 = U256::from_be_slice(&data[r_start..r_start + 32])
                 .try_into()
@@ -1582,11 +1592,10 @@ fn validate_multi_gas_exponents(
             continue;
         }
 
-        // divisor = window * target * max_weight (in bips).
+        // exp = (backlog * weight * 10_000) / (window * target * maxWeight)
         let divisor = (window as u128)
             .saturating_mul(target as u128)
             .saturating_mul(max_weight as u128);
-        let divisor_bips = divisor.saturating_mul(10000);
 
         for (r, exponent) in exponents
             .iter_mut()
@@ -1604,9 +1613,11 @@ fn validate_multi_gas_exponents(
                 continue;
             }
 
-            let dividend = (backlog as u128).saturating_mul(weight as u128) * 10000;
-            let exp = if divisor_bips > 0 {
-                (dividend / divisor_bips) as u64
+            let dividend = (backlog as u128)
+                .saturating_mul(weight as u128)
+                .saturating_mul(10_000);
+            let exp = if divisor > 0 {
+                (dividend / divisor) as u64
             } else {
                 0
             };
@@ -1631,7 +1642,7 @@ fn validate_multi_gas_exponents(
 fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 68 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
 
@@ -1641,9 +1652,7 @@ fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult 
         .map_err(|_| PrecompileError::other("bytes length overflow"))?;
 
     if data.len() < 68 + bytes_len {
-        return Err(PrecompileError::other(
-            "input too short for chain config bytes",
-        ));
+        return crate::burn_all_revert(gas_limit);
     }
     let config_bytes = &data[68..68 + bytes_len];
 
@@ -1704,7 +1713,7 @@ fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 fn handle_set_calldata_price_increase(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let enabled = U256::from_be_slice(&data[4..36]) != U256::ZERO;

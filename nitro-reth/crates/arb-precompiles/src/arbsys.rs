@@ -151,10 +151,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         ARB_BLOCK_NUMBER => handle_arb_block_number(&mut input),
@@ -169,7 +170,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         WITHDRAW_ETH => handle_withdraw_eth(&mut input),
         SEND_TX_TO_L1 => handle_send_tx_to_l1(&mut input),
         SEND_MERKLE_TREE_STATE => handle_send_merkle_tree_state(&mut input),
-        _ => Err(PrecompileError::other("unknown ArbSys selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -189,16 +190,28 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 4 + 32 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
-    let requested: u64 = U256::from_be_slice(&data[4..36])
-        .try_into()
-        .unwrap_or(u64::MAX);
+    let requested_u256 = U256::from_be_slice(&data[4..36]);
+    let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
     let current = get_current_l2_block();
 
     // Must be strictly less than current and within 256 blocks.
     if requested >= current || requested + 256 < current {
+        let arbos_version = crate::get_arbos_version();
+        if arbos_version >= 11 {
+            let mut revert_data = Vec::with_capacity(4 + 64);
+            revert_data.extend_from_slice(&[0xd5, 0xdc, 0x64, 0x2d]); // InvalidBlockNumberError
+            revert_data.extend_from_slice(&requested_u256.to_be_bytes::<32>());
+            revert_data.extend_from_slice(&U256::from(current).to_be_bytes::<32>());
+            let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
+            let result_cost = COPY_GAS * words_for_bytes(revert_data.len() as u64);
+            return Ok(PrecompileOutput::new_reverted(
+                STORAGE_READ_COST + args_cost + result_cost,
+                revert_data.into(),
+            ));
+        }
         return Err(PrecompileError::other("invalid block number"));
     }
 
@@ -233,8 +246,7 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // ArbOS version is at root offset 0. Add 55 because the storage value is 0-based (v56 = stored
-    // 1).
+    // User-visible version = 55 + raw stored value.
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
@@ -324,7 +336,7 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
 fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 4 + 64 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     // mapL1SenderContractAddressToL2Alias(address l1_addr, address _unused)
     let l1_addr = Address::from_slice(&data[16..36]);
@@ -360,7 +372,7 @@ fn handle_withdraw_eth(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 + 32 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let destination = Address::from_slice(&data[16..36]);
@@ -377,7 +389,7 @@ fn handle_send_tx_to_l1(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 + 64 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     // sendTxToL1(address destination, bytes calldata)
@@ -411,15 +423,12 @@ fn do_send_tx_to_l1(
 ) -> PrecompileResult {
     let caller = input.caller;
     let value = input.value;
-    // Use the L1 block number from ArbOS state (set by StartBlock), not from
-    // block_env.number (mix_hash). These can differ — the mix_hash value is the
-    // header's L1 block number, while ArbOS state holds the value updated during
-    // StartBlock which is what Nitro's evm.Context.BlockNumber returns.
+    // Read the L1 block number recorded by StartBlock. `block_env.number` holds
+    // the header's mix_hash L1 value, which can lag the StartBlock-updated one.
     let l1_block_number = U256::from(crate::get_l1_block_number_for_evm());
     let l2_block_number = U256::from(get_current_l2_block());
     let timestamp = input.internals().block_timestamp();
 
-    // Gas tracking: match the precompile framework burn pattern.
     let mut gas_used = 0u64;
     // Argument copy cost.
     gas_used += COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
@@ -837,18 +846,68 @@ fn compute_merkle_root(partials: &[B256], size: u64) -> B256 {
 
 // ── L1 alias helpers ─────────────────────────────────────────────────
 
+fn alias_offset_u256() -> U256 {
+    U256::from_be_slice(L1_ALIAS_OFFSET.as_slice())
+}
+
+fn truncate_to_address(v: U256) -> Address {
+    let bytes = v.to_be_bytes::<32>();
+    Address::from_slice(&bytes[12..])
+}
+
 fn apply_l1_alias(addr: Address) -> Address {
-    let mut bytes = [0u8; 20];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = addr.0[i].wrapping_add(L1_ALIAS_OFFSET.0[i]);
-    }
-    Address::new(bytes)
+    let val = U256::from_be_slice(addr.as_slice());
+    truncate_to_address(val.wrapping_add(alias_offset_u256()))
 }
 
 fn undo_l1_alias(addr: Address) -> Address {
-    let mut bytes = [0u8; 20];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = addr.0[i].wrapping_sub(L1_ALIAS_OFFSET.0[i]);
+    let val = U256::from_be_slice(addr.as_slice());
+    truncate_to_address(val.wrapping_sub(alias_offset_u256()))
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+    use alloy_primitives::address;
+
+    #[test]
+    fn alias_simple_no_carry() {
+        let l1 = address!("0000000000000000000000000000000000000000");
+        let aliased = apply_l1_alias(l1);
+        assert_eq!(aliased, L1_ALIAS_OFFSET);
+        assert_eq!(undo_l1_alias(aliased), l1);
     }
-    Address::new(bytes)
+
+    #[test]
+    fn alias_carry_propagates_across_bytes() {
+        let l1 = address!("00ef000000000000000000000000000000000000");
+        let expected = address!("1200000000000000000000000000000000001111");
+        assert_eq!(apply_l1_alias(l1), expected);
+        assert_eq!(undo_l1_alias(expected), l1);
+    }
+
+    #[test]
+    fn alias_wraps_at_160_bits() {
+        // (2^160 - 1) + 0x1111000000000000000000000000000000001111
+        //   = 2^160 + (0x1111000000000000000000000000000000001110)
+        //   ≡ 0x1111000000000000000000000000000000001110 (mod 2^160)
+        let l1 = address!("ffffffffffffffffffffffffffffffffffffffff");
+        let expected = address!("1111000000000000000000000000000000001110");
+        assert_eq!(apply_l1_alias(l1), expected);
+        assert_eq!(undo_l1_alias(expected), l1);
+    }
+
+    #[test]
+    fn alias_inverse_round_trip() {
+        let cases = [
+            address!("0123456789abcdef0123456789abcdef01234567"),
+            address!("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
+            address!("ffeeffeeffeeffeeffeeffeeffeeffeeffeeffee"),
+        ];
+        for addr in cases {
+            let aliased = apply_l1_alias(addr);
+            let restored = undo_l1_alias(aliased);
+            assert_eq!(restored, addr, "round trip failed for {addr}");
+        }
+    }
 }

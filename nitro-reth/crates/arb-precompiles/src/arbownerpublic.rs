@@ -16,23 +16,23 @@ pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
 ]);
 
 // Function selectors.
-const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x3e, 0x7a, 0x47, 0xb1];
-const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x74, 0x33, 0x16, 0x04];
-const GET_BROTLI_COMPRESSION_LEVEL: [u8; 4] = [0xb1, 0x9e, 0x6b, 0xef];
-const GET_SCHEDULED_UPGRADE: [u8; 4] = [0xed, 0x23, 0xfa, 0x57];
-const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x69, 0x9d];
-const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0xaf, 0x03];
-const RECTIFY_CHAIN_OWNER: [u8; 4] = [0x18, 0x3b, 0xe5, 0xf2];
-const IS_NATIVE_TOKEN_OWNER: [u8; 4] = [0x40, 0xb6, 0x62, 0x08];
-const GET_ALL_NATIVE_TOKEN_OWNERS: [u8; 4] = [0xf5, 0xc8, 0x16, 0x7a];
-const GET_NATIVE_TOKEN_MANAGEMENT_FROM: [u8; 4] = [0xaa, 0x57, 0x87, 0x88];
-const GET_TRANSACTION_FILTERING_FROM: [u8; 4] = [0x7a, 0x86, 0xfe, 0x96];
-const IS_TRANSACTION_FILTERER: [u8; 4] = [0xa5, 0x3f, 0xef, 0x64];
-const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x3d, 0xbb, 0x43, 0x98];
-const GET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x8b, 0x00, 0x16, 0x72];
-const IS_CALLDATA_PRICE_INCREASE_ENABLED: [u8; 4] = [0x7f, 0xe5, 0x5a, 0x2f];
-const GET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0xee, 0x36, 0x03, 0x8e];
-const GET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xea, 0x25, 0x8c, 0x64];
+const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x2d, 0x91, 0x25, 0xe9];
+const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0xee, 0x95, 0xa8, 0x24];
+const GET_BROTLI_COMPRESSION_LEVEL: [u8; 4] = [0x22, 0xd4, 0x99, 0xc7];
+const GET_SCHEDULED_UPGRADE: [u8; 4] = [0x81, 0xef, 0x94, 0x4c];
+const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x7f, 0x68];
+const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0x4e, 0x0f];
+const RECTIFY_CHAIN_OWNER: [u8; 4] = [0x6f, 0xe8, 0x63, 0x73];
+const IS_NATIVE_TOKEN_OWNER: [u8; 4] = [0xc6, 0x86, 0xf4, 0xdb];
+const GET_ALL_NATIVE_TOKEN_OWNERS: [u8; 4] = [0x3f, 0x86, 0x01, 0xe4];
+const GET_NATIVE_TOKEN_MANAGEMENT_FROM: [u8; 4] = [0x3f, 0xec, 0xba, 0xb0];
+const GET_TRANSACTION_FILTERING_FROM: [u8; 4] = [0xc1, 0xd3, 0x55, 0xb8]; // getTransactionFilteringFrom()
+const IS_TRANSACTION_FILTERER: [u8; 4] = [0xb3, 0x23, 0x52, 0xc3]; // isTransactionFilterer(address)
+const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x59, 0x5f, 0xbb, 0x5a]; // getAllTransactionFilterers()
+const GET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x3c, 0xaa, 0x5f, 0x12]; // getFilteredFundsRecipient()
+const IS_CALLDATA_PRICE_INCREASE_ENABLED: [u8; 4] = [0x2a, 0xa9, 0x55, 0x1e];
+const GET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0x49, 0xcc, 0xda, 0xff];
+const GET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xe5, 0xa7, 0xf8, 0x93];
 
 // ArbOS state offsets (from arbosState).
 const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
@@ -45,6 +45,7 @@ const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
 const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
 const SLOAD_GAS: u64 = 800;
+const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
 pub fn create_arbownerpublic_precompile() -> DynPrecompile {
@@ -55,98 +56,52 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
+
+    crate::init_precompile_gas(data.len());
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
     let result = match selector {
         GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        // GetInfraFeeAccount: ArbOS >= 5
+        // Nitro precompiles/ArbOwnerPublic.go::GetInfraFeeAccount returns
+        // NetworkFeeAccount when ArbOSVersion < 6, otherwise InfraFeeAccount.
         GET_INFRA_FEE_ACCOUNT => {
-            if let Some(r) = crate::check_method_version(5, 0) {
-                return r;
+            if crate::get_arbos_version() < 6 {
+                read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
+            } else {
+                read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
             }
-            read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
         }
-        // GetBrotliCompressionLevel: ArbOS >= 20
         GET_BROTLI_COMPRESSION_LEVEL => {
-            if let Some(r) = crate::check_method_version(20, 0) {
-                return r;
-            }
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
-        // GetScheduledUpgrade: ArbOS >= 20
-        GET_SCHEDULED_UPGRADE => {
-            if let Some(r) = crate::check_method_version(20, 0) {
-                return r;
-            }
-            handle_scheduled_upgrade(&mut input)
-        }
+        GET_SCHEDULED_UPGRADE => handle_scheduled_upgrade(&mut input),
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
-        // RectifyChainOwner: ArbOS >= 11
-        RECTIFY_CHAIN_OWNER => {
-            if let Some(r) = crate::check_method_version(11, 0) {
-                return r;
-            }
-            let gas_cost = (SLOAD_GAS + COPY_GAS).min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
-        }
-        // IsNativeTokenOwner: ArbOS >= 41
-        IS_NATIVE_TOKEN_OWNER => {
-            if let Some(r) = crate::check_method_version(41, 0) {
-                return r;
-            }
-            handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE)
-        }
-        // IsTransactionFilterer: ArbOS >= 60 (TransactionFiltering)
-        IS_TRANSACTION_FILTERER => {
-            if let Some(r) = crate::check_method_version(60, 0) {
-                return r;
-            }
-            handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
-        }
-        // GetAllNativeTokenOwners: ArbOS >= 41
+        RECTIFY_CHAIN_OWNER => handle_rectify_chain_owner(&mut input),
+        // Nitro precompiles/ArbOwnerPublic.go does NOT version-gate any of the
+        // following; they just call the underlying state, which returns the
+        // zero value when uninitialized.
+        IS_NATIVE_TOKEN_OWNER => handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE),
+        IS_TRANSACTION_FILTERER => handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE),
         GET_ALL_NATIVE_TOKEN_OWNERS => {
-            if let Some(r) = crate::check_method_version(41, 0) {
-                return r;
-            }
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
-        // GetAllTransactionFilterers: ArbOS >= 60 (TransactionFiltering)
         GET_ALL_TRANSACTION_FILTERERS => {
-            if let Some(r) = crate::check_method_version(60, 0) {
-                return r;
-            }
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
-        // GetNativeTokenManagementFrom: ArbOS >= 50
         GET_NATIVE_TOKEN_MANAGEMENT_FROM => {
-            if let Some(r) = crate::check_method_version(50, 0) {
-                return r;
-            }
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
-        // GetTransactionFilteringFrom: ArbOS >= 60 (TransactionFiltering)
         GET_TRANSACTION_FILTERING_FROM => {
-            if let Some(r) = crate::check_method_version(60, 0) {
-                return r;
-            }
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
-        // GetFilteredFundsRecipient: ArbOS >= 60 (TransactionFiltering)
         GET_FILTERED_FUNDS_RECIPIENT => {
-            if let Some(r) = crate::check_method_version(60, 0) {
-                return r;
-            }
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
-        // IsCalldataPriceIncreaseEnabled: ArbOS >= 40
         IS_CALLDATA_PRICE_INCREASE_ENABLED => {
-            if let Some(r) = crate::check_method_version(40, 0) {
-                return r;
-            }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
@@ -159,11 +114,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 enabled.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        // GetParentGasFloorPerToken: ArbOS >= 50
         GET_PARENT_GAS_FLOOR_PER_TOKEN => {
-            if let Some(r) = crate::check_method_version(50, 0) {
-                return r;
-            }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
@@ -173,16 +124,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        // GetMaxStylusContractFragments: ArbOS >= 60 (StylusContractLimit)
         GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            if let Some(r) = crate::check_method_version(60, 0) {
-                return r;
-            }
             // OAS(800) + Params() burn(100) + resultCost(3).
             let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }
-        _ => Err(PrecompileError::other("unknown ArbOwnerPublic selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -202,7 +149,21 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
+}
+
+fn sstore_field(
+    input: &mut PrecompileInput<'_>,
+    slot: U256,
+    value: U256,
+) -> Result<(), PrecompileError> {
+    input
+        .internals_mut()
+        .sstore(ARBOS_STATE_ADDRESS, slot, value)
+        .map_err(|_| PrecompileError::other("sstore failed"))?;
+    crate::charge_precompile_gas(SSTORE_GAS);
+    Ok(())
 }
 
 fn read_state_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
@@ -234,10 +195,78 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     ))
 }
 
+fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return crate::burn_all_revert(input.gas);
+    }
+
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    load_arbos(input)?;
+
+    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
+    let addr_hash = alloy_primitives::B256::left_padding_from(addr.as_slice());
+
+    // IsMember check
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let slot_val = sload_field(input, member_slot)?;
+    if slot_val == U256::ZERO {
+        return Err(PrecompileError::other("not an owner"));
+    }
+
+    // Check if mapping is already correct
+    let slot_idx: u64 = slot_val
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid slot"))?;
+    let at_slot_key = map_slot(set_key.as_slice(), slot_idx);
+    let at_slot_val = sload_field(input, at_slot_key)?;
+    let size_slot = map_slot(set_key.as_slice(), 0);
+    let size: u64 = sload_field(input, size_slot)?
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid size"))?;
+
+    // Compare: backingStorage[slot] should store the address as U256
+    let addr_as_u256 = U256::from_be_slice(addr.as_slice());
+    if at_slot_val == addr_as_u256 && slot_idx <= size {
+        return Err(PrecompileError::other("already correctly mapped"));
+    }
+
+    // Clear byAddress mapping, then re-add
+    sstore_field(input, member_slot, U256::ZERO)?;
+
+    // Re-add using same logic as address_set_add in arbowner.rs
+    let new_size = size + 1;
+    let new_pos_slot = map_slot(set_key.as_slice(), new_size);
+    sstore_field(input, new_pos_slot, addr_as_u256)?;
+    sstore_field(input, member_slot, U256::from(new_size))?;
+    sstore_field(input, size_slot, U256::from(new_size))?;
+
+    // Emit ChainOwnerRectified(address) event
+    let topic0 = alloy_primitives::keccak256("ChainOwnerRectified(address)");
+    input
+        .internals_mut()
+        .log(alloy_primitives::Log::new_unchecked(
+            ARBOWNERPUBLIC_ADDRESS,
+            vec![topic0],
+            addr_hash.0.to_vec().into(),
+        ));
+
+    const SSTORE_ZERO_GAS: u64 = 5_000;
+    const RECTIFY_EVENT_GAS: u64 = 1_006; // LOG1 + 32 bytes data
+    let gas_used =
+        SLOAD_GAS + 7 * SLOAD_GAS + SSTORE_ZERO_GAS + 3 * SSTORE_GAS + RECTIFY_EVENT_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
 fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -299,7 +328,7 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_is_set_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);

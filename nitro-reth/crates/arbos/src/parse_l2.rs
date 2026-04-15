@@ -157,9 +157,9 @@ fn parse_l2_message(
             "L2 message kind SignedCompressedTx is unimplemented",
         )),
         L2_MESSAGE_KIND_SIGNED_TX => {
-            // Decode and validate the tx type: reject Arbitrum internal types and blob txs.
-            // Chain ID is NOT checked here — legacy txs with v=27/28 (no EIP-155
-            // chain ID) are valid (e.g. deterministic deploy txs).
+            // Reject Arbitrum internal types and blob txs. Chain ID is not
+            // checked here — legacy txs with `v = 27/28` (no EIP-155 chain
+            // ID) are valid (e.g. deterministic deploy txs).
             match ArbTransactionSigned::decode_2718(&mut &payload[..]) {
                 Ok(tx) => {
                     let ty = tx.ty();
@@ -193,7 +193,6 @@ fn parse_l2_message(
                 if segment.len() > MAX_L2_MESSAGE_SIZE {
                     break;
                 }
-                // Derive sub-request ID if parent has one
                 let sub_request_id = request_id.map(|parent_id| {
                     let mut preimage = [0u8; 64];
                     preimage[..32].copy_from_slice(parent_id.as_slice());
@@ -326,8 +325,7 @@ fn parse_l2_funded_by_l1(
         _ => U256::ZERO,
     };
 
-    // Nitro's ArbitrumDepositTx for L2FundedByL1 has From unset (= zero)
-    // and To = header.Poster. Matches Go struct initialization default.
+    // L2FundedByL1 deposit: `from` is zero and `to` is the poster.
     let deposit = ParsedTransaction::EthDeposit {
         from: Address::ZERO,
         to: poster,

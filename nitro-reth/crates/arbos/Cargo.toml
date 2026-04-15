@@ -16,7 +16,9 @@ alloy-rlp = { workspace = true }
 revm = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-brotli = { workspace = true }
+
+[build-dependencies]
+cc = "1"
 
 [lints]
 workspace = true

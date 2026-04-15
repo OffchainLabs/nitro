@@ -12,10 +12,14 @@ pub fn create_arbdebug_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbdebug"), handler)
 }
 
-fn handler(_input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     // ArbDebug is gated by the DebugPrecompile wrapper in Go.
     // In production, all calls are rejected.
-    Err(PrecompileError::other(
-        "ArbDebug is only available in debug mode",
-    ))
+    crate::init_precompile_gas(input.data.len());
+    crate::gas_check(
+        input.gas,
+        Err(PrecompileError::other(
+            "ArbDebug is only available in debug mode",
+        )),
+    )
 }

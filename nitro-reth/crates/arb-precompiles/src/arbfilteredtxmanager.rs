@@ -1,11 +1,19 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
     ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
 };
+
+fn filtered_added_topic() -> B256 {
+    keccak256("FilteredTransactionAdded(bytes32)")
+}
+
+fn filtered_deleted_topic() -> B256 {
+    keccak256("FilteredTransactionDeleted(bytes32)")
+}
 
 /// ArbFilteredTransactionsManager precompile address (0x74).
 pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
@@ -14,9 +22,9 @@ pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
 ]);
 
 // Function selectors.
-const ADD_FILTERED_TX: [u8; 4] = [0xbf, 0xc1, 0xd5, 0x0e];
-const DELETE_FILTERED_TX: [u8; 4] = [0x0b, 0x23, 0x48, 0x5a];
-const IS_TX_FILTERED: [u8; 4] = [0x37, 0x94, 0x6f, 0x6a];
+const ADD_FILTERED_TX: [u8; 4] = [0xcb, 0x47, 0x04, 0x91]; // addFilteredTransaction(bytes32)
+const DELETE_FILTERED_TX: [u8; 4] = [0xd2, 0x63, 0x74, 0xb1]; // deleteFilteredTransaction(bytes32)
+const IS_TX_FILTERED: [u8; 4] = [0x85, 0xc7, 0x33, 0xa4]; // isTransactionFiltered(bytes32)
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
@@ -39,16 +47,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+
+    crate::init_precompile_gas(data.len());
 
     let result = match selector {
         ADD_FILTERED_TX => handle_add_filtered_tx(&mut input),
         DELETE_FILTERED_TX => handle_delete_filtered_tx(&mut input),
         IS_TX_FILTERED => handle_is_tx_filtered(&mut input),
-        _ => Err(PrecompileError::other("unknown selector")),
+        _ => return crate::burn_all_revert(input.gas),
     };
     crate::gas_check(input.gas, result)
 }
@@ -120,7 +130,7 @@ fn is_transaction_filterer(
 fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -145,7 +155,7 @@ fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -162,6 +172,12 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let slot = filtered_tx_slot(&tx_hash);
     sstore_filtered(input, slot, PRESENT_VALUE)?;
 
+    input.internals_mut().log(Log::new_unchecked(
+        ARBFILTEREDTXMANAGER_ADDRESS,
+        vec![filtered_added_topic(), tx_hash],
+        Default::default(),
+    ));
+
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -173,7 +189,7 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -189,6 +205,12 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     let slot = filtered_tx_slot(&tx_hash);
     sstore_filtered(input, slot, U256::ZERO)?;
+
+    input.internals_mut().log(Log::new_unchecked(
+        ARBFILTEREDTXMANAGER_ADDRESS,
+        vec![filtered_deleted_topic(), tx_hash],
+        Default::default(),
+    ));
 
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(

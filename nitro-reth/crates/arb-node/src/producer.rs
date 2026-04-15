@@ -4,7 +4,7 @@
 //! executing them against the current state, and persisting the results.
 
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 
@@ -71,13 +71,6 @@ where
 pub const DEFAULT_FLUSH_INTERVAL: u64 = 128;
 
 /// Block producer using reth's save_blocks(Full) for persistence.
-///
-/// Execution happens on the producer thread. After execution, blocks are:
-/// 1. Added to `CanonicalInMemoryState` (immediate, for next block's state)
-/// 2. Accumulated until flush_interval, then persisted via save_blocks(Full)
-///
-/// save_blocks(Full) writes ALL tables including history indices — this is
-/// the same persistence path as reth's Pipeline/ExecutionStage.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
     chain_spec: Arc<ChainSpec>,
@@ -87,6 +80,8 @@ pub struct ArbBlockProducer<Provider> {
     blocks_since_flush: AtomicU64,
     flush_interval: u64,
     accumulated_trie_input: Mutex<TrieInput>,
+    flushing_trie_input: Mutex<Option<TrieInput>>,
+    pending_flush: AtomicBool,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
@@ -112,6 +107,8 @@ where
             blocks_since_flush: AtomicU64::new(0),
             flush_interval,
             accumulated_trie_input: Mutex::new(TrieInput::default()),
+            flushing_trie_input: Mutex::new(None),
+            pending_flush: AtomicBool::new(false),
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -156,9 +153,26 @@ where
         input: &BlockProductionInput,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
+        // Check if a background flush completed.
+        if self.pending_flush.load(Ordering::SeqCst) {
+            if let Some(result) = crate::launcher::try_flush_result() {
+                self.in_memory_state
+                    .remove_persisted_blocks(result.last_num_hash);
+                *self.flushing_trie_input.lock() = None;
+                self.pending_flush.store(false, Ordering::SeqCst);
+                info!(
+                    target: "block_producer",
+                    flushed = result.count,
+                    last_block = result.last_num_hash.number,
+                    duration_ms = result.duration.as_millis(),
+                    "Background flush completed"
+                );
+            }
+        }
+
         let head_num = self.head_block_number()?;
-        let parent_header = self.parent_header(head_num)?;
         let l2_block_number = head_num + 1;
+        let parent_header = self.parent_header(head_num)?;
 
         let timestamp = input.l1_timestamp.max(parent_header.timestamp());
         let time_passed = timestamp.saturating_sub(parent_header.timestamp());
@@ -178,15 +192,13 @@ where
         };
         let provisional_mix_hash = compute_mix_hash(send_count, l1_block_number, arbos_version);
 
-        // Open state at parent block via block hash (matches reth fork pattern).
+        // Open state at parent block via block hash.
         let state_provider = self
             .provider
             .state_by_block_hash(parent_header.hash())
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
         // Read the L2 baseFee from the parent's committed state.
-        // This is the value written by the parent block's StartBlock — the correct
-        // baseFee for this block's header and EVM execution.
         let l2_base_fee = {
             let read_slot = |addr: Address, slot: B256| -> Option<U256> {
                 state_provider.storage(addr, slot).ok().flatten()
@@ -224,21 +236,35 @@ where
             .evm_env(&provisional_header)
             .map_err(|_| BlockProducerError::Execution("evm_env construction failed".into()))?;
 
-        // without_state_clear() disables EIP-161 empty account pruning.
-        // Arbitrum needs this for zombie accounts (e.g. retryable escrow
-        // accounts that are created and destroyed within a single block).
+        // Collect bytecodes from in-memory blocks that might not be flushed to DB yet.
+        // When a Stylus contract is deployed in a recent block and the flush hasn't
+        // persisted it yet, the DB's Bytecodes table won't have the code. The
+        // State<DB>'s `code_by_hash` with `use_preloaded_bundle` will check the
+        // bundle_state.contracts before falling back to the DB, ensuring all
+        // bytecodes from recent blocks are available during execution.
+        let prestate = {
+            let mut bundle = BundleState::default();
+            if let Some(head_state) = self.in_memory_state.head_state() {
+                for block_state in head_state.chain() {
+                    let exec_output = &block_state.block().execution_output;
+                    for (hash, code) in &exec_output.state.contracts {
+                        bundle.contracts.entry(*hash).or_insert(code.clone());
+                    }
+                }
+            }
+            bundle
+        };
+
         let mut db = StateBuilder::new()
             .with_database(StateProviderDatabase::new(state_provider.as_ref()))
+            .with_bundle_prestate(prestate)
             .with_bundle_update()
             .without_state_clear()
             .build();
 
         let chain_id = self.chain_spec.chain().id();
 
-        // If Init params were cached, apply ArbOS initialization now.
-        // This makes the Init state changes part of block 1's delta so the
-        // state root correctly includes both Init and execution changes.
-        // Skip if genesis alloc already includes ArbOS state.
+        // Apply cached ArbOS Init during block 1 if not already in genesis.
         if let Some(init_msg) = self.cached_init.lock().take() {
             if !genesis::is_arbos_initialized(&mut db) {
                 info!(
@@ -262,10 +288,8 @@ where
             }
         }
 
-        // Build execution context: extra_data carries send_root + delayed_messages_read.
         let parent_extra = parent_header.extra_data().to_vec();
         let mut exec_extra = parent_extra.clone();
-        // Append delayed_messages_read as bytes 32..39.
         exec_extra.resize(32, 0);
         exec_extra.extend_from_slice(&input.delayed_messages_read.to_be_bytes());
 
@@ -291,10 +315,7 @@ where
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = l1_block_number;
 
-        // Add the parent hash to the L2 block hash cache for arbBlockHash().
-        // The cache persists across blocks (static HashMap), so we only need
-        // to add one new entry per block. Old entries remain from previous blocks.
-        // First block populates the full 256 entries; subsequent blocks add 1.
+        // Populate L2 block hash cache for arbBlockHash().
         {
             let parent_num = l2_block_number.saturating_sub(1);
             arb_precompiles::set_l2_block_hash(parent_num, parent_header.hash());
@@ -393,28 +414,18 @@ where
             let signed_tx = match parsed_tx_to_signed(parsed, chain_id) {
                 Some(tx) => tx,
                 None => {
-                    debug!(
-                        target: "block_producer",
-                        ?parsed,
-                        "Skipping unparseable transaction"
-                    );
+                    debug!(target: "block_producer", ?parsed, "Skipping unparseable transaction");
                     continue;
                 }
             };
 
-            // Recover the signer to get a Recovered<ArbTransactionSigned>.
             let recovered = match signed_tx.clone().try_into_recovered() {
                 Ok(r) => r,
                 Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Failed to recover tx sender, skipping"
-                    );
+                    warn!(target: "block_producer", error = %e, "Failed to recover tx sender, skipping");
                     continue;
                 }
             };
-
             match executor.execute_transaction_without_commit(recovered) {
                 Ok(result) => {
                     match executor.commit_transaction(result) {
@@ -483,70 +494,40 @@ where
                             }
                         }
                         Err(e) => {
-                            warn!(
-                                target: "block_producer",
-                                error = %e,
-                                "Failed to commit transaction"
-                            );
+                            warn!(target: "block_producer", error = %e, "Failed to commit transaction");
                         }
                     }
                 }
                 Err(ref e) if e.to_string().contains("block gas limit reached") => {
-                    debug!(
-                        target: "block_producer",
-                        "Block gas limit reached, stopping execution"
-                    );
                     break;
                 }
                 Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Transaction execution failed, skipping"
-                    );
+                    warn!(target: "block_producer", error = %e, "Transaction execution failed, skipping");
                 }
             }
         }
 
-        // Extract zombie accounts before finish() consumes the executor.
-        // Zombie accounts are empty accounts preserved by pre-Stylus ArbOS
-        // (CreateZombieIfDeleted) and must NOT be deleted during EIP-161 cleanup.
         let zombie_accounts = executor.zombie_accounts().clone();
         let finalise_deleted = executor.finalise_deleted().clone();
 
-        // Finalize execution: finish() consumes the executor and returns
-        // the EVM and BlockExecutionResult containing receipts.
         let (_, exec_result) = executor
             .finish()
             .map_err(|e| BlockProducerError::Execution(format!("finish: {e}")))?;
 
         let receipts: Vec<arb_primitives::ArbReceipt> = exec_result.receipts;
 
-        // After executor is dropped, we can access the db again.
         db.merge_transitions(BundleRetention::Reverts);
         let mut bundle = db.take_bundle();
 
-        // Augment bundle with direct cache modifications (bypass txs,
-        // post-commit hooks) that didn't go through revm's commit.
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
-        // Mark per-tx finalise deletions in the bundle.
-        // Accounts deleted by per-tx EIP-161 cleanup are kept in the cache
-        // as Destroyed (account=None) so augment_bundle_from_cache handles
-        // them. This loop serves as a safety net and handles zombie checks.
-        //
-        // Skip accounts that were later re-created as zombies — those are
-        // valid empty accounts that must persist in the trie.
+        // Mark per-tx finalise deletions, skipping zombie accounts.
         let keccak_empty_hash = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
         for addr in &finalise_deleted {
-            // Zombie accounts were re-created after Finalise deleted them.
-            // They're back in cache and handled by augment_bundle_from_cache.
             if zombie_accounts.contains(addr) {
                 continue;
             }
             if bundle.state.contains_key(addr) {
-                // Account is in bundle from EVM transitions. Check whether
-                // it existed in the trie before this block.
                 let existed_before = state_provider.basic_account(addr).ok().flatten().is_some();
                 if existed_before {
                     // Account was in the trie. Only mark as deleted if it's
@@ -567,10 +548,6 @@ where
                         }
                     }
                 } else {
-                    // Account was created within this block. It may have been
-                    // emptied and then re-created (e.g., sender emptied after
-                    // SubmitRetryable, then nonce incremented during RetryTx).
-                    // Only remove if the account is still empty.
                     let still_empty = bundle
                         .state
                         .get(addr)
@@ -605,14 +582,7 @@ where
             }
         }
 
-        // Filter bundle to only include actually changed storage slots.
-        // revm's bundle may include storage slots that were loaded (read) but
-        // not modified. Including unchanged slots in the HashedPostState would
-        // produce an incorrect state root.
         filter_unchanged_storage(&mut bundle);
-
-        // Delete empty accounts from the bundle (EIP-161).
-        // Zombie accounts are preserved.
         delete_empty_accounts(&mut bundle, &zombie_accounts, &*state_provider);
 
         let hashed_state =
@@ -620,23 +590,28 @@ where
 
         let (state_root, trie_updates) = {
             let mut acc = self.accumulated_trie_input.lock();
-            let mut input = acc.clone();
+            let flushing = self.flushing_trie_input.lock();
+
+            // Merge flushing overlay (if flush in progress) + accumulated + this block.
+            let mut input = if let Some(ref flushing) = *flushing {
+                let mut base = flushing.clone();
+                base.nodes.extend(acc.nodes.clone());
+                base.state.extend(acc.state.clone());
+                base.prefix_sets.extend(acc.prefix_sets.clone());
+                base
+            } else {
+                acc.clone()
+            };
+            drop(flushing);
+
             input.append(hashed_state.clone());
-            let (root, updates) = state_provider
-                .state_root_from_nodes_with_updates(input)
+
+            let (root, updates) = crate::launcher::compute_parallel_state_root(input)
                 .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+
             acc.append_cached(updates.clone(), hashed_state.clone());
             (root, updates)
         };
-
-        debug!(
-            target: "block_producer",
-            changed_accounts = hashed_state.accounts.len(),
-            changed_storages = hashed_state.storages.len(),
-            total_storage_slots = hashed_state.storages.values().map(|s| s.storage.len()).sum::<usize>(),
-            ?state_root,
-            "HashedPostState from bundle"
-        );
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
@@ -719,8 +694,7 @@ where
         let sealed = reth_primitives_traits::SealedBlock::seal_slow(block);
         let block_hash = sealed.hash();
 
-        // Buffer block in memory instead of persisting immediately.
-        // This avoids a per-block fsync, batching writes for much higher throughput.
+        // Buffer block in memory for batched persistence.
         {
             use alloy_evm::block::BlockExecutionResult;
             use reth_chain_state::ComputedTrieData;
@@ -755,10 +729,10 @@ where
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
-        // Flush to DB via reth's save_blocks(Full) when buffer threshold reached.
+        // Start async flush when buffer threshold reached (non-blocking).
         let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
-        if since_flush >= self.flush_interval {
-            self.flush_to_db()?;
+        if since_flush >= self.flush_interval && !self.pending_flush.load(Ordering::SeqCst) {
+            self.start_async_flush();
         }
 
         info!(
@@ -778,9 +752,8 @@ where
         })
     }
 
-    /// Flush buffered blocks to DB via reth's save_blocks(Full).
-    /// This writes ALL tables including history indices — same as reth's Pipeline.
-    fn flush_to_db(&self) -> Result<(), BlockProducerError> {
+    /// Start an async (non-blocking) flush to the background persistence thread.
+    fn start_async_flush(&self) {
         let mut blocks: Vec<ExecutedBlock<ArbPrimitives>> = Vec::new();
         if let Some(head_state) = self.in_memory_state.head_state() {
             for block_state in head_state.chain() {
@@ -790,29 +763,34 @@ where
         blocks.reverse();
 
         if blocks.is_empty() {
-            return Ok(());
+            return;
         }
 
-        let count = blocks.len();
         let last = blocks.last().unwrap();
         let last_num_hash = alloy_eips::BlockNumHash::new(
             last.recovered_block().number(),
             last.recovered_block().hash(),
         );
 
-        crate::launcher::save_blocks(blocks).map_err(BlockProducerError::Storage)?;
+        // Double-buffer: move current accumulator to flushing slot.
+        let current = std::mem::take(&mut *self.accumulated_trie_input.lock());
+        *self.flushing_trie_input.lock() = Some(current);
 
-        self.in_memory_state.remove_persisted_blocks(last_num_hash);
         self.blocks_since_flush.store(0, Ordering::SeqCst);
-        self.accumulated_trie_input.lock().clear();
+        self.pending_flush.store(true, Ordering::SeqCst);
 
-        info!(
+        let count = blocks.len();
+        crate::launcher::start_flush(crate::launcher::FlushRequest {
+            blocks,
+            last_num_hash,
+        });
+
+        debug!(
             target: "block_producer",
-            flushed = count,
+            count,
             last_block = last_num_hash.number,
-            "Flushed via save_blocks(Full)"
+            "Started async flush"
         );
-        Ok(())
     }
 
     /// Produce a minimal block for messages with no transactions.
@@ -821,8 +799,7 @@ where
         &self,
         input: &BlockProductionInput,
     ) -> Result<ProducedBlock, BlockProducerError> {
-        // Even empty blocks need to execute the StartBlock internal tx
-        // so that ArbOS state updates (pricing, retryable reaping) happen.
+        // Empty blocks still need StartBlock execution for ArbOS state updates.
         self.produce_block_with_execution(input, vec![])
     }
 }
@@ -873,6 +850,7 @@ where
 
         // Parse L2 transactions from the message.
         let chain_id = self.chain_spec.chain().id();
+
         let parsed_txs = parse_l2_transactions(
             input.kind,
             input.sender,
@@ -882,7 +860,6 @@ where
             chain_id,
         )
         .unwrap_or_else(|e| {
-            // If ParseL2Transactions returns an error, treat as empty.
             warn!(target: "block_producer", error=%e, "Error parsing L2 message, treating as empty");
             vec![]
         });
@@ -949,10 +926,6 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
 }
 
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
-///
-/// Accounts that existed in the trie before this block are marked as deleted
-/// (info=None). Accounts that were created and emptied within this block are
-/// removed from the bundle entirely (no trie operation needed).
 fn delete_empty_accounts(
     bundle: &mut BundleState,
     zombie_accounts: &std::collections::HashSet<Address>,
@@ -1011,8 +984,7 @@ fn derive_header_info_from_state(
     derive_arb_header_info(&read_slot)
 }
 
-/// Augment the bundle with cache modifications not captured by transitions.
-/// Diffs cache against state provider and adds missing/changed entries.
+/// Augment the bundle with direct cache modifications not captured by EVM transitions.
 fn augment_bundle_from_cache(
     bundle: &mut BundleState,
     cache: &revm_database::CacheState,
@@ -1030,15 +1002,14 @@ fn augment_bundle_from_cache(
             .unwrap_or_default();
 
         if let Some(bundle_acct) = bundle.state.get_mut(addr) {
-            // Account already in bundle — update info and storage from cache
-            // to capture post-commit modifications.
+            // Update existing bundle entry from cache.
             bundle_acct.info = current_info;
 
             for (key, value) in &current_storage {
                 if let Some(slot) = bundle_acct.storage.get_mut(key) {
                     slot.present_value = *value;
                 } else {
-                    // Storage slot written via direct cache mod, not by EVM.
+                    // Slot written via direct cache modification.
                     let original_value = state_provider
                         .storage(*addr, B256::from(*key))
                         .ok()
@@ -1056,7 +1027,7 @@ fn augment_bundle_from_cache(
                 }
             }
         } else {
-            // Account not in bundle — check if it was modified from original.
+            // Account not in bundle — check if modified from original.
             let original = state_provider.basic_account(addr).ok().flatten();
 
             let info_changed = match (&original, &current_info) {
@@ -1096,8 +1067,6 @@ fn augment_bundle_from_cache(
                     .collect();
 
             if info_changed || !storage_changes.is_empty() {
-                // For OriginalValuesKnown::No persistence, original_info
-                // is not relied upon; set to None for simplicity.
                 let original_info = None;
 
                 let status = if original.is_some() {

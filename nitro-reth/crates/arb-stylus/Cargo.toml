@@ -16,9 +16,13 @@ alloy-primitives = { workspace = true }
 
 # Wasmer
 wasmer = { workspace = true }
-wasmer-compiler = "4.4"
-wasmer-types = "4.4"
-wasmparser = "0.121"
+wasmer-compiler = { path = "../../vendor/wasmer/lib/compiler" }
+wasmer-types = { path = "../../vendor/wasmer/lib/types" }
+wasmparser = { workspace = true }
+
+nitro-prover = { workspace = true }
+nitro-arbutil = { workspace = true }
+nitro-brotli = { package = "nitro-brotli", path = "../../vendor/nitro-crates/brotli" }
 
 # Revm
 revm = { workspace = true }
@@ -29,6 +33,9 @@ tracing = { workspace = true }
 parking_lot = { workspace = true }
 lazy_static = { workspace = true }
 eyre = { workspace = true }
+
+[dev-dependencies]
+wat = "1"
 
 [lints]
 workspace = true

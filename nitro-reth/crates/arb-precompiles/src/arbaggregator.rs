@@ -48,23 +48,22 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
+    crate::init_precompile_gas(data.len());
+
     let result = match selector {
         GET_PREFERRED_AGGREGATOR => {
-            // Deprecated view method: always returns (BatchPosterAddress, true).
-            // OpenArbosState (800) + argsCost (3) + resultCost (6) = 809.
-            let mut out = Vec::with_capacity(96);
-            out.extend_from_slice(&U256::from(0x40u64).to_be_bytes::<32>());
-            out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
+            let mut out = Vec::with_capacity(64);
             let mut addr_word = [0u8; 32];
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
+            out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + 9).min(gas_limit),
+                (SLOAD_GAS + 6).min(gas_limit),
                 out.into(),
             ))
         }
@@ -98,7 +97,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_FEE_COLLECTOR => handle_set_fee_collector(&mut input),
         GET_BATCH_POSTERS => handle_get_batch_posters(&mut input),
         ADD_BATCH_POSTER => handle_add_batch_poster(&mut input),
-        _ => Err(PrecompileError::other("unknown ArbAggregator selector")),
+        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -118,6 +117,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -130,6 +130,7 @@ fn sstore_field(
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
+    crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
 
@@ -166,7 +167,7 @@ fn is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> Result<bool
 fn handle_get_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -189,7 +190,7 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
 fn handle_set_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 68 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
@@ -273,7 +274,7 @@ fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult
 fn handle_add_batch_poster(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return crate::burn_all_revert(input.gas);
     }
 
     let gas_limit = input.gas;
