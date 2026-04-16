@@ -1,0 +1,25 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: auto
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "vendor"
+  - "bin"
+  - "testing"
+  - "genesis"
+  - "**/tests/**"
+  - "**/build.rs"
+  - "target"
