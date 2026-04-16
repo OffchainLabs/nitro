@@ -9,6 +9,7 @@ members = [
     "crates/arb-payload",
     "crates/arb-rpc",
     "crates/arb-txpool",
+    "crates/arb-spec-tests",
     "crates/arb-stylus",
     "crates/arb-test-utils",
     "crates/arbos",

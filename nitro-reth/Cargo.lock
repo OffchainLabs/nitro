@@ -1262,6 +1262,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-spec-tests"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "arb-storage",
+ "arb-test-utils",
+ "arbos",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "walkdir",
+]
+
+[[package]]
 name = "arb-storage"
 version = "0.1.0"
 dependencies = [
