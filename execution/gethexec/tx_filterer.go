@@ -12,21 +12,13 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 )
 
-// ErrAddressFiltered wraps state.ErrArbTxFilter with the filtered address
-// records so callers can build a FilteredTxReport without re-running the check.
-type ErrAddressFiltered struct {
-	Records []filter.FilteredAddressRecord
-}
-
-func (e *ErrAddressFiltered) Error() string { return state.ErrArbTxFilter.Error() }
-func (e *ErrAddressFiltered) Unwrap() error { return state.ErrArbTxFilter }
-
 // txFilterer implements core.TxFilterer for address-based transaction filtering
 // for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine to resolve the address
 // checker lazily, so tests can inject checkers via ExecEngine.SetAddressChecker.
 type txFilterer struct {
-	execEngine  *ExecutionEngine
-	eventFilter *eventfilter.EventFilter
+	execEngine      *ExecutionEngine
+	eventFilter     *eventfilter.EventFilter
+	filteredRecords []filter.FilteredAddressRecord
 }
 
 func (f *txFilterer) Setup(statedb *state.StateDB) {
@@ -41,7 +33,14 @@ func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transactio
 func (f *txFilterer) CheckFiltered(statedb *state.StateDB) error {
 	applyEventFilter(f.eventFilter, statedb)
 	if filtered, records := statedb.IsAddressFiltered(); filtered {
-		return &ErrAddressFiltered{Records: records}
+		f.filteredRecords = records
+		return state.ErrArbTxFilter
 	}
 	return nil
+}
+
+func (f *txFilterer) FilteredRecords() []filter.FilteredAddressRecord {
+	records := f.filteredRecords
+	f.filteredRecords = nil
+	return records
 }
