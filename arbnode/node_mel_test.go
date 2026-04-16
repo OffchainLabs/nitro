@@ -27,34 +27,32 @@ func putRLPValue(t *testing.T, db interface{ Put([]byte, []byte) error }, key []
 func TestValidateAndInitializeDBForMEL_StateAlreadyExists(t *testing.T) {
 	t.Parallel()
 	db := rawdb.NewMemoryDatabase()
-	melDB := melrunner.NewDatabase(db)
+	melDB, err := melrunner.NewDatabase(db)
+	require.NoError(t, err)
 	require.NoError(t, melDB.SaveState(&mel.State{
 		ParentChainBlockNumber: 10,
 		ParentChainBlockHash:   common.HexToHash("0x1234"),
 	}))
 
-	err := validateAndInitializeDBForMEL(context.Background(), nil, nil, db)
+	_, err = validateAndInitializeDBForMEL(context.Background(), nil, nil, db, false)
 	require.NoError(t, err)
 }
 
-func TestValidateAndInitializeDBForMEL_StaleSequencerBatchCountKey(t *testing.T) {
+func TestValidateAndInitializeDBForMEL_LegacyKeysWithExistingState(t *testing.T) {
 	t.Parallel()
+	// If MEL state already exists, legacy keys are irrelevant — should succeed.
 	db := rawdb.NewMemoryDatabase()
-	putRLPValue(t, db, schema.MessageCountKey, 0)
-	require.NoError(t, db.Put(schema.SequencerBatchCountKey, []byte("stale")))
+	melDB, err := melrunner.NewDatabase(db)
+	require.NoError(t, err)
+	require.NoError(t, melDB.SaveState(&mel.State{
+		ParentChainBlockNumber: 10,
+		ParentChainBlockHash:   common.HexToHash("0x1234"),
+	}))
+	putRLPValue(t, db, schema.SequencerBatchCountKey, 5)
+	putRLPValue(t, db, schema.DelayedMessageCountKey, 3)
 
-	err := validateAndInitializeDBForMEL(context.Background(), nil, nil, db)
-	require.ErrorContains(t, err, "stale SequencerBatchCountKey from inbox reader")
-}
-
-func TestValidateAndInitializeDBForMEL_StaleDelayedMessageCountKey(t *testing.T) {
-	t.Parallel()
-	db := rawdb.NewMemoryDatabase()
-	putRLPValue(t, db, schema.MessageCountKey, 0)
-	require.NoError(t, db.Put(schema.DelayedMessageCountKey, []byte("stale")))
-
-	err := validateAndInitializeDBForMEL(context.Background(), nil, nil, db)
-	require.ErrorContains(t, err, "stale DelayedMessageCountKey from inbox reader")
+	_, err = validateAndInitializeDBForMEL(context.Background(), nil, nil, db, false)
+	require.NoError(t, err)
 }
 
 func TestValidateAndInitializeDBForMEL_NonZeroMessageCount(t *testing.T) {
@@ -62,6 +60,6 @@ func TestValidateAndInitializeDBForMEL_NonZeroMessageCount(t *testing.T) {
 	db := rawdb.NewMemoryDatabase()
 	putRLPValue(t, db, schema.MessageCountKey, 5)
 
-	err := validateAndInitializeDBForMEL(context.Background(), nil, nil, db)
+	_, err := validateAndInitializeDBForMEL(context.Background(), nil, nil, db, false)
 	require.ErrorContains(t, err, "stale msgs")
 }

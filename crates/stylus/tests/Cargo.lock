@@ -3534,7 +3534,7 @@ dependencies = [
 
 [[package]]
 name = "stylus-core"
-version = "0.10.3"
+version = "0.10.4"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -3546,7 +3546,7 @@ dependencies = [
 
 [[package]]
 name = "stylus-proc"
-version = "0.10.3"
+version = "0.10.4"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -3566,7 +3566,7 @@ dependencies = [
 
 [[package]]
 name = "stylus-sdk"
-version = "0.10.3"
+version = "0.10.4"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -3587,7 +3587,7 @@ dependencies = [
 
 [[package]]
 name = "stylus-test"
-version = "0.10.3"
+version = "0.10.4"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
