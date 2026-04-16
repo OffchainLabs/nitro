@@ -1,13 +1,4 @@
-//! `ArbosHarness` — in-memory ArbOS state for unit tests.
-//!
-//! Initializes a fresh ArbOS state in a `revm::database::State<EmptyDb>`,
-//! running the same version-upgrade path used at genesis. Subsystem state
-//! handles (l1 pricing, l2 pricing, retryables, ...) are exposed via
-//! convenience accessors.
-//!
-//! The harness intentionally exposes the raw state pointer so subsystem
-//! state structs (which already use `*mut State<D>` internally) work
-//! without further indirection.
+//! In-memory ArbOS state for unit tests.
 
 use alloy_primitives::{Address, B256, U256};
 use arb_storage::{
@@ -29,17 +20,11 @@ const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
 const CHAIN_ID_OFFSET: u64 = 4;
 const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
 
-/// Subspace IDs (mirror ArbosState's private constants).
 const L1_PRICING_SUBSPACE: &[u8] = &[0];
 const L2_PRICING_SUBSPACE: &[u8] = &[1];
 const RETRYABLES_SUBSPACE: &[u8] = &[2];
 
 /// Builder + handle for an in-memory ArbOS state.
-///
-/// Construct via [`ArbosHarness::new`], configure with `with_*` setters,
-/// then call [`ArbosHarness::initialize`] once. Subsystem accessors
-/// (e.g. [`ArbosHarness::l1_pricing_state`]) can then be called multiple
-/// times — each returns a fresh handle backed by the same underlying state.
 pub struct ArbosHarness {
     state: Box<State<EmptyDb>>,
     arbos_version: u64,
@@ -57,10 +42,7 @@ impl Default for ArbosHarness {
 }
 
 impl ArbosHarness {
-    /// Create an uninitialized harness with sensible defaults.
-    ///
-    /// Defaults: ArbOS v30, chain id 412346 (Nitro dev chain), no fee accounts,
-    /// L1 base fee 0.1 gwei.
+    /// Defaults: ArbOS v30, chain id 412346, L1 base fee 0.1 gwei.
     pub fn new() -> Self {
         let state = Box::new(
             StateBuilder::new()
@@ -109,9 +91,6 @@ impl ArbosHarness {
         self
     }
 
-    /// Run the genesis init path: create ArbOS account, initialize the
-    /// L1/L2 pricing subspaces and retryable state, then walk the version
-    /// upgrade ladder up to `arbos_version`.
     pub fn initialize(mut self) -> Self {
         assert!(!self.initialized, "initialize() called twice");
 
@@ -120,7 +99,6 @@ impl ArbosHarness {
 
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
 
-        // Bootstrap root-level slots so ArbosState::open() succeeds.
         let backing = Storage::new(state_ptr, B256::ZERO);
         backing
             .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(1u64)))
@@ -135,7 +113,6 @@ impl ArbosHarness {
             .set(self.infra_fee_account)
             .expect("set infra fee account");
 
-        // Initialize the subsystem subspaces.
         l1_pricing::initialize_l1_pricing_state(
             &backing.open_sub_storage(L1_PRICING_SUBSPACE),
             self.network_fee_account,
@@ -145,7 +122,6 @@ impl ArbosHarness {
         retryables::initialize_retryable_state(&backing.open_sub_storage(RETRYABLES_SUBSPACE))
             .expect("init retryables");
 
-        // Walk the upgrade ladder so version-gated state is populated.
         let mut state = ArbosState::<EmptyDb, SystemBurner>::open(
             state_ptr,
             SystemBurner::new(None, false),
@@ -159,18 +135,14 @@ impl ArbosHarness {
         self
     }
 
-    /// Raw mutable reference to the underlying revm state (advanced use).
     pub fn state(&mut self) -> &mut State<EmptyDb> {
         &mut self.state
     }
 
-    /// Raw `*mut State<EmptyDb>` for subsystem state structs that take it
-    /// directly. Lifetime is bound by the harness.
     pub fn state_ptr(&mut self) -> *mut State<EmptyDb> {
         self.state.as_mut()
     }
 
-    /// Open a fresh `ArbosState` view over the harness state.
     pub fn arbos_state(&mut self) -> ArbosState<EmptyDb, SystemBurner> {
         assert!(self.initialized, "call initialize() first");
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
@@ -178,7 +150,6 @@ impl ArbosHarness {
             .expect("open arbos state")
     }
 
-    /// Convenience: open the L1 pricing subsystem state.
     pub fn l1_pricing_state(&mut self) -> L1PricingState<EmptyDb> {
         assert!(self.initialized, "call initialize() first");
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
@@ -189,7 +160,6 @@ impl ArbosHarness {
         )
     }
 
-    /// Convenience: open the L2 pricing subsystem state.
     pub fn l2_pricing_state(&mut self) -> L2PricingState<EmptyDb> {
         assert!(self.initialized, "call initialize() first");
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
@@ -200,7 +170,6 @@ impl ArbosHarness {
         )
     }
 
-    /// Convenience: open the retryable subsystem state.
     pub fn retryable_state(&mut self) -> RetryableState<EmptyDb> {
         assert!(self.initialized, "call initialize() first");
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
@@ -208,18 +177,15 @@ impl ArbosHarness {
         RetryableState::open(backing.open_sub_storage(RETRYABLES_SUBSPACE))
     }
 
-    /// Open a backing `Storage` rooted at the ArbOS state account.
     pub fn root_storage(&mut self) -> Storage<EmptyDb> {
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
         Storage::new(state_ptr, B256::ZERO)
     }
 
-    /// Configured ArbOS version.
     pub fn arbos_version(&self) -> u64 {
         self.arbos_version
     }
 
-    /// Configured chain id.
     pub fn chain_id(&self) -> u64 {
         self.chain_id
     }

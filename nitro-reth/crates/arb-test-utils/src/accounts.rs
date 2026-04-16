@@ -1,7 +1,4 @@
-//! Canonical test account addresses.
-//!
-//! Mirror the accounts used in `testing/synthetic_suite.py` so tests
-//! across Rust unit suites and the Python dual-exec suite share names.
+//! Canonical test account addresses (mirror `testing/synthetic_suite.py`).
 
 use alloy_primitives::{address, Address};
 
@@ -25,13 +22,11 @@ pub fn eve() -> Address {
     address!("0000000000000000000000000000000000E7E000")
 }
 
-/// Reserved for intentional-failure tests. Nonce drift won't cascade
-/// into other accounts.
+/// Reserved for intentional-failure tests.
 pub fn frank() -> Address {
     address!("00000000000000000000000000000000F4A11CE0")
 }
 
-/// Returns one of the canonical test accounts by index `0..6`.
 pub fn test_account(idx: usize) -> Address {
     match idx {
         0 => alice(),

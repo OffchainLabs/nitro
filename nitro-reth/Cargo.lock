@@ -1301,6 +1301,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-test-utils"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "arb-chainspec",
+ "arb-primitives",
+ "arb-storage",
+ "arbos",
+ "revm",
+]
+
+[[package]]
 name = "arb-txpool"
 version = "0.1.0"
 dependencies = [
@@ -1325,6 +1337,7 @@ dependencies = [
  "arb-chainspec",
  "arb-primitives",
  "arb-storage",
+ "arb-test-utils",
  "cc",
  "revm",
  "thiserror 2.0.18",

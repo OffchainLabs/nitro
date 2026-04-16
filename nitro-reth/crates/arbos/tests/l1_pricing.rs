@@ -1,16 +1,9 @@
-//! Ports of `nitro/arbos/l1pricing/l1pricing_test.go` and `batchPoster_test.go`.
-//!
-//! These mirror Nitro's pure-storage tests over our `arb-test-utils`
-//! harness. Each Rust test maps 1:1 to a Go `Test*` function; the Go names
-//! are recorded in module docstrings so divergences are easy to spot.
-
 use alloy_primitives::{address, Address, U256};
 use arb_test_utils::ArbosHarness;
 use arbos::l1_pricing::BATCH_POSTER_ADDRESS;
 
 const ONE_GWEI: u64 = 1_000_000_000;
 
-/// Port of `TestL1PriceUpdate`.
 #[test]
 fn l1_price_update_initial_state() {
     let initial_price = U256::from(123u64) * U256::from(ONE_GWEI);
@@ -23,11 +16,6 @@ fn l1_price_update_initial_state() {
     assert_eq!(ps.price_per_unit().unwrap(), initial_price);
 }
 
-/// Port of `TestBatchPosterTable`.
-///
-/// Differs from the Go original in one detail: our genesis path always
-/// installs `BATCH_POSTER_ADDRESS` as the initial poster (matching the
-/// real chain), so the table starts with one entry, not zero.
 #[test]
 fn batch_poster_table_lifecycle() {
     let mut h = ArbosHarness::new().initialize();
@@ -71,7 +59,6 @@ fn batch_poster_table_lifecycle() {
     assert_eq!(bpt.total_funds_due().unwrap(), U256::from(55u64));
 }
 
-/// New test: re-add of an existing poster fails.
 #[test]
 fn add_poster_twice_fails() {
     let mut h = ArbosHarness::new().initialize();
@@ -82,14 +69,6 @@ fn add_poster_twice_fails() {
     assert!(bpt.add_poster(addr, addr).is_err());
 }
 
-/// Port of `Test_getPosterUnitsWithoutCache` first half: non-batch-poster
-/// txs always cost 0 poster units regardless of payload.
-///
-/// Ported as an in-Rust analog: confirm a fresh L1PricingState reports zero
-/// units accumulated when no batch has been posted yet, and that surplus
-/// computation does not panic on the zero state. (The full Go test exercises
-/// `getPosterUnitsWithoutCache` over a typed deposit tx, which lives in the
-/// arb-evm crate in our codebase — see `arb-evm/tests/poster_units.rs`.)
 #[test]
 fn fresh_l1_pricing_state_reports_zero_units() {
     let mut h = ArbosHarness::new().initialize();
