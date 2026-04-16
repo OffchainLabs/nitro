@@ -229,6 +229,7 @@ func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
 }
 
 func (tc *TestClient) RecalibrateNonce(t *testing.T, lInfo info) {
+	t.Helper()
 	for account, accInfo := range lInfo.Accounts {
 		if accInfo.PrivateKey != nil {
 			currNonce, err := tc.Client.PendingNonceAt(tc.ctx, lInfo.GetAddress(account))

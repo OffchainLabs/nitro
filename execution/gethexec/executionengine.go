@@ -498,8 +498,15 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		s.recorder.ReorgTo(lastBlockToKeep.Header())
 	}
 	if len(oldMessages) > 0 {
-		s.resequenceChan <- oldMessages
-		resequencing = true
+		// Use a select to avoid blocking forever if the resequence goroutine
+		// has already exited (e.g., because the context was cancelled during
+		// shutdown before the nodes were stopped).
+		select {
+		case s.resequenceChan <- oldMessages:
+			resequencing = true
+		case <-s.GetContext().Done():
+			log.Warn("ExecutionEngine: context cancelled, skipping message resequencing")
+		}
 	}
 	return newMessagesResults, nil
 }
