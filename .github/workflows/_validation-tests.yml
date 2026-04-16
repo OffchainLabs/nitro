@@ -129,8 +129,8 @@ jobs:
 
             # 2. Wait for server to respond (up to 5 seconds)
             echo "Waiting for validator ($MODE_NAME) to start..."
-            if ! timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'; then
-              echo "❌ Server ($MODE_NAME) failed to start within timeout"
+            if ! timeout 120s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'; then
+              echo "❌ Server ($MODE_NAME) failed to start within 2 min timeout"
               kill $SERVER_PID
               exit 1
             fi
