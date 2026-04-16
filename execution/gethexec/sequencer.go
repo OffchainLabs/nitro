@@ -722,7 +722,8 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	}
 
 	touchAddresses(statedb, tx, sender)
-	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
+	addressFiltered, _ := statedb.IsAddressFiltered()
+	if statedb.IsTxFiltered() || addressFiltered {
 		return state.ErrArbTxFilter
 	}
 	return nil
@@ -732,13 +733,13 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
-			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(addr)
+			for _, record := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
+				statedb.TouchAddress(&record)
 			}
 		}
 	}
 
-	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
+	if addressFiltered, _ := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
 		return state.ErrArbTxFilter
 	}
 

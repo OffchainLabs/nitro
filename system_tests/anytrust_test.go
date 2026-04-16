@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -27,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func startLocalAnyTrustServer(
@@ -112,9 +110,6 @@ func TestAnyTrustRekey(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	if *testflag.StateSchemeFlag == rawdb.PathScheme {
-		builder.nodeConfig.MessageExtraction.Enable = false
-	}
 	builder.BuildL1(t)
 
 	// Setup AnyTrust servers

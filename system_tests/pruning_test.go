@@ -4,7 +4,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -37,12 +36,20 @@ func countStateEntries(db ethdb.Iteratee) int {
 	return entries
 }
 
-func TestPruningDBSizeReduction(t *testing.T) {
-	// TODO test "validator" pruning mode - requires latest confirmed
-	for _, mode := range []string{"full", "minimal"} {
-		t.Run(fmt.Sprintf("-%s-mode-without-parallel-storage-traversal", mode), func(t *testing.T) { runPruningDBSizeReductionTest(t, mode, false) })
-		t.Run(fmt.Sprintf("-%s-mode-with-parallel-storage-traversal", mode), func(t *testing.T) { runPruningDBSizeReductionTest(t, mode, true) })
-	}
+func TestPruningDBSizeReductionFullModeWithoutParallelStorageTraversal(t *testing.T) {
+	runPruningDBSizeReductionTest(t, "full", false)
+}
+
+func TestPruningDBSizeReductionFullModeWithParallelStorageTraversal(t *testing.T) {
+	runPruningDBSizeReductionTest(t, "full", true)
+}
+
+func TestPruningDBSizeReductionMinimalModeWithoutParallelStorageTraversal(t *testing.T) {
+	runPruningDBSizeReductionTest(t, "minimal", false)
+}
+
+func TestPruningDBSizeReductionMinimalModeWithParallelStorageTraversal(t *testing.T) {
+	runPruningDBSizeReductionTest(t, "minimal", true)
 }
 
 func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
@@ -146,6 +153,9 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 	}
 	for i := start; i <= currentBlock; i++ {
 		header := bc.GetHeaderByNumber(i)
+		if header == nil {
+			t.Fatalf("missing header for block %d", i)
+		}
 		_, err := bc.StateAt(header.Root)
 		Require(t, err)
 		tr, err := trie.New(trie.TrieID(header.Root), triedb)
@@ -356,10 +366,20 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 }
 
 func waitForChainToCatchUp(t *testing.T, ctx context.Context, testClient *TestClient, lastBlock uint64) uint64 {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
 	currentBlock := uint64(0)
 	var err error
 	// wait for the chain to catch up
 	for currentBlock < lastBlock {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for chain to catch up to block %d (currently at %d)", lastBlock, currentBlock)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("context cancelled waiting for chain to catch up: %v", ctx.Err())
+		default:
+		}
 		currentBlock, err = testClient.Client.BlockNumber(ctx)
 		Require(t, err)
 		time.Sleep(20 * time.Millisecond)

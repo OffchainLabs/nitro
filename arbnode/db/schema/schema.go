@@ -25,6 +25,7 @@ var (
 	SequencerBatchCountKey      []byte = []byte("_sequencerBatchCount")         // contains the current sequencer message count
 	DbSchemaVersion             []byte = []byte("_schemaVersion")               // contains a uint64 representing the database schema version
 	HeadMelStateBlockNumKey     []byte = []byte("_headMelStateBlockNum")        // contains the latest computed MEL state's parent chain block number
+	InitialMelStateBlockNumKey  []byte = []byte("_initialMelStateBlockNum")     // contains the initial MEL state's parent chain block number (legacy/MEL boundary)
 )
 
 const CurrentDbSchemaVersion uint64 = 2

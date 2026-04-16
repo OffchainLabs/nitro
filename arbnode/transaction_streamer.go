@@ -490,41 +490,43 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	var parentChainBlockNumber *uint64
-	if message.DelayedMessagesRead != 0 && s.batchDataProvider != nil {
-		localParentChainBlockNumber, err := s.batchDataProvider.FindParentChainBlockContainingDelayed(ctx, message.DelayedMessagesRead-1)
-		if err != nil {
-			if errors.Is(err, melrunner.ErrFindDelayedNotImplementedByMEL) {
-				log.Debug("MEL: using BatchMetadata fallback for parent chain block number", "idx", message.DelayedMessagesRead-1)
+	if message.Message.IsBatchGasFieldsMissing() {
+		var parentChainBlockNumber *uint64
+		if message.DelayedMessagesRead != 0 && s.batchDataProvider != nil {
+			localParentChainBlockNumber, err := s.batchDataProvider.FindParentChainBlockContainingDelayed(ctx, message.DelayedMessagesRead-1)
+			if err != nil {
+				if errors.Is(err, melrunner.ErrFindDelayedNotImplementedByMEL) {
+					log.Debug("MEL: using BatchMetadata fallback for parent chain block number", "idx", message.DelayedMessagesRead-1)
+				} else {
+					log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1, "err", err)
+				}
 			} else {
-				log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1, "err", err)
+				parentChainBlockNumber = &localParentChainBlockNumber
 			}
-		} else {
-			parentChainBlockNumber = &localParentChainBlockNumber
 		}
-	}
 
-	if s.batchDataProvider != nil {
-		err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-			ctx, err := s.GetContextSafe()
+		if s.batchDataProvider != nil {
+			err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+				ctx, err := s.GetContextSafe()
+				if err != nil {
+					return nil, err
+				}
+
+				var data []byte
+				if parentChainBlockNumber != nil {
+					data, _, err = s.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
+				} else {
+					data, _, err = s.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
+				}
+				if err != nil {
+					return nil, err
+				}
+
+				return data, err
+			})
 			if err != nil {
 				return nil, err
 			}
-
-			var data []byte
-			if parentChainBlockNumber != nil {
-				data, _, err = s.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
-			} else {
-				data, _, err = s.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
-			}
-			if err != nil {
-				return nil, err
-			}
-
-			return data, err
-		})
-		if err != nil {
-			return nil, err
 		}
 	}
 	return &message, nil
