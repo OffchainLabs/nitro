@@ -353,3 +353,171 @@ func TestAddPages_StylusPageLimit_ArbOS59_Zero_Disabled(t *testing.T) {
 	cost := callAddPages(handler, 100)
 	require.Equal(t, model.GasCost(100, 0, 0), cost, "pageLimit=0 should disable the consensus check")
 }
+
+// ---------------------------------------------------------------------------
+// Direct unit tests for enforceStylusPageLimit
+// ---------------------------------------------------------------------------
+//
+// The TestAddPages_* tests above exercise enforceStylusPageLimit indirectly
+// through the addPages hostio closure. The tests below call the function
+// directly, which avoids the full handler setup and makes it easier to cover
+// edge cases and the nil-config path.
+
+// buildEnforceTestArgs creates a minimal EVM + StateDB for calling
+// enforceStylusPageLimit directly. maxPages=0 leaves ArbNodeConfig nil (tests
+// the nil-config path); otherwise it is set on the StateDB database.
+func buildEnforceTestArgs(t *testing.T, maxPages uint16, setConfig bool, arbosVersion uint64) (*vm.EVM, vm.StateDB) {
+	t.Helper()
+	db := state.NewDatabaseForTesting()
+	if setConfig {
+		db.SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
+	}
+	statedb, _ := state.New(types.EmptyRootHash, db)
+	evm := vm.NewEVM(vm.BlockContext{ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
+	return evm, statedb
+}
+
+func TestEnforce_NilConfig_ReturnsZero(t *testing.T) {
+	// ArbNodeConfig never set → raw == nil → limit stays 0 → returns 0.
+	evm, statedb := buildEnforceTestArgs(t, 0, false, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 200, common.Address{1}, nil, pageLimitCallProgram)
+	require.Equal(t, uint64(0), penalty, "nil config should fail open (no enforcement)")
+}
+
+func TestEnforce_WrongConfigType_ReturnsZero(t *testing.T) {
+	db := state.NewDatabaseForTesting()
+	db.SetArbNodeConfig("not a *ArbNodeConfig")
+	statedb, _ := state.New(types.EmptyRootHash, db)
+	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 200, common.Address{1}, nil, pageLimitCallProgram)
+	require.Equal(t, uint64(0), penalty, "wrong config type should fail open")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+func TestEnforce_LimitDisabled_ReturnsZero(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 200, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "MaxOpenPages=0 disables the check")
+}
+
+func TestEnforce_UnderLimit_ReturnsZero(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 100, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 50, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "under limit should allow")
+}
+
+func TestEnforce_ExactlyAtLimit_ReturnsZero(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 10, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "exactly at limit should be allowed (strict >)")
+}
+
+func TestEnforce_OverLimit_NilRunCtx_ReturnsZero(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, nil, 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "nil runCtx should fail open")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+func TestEnforce_OverLimit_EthCall_ReturnsMaxUint64(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "eth_call over limit should OOG")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+func TestEnforce_OverLimit_GasEstimation_ReturnsMaxUint64(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageGasEstimationContext(), 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "gas estimation over limit should OOG")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+func TestEnforce_OverLimit_Sequencing_FiltersAndReturnsMaxUint64(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageSequencingContext(nil), 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "sequencing over limit should OOG")
+	require.True(t, statedb.IsTxFiltered(), "sequencing should call FilterTx")
+}
+
+func TestEnforce_OverLimit_Commit_Exempt(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageCommitContext(nil), 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "commit should be exempt (log only)")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+func TestEnforce_OverLimit_Replay_Exempt(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageReplayContext(), 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "replay should be exempt (log only)")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+func TestEnforce_OverLimit_Recording_Exempt(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageRecordingContext(nil), 20, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "recording should be exempt (log only)")
+	require.False(t, statedb.IsTxFiltered())
+}
+
+// Consensus tests
+
+func TestEnforce_Consensus_ArbOS59_OverPageLimit(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 10}
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 20, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "ArbOS 59 consensus limit should OOG")
+	require.False(t, statedb.IsTxFiltered(), "consensus check must not FilterTx")
+}
+
+func TestEnforce_Consensus_ArbOS59_UnderPageLimit(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 50}
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 20, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "under consensus limit should allow")
+}
+
+func TestEnforce_Consensus_PreArbOS59_NotEnforced(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59-1)
+	sp := &StylusParams{PageLimit: 10}
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 20, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "pre-ArbOS 59 should not enforce consensus limit")
+}
+
+func TestEnforce_Consensus_NilStylusParams_NotEnforced(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 200, common.Address{1}, nil, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "nil stylusParams should skip consensus check")
+}
+
+func TestEnforce_Consensus_ZeroPageLimit_Disabled(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 0}
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 200, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "PageLimit=0 should disable consensus check")
+}
+
+func TestEnforce_Consensus_TakesPrecedence_OverNodeLimit(t *testing.T) {
+	// Both caps active, consensus fires first → no FilterTx even in sequencing.
+	evm, statedb := buildEnforceTestArgs(t, 10, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 10}
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageSequencingContext(nil), 20, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "consensus cap should fire")
+	require.False(t, statedb.IsTxFiltered(), "consensus cap fires before node-level, so no FilterTx")
+}
+
+func TestEnforce_Consensus_ExactlyAtPageLimit_Allowed(t *testing.T) {
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 10}
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 10, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(0), penalty, "exactly at consensus limit should be allowed (strict >)")
+}
+
+func TestEnforce_Consensus_NilRunCtx_StillEnforced(t *testing.T) {
+	// Unlike the node-level check, the consensus check is runCtx-independent.
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 10}
+	penalty := enforceStylusPageLimit(evm, statedb, nil, 20, common.Address{1}, sp, pageLimitAddPages)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "consensus check must fire even with nil runCtx")
+}

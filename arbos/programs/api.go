@@ -518,7 +518,10 @@ func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.Messag
 			log.Error("ArbNodeConfig unexpected type; page limit inactive",
 				"type", fmt.Sprintf("%T", raw))
 		}
+	} else {
+		log.Debug("ArbNodeConfig not set; page limit inactive")
 	}
+
 	if limit > 0 && newOpen > limit && runCtx != nil {
 		if !runCtx.IsExecutedOnChain() {
 			log.Info("page limit exceeded", "location", location,
