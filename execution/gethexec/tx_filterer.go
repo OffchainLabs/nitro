@@ -30,7 +30,7 @@ func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transactio
 
 func (f *txFilterer) ApplyEventsAndCheckFiltered(statedb *state.StateDB) error {
 	applyEventFilter(f.eventFilter, statedb)
-	if statedb.IsAddressFiltered() {
+	if filtered, _ := statedb.IsAddressFiltered(); filtered {
 		return state.ErrArbTxFilter
 	}
 	return nil
