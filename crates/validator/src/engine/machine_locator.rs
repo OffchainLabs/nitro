@@ -174,7 +174,7 @@ mod tests {
 
     use anyhow::{Result, anyhow};
     use arbutil::Bytes32;
-    use rand::RngCore;
+    use rand::Rng;
 
     use crate::engine::{
         ModuleRoot,
@@ -221,7 +221,7 @@ mod tests {
 
     fn gen_random_module_root() -> ModuleRoot {
         let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
 
         Bytes32(bytes)
     }
