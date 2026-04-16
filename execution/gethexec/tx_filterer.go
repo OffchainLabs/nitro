@@ -16,9 +16,8 @@ import (
 // for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine to resolve the address
 // checker lazily, so tests can inject checkers via ExecEngine.SetAddressChecker.
 type txFilterer struct {
-	execEngine      *ExecutionEngine
-	eventFilter     *eventfilter.EventFilter
-	filteredRecords []filter.FilteredAddressRecord
+	execEngine  *ExecutionEngine
+	eventFilter *eventfilter.EventFilter
 }
 
 func (f *txFilterer) Setup(statedb *state.StateDB) {
@@ -30,17 +29,10 @@ func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transactio
 	touchAddresses(statedb, tx, sender)
 }
 
-func (f *txFilterer) CheckFiltered(statedb *state.StateDB) error {
+func (f *txFilterer) CheckFiltered(statedb *state.StateDB) ([]filter.FilteredAddressRecord, error) {
 	applyEventFilter(f.eventFilter, statedb)
 	if filtered, records := statedb.IsAddressFiltered(); filtered {
-		f.filteredRecords = records
-		return state.ErrArbTxFilter
+		return records, state.ErrArbTxFilter
 	}
-	return nil
-}
-
-func (f *txFilterer) FilteredRecords() []filter.FilteredAddressRecord {
-	records := f.filteredRecords
-	f.filteredRecords = nil
-	return records
+	return nil, nil
 }

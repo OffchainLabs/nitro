@@ -323,7 +323,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 	}
 	msg.SkipNonceChecks = true
 
-	_, err = gasestimator.Run(ctx, msg, &gasestimator.Options{
+	_, filteredAddresses, err := gasestimator.Run(ctx, msg, &gasestimator.Options{
 		Config:           c.bc.Config(),
 		Chain:            c.bc,
 		Header:           header,
@@ -332,10 +332,6 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
-		var filteredAddresses []filter.FilteredAddressRecord
-		if tf, ok := c.backend.TxFilter().(*txFilterer); ok {
-			filteredAddresses = tf.FilteredRecords()
-		}
 		if reportErr := c.reportFilteredTransaction(tx, header, filteredAddresses); reportErr != nil {
 			log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
 		}
@@ -367,6 +363,13 @@ func (c *TxPreChecker) reportFilteredTransaction(tx *types.Transaction, header *
 		DelayedReportData: nil,
 	}
 	// Non-blocking: ReportFilteredTransactions uses LaunchPromiseThread internally.
-	c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
+	// Await the delivery result in a background goroutine so RPC failures surface
+	// in the logs rather than being silently dropped.
+	promise := c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
+	go func(txHash common.Hash) {
+		if _, err := promise.Await(context.Background()); err != nil {
+			log.Error("failed to deliver filtered tx report", "txHash", txHash, "err", err)
+		}
+	}(tx.Hash())
 	return nil
 }

@@ -520,7 +520,9 @@ func startTestReportServer(t *testing.T, ctx context.Context) (string, *testRepo
 	go httpServer.Serve(listener) //nolint:errcheck
 	go func() {
 		<-ctx.Done()
-		httpServer.Shutdown(context.Background()) //nolint:errcheck
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpServer.Shutdown(shutdownCtx) //nolint:errcheck
 	}()
 
 	return "http://" + listener.Addr().String(), collector
