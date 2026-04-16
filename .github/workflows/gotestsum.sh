@@ -18,6 +18,7 @@ log=true
 race=false
 cover=false
 consensus_execution_in_same_process_use_rpc=false
+test_mel=false
 flaky=false
 reduce_parallelism=false
 while [[ $# -gt 0 ]]; do
@@ -68,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --consensus_execution_in_same_process_use_rpc)
      consensus_execution_in_same_process_use_rpc=true
+      shift
+      ;;
+    --test_mel)
+      test_mel=true
       shift
       ;;
     --nolog)
@@ -153,6 +158,10 @@ fi
 
 if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
     cmd="$cmd --consensus_execution_in_same_process_use_rpc=true"
+fi
+
+if [ "$test_mel" == true ]; then
+    cmd="$cmd --test_mel=true"
 fi
 
 if [ "$test_database_engine" != "" ]; then

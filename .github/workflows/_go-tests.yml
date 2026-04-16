@@ -46,6 +46,15 @@ on:
       run-pebble-b:
         required: false
         type: boolean
+      run-defaults-a-mel:
+        required: false
+        type: boolean
+      run-defaults-b-mel:
+        required: false
+        type: boolean
+      run-pathdb-mel:
+        required: false
+        type: boolean
 
 jobs:
   go-tests:
@@ -104,6 +113,31 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
+
+      # --------------------- PATHDB MEL MODE ---------------------
+
+      - name: run tests without race detection and path state scheme (MEL)
+        if: inputs.run-pathdb-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-mel.xml --test_mel
+
+      # --------------------- DEFAULTS MEL MODE ---------------------
+
+      - name: run tests without race detection and hash state scheme (A-batch, MEL)
+        if: inputs.run-defaults-a-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel
+
+      - name: run tests without race detection and hash state scheme (B-batch, MEL)
+        if: inputs.run-defaults-b-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel
       
       - name: run redis tests
         if: inputs.run-defaults-a
