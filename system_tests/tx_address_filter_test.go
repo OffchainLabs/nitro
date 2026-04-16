@@ -7,6 +7,7 @@ import (
 	"context"
 	"math/big"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,8 +15,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -47,14 +52,90 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 	return checker
 }
 
+// capturingFilteringReportAPI is a test RPC service that captures reports
+// sent via the filteringreport_reportFilteredTransactions RPC method.
+type capturingFilteringReportAPI struct {
+	mu      sync.Mutex
+	reports []addressfilter.FilteredTxReport
+}
+
+func (a *capturingFilteringReportAPI) ReportFilteredTransactions(_ context.Context, reports []addressfilter.FilteredTxReport) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.reports = append(a.reports, reports...)
+	return nil
+}
+
+func (a *capturingFilteringReportAPI) getReports() []addressfilter.FilteredTxReport {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	result := make([]addressfilter.FilteredTxReport, len(a.reports))
+	copy(result, a.reports)
+	return result
+}
+
+func waitForReport(t *testing.T, capturer *capturingFilteringReportAPI, txHash common.Hash) addressfilter.FilteredTxReport {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, r := range capturer.getReports() {
+			if r.TxHash == txHash {
+				return r
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for report for tx %s", txHash.Hex())
+	panic("unreachable")
+}
+
+func newCapturingReportStack(t *testing.T) (*node.Node, *capturingFilteringReportAPI) {
+	t.Helper()
+	stackConfig := node.Config{
+		DataDir:             "",
+		HTTPPort:            0,
+		HTTPHost:            "127.0.0.1",
+		HTTPModules:         []string{gethexec.FilteringReportNamespace},
+		HTTPVirtualHosts:    []string{"localhost"},
+		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+		WSHost:              "127.0.0.1",
+		WSPort:              0,
+		WSModules:           []string{gethexec.FilteringReportNamespace},
+		GraphQLVirtualHosts: []string{"localhost"},
+		P2P:                 p2p.Config{ListenAddr: "", NoDiscovery: true, NoDial: true},
+	}
+	stack, err := node.New(&stackConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capturer := &capturingFilteringReportAPI{}
+	stack.RegisterAPIs([]rpc.API{{
+		Namespace: gethexec.FilteringReportNamespace,
+		Version:   "1.0",
+		Service:   capturer,
+		Public:    true,
+	}})
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stack.Close() })
+	return stack, capturer
+}
+
 func TestAddressFilterDirectTransfer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Start in-process filtering-report RPC server that captures reports
+	reportStack, capturer := newCapturingReportStack(t)
+
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = reportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
+
+	testStartTime := time.Now()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -66,10 +147,10 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	addrFilter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
-	// Test 1: Transaction TO a filtered address should fail
+	// Test 1: Transaction TO a filtered address should fail and produce a report
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
@@ -78,10 +159,33 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
+	report := waitForReport(t, capturer, tx.Hash())
+	if report.ID == "" {
+		t.Fatal("report ID should not be empty")
+	}
+	if len(report.TxRLP) == 0 {
+		t.Fatal("report TxRLP should not be empty")
+	}
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	if report.FilteredAt.Before(testStartTime) {
+		t.Fatalf("report FilteredAt %v is before test start %v", report.FilteredAt, testStartTime)
+	}
+	hasFilteredAddr := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == filteredAddr {
+			hasFilteredAddr = true
+			break
+		}
+	}
+	if !hasFilteredAddr {
+		t.Fatalf("report should contain filtered address %s", filteredAddr.Hex())
+	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
 
-	// Test 2: Transaction FROM a filtered address should fail
+	// Test 2: Transaction FROM a filtered address should fail and produce a report
 	tx = builder.L2Info.PrepareTx("FilteredUser", "NormalUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
@@ -90,10 +194,15 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
+	report2 := waitForReport(t, capturer, tx.Hash())
+	if report2.TxHash != tx.Hash() {
+		t.Fatalf("report2 TxHash mismatch: got %s, want %s", report2.TxHash.Hex(), tx.Hash().Hex())
+	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("FilteredUser").Nonce.Store(0)
 
-	// Test 3: Transaction between non-filtered addresses should succeed
+	// Test 3: Transaction between non-filtered addresses should succeed with no report
+	reportCountBefore := len(capturer.getReports())
 	builder.L2Info.GenerateAccount("AnotherUser")
 	builder.L2.TransferBalance(t, "Owner", "AnotherUser", big.NewInt(1e18), builder.L2Info)
 	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -101,6 +210,12 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	// Give async dispatch time to arrive (if it were to fire spuriously)
+	time.Sleep(500 * time.Millisecond)
+	if len(capturer.getReports()) != reportCountBefore {
+		t.Fatalf("expected no new reports for clean transaction, got %d new", len(capturer.getReports())-reportCountBefore)
+	}
 }
 
 func deployAddressFilterTestContract(t *testing.T, ctx context.Context, builder *NodeBuilder) (common.Address, *localgen.AddressFilterTest) {
