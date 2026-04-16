@@ -6,15 +6,19 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"net"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -22,11 +26,13 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -482,6 +488,102 @@ func TestPrecheckerFilterCascadingRedeemDepth3(t *testing.T) {
 // TestPrecheckerFilterCascadingRedeemDepth4 tests A -> B -> C -> D -> wrapper.callTarget(filtered).
 func TestPrecheckerFilterCascadingRedeemDepth4(t *testing.T) {
 	testPrecheckerFilterCascadingRedeem(t, 4)
+}
+
+// testReportCollector implements the filteringreport RPC namespace for testing.
+// Reports sent via FilteringReportRPCClient are captured in the Reports channel.
+type testReportCollector struct {
+	Reports chan []addressfilter.FilteredTxReport
+}
+
+func (c *testReportCollector) ReportFilteredTransactions(_ context.Context, reports []addressfilter.FilteredTxReport) error {
+	c.Reports <- reports
+	return nil
+}
+
+// startTestReportServer starts an HTTP-JSON-RPC server that captures
+// filteringreport_reportFilteredTransactions calls. Returns the server URL
+// and the collector. The server shuts down when ctx is cancelled.
+func startTestReportServer(t *testing.T, ctx context.Context) (string, *testReportCollector) {
+	t.Helper()
+	collector := &testReportCollector{
+		Reports: make(chan []addressfilter.FilteredTxReport, 16),
+	}
+	rpcServer := rpc.NewServer()
+	err := rpcServer.RegisterName(gethexec.FilteringReportNamespace, collector)
+	require.NoError(t, err)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	httpServer := &http.Server{Handler: rpcServer, ReadHeaderTimeout: 5 * time.Second}
+	go httpServer.Serve(listener) //nolint:errcheck
+	go func() {
+		<-ctx.Done()
+		httpServer.Shutdown(context.Background()) //nolint:errcheck
+	}()
+
+	return "http://" + listener.Addr().String(), collector
+}
+
+// TestPrecheckerFilterReport verifies that the prechecker sends a
+// FilteredTxReport to the filtering-report service when a tx is filtered.
+func TestPrecheckerFilterReport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	reportURL, collector := startTestReportServer(t, ctx)
+
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	defer cleanup()
+
+	// Wire report client into forwarder's prechecker
+	reportConfig := gethexec.DefaultFilteringReportRPCClientConfig
+	reportConfig.URL = reportURL
+	reportClient := gethexec.NewFilteringReportRPCClient(func() *rpcclient.ClientConfig {
+		return &reportConfig
+	})
+	Require(t, reportClient.Start(ctx))
+	defer reportClient.StopAndWait()
+	forwarder.ExecNode.TxPreChecker.SetFilteringReportRPCClient(reportClient)
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	_, fundReceipt := builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
+	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+
+	// Filtered tx should be rejected and generate a report
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := forwarder.Client.SendTransaction(ctx, tx)
+	require.True(t, isFilteredError(err), "expected filtered error, got: %v", err)
+
+	select {
+	case reports := <-collector.Reports:
+		require.Len(t, reports, 1)
+		report := reports[0]
+		require.Equal(t, tx.Hash(), report.TxHash)
+		require.NotEmpty(t, report.ID)
+		require.NotEmpty(t, report.TxRLP)
+		require.NotZero(t, report.BlockNumber)
+		require.False(t, report.IsDelayed)
+		require.False(t, report.FilteredAt.IsZero())
+
+		var found bool
+		for _, rec := range report.FilteredAddresses {
+			if rec.Address == filteredAddr {
+				found = true
+				require.Equal(t, filter.ReasonTo, rec.Reason)
+				break
+			}
+		}
+		require.True(t, found, "report should contain filtered address %s", filteredAddr.Hex())
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for filtered tx report")
+	}
 }
 
 // lookupSubmissionTxHash finds the ArbitrumSubmitRetryableTx hash from an L1 receipt
