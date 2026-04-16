@@ -332,11 +332,11 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
-		var records []filter.FilteredAddressRecord
+		var filteredAddresses []filter.FilteredAddressRecord
 		if tf, ok := c.backend.TxFilter().(*txFilterer); ok {
-			records = tf.FilteredRecords()
+			filteredAddresses = tf.FilteredRecords()
 		}
-		if reportErr := c.reportFilteredTransaction(tx, header, records); reportErr != nil {
+		if reportErr := c.reportFilteredTransaction(tx, header, filteredAddresses); reportErr != nil {
 			log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
 		}
 		return err
@@ -346,7 +346,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 	return nil
 }
 
-func (c *TxPreChecker) reportFilteredTransaction(tx *types.Transaction, header *types.Header, records []filter.FilteredAddressRecord) error {
+func (c *TxPreChecker) reportFilteredTransaction(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord) error {
 	if c.filteringReportRPCClient == nil {
 		return nil
 	}
@@ -358,11 +358,11 @@ func (c *TxPreChecker) reportFilteredTransaction(tx *types.Transaction, header *
 		ID:                uuid.Must(uuid.NewV7()).String(),
 		TxHash:            tx.Hash(),
 		TxRLP:             txRLP,
-		FilteredAddresses: records,
+		FilteredAddresses: filteredAddresses,
 		BlockNumber:       header.Number.Uint64(),
 		ParentBlockHash:   header.ParentHash,
 		PositionInBlock:   0,
-		FilteredAt:        time.Now(),
+		FilteredAt:        time.Now().UTC(),
 		IsDelayed:         false,
 		DelayedReportData: nil,
 	}
