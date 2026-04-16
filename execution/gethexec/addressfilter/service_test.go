@@ -231,6 +231,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test invalid hash hex
 	invalidHashPayload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
 		"address_hashes": []map[string]interface{}{{"hash": "not-hex"}},
 	}
 	invalidHashJSON, _ := json.Marshal(invalidHashPayload)
@@ -242,6 +243,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test wrong hash length
 	wrongLenPayload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
 		"address_hashes": []map[string]interface{}{{"hash": "0123456789abcdef"}},
 	}
 	wrongLenJSON, _ := json.Marshal(wrongLenPayload)
