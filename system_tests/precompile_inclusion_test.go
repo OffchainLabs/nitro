@@ -6,10 +6,12 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -58,26 +60,33 @@ var (
 		input:    bytes.Repeat([]byte{0}, 320),
 		expected: bytes.Repeat([]byte{0}, 128),
 	}
+	// ArbFilteredTransactionsManager.isTransactionFiltered(bytes32) — gated at ArbOS 60.
+	// Selector 0x85c733a4; passing zero hash returns bool false = 32 zero bytes.
+	arbFilteredTransactionsManagerIsTransactionFiltered = precompileCaseProvider{
+		addr:     common.HexToAddress("0x74"),
+		input:    common.Hex2Bytes("85c733a40000000000000000000000000000000000000000000000000000000000000000"),
+		expected: bytes.Repeat([]byte{0}, 32),
+	}
 )
 
 func TestVersion11(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_11, ecrecover.Included(), bn256AddByzantium.Included(), blake2F.Included(), kzgPointEvaluation.NotIncluded(), p256Verify.NotIncluded(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
+	testPrecompiles(t, params.ArbosVersion_11, ecrecover.Included(), bn256AddByzantium.Included(), blake2F.Included(), kzgPointEvaluation.NotIncluded(), p256Verify.NotIncluded(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded(), arbFilteredTransactionsManagerIsTransactionFiltered.NotIncluded())
 }
 
 func TestVersion30(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_30, ecrecover.Included(), bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
+	testPrecompiles(t, params.ArbosVersion_30, ecrecover.Included(), bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded(), arbFilteredTransactionsManagerIsTransactionFiltered.NotIncluded())
 }
 
 func TestVersion40(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_40, bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
+	testPrecompiles(t, params.ArbosVersion_40, bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded(), arbFilteredTransactionsManagerIsTransactionFiltered.NotIncluded())
 }
 
 func TestArbOSVersion50(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
+	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included(), arbFilteredTransactionsManagerIsTransactionFiltered.NotIncluded())
 }
 
 func TestArbOSVersion60(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_60, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
+	testPrecompiles(t, params.ArbosVersion_60, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included(), arbFilteredTransactionsManagerIsTransactionFiltered.Included())
 }
 
 func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase) {
@@ -91,20 +100,36 @@ func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase)
 	builder.execConfig.RPC.RPCEVMTimeout = 30 * time.Second
 	cleanup := builder.Build(t)
 	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	_, simple := builder.L2.DeploySimple(t, auth)
+
 	for _, c := range cases {
-		res, err := builder.L2.Client.CallContract(context.Background(), ethereum.CallMsg{To: &c.addr, Data: c.in}, nil)
+		res, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{To: &c.addr, Data: c.in}, nil)
 		Require(t, err)
 		if !bytes.Equal(res, c.out) {
 			t.Errorf("Expected %v [%d], got %v [%d]", c.out, len(c.out), res, len(res))
 		}
-	}
 
+		// Charge check: a staticcall to a not-yet-active precompile must pay
+		// COLD account access (~2600), not WARM (~100). If the address were
+		// wrongly pre-registered as a precompile it would be pre-warmed via
+		// state.Prepare(..., ActivePrecompiles(rules), ...) and this check
+		// would fail against the expected cold-access range.
+		gas, err := simple.CheckGasUsed(&bind.CallOpts{Context: ctx}, c.addr, c.in)
+		Require(t, err, "Simple.CheckGasUsed failed for", c.addr)
+		if gas.Cmp(big.NewInt(int64(c.gasMin))) < 0 || gas.Cmp(big.NewInt(int64(c.gasMax))) > 0 {
+			t.Errorf("Precompile %v: gas used %v, expected in [%d, %d]",
+				c.addr, gas, c.gasMin, c.gasMax)
+		}
+	}
 }
 
 type precompileCase struct {
-	addr common.Address
-	in   []byte
-	out  []byte
+	addr           common.Address
+	in             []byte
+	out            []byte
+	gasMin, gasMax uint64
 }
 
 type precompileCaseProvider struct {
@@ -118,6 +143,11 @@ func (c precompileCaseProvider) Included() precompileCase {
 		addr: c.addr,
 		in:   c.input,
 		out:  c.expected,
+		// Warm access (100) + precompile.RequiredGas + staticcall/solidity
+		// overhead. Lower bound rules out warm-and-no-op (~100) — the cheapest
+		// precompile here is bls12381G1Add at 375 gas.
+		gasMin: 400,
+		gasMax: 100_000,
 	}
 }
 
@@ -126,5 +156,8 @@ func (c precompileCaseProvider) NotIncluded() precompileCase {
 		addr: c.addr,
 		in:   c.input,
 		out:  []byte{},
+		// COLD account access (2600) + empty-account no-op + minor overhead.
+		gasMin: 2500,
+		gasMax: 3000,
 	}
 }
