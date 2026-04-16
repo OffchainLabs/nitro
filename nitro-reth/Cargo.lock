@@ -1305,6 +1305,7 @@ dependencies = [
  "lazy_static",
  "nitro-brotli",
  "parking_lot",
+ "proptest",
  "prover",
  "revm",
  "thiserror 2.0.18",

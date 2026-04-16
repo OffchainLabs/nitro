@@ -36,6 +36,7 @@ eyre = { workspace = true }
 
 [dev-dependencies]
 wat = "1"
+proptest = { workspace = true }
 
 [lints]
 workspace = true
