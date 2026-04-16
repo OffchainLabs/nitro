@@ -37,9 +37,32 @@ func TestArbOwner(t *testing.T) {
 	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
+	type eventNameAndEmits struct {
+		eventName string
+		emitted   []common.Address
+	}
+	ownerAddedEvents := eventNameAndEmits{}
+
+	eventEmmitterMock := func(event *eventNameAndEmits) func(ctx, mech, common.Address) error {
+		return func(ctx, mech, address common.Address) error {
+			events = append(event.emitted, address)
+			return nil
+		}
+	}
+	checkAndClear := func(event *eventNameAndEmits, expectedAddress common.Address) {
+		t.Helper()
+		if len(expectedAddress) == 0 && len(event.emitted) > 0 {
+			Fail(t, event.name, "shouldn't have been emitted, got:", events)
+		}
+		expected := []common.Address{expectedAddress}
+		if event.emmited != expected {
+			Fail(t, "Unexpected ", event.name, "events emitted, got:", events, "want:", expected)
+		}
+		event.emitted = nil
+	}
 	prec := &ArbOwner{
-		ChainOwnerAdded:   func(ctx, mech, common.Address) error { return nil },
-		ChainOwnerRemoved: func(ctx, mech, common.Address) error { return nil },
+		ChainOwnerAdded:   eventEmmitterMock(&ownerAddedEvents),
+		ChainOwnerRemoved: eventEmmitterMock(&ownerRemovedEvents),
 	}
 	gasInfo := &ArbGasInfo{}
 	callCtx := testContext(caller, evm)
@@ -48,8 +71,14 @@ func TestArbOwner(t *testing.T) {
 	Require(t, prec.RemoveChainOwner(callCtx, evm, common.Address{}))
 
 	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
+	checkAndClear(ownerAddedEvents, addr1)
+	checkAndClear(ownerRemovedEvents, nil)
 	Require(t, prec.AddChainOwner(callCtx, evm, addr2))
+	checkAndClear(ownerAddedEvents, addr2)
+	checkAndClear(ownerRemovedEvents, nil)
 	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
+	checkAndClear(ownerAddedEvents, nil)
+	checkAndClear(ownerRemovedEvents, nil)
 
 	member, err := prec.IsChainOwner(callCtx, evm, addr1)
 	Require(t, err)
@@ -70,6 +99,8 @@ func TestArbOwner(t *testing.T) {
 	}
 
 	Require(t, prec.RemoveChainOwner(callCtx, evm, addr1))
+	checkAndClear(ownerAddedEvents, nil)
+	checkAndClear(ownerRemovedEvents, addr1)
 	member, err = prec.IsChainOwner(callCtx, evm, addr1)
 	Require(t, err)
 	if member {
@@ -82,6 +113,8 @@ func TestArbOwner(t *testing.T) {
 	}
 
 	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
+	checkAndClear(ownerAddedEvents, addr1)
+	checkAndClear(ownerRemovedEvents, nil)
 	all, err := prec.GetAllChainOwners(callCtx, evm)
 	Require(t, err)
 	if len(all) != 3 {
