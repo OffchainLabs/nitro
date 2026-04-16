@@ -1,0 +1,24 @@
+{
+  "name": "retryable_expires",
+  "description": "Retryable past its timeout should not open",
+  "setup": { "arbos_version": 30, "chain_id": 412346 },
+  "actions": [
+    {
+      "type": "retryable_create",
+      "id": "0x00000000000000000000000000000000000000000000000000000000000000aa",
+      "timeout": 100,
+      "from": "0x00000000000000000000000000000000000A11CE",
+      "callvalue": "0x0",
+      "beneficiary": "0x00000000000000000000000000000000000B0B00"
+    }
+  ],
+  "assertions": {
+    "retryable": {
+      "exists": {
+        "id": "0x00000000000000000000000000000000000000000000000000000000000000aa",
+        "at_time": 500,
+        "expected": false
+      }
+    }
+  }
+}

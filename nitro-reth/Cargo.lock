@@ -1269,6 +1269,7 @@ dependencies = [
  "arb-storage",
  "arb-test-utils",
  "arbos",
+ "hex",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

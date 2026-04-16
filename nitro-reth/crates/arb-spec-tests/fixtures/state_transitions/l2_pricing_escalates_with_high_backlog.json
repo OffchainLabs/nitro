@@ -1,0 +1,14 @@
+{
+  "name": "l2_pricing_escalates_with_high_backlog",
+  "description": "Setting a backlog far above tolerance forces base fee above min after one tick",
+  "setup": { "arbos_version": 30, "chain_id": 412346 },
+  "actions": [
+    { "type": "l2_pricing_set_gas_backlog", "value": 10000000000 },
+    { "type": "l2_pricing_update_model", "time_passed": 1 }
+  ],
+  "assertions": {
+    "l2_pricing": {
+      "base_fee_at_least": "0x6000000"
+    }
+  }
+}

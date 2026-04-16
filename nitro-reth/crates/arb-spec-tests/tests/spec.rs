@@ -10,3 +10,4 @@ macro_rules! spec_dir {
 }
 
 spec_dir!(pricing, "pricing");
+spec_dir!(state_transitions, "state_transitions");
