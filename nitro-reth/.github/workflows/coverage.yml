@@ -20,9 +20,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov,cargo-nextest
       - name: Generate coverage report
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info --no-fail-fast
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
