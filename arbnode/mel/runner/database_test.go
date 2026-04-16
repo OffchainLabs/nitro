@@ -25,7 +25,8 @@ func TestMelDatabase(t *testing.T) {
 
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 
 	headMelState := &mel.State{
 		ParentChainBlockNumber: 2,
@@ -68,7 +69,8 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	// Init
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 
 	delayedRequestId := common.BigToHash(common.Big1)
 	delayedMsg := &mel.DelayedInboxMessage{
@@ -102,10 +104,10 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 
 	// Add genesis melState
-	var err error
 	genesis := &mel.State{
 		ParentChainBlockNumber: 1,
 	}
