@@ -10,6 +10,7 @@ members = [
     "crates/arb-rpc",
     "crates/arb-txpool",
     "crates/arb-stylus",
+    "crates/arb-test-utils",
     "crates/arbos",
     "bin/arb-reth",
     "bin/gen-genesis",
@@ -36,6 +37,7 @@ arb-rpc = { path = "crates/arb-rpc" }
 arb-txpool = { path = "crates/arb-txpool" }
 
 arb-stylus = { path = "crates/arb-stylus" }
+arb-test-utils = { path = "crates/arb-test-utils" }
 arbos = { path = "crates/arbos" }
 
 # Reth SDK (official)
