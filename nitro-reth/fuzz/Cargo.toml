@@ -1,0 +1,46 @@
+[package]
+name = "arbreth-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbos = { path = "../crates/arbos" }
+arb-primitives = { path = "../crates/arb-primitives" }
+arb-alloy-consensus = "0.1.2"
+alloy-primitives = "1.5"
+alloy-eips = "1.7"
+
+[[bin]]
+name = "parse_l2_transactions"
+path = "fuzz_targets/parse_l2_transactions.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_arb_receipt"
+path = "fuzz_targets/decode_arb_receipt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_arb_tx_envelope"
+path = "fuzz_targets/decode_arb_tx_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_internal_tx"
+path = "fuzz_targets/decode_internal_tx.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -16,7 +16,7 @@ members = [
     "bin/arb-reth",
     "bin/gen-genesis",
 ]
-exclude = ["vendor"]
+exclude = ["vendor", "fuzz"]
 resolver = "2"
 
 [workspace.package]
