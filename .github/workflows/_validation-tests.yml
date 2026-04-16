@@ -45,25 +45,83 @@ jobs:
           JIT_HASH=$(grep -oP 'hash \K(0x)?[a-f0-9]+' /tmp/jit_output.txt)
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
-      - name: Download a second module root (consensus-v60-alpha.2)
-        env:
-          SECOND_MODULE_ROOT: "0x5a79438ff2ab312234ee23839ea03b0c9348e856298b5ab1d2c067bf3c725bd0"
+      - name: Download all module roots from Dockerfile
+        id: module-roots
         run: |
-          scripts/download-machine.sh consensus-v60-alpha.2 "$SECOND_MODULE_ROOT"
-          mv "$SECOND_MODULE_ROOT" target/machines/
-          rm -f latest
+          # Download every module root the Dockerfile currently supports, so
+          # the validation server discovers all of them under target/machines/
+          # at startup and we can address each one by hash in the next step.
+          HASHES=()
+          while IFS=' ' read -r NAME HASH; do
+            echo "Downloading $NAME ($HASH)..."
+            scripts/download-machine.sh "$NAME" "$HASH"
+            mv "$HASH" target/machines/
+            # download-machine.sh creates a `latest` symlink in cwd; remove it
+            # so the target/machines/latest built by `make build-replay-env`
+            # stays intact.
+            rm -f latest
+            HASHES+=("$HASH")
+          done < <(scripts/extract-dockerfile-module-roots.sh Dockerfile)
+
+          {
+            echo "hashes<<EOF"
+            printf '%s\n' "${HASHES[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Run Rust validation server (Native & Continuous)
+        env:
+          MODULE_ROOT_HASHES: ${{ steps.module-roots.outputs.hashes }}
         run: |
           # Capture the expected hash once
           JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
+
+          # Every module root in MODULE_ROOT_HASHES supports the ArbOS version
+          # of the TestProgramStorage block, so each one must produce the same
+          # block hash as the JIT prover. A mismatch (or error) on any single
+          # root fails the job.
+          send_validate() {
+            local ID=$1
+            local MODULE_ROOT=$2
+            if [ -z "$MODULE_ROOT" ]; then
+              jq -n --slurpfile input "${{ env.INPUT_FILE }}" --argjson id "$ID" \
+                '{jsonrpc: "2.0", id: $id, method: "validation_validate", params: [$input[0]]}'
+            else
+              jq -n --slurpfile input "${{ env.INPUT_FILE }}" --argjson id "$ID" --arg mr "$MODULE_ROOT" \
+                '{jsonrpc: "2.0", id: $id, method: "validation_validate", params: [$input[0], $mr]}'
+            fi | curl -s -X POST http://localhost:4141/ \
+              -H "Content-Type: application/json" -d @-
+          }
+
+          check_response() {
+            local LABEL=$1
+            local EXPECTED_ID=$2
+            local RESPONSE=$3
+
+            local RESP_ID SERVER_HASH
+            RESP_ID=$(echo "$RESPONSE" | jq -r '.id')
+            if [ "$RESP_ID" != "$EXPECTED_ID" ]; then
+              echo "❌ $LABEL JSON-RPC id mismatch: expected $EXPECTED_ID, got $RESP_ID"
+              echo "   response: $RESPONSE"
+              return 1
+            fi
+
+            SERVER_HASH=$(echo "$RESPONSE" | jq -r '.result.BlockHash')
+            if [ "$JIT_HASH" != "$SERVER_HASH" ]; then
+              echo "❌ $LABEL hash mismatch: JIT=$JIT_HASH server=$SERVER_HASH"
+              echo "   response: $RESPONSE"
+              return 1
+            fi
+
+            echo "✅ $LABEL matches JIT ($SERVER_HASH)"
+          }
 
           validate_mode() {
             local MODE_NAME=$1
             local SERVER_ARGS=$2
 
             echo "::group::Testing Mode: $MODE_NAME"
-            
+
             # 1. Start server in background
             echo "Starting server ($MODE_NAME)..."
             target/bin/validator $SERVER_ARGS &
@@ -77,63 +135,35 @@ jobs:
               exit 1
             fi
 
-            # 3. Send 2 validation requests
-            RESPONSE1=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-              '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}' | \
-              curl -s -X POST http://localhost:4141/ \
-                -H "Content-Type: application/json" -d @-)
+            # 3. Validate once against the default (latest) module root, then
+            # once per Dockerfile-listed module root.
+            local EXIT_CODE=0
+            local ID=1
+            local RESPONSE
+            RESPONSE=$(send_validate "$ID" "")
+            check_response "$MODE_NAME latest" "$ID" "$RESPONSE" || EXIT_CODE=1
 
-            SECOND_MODULE_ROOT="0x5a79438ff2ab312234ee23839ea03b0c9348e856298b5ab1d2c067bf3c725bd0"
-            RESPONSE2=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-              --arg mr "$SECOND_MODULE_ROOT" \
-              '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0], $mr]}' | \
-              curl -s -X POST http://localhost:4141/ \
-                -H "Content-Type: application/json" -d @-)
+            while IFS= read -r MODULE_ROOT; do
+              [ -z "$MODULE_ROOT" ] && continue
+              ID=$((ID + 1))
+              RESPONSE=$(send_validate "$ID" "$MODULE_ROOT")
+              check_response "$MODE_NAME $MODULE_ROOT" "$ID" "$RESPONSE" || EXIT_CODE=1
+            done <<< "$MODULE_ROOT_HASHES"
 
             # 4. Stop the server
             kill $SERVER_PID
             wait $SERVER_PID 2>/dev/null || true
 
-            # 5. Verify JSON-RPC response IDs match request IDs
-            RESP_ID1=$(echo "$RESPONSE1" | jq -r '.id')
-            RESP_ID2=$(echo "$RESPONSE2" | jq -r '.id')
-
-            if [ "$RESP_ID1" != "1" ] || [ "$RESP_ID2" != "2" ]; then
-              echo "❌ $MODE_NAME JSON-RPC response ID mismatch: expected 1 and 2, got $RESP_ID1 and $RESP_ID2"
-              exit 1
+            if [ "$EXIT_CODE" -ne 0 ]; then
+              echo "❌ $MODE_NAME Validation failed"
+              exit "$EXIT_CODE"
             fi
-
-            # 6. Compare hashes
-            SERVER_HASH1=$(echo "$RESPONSE1" | jq -r '.result.BlockHash')
-            SERVER_HASH2=$(echo "$RESPONSE2" | jq -r '.result.BlockHash')
-
-            echo "JIT Hash:               $JIT_HASH"
-            echo "Server response 1 Hash: $SERVER_HASH1"
-            echo "Server response 2 Hash: $SERVER_HASH2"
-
-            if [ "$JIT_HASH" != "$SERVER_HASH1" ]; then
-              echo "--- $MODE_NAME Validation failed: HASH1 does not match JIT hash"
-              exit 1
-            fi
-            echo "+++ $MODE_NAME Request 1 (latest module root): hash matches JIT"
-
-            # HASH2 uses a different module root, so it will differ from JIT_HASH.
-            # Verify the response is successful but don't compare hashes.
-            ERROR2=$(echo "$RESPONSE2" | jq -r '.error // empty')
-            if [ -n "$ERROR2" ]; then
-              echo "--- $MODE_NAME Request 2 failed with error: $ERROR2"
-              exit 1
-            fi
-            if [ -z "$SERVER_HASH2" ] || [ "$SERVER_HASH2" == "null" ]; then
-              echo "--- $MODE_NAME Request 2 returned null hash"
-              exit 1
-            fi
-            echo "+++ $MODE_NAME Request 2 (second module root): validation succeeded with hash $SERVER_HASH2"
+            echo "✅ $MODE_NAME Validation successful"
             echo "::endgroup::"
           }
 
           # --- RUN TESTS ---
-          
+
           # Run Validator in Native mode
           validate_mode "Native" ""
 
