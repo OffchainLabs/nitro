@@ -291,6 +291,13 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		err = pruning.PruneExecutionDBWithDistance(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false, 100)
 		Require(t, err)
 
+		// Delete the snapshot root so the 2nd node's blockchain initialization doesn't
+		// try to rewind past the snapshot disk layer. Without this, the rewind goes much
+		// further back than the nearest available state, causing the node to re-process
+		// many blocks and regenerate their state in the trie dirty cache, which makes
+		// BalanceAt succeed for blocks that should have been pruned.
+		rawdb.DeleteSnapshotRoot(executionDB)
+
 		executionDBEntriesAfterPruning := countStateEntries(executionDB)
 		t.Log("db entries pre-pruning:", executionDBEntriesBeforePruning)
 		t.Log("db entries post-pruning:", executionDBEntriesAfterPruning)
@@ -351,8 +358,10 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		Require(t, err)
 	} else {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
-		if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected balance retrieval to fail for block %d", validatedMsgIdx)
+		if err == nil {
+			t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", validatedMsgIdx)
+		} else if !strings.Contains(err.Error(), "missing trie node") {
+			t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", validatedMsgIdx, err)
 		}
 	}
 
@@ -361,8 +370,10 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		Require(t, err)
 	} else {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
-		if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected balance retrieval to fail for block %d", finalizedMsgIdx)
+		if err == nil {
+			t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", finalizedMsgIdx)
+		} else if !strings.Contains(err.Error(), "missing trie node") {
+			t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", finalizedMsgIdx, err)
 		}
 	}
 }
