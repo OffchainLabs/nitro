@@ -11,7 +11,6 @@ import (
 	"time"
 
 	googlestorage "cloud.google.com/go/storage"
-	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 	"google.golang.org/api/option"
 
@@ -171,10 +170,24 @@ func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not check permissions: %w", err)
 	}
-	sort.Strings(permissions)
-	sort.Strings(perms)
-	if !cmp.Equal(perms, permissions) {
-		return fmt.Errorf("permissions mismatch (-want +got):\n%s", cmp.Diff(permissions, perms))
+	// GCP's TestPermissions silently omits permissions granted via conditional IAM bindings
+	// (e.g. bindings with a CEL expression scoped to an object prefix). Rather than doing
+	// an exact equality check — which would always fail when conditions are in use — we
+	// check for missing permissions only, so that conditional bindings are tolerated while
+	// genuinely absent permissions are still caught.
+	permsSet := make(map[string]struct{}, len(perms))
+	for _, p := range perms {
+		permsSet[p] = struct{}{}
+	}
+	var missing []string
+	for _, p := range permissions {
+		if _, ok := permsSet[p]; !ok {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("missing required permissions: %v", missing)
 	}
 
 	return nil
