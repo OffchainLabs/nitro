@@ -333,8 +333,10 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 				continue
 			}
 			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
-			if !strings.Contains(err.Error(), "missing trie node") {
-				t.Fatalf("Expected balance retrieval to fail for block %d", i)
+			if err == nil {
+				t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", i)
+			} else if !strings.Contains(err.Error(), "missing trie node") {
+				t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", i, err)
 			}
 		} else {
 			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
