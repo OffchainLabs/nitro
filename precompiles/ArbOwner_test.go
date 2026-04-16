@@ -37,7 +37,10 @@ func TestArbOwner(t *testing.T) {
 	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
-	prec := &ArbOwner{}
+	prec := &ArbOwner{
+		ChainOwnerAdded:   func(ctx, mech, common.Address) error { return nil },
+		ChainOwnerRemoved: func(ctx, mech, common.Address) error { return nil },
+	}
 	gasInfo := &ArbGasInfo{}
 	callCtx := testContext(caller, evm)
 
