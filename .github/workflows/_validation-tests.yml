@@ -51,6 +51,11 @@ jobs:
           # Download every module root the Dockerfile currently supports, so
           # the validation server discovers all of them under target/machines/
           # at startup and we can address each one by hash in the next step.
+          # Capture into a variable (not process substitution) so a non-zero
+          # exit from extract-dockerfile-module-roots.sh — which is how it
+          # signals "zero matches, CI has been silently weakened" — propagates
+          # and fails the step under the default `set -eo pipefail`.
+          MODULE_ROOTS=$(scripts/extract-dockerfile-module-roots.sh Dockerfile)
           HASHES=()
           while IFS=' ' read -r NAME HASH; do
             echo "Downloading $NAME ($HASH)..."
@@ -61,7 +66,7 @@ jobs:
             # stays intact.
             rm -f latest
             HASHES+=("$HASH")
-          done < <(scripts/extract-dockerfile-module-roots.sh Dockerfile)
+          done <<< "$MODULE_ROOTS"
 
           {
             echo "hashes<<EOF"
@@ -75,6 +80,15 @@ jobs:
         run: |
           # Capture the expected hash once
           JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
+
+          # Refuse to run a degraded validation that only checks `latest`.
+          # If MODULE_ROOT_HASHES is empty here, something went wrong upstream
+          # (e.g. the download step silently produced no hashes) and the
+          # multi-root coverage this job is supposed to provide would be lost.
+          if ! grep -qE '[^[:space:]]' <<< "$MODULE_ROOT_HASHES"; then
+            echo "❌ MODULE_ROOT_HASHES is empty — refusing to run degraded validation"
+            exit 1
+          fi
 
           # Every module root in MODULE_ROOT_HASHES supports the ArbOS version
           # of the TestProgramStorage block, so each one must produce the same
@@ -122,16 +136,21 @@ jobs:
 
             echo "::group::Testing Mode: $MODE_NAME"
 
-            # 1. Start server in background
+            # 1. Start server in background, capturing output so a crash
+            # surfaces the actual error instead of just a hash/id mismatch.
+            local LOG_FILE="/tmp/validator-$MODE_NAME.log"
             echo "Starting server ($MODE_NAME)..."
-            target/bin/validator $SERVER_ARGS &
+            target/bin/validator $SERVER_ARGS > "$LOG_FILE" 2>&1 &
             SERVER_PID=$!
 
-            # 2. Wait for server to respond (up to 5 seconds)
+            # 2. Wait for server to respond (up to 2 minutes)
             echo "Waiting for validator ($MODE_NAME) to start..."
             if ! timeout 120s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'; then
               echo "❌ Server ($MODE_NAME) failed to start within 2 min timeout"
-              kill $SERVER_PID
+              echo "::group::Validator log ($MODE_NAME)"
+              cat "$LOG_FILE" || true
+              echo "::endgroup::"
+              kill $SERVER_PID 2>/dev/null || true
               exit 1
             fi
 
@@ -155,6 +174,9 @@ jobs:
             wait $SERVER_PID 2>/dev/null || true
 
             if [ "$EXIT_CODE" -ne 0 ]; then
+              echo "::group::Validator log ($MODE_NAME)"
+              cat "$LOG_FILE" || true
+              echo "::endgroup::"
               echo "❌ $MODE_NAME Validation failed"
               exit "$EXIT_CODE"
             fi
