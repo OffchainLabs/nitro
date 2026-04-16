@@ -38,6 +38,7 @@ docker-compose*.yml
 # Docker data volumes
 arbitrum-reth-data/
 nitro-data/
+arbreth-data/
 
 # MCP config
 .mcp.json

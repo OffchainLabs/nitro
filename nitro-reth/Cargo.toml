@@ -177,6 +177,7 @@ ruint2 = "1.9.0"
 
 # Test deps
 rstest = "0.26"
+proptest = "1"
 
 [workspace.lints.rust]
 unused_must_use = "deny"

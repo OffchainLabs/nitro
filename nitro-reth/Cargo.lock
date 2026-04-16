@@ -1199,6 +1199,7 @@ dependencies = [
  "arb-alloy-util",
  "bytes",
  "derive_more 2.1.1",
+ "proptest",
  "reth-codecs",
  "reth-db-api",
  "reth-primitives-traits",
@@ -1266,6 +1267,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "arb-primitives",
+ "arb-test-utils",
  "reth-db-api",
  "reth-provider",
  "reth-storage-api",
@@ -1339,6 +1341,7 @@ dependencies = [
  "arb-storage",
  "arb-test-utils",
  "cc",
+ "proptest",
  "revm",
  "thiserror 2.0.18",
  "tracing",
