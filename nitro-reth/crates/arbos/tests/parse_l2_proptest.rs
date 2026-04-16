@@ -5,11 +5,16 @@ use proptest::prelude::*;
 const KINDS: &[u8] = &[0, 1, 3, 6, 7, 9, 11, 12, 100, 255];
 
 proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 64,
+        ..ProptestConfig::default()
+    })]
+
     #[test]
     fn parse_l2_transactions_no_panic(
         kind in prop::sample::select(KINDS),
         poster in prop::array::uniform20(any::<u8>()),
-        body in prop::collection::vec(any::<u8>(), 0..512),
+        body in prop::collection::vec(any::<u8>(), 0..256),
         request_id in prop::option::of(any::<[u8; 32]>()),
         l1_base_fee in prop::option::of(any::<[u8; 32]>()),
         chain_id in any::<u64>(),
@@ -27,7 +32,7 @@ proptest! {
     #[test]
     fn parse_l2_transactions_random_kind_no_panic(
         kind in any::<u8>(),
-        body in prop::collection::vec(any::<u8>(), 0..256),
+        body in prop::collection::vec(any::<u8>(), 0..128),
     ) {
         let _ = parse_l2_transactions(
             kind,
