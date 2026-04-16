@@ -4,7 +4,6 @@ package execution
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,9 +40,6 @@ type ConsensusSyncData struct {
 	SyncProgressMap map[string]interface{} // Only populated when !Synced for debugging
 	UpdatedAt       time.Time
 }
-
-var ErrRetrySequencer = errors.New("please retry transaction")
-var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {

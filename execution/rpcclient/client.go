@@ -5,7 +5,6 @@ package rpcclient
 
 import (
 	"context"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
@@ -13,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -41,24 +39,11 @@ func (c *Client) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 }
 
-func convertError(err error) error {
-	if err == nil {
-		return nil
-	}
-	errStr := err.Error()
-	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
-		return execution.ErrRetrySequencer
-	} else if strings.Contains(errStr, gethexec.ResultNotFound.Error()) {
-		return gethexec.ResultNotFound
-	}
-	return err
-}
-
 func sendRequest[T any](c *Client, method string, args ...any) containers.PromiseInterface[T] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (T, error) {
 		var res T
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+method, args...)
-		return res, convertError(err)
+		return res, err
 	})
 }
 
