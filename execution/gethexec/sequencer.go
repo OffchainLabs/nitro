@@ -503,7 +503,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 		FilteredAddresses: filteredAddresses,
 		BlockNumber:       header.Number.Uint64(),
 		ParentBlockHash:   header.ParentHash,
-		PositionInBlock:   positionInBlock, // #nosec G115
+		PositionInBlock:   uint64(positionInBlock), // #nosec G115
 		FilteredAt:        time.Now().UTC(),
 		IsDelayed:         false,
 		DelayedReportData: nil,
