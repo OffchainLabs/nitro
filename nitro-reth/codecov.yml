@@ -5,19 +5,76 @@ coverage:
         target: auto
         threshold: 1%
         informational: true
+      arbos:
+        paths:
+          - "crates/arbos/"
+        target: 30%
+        threshold: 2%
+        informational: true
+      arb-storage:
+        paths:
+          - "crates/arb-storage/"
+        target: 40%
+        threshold: 2%
+        informational: true
+      arb-primitives:
+        paths:
+          - "crates/arb-primitives/"
+        target: 40%
+        threshold: 2%
+        informational: true
+      arb-precompiles:
+        paths:
+          - "crates/arb-precompiles/"
+        target: 50%
+        threshold: 2%
+        informational: true
+      arb-stylus:
+        paths:
+          - "crates/arb-stylus/"
+        target: 25%
+        threshold: 2%
+        informational: true
+      arb-chainspec:
+        paths:
+          - "crates/arb-chainspec/"
+        target: 60%
+        threshold: 2%
+        informational: true
     patch:
       default:
-        target: auto
+        target: 70%
         informational: true
 
+flags:
+  arbos:
+    paths:
+      - crates/arbos/
+  arb-storage:
+    paths:
+      - crates/arb-storage/
+  arb-primitives:
+    paths:
+      - crates/arb-primitives/
+  arb-precompiles:
+    paths:
+      - crates/arb-precompiles/
+  arb-stylus:
+    paths:
+      - crates/arb-stylus/
+  arb-chainspec:
+    paths:
+      - crates/arb-chainspec/
+
 comment:
-  layout: "reach, diff, flags, files"
+  layout: "reach, diff, flags, files, components"
   behavior: default
   require_changes: false
 
 ignore:
   - "vendor"
   - "bin"
+  - "fuzz"
   - "testing"
   - "genesis"
   - "**/tests/**"
