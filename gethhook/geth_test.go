@@ -193,11 +193,36 @@ func TestPrecompileBucketMembership(t *testing.T) {
 		contracts  map[common.Address]vm.PrecompiledContract
 		addrs      []common.Address
 		upperBound uint64 // exclusive
+		ethSubsets []map[common.Address]vm.PrecompiledContract
 	}{
-		{"BeforeArbOS30", vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledAddressesBeforeArbOS30, params.ArbosVersion_30},
-		{"StartingFromArbOS30", vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledAddressesStartingFromArbOS30, params.ArbosVersion_50},
-		{"StartingFromArbOS50", vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledAddressesStartingFromArbOS50, params.ArbosVersion_60},
-		{"StartingFromArbOS60", vm.PrecompiledContractsStartingFromArbOS60, vm.PrecompiledAddressesStartingFromArbOS60, maxKnownArbosVersion + 1},
+		{
+			name:       "BeforeArbOS30",
+			contracts:  vm.PrecompiledContractsBeforeArbOS30,
+			addrs:      vm.PrecompiledAddressesBeforeArbOS30,
+			upperBound: params.ArbosVersion_30,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsBerlin},
+		},
+		{
+			name:       "StartingFromArbOS30",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS30,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS30,
+			upperBound: params.ArbosVersion_50,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsCancun, vm.PrecompiledContractsP256Verify},
+		},
+		{
+			name:       "StartingFromArbOS50",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS50,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS50,
+			upperBound: params.ArbosVersion_60,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsOsaka},
+		},
+		{
+			name:       "StartingFromArbOS60",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS60,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS60,
+			upperBound: maxKnownArbosVersion + 1,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsOsaka},
+		},
 	}
 
 	for addr, p := range precompiles.Precompiles() {
@@ -218,19 +243,10 @@ func TestPrecompileBucketMembership(t *testing.T) {
 		}
 	}
 
-	// Ethereum precompile subsets init() explicitly merges into each bucket
-	// (see geth-hook.go). Keys must match the bucket names declared above.
-	ethSubsets := map[string][]map[common.Address]vm.PrecompiledContract{
-		"BeforeArbOS30":       {vm.PrecompiledContractsBerlin},
-		"StartingFromArbOS30": {vm.PrecompiledContractsCancun, vm.PrecompiledContractsP256Verify},
-		"StartingFromArbOS50": {vm.PrecompiledContractsOsaka},
-		"StartingFromArbOS60": {vm.PrecompiledContractsOsaka},
-	}
-
 	for _, b := range buckets {
 		// Every address from each assigned Ethereum subset must be present.
 		ethUnion := make(map[common.Address]struct{})
-		for _, subset := range ethSubsets[b.name] {
+		for _, subset := range b.ethSubsets {
 			for addr := range subset {
 				ethUnion[addr] = struct{}{}
 				if _, ok := b.contracts[addr]; !ok {
