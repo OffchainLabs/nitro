@@ -214,11 +214,13 @@ func (p Programs) CallProgram(
 	if !cached {
 		callCost = arbmath.SaturatingUAdd(callCost, program.initGas(params))
 	}
-	// Gate the per-node open-page cap before BurnGas. The helper returns
-	// math.MaxUint64 (its only non-zero return) when over-limit, which
-	// overrides callCost so BurnGas below fails with vm.ErrOutOfGas.
-	newOpen := arbmath.SaturatingUAdd(open, program.footprint)
-	if penalty := enforceStylusPageLimit(evm, statedb, runCtx, newOpen, contract.Address(), params, pageLimitCallProgram); penalty > 0 {
+	// Gate against programs whose static footprint alone exceeds the page
+	// caps. The cumulative `open + footprint` case is handled at the addPages
+	// hostio (once the program actually grows memory); checking cumulative
+	// here too would falsely reject legitimate nested calls where the outer
+	// frame has already consumed pages via memory.grow. On exceed, the helper
+	// returns math.MaxUint64 so BurnGas below fails with vm.ErrOutOfGas.
+	if penalty := enforceStylusPageLimit(evm, statedb, runCtx, program.footprint, contract.Address(), params, pageLimitCallProgram); penalty > 0 {
 		callCost = penalty
 	}
 	if err := contract.BurnGas(callCost); err != nil {
