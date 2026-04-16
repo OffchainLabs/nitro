@@ -33,7 +33,7 @@ wasmer-vm = { workspace = true }
 
 [dev-dependencies]
 num-bigint = { workspace = true }
-rand = { workspace = true, default-features = true }
+rand = { workspace = true, features = ["default", "thread_rng"] }
 
 [features]
 default = ["rayon", "singlepass_rayon"]

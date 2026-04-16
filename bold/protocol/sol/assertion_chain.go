@@ -634,7 +634,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	existingAssertion, err := a.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, protocol.AssertionHash{Hash: computedHash})
 	switch {
 	case err == nil:
-		return existingAssertion, nil
+		return existingAssertion, ErrAlreadyExists
 	case !errors.Is(err, ErrNotFound):
 		return nil, errors.Wrapf(err, "could not fetch assertion with computed hash %#x", computedHash)
 	default:
@@ -677,7 +677,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 			if err2 != nil {
 				return nil, err2
 			}
-			return assertionItem, nil
+			return assertionItem, ErrAlreadyExists
 		}
 		return nil, fmt.Errorf("could not create assertion: %w", createErr)
 	}

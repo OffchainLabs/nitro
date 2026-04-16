@@ -5,6 +5,7 @@ package melrunner
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -19,10 +20,67 @@ import (
 // against the outbox accumulator.
 type Database struct {
 	db ethdb.KeyValueStore
+
+	// Cached boundary counts from the initial MEL state (set during legacy migration).
+	// Indices below these thresholds are read from legacy (pre-MEL) schema keys.
+	hasInitialState     bool
+	initialDelayedCount uint64
+	initialBatchCount   uint64
 }
 
-func NewDatabase(db ethdb.KeyValueStore) *Database {
-	return &Database{db}
+func NewDatabase(db ethdb.KeyValueStore) (*Database, error) {
+	d := &Database{db: db}
+	if err := d.loadInitialBoundary(); err != nil {
+		return nil, fmt.Errorf("failed to load initial MEL state boundary: %w", err)
+	}
+	return d, nil
+}
+
+// loadInitialBoundary loads the initial MEL state boundary counts from the DB.
+// If InitialMelStateBlockNumKey exists, it reads the initial state to cache
+// the delayed message and batch count thresholds for legacy key dispatch.
+// Returns nil if the key does not exist (fresh node with no legacy boundary).
+func (d *Database) loadInitialBoundary() error {
+	blockNum, err := read.Value[uint64](d.db, schema.InitialMelStateBlockNumKey)
+	if err != nil {
+		if rawdb.IsDbErrNotFound(err) {
+			d.hasInitialState = false
+			return nil
+		}
+		return fmt.Errorf("error reading InitialMelStateBlockNumKey: %w", err)
+	}
+	state, err := d.State(blockNum)
+	if err != nil {
+		return fmt.Errorf("error reading initial MEL state at block %d: %w", blockNum, err)
+	}
+	d.hasInitialState = true
+	d.initialDelayedCount = state.DelayedMessagesSeen
+	d.initialBatchCount = state.BatchCount
+	return nil
+}
+
+func (d *Database) SaveInitialMelState(initialState *mel.State) error {
+	dbBatch := d.db.NewBatch()
+	encoded, err := rlp.EncodeToBytes(initialState.ParentChainBlockNumber)
+	if err != nil {
+		return err
+	}
+	if err := dbBatch.Put(schema.InitialMelStateBlockNumKey, encoded); err != nil {
+		return err
+	}
+	if err := d.setMelState(dbBatch, initialState.ParentChainBlockNumber, *initialState); err != nil {
+		return err
+	}
+	if err := d.setHeadMelStateBlockNum(dbBatch, initialState.ParentChainBlockNumber); err != nil {
+		return err
+	}
+	if err := dbBatch.Write(); err != nil {
+		return err
+	}
+	d.hasInitialState = true
+	d.initialDelayedCount = initialState.DelayedMessagesSeen
+	d.initialBatchCount = initialState.BatchCount
+	return nil
 }
 
 func (d *Database) GetHeadMelState() (*mel.State, error) {
@@ -104,6 +162,9 @@ func (d *Database) SaveBatchMetas(state *mel.State, batchMetas []*mel.BatchMetad
 }
 
 func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
+	if d.hasInitialState && seqNum < d.initialBatchCount {
+		return legacyFetchBatchMetadata(d.db, seqNum)
+	}
 	batchMetadata, err := read.Value[mel.BatchMetadata](d.db, read.Key(schema.MelSequencerBatchMetaPrefix, seqNum))
 	if err != nil {
 		return nil, err
@@ -163,6 +224,9 @@ func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.Dela
 }
 
 func (d *Database) FetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
+	if d.hasInitialState && index < d.initialDelayedCount {
+		return legacyFetchDelayedMessage(d.db, index)
+	}
 	delayed, err := read.Value[mel.DelayedInboxMessage](d.db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
 		return nil, err
