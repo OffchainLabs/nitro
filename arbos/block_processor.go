@@ -492,6 +492,10 @@ func ProduceBlockAdvanced(
 					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result, len(buildState.receipts)); err != nil {
 						return err
 					}
+					// Additional post-transaction validity check
+					if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
+						return err
+					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
 						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
 							return err
@@ -502,13 +506,6 @@ func ProduceBlockAdvanced(
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
-				buildState.statedb.RevertToSnapshot(snap)
-				buildState.statedb.ClearTxFilter()
-				return nil, nil, err
-			}
-
-			// Additional post-transaction validity check
-			if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
 				buildState.statedb.RevertToSnapshot(snap)
 				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
