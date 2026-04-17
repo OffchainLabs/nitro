@@ -1,0 +1,32 @@
+[package]
+name = "arb-e2e-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "End-to-end tests that exercise the ArbBlockExecutor"
+
+[dependencies]
+arb-test-utils = { workspace = true }
+arbos = { workspace = true }
+arb-storage = { workspace = true }
+arb-primitives = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-alloy-consensus = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-consensus = { workspace = true }
+alloy-rlp = { workspace = true }
+revm = { workspace = true }
+
+[dev-dependencies]
+arb-evm = { workspace = true }
+arb-node = { workspace = true }
+reth-evm = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-revm = { workspace = true }
+reth-storage-api = { workspace = true }
+reth-primitives-traits = { workspace = true }
+alloy-evm = { workspace = true }
+
+[lints]
+workspace = true

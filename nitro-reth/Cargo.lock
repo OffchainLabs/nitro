@@ -1037,6 +1037,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-e2e-tests"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-evm",
+ "alloy-primitives",
+ "alloy-rlp",
+ "arb-alloy-consensus",
+ "arb-chainspec",
+ "arb-evm",
+ "arb-node",
+ "arb-primitives",
+ "arb-storage",
+ "arb-test-utils",
+ "arbos",
+ "reth-chainspec",
+ "reth-evm",
+ "reth-primitives-traits",
+ "reth-revm",
+ "reth-storage-api",
+ "revm",
+]
+
+[[package]]
 name = "arb-evm"
 version = "0.1.0"
 dependencies = [
