@@ -22,6 +22,7 @@ mod arbsys;
 mod arbwasm;
 mod arbwasmcache;
 mod nodeinterface;
+mod nodeinterface_debug;
 pub mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
@@ -53,6 +54,9 @@ pub use arbsys::{
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
 pub use nodeinterface::{create_nodeinterface_precompile, NODE_INTERFACE_ADDRESS};
+pub use nodeinterface_debug::{
+    create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
+};
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
@@ -473,6 +477,10 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
             create_arbnativetokenmanager_precompile(),
         ),
         (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
+        (
+            NODE_INTERFACE_DEBUG_ADDRESS,
+            create_nodeinterface_debug_precompile(),
+        ),
     ]);
 
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {

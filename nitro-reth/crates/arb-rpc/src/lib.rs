@@ -6,6 +6,9 @@
 
 pub mod api;
 pub mod arb_api;
+pub mod arbdebug;
+pub mod arbtimeboost;
+pub mod arbtrace;
 pub mod block_producer;
 pub mod builder;
 pub mod header;
