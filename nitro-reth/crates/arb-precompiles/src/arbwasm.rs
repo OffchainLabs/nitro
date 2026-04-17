@@ -38,6 +38,7 @@ const PROGRAM_TIME_LEFT: [u8; 4] = [0xc7, 0x75, 0xa6, 0x2a]; // programTimeLeft(
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
+const WARM_SLOAD_GAS: u64 = 100;
 
 /// Initial page ramp constant (not stored in packed params).
 const INITIAL_PAGE_RAMP: u64 = 620674314;
@@ -208,7 +209,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             let asm_size = program.asm_estimate_kb.saturating_mul(1024);
-            ok_u256(2 * SLOAD_GAS + COPY_GAS, U256::from(asm_size))
+            ok_u256(
+                SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + 2 * COPY_GAS,
+                U256::from(asm_size),
+            )
         }
         // Program queries by address (need to get codehash from account).
         PROGRAM_VERSION => {
