@@ -214,6 +214,16 @@ func (p Programs) CallProgram(
 	if !cached {
 		callCost = arbmath.SaturatingUAdd(callCost, program.initGas(params))
 	}
+	// Penalize programs whose static footprint alone exceeds the page caps.
+	// The cumulative `open + footprint` case is handled at the addPages
+	// hostio (once the program actually grows memory); checking cumulative
+	// here too would falsely reject legitimate nested calls where the outer
+	// frame has already consumed pages via memory.grow. On exceed, the helper
+	// returns math.MaxUint64 which saturates callCost to MaxUint64 so BurnGas
+	// below fails with vm.ErrOutOfGas.
+	penalty := enforceStylusPageLimit(evm, statedb, runCtx, program.footprint, contract.Address(), params, pageLimitCallProgram)
+	callCost = arbmath.SaturatingUAdd(callCost, penalty)
+
 	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
 	}
@@ -251,7 +261,7 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx, params)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
