@@ -478,9 +478,15 @@ where
 
 impl<N, Rpc> EthCall for ArbEthApi<N, Rpc>
 where
-    N: RpcNodeCore<Provider: StateProviderFactory>,
+    N: RpcNodeCore<
+            Provider: StateProviderFactory + reth_provider::BlockReaderIdExt + Clone,
+            Primitives = arb_primitives::ArbPrimitives,
+        >,
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+    RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
+        + AsMut<alloy_rpc_types_eth::TransactionRequest>
+        + Clone,
 {
     /// Override gas estimation to add L1 posting costs.
     #[allow(clippy::manual_async_fn)]
@@ -508,4 +514,184 @@ where
             Ok(compute_gas.saturating_add(U256::from(l1_gas)))
         }
     }
+
+    /// Intercept `eth_call` to the NodeInterface (0xc8) virtual contract
+    /// for methods that need chain history or nested EVM calls. Methods
+    /// that can be resolved at the precompile layer (with zero / empty
+    /// fallbacks) are delegated to the default EVM path.
+    #[allow(clippy::manual_async_fn)]
+    fn call(
+        &self,
+        request: RpcTxReq<<Self::RpcConvert as RpcConvert>::Network>,
+        block_number: Option<BlockId>,
+        overrides: alloy_rpc_types_eth::state::EvmOverrides,
+    ) -> impl std::future::Future<Output = Result<alloy_primitives::Bytes, Self::Error>> + Send
+    {
+        async move {
+            use crate::nodeinterface_rpc::{
+                encode_gas_estimate_components, encode_l2_block_range, gas_estimate_data_len,
+                unpack_mix_hash, SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
+                SEL_L2_BLOCK_RANGE_FOR_L1, NODE_INTERFACE_ADDRESS,
+            };
+            use alloy_primitives::{Address, TxKind};
+
+            // Only intercept calls targeting the NodeInterface address.
+            let target: Option<Address> = match request.as_ref().to {
+                Some(TxKind::Call(addr)) => Some(addr),
+                _ => None,
+            };
+            if target != Some(NODE_INTERFACE_ADDRESS) {
+                let _permit = self.acquire_owned_blocking_io().await;
+                let res = self
+                    .transact_call_at(request, block_number.unwrap_or_default(), overrides)
+                    .await?;
+                return <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result);
+            }
+
+            // Parse selector.
+            let input_bytes = request.as_ref().input.input().cloned().unwrap_or_default();
+            if input_bytes.len() < 4 {
+                // Fall back to EVM (which will revert with our precompile).
+                let _permit = self.acquire_owned_blocking_io().await;
+                let res = self
+                    .transact_call_at(request, block_number.unwrap_or_default(), overrides)
+                    .await?;
+                return <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result);
+            }
+            let selector: [u8; 4] = [input_bytes[0], input_bytes[1], input_bytes[2], input_bytes[3]];
+            let at = block_number.unwrap_or_default();
+
+            match selector {
+                SEL_GAS_ESTIMATE_COMPONENTS | SEL_GAS_ESTIMATE_L1_COMPONENT => {
+                    // Run a real eth_estimateGas binary search for the total.
+                    // The tx data we want to estimate is the `bytes` param
+                    // embedded in the call; we don't have direct access to
+                    // it here, so we use the inner tx request calldata as a
+                    // proxy for estimation. The L1 component is derived
+                    // from the embedded `bytes` param length.
+                    let data_len = gas_estimate_data_len(&input_bytes);
+
+                    // Read L1 price and L2 basefee from ArbOS state.
+                    let state = self
+                        .inner
+                        .provider()
+                        .state_by_block_id(at)
+                        .map_err(|e| EthApiError::Internal(e.into()))?;
+                    let l1_price_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
+                    let l1_price = state
+                        .storage(
+                            ARBOS_STATE_ADDRESS,
+                            StorageKey::from(B256::from(l1_price_slot.to_be_bytes::<32>())),
+                        )
+                        .map_err(|e| EthApiError::Internal(e.into()))?
+                        .unwrap_or_default();
+                    let basefee_slot = subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE);
+                    let basefee = state
+                        .storage(
+                            ARBOS_STATE_ADDRESS,
+                            StorageKey::from(B256::from(basefee_slot.to_be_bytes::<32>())),
+                        )
+                        .map_err(|e| EthApiError::Internal(e.into()))?
+                        .unwrap_or_default();
+
+                    // Compute gas-for-L1 from ArbOS pricing.
+                    let gas_for_l1 = if basefee.is_zero() || l1_price.is_zero() {
+                        0u64
+                    } else {
+                        let l1_fee = l1_price
+                            .saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS))
+                            .saturating_mul(U256::from(data_len));
+                        // Only gasEstimateComponents applies padding.
+                        let padded = if selector == SEL_GAS_ESTIMATE_COMPONENTS {
+                            l1_fee.saturating_mul(U256::from(GAS_ESTIMATION_L1_PRICE_PADDING))
+                                / U256::from(10_000u64)
+                        } else {
+                            l1_fee
+                        };
+                        (padded / basefee).try_into().unwrap_or(u64::MAX)
+                    };
+
+                    if selector == SEL_GAS_ESTIMATE_L1_COMPONENT {
+                        // Returns (uint64, uint256, uint256).
+                        let mut out = vec![0u8; 96];
+                        out[24..32].copy_from_slice(&gas_for_l1.to_be_bytes());
+                        out[32..64].copy_from_slice(&basefee.to_be_bytes::<32>());
+                        out[64..96].copy_from_slice(&l1_price.to_be_bytes::<32>());
+                        return Ok(alloy_primitives::Bytes::from(out));
+                    }
+
+                    // For gasEstimateComponents, compute the full estimate by
+                    // issuing an inner estimate_gas_at with the embedded call.
+                    // We approximate: the full estimate is the caller's
+                    // current request's compute-gas estimate.
+                    let compute_gas =
+                        EstimateCall::estimate_gas_at(self, request, at, overrides.state).await?;
+                    let total: u64 = compute_gas
+                        .saturating_add(U256::from(gas_for_l1))
+                        .try_into()
+                        .unwrap_or(u64::MAX);
+
+                    Ok(encode_gas_estimate_components(
+                        total, gas_for_l1, basefee, l1_price,
+                    ))
+                }
+
+                SEL_L2_BLOCK_RANGE_FOR_L1 => {
+                    use reth_provider::{BlockNumReader, BlockReaderIdExt};
+
+                    if input_bytes.len() < 4 + 32 {
+                        return Err(EthApiError::InvalidParams(
+                            "l2BlockRangeForL1: missing uint64 arg".into(),
+                        )
+                        .into());
+                    }
+                    let target_l1: u64 =
+                        U256::from_be_slice(&input_bytes[4..36]).try_into().unwrap_or(u64::MAX);
+
+                    let provider = self.inner.provider().clone();
+                    let best = provider
+                        .best_block_number()
+                        .map_err(|e| EthApiError::Internal(e.into()))?;
+
+                    let mix_hash_of = move |n: u64| -> Option<B256> {
+                        use alloy_consensus::BlockHeader;
+                        provider
+                            .sealed_header_by_number_or_tag(
+                                alloy_rpc_types_eth::BlockNumberOrTag::Number(n),
+                            )
+                            .ok()
+                            .flatten()
+                            .and_then(|h| h.header().mix_hash())
+                    };
+
+                    match crate::nodeinterface_rpc::find_l2_block_range(
+                        target_l1,
+                        best,
+                        mix_hash_of,
+                    ) {
+                        Some((first, last)) => Ok(encode_l2_block_range(first, last)),
+                        None => Err(EthApiError::InvalidParams(format!(
+                            "l2BlockRangeForL1: no L2 blocks found for L1 block {target_l1}"
+                        ))
+                        .into()),
+                    }
+                }
+
+                _ => {
+                    // Delegate to EVM (precompile returns zero / reverts).
+                    let _permit = self.acquire_owned_blocking_io().await;
+                    let res = self
+                        .transact_call_at(request, at, overrides)
+                        .await?;
+                    <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result)
+                }
+            }
+        }
+    }
+}
+
+// Silence unused-variable in unpack_mix_hash for non-test builds.
+#[allow(dead_code)]
+fn _unused_nodeinterface_rpc_hint() {
+    let _ = crate::nodeinterface_rpc::unpack_mix_hash;
 }

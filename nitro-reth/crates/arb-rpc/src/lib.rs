@@ -11,6 +11,7 @@ pub mod builder;
 pub mod header;
 pub mod nitro_execution;
 pub mod nitro_execution_handler;
+pub mod nodeinterface_rpc;
 pub mod receipt;
 pub mod response;
 pub mod transaction;
