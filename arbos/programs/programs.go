@@ -594,6 +594,7 @@ const (
 	userFailure
 	userOutOfInk
 	userOutOfStack
+	userNativeStackOverflow
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
@@ -608,6 +609,8 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userOutOfInk:
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
+		return nil, "", vm.ErrDepth
+	case userNativeStackOverflow:
 		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
