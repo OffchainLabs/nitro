@@ -309,8 +309,7 @@ fn set_program_cached(
     let already_cached = prog_word[14] != 0;
 
     // Matches the early-return point before any mutation.
-    let after_get_program_gas =
-        boilerplate_gas + access_gas + WARM_SLOAD_GAS + SLOAD_GAS;
+    let after_get_program_gas = boilerplate_gas + access_gas + WARM_SLOAD_GAS + SLOAD_GAS;
 
     if cache && prog_version != params_version {
         let mut args = Vec::with_capacity(64);
