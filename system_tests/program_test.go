@@ -1295,6 +1295,102 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	}
 }
 
+func TestProgramMaxStylusOpenPagesInitialFootprint(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprint(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintNative(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprint(t, false)
+}
+
+func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
+	// grow-120.wat has a fixed 120-page initial footprint and does NOT call
+	// memory.grow at runtime, so the addPages hostio in api.go never fires.
+	// This isolates the CallProgram-entry page-limit check in
+	// arbos/programs/programs.go.
+	const pageLimit uint16 = 50
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Activation uses params.PageLimit (default 128) against 0 open pages, so
+	// a 120-page footprint deploys successfully; the node-level 50-page
+	// MaxOpenPages gate only applies at CallProgram entry.
+	fixed120Addr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+
+	// eth_call: 120-page footprint > 50-page limit, off-chain branch → OOG.
+	msg := ethereum.CallMsg{
+		To:  &fixed120Addr,
+		Gas: 32000000,
+	}
+	_, err := l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call with initial footprint over limit should have failed with 'out of gas', got:", err)
+	}
+
+	// Sequenced tx: sequencing branch → FilterTx, sequencer rejects before inclusion.
+	tx := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
+	err = l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	}
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprintConsensus(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintConsensusNative(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprintConsensus(t, false)
+}
+
+func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool) {
+	// Exercises the chain-level consensus cap (StylusParams.PageLimit, ArbOS >= 59)
+	// at the CallProgram-entry path. grow-120.wat has a fixed 120-page footprint
+	// and no memory.grow, so the addPages hostio never fires. The node-level
+	// MaxOpenPages cap is left at its default (0 = disabled), isolating the
+	// consensus check.
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_59)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Deploy at the default PageLimit (128); 120-page footprint activates.
+	fixed120Addr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+
+	// Lower PageLimit below the footprint via ArbOwner so subsequent calls
+	// trip the consensus cap at CallProgram entry.
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetWasmPageLimit(&auth, 50)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// eth_call: 120 > 50 → consensus cap OOGs at CallProgram entry.
+	msg := ethereum.CallMsg{To: &fixed120Addr, Gas: 32000000}
+	_, err = l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call over consensus PageLimit should have failed with 'out of gas', got:", err)
+	}
+
+	// Sequenced tx: the consensus cap OOGs WITHOUT calling FilterTx, so the
+	// sequencer must include the tx and produce a failed receipt (every replay
+	// node will reach the same OOG). This is the key behavioral distinction
+	// from the node-level MaxOpenPages sequencer path, which does FilterTx and
+	// rejects before inclusion.
+	tx2 := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
+	Require(t, l2client.SendTransaction(ctx, tx2))
+	EnsureTxFailed(t, ctx, l2client, tx2)
+}
+
 func TestProgramActivateFails(t *testing.T) {
 	testActivateFails(t, true)
 }

@@ -305,40 +305,8 @@ func newApiClosures(
 		// programs.go restores openWasmPages on frame return.
 		oldOpen, oldEver := db.AddStylusPages(pages)
 		newOpen := db.GetStylusPagesOpen()
-
-		// Chain-level consensus page limit check (ArbOS >= 59).
-		// stylusParams is nil only in unit tests that do not exercise the
-		// consensus check; the ArbOS gate itself protects pre-59 chains.
-		if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && stylusParams != nil && stylusParams.PageLimit > 0 && newOpen > stylusParams.PageLimit {
-			log.Debug("addPages: stylus params page limit exceeded",
-				"open", newOpen, "limit", stylusParams.PageLimit, "contract", actingAddress)
-			return math.MaxUint64
-		}
-
-		var limit uint16
-		if raw := db.Database().ArbNodeConfig(); raw != nil {
-			if cfg, ok := raw.(*ArbNodeConfig); ok {
-				limit = cfg.MaxOpenPages
-			} else {
-				// Internal wiring bug — fail-open to preserve pre-feature behavior.
-				log.Error("ArbNodeConfig unexpected type; page limit inactive",
-					"type", fmt.Sprintf("%T", raw))
-			}
-		}
-		if limit > 0 && newOpen > limit && runCtx != nil {
-			if !runCtx.IsExecutedOnChain() {
-				log.Info("addPages: page limit exceeded",
-					"open", newOpen, "limit", limit, "contract", actingAddress)
-				return math.MaxUint64
-			}
-			if runCtx.IsSequencing() {
-				log.Info("addPages: page limit exceeded, filtering tx",
-					"open", newOpen, "limit", limit, "contract", actingAddress)
-				db.FilterTx()
-				return math.MaxUint64
-			}
-			log.Info("addPages: page limit exceeded in exempt mode",
-				"open", newOpen, "limit", limit, "contract", actingAddress, "runMode", runCtx.RunModeMetricName())
+		if penalty := enforceStylusPageLimit(evm, db, runCtx, newOpen, actingAddress, stylusParams, pageLimitAddPages); penalty > 0 {
+			return penalty
 		}
 		// addPages WASM computation cost is charged separately in attributeWasmComputation
 		return memoryModel.GasCost(pages, oldOpen, oldEver)
@@ -505,4 +473,70 @@ func newApiClosures(
 			panic("unsupported call type: " + strconv.Itoa(int(req)))
 		}
 	}
+}
+
+// pageLimitLocation identifies the call site invoking enforceStylusPageLimit.
+type pageLimitLocation string
+
+const (
+	pageLimitAddPages    pageLimitLocation = "addPages"
+	pageLimitCallProgram pageLimitLocation = "CallProgram"
+)
+
+// enforceStylusPageLimit applies two independent Stylus open-page caps and
+// returns 0 (allow) or math.MaxUint64 (reject). Callers burn the return value
+// via BurnGas (or return it directly from a hostio) to produce vm.ErrOutOfGas.
+//
+// Cap 1 — consensus (StylusParams.PageLimit, ArbOS >= 59): runs first,
+// runCtx-independent (identical OOG on every replay). No FilterTx; the tx
+// must land as an OOG'd tx so consensus agrees. Disabled if stylusParams is
+// nil (test-only) or PageLimit == 0.
+//
+// Cap 2 — node-level policy (ArbNodeConfig.MaxOpenPages, flag
+// --execution.stylus-target.max-stylus-open-pages). runCtx-dependent:
+//   - off-chain (eth_call, gas estimation) and sequencing: OOG +
+//     statedb.FilterTx() (drop before inclusion).
+//   - exempt on-chain (commit, replay, recording): log only, so policy never
+//     affects consensus.
+//
+// Disabled on MaxOpenPages == 0, nil runCtx, or a wrong-type ArbNodeConfig
+// value — fail-open so an internal wiring bug cannot brick the node.
+func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.MessageRunContext, newOpen uint16, contract common.Address, stylusParams *StylusParams, location pageLimitLocation) uint64 {
+	// Chain-level consensus page limit check (ArbOS >= 59).
+	if evm.Context.ArbOSVersion >= params.ArbosVersion_59 && stylusParams != nil && stylusParams.PageLimit > 0 && newOpen > stylusParams.PageLimit {
+		log.Debug("stylus params page limit exceeded", "location", location,
+			"open", newOpen, "limit", stylusParams.PageLimit, "contract", contract)
+		return math.MaxUint64
+	}
+
+	var limit uint16
+	if raw := statedb.Database().ArbNodeConfig(); raw != nil {
+		if cfg, ok := raw.(*ArbNodeConfig); ok {
+			limit = cfg.MaxOpenPages
+		} else {
+			// Internal wiring bug — fail-open to preserve pre-feature behavior.
+			log.Error("ArbNodeConfig unexpected type; page limit inactive",
+				"type", fmt.Sprintf("%T", raw))
+		}
+	} else {
+		log.Debug("ArbNodeConfig not set; page limit inactive")
+	}
+
+	if limit > 0 && newOpen > limit && runCtx != nil {
+		if !runCtx.IsExecutedOnChain() {
+			log.Info("page limit exceeded", "location", location,
+				"open", newOpen, "limit", limit, "contract", contract)
+			statedb.FilterTx()
+			return math.MaxUint64
+		}
+		if runCtx.IsSequencing() {
+			log.Info("page limit exceeded, filtering tx", "location", location,
+				"open", newOpen, "limit", limit, "contract", contract)
+			statedb.FilterTx()
+			return math.MaxUint64
+		}
+		log.Info("page limit exceeded in exempt mode", "location", location,
+			"open", newOpen, "limit", limit, "contract", contract, "runMode", runCtx.RunModeMetricName())
+	}
+	return 0
 }
