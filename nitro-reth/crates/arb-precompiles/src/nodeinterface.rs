@@ -64,15 +64,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GAS_ESTIMATE_L1_COMPONENT => handle_gas_estimate_l1_component(&mut input),
         NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
         BLOCK_L1_NUM => handle_block_l1_num(&mut input),
-        // Methods requiring chain-level access (blockchain history, batch data, logs).
-        // These are handled at the RPC layer via InterceptRPCMessage, not as
-        // EVM precompiles. Revert here since the required backend is not available.
-        L2_BLOCK_RANGE_FOR_L1
-        | ESTIMATE_RETRYABLE_TICKET
-        | CONSTRUCT_OUTBOX_PROOF
-        | FIND_BATCH_CONTAINING_BLOCK
-        | GET_L1_CONFIRMATIONS
-        | LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => {
+        // Batch-fetcher-dependent methods. When no batch fetcher is available
+        // (validators, replayers, or nodes not following L1), Nitro returns 0.
+        // This matches Nitro's `ExecEngine.GetBatchFetcher()` returning nil →
+        // returning 0 instead of erroring, so bridge tooling can distinguish
+        // "unknown/pending" from "method not implemented".
+        GET_L1_CONFIRMATIONS => handle_zero_u64(&input),
+        FIND_BATCH_CONTAINING_BLOCK => handle_zero_u64(&input),
+        // Pre-Nitro legacy outbox lookup — arbreth has no classic chain to
+        // look up, so return empty encoded tuple (all zero words). Matches
+        // the behavior of a Nitro node with no classic outbox configured.
+        LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => handle_legacy_lookup_empty(&input),
+        // Still RPC-layer only (need header scans or tx construction).
+        L2_BLOCK_RANGE_FOR_L1 | ESTIMATE_RETRYABLE_TICKET | CONSTRUCT_OUTBOX_PROOF => {
             Err(PrecompileError::other("method only available via RPC"))
         }
         _ => return crate::burn_all_revert(gas_limit),
@@ -175,6 +179,53 @@ fn handle_block_l1_num(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         COPY_GAS.min(input.gas),
         U256::from(l1_block).to_be_bytes::<32>().to_vec().into(),
     ))
+}
+
+/// Encode a single uint64/uint256 zero — used when batch-fetcher methods
+/// can't resolve data and return 0 (matching Nitro with no batch fetcher).
+fn handle_zero_u64(input: &PrecompileInput<'_>) -> PrecompileResult {
+    Ok(PrecompileOutput::new(
+        COPY_GAS.min(input.gas),
+        U256::ZERO.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// legacyLookupMessageBatchProof returns the 9-value tuple with all zeros /
+/// empty bytes, matching a Nitro node with no classic outbox configured.
+///
+/// ABI return:
+///   (bytes32[] proof, uint256 path, address l2Sender, address l1Dest,
+///    uint256 l2Block, uint256 l1Block, uint256 timestamp, uint256 amount,
+///    bytes calldataForL1)
+fn handle_legacy_lookup_empty(input: &PrecompileInput<'_>) -> PrecompileResult {
+    // 9 head slots for the tuple + 1 slot each for the two dynamic arrays'
+    // length (proof and calldataForL1), emitted inline since length is 0.
+    // Head layout:
+    //   offset 0x00: proof offset (dynamic)       → points to trailing data
+    //   offset 0x20: path
+    //   offset 0x40: l2Sender
+    //   offset 0x60: l1Dest
+    //   offset 0x80: l2Block
+    //   offset 0xA0: l1Block
+    //   offset 0xC0: timestamp
+    //   offset 0xE0: amount
+    //   offset 0x100: calldataForL1 offset (dynamic)
+    //   offset 0x120: proof length (0)
+    //   offset 0x140: calldataForL1 length (0)
+    let mut out = vec![0u8; 0x160];
+    // proof offset = 0x140 (after the 9 head words, points to proof length)
+    U256::from(0x140u64)
+        .to_be_bytes::<32>()
+        .iter()
+        .enumerate()
+        .for_each(|(i, b)| out[i] = *b);
+    // calldataForL1 offset = 0x140 + 0x20 (after proof length = 0)
+    U256::from(0x160u64)
+        .to_be_bytes::<32>()
+        .iter()
+        .enumerate()
+        .for_each(|(i, b)| out[0x100 + i] = *b);
+    Ok(PrecompileOutput::new(COPY_GAS.min(input.gas), out.into()))
 }
 
 /// Estimate L1 gas from calldata in the input.
