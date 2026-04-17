@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -42,9 +43,16 @@ var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 // ErrFilteredCascadingRedeem is returned via TxFailed when a redeem's
 // inner execution touches a filtered address, requiring the entire tx group
-// (originating user tx + all its redeems) to be reverted.
+// (originating user tx + all its redeems) to be reverted. All fields are
+// captured before the group rollback so TxFailed can build a fully populated
+// FilteredTxReport without late-filling.
 type ErrFilteredCascadingRedeem struct {
 	OriginatingTxHash common.Hash
+	OriginatingTx     *types.Transaction
+	FilteredAddresses []filter.FilteredAddressRecord
+	BlockNumber       uint64
+	ParentBlockHash   common.Hash
+	PositionInBlock   int // receipt index of the originating user tx
 }
 
 func (e *ErrFilteredCascadingRedeem) Error() string {
@@ -519,11 +527,23 @@ func ProduceBlockAdvanced(
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
 			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
-				userTxHash := buildState.activeGroupCP.userTxHash
+				// Capture everything before rollback — addressCheckerState
+				// survives RevertToSnapshot (not journal-tracked) but is lost
+				// once rollbackToGroupCheckpoint replaces the statedb.
+				cp := buildState.activeGroupCP
+				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
+				originatingTx := buildState.complete[cp.completeLen]
 				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
 					return nil, nil, nil, err
 				}
-				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})
+				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{
+					OriginatingTxHash: cp.userTxHash,
+					OriginatingTx:     originatingTx,
+					FilteredAddresses: filteredAddresses,
+					BlockNumber:       header.Number.Uint64(),
+					ParentBlockHash:   header.ParentHash,
+					PositionInBlock:   cp.receiptsLen,
+				})
 				continue
 			}
 			if isUserTx {

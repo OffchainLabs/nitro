@@ -32,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -100,15 +101,16 @@ var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 // caller checks pendingFilteredTxReports and returns ErrFilteredDelayedMessage if any.
 type DelayedFilteringSequencingHooks struct {
 	arbos.NoopSequencingHooks
-	pendingFilteredTxReports        []addressfilter.FilteredTxReport
-	eventFilter                     *eventfilter.EventFilter
-	pendingCascadingRedeemAddresses []filter.FilteredAddressRecord
+	pendingFilteredTxReports []addressfilter.FilteredTxReport
+	eventFilter              *eventfilter.EventFilter
+	inboxRequestId           common.Hash
 }
 
-func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter) *DelayedFilteringSequencingHooks {
+func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter, inboxRequestId common.Hash) *DelayedFilteringSequencingHooks {
 	return &DelayedFilteringSequencingHooks{
 		NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes),
 		eventFilter:         ef,
+		inboxRequestId:      inboxRequestId,
 	}
 }
 
@@ -141,13 +143,9 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 
 	if filtered, filteredAddresses := db.IsAddressFiltered(); filtered {
 		// For redeems, return the filter error so the block processor can
-		// trigger a group rollback. The originating tx hash will be
-		// collected in TxFailed.
+		// trigger a group rollback. The block processor captures all report
+		// data before rollback and passes it through ErrFilteredCascadingRedeem.
 		if tx.Type() == types.ArbitrumRetryTxType {
-			// Stash filtered addresses so TxFailed can populate them on
-			// the cascading redeem report — the statedb will be reverted
-			// before TxFailed runs.
-			f.pendingCascadingRedeemAddresses = filteredAddresses
 			return state.ErrArbTxFilter
 		}
 		// If the STF already handled this tx via the onchain filter mechanism,
@@ -156,8 +154,6 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		if errors.As(result.Err, &filteredErr) {
 			return nil
 		}
-		// Build a report for this filtered tx. InboxRequestId is set later
-		// in createBlockFromNextMessage where msg metadata is available.
 		txRLP, err := tx.MarshalBinary()
 		if err != nil {
 			log.Error("error marshalling filtered delayed tx to RLP", "txHash", tx.Hash(), "err", err)
@@ -170,10 +166,10 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 			FilteredAddresses: filteredAddresses,
 			BlockNumber:       header.Number.Uint64(),
 			ParentBlockHash:   header.ParentHash,
-			PositionInBlock:   positionInBlock,
+			PositionInBlock:   uint64(positionInBlock), // #nosec G115
 			FilteredAt:        time.Now().UTC(),
 			IsDelayed:         true,
-			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
+			DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
 		}
 		f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
 	}
@@ -182,34 +178,36 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 
 func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
 
-// TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
-// and builds a minimal FilteredTxReport. After ProduceBlockAdvanced returns,
-// the existing check fires ErrFilteredDelayedMessage, causing the delayed
-// sequencer to halt and the transaction-filterer to add the hash to the
-// onchain filter.
+// TxFailed builds a fully populated FilteredTxReport from
+// ErrFilteredCascadingRedeem. The block processor captures all needed data
+// (originating tx, filtered addresses, block metadata, user tx position)
+// before the group rollback and passes it through the error.
 func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	var cascadingErr *arbos.ErrFilteredCascadingRedeem
-	if errors.As(err, &cascadingErr) {
-		// FilteredAddresses were stashed in PostTxFilter before the
-		// statedb was reverted. TxRLP and block metadata are populated
-		// later in createBlockFromNextMessage.
-		report := addressfilter.FilteredTxReport{
-			ID:                uuid.Must(uuid.NewV7()).String(),
-			TxHash:            cascadingErr.OriginatingTxHash,
-			FilteredAddresses: f.pendingCascadingRedeemAddresses,
-			FilteredAt:        time.Now().UTC(),
-			IsDelayed:         true,
-			PositionInBlock:   0,
-			DelayedReportData: nil, // populated later in createBlockFromNextMessage when msg metadata is available
-
-			// Populated later in createBlockFromNextMessage where txes and block are available
-			TxRLP:           nil,
-			BlockNumber:     0,
-			ParentBlockHash: common.Hash{},
-		}
-		f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
-		f.pendingCascadingRedeemAddresses = nil
+	if !errors.As(err, &cascadingErr) {
+		return
 	}
+	var txRLP hexutil.Bytes
+	if cascadingErr.OriginatingTx != nil {
+		if b, marshalErr := cascadingErr.OriginatingTx.MarshalBinary(); marshalErr != nil {
+			log.Error("error marshalling originating tx RLP", "txHash", cascadingErr.OriginatingTxHash, "err", marshalErr)
+		} else {
+			txRLP = b
+		}
+	}
+	report := addressfilter.FilteredTxReport{
+		ID:                uuid.Must(uuid.NewV7()).String(),
+		TxHash:            cascadingErr.OriginatingTxHash,
+		TxRLP:             txRLP,
+		FilteredAddresses: cascadingErr.FilteredAddresses,
+		BlockNumber:       cascadingErr.BlockNumber,
+		ParentBlockHash:   cascadingErr.ParentBlockHash,
+		PositionInBlock:   uint64(cascadingErr.PositionInBlock), // #nosec G115
+		FilteredAt:        time.Now().UTC(),
+		IsDelayed:         true,
+		DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
+	}
+	f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -978,7 +976,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			log.Warn("error parsing incoming message for filtering", "err", err)
 			txes = types.Transactions{}
 		}
-		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
+		var inboxRequestId common.Hash
+		if msg.Message.Header.RequestId != nil {
+			inboxRequestId = *msg.Message.Header.RequestId
+		}
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter, inboxRequestId)
 
 		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
@@ -996,43 +998,8 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
 		if len(filteringHooks.pendingFilteredTxReports) > 0 {
-			// Build tx lookup for enriching minimal TxFailed reports
-			txByHash := make(map[common.Hash]*types.Transaction, len(txes))
-			for _, tx := range txes {
-				txByHash[tx.Hash()] = tx
-			}
-
-			var inboxRequestId common.Hash
-			if msg.Message.Header.RequestId != nil {
-				inboxRequestId = *msg.Message.Header.RequestId
-			}
-
 			filteredTxHashes := make([]common.Hash, len(filteringHooks.pendingFilteredTxReports))
-			for i := range filteringHooks.pendingFilteredTxReports {
-				report := &filteringHooks.pendingFilteredTxReports[i]
-
-				// Enrich TxFailed reports (identified by BlockNumber = 0) with
-				// data not available after group rollback.
-				if report.BlockNumber == 0 {
-					if tx, ok := txByHash[report.TxHash]; ok {
-						txRLP, err := tx.MarshalBinary()
-						if err != nil {
-							log.Error("error marshalling filtered delayed tx to RLP", "txHash", report.TxHash, "err", err)
-						} else {
-							report.TxRLP = txRLP
-						}
-					}
-					if block != nil {
-						report.BlockNumber = block.NumberU64()
-						report.ParentBlockHash = block.ParentHash()
-					}
-				}
-
-				// Set InboxRequestId (not available in PostTxFilter/TxFailed)
-				report.DelayedReportData = &addressfilter.DelayedReportData{
-					InboxRequestId: inboxRequestId,
-				}
-
+			for i, report := range filteringHooks.pendingFilteredTxReports {
 				filteredTxHashes[i] = report.TxHash
 			}
 
