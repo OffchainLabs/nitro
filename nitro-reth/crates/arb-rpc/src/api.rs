@@ -168,13 +168,11 @@ where
     ///   total = submit_intrinsic + auto_redeem_gas
     ///
     /// where:
-    /// - `submit_intrinsic` covers the SubmitRetryableTx itself (tx
-    ///   base gas + EIP-2028 calldata + the fixed ArbOS bookkeeping
-    ///   overhead that creates the retryable record, escrows funds,
-    ///   and schedules the auto-redeem).
-    /// - `auto_redeem_gas` is what the scheduled redeem consumes
-    ///   when it executes `sender → retry_to` with `retry_value` and
-    ///   `retry_data`. We run the standard binary-search estimator
+    /// - `submit_intrinsic` covers the SubmitRetryableTx itself (tx base gas + EIP-2028 calldata +
+    ///   the fixed ArbOS bookkeeping overhead that creates the retryable record, escrows funds, and
+    ///   schedules the auto-redeem).
+    /// - `auto_redeem_gas` is what the scheduled redeem consumes when it executes `sender →
+    ///   retry_to` with `retry_value` and `retry_data`. We run the standard binary-search estimator
     ///   on that equivalent call.
     ///
     /// The returned gas is what clients should put on the retryable's
