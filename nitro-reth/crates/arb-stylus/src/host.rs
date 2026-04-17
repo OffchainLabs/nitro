@@ -20,12 +20,24 @@ macro_rules! hostio {
 
 /// Read the program's arguments into WASM memory.
 pub fn read_args<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("read_args", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::READ_ARGS_BASE_INK)?;
     let args = info.env.args.clone();
     info.pay_for_write(args.len() as u32)?;
     info.write_slice(ptr, &args)?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "read_args",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&args),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -35,19 +47,40 @@ pub fn write_result<E: EvmApi>(
     ptr: u32,
     len: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("write_result", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::WRITE_RESULT_BASE_INK)?;
     info.pay_for_read(len)?;
     info.pay_for_read(len)?; // read from geth
     let data = info.read_slice(ptr, len)?;
-    info.env.outs = data;
+    info.env.outs = data.clone();
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "write_result",
+            alloy_primitives::Bytes::from(data),
+            Default::default(),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
 /// Exit the program early with a status code.
 pub fn exit_early<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, status: u32) -> MaybeEscape {
-    crate::trace::record_leaf("exit_early", Default::default(), Default::default());
+    if crate::trace::is_active() {
+        crate::trace::record(
+            "exit_early",
+            alloy_primitives::Bytes::copy_from_slice(&status.to_be_bytes()),
+            Default::default(),
+            0,
+            0,
+            None,
+        );
+    }
     let _info = hostio!(&mut env);
     Err(Escape::Exit(status))
 }
@@ -249,11 +282,19 @@ pub fn call_contract<E: EvmApi>(
     let value = U256::from_be_bytes(info.read_fixed::<32>(value_ptr)?);
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
     let gas_req = Gas(gas.min(gas_left.0));
-    let (ret_len, gas_cost, status) = info
+    if trace_on {
+        crate::trace::enter_subcall();
+    }
+    let result = info
         .env
         .evm_api
-        .contract_call(contract, &calldata, gas_left, gas_req, value)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .contract_call(contract, &calldata, gas_left, gas_req, value);
+    let steps = if trace_on {
+        crate::trace::exit_subcall()
+    } else {
+        Vec::new()
+    };
+    let (ret_len, gas_cost, status) = result.map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -264,13 +305,14 @@ pub fn call_contract<E: EvmApi>(
         args.extend_from_slice(&value.to_be_bytes::<32>());
         args.extend_from_slice(&gas.to_be_bytes());
         args.extend_from_slice(&calldata);
-        crate::trace::record(
+        crate::trace::record_with_steps(
             "call_contract",
             alloy_primitives::Bytes::from(args),
             alloy_primitives::Bytes::from(vec![status as u8]),
             start_ink,
             end_ink,
             Some(contract),
+            steps,
         );
     }
     Ok(status as u8)
@@ -295,11 +337,19 @@ pub fn delegate_call_contract<E: EvmApi>(
     let calldata = info.read_slice(calldata_ptr, calldata_len)?;
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
     let gas_req = Gas(gas.min(gas_left.0));
-    let (ret_len, gas_cost, status) = info
+    if trace_on {
+        crate::trace::enter_subcall();
+    }
+    let result = info
         .env
         .evm_api
-        .delegate_call(contract, &calldata, gas_left, gas_req)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .delegate_call(contract, &calldata, gas_left, gas_req);
+    let steps = if trace_on {
+        crate::trace::exit_subcall()
+    } else {
+        Vec::new()
+    };
+    let (ret_len, gas_cost, status) = result.map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -309,13 +359,14 @@ pub fn delegate_call_contract<E: EvmApi>(
         args.extend_from_slice(contract.as_slice());
         args.extend_from_slice(&gas.to_be_bytes());
         args.extend_from_slice(&calldata);
-        crate::trace::record(
+        crate::trace::record_with_steps(
             "delegate_call_contract",
             alloy_primitives::Bytes::from(args),
             alloy_primitives::Bytes::from(vec![status as u8]),
             start_ink,
             end_ink,
             Some(contract),
+            steps,
         );
     }
     Ok(status as u8)
@@ -340,11 +391,19 @@ pub fn static_call_contract<E: EvmApi>(
     let calldata = info.read_slice(calldata_ptr, calldata_len)?;
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
     let gas_req = Gas(gas.min(gas_left.0));
-    let (ret_len, gas_cost, status) = info
+    if trace_on {
+        crate::trace::enter_subcall();
+    }
+    let result = info
         .env
         .evm_api
-        .static_call(contract, &calldata, gas_left, gas_req)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .static_call(contract, &calldata, gas_left, gas_req);
+    let steps = if trace_on {
+        crate::trace::exit_subcall()
+    } else {
+        Vec::new()
+    };
+    let (ret_len, gas_cost, status) = result.map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -354,13 +413,14 @@ pub fn static_call_contract<E: EvmApi>(
         args.extend_from_slice(contract.as_slice());
         args.extend_from_slice(&gas.to_be_bytes());
         args.extend_from_slice(&calldata);
-        crate::trace::record(
+        crate::trace::record_with_steps(
             "static_call_contract",
             alloy_primitives::Bytes::from(args),
             alloy_primitives::Bytes::from(vec![status as u8]),
             start_ink,
             end_ink,
             Some(contract),
+            steps,
         );
     }
     Ok(status as u8)
@@ -384,11 +444,16 @@ pub fn create1<E: EvmApi>(
     let code = info.read_slice(code_ptr, code_len)?;
     let endowment = U256::from_be_bytes(info.read_fixed::<32>(endowment_ptr)?);
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
-    let (response, ret_len, gas_cost) = info
-        .env
-        .evm_api
-        .create1(code.clone(), endowment, gas_left)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+    if trace_on {
+        crate::trace::enter_subcall();
+    }
+    let result = info.env.evm_api.create1(code.clone(), endowment, gas_left);
+    let steps = if trace_on {
+        crate::trace::exit_subcall()
+    } else {
+        Vec::new()
+    };
+    let (response, ret_len, gas_cost) = result.map_err(|e| Escape::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => {
@@ -404,13 +469,14 @@ pub fn create1<E: EvmApi>(
         let mut args = Vec::with_capacity(32 + code.len());
         args.extend_from_slice(&endowment.to_be_bytes::<32>());
         args.extend_from_slice(&code);
-        crate::trace::record(
+        crate::trace::record_with_steps(
             "create1",
             alloy_primitives::Bytes::from(args),
             alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
             start_ink,
             end_ink,
             Some(address),
+            steps,
         );
     }
     Ok(())
@@ -436,11 +502,19 @@ pub fn create2<E: EvmApi>(
     let endowment = U256::from_be_bytes(info.read_fixed::<32>(endowment_ptr)?);
     let salt = B256::from(info.read_fixed::<32>(salt_ptr)?);
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
-    let (response, ret_len, gas_cost) = info
+    if trace_on {
+        crate::trace::enter_subcall();
+    }
+    let result = info
         .env
         .evm_api
-        .create2(code.clone(), endowment, salt, gas_left)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .create2(code.clone(), endowment, salt, gas_left);
+    let steps = if trace_on {
+        crate::trace::exit_subcall()
+    } else {
+        Vec::new()
+    };
+    let (response, ret_len, gas_cost) = result.map_err(|e| Escape::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => {
@@ -457,13 +531,14 @@ pub fn create2<E: EvmApi>(
         args.extend_from_slice(&endowment.to_be_bytes::<32>());
         args.extend_from_slice(salt.as_slice());
         args.extend_from_slice(&code);
-        crate::trace::record(
+        crate::trace::record_with_steps(
             "create2",
             alloy_primitives::Bytes::from(args),
             alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
             start_ink,
             end_ink,
             Some(address),
+            steps,
         );
     }
     Ok(())
@@ -476,21 +551,54 @@ pub fn read_return_data<E: EvmApi>(
     offset: u32,
     size: u32,
 ) -> Result<u32, Escape> {
-    crate::trace::record_leaf("read_return_data", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::READ_RETURN_DATA_BASE_INK)?;
     let max = info.env.evm_return_data_len.saturating_sub(offset);
     info.pay_for_write(size.min(max))?;
     if max == 0 {
+        if trace_on {
+            let mut args = Vec::with_capacity(8);
+            args.extend_from_slice(&offset.to_be_bytes());
+            args.extend_from_slice(&size.to_be_bytes());
+            let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+            crate::trace::record(
+                "read_return_data",
+                alloy_primitives::Bytes::from(args),
+                Default::default(),
+                start_ink,
+                end_ink,
+                None,
+            );
+        }
         return Ok(0);
     }
     let data = info.env.evm_api.get_return_data();
-    let offset = offset as usize;
-    let size = size as usize;
-    let available = data.len().saturating_sub(offset);
-    let copy_len = available.min(size);
-    if copy_len > 0 {
-        info.write_slice(dest_ptr, &data[offset..offset + copy_len])?;
+    let offset_us = offset as usize;
+    let size_us = size as usize;
+    let available = data.len().saturating_sub(offset_us);
+    let copy_len = available.min(size_us);
+    let copied = if copy_len > 0 {
+        let slice = &data[offset_us..offset_us + copy_len];
+        info.write_slice(dest_ptr, slice)?;
+        slice.to_vec()
+    } else {
+        Vec::new()
+    };
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(8);
+        args.extend_from_slice(&offset.to_be_bytes());
+        args.extend_from_slice(&size.to_be_bytes());
+        crate::trace::record(
+            "read_return_data",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::from(copied),
+            start_ink,
+            end_ink,
+            None,
+        );
     }
     Ok(copy_len as u32)
 }
@@ -966,8 +1074,9 @@ pub fn math_pow<E: EvmApi>(
     base_ptr: u32,
     exp_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("math_pow", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MATH_POW_BASE_INK)?;
     let base = U256::from_be_bytes(info.read_fixed::<32>(base_ptr)?);
     let exp_bytes = info.read_fixed::<32>(exp_ptr)?;
@@ -975,6 +1084,20 @@ pub fn math_pow<E: EvmApi>(
     let exp = U256::from_be_bytes(exp_bytes);
     let result = base.pow(exp);
     info.write_slice(base_ptr, &result.to_be_bytes::<32>())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(64);
+        args.extend_from_slice(&base.to_be_bytes::<32>());
+        args.extend_from_slice(&exp.to_be_bytes::<32>());
+        crate::trace::record(
+            "math_pow",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(&result.to_be_bytes::<32>()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -985,8 +1108,9 @@ pub fn math_add_mod<E: EvmApi>(
     b_ptr: u32,
     mod_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("math_add_mod", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MATH_ADD_MOD_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
     let b = U256::from_be_bytes(info.read_fixed::<32>(b_ptr)?);
@@ -997,6 +1121,21 @@ pub fn math_add_mod<E: EvmApi>(
         a.add_mod(b, modulus)
     };
     info.write_slice(a_ptr, &result.to_be_bytes::<32>())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(96);
+        args.extend_from_slice(&a.to_be_bytes::<32>());
+        args.extend_from_slice(&b.to_be_bytes::<32>());
+        args.extend_from_slice(&modulus.to_be_bytes::<32>());
+        crate::trace::record(
+            "math_add_mod",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(&result.to_be_bytes::<32>()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -1007,8 +1146,9 @@ pub fn math_mul_mod<E: EvmApi>(
     b_ptr: u32,
     mod_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("math_mul_mod", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MATH_MUL_MOD_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
     let b = U256::from_be_bytes(info.read_fixed::<32>(b_ptr)?);
@@ -1019,6 +1159,21 @@ pub fn math_mul_mod<E: EvmApi>(
         a.mul_mod(b, modulus)
     };
     info.write_slice(a_ptr, &result.to_be_bytes::<32>())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(96);
+        args.extend_from_slice(&a.to_be_bytes::<32>());
+        args.extend_from_slice(&b.to_be_bytes::<32>());
+        args.extend_from_slice(&modulus.to_be_bytes::<32>());
+        crate::trace::record(
+            "math_mul_mod",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(&result.to_be_bytes::<32>()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
