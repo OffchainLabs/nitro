@@ -233,6 +233,14 @@ fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
         env.access_list = al.clone();
     }
 
+    // EIP-7702: propagate signed authorization list so revm processes
+    // delegations. Without this, 7702 txs execute with an empty list and
+    // revm rejects them with "empty authorization list".
+    if let Some(auths) = tx.authorization_list() {
+        use alloy_consensus::transaction::Either;
+        env.authorization_list = auths.iter().map(|a| Either::Left(a.clone())).collect();
+    }
+
     env
 }
 

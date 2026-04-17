@@ -734,7 +734,10 @@ impl ConsensusTx for ArbTransactionSigned {
     }
 
     fn authorization_list(&self) -> Option<&[alloy_eips::eip7702::SignedAuthorization]> {
-        None
+        match &self.transaction {
+            ArbTypedTransaction::Eip7702(tx) => Some(&tx.authorization_list),
+            _ => None,
+        }
     }
 }
 
