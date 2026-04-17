@@ -110,16 +110,31 @@ pub fn parse_l2_transactions(
         L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, poster, request_id, 0, chain_id),
         L1_MESSAGE_TYPE_END_OF_BLOCK => Ok(vec![]),
         L1_MESSAGE_TYPE_L2_FUNDED_BY_L1 => {
-            let request_id = request_id.unwrap_or(B256::ZERO);
+            let request_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue L2 funded by L1 tx without L1 request id",
+                )
+            })?;
             parse_l2_funded_by_l1(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_SUBMIT_RETRYABLE => {
-            let request_id = request_id.unwrap_or(B256::ZERO);
+            let request_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue submit retryable tx without L1 request id",
+                )
+            })?;
             let l1_base_fee = l1_base_fee.unwrap_or(U256::ZERO);
             parse_submit_retryable_message(l2_msg, poster, request_id, l1_base_fee)
         }
         L1_MESSAGE_TYPE_ETH_DEPOSIT => {
-            let request_id = request_id.unwrap_or(B256::ZERO);
+            let request_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue deposit tx without L1 request id",
+                )
+            })?;
             parse_eth_deposit_message(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_BATCH_POSTING_REPORT => {

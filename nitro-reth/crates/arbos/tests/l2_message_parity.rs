@@ -65,3 +65,44 @@ fn empty_l2_message_returns_err_like_nitro() {
         "Nitro errors on empty L2 message data; arbreth returns Ok([])"
     );
 }
+
+/// `parseEthDepositMessage`: Nitro errors when `header.RequestId == nil`.
+/// We must not silently substitute zero.
+#[test]
+fn eth_deposit_without_request_id_returns_err() {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0u8; 20]);
+    data.extend_from_slice(&[0u8; 32]);
+    let res = parse_l2_transactions(12, Address::ZERO, &data, None, None, 42_161);
+    assert!(
+        res.is_err(),
+        "Nitro errors on EthDeposit without request_id; got {res:?}"
+    );
+}
+
+/// `parseSubmitRetryableMessage`: Nitro errors when `header.RequestId == nil`.
+#[test]
+fn submit_retryable_without_request_id_returns_err() {
+    let mut data = Vec::new();
+    for _ in 0..9 {
+        data.extend_from_slice(&[0u8; 32]);
+    }
+    data.extend_from_slice(&[0u8; 32]);
+    let res = parse_l2_transactions(9, Address::ZERO, &data, None, None, 42_161);
+    assert!(
+        res.is_err(),
+        "Nitro errors on SubmitRetryable without request_id; got {res:?}"
+    );
+}
+
+/// `L2FundedByL1`: Nitro errors when `header.RequestId == nil`.
+#[test]
+fn l2_funded_by_l1_without_request_id_returns_err() {
+    let mut data = vec![0u8];
+    data.extend_from_slice(&[0u8; 32 * 5]);
+    let res = parse_l2_transactions(7, Address::ZERO, &data, None, None, 42_161);
+    assert!(
+        res.is_err(),
+        "Nitro errors on L2FundedByL1 without request_id; got {res:?}"
+    );
+}
