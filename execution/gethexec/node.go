@@ -139,6 +139,7 @@ type TransactionFilteringConfig struct {
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -151,6 +152,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
 	}
+	if err := c.FilteringReportRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
+	}
 	return nil
 }
 
@@ -160,6 +164,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -168,6 +173,7 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
 }
 
 type Config struct {
@@ -324,6 +330,7 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
+	filteringReportRPCClient *FilteringReportRPCClient
 	AddressFilterService     *addressfilter.FilterService
 	EventFilter              *eventfilter.EventFilter
 }
@@ -355,7 +362,15 @@ func CreateExecutionNode(
 		addressChecker = addressFilterService.GetAddressChecker()
 	}
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker)
+	var filteringReportRPCClient *FilteringReportRPCClient
+	if config.TransactionFiltering.FilteringReportRPCClient.URL != "" {
+		filteringReportConfigFetcher := func() *rpcclient.ClientConfig {
+			return &configFetcher.Get().TransactionFiltering.FilteringReportRPCClient
+		}
+		filteringReportRPCClient = NewFilteringReportRPCClient(filteringReportConfigFetcher)
+	}
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -455,6 +470,7 @@ func CreateExecutionNode(
 		ParentChain:              seqParentChain,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		filteringReportRPCClient: filteringReportRPCClient,
 		AddressFilterService:     addressFilterService,
 		EventFilter:              eventFilter,
 	}
@@ -581,6 +597,12 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		}
 	}
 
+	if n.filteringReportRPCClient != nil {
+		if err := n.filteringReportRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting filtering report RPC client: %w", err)
+		}
+	}
+
 	if n.AddressFilterService != nil {
 		n.AddressFilterService.Start(ctx)
 	}
@@ -630,6 +652,9 @@ func (n *ExecutionNode) StopAndWait() {
 	}
 	if n.consensusRPCClient != nil {
 		n.consensusRPCClient.StopAndWait()
+	}
+	if n.filteringReportRPCClient != nil {
+		n.filteringReportRPCClient.StopAndWait()
 	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
