@@ -42,5 +42,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+arb-alloy-consensus = { workspace = true }
+
 [lints]
 workspace = true
