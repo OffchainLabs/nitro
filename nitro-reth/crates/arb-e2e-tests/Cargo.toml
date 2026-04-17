@@ -13,10 +13,11 @@ arb-storage = { workspace = true }
 arb-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-alloy-consensus = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
-alloy-consensus = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "k256"] }
+alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-rlp = { workspace = true }
 revm = { workspace = true }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
 [dev-dependencies]
 arb-evm = { workspace = true }

@@ -1052,6 +1052,7 @@ dependencies = [
  "arb-storage",
  "arb-test-utils",
  "arbos",
+ "k256",
  "reth-chainspec",
  "reth-evm",
  "reth-primitives-traits",
