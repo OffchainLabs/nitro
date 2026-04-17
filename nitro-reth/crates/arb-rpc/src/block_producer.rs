@@ -93,10 +93,7 @@ pub trait BlockProducer: Send + Sync + 'static {
     ///
     /// Default implementation returns an "unsupported" error. Node
     /// implementations that support reorg should override this.
-    async fn reset_to_block(
-        &self,
-        _target_block_number: u64,
-    ) -> Result<(), BlockProducerError> {
+    async fn reset_to_block(&self, _target_block_number: u64) -> Result<(), BlockProducerError> {
         Err(BlockProducerError::Unexpected(
             "reset_to_block not supported by this producer".into(),
         ))

@@ -118,7 +118,8 @@ fn recording_producer_records_finality_triple() {
         Some(B256::repeat_byte(3)),
     )
     .unwrap();
-    rec.set_finality(None, None, Some(B256::repeat_byte(4))).unwrap();
+    rec.set_finality(None, None, Some(B256::repeat_byte(4)))
+        .unwrap();
     let entries = rec.finality.lock().clone();
     assert_eq!(entries.len(), 2);
     assert_eq!(

@@ -11,7 +11,7 @@ use alloy_rpc_types_eth::BlockNumberOrTag;
 use jsonrpsee::core::RpcResult;
 use parking_lot::RwLock;
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
     block_producer::{BlockProducer, BlockProductionInput},

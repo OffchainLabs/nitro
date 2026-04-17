@@ -479,9 +479,9 @@ where
 impl<N, Rpc> EthCall for ArbEthApi<N, Rpc>
 where
     N: RpcNodeCore<
-            Provider: StateProviderFactory + reth_provider::BlockReaderIdExt + Clone,
-            Primitives = arb_primitives::ArbPrimitives,
-        >,
+        Provider: StateProviderFactory + reth_provider::BlockReaderIdExt + Clone,
+        Primitives = arb_primitives::ArbPrimitives,
+    >,
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
     RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
@@ -530,8 +530,8 @@ where
         async move {
             use crate::nodeinterface_rpc::{
                 encode_gas_estimate_components, encode_l2_block_range, gas_estimate_data_len,
-                unpack_mix_hash, SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
-                SEL_L2_BLOCK_RANGE_FOR_L1, NODE_INTERFACE_ADDRESS,
+                NODE_INTERFACE_ADDRESS, SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
+                SEL_L2_BLOCK_RANGE_FOR_L1,
             };
             use alloy_primitives::{Address, TxKind};
 
@@ -558,7 +558,12 @@ where
                     .await?;
                 return <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result);
             }
-            let selector: [u8; 4] = [input_bytes[0], input_bytes[1], input_bytes[2], input_bytes[3]];
+            let selector: [u8; 4] = [
+                input_bytes[0],
+                input_bytes[1],
+                input_bytes[2],
+                input_bytes[3],
+            ];
             let at = block_number.unwrap_or_default();
 
             match selector {
@@ -642,11 +647,11 @@ where
                     if input_bytes.len() < 4 + 32 {
                         return Err(EthApiError::InvalidParams(
                             "l2BlockRangeForL1: missing uint64 arg".into(),
-                        )
-                        .into());
+                        ));
                     }
-                    let target_l1: u64 =
-                        U256::from_be_slice(&input_bytes[4..36]).try_into().unwrap_or(u64::MAX);
+                    let target_l1: u64 = U256::from_be_slice(&input_bytes[4..36])
+                        .try_into()
+                        .unwrap_or(u64::MAX);
 
                     let provider = self.inner.provider().clone();
                     let best = provider
@@ -672,17 +677,14 @@ where
                         Some((first, last)) => Ok(encode_l2_block_range(first, last)),
                         None => Err(EthApiError::InvalidParams(format!(
                             "l2BlockRangeForL1: no L2 blocks found for L1 block {target_l1}"
-                        ))
-                        .into()),
+                        ))),
                     }
                 }
 
                 _ => {
                     // Delegate to EVM (precompile returns zero / reverts).
                     let _permit = self.acquire_owned_blocking_io().await;
-                    let res = self
-                        .transact_call_at(request, at, overrides)
-                        .await?;
+                    let res = self.transact_call_at(request, at, overrides).await?;
                     <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result)
                 }
             }
@@ -690,8 +692,3 @@ where
     }
 }
 
-// Silence unused-variable in unpack_mix_hash for non-test builds.
-#[allow(dead_code)]
-fn _unused_nodeinterface_rpc_hint() {
-    let _ = crate::nodeinterface_rpc::unpack_mix_hash;
-}

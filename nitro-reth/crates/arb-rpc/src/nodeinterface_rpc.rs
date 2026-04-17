@@ -182,7 +182,10 @@ mod tests {
         assert_eq!(U256::from_be_slice(&out[0..32]), U256::from(100_000u64));
         assert_eq!(U256::from_be_slice(&out[32..64]), U256::from(5_000u64));
         assert_eq!(U256::from_be_slice(&out[64..96]), U256::from(1_000_000u64));
-        assert_eq!(U256::from_be_slice(&out[96..128]), U256::from(50_000_000u64));
+        assert_eq!(
+            U256::from_be_slice(&out[96..128]),
+            U256::from(50_000_000u64)
+        );
     }
 
     #[test]

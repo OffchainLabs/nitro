@@ -147,9 +147,8 @@ where
             )
         })?;
         let clamped_to = to_block.min(best);
-        let mut out = Vec::with_capacity(
-            (clamped_to.saturating_sub(from_block) + 1).min(MAX_RANGE) as usize,
-        );
+        let mut out =
+            Vec::with_capacity((clamped_to.saturating_sub(from_block) + 1).min(MAX_RANGE) as usize);
         for block_number in from_block..=clamped_to {
             // Block must exist — verify via header lookup; else skip.
             let maybe = self
