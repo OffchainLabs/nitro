@@ -352,8 +352,13 @@ pub fn retryable_escrow_address(ticket_id: B256) -> Address {
 }
 
 /// Computes the submission fee for a retryable ticket.
+///
+/// Matches Nitro's `RetryableSubmissionFee`: `(1400 + 6 * len) * l1_base_fee`
+/// using big-integer arithmetic so length and product can't overflow.
 pub fn retryable_submission_fee(calldata_length: usize, l1_base_fee: U256) -> U256 {
-    l1_base_fee * U256::from(1400 + 6 * calldata_length as u64)
+    let factor = U256::from(1400u64)
+        .saturating_add(U256::from(6u64).saturating_mul(U256::from(calldata_length as u128)));
+    l1_base_fee.saturating_mul(factor)
 }
 
 /// Rounds up byte count to number of 32-byte words.
