@@ -199,11 +199,9 @@ new_without_default = "allow"
 
 [profile.dev]
 debug = 0
-strip = "debuginfo"
 
 [profile.test]
 debug = 0
-strip = "debuginfo"
 
 [profile.release]
 lto = "thin"
