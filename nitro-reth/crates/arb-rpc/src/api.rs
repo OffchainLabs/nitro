@@ -369,10 +369,78 @@ where
 
 impl<N, Rpc> LoadReceipt for ArbEthApi<N, Rpc>
 where
-    N: RpcNodeCore,
+    N: RpcNodeCore<Primitives = arb_primitives::ArbPrimitives>,
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+    Self::Error: reth_rpc_eth_types::error::FromEthApiError,
 {
+    /// Override to use `convert_receipts_with_block` so every single-tx
+    /// receipt fetch (e.g. `eth_getTransactionReceipt`) includes the
+    /// Arbitrum `l1BlockNumber` field sourced from the block's mix_hash.
+    ///
+    /// Reth's default impl uses `convert_receipts` (no-block path), which
+    /// our `ArbReceiptConverter` populates with `l1_block_number = None`.
+    /// That breaks Arbitrum spec (bridges, indexers, explorers all expect
+    /// `l1BlockNumber` on every receipt).
+    fn build_transaction_receipt(
+        &self,
+        tx: reth_storage_api::ProviderTx<Self::Provider>,
+        meta: alloy_consensus::transaction::TransactionMeta,
+        receipt: reth_storage_api::ProviderReceipt<Self::Provider>,
+    ) -> impl std::future::Future<
+        Output = Result<reth_rpc_eth_api::RpcReceipt<Self::NetworkTypes>, Self::Error>,
+    > + Send {
+        use alloy_consensus::TxReceipt;
+        use reth_primitives_traits::SignerRecoverable;
+        use reth_rpc_convert::transaction::ConvertReceiptInput;
+        use reth_rpc_eth_api::RpcNodeCoreExt;
+        use reth_rpc_eth_types::{
+            error::FromEthApiError, utils::calculate_gas_used_and_next_log_index, EthApiError,
+        };
+        async move {
+            let hash = meta.block_hash;
+            let all_receipts = self
+                .cache()
+                .get_receipts(hash)
+                .await
+                .map_err(<Self::Error as FromEthApiError>::from_eth_err)?
+                .ok_or_else(|| {
+                    <Self::Error as FromEthApiError>::from_eth_err(EthApiError::HeaderNotFound(
+                        hash.into(),
+                    ))
+                })?;
+
+            let (gas_used, next_log_index) =
+                calculate_gas_used_and_next_log_index(meta.index, &all_receipts);
+
+            let block = self
+                .cache()
+                .get_recovered_block(hash)
+                .await
+                .map_err(<Self::Error as FromEthApiError>::from_eth_err)?;
+
+            let tx_recovered = tx
+                .try_into_recovered_unchecked()
+                .map_err(<Self::Error as FromEthApiError>::from_eth_err)?;
+
+            let input = ConvertReceiptInput {
+                tx: tx_recovered.as_recovered_ref(),
+                gas_used: receipt.cumulative_gas_used() - gas_used,
+                receipt,
+                next_log_index,
+                meta,
+            };
+
+            let result = match block {
+                Some(sealed_block_with_senders) => self.converter().convert_receipts_with_block(
+                    vec![input],
+                    sealed_block_with_senders.sealed_block(),
+                )?,
+                None => self.converter().convert_receipts(vec![input])?,
+            };
+            Ok(result.into_iter().next().expect("one receipt in, one out"))
+        }
+    }
 }
 
 // ---- Gas estimation override ----

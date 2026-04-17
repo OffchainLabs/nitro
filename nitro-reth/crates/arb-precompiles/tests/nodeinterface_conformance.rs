@@ -73,7 +73,10 @@ fn block_l1_num_reads_cached_l1_block() {
 fn block_l1_num_returns_zero_for_uncached_block() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
         &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99_999_999_u64))]),
+        &calldata(
+            "blockL1Num(uint64)",
+            &[word_u256(U256::from(99_999_999_u64))],
+        ),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
@@ -221,10 +224,7 @@ fn gas_estimate_l1_component_returns_96_bytes() {
 fn get_l1_confirmations_unknown_block_returns_zero_not_revert() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
         &nodeinterface(),
-        &calldata(
-            "getL1Confirmations(bytes32)",
-            &[B256::repeat_byte(0xAB)],
-        ),
+        &calldata("getL1Confirmations(bytes32)", &[B256::repeat_byte(0xAB)]),
     );
     let execution = run.assert_ok();
     assert!(
