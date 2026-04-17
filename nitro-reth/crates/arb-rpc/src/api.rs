@@ -681,6 +681,41 @@ where
                     }
                 }
 
+                // estimateRetryableTicket: computes submission fee + runs
+                // the constructed SubmitRetryableTx via EstimateGas to return
+                // gas needed. Nitro uses a revert-with-data pattern to return
+                // the result through eth_call. Proper implementation requires
+                // constructing the tx, simulating, and encoding Nitro's
+                // revert-result envelope — substantial work that must match
+                // Nitro's exact error layout so bridges / deposit UIs can
+                // decode correctly. Until then, return a clear error rather
+                // than a partial result that could mislead callers.
+                [0xc3, 0xdc, 0x58, 0x79] => {
+                    Err(EthApiError::InvalidParams(
+                        "estimateRetryableTicket not yet implemented via RPC — \
+                         requires full Nitro-compatible submit-retryable tx construction \
+                         and revert-with-result encoding"
+                            .into(),
+                    ))
+                }
+
+                // constructOutboxProof: generates a Merkle proof of an
+                // L2→L1 message send against the outbox tree at the given
+                // size. Requires scanning all L2ToL1Tx / SendMerkleUpdate
+                // logs from ArbSys (0x64) across blocks, reconstructing the
+                // merkle accumulator partials, and walking the proof path.
+                // Full implementation is non-trivial cryptography; getting
+                // it wrong produces invalid withdrawal proofs. Return a
+                // clear error until properly implemented against Nitro's
+                // reference (see arbos/merkleAccumulator + NodeInterface.go).
+                [0x42, 0x69, 0x63, 0x50] => {
+                    Err(EthApiError::InvalidParams(
+                        "constructOutboxProof not yet implemented via RPC — \
+                         requires L2ToL1Tx log scan + Merkle tree reconstruction"
+                            .into(),
+                    ))
+                }
+
                 _ => {
                     // Delegate to EVM (precompile returns zero / reverts).
                     let _permit = self.acquire_owned_blocking_io().await;
