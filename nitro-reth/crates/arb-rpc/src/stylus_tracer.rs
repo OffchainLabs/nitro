@@ -2,9 +2,12 @@
 //! during Stylus program execution so `debug_traceTransaction` can
 //! surface them alongside EVM events.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 
-use alloy_primitives::{Address, Bytes};
+use alloy_primitives::{Address, Bytes, B256};
 use serde::{Deserialize, Serialize};
 
 /// One host-I/O record captured during Stylus execution.
@@ -86,6 +89,47 @@ impl From<Vec<HostioTraceInfo>> for StylusTraceOutput {
     fn from(hostio_records: Vec<HostioTraceInfo>) -> Self {
         Self { hostio_records }
     }
+}
+
+/// Global cache of `tx_hash -> HostioTraceInfo[]` populated by the
+/// block producer when a tx touches a Stylus program with tracing
+/// enabled, and drained by `arb_traceStylusHostio`. Size-bounded LRU
+/// semantics (oldest entries evicted when the cap is reached).
+fn trace_cache() -> &'static Mutex<HashMap<B256, Vec<HostioTraceInfo>>> {
+    static CACHE: OnceLock<Mutex<HashMap<B256, Vec<HostioTraceInfo>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Bound on cached tx-hash entries. A conservative default: most
+/// debug_trace workflows only care about recent txs.
+const TRACE_CACHE_MAX_ENTRIES: usize = 1024;
+
+/// Store the Stylus host-I/O records for a tx-hash. Called by the
+/// block producer after executing a tx with the trace buffer active.
+pub fn cache_trace(tx_hash: B256, records: Vec<HostioTraceInfo>) {
+    if records.is_empty() {
+        return;
+    }
+    if let Ok(mut m) = trace_cache().lock() {
+        if m.len() >= TRACE_CACHE_MAX_ENTRIES {
+            // Simple eviction: drop a random existing entry to stay
+            // bounded. (HashMap iteration order is nondeterministic.)
+            if let Some(key) = m.keys().next().cloned() {
+                m.remove(&key);
+            }
+        }
+        m.insert(tx_hash, records);
+    }
+}
+
+/// Retrieve + remove the cached trace for a tx-hash. Matches Nitro's
+/// one-shot retrieval semantics: the buffer is drained on first read.
+pub fn take_cached_trace(tx_hash: B256) -> Vec<HostioTraceInfo> {
+    trace_cache()
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(&tx_hash))
+        .unwrap_or_default()
 }
 
 /// Run `f` with a fresh Stylus host-I/O trace buffer installed on the

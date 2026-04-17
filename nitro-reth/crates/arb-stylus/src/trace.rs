@@ -90,6 +90,15 @@ pub fn record_leaf(name: &'static str, args: Bytes, outs: Bytes) {
     }
 }
 
+/// Record a host-function call with an ink delta captured by the
+/// caller. Used where args/outs aren't meaningful but ink cost is.
+#[inline]
+pub fn record_ink(name: &'static str, start_ink: u64, end_ink: u64) {
+    if is_active() {
+        record(name, Bytes::new(), Bytes::new(), start_ink, end_ink, None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

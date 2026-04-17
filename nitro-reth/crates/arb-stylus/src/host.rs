@@ -375,8 +375,9 @@ pub fn create1<E: EvmApi>(
     contract_ptr: u32,
     ret_len_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("create1", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::CREATE1_BASE_INK)?;
     info.pay_for_read(code_len)?;
     info.pay_for_read(code_len)?; // read from geth
@@ -386,7 +387,7 @@ pub fn create1<E: EvmApi>(
     let (response, ret_len, gas_cost) = info
         .env
         .evm_api
-        .create1(code, endowment, gas_left)
+        .create1(code.clone(), endowment, gas_left)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
@@ -398,6 +399,20 @@ pub fn create1<E: EvmApi>(
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(32 + code.len());
+        args.extend_from_slice(&endowment.to_be_bytes::<32>());
+        args.extend_from_slice(&code);
+        crate::trace::record(
+            "create1",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
+            start_ink,
+            end_ink,
+            Some(address),
+        );
+    }
     Ok(())
 }
 
@@ -411,8 +426,9 @@ pub fn create2<E: EvmApi>(
     contract_ptr: u32,
     ret_len_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("create2", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::CREATE2_BASE_INK)?;
     info.pay_for_read(code_len)?;
     info.pay_for_read(code_len)?; // read from geth
@@ -423,7 +439,7 @@ pub fn create2<E: EvmApi>(
     let (response, ret_len, gas_cost) = info
         .env
         .evm_api
-        .create2(code, endowment, salt, gas_left)
+        .create2(code.clone(), endowment, salt, gas_left)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
@@ -435,6 +451,21 @@ pub fn create2<E: EvmApi>(
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(64 + code.len());
+        args.extend_from_slice(&endowment.to_be_bytes::<32>());
+        args.extend_from_slice(salt.as_slice());
+        args.extend_from_slice(&code);
+        crate::trace::record(
+            "create2",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
+            start_ink,
+            end_ink,
+            Some(address),
+        );
+    }
     Ok(())
 }
 
@@ -466,10 +497,23 @@ pub fn read_return_data<E: EvmApi>(
 
 /// Get the size of the return data.
 pub fn return_data_size<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
-    crate::trace::record_leaf("return_data_size", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::RETURN_DATA_SIZE_BASE_INK)?;
-    Ok(info.env.evm_return_data_len)
+    let size = info.env.evm_return_data_len;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "return_data_size",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&size.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(size)
 }
 
 /// Emit a log.
@@ -551,8 +595,9 @@ pub fn account_code<E: EvmApi>(
     size: u32,
     dest_ptr: u32,
 ) -> Result<u32, Escape> {
-    crate::trace::record_leaf("account_code", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::ACCOUNT_CODE_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
     let address = Address::from_slice(&info.read_fixed::<20>(addr_ptr)?);
@@ -565,12 +610,27 @@ pub fn account_code<E: EvmApi>(
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.pay_for_write(code.len() as u32)?;
-    let offset = offset as usize;
-    let size = size as usize;
-    let available = code.len().saturating_sub(offset);
-    let copy_len = available.min(size);
+    let offset_usize = offset as usize;
+    let size_usize = size as usize;
+    let available = code.len().saturating_sub(offset_usize);
+    let copy_len = available.min(size_usize);
     if copy_len > 0 {
-        info.write_slice(dest_ptr, &code[offset..offset + copy_len])?;
+        info.write_slice(dest_ptr, &code[offset_usize..offset_usize + copy_len])?;
+    }
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(28);
+        args.extend_from_slice(address.as_slice());
+        args.extend_from_slice(&offset.to_be_bytes());
+        args.extend_from_slice(&size.to_be_bytes());
+        crate::trace::record(
+            "account_code",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(&code[..code.len().min(copy_len)]),
+            start_ink,
+            end_ink,
+            Some(address),
+        );
     }
     Ok(copy_len as u32)
 }
@@ -580,8 +640,9 @@ pub fn account_code_size<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
 ) -> Result<u32, Escape> {
-    crate::trace::record_leaf("account_code_size", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::ACCOUNT_CODE_SIZE_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
     let address = Address::from_slice(&info.read_fixed::<20>(addr_ptr)?);
@@ -593,7 +654,19 @@ pub fn account_code_size<E: EvmApi>(
         .account_code(arbos_version, address, gas_left)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
-    Ok(code.len() as u32)
+    let len = code.len() as u32;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "account_code_size",
+            alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
+            alloy_primitives::Bytes::copy_from_slice(&len.to_be_bytes()),
+            start_ink,
+            end_ink,
+            Some(address),
+        );
+    }
+    Ok(len)
 }
 
 /// Get an account's code hash.
@@ -602,8 +675,9 @@ pub fn account_codehash<E: EvmApi>(
     addr_ptr: u32,
     dest_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("account_codehash", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::ACCOUNT_CODE_HASH_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
     let address = Address::from_slice(&info.read_fixed::<20>(addr_ptr)?);
@@ -614,74 +688,189 @@ pub fn account_codehash<E: EvmApi>(
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, hash.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "account_codehash",
+            alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
+            alloy_primitives::Bytes::copy_from_slice(hash.as_slice()),
+            start_ink,
+            end_ink,
+            Some(address),
+        );
+    }
     Ok(())
 }
 
 /// Get remaining EVM gas.
 pub fn evm_gas_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
-    crate::trace::record_leaf("evm_gas_left", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::EVM_GAS_LEFT_BASE_INK)?;
     let ink = info.ink_ready()?;
-    Ok(info.pricing().ink_to_gas(ink).0)
+    let gas = info.pricing().ink_to_gas(ink).0;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "evm_gas_left",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&gas.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(gas)
 }
 
 /// Get remaining ink.
 pub fn evm_ink_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
-    crate::trace::record_leaf("evm_ink_left", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::EVM_INK_LEFT_BASE_INK)?;
-    Ok(info.ink_ready()?.0)
+    let ink = info.ink_ready()?.0;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "evm_ink_left",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&ink.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(ink)
 }
 
 /// Write the block base fee.
 pub fn block_basefee<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("block_basefee", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::BLOCK_BASEFEE_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.block_basefee.as_slice())?;
+    let basefee = info.env.evm_data.block_basefee;
+    info.write_slice(ptr, basefee.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "block_basefee",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(basefee.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
 /// Get the chain ID.
 pub fn chainid<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
-    crate::trace::record_leaf("chainid", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::CHAIN_ID_BASE_INK)?;
-    Ok(info.env.evm_data.chain_id)
+    let id = info.env.evm_data.chain_id;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "chainid",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&id.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(id)
 }
 
 /// Write the block coinbase address.
 pub fn block_coinbase<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("block_coinbase", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::BLOCK_COINBASE_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.block_coinbase.as_slice())?;
+    let coinbase = info.env.evm_data.block_coinbase;
+    info.write_slice(ptr, coinbase.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "block_coinbase",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(coinbase.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
 /// Get the block gas limit.
 pub fn block_gas_limit<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
-    crate::trace::record_leaf("block_gas_limit", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::BLOCK_GAS_LIMIT_BASE_INK)?;
-    Ok(info.env.evm_data.block_gas_limit)
+    let limit = info.env.evm_data.block_gas_limit;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "block_gas_limit",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&limit.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(limit)
 }
 
 /// Get the block number.
 pub fn block_number<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
-    crate::trace::record_leaf("block_number", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::BLOCK_NUMBER_BASE_INK)?;
-    Ok(info.env.evm_data.block_number)
+    let n = info.env.evm_data.block_number;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "block_number",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&n.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(n)
 }
 
 /// Get the block timestamp.
 pub fn block_timestamp<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
-    crate::trace::record_leaf("block_timestamp", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::BLOCK_TIMESTAMP_BASE_INK)?;
-    Ok(info.env.evm_data.block_timestamp)
+    let ts = info.env.evm_data.block_timestamp;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "block_timestamp",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&ts.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(ts)
 }
 
 /// Write the contract address.
@@ -689,10 +878,23 @@ pub fn contract_address<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("contract_address", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::ADDRESS_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.contract_address.as_slice())?;
+    let addr = info.env.evm_data.contract_address;
+    info.write_slice(ptr, addr.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "contract_address",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(addr.as_slice()),
+            start_ink,
+            end_ink,
+            Some(addr),
+        );
+    }
     Ok(())
 }
 
@@ -702,13 +904,28 @@ pub fn math_div<E: EvmApi>(
     a_ptr: u32,
     b_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("math_div", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MATH_DIV_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
     let b = U256::from_be_bytes(info.read_fixed::<32>(b_ptr)?);
     let result = if b.is_zero() { U256::ZERO } else { a / b };
     info.write_slice(a_ptr, &result.to_be_bytes::<32>())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(64);
+        args.extend_from_slice(&a.to_be_bytes::<32>());
+        args.extend_from_slice(&b.to_be_bytes::<32>());
+        crate::trace::record(
+            "math_div",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(&result.to_be_bytes::<32>()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -718,13 +935,28 @@ pub fn math_mod<E: EvmApi>(
     a_ptr: u32,
     b_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("math_mod", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MATH_MOD_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
     let b = U256::from_be_bytes(info.read_fixed::<32>(b_ptr)?);
     let result = if b.is_zero() { U256::ZERO } else { a % b };
     info.write_slice(a_ptr, &result.to_be_bytes::<32>())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(64);
+        args.extend_from_slice(&a.to_be_bytes::<32>());
+        args.extend_from_slice(&b.to_be_bytes::<32>());
+        crate::trace::record(
+            "math_mod",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::copy_from_slice(&result.to_be_bytes::<32>()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -792,53 +1024,131 @@ pub fn math_mul_mod<E: EvmApi>(
 
 /// Get the reentrant counter.
 pub fn msg_reentrant<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
-    crate::trace::record_leaf("msg_reentrant", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MSG_REENTRANT_BASE_INK)?;
-    Ok(info.env.evm_data.reentrant)
+    let r = info.env.evm_data.reentrant;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "msg_reentrant",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&r.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(r)
 }
 
 /// Write the message sender address.
 pub fn msg_sender<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("msg_sender", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MSG_SENDER_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.msg_sender.as_slice())?;
+    let sender = info.env.evm_data.msg_sender;
+    info.write_slice(ptr, sender.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "msg_sender",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(sender.as_slice()),
+            start_ink,
+            end_ink,
+            Some(sender),
+        );
+    }
     Ok(())
 }
 
 /// Write the message value.
 pub fn msg_value<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("msg_value", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::MSG_VALUE_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.msg_value.as_slice())?;
+    let v = info.env.evm_data.msg_value;
+    info.write_slice(ptr, v.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "msg_value",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(v.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
 /// Write the transaction gas price.
 pub fn tx_gas_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("tx_gas_price", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TX_GAS_PRICE_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.tx_gas_price.as_slice())?;
+    let p_ = info.env.evm_data.tx_gas_price;
+    info.write_slice(ptr, p_.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "tx_gas_price",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(p_.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
 /// Get the ink price.
 pub fn tx_ink_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
-    crate::trace::record_leaf("tx_ink_price", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TX_INK_PRICE_BASE_INK)?;
-    Ok(info.pricing().ink_price)
+    let price = info.pricing().ink_price;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "tx_ink_price",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(&price.to_be_bytes()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
+    Ok(price)
 }
 
 /// Write the transaction origin address.
 pub fn tx_origin<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
-    crate::trace::record_leaf("tx_origin", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TX_ORIGIN_BASE_INK)?;
-    info.write_slice(ptr, info.env.evm_data.tx_origin.as_slice())?;
+    let origin = info.env.evm_data.tx_origin;
+    info.write_slice(ptr, origin.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "tx_origin",
+            Default::default(),
+            alloy_primitives::Bytes::copy_from_slice(origin.as_slice()),
+            start_ink,
+            end_ink,
+            Some(origin),
+        );
+    }
     Ok(())
 }
 
@@ -873,12 +1183,24 @@ pub fn native_keccak256<E: EvmApi>(
     input_len: u32,
     output_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("native_keccak256", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.pay_for_keccak(input_len)?;
     let data = info.read_slice(input_ptr, input_len)?;
     let hash = alloy_primitives::keccak256(&data);
     info.write_slice(output_ptr, hash.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "native_keccak256",
+            alloy_primitives::Bytes::from(data),
+            alloy_primitives::Bytes::copy_from_slice(hash.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
