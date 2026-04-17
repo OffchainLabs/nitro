@@ -49,13 +49,33 @@ fn instantiate(wat: &str, imports: &Imports, store: &mut Store) -> Instance {
 }
 
 fn seed(instance: &Instance, store: &mut Store) {
-    instance.exports.get_global("stylus_ink_left").unwrap().set(store, Value::I64(i64::MAX)).unwrap();
-    instance.exports.get_global("stylus_ink_status").unwrap().set(store, Value::I32(0)).unwrap();
-    instance.exports.get_global("stylus_stack_left").unwrap().set(store, Value::I32(i32::MAX)).unwrap();
+    instance
+        .exports
+        .get_global("stylus_ink_left")
+        .unwrap()
+        .set(store, Value::I64(i64::MAX))
+        .unwrap();
+    instance
+        .exports
+        .get_global("stylus_ink_status")
+        .unwrap()
+        .set(store, Value::I32(0))
+        .unwrap();
+    instance
+        .exports
+        .get_global("stylus_stack_left")
+        .unwrap()
+        .set(store, Value::I32(i32::MAX))
+        .unwrap();
 }
 
 fn ink_left(instance: &Instance, store: &mut Store) -> u64 {
-    match instance.exports.get_global("stylus_ink_left").unwrap().get(store) {
+    match instance
+        .exports
+        .get_global("stylus_ink_left")
+        .unwrap()
+        .get(store)
+    {
         Value::I64(v) => v as u64,
         _ => unreachable!(),
     }
@@ -78,8 +98,17 @@ const STORE_LOAD_WAT: &str = r#"
 fn memory_store_then_load_returns_same_value() {
     let mut store = make_store();
     let inst = instantiate(STORE_LOAD_WAT, &imports! {}, &mut store);
-    let f = inst.exports.get_function("store_then_load").unwrap().clone();
-    let res = f.call(&mut store, &[Value::I32(64), Value::I32(0xdeadbeefu32 as i32)]).unwrap();
+    let f = inst
+        .exports
+        .get_function("store_then_load")
+        .unwrap()
+        .clone();
+    let res = f
+        .call(
+            &mut store,
+            &[Value::I32(64), Value::I32(0xdeadbeefu32 as i32)],
+        )
+        .unwrap();
     assert_eq!(res[0].i32().unwrap() as u32, 0xdeadbeefu32);
 }
 
@@ -87,7 +116,11 @@ fn memory_store_then_load_returns_same_value() {
 fn memory_store_consumes_ink() {
     let mut store = make_store();
     let inst = instantiate(STORE_LOAD_WAT, &imports! {}, &mut store);
-    let f = inst.exports.get_function("store_then_load").unwrap().clone();
+    let f = inst
+        .exports
+        .get_function("store_then_load")
+        .unwrap()
+        .clone();
     let before = ink_left(&inst, &mut store);
     let _ = f.call(&mut store, &[Value::I32(0), Value::I32(1)]).unwrap();
     let after = ink_left(&inst, &mut store);
@@ -112,8 +145,18 @@ fn branch_taken_returns_then_value() {
     let mut store = make_store();
     let inst = instantiate(BRANCH_WAT, &imports! {}, &mut store);
     let f = inst.exports.get_function("branch").unwrap().clone();
-    assert_eq!(f.call(&mut store, &[Value::I32(1)]).unwrap()[0].i32().unwrap(), 100);
-    assert_eq!(f.call(&mut store, &[Value::I32(0)]).unwrap()[0].i32().unwrap(), 200);
+    assert_eq!(
+        f.call(&mut store, &[Value::I32(1)]).unwrap()[0]
+            .i32()
+            .unwrap(),
+        100
+    );
+    assert_eq!(
+        f.call(&mut store, &[Value::I32(0)]).unwrap()[0]
+            .i32()
+            .unwrap(),
+        200
+    );
 }
 
 #[test]
@@ -212,5 +255,8 @@ fn nested_call_costs_more_than_a_single_call() {
     let before = ink_left(&inst, &mut store);
     let _ = outer.call(&mut store, &[Value::I32(1)]).unwrap();
     let cost = before - ink_left(&inst, &mut store);
-    assert!(cost > 5_000, "nested call ink cost should be substantial, got {cost}");
+    assert!(
+        cost > 5_000,
+        "nested call ink cost should be substantial, got {cost}"
+    );
 }

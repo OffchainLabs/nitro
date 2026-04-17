@@ -22,7 +22,10 @@ fn submission_fee_100_bytes() {
 #[test]
 fn submission_fee_10kb() {
     let l1 = U256::from(ONE_GWEI);
-    assert_eq!(retryable_submission_fee(10_000, l1), U256::from(61400u64) * l1);
+    assert_eq!(
+        retryable_submission_fee(10_000, l1),
+        U256::from(61400u64) * l1
+    );
 }
 
 #[test]
@@ -52,7 +55,10 @@ fn equilibration_units_v6_matches_nitro() {
 fn equilibration_units_after_v30_init_is_v6() {
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
     let l1 = h.l1_pricing_state();
-    assert_eq!(l1.equilibration_units().unwrap(), U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
+    assert_eq!(
+        l1.equilibration_units().unwrap(),
+        U256::from(INITIAL_EQUILIBRATION_UNITS_V6)
+    );
 }
 
 #[test]
@@ -118,19 +124,28 @@ fn l2_backlog_tolerance_is_10() {
 #[test]
 fn l2_min_base_fee_is_0_1_gwei() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l2_pricing_state().min_base_fee_wei().unwrap(), U256::from(100_000_000u64));
+    assert_eq!(
+        h.l2_pricing_state().min_base_fee_wei().unwrap(),
+        U256::from(100_000_000u64)
+    );
 }
 
 #[test]
 fn l2_speed_limit_v6_plus_is_7m() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l2_pricing_state().speed_limit_per_second().unwrap(), 7_000_000);
+    assert_eq!(
+        h.l2_pricing_state().speed_limit_per_second().unwrap(),
+        7_000_000
+    );
 }
 
 #[test]
 fn l2_per_block_gas_limit_v6_plus_is_32m() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l2_pricing_state().per_block_gas_limit().unwrap(), 32_000_000);
+    assert_eq!(
+        h.l2_pricing_state().per_block_gas_limit().unwrap(),
+        32_000_000
+    );
 }
 
 /// Hand-computed against Nitro's `ApproxExpBasisPoints(10000, 4)`.
@@ -227,8 +242,8 @@ mod end_tx_retryable {
         let params = base_params(true, 11, INFRA);
         let (_, transfers) = run(&p, &params);
         let log = transfers.borrow();
-        let expected_infra = params.min_base_fee.min(params.effective_base_fee)
-            * U256::from(params.gas_left);
+        let expected_infra =
+            params.min_base_fee.min(params.effective_base_fee) * U256::from(params.gas_left);
         let to_infra: U256 = log.iter().filter(|t| t.0 == INFRA).map(|t| t.2).sum();
         assert_eq!(to_infra, expected_infra);
     }
@@ -239,8 +254,8 @@ mod end_tx_retryable {
         let params = base_params(true, 11, INFRA);
         let (_, transfers) = run(&p, &params);
         let log = transfers.borrow();
-        let infra_amt = params.min_base_fee.min(params.effective_base_fee)
-            * U256::from(params.gas_left);
+        let infra_amt =
+            params.min_base_fee.min(params.effective_base_fee) * U256::from(params.gas_left);
         let total_gas_refund = params.effective_base_fee * U256::from(params.gas_left);
         let net_portion = total_gas_refund - infra_amt;
         let from_network_to_refund_to: Vec<U256> = log
@@ -316,7 +331,9 @@ mod end_tx_retryable {
         let log = transfers.borrow();
         let count: usize = log
             .iter()
-            .filter(|(from, to, amt)| *from == NETWORK && *to == REFUND_TO && *amt == params.submission_fee_refund)
+            .filter(|(from, to, amt)| {
+                *from == NETWORK && *to == REFUND_TO && *amt == params.submission_fee_refund
+            })
             .count();
         assert_eq!(count, 0);
     }
@@ -332,7 +349,8 @@ mod end_tx_retryable {
     #[test]
     fn failure_keeps_retryable_and_returns_escrow() {
         let p = TxProcessor::new(COINBASE);
-        let result = p.end_tx_retryable(&base_params(false, 30, INFRA), |_, _| {}, |_, _, _| Ok(()));
+        let result =
+            p.end_tx_retryable(&base_params(false, 30, INFRA), |_, _| {}, |_, _, _| Ok(()));
         assert!(!result.should_delete_retryable);
         assert!(result.should_return_value_to_escrow);
     }
@@ -375,7 +393,10 @@ mod end_tx_retryable {
         params.multi_dimensional_cost = Some(single);
         let (_, transfers_before) = run(&p, &base_params(true, 60, INFRA));
         let (_, transfers_with) = run(&p, &params);
-        assert_eq!(transfers_before.borrow().len(), transfers_with.borrow().len());
+        assert_eq!(
+            transfers_before.borrow().len(),
+            transfers_with.borrow().len()
+        );
     }
 
     #[test]
@@ -386,7 +407,10 @@ mod end_tx_retryable {
         params.multi_dimensional_cost = Some(single * U256::from(2u64));
         let (_, transfers_before) = run(&p, &base_params(true, 60, INFRA));
         let (_, transfers_with) = run(&p, &params);
-        assert_eq!(transfers_before.borrow().len(), transfers_with.borrow().len());
+        assert_eq!(
+            transfers_before.borrow().len(),
+            transfers_with.borrow().len()
+        );
     }
 }
 
@@ -406,11 +430,14 @@ mod batch_poster_funds_due {
         let bp_a = bpt.add_poster(a, a).unwrap();
         let bp_b = bpt.add_poster(b, b).unwrap();
 
-        bp_a.set_funds_due(U256::from(100u64), &bpt.total_funds_due).unwrap();
-        bp_b.set_funds_due(U256::from(50u64), &bpt.total_funds_due).unwrap();
+        bp_a.set_funds_due(U256::from(100u64), &bpt.total_funds_due)
+            .unwrap();
+        bp_b.set_funds_due(U256::from(50u64), &bpt.total_funds_due)
+            .unwrap();
         assert_eq!(bpt.total_funds_due().unwrap(), U256::from(150u64));
 
-        bp_a.set_funds_due(U256::from(30u64), &bpt.total_funds_due).unwrap();
+        bp_a.set_funds_due(U256::from(30u64), &bpt.total_funds_due)
+            .unwrap();
         assert_eq!(bpt.total_funds_due().unwrap(), U256::from(80u64));
     }
 
@@ -422,7 +449,8 @@ mod batch_poster_funds_due {
         let bpt = l1.batch_poster_table();
         let a = address!("AAAA000000000000000000000000000000000000");
         let bp = bpt.add_poster(a, a).unwrap();
-        bp.set_funds_due(U256::from(500u64), &bpt.total_funds_due).unwrap();
+        bp.set_funds_due(U256::from(500u64), &bpt.total_funds_due)
+            .unwrap();
         assert_eq!(bpt.total_funds_due().unwrap(), U256::from(500u64));
         bp.set_funds_due(U256::ZERO, &bpt.total_funds_due).unwrap();
         assert_eq!(bpt.total_funds_due().unwrap(), U256::ZERO);
@@ -448,7 +476,8 @@ mod l1_pricing_surplus {
     fn surplus_grows_with_l1_fees_available() {
         let mut h = ArbosHarness::new().initialize();
         let l1 = h.l1_pricing_state();
-        l1.add_to_l1_fees_available(U256::from(1_000_000u64)).unwrap();
+        l1.add_to_l1_fees_available(U256::from(1_000_000u64))
+            .unwrap();
         let (mag, neg) = l1.get_l1_pricing_surplus().unwrap();
         assert_eq!(mag, U256::from(1_000_000u64));
         assert!(!neg);
@@ -491,7 +520,12 @@ mod compute_poster_gas_overflow {
 
     #[test]
     fn compute_poster_gas_with_u256_max_cost_estimation_mode_does_not_panic() {
-        let _ = compute_poster_gas(U256::MAX, U256::from(ONE_GWEI), true, U256::from(ONE_GWEI / 2));
+        let _ = compute_poster_gas(
+            U256::MAX,
+            U256::from(ONE_GWEI),
+            true,
+            U256::from(ONE_GWEI / 2),
+        );
     }
 
     #[test]
@@ -504,8 +538,8 @@ mod compute_poster_gas_overflow {
 
 mod compute_retryable_gas_split_overflow {
     use super::*;
-    use arbos::tx_processor::compute_retryable_gas_split;
     use alloy_primitives::Address;
+    use arbos::tx_processor::compute_retryable_gas_split;
 
     #[test]
     fn retryable_gas_split_with_u64_max_gas_does_not_panic() {
@@ -520,16 +554,9 @@ mod compute_retryable_gas_split_overflow {
 
     #[test]
     fn retryable_gas_split_with_max_base_fee_does_not_panic() {
-        let _ = compute_retryable_gas_split(
-            1_000_000,
-            U256::MAX,
-            Address::ZERO,
-            U256::ZERO,
-            10,
-        );
+        let _ = compute_retryable_gas_split(1_000_000, U256::MAX, Address::ZERO, U256::ZERO, 10);
     }
 }
-
 
 mod retryable_lifecycle_edge_cases {
     use super::*;

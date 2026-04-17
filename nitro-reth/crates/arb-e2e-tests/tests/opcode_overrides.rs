@@ -5,7 +5,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_legacy, ExecutorScaffold,
     ONE_ETH, ONE_GWEI,
@@ -60,7 +60,9 @@ fn execute_call(
     let mut executor = cfg
         .block_executor_factory()
         .create_arb_executor(evm, exec_ctx, chain_id);
-    executor.apply_pre_execution_changes().map_err(|e| format!("pre: {e}"))?;
+    executor
+        .apply_pre_execution_changes()
+        .map_err(|e| format!("pre: {e}"))?;
 
     let tx = sign_legacy(
         chain_id,
@@ -86,7 +88,9 @@ fn execute_call(
         } => b.clone(),
         _ => Bytes::new(),
     };
-    executor.commit_transaction(result).map_err(|e| format!("commit: {e}"))?;
+    executor
+        .commit_transaction(result)
+        .map_err(|e| format!("commit: {e}"))?;
     let _ = executor.finish().map_err(|e| format!("finish: {e}"))?;
     Ok((success, output))
 }
@@ -121,9 +125,20 @@ fn run_opcode_test(opcode: u8) -> Result<(bool, U256), String> {
     let mut s = ExecutorScaffold::new();
     let target = Address::repeat_byte(opcode);
     fund_account(s.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
-    deploy_contract(s.harness.state(), target, one_op_returner(opcode), U256::ZERO);
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0)?;
+    deploy_contract(
+        s.harness.state(),
+        target,
+        one_op_returner(opcode),
+        U256::ZERO,
+    );
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+    )?;
     Ok((success, read_word(&output)))
 }
 
@@ -183,9 +198,15 @@ fn selfbalance_opcode_returns_account_balance() {
         one_op_returner(SELFBALANCE_OPCODE),
         target_balance,
     );
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+    )
+    .expect("call");
     assert!(success);
     assert_eq!(read_word(&output), target_balance);
 }
@@ -201,9 +222,15 @@ fn blobbasefee_opcode_halts_with_invalid_opcode() {
         one_op_returner(BLOBBASEFEE_OPCODE),
         U256::ZERO,
     );
-    let (success, _) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0)
-            .expect("call");
+    let (success, _) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+    )
+    .expect("call");
     assert!(!success, "BLOBBASEFEE must halt on Arbitrum");
 }
 
@@ -226,9 +253,15 @@ fn blockhash_opcode_returns_zero_for_out_of_range() {
     let mut code = vec![0x60, 0x05, 0x40];
     code.extend_from_slice(&store_and_return_top());
     deploy_contract(s.harness.state(), target, code, U256::ZERO);
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+    )
+    .expect("call");
     assert!(success);
     assert_eq!(
         read_word(&output),
@@ -245,9 +278,15 @@ fn basefee_opcode_returns_block_basefee() {
     let mut code = vec![0x48];
     code.extend_from_slice(&store_and_return_top());
     deploy_contract(s.harness.state(), target, code, U256::ZERO);
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+    )
+    .expect("call");
     assert!(success);
     assert_eq!(read_word(&output), U256::from(100_000_000u64));
 }
@@ -260,9 +299,15 @@ fn origin_opcode_returns_tx_signer() {
     let mut code = vec![0x32];
     code.extend_from_slice(&store_and_return_top());
     deploy_contract(s.harness.state(), target, code, U256::ZERO);
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+    )
+    .expect("call");
     assert!(success);
     let mut expected = [0u8; 32];
     expected[12..].copy_from_slice(alice().as_slice());

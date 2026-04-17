@@ -1,9 +1,7 @@
 //! In-memory ArbOS state for unit tests.
 
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::{
-    set_account_nonce, Storage, StorageBackedAddress, ARBOS_STATE_ADDRESS,
-};
+use arb_storage::{set_account_nonce, Storage, StorageBackedAddress, ARBOS_STATE_ADDRESS};
 use arbos::{
     arbos_state::ArbosState,
     burn::SystemBurner,
@@ -122,11 +120,9 @@ impl ArbosHarness {
         retryables::initialize_retryable_state(&backing.open_sub_storage(RETRYABLES_SUBSPACE))
             .expect("init retryables");
 
-        let mut state = ArbosState::<EmptyDb, SystemBurner>::open(
-            state_ptr,
-            SystemBurner::new(None, false),
-        )
-        .expect("open arbos state at v1");
+        let mut state =
+            ArbosState::<EmptyDb, SystemBurner>::open(state_ptr, SystemBurner::new(None, false))
+                .expect("open arbos state at v1");
         state
             .upgrade_arbos_version(self.arbos_version, true)
             .expect("upgrade to target arbos version");
@@ -146,8 +142,7 @@ impl ArbosHarness {
     pub fn arbos_state(&mut self) -> ArbosState<EmptyDb, SystemBurner> {
         assert!(self.initialized, "call initialize() first");
         let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
-        ArbosState::open(state_ptr, SystemBurner::new(None, false))
-            .expect("open arbos state")
+        ArbosState::open(state_ptr, SystemBurner::new(None, false)).expect("open arbos state")
     }
 
     pub fn l1_pricing_state(&mut self) -> L1PricingState<EmptyDb> {

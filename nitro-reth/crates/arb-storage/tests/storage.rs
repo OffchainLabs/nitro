@@ -1,5 +1,8 @@
 use alloy_primitives::{b256, keccak256, B256, U256};
-use arb_storage::{storage_key_map, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint, StorageBackedInt64, StorageBackedUint64};
+use arb_storage::{
+    storage_key_map, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint,
+    StorageBackedInt64, StorageBackedUint64,
+};
 use arb_test_utils::ArbosHarness;
 
 const TEST_OFFSET: u64 = 42;
@@ -84,7 +87,12 @@ fn big_uint_round_trip_at_boundaries() {
     let storage = h.root_storage();
     let v = StorageBackedBigUint::new(storage.state_ptr(), B256::repeat_byte(3), TEST_OFFSET);
 
-    for x in [U256::ZERO, U256::from(1u64), U256::from(u64::MAX), U256::MAX] {
+    for x in [
+        U256::ZERO,
+        U256::from(1u64),
+        U256::from(u64::MAX),
+        U256::MAX,
+    ] {
         v.set(x).unwrap();
         assert_eq!(v.get().unwrap(), x);
     }
@@ -107,7 +115,10 @@ fn big_int_two_complement_encoding() {
     assert_eq!(mag, U256::from(33u64));
     assert!(neg);
     assert!(v.is_negative().unwrap());
-    assert_eq!(v.get_raw().unwrap(), U256::ZERO.wrapping_sub(U256::from(33u64)));
+    assert_eq!(
+        v.get_raw().unwrap(),
+        U256::ZERO.wrapping_sub(U256::from(33u64))
+    );
 
     let max_pos = (U256::from(1u64) << 255) - U256::from(1u64);
     v.set(max_pos).unwrap();

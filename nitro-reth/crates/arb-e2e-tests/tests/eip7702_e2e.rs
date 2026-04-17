@@ -10,7 +10,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, bob, bob_key, deploy_contract, derive_address, fund_account, ONE_ETH,
     ONE_GWEI,
@@ -62,14 +62,18 @@ fn run_tx(
     let mut executor = cfg
         .block_executor_factory()
         .create_arb_executor(evm, exec_ctx, chain_id);
-    executor.apply_pre_execution_changes().map_err(|e| format!("pre: {e}"))?;
+    executor
+        .apply_pre_execution_changes()
+        .map_err(|e| format!("pre: {e}"))?;
 
     let recovered = Recovered::new_unchecked(tx, sender);
     let result = executor
         .execute_transaction_without_commit(recovered)
         .map_err(|e| format!("exec: {e}"))?;
     let success = result.result.result.is_success();
-    executor.commit_transaction(result).map_err(|e| format!("commit: {e}"))?;
+    executor
+        .commit_transaction(result)
+        .map_err(|e| format!("commit: {e}"))?;
     let _ = executor.finish().map_err(|e| format!("finish: {e}"))?;
     Ok(success)
 }
@@ -128,7 +132,11 @@ fn eip7702_delegation_installs_code_prefix_on_authority() {
     let delegate_target = Address::repeat_byte(0x77);
 
     let mut s = arb_e2e_tests::helpers::ExecutorScaffold::new();
-    fund_account(s.harness.state(), alice(), U256::from(10u128) * U256::from(ONE_ETH));
+    fund_account(
+        s.harness.state(),
+        alice(),
+        U256::from(10u128) * U256::from(ONE_ETH),
+    );
     fund_account(s.harness.state(), authority, U256::from(ONE_ETH));
     deploy_contract(
         s.harness.state(),
@@ -151,8 +159,7 @@ fn eip7702_delegation_installs_code_prefix_on_authority() {
         alice_key(),
     );
 
-    let success = run_tx(&mut s.harness, s.base_fee, chain_id, tx, alice())
-        .expect("execute");
+    let success = run_tx(&mut s.harness, s.base_fee, chain_id, tx, alice()).expect("execute");
     assert!(success, "7702 tx should succeed");
 
     let code = s
@@ -165,7 +172,10 @@ fn eip7702_delegation_installs_code_prefix_on_authority() {
         .and_then(|a| a.info.code.as_ref())
         .map(|c| c.original_bytes());
     let code = code.expect("authority must have delegated code");
-    assert!(code.len() >= 2, "delegated code should be at least the 2-byte prefix");
+    assert!(
+        code.len() >= 2,
+        "delegated code should be at least the 2-byte prefix"
+    );
     assert_eq!(
         &code[..2],
         &[0xEF, 0x01],
@@ -178,12 +188,7 @@ fn eip7702_authorization_recovers_authority() {
     let chain_id = 421614u64;
     let sk = alice_key();
     let expected = alice();
-    let signed_auth = sign_authorization(
-        chain_id,
-        Address::repeat_byte(0xAA),
-        0,
-        sk,
-    );
+    let signed_auth = sign_authorization(chain_id, Address::repeat_byte(0xAA), 0, sk);
     let recovered = signed_auth.recover_authority().expect("recover");
     assert_eq!(recovered, expected);
 }
@@ -192,7 +197,11 @@ fn eip7702_authorization_recovers_authority() {
 fn eip7702_empty_authorization_list_still_executes() {
     let chain_id = 421614u64;
     let mut s = arb_e2e_tests::helpers::ExecutorScaffold::new();
-    fund_account(s.harness.state(), alice(), U256::from(10u128) * U256::from(ONE_ETH));
+    fund_account(
+        s.harness.state(),
+        alice(),
+        U256::from(10u128) * U256::from(ONE_ETH),
+    );
 
     let recipient = Address::repeat_byte(0xCC);
     let send_value = U256::from(ONE_ETH);
@@ -218,14 +227,14 @@ fn eip7702_delegation_with_wrong_authority_does_not_install_code() {
     let authority = bob();
 
     let mut s = arb_e2e_tests::helpers::ExecutorScaffold::new();
-    fund_account(s.harness.state(), alice(), U256::from(10u128) * U256::from(ONE_ETH));
-
-    let signed_auth_by_wrong_key = sign_authorization(
-        chain_id,
-        Address::repeat_byte(0x99),
-        0,
-        alice_key(),
+    fund_account(
+        s.harness.state(),
+        alice(),
+        U256::from(10u128) * U256::from(ONE_ETH),
     );
+
+    let signed_auth_by_wrong_key =
+        sign_authorization(chain_id, Address::repeat_byte(0x99), 0, alice_key());
     let tx = sign_7702(
         chain_id,
         0,
@@ -242,7 +251,10 @@ fn eip7702_delegation_with_wrong_authority_does_not_install_code() {
     let _ = run_tx(&mut s.harness, s.base_fee, chain_id, tx, alice());
 
     let authority_acct = s.harness.state().cache.accounts.get(&authority).cloned();
-    if let Some(code) = authority_acct.and_then(|a| a.account).and_then(|a| a.info.code) {
+    if let Some(code) = authority_acct
+        .and_then(|a| a.account)
+        .and_then(|a| a.info.code)
+    {
         let raw = code.original_bytes();
         let starts_with_magic = raw.len() >= 2 && raw[..2] == [0xEF, 0x01];
         let delegated_to_wrong = if raw.len() >= 22 {

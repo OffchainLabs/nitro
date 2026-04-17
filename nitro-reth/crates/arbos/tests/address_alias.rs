@@ -12,8 +12,14 @@ fn remap_zero_returns_offset_constant() {
 
 #[test]
 fn inverse_offset_is_negation_mod_160() {
-    assert_eq!(remap_l1_address(INVERSE_ADDRESS_ALIAS_OFFSET), Address::ZERO);
-    assert_eq!(inverse_remap_l1_address(ADDRESS_ALIAS_OFFSET), Address::ZERO);
+    assert_eq!(
+        remap_l1_address(INVERSE_ADDRESS_ALIAS_OFFSET),
+        Address::ZERO
+    );
+    assert_eq!(
+        inverse_remap_l1_address(ADDRESS_ALIAS_OFFSET),
+        Address::ZERO
+    );
 }
 
 #[test]
@@ -47,10 +53,16 @@ fn does_tx_type_alias_covers_expected_types() {
 #[test]
 fn tx_type_has_poster_costs_excludes_deposit_retry_internal_submit() {
     for t in [0x64u8, 0x68, 0x69, 0x6A] {
-        assert!(!tx_type_has_poster_costs(t), "type {t:#x} should not have poster costs");
+        assert!(
+            !tx_type_has_poster_costs(t),
+            "type {t:#x} should not have poster costs"
+        );
     }
     for t in [0x00u8, 0x01, 0x02, 0x04, 0x65, 0x66] {
-        assert!(tx_type_has_poster_costs(t), "type {t:#x} should have poster costs");
+        assert!(
+            tx_type_has_poster_costs(t),
+            "type {t:#x} should have poster costs"
+        );
     }
 }
 

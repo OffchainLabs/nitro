@@ -65,7 +65,11 @@ fn legacy_receipt_no_type_prefix() {
     assert_eq!(r.ty(), 0x00);
     let bytes = encode(&r);
     // RLP list header byte starts with 0xC0+, not a type prefix.
-    assert!(bytes[0] >= 0xC0, "first byte should be RLP list header, got {:#x}", bytes[0]);
+    assert!(
+        bytes[0] >= 0xC0,
+        "first byte should be RLP list header, got {:#x}",
+        bytes[0]
+    );
 }
 
 #[test]

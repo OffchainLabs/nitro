@@ -2,7 +2,10 @@ use alloy_primitives::B256;
 use arb_storage::vector::open_sub_storage_vector;
 use arb_test_utils::ArbosHarness;
 
-fn fresh(h: &mut ArbosHarness, sub: u8) -> arb_storage::vector::SubStorageVector<arb_test_utils::EmptyDb> {
+fn fresh(
+    h: &mut ArbosHarness,
+    sub: u8,
+) -> arb_storage::vector::SubStorageVector<arb_test_utils::EmptyDb> {
     let root = h.root_storage();
     open_sub_storage_vector(root.open_sub_storage(&[sub]))
 }

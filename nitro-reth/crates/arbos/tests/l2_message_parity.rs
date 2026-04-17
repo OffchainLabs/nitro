@@ -44,7 +44,6 @@ fn batch_at_depth_zero_accepts_inner_kind() {
     assert!(result.is_ok(), "kind=3 with inner kind=6 should parse");
 }
 
-
 /// Empty L2_MESSAGE payload: Nitro reads the kind byte first; if input is
 /// empty, the read fails and Nitro returns an error. Ours returns Ok(vec![]).
 #[test]

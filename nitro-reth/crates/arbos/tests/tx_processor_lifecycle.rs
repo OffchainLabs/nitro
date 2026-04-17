@@ -105,7 +105,10 @@ fn push_distinct_programs_dont_interfere() {
 #[test]
 fn reverted_tx_hook_no_hash_returns_none() {
     let p = TxProcessor::new(BATCH_POSTER);
-    assert_eq!(p.reverted_tx_hook(None, Some(50_000), false), RevertedTxAction::None);
+    assert_eq!(
+        p.reverted_tx_hook(None, Some(50_000), false),
+        RevertedTxAction::None
+    );
     assert_eq!(p.reverted_tx_hook(None, None, true), RevertedTxAction::None);
 }
 
@@ -228,7 +231,10 @@ fn end_tx_normal_distributes_total_to_network_when_no_infra() {
         arbos_version: ARBOS_V30,
     };
     let dist = p.compute_end_tx_fee_distribution(&params);
-    assert_eq!(dist.network_fee_amount, U256::from(100_000u64) * U256::from(ONE_GWEI));
+    assert_eq!(
+        dist.network_fee_amount,
+        U256::from(100_000u64) * U256::from(ONE_GWEI)
+    );
     assert_eq!(dist.infra_fee_amount, U256::ZERO);
     assert_eq!(dist.poster_fee_amount, U256::ZERO);
 }

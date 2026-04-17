@@ -1,7 +1,7 @@
 use arb_chainspec::{
-    arbitrum_sepolia_spec_id_by_timestamp, spec_id_by_arbos_version, ArbChainSpec, ArbitrumChainSpec,
-    ARBITRUM_ONE_CHAIN_ID, ARBITRUM_SEPOLIA_CANCUN_TIMESTAMP, ARBITRUM_SEPOLIA_PRAGUE_TIMESTAMP,
-    ARBITRUM_SEPOLIA_SHANGHAI_TIMESTAMP,
+    arbitrum_sepolia_spec_id_by_timestamp, spec_id_by_arbos_version, ArbChainSpec,
+    ArbitrumChainSpec, ARBITRUM_ONE_CHAIN_ID, ARBITRUM_SEPOLIA_CANCUN_TIMESTAMP,
+    ARBITRUM_SEPOLIA_PRAGUE_TIMESTAMP, ARBITRUM_SEPOLIA_SHANGHAI_TIMESTAMP,
 };
 use revm::primitives::hardfork::SpecId;
 
@@ -25,11 +25,26 @@ fn arbos_version_to_spec_id_thresholds() {
 #[test]
 fn sepolia_timestamp_thresholds_select_correct_spec() {
     assert_eq!(arbitrum_sepolia_spec_id_by_timestamp(0), SpecId::MERGE);
-    assert_eq!(arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_SHANGHAI_TIMESTAMP - 1), SpecId::MERGE);
-    assert_eq!(arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_SHANGHAI_TIMESTAMP), SpecId::SHANGHAI);
-    assert_eq!(arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_CANCUN_TIMESTAMP), SpecId::CANCUN);
-    assert_eq!(arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_PRAGUE_TIMESTAMP), SpecId::PRAGUE);
-    assert_eq!(arbitrum_sepolia_spec_id_by_timestamp(u64::MAX), SpecId::PRAGUE);
+    assert_eq!(
+        arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_SHANGHAI_TIMESTAMP - 1),
+        SpecId::MERGE
+    );
+    assert_eq!(
+        arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_SHANGHAI_TIMESTAMP),
+        SpecId::SHANGHAI
+    );
+    assert_eq!(
+        arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_CANCUN_TIMESTAMP),
+        SpecId::CANCUN
+    );
+    assert_eq!(
+        arbitrum_sepolia_spec_id_by_timestamp(ARBITRUM_SEPOLIA_PRAGUE_TIMESTAMP),
+        SpecId::PRAGUE
+    );
+    assert_eq!(
+        arbitrum_sepolia_spec_id_by_timestamp(u64::MAX),
+        SpecId::PRAGUE
+    );
 }
 
 #[test]

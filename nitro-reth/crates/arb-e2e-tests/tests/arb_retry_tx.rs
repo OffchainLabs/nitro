@@ -6,7 +6,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{address, Address, B256, Bytes, Signature, U256};
+use alloy_primitives::{address, Address, Bytes, Signature, B256, U256};
 use arb_alloy_consensus::tx::ArbRetryTx;
 use arb_e2e_tests::helpers::{
     alice, balance_of, fund_account, ExecutorScaffold, ONE_ETH, ONE_GWEI,
@@ -61,14 +61,18 @@ fn run_tx(
     executor.arb_ctx.block_timestamp = 1_700_000_000;
     executor.arb_ctx.basefee = U256::from(base_fee);
     executor.arb_ctx.l2_block_number = 1;
-    executor.apply_pre_execution_changes().map_err(|e| format!("pre: {e}"))?;
+    executor
+        .apply_pre_execution_changes()
+        .map_err(|e| format!("pre: {e}"))?;
 
     let recovered = Recovered::new_unchecked(tx, sender);
     let result = executor
         .execute_transaction_without_commit(recovered)
         .map_err(|e| format!("exec: {e}"))?;
     let success = result.result.result.is_success();
-    executor.commit_transaction(result).map_err(|e| format!("commit: {e}"))?;
+    executor
+        .commit_transaction(result)
+        .map_err(|e| format!("commit: {e}"))?;
     let _ = executor.finish().map_err(|e| format!("finish: {e}"))?;
     Ok(success)
 }
@@ -120,10 +124,7 @@ fn retry_tx_redeems_existing_retryable() {
         submission_fee_refund: U256::ZERO,
     };
 
-    let tx = ArbTransactionSigned::new_unhashed(
-        ArbTypedTransaction::Retry(retry_tx),
-        zero_sig(),
-    );
+    let tx = ArbTransactionSigned::new_unhashed(ArbTypedTransaction::Retry(retry_tx), zero_sig());
 
     let recipient_before = balance_of(s.harness.state(), recipient);
     let success = run_tx(&mut s.harness, s.base_fee, chain_id, tx, sender).expect("exec");
@@ -138,7 +139,9 @@ fn retry_tx_redeems_existing_retryable() {
 
     let rs = s.harness.retryable_state();
     assert!(
-        rs.open_retryable(ticket_id, 1_700_000_000).unwrap().is_none(),
+        rs.open_retryable(ticket_id, 1_700_000_000)
+            .unwrap()
+            .is_none(),
         "successful retry should delete the retryable"
     );
 }
@@ -192,16 +195,15 @@ fn retry_tx_failure_keeps_retryable_alive() {
         submission_fee_refund: U256::ZERO,
     };
 
-    let tx = ArbTransactionSigned::new_unhashed(
-        ArbTypedTransaction::Retry(retry_tx),
-        zero_sig(),
-    );
+    let tx = ArbTransactionSigned::new_unhashed(ArbTypedTransaction::Retry(retry_tx), zero_sig());
 
     let _ = run_tx(&mut s.harness, s.base_fee, chain_id, tx, sender).expect("exec");
 
     let rs = s.harness.retryable_state();
     assert!(
-        rs.open_retryable(ticket_id, 1_700_000_000).unwrap().is_some(),
+        rs.open_retryable(ticket_id, 1_700_000_000)
+            .unwrap()
+            .is_some(),
         "failed retry must keep the retryable in state"
     );
 }

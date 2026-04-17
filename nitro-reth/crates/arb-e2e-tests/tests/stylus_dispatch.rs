@@ -16,7 +16,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_legacy, ExecutorScaffold,
     ONE_ETH, ONE_GWEI,
@@ -66,18 +66,28 @@ fn call(
     let mut executor = cfg
         .block_executor_factory()
         .create_arb_executor(evm, exec_ctx, chain_id);
-    executor.apply_pre_execution_changes().map_err(|e| format!("pre: {e}"))?;
+    executor
+        .apply_pre_execution_changes()
+        .map_err(|e| format!("pre: {e}"))?;
 
     let tx = sign_legacy(
-        chain_id, nonce, ONE_GWEI, 500_000,
-        TxKind::Call(to), U256::ZERO, Bytes::new(), sk,
+        chain_id,
+        nonce,
+        ONE_GWEI,
+        500_000,
+        TxKind::Call(to),
+        U256::ZERO,
+        Bytes::new(),
+        sk,
     );
     let recovered = recover(tx);
     let result = executor
         .execute_transaction_without_commit(recovered)
         .map_err(|e| format!("exec: {e}"))?;
     let success = result.result.result.is_success();
-    executor.commit_transaction(result).map_err(|e| format!("commit: {e}"))?;
+    executor
+        .commit_transaction(result)
+        .map_err(|e| format!("commit: {e}"))?;
     let _ = executor.finish().map_err(|e| format!("finish: {e}"))?;
     Ok(success)
 }
@@ -103,7 +113,14 @@ fn stylus_prefix_contract_does_not_cause_evm_invalid_opcode() {
     fund_account(s.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
     deploy_contract(s.harness.state(), stylus_addr, invalid_wasm, U256::ZERO);
 
-    let result = call(&mut s.harness, s.base_fee, s.chain_id, stylus_addr, alice_key(), 0);
+    let result = call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        stylus_addr,
+        alice_key(),
+        0,
+    );
     if let Ok(success) = result {
         assert!(!success, "Stylus dispatch with invalid WASM should fail");
     }
@@ -118,8 +135,15 @@ fn non_stylus_contract_executes_via_evm() {
     fund_account(s.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
     deploy_contract(s.harness.state(), evm_addr, valid_return, U256::ZERO);
 
-    let success = call(&mut s.harness, s.base_fee, s.chain_id, evm_addr, alice_key(), 0)
-        .expect("exec");
+    let success = call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        evm_addr,
+        alice_key(),
+        0,
+    )
+    .expect("exec");
     assert!(success, "valid EVM contract must execute successfully");
 }
 
@@ -139,7 +163,14 @@ fn stylus_dispatch_does_not_corrupt_caller_state() {
     fund_account(s.harness.state(), alice(), initial_balance);
     deploy_contract(s.harness.state(), stylus_addr, bad_stylus, U256::ZERO);
 
-    let _ = call(&mut s.harness, s.base_fee, s.chain_id, stylus_addr, alice_key(), 0);
+    let _ = call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        stylus_addr,
+        alice_key(),
+        0,
+    );
 
     let alice_after = arb_e2e_tests::helpers::balance_of(s.harness.state(), alice());
     assert!(

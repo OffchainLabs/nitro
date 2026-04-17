@@ -15,13 +15,20 @@ fn arb_log() -> impl Strategy<Value = Log> {
     )
         .prop_map(|(addr, topics, data)| Log {
             address: Address::from(addr),
-            data: LogData::new(topics.into_iter().map(B256::from).collect(), Bytes::from(data))
-                .expect("topics <= 4"),
+            data: LogData::new(
+                topics.into_iter().map(B256::from).collect(),
+                Bytes::from(data),
+            )
+            .expect("topics <= 4"),
         })
 }
 
 fn arb_receipt_inner() -> impl Strategy<Value = AlloyReceipt> {
-    (any::<bool>(), any::<u64>(), prop::collection::vec(arb_log(), 0..3))
+    (
+        any::<bool>(),
+        any::<u64>(),
+        prop::collection::vec(arb_log(), 0..3),
+    )
         .prop_map(|(status, cumulative_gas_used, logs)| AlloyReceipt {
             status: Eip658Value::Eip658(status),
             cumulative_gas_used,

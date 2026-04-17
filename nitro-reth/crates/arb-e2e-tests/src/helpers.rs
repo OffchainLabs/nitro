@@ -7,7 +7,7 @@ use alloy_consensus::{
     transaction::{Recovered, SignerRecoverable},
     EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930, TxLegacy,
 };
-use alloy_primitives::{address, keccak256, Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{address, keccak256, Address, Bytes, TxKind, B256, U256};
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::ArbTransactionSigned;
 use arb_test_utils::{ArbosHarness, EmptyDb};

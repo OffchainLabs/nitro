@@ -5,7 +5,7 @@ use alloy_consensus::{
     SignableTransaction, TxLegacy,
 };
 use alloy_evm::{block::BlockExecutorFactory, eth::EthBlockExecutionCtx, EvmFactory};
-use alloy_primitives::{address, keccak256, Address, B256, TxKind, U256};
+use alloy_primitives::{address, keccak256, Address, TxKind, B256, U256};
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::ArbTransactionSigned;
 use arb_test_utils::{ArbosHarness, EmptyDb};
@@ -94,8 +94,8 @@ fn sign_and_recover_legacy_tx_round_trip() {
 
 #[test]
 fn arb_executor_executes_signed_legacy_transfer() {
-    use alloy_evm::block::BlockExecutor;
     use alloy_consensus::transaction::Recovered;
+    use alloy_evm::block::BlockExecutor;
 
     let chain_id = 421614;
     let sender = derive_address(SECRET_KEY);

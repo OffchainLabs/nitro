@@ -5,7 +5,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, balance_of, bob, bob_key, charlie, charlie_key, deploy_contract,
     fund_account, nonce_of, recover, sign_legacy, ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT,
@@ -97,7 +97,10 @@ fn three_sequential_transfers_from_same_sender() {
 
     assert_eq!(results, vec![true, true, true]);
     assert_eq!(nonce_of(s.harness.state(), alice()), 3);
-    assert_eq!(balance_of(s.harness.state(), RECIPIENT), send * U256::from(3u64));
+    assert_eq!(
+        balance_of(s.harness.state(), RECIPIENT),
+        send * U256::from(3u64)
+    );
 }
 
 #[test]
@@ -110,9 +113,36 @@ fn three_transfers_from_three_distinct_senders() {
 
     let send = U256::from(ONE_ETH);
     let txs = vec![
-        sign_legacy(s.chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(s.chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), bob_key()),
-        sign_legacy(s.chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), charlie_key()),
+        sign_legacy(
+            s.chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            bob_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            charlie_key(),
+        ),
     ];
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
@@ -120,7 +150,10 @@ fn three_transfers_from_three_distinct_senders() {
     assert_eq!(nonce_of(s.harness.state(), alice()), 1);
     assert_eq!(nonce_of(s.harness.state(), bob()), 1);
     assert_eq!(nonce_of(s.harness.state(), charlie()), 1);
-    assert_eq!(balance_of(s.harness.state(), RECIPIENT), send * U256::from(3u64));
+    assert_eq!(
+        balance_of(s.harness.state(), RECIPIENT),
+        send * U256::from(3u64)
+    );
 }
 
 #[test]
@@ -130,8 +163,26 @@ fn nonce_skip_rejects_second_tx() {
 
     let send = U256::from(ONE_ETH);
     let txs = vec![
-        sign_legacy(s.chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(s.chain_id, 5, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
+        sign_legacy(
+            s.chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            5,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
     ];
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
@@ -150,9 +201,36 @@ fn revert_in_middle_does_not_block_subsequent_txs() {
 
     let send = U256::from(ONE_ETH);
     let txs = vec![
-        sign_legacy(s.chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(s.chain_id, 1, ONE_GWEI, 100_000, TxKind::Call(revert_addr), U256::ZERO, Bytes::new(), alice_key()),
-        sign_legacy(s.chain_id, 2, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
+        sign_legacy(
+            s.chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            1,
+            ONE_GWEI,
+            100_000,
+            TxKind::Call(revert_addr),
+            U256::ZERO,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            2,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
     ];
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
@@ -160,7 +238,10 @@ fn revert_in_middle_does_not_block_subsequent_txs() {
     assert!(!results[1]);
     assert!(results[2]);
     assert_eq!(nonce_of(s.harness.state(), alice()), 3);
-    assert_eq!(balance_of(s.harness.state(), RECIPIENT), send * U256::from(2u64));
+    assert_eq!(
+        balance_of(s.harness.state(), RECIPIENT),
+        send * U256::from(2u64)
+    );
 }
 
 #[test]
@@ -188,7 +269,10 @@ fn many_small_transfers_in_one_block() {
 
     assert!(results.iter().all(|&ok| ok));
     assert_eq!(nonce_of(s.harness.state(), alice()), N);
-    assert_eq!(balance_of(s.harness.state(), RECIPIENT), send * U256::from(N));
+    assert_eq!(
+        balance_of(s.harness.state(), RECIPIENT),
+        send * U256::from(N)
+    );
 }
 
 #[test]
@@ -199,14 +283,44 @@ fn balance_drains_correctly_when_value_plus_gas_exceeds_balance_mid_block() {
 
     let send = U256::from(ONE_ETH);
     let txs = vec![
-        sign_legacy(s.chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(s.chain_id, 1, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(s.chain_id, 2, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
+        sign_legacy(
+            s.chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            1,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            s.chain_id,
+            2,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
     ];
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
     let successes: usize = results.iter().filter(|&&ok| ok).count();
-    assert!((1..=2).contains(&successes), "expected 1 or 2 successes, got {successes}");
+    assert!(
+        (1..=2).contains(&successes),
+        "expected 1 or 2 successes, got {successes}"
+    );
     let final_recipient = balance_of(s.harness.state(), RECIPIENT);
     assert!(final_recipient <= send * U256::from(2u64));
 }

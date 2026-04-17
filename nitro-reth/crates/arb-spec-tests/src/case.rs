@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::path::Path;
+use std::{cell::RefCell, path::Path};
 
 use alloy_primitives::{Address, B256, U256};
 use arb_test_utils::ArbosHarness;
@@ -174,7 +173,15 @@ fn apply_action(
             };
             harness
                 .retryable_state()
-                .create_retryable(*id, *timeout, *from, *to, *callvalue, *beneficiary, &calldata)
+                .create_retryable(
+                    *id,
+                    *timeout,
+                    *from,
+                    *to,
+                    *callvalue,
+                    *beneficiary,
+                    &calldata,
+                )
                 .map_err(|_| SpecError::Action("create_retryable".into()))?;
         }
         Action::RetryableIncrementNumTries { id, at_time } => {
@@ -186,7 +193,11 @@ fn apply_action(
             r.increment_num_tries()
                 .map_err(|_| SpecError::Action("increment_num_tries".into()))?;
         }
-        Action::RetryableSetTimeout { id, at_time, new_timeout } => {
+        Action::RetryableSetTimeout {
+            id,
+            at_time,
+            new_timeout,
+        } => {
             let rs = harness.retryable_state();
             let r = rs
                 .open_retryable(*id, *at_time)
@@ -202,7 +213,9 @@ fn apply_action(
             rs.delete_retryable(
                 *id,
                 |from, to, amount| {
-                    transfers.borrow_mut().push(TransferEntry { from, to, amount });
+                    transfers
+                        .borrow_mut()
+                        .push(TransferEntry { from, to, amount });
                     Ok(())
                 },
                 |addr| if addr == escrow { bal } else { U256::ZERO },
@@ -237,28 +250,56 @@ fn check_assertions(
     if let Some(s) = &a.l1_pricing {
         let l1 = harness.l1_pricing_state();
         if let Some(v) = s.last_update_time {
-            ensure_eq("l1.last_update_time", l1.last_update_time().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.last_update_time",
+                l1.last_update_time().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.price_per_unit {
-            ensure_eq("l1.price_per_unit", l1.price_per_unit().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.price_per_unit",
+                l1.price_per_unit().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.units_since_update {
-            ensure_eq("l1.units_since_update", l1.units_since_update().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.units_since_update",
+                l1.units_since_update().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.l1_fees_available {
-            ensure_eq("l1.l1_fees_available", l1.l1_fees_available().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.l1_fees_available",
+                l1.l1_fees_available().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.inertia {
             ensure_eq("l1.inertia", l1.inertia().map_err(map_err)?, v)?;
         }
         if let Some(v) = s.per_unit_reward {
-            ensure_eq("l1.per_unit_reward", l1.per_unit_reward().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.per_unit_reward",
+                l1.per_unit_reward().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.per_batch_gas_cost {
-            ensure_eq("l1.per_batch_gas_cost", l1.per_batch_gas_cost().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.per_batch_gas_cost",
+                l1.per_batch_gas_cost().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.equilibration_units {
-            ensure_eq("l1.equilibration_units", l1.equilibration_units().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.equilibration_units",
+                l1.equilibration_units().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(true) = s.surplus_is_zero {
             let (mag, _) = l1.get_l1_pricing_surplus().map_err(map_err)?;
@@ -274,7 +315,11 @@ fn check_assertions(
         }
         if let Some(v) = s.total_funds_due {
             let bpt = l1.batch_poster_table();
-            ensure_eq("l1.total_funds_due", bpt.total_funds_due().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.total_funds_due",
+                bpt.total_funds_due().map_err(map_err)?,
+                v,
+            )?;
         }
     }
     if let Some(s) = &a.l2_pricing {
@@ -283,7 +328,11 @@ fn check_assertions(
             ensure_eq("l2.base_fee_wei", l2.base_fee_wei().map_err(map_err)?, v)?;
         }
         if let Some(v) = s.min_base_fee_wei {
-            ensure_eq("l2.min_base_fee_wei", l2.min_base_fee_wei().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.min_base_fee_wei",
+                l2.min_base_fee_wei().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.speed_limit_per_second {
             ensure_eq(
@@ -296,16 +345,32 @@ fn check_assertions(
             ensure_eq("l2.gas_backlog", l2.gas_backlog().map_err(map_err)?, v)?;
         }
         if let Some(v) = s.pricing_inertia {
-            ensure_eq("l2.pricing_inertia", l2.pricing_inertia().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.pricing_inertia",
+                l2.pricing_inertia().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.backlog_tolerance {
-            ensure_eq("l2.backlog_tolerance", l2.backlog_tolerance().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.backlog_tolerance",
+                l2.backlog_tolerance().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.per_block_gas_limit {
-            ensure_eq("l2.per_block_gas_limit", l2.per_block_gas_limit().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.per_block_gas_limit",
+                l2.per_block_gas_limit().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.per_tx_gas_limit {
-            ensure_eq("l2.per_tx_gas_limit", l2.per_tx_gas_limit().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.per_tx_gas_limit",
+                l2.per_tx_gas_limit().map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.gas_constraints_length {
             ensure_eq(
@@ -357,13 +422,19 @@ fn check_assertions(
         }
         if let Some(check) = &s.hash_for_block_equals {
             let actual = bh.block_hash(check.block_number).map_err(map_err)?;
-            ensure_eq("blockhash.hash_for_block_equals", actual, Some(check.expected))?;
+            ensure_eq(
+                "blockhash.hash_for_block_equals",
+                actual,
+                Some(check.expected),
+            )?;
         }
     }
     if let Some(s) = &a.retryable {
         if let Some(check) = &s.exists {
             let rs = harness.retryable_state();
-            let opened = rs.open_retryable(check.id, check.at_time).map_err(map_err)?;
+            let opened = rs
+                .open_retryable(check.id, check.at_time)
+                .map_err(map_err)?;
             ensure_eq("retryable.exists", opened.is_some(), check.expected)?;
         }
         if let Some(check) = &s.num_tries {
@@ -372,7 +443,11 @@ fn check_assertions(
                 .open_retryable(check.id, check.at_time)
                 .map_err(map_err)?
                 .ok_or_else(|| SpecError::Assertion("retryable.num_tries: missing".into()))?;
-            ensure_eq("retryable.num_tries", opened.num_tries().map_err(map_err)?, check.expected)?;
+            ensure_eq(
+                "retryable.num_tries",
+                opened.num_tries().map_err(map_err)?,
+                check.expected,
+            )?;
         }
     }
     if let Some(s) = &a.merkle {
@@ -455,7 +530,11 @@ fn check_assertions(
     Ok(())
 }
 
-fn ensure_eq<T: std::fmt::Debug + PartialEq>(field: &str, actual: T, expected: T) -> Result<(), SpecError> {
+fn ensure_eq<T: std::fmt::Debug + PartialEq>(
+    field: &str,
+    actual: T,
+    expected: T,
+) -> Result<(), SpecError> {
     if actual != expected {
         return Err(SpecError::Assertion(format!(
             "{field}: expected {expected:?}, got {actual:?}"

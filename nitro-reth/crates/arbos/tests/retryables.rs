@@ -85,7 +85,13 @@ fn delete_clears_storage_and_transfers_escrow() {
                 transfers.push((from, to, amount));
                 Ok(())
             },
-            |addr| if addr == escrow { escrow_balance } else { U256::ZERO },
+            |addr| {
+                if addr == escrow {
+                    escrow_balance
+                } else {
+                    U256::ZERO
+                }
+            },
         )
         .unwrap()
     };

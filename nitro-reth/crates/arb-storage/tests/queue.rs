@@ -6,7 +6,10 @@ fn h_n(n: u8) -> B256 {
     B256::repeat_byte(n)
 }
 
-fn fresh_queue(h: &mut ArbosHarness, sub: u8) -> arb_storage::queue::Queue<arb_test_utils::EmptyDb> {
+fn fresh_queue(
+    h: &mut ArbosHarness,
+    sub: u8,
+) -> arb_storage::queue::Queue<arb_test_utils::EmptyDb> {
     let root = h.root_storage();
     let sto = root.open_sub_storage(&[sub]);
     initialize_queue(&sto).unwrap();

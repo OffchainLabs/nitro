@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alloy_consensus::Header;
 use alloy_evm::{block::BlockExecutorFactory, eth::EthBlockExecutionCtx, EvmFactory};
-use alloy_primitives::{Address, B64, B256, U256};
+use alloy_primitives::{Address, B256, B64, U256};
 use arb_evm::config::ArbEvmConfig;
 use arb_test_utils::{ArbosHarness, EmptyDb};
 use reth_chainspec::ChainSpec;

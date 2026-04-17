@@ -6,7 +6,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{address, Address, B256, Bytes, Signature, U256};
+use alloy_primitives::{address, Address, Bytes, Signature, B256, U256};
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };
@@ -69,14 +69,18 @@ fn run_arb_tx(
     executor.arb_ctx.block_timestamp = 1_700_000_000;
     executor.arb_ctx.basefee = U256::from(base_fee);
     executor.arb_ctx.l2_block_number = 1;
-    executor.apply_pre_execution_changes().map_err(|e| format!("pre: {e}"))?;
+    executor
+        .apply_pre_execution_changes()
+        .map_err(|e| format!("pre: {e}"))?;
 
     let recovered = Recovered::new_unchecked(tx, sender);
     let result = executor
         .execute_transaction_without_commit(recovered)
         .map_err(|e| format!("execute: {e}"))?;
     let success = result.result.result.is_success();
-    executor.commit_transaction(result).map_err(|e| format!("commit: {e}"))?;
+    executor
+        .commit_transaction(result)
+        .map_err(|e| format!("commit: {e}"))?;
     let _ = executor.finish().map_err(|e| format!("finish: {e}"))?;
     Ok(success)
 }
@@ -97,8 +101,7 @@ fn arbitrum_deposit_tx_mints_to_recipient() {
         }),
         zero_sig(),
     );
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER)
-        .expect("execute");
+    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), to), value);
 }
@@ -123,8 +126,7 @@ fn arbitrum_unsigned_tx_executes_with_poster_as_sender() {
         zero_sig(),
     );
 
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER)
-        .expect("execute");
+    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send_value);
     assert_eq!(nonce_of(s.harness.state(), POSTER), 1);
@@ -151,8 +153,8 @@ fn arbitrum_contract_tx_executes_from_l1_contract() {
         zero_sig(),
     );
 
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, l1_contract)
-        .expect("execute");
+    let success =
+        run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, l1_contract).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send_value);
 }
@@ -170,8 +172,8 @@ fn arbitrum_internal_tx_start_block_executes() {
         zero_sig(),
     );
     let arbos_addr = address!("00000000000000000000000000000000000A4B05");
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, arbos_addr)
-        .expect("execute");
+    let success =
+        run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, arbos_addr).expect("execute");
     assert!(success);
 }
 
@@ -207,8 +209,8 @@ fn arbitrum_submit_retryable_creates_ticket_in_state() {
     );
     use alloy_eips::eip2718::Encodable2718;
     let ticket_id: B256 = tx.trie_hash();
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, submitter)
-        .expect("execute");
+    let success =
+        run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, submitter).expect("execute");
     assert!(success);
 
     let rs = s.harness.retryable_state();
@@ -230,8 +232,7 @@ fn deposit_zero_value_still_succeeds() {
         }),
         zero_sig(),
     );
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER)
-        .expect("execute");
+    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER).expect("execute");
     assert!(success);
 }
 
@@ -258,8 +259,7 @@ fn unsigned_tx_with_calldata_to_contract() {
         }),
         zero_sig(),
     );
-    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER)
-        .expect("execute");
+    let success = run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, POSTER).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), target), U256::from(100u64));
 }

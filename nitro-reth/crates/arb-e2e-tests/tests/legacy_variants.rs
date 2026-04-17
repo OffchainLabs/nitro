@@ -5,12 +5,12 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
-use arb_evm::config::ArbEvmConfig;
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, balance_of, bob, deploy_contract, fund_account, nonce_of, recover,
     sign_legacy, ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT,
 };
+use arb_evm::config::ArbEvmConfig;
 use arb_test_utils::ArbosHarness;
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};
@@ -74,7 +74,11 @@ fn execute_in_fresh_block(
 #[test]
 fn legacy_transfer_credits_recipient() {
     let mut scaffold = ExecutorScaffold::new();
-    fund_account(scaffold.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
+    fund_account(
+        scaffold.harness.state(),
+        alice(),
+        U256::from(10u128 * ONE_ETH),
+    );
 
     let send_value = U256::from(ONE_ETH);
     let result = execute_in_fresh_block(
@@ -107,7 +111,11 @@ const MIN_INIT: &[u8] = &[
 #[test]
 fn legacy_contract_deployment_creates_account_with_code() {
     let mut scaffold = ExecutorScaffold::new();
-    fund_account(scaffold.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
+    fund_account(
+        scaffold.harness.state(),
+        alice(),
+        U256::from(10u128 * ONE_ETH),
+    );
 
     let result = execute_in_fresh_block(
         &mut scaffold.harness,
@@ -136,7 +144,11 @@ const REVERT_RUNTIME: &[u8] = &[0x60, 0x00, 0x60, 0x00, 0xFD];
 fn legacy_call_to_revert_contract_returns_failure_status() {
     let mut scaffold = ExecutorScaffold::new();
     let revert_addr = Address::repeat_byte(0xCA);
-    fund_account(scaffold.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
+    fund_account(
+        scaffold.harness.state(),
+        alice(),
+        U256::from(10u128 * ONE_ETH),
+    );
     deploy_contract(
         scaffold.harness.state(),
         revert_addr,
@@ -172,7 +184,11 @@ fn legacy_call_to_consume_loop_runs_out_of_gas() {
     let consume_addr = Address::repeat_byte(0xCB);
     let consume_runtime: Vec<u8> = vec![0x5B, 0x60, 0x00, 0x56];
 
-    fund_account(scaffold.harness.state(), alice(), U256::from(10u128 * ONE_ETH));
+    fund_account(
+        scaffold.harness.state(),
+        alice(),
+        U256::from(10u128 * ONE_ETH),
+    );
     deploy_contract(
         scaffold.harness.state(),
         consume_addr,

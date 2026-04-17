@@ -5,7 +5,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, bob, bob_key, charlie, charlie_key, fund_account, recover, sign_legacy,
     ONE_ETH, ONE_GWEI, RECIPIENT,
@@ -74,10 +74,7 @@ fn run_block(
     results
 }
 
-fn account_snapshot(
-    harness: &mut ArbosHarness,
-    addrs: &[Address],
-) -> Vec<(Address, U256, u64)> {
+fn account_snapshot(harness: &mut ArbosHarness, addrs: &[Address]) -> Vec<(Address, U256, u64)> {
     addrs
         .iter()
         .map(|a| {
@@ -97,10 +94,46 @@ fn account_snapshot(
 fn build_scenario(chain_id: u64) -> Vec<arb_primitives::ArbTransactionSigned> {
     let send = U256::from(ONE_ETH);
     vec![
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), bob_key()),
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), charlie_key()),
-        sign_legacy(chain_id, 1, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            bob_key(),
+        ),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            charlie_key(),
+        ),
+        sign_legacy(
+            chain_id,
+            1,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
     ]
 }
 
@@ -123,10 +156,20 @@ fn identical_inputs_produce_identical_post_state() {
     let mut h2 = fresh_harness_with_funds();
 
     run_block(
-        &mut h1, 100_000_000, chain_id, 1, 1_700_000_000, build_scenario(chain_id),
+        &mut h1,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        build_scenario(chain_id),
     );
     run_block(
-        &mut h2, 100_000_000, chain_id, 1, 1_700_000_000, build_scenario(chain_id),
+        &mut h2,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        build_scenario(chain_id),
     );
 
     let addrs = vec![alice(), bob(), charlie(), RECIPIENT];
@@ -147,16 +190,66 @@ fn tx_order_matters_for_post_state() {
 
     let send = U256::from(ONE_ETH);
     let txs_a_then_b = vec![
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), bob_key()),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            bob_key(),
+        ),
     ];
     let txs_b_then_a = vec![
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), bob_key()),
-        sign_legacy(chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), send, Bytes::new(), alice_key()),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            bob_key(),
+        ),
+        sign_legacy(
+            chain_id,
+            0,
+            ONE_GWEI,
+            21_000,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        ),
     ];
 
-    run_block(&mut h1, 100_000_000, chain_id, 1, 1_700_000_000, txs_a_then_b);
-    run_block(&mut h2, 100_000_000, chain_id, 1, 1_700_000_000, txs_b_then_a);
+    run_block(
+        &mut h1,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        txs_a_then_b,
+    );
+    run_block(
+        &mut h2,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        txs_b_then_a,
+    );
 
     let recipient_bal_1 = account_snapshot(&mut h1, &[RECIPIENT])[0].1;
     let recipient_bal_2 = account_snapshot(&mut h2, &[RECIPIENT])[0].1;
@@ -174,21 +267,44 @@ fn reorg_from_fresh_state_produces_canonical_result() {
 
     let mut forked = fresh_harness_with_funds();
     run_block(
-        &mut forked, 100_000_000, chain_id, 1, 1_700_000_000, build_scenario(chain_id),
+        &mut forked,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        build_scenario(chain_id),
     );
 
     let mut canonical = fresh_harness_with_funds();
     let alt_send = U256::from(ONE_ETH / 2);
-    let alt_txs = vec![
-        sign_legacy(
-            chain_id, 0, ONE_GWEI, 21_000, TxKind::Call(RECIPIENT), alt_send,
-            Bytes::new(), alice_key(),
-        ),
-    ];
-    run_block(&mut canonical, 100_000_000, chain_id, 1, 1_700_000_000, alt_txs.clone());
+    let alt_txs = vec![sign_legacy(
+        chain_id,
+        0,
+        ONE_GWEI,
+        21_000,
+        TxKind::Call(RECIPIENT),
+        alt_send,
+        Bytes::new(),
+        alice_key(),
+    )];
+    run_block(
+        &mut canonical,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        alt_txs.clone(),
+    );
 
     let mut canonical_from_fresh = fresh_harness_with_funds();
-    run_block(&mut canonical_from_fresh, 100_000_000, chain_id, 1, 1_700_000_000, alt_txs);
+    run_block(
+        &mut canonical_from_fresh,
+        100_000_000,
+        chain_id,
+        1,
+        1_700_000_000,
+        alt_txs,
+    );
 
     let addrs = vec![alice(), RECIPIENT];
     assert_eq!(

@@ -1,10 +1,12 @@
 use alloy_primitives::{address, B256, U256};
 use arb_test_utils::ArbosHarness;
-use arbos::arbos_state::initialize::{
-    initialize_retryables, make_genesis_block, AccountInitInfo, AggregatorInitInfo,
-    ContractInitInfo, GenesisBlockInfo, InitRetryableData,
+use arbos::{
+    arbos_state::initialize::{
+        initialize_retryables, make_genesis_block, AccountInitInfo, AggregatorInitInfo,
+        ContractInitInfo, GenesisBlockInfo, InitRetryableData,
+    },
+    retryables::retryable_escrow_address,
 };
-use arbos::retryables::retryable_escrow_address;
 
 #[test]
 fn make_genesis_block_returns_well_formed_struct() {
@@ -71,7 +73,10 @@ fn account_init_info_round_trips_through_construction() {
     assert_eq!(info.nonce, 5);
     assert_eq!(info.balance, U256::from(123_456u64));
     assert!(info.contract_info.is_some());
-    assert_eq!(info.contract_info.unwrap().storage[0], (U256::from(1u64), U256::from(2u64)));
+    assert_eq!(
+        info.contract_info.unwrap().storage[0],
+        (U256::from(1u64), U256::from(2u64))
+    );
 }
 
 #[test]
@@ -86,7 +91,9 @@ fn sepolia_genesis_file_parses() {
     assert_eq!(json["config"]["chainId"], 421614);
     assert!(json["alloc"].is_object());
     let alloc = json["alloc"].as_object().unwrap();
-    let arb_state = alloc.get("a4b05fffffffffffffffffffffffffffffffffff").expect("ArbOS state account present");
+    let arb_state = alloc
+        .get("a4b05fffffffffffffffffffffffffffffffffff")
+        .expect("ArbOS state account present");
     assert_eq!(arb_state["nonce"], "0x1");
     assert!(arb_state["storage"].is_object());
 }

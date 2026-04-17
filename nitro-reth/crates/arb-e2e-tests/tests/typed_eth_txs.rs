@@ -6,7 +6,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, balance_of, fund_account, nonce_of, recover, sign_1559, sign_2930, ONE_ETH,
     ONE_GWEI, RECIPIENT,
@@ -87,8 +87,8 @@ fn eip1559_transfer_credits_recipient_and_increments_nonce() {
         Bytes::new(),
         alice_key(),
     );
-    let success = execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx)
-        .expect("execute");
+    let success =
+        execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send_value);
     assert_eq!(nonce_of(s.harness.state(), alice()), 1);
@@ -152,8 +152,8 @@ fn eip2930_with_access_list_executes() {
         access_list,
         alice_key(),
     );
-    let success = execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx)
-        .expect("execute");
+    let success =
+        execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send_value);
 }
@@ -175,8 +175,8 @@ fn eip2930_empty_access_list_executes_like_legacy() {
         AccessList::default(),
         alice_key(),
     );
-    let success = execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx)
-        .expect("execute");
+    let success =
+        execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx).expect("execute");
     assert!(success);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send_value);
 }
@@ -197,8 +197,8 @@ fn eip1559_zero_value_with_calldata_executes() {
         Bytes::from(vec![0xAA, 0xBB, 0xCC]),
         alice_key(),
     );
-    let success = execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx)
-        .expect("execute");
+    let success =
+        execute_in_fresh_block(&mut s.harness, s.base_fee, s.chain_id, tx).expect("execute");
     assert!(success);
     assert_eq!(nonce_of(s.harness.state(), alice()), 1);
 }

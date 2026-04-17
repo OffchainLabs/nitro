@@ -5,7 +5,9 @@ use arbos::util::{burn_balance, mint_balance, transfer_balance};
 
 type TransferLog = RefCell<Vec<(Option<Address>, Option<Address>, U256)>>;
 
-fn record(log: &TransferLog) -> impl FnMut(Option<&Address>, Option<&Address>, U256) -> Result<(), ()> + '_ {
+fn record(
+    log: &TransferLog,
+) -> impl FnMut(Option<&Address>, Option<&Address>, U256) -> Result<(), ()> + '_ {
     move |from, to, amount| {
         log.borrow_mut().push((from.copied(), to.copied(), amount));
         Ok(())

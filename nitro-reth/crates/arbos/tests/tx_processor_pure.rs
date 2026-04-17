@@ -1,7 +1,7 @@
 use alloy_primitives::{address, Address, U256};
 use arbos::tx_processor::{
-    compute_poster_gas, compute_retryable_gas_split, compute_submit_retryable_fees,
-    get_poster_gas, take_funds, SubmitRetryableParams,
+    compute_poster_gas, compute_retryable_gas_split, compute_submit_retryable_fees, get_poster_gas,
+    take_funds, SubmitRetryableParams,
 };
 
 const ONE_GWEI: u64 = 1_000_000_000;
@@ -35,7 +35,12 @@ fn take_funds_zero_pool_returns_zero() {
 
 #[test]
 fn compute_poster_gas_base_fee_zero_returns_zero() {
-    let g = compute_poster_gas(U256::from(1_000_000u64), U256::ZERO, false, U256::from(1u64));
+    let g = compute_poster_gas(
+        U256::from(1_000_000u64),
+        U256::ZERO,
+        false,
+        U256::from(1u64),
+    );
     assert_eq!(g, 0);
 }
 
@@ -69,8 +74,14 @@ fn compute_poster_gas_estimation_floor_uses_min_gas_price() {
 #[test]
 fn get_poster_gas_returns_zero_when_either_fee_zero() {
     let data = b"hello";
-    assert_eq!(get_poster_gas(data, U256::ZERO, U256::from(1u64), ARBOS_V30), (0, 0));
-    assert_eq!(get_poster_gas(data, U256::from(1u64), U256::ZERO, ARBOS_V30), (0, 0));
+    assert_eq!(
+        get_poster_gas(data, U256::ZERO, U256::from(1u64), ARBOS_V30),
+        (0, 0)
+    );
+    assert_eq!(
+        get_poster_gas(data, U256::from(1u64), U256::ZERO, ARBOS_V30),
+        (0, 0)
+    );
 }
 
 #[test]
@@ -148,6 +159,9 @@ fn submit_retryable_fees_returns_escrow_address_and_timeout() {
         arbos_version: ARBOS_V30,
     };
     let fees = compute_submit_retryable_fees(&params);
-    assert_eq!(fees.escrow, arbos::retryables::retryable_escrow_address(ticket));
+    assert_eq!(
+        fees.escrow,
+        arbos::retryables::retryable_escrow_address(ticket)
+    );
     assert!(fees.timeout > params.current_time);
 }

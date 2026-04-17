@@ -6,7 +6,10 @@ use arbos::address_set::{initialize_address_set, open_address_set};
 
 const ARBOS_V30: u64 = 30;
 
-fn fresh_set(harness: &mut ArbosHarness, sub_id: u8) -> arbos::address_set::AddressSet<arb_test_utils::EmptyDb> {
+fn fresh_set(
+    harness: &mut ArbosHarness,
+    sub_id: u8,
+) -> arbos::address_set::AddressSet<arb_test_utils::EmptyDb> {
     let root = harness.root_storage();
     let sto = root.open_sub_storage(&[sub_id]);
     initialize_address_set(&sto).unwrap();
@@ -104,7 +107,9 @@ fn random_add_remove_keeps_invariants() {
 
     let mut state = 0xC0FFEEu64;
     for _ in 0..256 {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let addr = pool[(state >> 33) as usize % pool.len()];
         let remove = (state & 1) == 0;
         if remove {

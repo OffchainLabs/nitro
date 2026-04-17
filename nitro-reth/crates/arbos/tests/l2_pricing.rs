@@ -15,7 +15,9 @@ fn weights(pairs: &[(ResourceKind, u64)]) -> [u64; NUM_RESOURCE_KIND] {
 
 #[test]
 fn legacy_pricing_model_steady_state_and_escalation() {
-    let mut h = ArbosHarness::new().with_arbos_version(ARBOS_V30).initialize();
+    let mut h = ArbosHarness::new()
+        .with_arbos_version(ARBOS_V30)
+        .initialize();
     let p = h.l2_pricing_state();
 
     let min_price = p.min_base_fee_wei().unwrap();
@@ -55,7 +57,9 @@ fn legacy_pricing_model_steady_state_and_escalation() {
 
 #[test]
 fn gas_constraints_add_open_clear() {
-    let mut h = ArbosHarness::new().with_arbos_version(ARBOS_V60).initialize();
+    let mut h = ArbosHarness::new()
+        .with_arbos_version(ARBOS_V60)
+        .initialize();
     let p = h.l2_pricing_state();
 
     assert_eq!(p.gas_constraints_length().unwrap(), 0);
@@ -80,7 +84,9 @@ fn gas_constraints_add_open_clear() {
 
 #[test]
 fn multi_gas_constraints_add_open_clear() {
-    let mut h = ArbosHarness::new().with_arbos_version(ARBOS_V60).initialize();
+    let mut h = ArbosHarness::new()
+        .with_arbos_version(ARBOS_V60)
+        .initialize();
     let p = h.l2_pricing_state();
 
     assert_eq!(p.multi_gas_constraints_length().unwrap(), 0);
@@ -102,8 +108,14 @@ fn multi_gas_constraints_add_open_clear() {
         assert_eq!(c.target().unwrap(), 100 * i + 1);
         assert_eq!(c.adjustment_window().unwrap(), (100 * i + 2) as u32);
         assert_eq!(c.backlog().unwrap(), 100 * i + 3);
-        assert_eq!(c.resource_weight(ResourceKind::Computation).unwrap(), 10 + i);
-        assert_eq!(c.resource_weight(ResourceKind::StorageAccess).unwrap(), 20 + i);
+        assert_eq!(
+            c.resource_weight(ResourceKind::Computation).unwrap(),
+            10 + i
+        );
+        assert_eq!(
+            c.resource_weight(ResourceKind::StorageAccess).unwrap(),
+            20 + i
+        );
     }
 
     p.clear_multi_gas_constraints().unwrap();
@@ -112,7 +124,9 @@ fn multi_gas_constraints_add_open_clear() {
 
 #[test]
 fn multi_gas_constraints_exponents() {
-    let mut h = ArbosHarness::new().with_arbos_version(ARBOS_V60).initialize();
+    let mut h = ArbosHarness::new()
+        .with_arbos_version(ARBOS_V60)
+        .initialize();
     let p = h.l2_pricing_state();
 
     p.add_multi_gas_constraint(100, 10, 100, &weights(&[(ResourceKind::Computation, 1)]))

@@ -35,22 +35,57 @@ fn default_chain_id() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
-    L1PricingSetPricePerUnit { value: U256 },
-    L1PricingSetUnitsSinceUpdate { value: u64 },
-    L1PricingSetInertia { value: u64 },
-    L1PricingAddToFeesAvailable { amount: U256 },
-    L1PricingAddPoster { poster: Address, pay_to: Address },
-    L1PricingSetPosterFundsDue { poster: Address, amount: U256 },
-    L2PricingSetGasBacklog { value: u64 },
-    L2PricingSetMinBaseFee { value: U256 },
-    L2PricingUpdateModel { time_passed: u64 },
-    L2PricingAddGasConstraint { target: u64, adjustment_window: u64, backlog: u64 },
+    L1PricingSetPricePerUnit {
+        value: U256,
+    },
+    L1PricingSetUnitsSinceUpdate {
+        value: u64,
+    },
+    L1PricingSetInertia {
+        value: u64,
+    },
+    L1PricingAddToFeesAvailable {
+        amount: U256,
+    },
+    L1PricingAddPoster {
+        poster: Address,
+        pay_to: Address,
+    },
+    L1PricingSetPosterFundsDue {
+        poster: Address,
+        amount: U256,
+    },
+    L2PricingSetGasBacklog {
+        value: u64,
+    },
+    L2PricingSetMinBaseFee {
+        value: U256,
+    },
+    L2PricingUpdateModel {
+        time_passed: u64,
+    },
+    L2PricingAddGasConstraint {
+        target: u64,
+        adjustment_window: u64,
+        backlog: u64,
+    },
     L2PricingClearGasConstraints,
-    BlockhashRecord { number: u64, hash: B256 },
-    AddressTableRegister { address: Address },
-    MerkleAppend { item: B256 },
-    ChainOwnerAdd { owner: Address },
-    ChainOwnerRemove { owner: Address },
+    BlockhashRecord {
+        number: u64,
+        hash: B256,
+    },
+    AddressTableRegister {
+        address: Address,
+    },
+    MerkleAppend {
+        item: B256,
+    },
+    ChainOwnerAdd {
+        owner: Address,
+    },
+    ChainOwnerRemove {
+        owner: Address,
+    },
     RetryableCreate {
         id: B256,
         timeout: u64,
@@ -62,10 +97,20 @@ pub enum Action {
         #[serde(default)]
         calldata_hex: String,
     },
-    RetryableIncrementNumTries { id: B256, at_time: u64 },
-    RetryableSetTimeout { id: B256, at_time: u64, new_timeout: u64 },
+    RetryableIncrementNumTries {
+        id: B256,
+        at_time: u64,
+    },
+    RetryableSetTimeout {
+        id: B256,
+        at_time: u64,
+        new_timeout: u64,
+    },
     /// Delete a retryable. Escrow balance for the closure is `escrow_balance`.
-    RetryableDelete { id: B256, escrow_balance: U256 },
+    RetryableDelete {
+        id: B256,
+        escrow_balance: U256,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

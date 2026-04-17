@@ -1,6 +1,8 @@
 use alloy_primitives::B256;
 use arb_test_utils::ArbosHarness;
-use arbos::merkle_accumulator::{calc_num_partials, open_merkle_accumulator, InMemoryMerkleAccumulator};
+use arbos::merkle_accumulator::{
+    calc_num_partials, open_merkle_accumulator, InMemoryMerkleAccumulator,
+};
 
 fn item(n: u64) -> B256 {
     let mut buf = [0u8; 32];

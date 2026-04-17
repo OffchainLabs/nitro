@@ -5,7 +5,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_legacy, ExecutorScaffold,
     ONE_ETH, ONE_GWEI,
@@ -62,7 +62,9 @@ fn execute_call(
         .block_executor_factory()
         .create_arb_executor(evm, exec_ctx, chain_id);
     executor.arb_ctx.l1_block_number = l1_block_number;
-    executor.apply_pre_execution_changes().map_err(|e| format!("pre: {e}"))?;
+    executor
+        .apply_pre_execution_changes()
+        .map_err(|e| format!("pre: {e}"))?;
 
     let tx = sign_legacy(
         chain_id,
@@ -87,7 +89,9 @@ fn execute_call(
         } => b.clone(),
         _ => Bytes::new(),
     };
-    executor.commit_transaction(result).map_err(|e| format!("commit: {e}"))?;
+    executor
+        .commit_transaction(result)
+        .map_err(|e| format!("commit: {e}"))?;
     let _ = executor.finish().map_err(|e| format!("finish: {e}"))?;
     Ok((success, output))
 }
@@ -125,7 +129,11 @@ fn number_opcode_returns_specific_l1_block_not_l2() {
     assert!(success);
     let value = read_word(&output);
     assert_eq!(value, U256::from(42_000_000u64));
-    assert_ne!(value, U256::from(1u64), "NUMBER must not be L2 block number");
+    assert_ne!(
+        value,
+        U256::from(1u64),
+        "NUMBER must not be L2 block number"
+    );
 }
 
 /// BALANCE on the tx sender subtracts the poster-fee correction.
@@ -145,9 +153,16 @@ fn balance_opcode_on_sender_subtracts_poster_correction() {
     code.extend_from_slice(&[0x31, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3]);
     deploy_contract(s.harness.state(), target, code, U256::ZERO);
 
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0, 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+        0,
+    )
+    .expect("call");
     assert!(success);
     let reported = read_word(&output);
 
@@ -172,7 +187,11 @@ fn balance_opcode_on_non_sender_returns_full_balance() {
     arb_precompiles::set_poster_balance_correction(U256::from(1_000_000u64));
 
     let mut s = ExecutorScaffold::new();
-    fund_account(s.harness.state(), alice(), U256::from(10u128) * U256::from(ONE_ETH));
+    fund_account(
+        s.harness.state(),
+        alice(),
+        U256::from(10u128) * U256::from(ONE_ETH),
+    );
 
     let other = Address::repeat_byte(0x33);
     let other_balance = U256::from(5u128) * U256::from(ONE_ETH);
@@ -184,9 +203,16 @@ fn balance_opcode_on_non_sender_returns_full_balance() {
     code.extend_from_slice(&[0x31, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3]);
     deploy_contract(s.harness.state(), target, code, U256::ZERO);
 
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0, 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+        0,
+    )
+    .expect("call");
     assert!(success);
     let reported = read_word(&output);
 
@@ -206,7 +232,11 @@ fn selfbalance_opcode_on_non_sender_contract_returns_full_balance() {
     arb_precompiles::set_poster_balance_correction(U256::from(999_999u64));
 
     let mut s = ExecutorScaffold::new();
-    fund_account(s.harness.state(), alice(), U256::from(10u128) * U256::from(ONE_ETH));
+    fund_account(
+        s.harness.state(),
+        alice(),
+        U256::from(10u128) * U256::from(ONE_ETH),
+    );
 
     let target = Address::repeat_byte(0xDD);
     let target_balance = U256::from(2u128) * U256::from(ONE_ETH);
@@ -217,9 +247,16 @@ fn selfbalance_opcode_on_non_sender_contract_returns_full_balance() {
         target_balance,
     );
 
-    let (success, output) =
-        execute_call(&mut s.harness, s.base_fee, s.chain_id, target, alice_key(), 0, 0)
-            .expect("call");
+    let (success, output) = execute_call(
+        &mut s.harness,
+        s.base_fee,
+        s.chain_id,
+        target,
+        alice_key(),
+        0,
+        0,
+    )
+    .expect("call");
 
     arb_precompiles::set_poster_balance_correction(U256::ZERO);
     arb_precompiles::set_current_tx_sender(Address::ZERO);
@@ -233,7 +270,9 @@ fn selfbalance_opcode_on_non_sender_contract_returns_full_balance() {
 #[test]
 fn stylus_discriminant_classifier_matches_arbitrum_spec() {
     assert!(arb_stylus::is_stylus_program(&[0xEF, 0xF0, 0x00, 0x00]));
-    assert!(arb_stylus::is_stylus_program(&[0xEF, 0xF0, 0x00, 0x01, 0x42, 0x42]));
+    assert!(arb_stylus::is_stylus_program(&[
+        0xEF, 0xF0, 0x00, 0x01, 0x42, 0x42
+    ]));
     assert!(!arb_stylus::is_stylus_program(&[0xEF, 0xF0, 0x00]));
     assert!(!arb_stylus::is_stylus_program(&[0xEF, 0xF0, 0x01, 0x00]));
     assert!(!arb_stylus::is_stylus_program(&[0x60, 0x00, 0x52]));
