@@ -1,0 +1,4 @@
+# Force GNU ld on Linux: wasmer_vm references __rust_probestack, which
+# rust-lld (the Rust 1.93 default) fails to resolve.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=bfd"]

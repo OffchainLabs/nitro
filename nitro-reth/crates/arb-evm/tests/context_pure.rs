@@ -54,11 +54,14 @@ fn activate_wasm_same_targets_replaces_ok() {
     let mut asm1 = HashMap::new();
     asm1.insert("x86_64".to_string(), vec![1]);
     asm1.insert("arm64".to_string(), vec![2]);
-    x.activate_wasm(B256::repeat_byte(1), asm1.clone(), vec![0xBB]).unwrap();
+    x.activate_wasm(B256::repeat_byte(1), asm1.clone(), vec![0xBB])
+        .unwrap();
     let mut asm2 = HashMap::new();
     asm2.insert("x86_64".to_string(), vec![3]);
     asm2.insert("arm64".to_string(), vec![4]);
-    assert!(x.activate_wasm(B256::repeat_byte(1), asm2, vec![0xCC]).is_ok());
+    assert!(x
+        .activate_wasm(B256::repeat_byte(1), asm2, vec![0xCC])
+        .is_ok());
 }
 
 #[test]
@@ -154,7 +157,10 @@ fn start_recording_clears_user_wasms() {
     let mut x = ArbitrumExtraData::default();
     x.record_program(
         B256::repeat_byte(1),
-        ActivatedWasm { asm: HashMap::new(), module: vec![] },
+        ActivatedWasm {
+            asm: HashMap::new(),
+            module: vec![],
+        },
     );
     assert_eq!(x.user_wasms.len(), 1);
     x.start_recording();

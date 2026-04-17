@@ -120,7 +120,10 @@ fn builder_attrs_try_new_populates_fields() {
     assert_eq!(ba.parent(), parent);
     assert_eq!(ba.timestamp(), attrs.inner.timestamp);
     assert_eq!(ba.prev_randao(), attrs.inner.prev_randao);
-    assert_eq!(ba.suggested_fee_recipient(), attrs.inner.suggested_fee_recipient);
+    assert_eq!(
+        ba.suggested_fee_recipient(),
+        attrs.inner.suggested_fee_recipient
+    );
     assert!(!ba.no_tx_pool);
     assert!(ba.transactions.is_empty());
 }

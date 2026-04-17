@@ -1,9 +1,11 @@
 use alloy_primitives::{Address, B256, U256};
-use arbos::block_processor::{
-    create_new_header, finalize_block_header_info, BlockProductionState, NoopSequencingHooks,
-    SequencingHooks, TxAction, TxOutcome, TxResult,
+use arbos::{
+    block_processor::{
+        create_new_header, finalize_block_header_info, BlockProductionState, NoopSequencingHooks,
+        SequencingHooks, TxAction, TxOutcome, TxResult,
+    },
+    internal_tx::L1Info,
 };
-use arbos::internal_tx::L1Info;
 
 fn l1_info(ts: u64, poster_byte: u8) -> L1Info {
     L1Info {
@@ -51,7 +53,15 @@ fn create_new_header_uses_l1_info_when_newer_timestamp() {
 #[test]
 fn create_new_header_clamps_timestamp_to_parent_if_l1_older() {
     let info = l1_info(1_000_000, 0xCC);
-    let r = create_new_header(Some(&info), B256::ZERO, 5, 9_999_999, &[], B256::ZERO, U256::ZERO);
+    let r = create_new_header(
+        Some(&info),
+        B256::ZERO,
+        5,
+        9_999_999,
+        &[],
+        B256::ZERO,
+        U256::ZERO,
+    );
     assert_eq!(r.timestamp, 9_999_999);
 }
 
@@ -67,7 +77,15 @@ fn create_new_header_truncates_parent_extra_to_32_bytes() {
 
 #[test]
 fn create_new_header_pads_short_parent_extra_with_zeros() {
-    let r = create_new_header(None, B256::ZERO, 0, 0, &[0x01, 0x02], B256::ZERO, U256::ZERO);
+    let r = create_new_header(
+        None,
+        B256::ZERO,
+        0,
+        0,
+        &[0x01, 0x02],
+        B256::ZERO,
+        U256::ZERO,
+    );
     let mut expected = vec![0u8; 32];
     expected[0] = 0x01;
     expected[1] = 0x02;
@@ -93,11 +111,8 @@ fn compute_data_gas_base_fee_zero_returns_zero() {
 
 #[test]
 fn compute_data_gas_clamps_at_tx_gas_limit() {
-    let data_gas = BlockProductionState::compute_data_gas(
-        U256::from(1_000_000u64),
-        U256::from(1u64),
-        100_000,
-    );
+    let data_gas =
+        BlockProductionState::compute_data_gas(U256::from(1_000_000u64), U256::from(1u64), 100_000);
     assert_eq!(data_gas, 100_000);
 }
 
@@ -112,7 +127,10 @@ fn compute_data_gas_divides_poster_by_base_fee() {
 fn production_state_first_action_is_start_block() {
     let mut s = BlockProductionState::new(30_000_000, 30, 1_700_000_000, U256::from(1));
     let mut hooks = NoopSequencingHooks;
-    assert!(matches!(s.next_tx_action(&mut hooks), TxAction::ExecuteStartBlock));
+    assert!(matches!(
+        s.next_tx_action(&mut hooks),
+        TxAction::ExecuteStartBlock
+    ));
 }
 
 #[test]

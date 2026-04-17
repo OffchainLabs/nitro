@@ -1,7 +1,6 @@
 use alloy_primitives::{B256, U256};
 use arb_test_utils::ArbosHarness;
-use arbos::programs::params::StylusParams;
-use arbos::programs::Program;
+use arbos::programs::{params::StylusParams, Program};
 
 // ======================================================================
 // Program encoding/decoding

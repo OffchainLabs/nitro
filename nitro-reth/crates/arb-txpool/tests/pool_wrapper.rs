@@ -1,5 +1,7 @@
-use alloy_consensus::{transaction::Recovered, SignableTransaction, TxLegacy};
-use alloy_consensus::{crypto::secp256k1::sign_message, EthereumTxEnvelope};
+use alloy_consensus::{
+    crypto::secp256k1::sign_message, transaction::Recovered, EthereumTxEnvelope,
+    SignableTransaction, TxLegacy,
+};
 use alloy_primitives::{address, Bytes, TxKind, B256, U256};
 use arb_primitives::ArbTransactionSigned;
 use arb_txpool::ArbPooledTransaction;
@@ -52,7 +54,10 @@ fn pool_tx_hash_is_consistent() {
     let h1 = *PoolTransaction::hash(&p);
     let p2 = make_pooled(0, 256);
     let h2 = *PoolTransaction::hash(&p2);
-    assert_eq!(h1, h2, "same tx content produces same hash regardless of encoded_len");
+    assert_eq!(
+        h1, h2,
+        "same tx content produces same hash regardless of encoded_len"
+    );
 }
 
 #[test]

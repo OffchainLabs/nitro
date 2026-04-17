@@ -1,12 +1,15 @@
 use alloy_primitives::{Address, B256, U256};
-use arbos::arbos_types::{
-    get_data_stats, legacy_cost_for_stats, parse_batch_posting_report_fields,
-    parse_incoming_l1_message, parse_init_message, DEFAULT_INITIAL_L1_BASE_FEE,
-    L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1_MESSAGE_TYPE_INITIALIZE, L1_MESSAGE_TYPE_L2_MESSAGE,
-};
-use arbos::parse_l2::{
-    parse_l2_transactions, ParsedTransaction, L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT,
-    L2_MESSAGE_KIND_NON_MUTATING_CALL, L2_MESSAGE_KIND_UNSIGNED_USER_TX,
+use arbos::{
+    arbos_types::{
+        get_data_stats, legacy_cost_for_stats, parse_batch_posting_report_fields,
+        parse_incoming_l1_message, parse_init_message, DEFAULT_INITIAL_L1_BASE_FEE,
+        L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1_MESSAGE_TYPE_INITIALIZE,
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+    },
+    parse_l2::{
+        parse_l2_transactions, ParsedTransaction, L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT,
+        L2_MESSAGE_KIND_NON_MUTATING_CALL, L2_MESSAGE_KIND_UNSIGNED_USER_TX,
+    },
 };
 
 const CHAIN_ID: u64 = 42_161;
@@ -25,7 +28,10 @@ fn init_msg_len_32_is_chain_id_only_default_base_fee() {
     data[31] = 42;
     let r = parse_init_message(&data).expect("parse");
     assert_eq!(r.chain_id, U256::from(42u64));
-    assert_eq!(r.initial_l1_base_fee, U256::from(DEFAULT_INITIAL_L1_BASE_FEE));
+    assert_eq!(
+        r.initial_l1_base_fee,
+        U256::from(DEFAULT_INITIAL_L1_BASE_FEE)
+    );
     assert!(r.serialized_chain_config.is_empty());
 }
 
@@ -41,7 +47,10 @@ fn init_msg_len_between_33_inclusive_tests_version_zero() {
     data[32] = 0;
     let r = parse_init_message(&data).expect("parse");
     assert_eq!(r.chain_id, U256::from(1u64));
-    assert_eq!(r.initial_l1_base_fee, U256::from(DEFAULT_INITIAL_L1_BASE_FEE));
+    assert_eq!(
+        r.initial_l1_base_fee,
+        U256::from(DEFAULT_INITIAL_L1_BASE_FEE)
+    );
     assert!(r.serialized_chain_config.is_empty());
 }
 
@@ -154,38 +163,73 @@ fn submit_retryable_requires_request_id() {
 
 #[test]
 fn l2_message_empty_errors() {
-    let err = parse_l2_transactions(L1_MESSAGE_TYPE_L2_MESSAGE, noop_poster(), &[], None, None, CHAIN_ID);
+    let err = parse_l2_transactions(
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+        noop_poster(),
+        &[],
+        None,
+        None,
+        CHAIN_ID,
+    );
     assert!(err.is_err());
 }
 
 #[test]
 fn l2_message_heartbeat_yields_empty() {
     let data = vec![L2_MESSAGE_KIND_HEARTBEAT];
-    let r = parse_l2_transactions(L1_MESSAGE_TYPE_L2_MESSAGE, noop_poster(), &data, None, None, CHAIN_ID)
-        .expect("parse");
+    let r = parse_l2_transactions(
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+        noop_poster(),
+        &data,
+        None,
+        None,
+        CHAIN_ID,
+    )
+    .expect("parse");
     assert!(r.is_empty());
 }
 
 #[test]
 fn l2_message_non_mutating_call_yields_empty() {
     let data = vec![L2_MESSAGE_KIND_NON_MUTATING_CALL];
-    let r = parse_l2_transactions(L1_MESSAGE_TYPE_L2_MESSAGE, noop_poster(), &data, None, None, CHAIN_ID)
-        .expect("parse");
+    let r = parse_l2_transactions(
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+        noop_poster(),
+        &data,
+        None,
+        None,
+        CHAIN_ID,
+    )
+    .expect("parse");
     assert!(r.is_empty());
 }
 
 #[test]
 fn l2_message_signed_compressed_tx_errors() {
     let data = vec![7u8];
-    let err = parse_l2_transactions(L1_MESSAGE_TYPE_L2_MESSAGE, noop_poster(), &data, None, None, CHAIN_ID);
+    let err = parse_l2_transactions(
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+        noop_poster(),
+        &data,
+        None,
+        None,
+        CHAIN_ID,
+    );
     assert!(err.is_err());
 }
 
 #[test]
 fn l2_message_unknown_inner_kind_yields_empty() {
     let data = vec![0xFE];
-    let r = parse_l2_transactions(L1_MESSAGE_TYPE_L2_MESSAGE, noop_poster(), &data, None, None, CHAIN_ID)
-        .expect("parse");
+    let r = parse_l2_transactions(
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+        noop_poster(),
+        &data,
+        None,
+        None,
+        CHAIN_ID,
+    )
+    .expect("parse");
     assert!(r.is_empty());
 }
 
@@ -216,8 +260,15 @@ fn l2_batch_at_depth_zero_accepts() {
     let mut inner_encoded = rlp_bytes(&inner);
     let mut batch = vec![L2_MESSAGE_KIND_BATCH];
     batch.append(&mut inner_encoded);
-    let r = parse_l2_transactions(L1_MESSAGE_TYPE_L2_MESSAGE, noop_poster(), &batch, None, None, CHAIN_ID)
-        .expect("parse");
+    let r = parse_l2_transactions(
+        L1_MESSAGE_TYPE_L2_MESSAGE,
+        noop_poster(),
+        &batch,
+        None,
+        None,
+        CHAIN_ID,
+    )
+    .expect("parse");
     assert!(r.is_empty());
 }
 
@@ -308,6 +359,7 @@ fn data_stats_empty() {
 }
 
 #[test]
+#[allow(clippy::identity_op)]
 fn legacy_cost_empty_is_just_overhead() {
     let c = legacy_cost_for_stats(&get_data_stats(&[]));
     assert_eq!(c, 30 + 0 + 2 * 20_000);

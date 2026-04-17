@@ -183,7 +183,10 @@ fn set_last_surplus_positive_and_negative() {
 fn per_batch_gas_cost_default_is_initial() {
     let mut h = fresh();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.per_batch_gas_cost().unwrap(), INITIAL_PER_BATCH_GAS_COST_V12);
+    assert_eq!(
+        ps.per_batch_gas_cost().unwrap(),
+        INITIAL_PER_BATCH_GAS_COST_V12
+    );
 }
 
 #[test]
@@ -211,7 +214,9 @@ fn l1_fees_available_add_and_transfer() {
     ps.add_to_l1_fees_available(U256::from(1_000u64)).unwrap();
     ps.add_to_l1_fees_available(U256::from(500u64)).unwrap();
     assert_eq!(ps.l1_fees_available().unwrap(), U256::from(1_500u64));
-    let taken = ps.transfer_from_l1_fees_available(U256::from(200u64)).unwrap();
+    let taken = ps
+        .transfer_from_l1_fees_available(U256::from(200u64))
+        .unwrap();
     assert_eq!(taken, U256::from(200u64));
     assert_eq!(ps.l1_fees_available().unwrap(), U256::from(1_300u64));
 }
@@ -221,7 +226,9 @@ fn transfer_from_l1_fees_caps_at_available() {
     let mut h = fresh();
     let ps = h.l1_pricing_state();
     ps.add_to_l1_fees_available(U256::from(100u64)).unwrap();
-    let taken = ps.transfer_from_l1_fees_available(U256::from(500u64)).unwrap();
+    let taken = ps
+        .transfer_from_l1_fees_available(U256::from(500u64))
+        .unwrap();
     assert_eq!(taken, U256::from(100u64));
     assert_eq!(ps.l1_fees_available().unwrap(), U256::ZERO);
 }
@@ -307,9 +314,10 @@ fn poster_data_cost_for_estimation_adds_padding() {
     let ps = h.l1_pricing_state();
     ps.set_price_per_unit(U256::from(10u64)).unwrap();
     let tx_bytes = vec![0x42u8; 100];
-    let (raw_cost, raw_units) = ps.compute_poster_cost(BATCH_POSTER_ADDRESS, &tx_bytes, 11).unwrap();
-    let (padded_cost, padded_units) =
-        ps.poster_data_cost_for_estimation(&tx_bytes, 11).unwrap();
+    let (raw_cost, raw_units) = ps
+        .compute_poster_cost(BATCH_POSTER_ADDRESS, &tx_bytes, 11)
+        .unwrap();
+    let (padded_cost, padded_units) = ps.poster_data_cost_for_estimation(&tx_bytes, 11).unwrap();
     assert!(padded_units > raw_units, "estimation pads raw units");
     assert!(padded_cost > raw_cost);
 }

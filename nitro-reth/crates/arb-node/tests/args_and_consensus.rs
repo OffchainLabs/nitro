@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use alloy_consensus::Header;
-use arb_node::args::RollupArgs;
-use arb_node::consensus::ArbConsensus;
+use arb_node::{args::RollupArgs, consensus::ArbConsensus};
 use clap::Parser;
 use reth_chainspec::ChainSpec;
 use reth_consensus::HeaderValidator;

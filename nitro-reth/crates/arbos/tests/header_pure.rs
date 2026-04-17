@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use alloy_primitives::{Address, B256, U256};
 use arbos::header::{
@@ -14,7 +13,10 @@ use arbos::header::{
 fn mixhash_roundtrips_all_three_fields() {
     let mix = compute_arbos_mixhash(0x1122334455667788, 0xAABBCCDDEEFF0011, 30);
     assert_eq!(extract_send_count_from_mix_hash(mix), 0x1122334455667788);
-    assert_eq!(extract_l1_block_number_from_mix_hash(mix), 0xAABBCCDDEEFF0011);
+    assert_eq!(
+        extract_l1_block_number_from_mix_hash(mix),
+        0xAABBCCDDEEFF0011
+    );
     assert_eq!(extract_arbos_version_from_mix_hash(mix), 30);
 }
 
@@ -44,7 +46,10 @@ fn extract_send_root_uses_first_32_bytes_only() {
     let mut extra = vec![0u8; 64];
     extra[0..32].copy_from_slice(&[0xAB; 32]);
     extra[32..64].copy_from_slice(&[0xCD; 32]);
-    assert_eq!(extract_send_root_from_header_extra(&extra), B256::repeat_byte(0xAB));
+    assert_eq!(
+        extract_send_root_from_header_extra(&extra),
+        B256::repeat_byte(0xAB)
+    );
 }
 
 #[test]
@@ -99,7 +104,10 @@ fn read_storage_u64_be_returns_last_8_bytes() {
 #[test]
 fn read_storage_u64_be_returns_none_if_unset() {
     let s = MockStorage::default();
-    assert_eq!(read_storage_u64_be(&s.reader(), Address::ZERO, B256::ZERO), None);
+    assert_eq!(
+        read_storage_u64_be(&s.reader(), Address::ZERO, B256::ZERO),
+        None
+    );
 }
 
 #[test]

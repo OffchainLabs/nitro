@@ -1,7 +1,9 @@
 use alloy_primitives::{Address, B256, U256};
-use arbos::programs::api::{ApiStatus, RequestParser, EVM_API_METHOD_REQ_OFFSET};
-use arbos::programs::memory::MemoryModel;
-use arbos::programs::types::{evm_memory_cost, to_word_size, RequestType, UserOutcome};
+use arbos::programs::{
+    api::{ApiStatus, RequestParser, EVM_API_METHOD_REQ_OFFSET},
+    memory::MemoryModel,
+    types::{evm_memory_cost, to_word_size, RequestType, UserOutcome},
+};
 
 #[test]
 fn user_outcome_from_u8_all_defined_values() {
@@ -22,8 +24,14 @@ fn user_outcome_from_u8_rejects_undefined() {
 fn request_type_from_u32_covers_all_variants() {
     assert_eq!(RequestType::from_u32(0), Some(RequestType::GetBytes32));
     assert_eq!(RequestType::from_u32(1), Some(RequestType::SetTrieSlots));
-    assert_eq!(RequestType::from_u32(2), Some(RequestType::GetTransientBytes32));
-    assert_eq!(RequestType::from_u32(3), Some(RequestType::SetTransientBytes32));
+    assert_eq!(
+        RequestType::from_u32(2),
+        Some(RequestType::GetTransientBytes32)
+    );
+    assert_eq!(
+        RequestType::from_u32(3),
+        Some(RequestType::SetTransientBytes32)
+    );
     assert_eq!(RequestType::from_u32(4), Some(RequestType::ContractCall));
     assert_eq!(RequestType::from_u32(5), Some(RequestType::DelegateCall));
     assert_eq!(RequestType::from_u32(6), Some(RequestType::StaticCall));
@@ -32,7 +40,10 @@ fn request_type_from_u32_covers_all_variants() {
     assert_eq!(RequestType::from_u32(9), Some(RequestType::EmitLog));
     assert_eq!(RequestType::from_u32(10), Some(RequestType::AccountBalance));
     assert_eq!(RequestType::from_u32(11), Some(RequestType::AccountCode));
-    assert_eq!(RequestType::from_u32(12), Some(RequestType::AccountCodeHash));
+    assert_eq!(
+        RequestType::from_u32(12),
+        Some(RequestType::AccountCodeHash)
+    );
     assert_eq!(RequestType::from_u32(13), Some(RequestType::AddPages));
     assert_eq!(RequestType::from_u32(14), Some(RequestType::CaptureHostIO));
 }

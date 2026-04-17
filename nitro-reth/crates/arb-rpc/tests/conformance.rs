@@ -11,8 +11,10 @@ use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };
 use arb_primitives::ArbTypedTransaction;
-use arb_rpc::header::{l1_block_number_from_mix_hash, ArbHeaderConverter};
-use arb_rpc::response::arb_tx_fields;
+use arb_rpc::{
+    header::{l1_block_number_from_mix_hash, ArbHeaderConverter},
+    response::arb_tx_fields,
+};
 use reth_primitives_traits::SealedHeader;
 use reth_rpc_convert::transaction::HeaderConverter;
 
@@ -112,7 +114,6 @@ fn header_converter_emits_all_three_required_fields() {
 // ======================================================================
 // arb_tx_fields emits Arbitrum-specific fields per tx type
 // ======================================================================
-
 
 #[test]
 fn deposit_tx_emits_request_id_field() {
