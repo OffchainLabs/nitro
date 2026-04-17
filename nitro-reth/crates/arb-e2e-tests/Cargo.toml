@@ -14,6 +14,8 @@ arb-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-alloy-consensus = { workspace = true }
 arb-evm = { workspace = true }
+arb-precompiles = { workspace = true }
+arb-stylus = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "k256"] }
 alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-eips = { workspace = true }
