@@ -1266,6 +1266,8 @@ dependencies = [
  "arb-payload",
  "arb-precompiles",
  "arb-primitives",
+ "arb-stylus",
+ "arbos",
  "async-trait",
  "eyre",
  "jsonrpsee",

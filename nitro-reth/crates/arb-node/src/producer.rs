@@ -905,6 +905,10 @@ where
                 "reset target {target_block_number} > current head {current}"
             )));
         }
+        if target_block_number == current {
+            return Ok(());
+        }
+
         let header = self
             .provider
             .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(target_block_number))
@@ -914,12 +918,41 @@ where
                     "reset target block {target_block_number} not found"
                 ))
             })?;
+
+        // Walk blocks above target in the in-memory state and gather
+        // them as "old" for a reorg. Without them, the canonical head
+        // points at the truncated block but consumers still see the
+        // stale blocks in memory.
+        let mut old_blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>> = Vec::new();
+        for bn in (target_block_number + 1)..=current {
+            if let Some(state) = self.in_memory_state.state_by_number(bn) {
+                old_blocks.push(state.block());
+            }
+        }
+
+        // Reorg with no new blocks => pure rollback.
+        if !old_blocks.is_empty() {
+            self.in_memory_state
+                .update_chain(reth_chain_state::NewCanonicalChain::Reorg {
+                    new: Vec::new(),
+                    old: old_blocks,
+                });
+        }
+
+        // Anchor the canonical head at the rolled-back block so RPC
+        // queries like eth_blockNumber return the correct value.
+        self.in_memory_state.set_canonical_head(header.clone());
+
+        // Reset the block producer's counter so the next digestMessage
+        // extends from the new head.
         self.head_block_num
             .store(target_block_number, Ordering::SeqCst);
+
         info!(
             target: "block_producer",
             target = target_block_number,
             hash = %header.hash(),
+            old_count = current - target_block_number,
             "reset head"
         );
         Ok(())
@@ -941,6 +974,25 @@ where
         if validated.is_some() {
             f.validated = validated;
         }
+        drop(f);
+
+        // Propagate to reth's canonical in-memory state so
+        // eth_getBlockByNumber("safe" | "finalized") returns the
+        // correct header.
+        if let Some(h) = safe {
+            if let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
+                self.in_memory_state.set_safe(sealed);
+            }
+        }
+        if let Some(h) = finalized {
+            if let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
+                self.in_memory_state.set_finalized(sealed);
+            }
+        }
+        // `validated` is tracked in our own finality markers above.
+        // Reth exposes only safe/finalized publicly; we surface the
+        // validated marker via our own finality_markers() getter.
+        let _ = validated;
         Ok(())
     }
 }

@@ -257,11 +257,12 @@ where
         let redeem_gas =
             EstimateCall::estimate_gas_at(self, equivalent_req, at, state_override).await?;
 
-        // Submit-retryable intrinsic gas, matching Nitro's
-        // ArbitrumSubmitRetryableTx.IntrinsicGas:
-        //   21,000  — tx base
-        //   + 16 × nonzero_bytes + 4 × zero_bytes  (EIP-2028 calldata)
-        //   + 40,000 — fixed ArbOS bookkeeping (retryable create + escrow + auto-redeem schedule)
+        // Submit-retryable intrinsic gas matches the default
+        // IntrinsicGas for ArbitrumSubmitRetryableTx: 21,000 tx base +
+        // EIP-2028 calldata (16 × non-zero + 4 × zero). ArbOS's
+        // state-transition overhead for retryable creation, escrow,
+        // and auto-redeem scheduling is charged inside the auto-redeem
+        // itself and is therefore already captured by `redeem_gas`.
         let (zeros, non_zeros) =
             data_ref.iter().fold(
                 (0u64, 0u64),
@@ -270,11 +271,126 @@ where
         let calldata_gas = zeros
             .saturating_mul(4)
             .saturating_add(non_zeros.saturating_mul(16));
-        let submit_intrinsic = 21_000u64
-            .saturating_add(calldata_gas)
-            .saturating_add(40_000);
+        let submit_intrinsic = 21_000u64.saturating_add(calldata_gas);
 
         Ok(redeem_gas.saturating_add(U256::from(submit_intrinsic)))
+    }
+
+    /// Handle `eth_call` dispatch of
+    /// `NodeInterfaceDebug.getRetryable(bytes32 ticketId)` — reads the
+    /// retryable record from storage and returns the 7-tuple
+    /// `(timeout, from, to, value, beneficiary, tries, data)`.
+    async fn get_retryable_abi(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError> {
+        use arb_precompiles::storage_slot::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};
+        use arbos::retryables::{
+            BENEFICIARY_OFFSET, CALLDATA_KEY, CALLVALUE_OFFSET, FROM_OFFSET, NUM_TRIES_OFFSET,
+            TIMEOUT_OFFSET, TO_OFFSET,
+        };
+
+        if input.len() < 4 + 32 {
+            return Err(EthApiError::InvalidParams(
+                "getRetryable: expected bytes32 ticket".into(),
+            ));
+        }
+        let ticket = B256::from_slice(&input[4..36]);
+
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let load = |slot: U256| -> Result<U256, EthApiError> {
+            let k = StorageKey::from(B256::from(slot.to_be_bytes::<32>()));
+            Ok(state
+                .storage(ARBOS_STATE_ADDRESS, k)
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or(U256::ZERO))
+        };
+
+        let retryables_key = derive_subspace_key(
+            ROOT_STORAGE_KEY,
+            arb_precompiles::storage_slot::RETRYABLES_SUBSPACE,
+        );
+        let r_key = derive_subspace_key(retryables_key.as_slice(), ticket.as_slice());
+
+        let timeout: u64 = load(map_slot(r_key.as_slice(), TIMEOUT_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+        if timeout == 0 {
+            return Err(EthApiError::InvalidParams(format!(
+                "no retryable with id 0x{ticket:x}"
+            )));
+        }
+        let from_word = load(map_slot(r_key.as_slice(), FROM_OFFSET))?;
+        let from = Address::from_slice(&from_word.to_be_bytes::<32>()[12..]);
+        let to_word = load(map_slot(r_key.as_slice(), TO_OFFSET))?;
+        let to_bytes: [u8; 32] = to_word.to_be_bytes();
+        // StorageBackedAddressOrNil uses all-ones in the high 12 bytes
+        // to encode Nil; actual encoding varies, so just take low 20
+        // bytes and let callers treat zero as nil.
+        let to = Address::from_slice(&to_bytes[12..]);
+        let value = load(map_slot(r_key.as_slice(), CALLVALUE_OFFSET))?;
+        let beneficiary_word = load(map_slot(r_key.as_slice(), BENEFICIARY_OFFSET))?;
+        let beneficiary = Address::from_slice(&beneficiary_word.to_be_bytes::<32>()[12..]);
+        let tries: u64 = load(map_slot(r_key.as_slice(), NUM_TRIES_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+
+        // Calldata lives under its own subspace with StorageBackedBytes
+        // layout: slot 0 = size, slot 1+ = chunks. We read the size,
+        // then each 32-byte chunk, and truncate.
+        let cd_key = derive_subspace_key(r_key.as_slice(), CALLDATA_KEY);
+        let size: usize = load(map_slot(cd_key.as_slice(), 0))?
+            .try_into()
+            .unwrap_or(0);
+        let chunks = size.div_ceil(32);
+        let mut data = Vec::with_capacity(size);
+        for i in 0..chunks {
+            let chunk = load(map_slot(cd_key.as_slice(), 1 + i as u64))?;
+            data.extend_from_slice(&chunk.to_be_bytes::<32>());
+        }
+        data.truncate(size);
+
+        // ABI-encode the 7-tuple:
+        //   head (7 × 32):
+        //     timeout, from, to, value, beneficiary, tries, data_offset
+        //   tail: data_len, data_bytes (padded to 32)
+        let mut out = vec![0u8; 7 * 32];
+        U256::from(timeout)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| out[i] = *b);
+        out[32 + 12..32 + 32].copy_from_slice(from.as_slice());
+        out[64 + 12..64 + 32].copy_from_slice(to.as_slice());
+        out[96..128].copy_from_slice(&value.to_be_bytes::<32>());
+        out[128 + 12..128 + 32].copy_from_slice(beneficiary.as_slice());
+        U256::from(tries)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| out[160 + i] = *b);
+        // data offset = 0xe0 (7 × 32).
+        U256::from(7u64 * 32)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| out[192 + i] = *b);
+        // Tail.
+        let padded_len = size.div_ceil(32) * 32;
+        let mut tail = vec![0u8; 32 + padded_len];
+        U256::from(size as u64)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| tail[i] = *b);
+        tail[32..32 + size].copy_from_slice(&data);
+        out.extend_from_slice(&tail);
+        Ok(alloy_primitives::Bytes::from(out))
     }
 
     /// Handle `eth_call` dispatch of
@@ -805,17 +921,28 @@ where
             };
             use alloy_primitives::{Address, TxKind};
 
-            // Only intercept calls targeting the NodeInterface address.
+            // Only intercept calls targeting the NodeInterface or
+            // NodeInterfaceDebug addresses.
             let target: Option<Address> = match request.as_ref().to {
                 Some(TxKind::Call(addr)) => Some(addr),
                 _ => None,
             };
-            if target != Some(NODE_INTERFACE_ADDRESS) {
+            let is_ni = target == Some(NODE_INTERFACE_ADDRESS);
+            let is_ni_debug = target == Some(arb_precompiles::NODE_INTERFACE_DEBUG_ADDRESS);
+            if !is_ni && !is_ni_debug {
                 let _permit = self.acquire_owned_blocking_io().await;
                 let res = self
                     .transact_call_at(request, block_number.unwrap_or_default(), overrides)
                     .await?;
                 return <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result);
+            }
+
+            // NodeInterfaceDebug (0xc9) has one method: getRetryable(bytes32).
+            if is_ni_debug {
+                let at = block_number.unwrap_or_default();
+                let data: alloy_primitives::Bytes =
+                    request.as_ref().input.input().cloned().unwrap_or_default();
+                return self.get_retryable_abi(&data, at).await;
             }
 
             // Parse selector.

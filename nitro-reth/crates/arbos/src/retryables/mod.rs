@@ -9,17 +9,17 @@ use arb_storage::{
 pub const RETRYABLE_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60; // one week
 pub const RETRYABLE_REAP_PRICE: u64 = 58000;
 
-const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
-const CALLDATA_KEY: &[u8] = &[1];
+pub const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
+pub const CALLDATA_KEY: &[u8] = &[1];
 
 // Storage offsets for Retryable fields.
-const NUM_TRIES_OFFSET: u64 = 0;
-const FROM_OFFSET: u64 = 1;
-const TO_OFFSET: u64 = 2;
-const CALLVALUE_OFFSET: u64 = 3;
-const BENEFICIARY_OFFSET: u64 = 4;
-const TIMEOUT_OFFSET: u64 = 5;
-const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
+pub const NUM_TRIES_OFFSET: u64 = 0;
+pub const FROM_OFFSET: u64 = 1;
+pub const TO_OFFSET: u64 = 2;
+pub const CALLVALUE_OFFSET: u64 = 3;
+pub const BENEFICIARY_OFFSET: u64 = 4;
+pub const TIMEOUT_OFFSET: u64 = 5;
+pub const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 
 /// Manages the collection of retryable tickets.
 pub struct RetryableState<D> {
@@ -230,6 +230,40 @@ impl<D: Database> RetryableState<D> {
         timeout_storage.set(timeout + RETRYABLE_LIFETIME_SECONDS)?;
         windows_left_storage.set(windows_left - 1)?;
         Ok(())
+    }
+
+    /// Total number of pending retryables in the timeout queue.
+    pub fn queue_size(&self) -> Result<u64, ()> {
+        self.timeout_queue.size()
+    }
+
+    /// Walk the timeout queue and yield `(ticket_id, timeout_seconds)`
+    /// for each non-expired retryable. Expired tickets (those that
+    /// would be reaped by `try_to_reap_one_retryable` at
+    /// `current_time`) are skipped so callers see a faithful snapshot
+    /// of the live queue.
+    pub fn snapshot_queue(
+        &self,
+        current_time: u64,
+        max_entries: usize,
+    ) -> Result<Vec<(B256, u64)>, ()> {
+        let mut out = Vec::new();
+        self.timeout_queue.for_each(|id| {
+            if out.len() >= max_entries {
+                return Ok(());
+            }
+            match self.open_retryable(id, current_time)? {
+                Some(retryable) => {
+                    let timeout = retryable.calculate_timeout()?;
+                    out.push((id, timeout));
+                }
+                None => {
+                    // Expired/deleted — skip.
+                }
+            }
+            Ok(())
+        })?;
+        Ok(out)
     }
 
     fn internal_open(&self, id: B256) -> Retryable<D> {

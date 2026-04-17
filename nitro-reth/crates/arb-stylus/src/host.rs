@@ -100,12 +100,9 @@ pub fn storage_cache_bytes32<E: EvmApi>(
     key_ptr: u32,
     value_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf(
-        "storage_cache_bytes32",
-        Default::default(),
-        Default::default(),
-    );
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::STORAGE_CACHE_BASE_INK)?;
     info.require_gas(evm_gas::SSTORE_SENTRY_GAS + evm_gas::STORAGE_CACHE_REQUIRED_ACCESS_GAS)?;
     let key = B256::from(info.read_fixed::<32>(key_ptr)?);
@@ -116,6 +113,20 @@ pub fn storage_cache_bytes32<E: EvmApi>(
         .cache_bytes32(key, value)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(64);
+        args.extend_from_slice(key.as_slice());
+        args.extend_from_slice(value.as_slice());
+        crate::trace::record(
+            "storage_cache_bytes32",
+            alloy_primitives::Bytes::from(args),
+            Default::default(),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -153,12 +164,9 @@ pub fn transient_load_bytes32<E: EvmApi>(
     key_ptr: u32,
     dest_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf(
-        "transient_load_bytes32",
-        Default::default(),
-        Default::default(),
-    );
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TRANSIENT_LOAD_BASE_INK)?;
     info.buy_gas(evm_gas::TLOAD_GAS)?;
     let key = B256::from(info.read_fixed::<32>(key_ptr)?);
@@ -168,6 +176,17 @@ pub fn transient_load_bytes32<E: EvmApi>(
         .get_transient_bytes32(key)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.write_slice(dest_ptr, value.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "transient_load_bytes32",
+            alloy_primitives::Bytes::copy_from_slice(key.as_slice()),
+            alloy_primitives::Bytes::copy_from_slice(value.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -177,12 +196,9 @@ pub fn transient_store_bytes32<E: EvmApi>(
     key_ptr: u32,
     value_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf(
-        "transient_store_bytes32",
-        Default::default(),
-        Default::default(),
-    );
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TRANSIENT_STORE_BASE_INK)?;
     info.buy_gas(evm_gas::TSTORE_GAS)?;
     let key = B256::from(info.read_fixed::<32>(key_ptr)?);
@@ -194,6 +210,20 @@ pub fn transient_store_bytes32<E: EvmApi>(
         .map_err(|e| Escape::Internal(e.to_string()))?;
     if status == UserOutcomeKind::Failure {
         return Escape::logical("transient store failed");
+    }
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(64);
+        args.extend_from_slice(key.as_slice());
+        args.extend_from_slice(value.as_slice());
+        crate::trace::record(
+            "transient_store_bytes32",
+            alloy_primitives::Bytes::from(args),
+            Default::default(),
+            start_ink,
+            end_ink,
+            None,
+        );
     }
     Ok(())
 }
@@ -208,8 +238,9 @@ pub fn call_contract<E: EvmApi>(
     gas: u64,
     ret_len_ptr: u32,
 ) -> Result<u8, Escape> {
-    crate::trace::record_leaf("call_contract", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::CALL_CONTRACT_BASE_INK)?;
     info.pay_for_read(calldata_len)?;
     info.pay_for_read(calldata_len)?; // read from geth
@@ -226,6 +257,22 @@ pub fn call_contract<E: EvmApi>(
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(20 + 32 + 8 + calldata.len());
+        args.extend_from_slice(contract.as_slice());
+        args.extend_from_slice(&value.to_be_bytes::<32>());
+        args.extend_from_slice(&gas.to_be_bytes());
+        args.extend_from_slice(&calldata);
+        crate::trace::record(
+            "call_contract",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::from(vec![status as u8]),
+            start_ink,
+            end_ink,
+            Some(contract),
+        );
+    }
     Ok(status as u8)
 }
 
@@ -238,12 +285,9 @@ pub fn delegate_call_contract<E: EvmApi>(
     gas: u64,
     ret_len_ptr: u32,
 ) -> Result<u8, Escape> {
-    crate::trace::record_leaf(
-        "delegate_call_contract",
-        Default::default(),
-        Default::default(),
-    );
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::CALL_CONTRACT_BASE_INK)?;
     info.pay_for_read(calldata_len)?;
     info.pay_for_read(calldata_len)?; // read from geth
@@ -259,6 +303,21 @@ pub fn delegate_call_contract<E: EvmApi>(
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(20 + 8 + calldata.len());
+        args.extend_from_slice(contract.as_slice());
+        args.extend_from_slice(&gas.to_be_bytes());
+        args.extend_from_slice(&calldata);
+        crate::trace::record(
+            "delegate_call_contract",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::from(vec![status as u8]),
+            start_ink,
+            end_ink,
+            Some(contract),
+        );
+    }
     Ok(status as u8)
 }
 
@@ -271,12 +330,9 @@ pub fn static_call_contract<E: EvmApi>(
     gas: u64,
     ret_len_ptr: u32,
 ) -> Result<u8, Escape> {
-    crate::trace::record_leaf(
-        "static_call_contract",
-        Default::default(),
-        Default::default(),
-    );
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::CALL_CONTRACT_BASE_INK)?;
     info.pay_for_read(calldata_len)?;
     info.pay_for_read(calldata_len)?; // read from geth
@@ -292,6 +348,21 @@ pub fn static_call_contract<E: EvmApi>(
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(20 + 8 + calldata.len());
+        args.extend_from_slice(contract.as_slice());
+        args.extend_from_slice(&gas.to_be_bytes());
+        args.extend_from_slice(&calldata);
+        crate::trace::record(
+            "static_call_contract",
+            alloy_primitives::Bytes::from(args),
+            alloy_primitives::Bytes::from(vec![status as u8]),
+            start_ink,
+            end_ink,
+            Some(contract),
+        );
+    }
     Ok(status as u8)
 }
 
@@ -408,8 +479,9 @@ pub fn emit_log<E: EvmApi>(
     data_len: u32,
     topics: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("emit_log", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::EMIT_LOG_BASE_INK)?;
     if topics > 4 || data_len < topics * 32 {
         return Escape::logical("bad topic data");
@@ -419,8 +491,22 @@ pub fn emit_log<E: EvmApi>(
     let data = info.read_slice(data_ptr, data_len)?;
     info.env
         .evm_api
-        .emit_log(data, topics)
+        .emit_log(data.clone(), topics)
         .map_err(|e| Escape::Internal(e.to_string()))?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        let mut args = Vec::with_capacity(4 + data.len());
+        args.extend_from_slice(&topics.to_be_bytes());
+        args.extend_from_slice(&data);
+        crate::trace::record(
+            "emit_log",
+            alloy_primitives::Bytes::from(args),
+            Default::default(),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 
@@ -430,8 +516,9 @@ pub fn account_balance<E: EvmApi>(
     addr_ptr: u32,
     dest_ptr: u32,
 ) -> MaybeEscape {
-    crate::trace::record_leaf("account_balance", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::ACCOUNT_BALANCE_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
     let address = Address::from_slice(&info.read_fixed::<20>(addr_ptr)?);
@@ -442,6 +529,17 @@ pub fn account_balance<E: EvmApi>(
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, &balance.to_be_bytes::<32>())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "account_balance",
+            alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
+            alloy_primitives::Bytes::copy_from_slice(&balance.to_be_bytes::<32>()),
+            start_ink,
+            end_ink,
+            Some(address),
+        );
+    }
     Ok(())
 }
 

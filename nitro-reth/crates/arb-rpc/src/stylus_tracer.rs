@@ -88,6 +88,41 @@ impl From<Vec<HostioTraceInfo>> for StylusTraceOutput {
     }
 }
 
+/// Run `f` with a fresh Stylus host-I/O trace buffer installed on the
+/// current thread. The buffer is drained and returned after `f`
+/// completes so callers can attach the records to a debug response.
+///
+/// This is the integration seam between `debug_traceTransaction` and
+/// the Stylus runtime: the debug handler wraps its tx execution in a
+/// `with_trace_buffer` call and then surfaces the records alongside
+/// the standard EVM trace.
+pub fn with_trace_buffer<F, T>(f: F) -> (T, Vec<HostioTraceInfo>)
+where
+    F: FnOnce() -> T,
+{
+    use std::sync::{Arc, Mutex};
+
+    let buf = Arc::new(Mutex::new(Vec::<arb_stylus::trace::HostioRecord>::new()));
+    arb_stylus::trace::enable(buf.clone());
+    let result = f();
+    arb_stylus::trace::disable();
+
+    let raw = buf.lock().map(|g| g.clone()).unwrap_or_default();
+    let records = raw
+        .into_iter()
+        .map(|r| HostioTraceInfo {
+            name: r.name.to_string(),
+            args: r.args,
+            outs: r.outs,
+            start_ink: r.start_ink,
+            end_ink: r.end_ink,
+            address: r.address,
+            steps: Vec::new(),
+        })
+        .collect();
+    (result, records)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

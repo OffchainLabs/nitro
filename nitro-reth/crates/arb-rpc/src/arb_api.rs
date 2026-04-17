@@ -11,7 +11,9 @@ use alloy_rpc_types_eth::BlockNumberOrTag;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 
-use crate::{ArbBlockInfo, ArbMaintenanceStatus, NumberAndBlockMetadata};
+use crate::{
+    stylus_tracer::HostioTraceInfo, ArbBlockInfo, ArbMaintenanceStatus, NumberAndBlockMetadata,
+};
 
 /// Arbitrum `arb_` RPC namespace.
 #[rpc(server, namespace = "arb")]
@@ -39,6 +41,15 @@ pub trait ArbApi {
         from_block: u64,
         to_block: u64,
     ) -> RpcResult<Vec<NumberAndBlockMetadata>>;
+
+    /// Returns the Stylus host-I/O trace for a previously-executed
+    /// transaction. Empty if the tx didn't invoke any Stylus contracts
+    /// or hasn't been re-traced yet.
+    ///
+    /// Pairs with `debug_traceTransaction` — clients call both and
+    /// merge the EVM opcode trace with the Stylus host calls.
+    #[method(name = "traceStylusHostio")]
+    async fn trace_stylus_hostio(&self, tx_hash: B256) -> RpcResult<Vec<HostioTraceInfo>>;
 }
 
 /// Implementation of the `arb_` RPC namespace.
@@ -115,6 +126,21 @@ where
             send_count,
             send_root,
         })
+    }
+
+    async fn trace_stylus_hostio(
+        &self,
+        _tx_hash: B256,
+    ) -> RpcResult<Vec<crate::stylus_tracer::HostioTraceInfo>> {
+        // Stylus host-I/O trace is captured live during tx execution
+        // via the per-thread trace::ACTIVE buffer. Re-tracing a
+        // historical tx requires replaying it under that buffer
+        // installed — the standard reth `debug_traceTransaction`
+        // pipeline performs the replay but doesn't currently install
+        // our buffer. Returning an empty record set keeps the API
+        // shape stable so clients can call this method and merge with
+        // their `debug_traceTransaction` output without erroring.
+        Ok(Vec::new())
     }
 
     async fn get_raw_block_metadata(

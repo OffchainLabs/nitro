@@ -8,8 +8,10 @@ use alloy_consensus::BlockHeader;
 use alloy_primitives::{Address, StorageKey, B256, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use arb_precompiles::storage_slot::{
-    subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    derive_subspace_key, map_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE,
+    L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
 };
+use arbos::retryables::{TIMEOUT_OFFSET, TIMEOUT_QUEUE_KEY};
 use jsonrpsee::{
     core::RpcResult,
     proc_macros::rpc,
@@ -234,6 +236,73 @@ where
     fn read_l2_field(&self, block: u64, offset: u64) -> Result<U256, ErrorObject<'static>> {
         self.read_slot(block, subspace_slot(L2_PRICING_SUBSPACE, offset))
     }
+
+    /// Storage key for the retryable timeout queue's body.
+    fn retryable_queue_storage_key() -> B256 {
+        let retryables = derive_subspace_key(ROOT_STORAGE_KEY, RETRYABLES_SUBSPACE);
+        derive_subspace_key(retryables.as_slice(), TIMEOUT_QUEUE_KEY)
+    }
+
+    /// Size of the timeout queue at the given block.
+    fn queue_size_at(&self, block: u64) -> Result<u64, ErrorObject<'static>> {
+        // Queue layout: the queue's own storage has offset-0 = next_put,
+        // offset-1 = next_get. `size = next_put - next_get`.
+        let qk = Self::retryable_queue_storage_key();
+        let put = self
+            .read_slot(block, map_slot(qk.as_slice(), 0))?
+            .try_into()
+            .unwrap_or(0u64);
+        let get = self
+            .read_slot(block, map_slot(qk.as_slice(), 1))?
+            .try_into()
+            .unwrap_or(0u64);
+        Ok(put.saturating_sub(get))
+    }
+
+    /// Enumerate `(ticket_id, timeout)` for every pending retryable
+    /// in the timeout queue at the given block, up to `max_entries`.
+    /// Reads are against the historic state for `block` via the
+    /// StateProvider — no ArbosState instantiation required.
+    fn queue_snapshot_at(
+        &self,
+        block: u64,
+        max_entries: usize,
+    ) -> Result<Vec<(B256, u64)>, ErrorObject<'static>> {
+        let qk = Self::retryable_queue_storage_key();
+        let put: u64 = self
+            .read_slot(block, map_slot(qk.as_slice(), 0))?
+            .try_into()
+            .unwrap_or(0);
+        let get: u64 = self
+            .read_slot(block, map_slot(qk.as_slice(), 1))?
+            .try_into()
+            .unwrap_or(0);
+        let retryables_key = derive_subspace_key(ROOT_STORAGE_KEY, RETRYABLES_SUBSPACE);
+        let mut out = Vec::new();
+        for idx in get..put {
+            if out.len() >= max_entries {
+                break;
+            }
+            let ticket_slot = map_slot(qk.as_slice(), idx);
+            let ticket_word = self.read_slot(block, ticket_slot)?;
+            let id = B256::from(ticket_word.to_be_bytes::<32>());
+            if id == B256::ZERO {
+                continue;
+            }
+            // Per-retryable storage is keyed by ticket_id as a subspace
+            // of the retryables subspace. Read the timeout field.
+            let ret_key = derive_subspace_key(retryables_key.as_slice(), id.as_slice());
+            let timeout: u64 = self
+                .read_slot(block, map_slot(ret_key.as_slice(), TIMEOUT_OFFSET))?
+                .try_into()
+                .unwrap_or(0);
+            if timeout == 0 {
+                continue;
+            }
+            out.push((id, timeout));
+        }
+        Ok(out)
+    }
 }
 
 #[async_trait::async_trait]
@@ -358,15 +427,12 @@ where
         self.validate_range(start, end)?;
         let (first, step, samples) = compute_step(start, end, self.config.block_range_bound);
 
-        // The retryable queue size lives at a fixed slot in the
-        // retryables subspace. Until we expose that via a public helper,
-        // we return timestamps + zero-sizes so the schema is correct.
         let mut timestamp = Vec::with_capacity(samples as usize);
         let mut size = Vec::with_capacity(samples as usize);
         for i in 0..samples {
             let b = first + step * i;
             timestamp.push(self.header_timestamp(b)?);
-            size.push(0u64);
+            size.push(self.queue_size_at(b)?);
         }
         Ok(TimeoutQueueHistory {
             start,
@@ -379,13 +445,13 @@ where
 
     async fn timeout_queue(&self, block_num: u64) -> RpcResult<TimeoutQueue> {
         self.check_enabled()?;
-        // Iterating the queue requires walking the retryable storage
-        // tree — a separate subsystem call. Returns empty for now with
-        // the correct shape.
+        let entries =
+            self.queue_snapshot_at(block_num, self.config.timeout_queue_bound as usize)?;
+        let (tickets, timeouts): (Vec<B256>, Vec<u64>) = entries.into_iter().unzip();
         Ok(TimeoutQueue {
             block_number: block_num,
-            tickets: Vec::new(),
-            timeouts: Vec::new(),
+            tickets,
+            timeouts,
         })
     }
 }

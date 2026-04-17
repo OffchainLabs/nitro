@@ -10,6 +10,8 @@ async-trait = { workspace = true }
 arb-alloy-consensus = { workspace = true }
 arb-primitives = { workspace = true }
 arb-precompiles = { workspace = true }
+arb-stylus = { workspace = true }
+arbos = { workspace = true }
 arb-evm = { workspace = true }
 arb-payload = { workspace = true }
 alloy-consensus = { workspace = true }
