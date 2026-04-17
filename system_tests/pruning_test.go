@@ -272,6 +272,11 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	builder.StopL2ForRestart(ctx)
 	t.Log("stopped l2 node")
 
+	// blocksWithState tracks which blocks still have state roots on disk after pruning.
+	// The pruner preserves state for explicitly requested important roots (genesis, validated,
+	// finalized) and also for the bottom-most snapshot diff layer, whose block number cannot
+	// be predicted exactly by the test.
+	blocksWithState := make(map[int64]bool)
 	func() {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
@@ -291,6 +296,13 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		err = pruning.PruneExecutionDBWithDistance(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false, 100)
 		Require(t, err)
 
+		// Delete the snapshot root so the 2nd node's blockchain initialization doesn't
+		// try to rewind past the snapshot disk layer. Without this, the rewind goes much
+		// further back than the nearest available state, causing the node to re-process
+		// many blocks and regenerate their state in the trie dirty cache, which makes
+		// BalanceAt succeed for blocks that should have been pruned.
+		rawdb.DeleteSnapshotRoot(executionDB)
+
 		executionDBEntriesAfterPruning := countStateEntries(executionDB)
 		t.Log("db entries pre-pruning:", executionDBEntriesBeforePruning)
 		t.Log("db entries post-pruning:", executionDBEntriesAfterPruning)
@@ -298,6 +310,19 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		if executionDBEntriesAfterPruning >= executionDBEntriesBeforePruning {
 			Fatal(t, "The db doesn't have less entries after pruning then before. Before:", executionDBEntriesBeforePruning, "After:", executionDBEntriesAfterPruning)
 		}
+
+		// Record which blocks still have state after pruning so the verification
+		// loop below can skip them (e.g. the snapshot-preserved block).
+		for i := int64(1); i < int64(numOfBlocksToGenerate); i++ {
+			// #nosec G115
+			hash := rawdb.ReadCanonicalHash(executionDB, uint64(i))
+			// #nosec G115
+			header := rawdb.ReadHeader(executionDB, hash, uint64(i))
+			if header != nil && rawdb.HasLegacyTrieNode(executionDB, header.Root) {
+				blocksWithState[i] = true
+			}
+		}
+		t.Log("blocks with state after pruning:", blocksWithState)
 	}()
 
 	// We could have restarted the same node, but spinning up a node with the same
@@ -319,6 +344,18 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 	// #nosec G115
 	balanceShouldntExistUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
+	// The 2nd node rewinds to the highest block with state on disk and re-processes all
+	// subsequent blocks, keeping their state in the in-memory trie cache. Cap the prune
+	// boundary so we don't expect those re-processed blocks to be missing.
+	highestPreservedBlock := int64(0)
+	for block := range blocksWithState {
+		if block > highestPreservedBlock {
+			highestPreservedBlock = block
+		}
+	}
+	if balanceShouldntExistUntilBlock > highestPreservedBlock+1 {
+		balanceShouldntExistUntilBlock = highestPreservedBlock + 1
+	}
 	// #nosec G115
 	for i := int64(1); i < int64(newLastBlock); i++ {
 		// Create a safety buffer (+/- 2 blocks) around the expected prune point.
@@ -328,13 +365,16 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 			continue
 		} else if i < balanceShouldntExistUntilBlock {
 			// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
-			// all blocks between [1, checkUntilBlock) with the exception of last validated and last finalized blocks
-			if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx {
+			// all blocks between [1, checkUntilBlock) with the exception of last validated, last finalized,
+			// and any blocks whose state was preserved by the pruner (e.g. snapshot diff layer target)
+			if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx || blocksWithState[i] {
 				continue
 			}
 			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
-			if !strings.Contains(err.Error(), "missing trie node") {
-				t.Fatalf("Expected balance retrieval to fail for block %d", i)
+			if err == nil {
+				t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", i)
+			} else if !strings.Contains(err.Error(), "missing trie node") {
+				t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", i, err)
 			}
 		} else {
 			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
@@ -342,25 +382,30 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		}
 	}
 
-	// We do the same for last validated and last finalized blocks since they should have been added as important roots
-	// we only check these in validator mode since all other modes they are also pruned
-	if mode == "validator" {
+	// Check last validated and last finalized blocks. In validator mode they should have been
+	// added as important roots. In other modes they are pruned, but may still be accessible if
+	// the 2nd node re-processed them (i.e. they are above the highest preserved block on disk).
+	if mode == "validator" || blocksWithState[int64(validatedMsgIdx)] || int64(validatedMsgIdx) > highestPreservedBlock {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
 		Require(t, err)
 	} else {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
-		if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected balance retrieval to fail for block %d", validatedMsgIdx)
+		if err == nil {
+			t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", validatedMsgIdx)
+		} else if !strings.Contains(err.Error(), "missing trie node") {
+			t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", validatedMsgIdx, err)
 		}
 	}
 
-	if mode == "validator" || mode == "full" {
+	if mode == "validator" || mode == "full" || blocksWithState[int64(finalizedMsgIdx)] || int64(finalizedMsgIdx) > highestPreservedBlock {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
 		Require(t, err)
 	} else {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
-		if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected balance retrieval to fail for block %d", finalizedMsgIdx)
+		if err == nil {
+			t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", finalizedMsgIdx)
+		} else if !strings.Contains(err.Error(), "missing trie node") {
+			t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", finalizedMsgIdx, err)
 		}
 	}
 }
