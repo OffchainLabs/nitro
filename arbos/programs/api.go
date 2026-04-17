@@ -494,8 +494,8 @@ const (
 //
 // Cap 2 — node-level policy (ArbNodeConfig.MaxOpenPages, flag
 // --execution.stylus-target.max-stylus-open-pages). runCtx-dependent:
-//   - off-chain (eth_call, gas estimation): OOG.
-//   - sequencing: OOG + statedb.FilterTx() (drop before inclusion).
+//   - off-chain (eth_call, gas estimation) and sequencing: OOG +
+//     statedb.FilterTx() (drop before inclusion).
 //   - exempt on-chain (commit, replay, recording): log only, so policy never
 //     affects consensus.
 //
@@ -526,6 +526,7 @@ func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.Messag
 		if !runCtx.IsExecutedOnChain() {
 			log.Info("page limit exceeded", "location", location,
 				"open", newOpen, "limit", limit, "contract", contract)
+			statedb.FilterTx()
 			return math.MaxUint64
 		}
 		if runCtx.IsSequencing() {

@@ -116,7 +116,7 @@ func TestAddPages_ExceedsLimit_EthCall(t *testing.T) {
 	handler, statedb, _ := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
 	require.Equal(t, uint64(math.MaxUint64), cost, "eth_call should return MaxUint64 when over limit")
-	require.False(t, statedb.IsTxFiltered(), "eth_call should not call FilterTx")
+	require.True(t, statedb.IsTxFiltered(), "eth_call should call FilterTx when over limit")
 }
 
 func TestAddPages_ExceedsLimit_GasEstimation(t *testing.T) {
@@ -124,7 +124,7 @@ func TestAddPages_ExceedsLimit_GasEstimation(t *testing.T) {
 	handler, statedb, _ := newTestHandler(t, common.Address{}, runCtx, 10)
 	cost := callAddPages(handler, 20)
 	require.Equal(t, uint64(math.MaxUint64), cost, "gas estimation should return MaxUint64 when over limit")
-	require.False(t, statedb.IsTxFiltered(), "gas estimation should not call FilterTx")
+	require.True(t, statedb.IsTxFiltered(), "gas estimation should call FilterTx when over limit")
 }
 
 func TestAddPages_ExceedsLimit_SequencerCommit(t *testing.T) {
@@ -419,18 +419,18 @@ func TestEnforce_OverLimit_NilRunCtx_ReturnsZero(t *testing.T) {
 	require.False(t, statedb.IsTxFiltered())
 }
 
-func TestEnforce_OverLimit_EthCall_ReturnsMaxUint64(t *testing.T) {
+func TestEnforce_OverLimit_EthCall_FiltersAndReturnsMaxUint64(t *testing.T) {
 	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
 	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 20, common.Address{1}, nil, pageLimitAddPages)
 	require.Equal(t, uint64(math.MaxUint64), penalty, "eth_call over limit should OOG")
-	require.False(t, statedb.IsTxFiltered())
+	require.True(t, statedb.IsTxFiltered(), "eth_call should call FilterTx")
 }
 
-func TestEnforce_OverLimit_GasEstimation_ReturnsMaxUint64(t *testing.T) {
+func TestEnforce_OverLimit_GasEstimation_FiltersAndReturnsMaxUint64(t *testing.T) {
 	evm, statedb := buildEnforceTestArgs(t, 10, true, 0)
 	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageGasEstimationContext(), 20, common.Address{1}, nil, pageLimitAddPages)
 	require.Equal(t, uint64(math.MaxUint64), penalty, "gas estimation over limit should OOG")
-	require.False(t, statedb.IsTxFiltered())
+	require.True(t, statedb.IsTxFiltered(), "gas estimation should call FilterTx")
 }
 
 func TestEnforce_OverLimit_Sequencing_FiltersAndReturnsMaxUint64(t *testing.T) {
