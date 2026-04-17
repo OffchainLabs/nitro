@@ -5,7 +5,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use alloy_primitives::{StorageKey, B256, U256};
+use alloy_primitives::{Address, StorageKey, B256, U256};
 use alloy_rpc_types_eth::{state::StateOverride, BlockId};
 use reth_primitives_traits::{Recovered, WithEncoded};
 use reth_rpc::eth::core::EthApiInner;
@@ -145,6 +145,111 @@ where
         // Convert to gas units: posting_gas = padded_fee / adjusted_basefee
         let gas = padded / adjusted_basefee;
         Ok(gas.try_into().unwrap_or(u64::MAX))
+    }
+}
+
+impl<N, Rpc> ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore<Provider: StateProviderFactory>,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+    RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
+        + AsMut<alloy_rpc_types_eth::TransactionRequest>
+        + Clone
+        + Default,
+{
+    /// Handle an `eth_estimateGas` targeting
+    /// `NodeInterface.estimateRetryableTicket(...)` (selector 0xc3dc5879).
+    ///
+    /// Mirrors Nitro's behavior (`nodeinterface/node_interface.go:128`):
+    /// parse ABI args, compute the retryable submission fee from the
+    /// current L1 base fee, construct an equivalent TransactionRequest
+    /// targeting `retry_to` with `retry_value` + `retry_data`, and run
+    /// the standard estimate on it. The returned gas approximates what
+    /// the retryable auto-redeem will consume.
+    ///
+    /// This is close enough for wallet UX (deposit flows, bridge fee
+    /// previews). Exact Nitro parity requires tx construction as an
+    /// `ArbSubmitRetryableTx` and simulation through the full block
+    /// executor; that deeper integration is tracked separately.
+    async fn estimate_retryable_ticket_gas(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+        state_override: Option<StateOverride>,
+    ) -> Result<U256, EthApiError>
+    where
+        RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
+    {
+        use alloy_primitives::{Bytes, TxKind};
+        use alloy_rpc_types_eth::TransactionRequest;
+
+        // ABI decode: selector(4) + 7 heads(32 each) + bytes tail.
+        // sender, deposit, to, l2CallValue, excessFeeRefundAddr,
+        // callValueRefundAddr, <bytes data offset>.
+        const HEAD_LEN: usize = 4 + 32 * 7;
+        if input.len() < HEAD_LEN {
+            return Err(EthApiError::InvalidParams(
+                "estimateRetryableTicket: calldata too short".into(),
+            ));
+        }
+        let sender = Address::from_slice(&input[4 + 12..4 + 32]);
+        let _deposit = U256::from_be_slice(&input[36..68]);
+        let to_word = &input[68..100];
+        let to = Address::from_slice(&to_word[12..32]);
+        let l2_call_value = U256::from_be_slice(&input[100..132]);
+        let _excess_fee_refund = Address::from_slice(&input[132 + 12..132 + 32]);
+        let _call_value_refund = Address::from_slice(&input[164 + 12..164 + 32]);
+        let data_offset: usize =
+            U256::from_be_slice(&input[196..228])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: invalid data offset".into(),
+                    )
+                })?;
+        let abi_body = &input[4..];
+        let data: Bytes = if data_offset + 32 <= abi_body.len() {
+            let len: usize = U256::from_be_slice(&abi_body[data_offset..data_offset + 32])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: data length too large".into(),
+                    )
+                })?;
+            if data_offset + 32 + len > abi_body.len() {
+                return Err(EthApiError::InvalidParams(
+                    "estimateRetryableTicket: data out of bounds".into(),
+                ));
+            }
+            Bytes::copy_from_slice(&abi_body[data_offset + 32..data_offset + 32 + len])
+        } else {
+            Bytes::new()
+        };
+
+        // Build an equivalent regular call that estimates the
+        // retryable's on-execution cost (caller = sender, target =
+        // retry_to, value = l2_call_value, data = retry_data).
+        //
+        // `to == zero` means the retryable is a contract-create — map
+        // that to TxKind::Create for the estimate request.
+        let kind = if to == Address::ZERO {
+            TxKind::Create
+        } else {
+            TxKind::Call(to)
+        };
+        let equivalent = TransactionRequest {
+            from: Some(sender),
+            to: Some(kind),
+            value: Some(l2_call_value),
+            input: data.into(),
+            ..Default::default()
+        };
+        let equivalent_req: RpcTxReq<<Rpc as RpcConvert>::Network> = equivalent.into();
+
+        // Run the standard estimation on the equivalent call. Our
+        // override will add L1 posting gas on top automatically.
+        EstimateCall::estimate_gas_at(self, equivalent_req, at, state_override).await
     }
 }
 
@@ -486,9 +591,19 @@ where
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
     RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
         + AsMut<alloy_rpc_types_eth::TransactionRequest>
-        + Clone,
+        + Clone
+        + Default
+        + From<alloy_rpc_types_eth::TransactionRequest>,
 {
     /// Override gas estimation to add L1 posting costs.
+    ///
+    /// Also intercepts `estimateRetryableTicket` calls to the
+    /// NodeInterface (0xc8): client calls
+    /// `eth_estimateGas({to:0xc8, data: estimateRetryableTicket(...)})`
+    /// and expects back the gas for the retryable submission. We parse
+    /// the ABI args, build an equivalent transaction request targeting
+    /// the retry_to with retry_value + retry_data, run the standard
+    /// estimation on that, and add the submit-retryable overhead.
     #[allow(clippy::manual_async_fn)]
     fn estimate_gas_at(
         &self,
@@ -497,8 +612,36 @@ where
         state_override: Option<StateOverride>,
     ) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send {
         async move {
+            use crate::nodeinterface_rpc::NODE_INTERFACE_ADDRESS;
+            use alloy_primitives::TxKind;
+
+            let inner = request.as_ref();
+            let target: Option<Address> = match inner.to {
+                Some(TxKind::Call(addr)) => Some(addr),
+                _ => None,
+            };
+            let input_bytes: Option<alloy_primitives::Bytes> = inner.input.input().cloned();
+
+            // Intercept estimateRetryableTicket on NodeInterface (0xc8).
+            //
+            // ABI: estimateRetryableTicket(
+            //   address sender, uint256 deposit, address to,
+            //   uint256 l2CallValue, address excessFeeRefundAddress,
+            //   address callValueRefundAddress, bytes data)
+            //
+            // selector: 0xc3dc5879
+            if target == Some(NODE_INTERFACE_ADDRESS) {
+                if let Some(ref buf) = input_bytes {
+                    if buf.len() >= 4 && buf[..4] == [0xc3, 0xdc, 0x58, 0x79] {
+                        return self
+                            .estimate_retryable_ticket_gas(buf, at, state_override)
+                            .await;
+                    }
+                }
+            }
+
             // Extract calldata length before request is consumed by the binary search.
-            let calldata_len = request.as_ref().input.input().map(|b| b.len()).unwrap_or(0);
+            let calldata_len = input_bytes.as_ref().map(|b| b.len()).unwrap_or(0);
 
             // Run the standard binary search to find compute gas.
             let compute_gas =

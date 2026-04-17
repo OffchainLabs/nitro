@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This newtype allows implementing Arbitrum-specific RPC traits while
 /// delegating serialization and most behavior to the inner type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ArbTransactionRequest(pub TransactionRequest);
 
@@ -25,6 +25,12 @@ impl AsRef<TransactionRequest> for ArbTransactionRequest {
 impl AsMut<TransactionRequest> for ArbTransactionRequest {
     fn as_mut(&mut self) -> &mut TransactionRequest {
         &mut self.0
+    }
+}
+
+impl From<TransactionRequest> for ArbTransactionRequest {
+    fn from(req: TransactionRequest) -> Self {
+        Self(req)
     }
 }
 

@@ -11,12 +11,15 @@ pub mod arbtimeboost;
 pub mod arbtrace;
 pub mod block_producer;
 pub mod builder;
+pub mod conditional_tx;
 pub mod header;
 pub mod nitro_execution;
 pub mod nitro_execution_handler;
 pub mod nodeinterface_rpc;
+pub mod outbox_proof;
 pub mod receipt;
 pub mod response;
+pub mod stylus_tracer;
 pub mod transaction;
 pub mod types;
 

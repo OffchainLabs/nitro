@@ -84,6 +84,15 @@ pub struct ArbBlockProducer<Provider> {
     pending_flush: AtomicBool,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
+    /// Finality markers propagated by `nitroexecution_setFinalityData`.
+    finality: Mutex<FinalityMarkers>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct FinalityMarkers {
+    safe: Option<alloy_primitives::B256>,
+    finalized: Option<alloy_primitives::B256>,
+    validated: Option<alloy_primitives::B256>,
 }
 
 impl<Provider> ArbBlockProducer<Provider>
@@ -111,7 +120,20 @@ where
             pending_flush: AtomicBool::new(false),
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
+            finality: Mutex::new(FinalityMarkers::default()),
         }
+    }
+
+    /// Currently-tracked finality markers (for RPC / debugging use).
+    pub fn finality_markers(
+        &self,
+    ) -> (
+        Option<alloy_primitives::B256>,
+        Option<alloy_primitives::B256>,
+        Option<alloy_primitives::B256>,
+    ) {
+        let f = self.finality.lock();
+        (f.safe, f.finalized, f.validated)
     }
 }
 
@@ -873,6 +895,53 @@ where
         );
 
         self.produce_block_with_execution(&input, parsed_txs)
+    }
+
+    async fn reset_to_block(&self, target_block_number: u64) -> Result<(), BlockProducerError> {
+        let _lock = self.produce_lock.lock();
+        let current = self.head_block_num.load(Ordering::SeqCst);
+        if target_block_number > current {
+            return Err(BlockProducerError::Unexpected(format!(
+                "reset target {target_block_number} > current head {current}"
+            )));
+        }
+        let header = self
+            .provider
+            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(target_block_number))
+            .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?
+            .ok_or_else(|| {
+                BlockProducerError::Unexpected(format!(
+                    "reset target block {target_block_number} not found"
+                ))
+            })?;
+        self.head_block_num
+            .store(target_block_number, Ordering::SeqCst);
+        info!(
+            target: "block_producer",
+            target = target_block_number,
+            hash = %header.hash(),
+            "reset head"
+        );
+        Ok(())
+    }
+
+    fn set_finality(
+        &self,
+        safe: Option<alloy_primitives::B256>,
+        finalized: Option<alloy_primitives::B256>,
+        validated: Option<alloy_primitives::B256>,
+    ) -> Result<(), BlockProducerError> {
+        let mut f = self.finality.lock();
+        if safe.is_some() {
+            f.safe = safe;
+        }
+        if finalized.is_some() {
+            f.finalized = finalized;
+        }
+        if validated.is_some() {
+            f.validated = validated;
+        }
+        Ok(())
     }
 }
 
