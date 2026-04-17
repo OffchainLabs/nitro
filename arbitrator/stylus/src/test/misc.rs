@@ -87,18 +87,25 @@ fn test_memory_fill_value_overflow_nonzero() -> Result<()> {
 #[test]
 fn test_memory_fill_overflow_native_trap() -> Result<()> {
     let filename = "tests/memory-fill-overflow.wat";
-    let (compile, _, ink) = test_configs();
 
-    let mut native = NativeInstance::new_test(filename, compile)?;
-
-    let exports = &native.instance.exports;
-    let fill = exports.get_typed_function::<(), ()>(&native.store, "fill_overflow")?;
-    let err = format!("{}", native.call_func(fill, ink).unwrap_err());
+    // Version 0 (< 3): should trap on val > 0xFF
+    let (compile_v0, _, ink) = test_configs(); // version 0
+    let mut native_v0 = NativeInstance::new_test(filename, compile_v0)?;
+    let exports = &native_v0.instance.exports;
+    let fill = exports.get_typed_function::<(), ()>(&native_v0.store, "fill_overflow")?;
+    let err = format!("{}", native_v0.call_func(fill, ink).unwrap_err());
     assert!(
         err.contains("memory.fill value exceeds 8 bits"),
-        "expected overflow error, got: {}",
+        "expected overflow error for v0, got: {}",
         err,
     );
+
+    // Version 3 (>= 3): should succeed, silently truncating val to u8
+    let compile_v3 = CompileConfig::version(3, true);
+    let mut native_v3 = NativeInstance::new_test(filename, compile_v3)?;
+    let exports = &native_v3.instance.exports;
+    let fill = exports.get_typed_function::<(), ()>(&native_v3.store, "fill_overflow")?;
+    native_v3.call_func(fill, ink)?;
 
     Ok(())
 }

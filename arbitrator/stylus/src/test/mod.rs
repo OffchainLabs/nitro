@@ -18,8 +18,8 @@ use prover::{
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
-    imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store, Target,
+    imports, wasmparser::Operator, AsStoreMut, CompilerConfig, Function, FunctionEnv, Imports,
+    Instance, Module, Store, Target,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -37,6 +37,7 @@ type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
         let mut store = compile.store(Target::default(), false);
+        store.objects_mut().set_stylus_version(compile.version);
         let imports = imports! {
             "test" => {
                 "noop" => Function::new_typed(&mut store, || {}),
