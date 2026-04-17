@@ -111,6 +111,7 @@ func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase)
 			t.Errorf("Expected %v [%d], got %v [%d]", c.out, len(c.out), res, len(res))
 		}
 
+		// TODO the range was claude suggested, need to validate if we can't just have exact value
 		// Charge check: a staticcall to a not-yet-active precompile must pay
 		// COLD account access (~2600), not WARM (~100). If the address were
 		// wrongly pre-registered as a precompile it would be pre-warmed via
