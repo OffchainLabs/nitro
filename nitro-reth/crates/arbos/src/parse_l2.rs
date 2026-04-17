@@ -215,7 +215,8 @@ fn parse_l2_message(
             let mut reader = Cursor::new(payload);
             let mut txs = Vec::new();
             let mut index: u64 = 0;
-            while let Ok(segment) = bytestring_from_reader(&mut reader) {
+            while let Ok(segment) = bytestring_from_reader(&mut reader, MAX_L2_MESSAGE_SIZE as u64)
+            {
                 if segment.len() > MAX_L2_MESSAGE_SIZE {
                     break;
                 }
