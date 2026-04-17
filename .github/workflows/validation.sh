@@ -84,7 +84,8 @@ check_response() {
 
 validate_mode() {
   local MODE_NAME=$1
-  local SERVER_ARGS=$2
+  shift
+  local SERVER_ARGS=("$@")
 
   echo "::group::Testing Mode: $MODE_NAME"
 
@@ -92,7 +93,7 @@ validate_mode() {
   # actual error instead of just a hash/id mismatch.
   local LOG_FILE="/tmp/validator-$MODE_NAME.log"
   echo "Starting server ($MODE_NAME)..."
-  target/bin/validator $SERVER_ARGS > "$LOG_FILE" 2>&1 &
+  target/bin/validator "${SERVER_ARGS[@]}" > "$LOG_FILE" 2>&1 &
   SERVER_PID=$!
 
   # 2. Wait for server to respond (up to 2 minutes)
@@ -139,5 +140,5 @@ validate_mode() {
 
 # --- Run tests -------------------------------------------------------------
 
-validate_mode "Native" ""
-validate_mode "Continuous" "--mode continuous"
+validate_mode "Native"
+validate_mode "Continuous" --mode continuous
