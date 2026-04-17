@@ -622,7 +622,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	}
 	msgToDelete := min(finalized, remoteMsgCount)
 	if prevFinalized < msgToDelete {
-		var keys []string
+		keys := make([]string, 0, (msgToDelete-prevFinalized)*2) // *2 = one message key + one signature key per message
 		for msg := prevFinalized; msg < msgToDelete; msg++ {
 			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
 		}
@@ -705,8 +705,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	if c.prevRedisMessageCount != 0 && localMsgCount >= c.prevRedisMessageCount {
 		log.Info("coordinator caught up to prev redis coordinator", "msgcount", localMsgCount, "prevMsgCount", c.prevRedisMessageCount)
 	}
-	var messages []arbostypes.MessageWithMetadata
-	var blockMetadataArr []common.BlockMetadata
+	expectedMsgCount := arbmath.SaturatingUSub(readUntil, localMsgCount)
+	messages := make([]arbostypes.MessageWithMetadata, 0, expectedMsgCount)
+	blockMetadataArr := make([]common.BlockMetadata, 0, expectedMsgCount)
 	msgToRead := localMsgCount
 	var msgReadErr error
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {

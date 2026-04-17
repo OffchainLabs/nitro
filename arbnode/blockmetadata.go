@@ -208,7 +208,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	}
 	iter := b.db.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, start)
 	defer iter.Release()
-	var query []uint64
+	query := make([]uint64, 0, b.config.APIBlocksLimit)
 	for iter.Next() {
 		keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
 		query = append(query, binary.BigEndian.Uint64(keyBytes))

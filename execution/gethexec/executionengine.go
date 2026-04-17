@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -110,9 +111,9 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 }
 
 func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Address) {
-	db.TouchAddress(sender)
+	db.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil}})
 	if tx.To() != nil {
-		db.TouchAddress(*tx.To())
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
 	}
 	// For tx types that alias the sender (unsigned contract txs, retryables),
 	// also check the original L1 address. The sender in the tx is already
@@ -120,7 +121,7 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	// original (non-aliased) addresses.
 	txType := tx.Type()
 	if arbosutil.DoesTxTypeAlias(&txType) {
-		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
 	touchRetryableAddresses(db, tx)
 }
@@ -135,7 +136,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	touchAddresses(db, tx, sender)
 	applyEventFilter(f.eventFilter, db)
 
-	if db.IsAddressFiltered() {
+	if filtered, _ := db.IsAddressFiltered(); filtered {
 		// For redeems, return the filter error so the block processor can
 		// trigger a group rollback.
 		if tx.Type() == types.ArbitrumRetryTxType {
@@ -173,8 +174,8 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 	}
 	logs := db.GetCurrentTxLogs()
 	for _, l := range logs {
-		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
-			db.TouchAddress(addr)
+		for _, record := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
+			db.TouchAddress(&record)
 		}
 	}
 }
@@ -185,13 +186,13 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 // aliased by the Inbox contract.
 func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
 	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(inner.Beneficiary)
-		db.TouchAddress(inner.FeeRefundAddr)
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
 		if inner.RetryTo != nil {
-			db.TouchAddress(*inner.RetryTo)
+			db.TouchAddress(&filter.FilteredAddressRecord{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
 		}
-		db.TouchAddress(arbosutil.InverseRemapL1Address(inner.Beneficiary))
-		db.TouchAddress(arbosutil.InverseRemapL1Address(inner.FeeRefundAddr))
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
 	}
 }
 
@@ -329,8 +330,14 @@ func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 			return fmt.Errorf("unsupported stylus target: %v", target)
 		}
 		isNative := target == localTarget
-		err := programs.SetTarget(target, effectiveStylusTarget, isNative)
-		if err != nil {
+		// Register both cranelift and non-cranelift variants so that
+		// compileNative can look up either name in the Rust target cache.
+		if craneliftTarget, err := rawdb.CraneliftTarget(target); err == nil {
+			if err := programs.SetTarget(craneliftTarget, effectiveStylusTarget, isNative); err != nil {
+				return fmt.Errorf("failed to set stylus cranelift target: %w", err)
+			}
+		}
+		if err := programs.SetTarget(target, effectiveStylusTarget, isNative); err != nil {
 			return fmt.Errorf("failed to set stylus target: %w", err)
 		}
 		nativeSet = nativeSet || isNative
@@ -350,6 +357,8 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
+	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
 }
 
@@ -490,8 +499,15 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		s.recorder.ReorgTo(lastBlockToKeep.Header())
 	}
 	if len(oldMessages) > 0 {
-		s.resequenceChan <- oldMessages
-		resequencing = true
+		// Use a select to avoid blocking forever if the resequence goroutine
+		// has already exited (e.g., because the context was cancelled during
+		// shutdown before the nodes were stopped).
+		select {
+		case s.resequenceChan <- oldMessages:
+			resequencing = true
+		case <-s.GetContext().Done():
+			log.Warn("ExecutionEngine: context cancelled, skipping message resequencing")
+		}
 	}
 	return newMessagesResults, nil
 }
