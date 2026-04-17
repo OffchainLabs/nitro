@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
@@ -74,19 +75,19 @@ func (a *capturingFilteringReportAPI) getReports() []addressfilter.FilteredTxRep
 	return result
 }
 
-func waitForReport(t *testing.T, capturer *capturingFilteringReportAPI, txHash common.Hash) addressfilter.FilteredTxReport {
+func waitForReport(t *testing.T, capturer *capturingFilteringReportAPI, txHash common.Hash) *addressfilter.FilteredTxReport {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		for _, r := range capturer.getReports() {
 			if r.TxHash == txHash {
-				return r
+				return &r
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for report for tx %s", txHash.Hex())
-	panic("unreachable")
+	return nil
 }
 
 func newCapturingReportStack(t *testing.T) (*node.Node, *capturingFilteringReportAPI) {
@@ -160,6 +161,9 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 	report := waitForReport(t, capturer, tx.Hash())
+	if report == nil {
+		t.Fatal("expected report to not be nil")
+	}
 	if report.ID == "" {
 		t.Fatal("report ID should not be empty")
 	}
@@ -172,15 +176,18 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if report.FilteredAt.Before(testStartTime) {
 		t.Fatalf("report FilteredAt %v is before test start %v", report.FilteredAt, testStartTime)
 	}
-	hasFilteredAddr := false
+	foundToReason := false
 	for _, fa := range report.FilteredAddresses {
 		if fa.Address == filteredAddr {
-			hasFilteredAddr = true
+			if fa.FilterReason.Reason != filter.ReasonTo {
+				t.Fatalf("expected filter reason %q for TO address, got %q", filter.ReasonTo, fa.FilterReason.Reason)
+			}
+			foundToReason = true
 			break
 		}
 	}
-	if !hasFilteredAddr {
-		t.Fatalf("report should contain filtered address %s", filteredAddr.Hex())
+	if !foundToReason {
+		t.Fatalf("report should contain filtered address %s with ReasonTo", filteredAddr.Hex())
 	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
@@ -195,8 +202,30 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 	report2 := waitForReport(t, capturer, tx.Hash())
-	if report2.TxHash != tx.Hash() {
-		t.Fatalf("report2 TxHash mismatch: got %s, want %s", report2.TxHash.Hex(), tx.Hash().Hex())
+	if report2.ID == "" {
+		t.Fatal("report2 ID should not be empty")
+	}
+	if len(report2.TxRLP) == 0 {
+		t.Fatal("report2 TxRLP should not be empty")
+	}
+	if report2.IsDelayed {
+		t.Fatal("report2 should not be marked as delayed")
+	}
+	if report2.FilteredAt.Before(testStartTime) {
+		t.Fatalf("report2 FilteredAt %v is before test start %v", report2.FilteredAt, testStartTime)
+	}
+	foundFromReason := false
+	for _, fa := range report2.FilteredAddresses {
+		if fa.Address == filteredAddr {
+			if fa.FilterReason.Reason != filter.ReasonFrom {
+				t.Fatalf("expected filter reason %q for FROM address, got %q", filter.ReasonFrom, fa.FilterReason.Reason)
+			}
+			foundFromReason = true
+			break
+		}
+	}
+	if !foundFromReason {
+		t.Fatalf("report2 should contain filtered address %s with ReasonFrom", filteredAddr.Hex())
 	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("FilteredUser").Nonce.Store(0)

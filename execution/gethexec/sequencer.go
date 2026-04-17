@@ -488,13 +488,15 @@ func (s *Sequencer) FilteringReady() bool {
 	return !s.addressFilterService.GetLoadedAt().IsZero()
 }
 
-func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) error {
+func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
 	if s.execEngine.filteringReportRPCClient == nil {
-		return nil
+		return
 	}
 	txRLP, err := tx.MarshalBinary()
 	if err != nil {
-		return err
+		// No need to return error here because MessageFromTxes will prevent a block to be produced in case of
+		// marshalling issues.
+		log.Error("failed to marshal transaction for filtered tx report", "err", err, "txHash", tx.Hash())
 	}
 	report := addressfilter.FilteredTxReport{
 		ID:                uuid.Must(uuid.NewV7()).String(),
@@ -509,7 +511,6 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 		DelayedReportData: nil,
 	}
 	s.pendingFilteredTxReports = append(s.pendingFilteredTxReports, report)
-	return nil
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -756,9 +757,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 
 	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
 	if addressFiltered {
-		if err := s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock); err != nil {
-			return err
-		}
+		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
 		return state.ErrArbTxFilter
 	}
 	return nil
@@ -777,9 +776,7 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		return state.ErrArbTxFilter
 	}
 	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
-		if err := s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock); err != nil {
-			return err
-		}
+		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
 		return state.ErrArbTxFilter
 	}
 
