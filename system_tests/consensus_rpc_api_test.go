@@ -226,7 +226,7 @@ func TestFindBatch(t *testing.T) {
 		if expBatchNum != gotBatchNum {
 			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
 		}
-		batchL1Block, err := builder.L2.ConsensusNode.InboxTracker.GetBatchParentChainBlock(gotBatchNum)
+		batchL1Block, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchParentChainBlock(gotBatchNum)
 		Require(t, err)
 		blockHeader, err := builder.L2.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
 		Require(t, err)

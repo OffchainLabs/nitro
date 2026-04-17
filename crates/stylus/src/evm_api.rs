@@ -9,6 +9,7 @@ use prover_ffi::RustSlice;
 
 use crate::GoSliceData;
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct NativeRequestHandler {
     pub handle_request_fptr: unsafe extern "C" fn(

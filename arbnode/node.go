@@ -756,6 +756,7 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
+		log.Info("Inbox reader and tracker disabled")
 		return nil, nil, nil
 	}
 	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders)
@@ -767,11 +768,40 @@ func getInboxTrackerAndReader(
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := txStreamer.SetInboxReaders(inboxReader, delayedBridge); err != nil {
-		return nil, nil, err
-	}
-
 	return inboxTracker, inboxReader, nil
+}
+
+// computeMigrationStartBlock determines the parent chain block number to anchor
+// the initial MEL state during legacy migration. Uses the finalized block (capped
+// at the last batch's block) to ensure the initial state cannot be reorged out.
+// For Arbitrum parent chains (no native finality), uses the last batch's block directly.
+func computeMigrationStartBlock(
+	ctx context.Context,
+	l1client *ethclient.Client,
+	consensusDB ethdb.Database,
+	deployInfo *chaininfo.RollupAddresses,
+	parentChainIsArbitrum bool,
+) (uint64, error) {
+	totalBatchCount, err := read.Value[uint64](consensusDB, schema.SequencerBatchCountKey)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read legacy batch count: %w", err)
+	}
+	if totalBatchCount == 0 {
+		return deployInfo.DeployedAt - 1, nil
+	}
+	lastBatchMeta, err := read.BatchMetadata(consensusDB, totalBatchCount-1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read last legacy batch metadata: %w", err)
+	}
+	startBlockNum := lastBatchMeta.ParentChainBlock
+	if !parentChainIsArbitrum {
+		finalizedHeader, err := l1client.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+		if err != nil {
+			return 0, fmt.Errorf("failed to get finalized block: %w", err)
+		}
+		startBlockNum = min(startBlockNum, finalizedHeader.Number.Uint64())
+	}
+	return startBlockNum, nil
 }
 
 func validateAndInitializeDBForMEL(
@@ -779,47 +809,98 @@ func validateAndInitializeDBForMEL(
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	consensusDB ethdb.Database,
-) error {
-	melDB := melrunner.NewDatabase(consensusDB)
-	_, err := melDB.GetHeadMelState()
+	parentChainIsArbitrum bool,
+) (*melrunner.Database, error) {
+	melDB, err := melrunner.NewDatabase(consensusDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MEL database: %w", err)
+	}
+	_, err = melDB.GetHeadMelState()
 	if err != nil {
 		if !rawdb.IsDbErrNotFound(err) {
-			return err
+			return nil, err
 		}
-		// SequencerBatchCountKey shouldn't exist
+		// No existing MEL state. Check if this is a legacy node (has inbox reader/tracker keys).
 		hasSequencerBatchCountKey, err := consensusDB.Has(schema.SequencerBatchCountKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if hasSequencerBatchCountKey {
-			return errors.New("MEL being initialized when DB already has stale SequencerBatchCountKey from inbox reader")
-		}
-		// DelayedMessageCountKey shouldn't exist
 		hasDelayedMessageCountKey, err := consensusDB.Has(schema.DelayedMessageCountKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if hasDelayedMessageCountKey {
-			return errors.New("MEL being initialized when DB already has stale DelayedMessageCountKey from inbox reader")
-		}
-		// MessageCountKey should be zero (since TxStreamer initializes it to zero if it doesn't exist)
-		msgCount, err := read.Value[uint64](consensusDB, schema.MessageCountKey)
-		if err != nil {
-			return err
-		}
-		if msgCount != 0 {
-			return errors.New("MEL being initialized when DB already has stale msgs")
-		}
-		// Create Initial MEL state
-		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
-		if err != nil {
-			return err
-		}
-		if err = melDB.SaveState(initialState); err != nil {
-			return fmt.Errorf("failed to save initial mel state: %w", err)
+		if hasSequencerBatchCountKey || hasDelayedMessageCountKey {
+			// Legacy node migration: construct initial MEL state from existing data.
+			log.Info("Migrating legacy inbox reader/tracker data to MEL")
+			chainId, err := l1client.ChainID(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get chain ID: %w", err)
+			}
+			// Determine startBlockNum: use the finalized block (capped at last batch's block)
+			// to ensure the initial state cannot be reorged out.
+			startBlockNum, err := computeMigrationStartBlock(ctx, l1client, consensusDB, deployInfo, parentChainIsArbitrum)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute migration start block: %w", err)
+			}
+			// Query the on-chain bridge contract for the authoritative delayed message
+			// count at startBlockNum. This is more reliable than scanning the legacy DB.
+			delayedBridge, err := NewDelayedBridge(l1client, deployInfo.Bridge, deployInfo.DeployedAt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create delayed bridge: %w", err)
+			}
+			delayedSeenAtBlock, err := delayedBridge.GetMessageCount(ctx, new(big.Int).SetUint64(startBlockNum))
+			if err != nil {
+				return nil, fmt.Errorf("failed to get on-chain delayed message count at block %d: %w", startBlockNum, err)
+			}
+			initialState, err := melrunner.CreateInitialMELStateFromLegacyDB(
+				consensusDB,
+				deployInfo.SequencerInbox,
+				deployInfo.Bridge,
+				chainId.Uint64(),
+				func(blockNum uint64) (common.Hash, common.Hash, error) {
+					block, err := l1client.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
+					if err != nil {
+						return common.Hash{}, common.Hash{}, err
+					}
+					return block.Hash(), block.ParentHash(), nil
+				},
+				startBlockNum,
+				delayedSeenAtBlock,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create initial MEL state from legacy DB: %w", err)
+			}
+			if err = melDB.SaveInitialMelState(initialState); err != nil {
+				return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+			}
+			log.Info("MEL migration from legacy data complete",
+				"delayedSeen", initialState.DelayedMessagesSeen,
+				"delayedRead", initialState.DelayedMessagesRead,
+				"batchCount", initialState.BatchCount,
+				"msgCount", initialState.MsgCount,
+				"parentChainBlock", initialState.ParentChainBlockNumber,
+			)
+		} else {
+			// Fresh node: no legacy keys exist.
+			// MessageCountKey should be zero (since TxStreamer initializes it to zero if it doesn't exist)
+			msgCount, err := read.Value[uint64](consensusDB, schema.MessageCountKey)
+			if err != nil {
+				return nil, err
+			}
+			if msgCount != 0 {
+				return nil, errors.New("MEL being initialized when DB already has stale msgs")
+			}
+			// Create Initial MEL state
+			initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+			if err != nil {
+				return nil, err
+			}
+			if err = melDB.SaveState(initialState); err != nil {
+				return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+			}
 		}
 	}
-	return nil
+	return melDB, nil
 }
 
 func getMessageExtractor(
@@ -846,7 +927,8 @@ func getMessageExtractor(
 		}
 		return nil, nil
 	}
-	if err := validateAndInitializeDBForMEL(ctx, l1client, deployInfo, consensusDB); err != nil {
+	melDB, err := validateAndInitializeDBForMEL(ctx, l1client, deployInfo, consensusDB, l1Reader.IsParentChainArbitrum())
+	if err != nil {
 		return nil, err
 	}
 	msgExtractor, err := melrunner.NewMessageExtractor(
@@ -854,7 +936,7 @@ func getMessageExtractor(
 		l1client,
 		l2Config,
 		deployInfo,
-		melrunner.NewDatabase(consensusDB),
+		melDB,
 		dapRegistry,
 		sequencerInbox,
 		l1Reader,
@@ -863,6 +945,7 @@ func getMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
+	log.Info("Message extractor enabled")
 	return msgExtractor, nil
 }
 
@@ -890,7 +973,6 @@ func createInitialMELState(
 		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
 		DelayedMessagesSeen:                0,
 		DelayedMessagesRead:                0,
-		DelayedMessageMerklePartials:       make([]common.Hash, 0),
 		MsgCount:                           0,
 		BatchCount:                         0,
 	}, nil
@@ -900,7 +982,7 @@ func getBlockValidator(
 	config *Config,
 	configFetcher ConfigFetcher,
 	statelessBlockValidator *staker.StatelessBlockValidator,
-	inboxTracker *InboxTracker,
+	inboxTracker staker.InboxTrackerInterface,
 	txStreamer *TransactionStreamer,
 	fatalErrChan chan error,
 ) (*staker.BlockValidator, error) {
@@ -933,13 +1015,15 @@ func getStaker(
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txStreamer *TransactionStreamer,
-	inboxTracker *InboxTracker,
-	inboxReader *InboxReader,
+	inboxReader staker.InboxReaderInterface,
+	inboxTracker staker.InboxTrackerInterface,
+	batchMetaFetcher BatchMetadataFetcher,
 	stack *node.Node,
 	fatalErrChan chan error,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
 	dapRegistry *daprovider.DAProviderRegistry,
+	messageExtractor *melrunner.MessageExtractor,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
@@ -991,11 +1075,26 @@ func getStaker(
 
 		var confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable {
-			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
+			if batchMetaFetcher == nil {
+				return nil, nil, common.Address{}, errors.New("MessagePruner requires either inbox tracker or message extractor")
+			}
+			messagePruner = NewMessagePruner(consensusDB, txStreamer, batchMetaFetcher, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, dapRegistry, fatalErrChan)
+		var tracker staker.InboxTrackerInterface
+		var reader staker.InboxReaderInterface
+		if messageExtractor != nil {
+			tracker = messageExtractor
+			reader = messageExtractor
+		} else {
+			tracker = inboxTracker
+			reader = inboxReader
+		}
+		if tracker == nil || reader == nil {
+			return nil, nil, common.Address{}, errors.New("staker requires either message extractor or inbox tracker/reader")
+		}
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, tracker, reader, dapRegistry, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -1063,8 +1162,8 @@ func getSeqCoordinator(
 func getStatelessBlockValidator(
 	config *Config,
 	configFetcher ConfigFetcher,
-	inboxReader *InboxReader,
-	inboxTracker *InboxTracker,
+	inboxReader staker.InboxReaderInterface,
+	inboxTracker staker.InboxTrackerInterface,
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionRecorder,
 	consensusDB ethdb.Database,
@@ -1168,8 +1267,7 @@ func getBatchPoster(
 
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
-	msgExtractor *melrunner.MessageExtractor,
+	delayedMessageFetcher DelayedMessageFetcher,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
@@ -1179,14 +1277,7 @@ func getDelayedSequencer(
 		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
-	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
-	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
-	var delayedMessageFetcher DelayedMessageFetcher
-	if inboxTracker != nil {
-		delayedMessageFetcher = inboxTracker
-	} else if msgExtractor != nil {
-		delayedMessageFetcher = msgExtractor
-	} else {
+	if delayedMessageFetcher == nil {
 		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
@@ -1346,25 +1437,40 @@ func createNodeImpl(
 		return nil, err
 	}
 	if messageExtractor != nil {
-		if err := txStreamer.SetMsgExtractor(messageExtractor); err != nil {
-			return nil, err
-		}
 		if err := messageExtractor.SetMessageConsumer(txStreamer); err != nil {
 			return nil, err
 		}
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
+	var batchDataProvider BatchDataProvider
+	if inboxReader != nil && inboxTracker != nil {
+		batchDataProvider = inboxReader.GetParentChainDataSource()
+	} else if messageExtractor != nil {
+		batchDataProvider = messageExtractor
+	}
+	if batchDataProvider != nil {
+		if err := txStreamer.SetBatchDataProvider(batchDataProvider, delayedBridge); err != nil {
+			return nil, err
+		}
+	}
+
+	// TODO: rename staker.InboxReaderInterface and staker.InboxTrackerInterface to a better name
+	var validatorInboxReader staker.InboxReaderInterface
+	var validatorInboxTracker staker.InboxTrackerInterface
+	if messageExtractor != nil {
+		validatorInboxReader = messageExtractor
+		validatorInboxTracker = messageExtractor
+	} else {
+		validatorInboxReader = inboxReader
+		validatorInboxTracker = inboxTracker
+	}
+
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, validatorInboxReader, validatorInboxTracker, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
 
-	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
-	if err != nil {
-		return nil, err
-	}
-
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
+	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, validatorInboxTracker, txStreamer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1375,12 +1481,26 @@ func createNodeImpl(
 	} else if messageExtractor != nil {
 		batchMetaFetcher = messageExtractor
 	}
+
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, validatorInboxReader, validatorInboxTracker, batchMetaFetcher, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry, messageExtractor)
+	if err != nil {
+		return nil, err
+	}
+
 	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChain, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxTracker, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
+	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
+	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
+	var delayedMessageFetcher DelayedMessageFetcher
+	if inboxTracker != nil {
+		delayedMessageFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		delayedMessageFetcher = messageExtractor
+	}
+	delayedSequencer, err := getDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1796,32 +1916,34 @@ func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containe
 	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
 }
 
+func (n *Node) GetParentChainDataSource() ParentChainDataSource {
+	if n.MessageExtractor != nil {
+		return n.MessageExtractor
+	}
+	if n.InboxReader != nil {
+		return n.InboxReader.GetParentChainDataSource()
+	}
+	return nil
+}
+
 func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	if n.L1Reader == nil {
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
 
 	// batches not yet posted have 0 confirmations but no error
-	var batchNum uint64
-	var found bool
-	var err error
-	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
-	} else {
-		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	pcds := n.GetParentChainDataSource()
+	if pcds == nil {
+		return containers.NewReadyPromise(uint64(0), errors.New("no parent chain data source available"))
 	}
+	batchNum, found, err := pcds.FindInboxBatchContainingMessage(msgIdx)
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
 	if !found {
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
-	var parentChainBlockNum uint64
-	if n.MessageExtractor != nil {
-		parentChainBlockNum, err = n.MessageExtractor.GetBatchParentChainBlock(batchNum)
-	} else {
-		parentChainBlockNum, err = n.InboxTracker.GetBatchParentChainBlock(batchNum)
-	}
+	parentChainBlockNum, err := pcds.GetBatchParentChainBlock(batchNum)
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
@@ -1874,14 +1996,11 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 }
 
 func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	var batchNum uint64
-	var found bool
-	var err error
-	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
-	} else {
-		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	pcds := n.GetParentChainDataSource()
+	if pcds == nil {
+		return containers.NewReadyPromise(uint64(0), errors.New("no parent chain data source available"))
 	}
+	batchNum, found, err := pcds.FindInboxBatchContainingMessage(msgIdx)
 	if err == nil && !found {
 		return containers.NewReadyPromise(uint64(0), errors.New("block not yet found on any batch"))
 	}

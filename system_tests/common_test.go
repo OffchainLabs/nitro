@@ -228,6 +228,17 @@ func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
 	}
 }
 
+func (tc *TestClient) RecalibrateNonce(t *testing.T, lInfo info) {
+	t.Helper()
+	for account, accInfo := range lInfo.Accounts {
+		if accInfo.PrivateKey != nil {
+			currNonce, err := tc.Client.PendingNonceAt(tc.ctx, lInfo.GetAddress(account))
+			Require(t, err)
+			lInfo.GetInfoWithPrivKey(account).Nonce.Store(currNonce)
+		}
+	}
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -255,7 +266,6 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	TransactionFiltering:         gethexec.DefaultSequencerConfig.TransactionFiltering,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
@@ -280,6 +290,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
+	config.TransactionFiltering.EnableETHCallFilter = false
 
 	Require(t, config.Validate())
 
@@ -600,7 +611,7 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 		panic("execConfig must be initialised before setting event filter rules")
 	}
 
-	b.execConfig.Sequencer.TransactionFiltering.EventFilter.Rules = rules
+	b.execConfig.TransactionFiltering.EventFilter.Rules = rules
 
 	return b
 }
@@ -750,9 +761,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		} else {
 			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
-	}
-	if b.nodeConfig.BlockValidator.Enable {
-		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
 	}
 }
 
@@ -1027,6 +1035,10 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		if b.WithPrestateTracerChecks {
 			AutomatedPrestateTracerTest(t, b.L2)
 		}
+		// Cancel context before stopping nodes so the StartWatchChanErr
+		// goroutine exits cleanly via ctx.Done rather than blocking on
+		// feedErrChan after shutdown.
+		b.ctxCancel()
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
@@ -1036,7 +1048,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 				t.Logf("Error shutting down ReferenceDA server: %v", err)
 			}
 		}
-		b.ctxCancel()
 	}
 }
 
@@ -1122,9 +1133,21 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		if b.WithPrestateTracerChecks {
 			AutomatedPrestateTracerTest(t, b.L2)
 		}
-		b.L2.cleanup()
+		// Cancel context before stopping nodes so the StartWatchChanErr
+		// goroutine exits cleanly via ctx.Done rather than blocking on
+		// feedErrChan after shutdown.
 		b.ctxCancel()
+		b.L2.cleanup()
 	}
+}
+
+// StopL2ForRestart cancels the builder context so the StartWatchChanErr
+// goroutine exits cleanly, cleans up the L2 node, and creates a fresh
+// builder context derived from parentCtx for subsequent Build2ndNode calls.
+func (b *NodeBuilder) StopL2ForRestart(parentCtx context.Context) {
+	b.ctxCancel()
+	b.L2.cleanup()
+	b.ctx, b.ctxCancel = context.WithCancel(parentCtx)
 }
 
 // L2 -Only. RestartL2Node shutdowns the existing l2 node and start it again using the same data dir.
@@ -1199,6 +1222,7 @@ func build2ndNode(
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
+		params.nodeConfig.MessageExtraction.Enable = firstNodeNodeConfig.MessageExtraction.Enable
 	}
 	if params.anyTrustConfig != nil {
 		params.nodeConfig.DA.AnyTrust = *params.anyTrustConfig
@@ -2189,11 +2213,18 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 		case <-ctx.Done():
 			return
 		case err := <-feedErrChan:
-			// During shutdown, ctx.Done() and feedErrChan may both be ready
-			// simultaneously and Go's select picks randomly. Ignore context
-			// cancellation errors that are expected during normal shutdown,
-			// but still report any other errors.
-			if ctx.Err() != nil && isContextError(err) {
+			// Context errors in the feedErrChan indicate node shutdown:
+			// the block validator or another component had its context
+			// cancelled while work was in-flight. Suppress these regardless
+			// of whether the test context is already done, because the node
+			// may be explicitly stopped (e.g. for pruning) before the test
+			// context is cancelled.
+			if isContextError(err) {
+				if ctx.Err() == nil {
+					t.Logf("StartWatchChanErr: suppressed context error while test context still active (possible bug): %v", err)
+				} else {
+					t.Logf("StartWatchChanErr: suppressed context error (likely shutdown): %v", err)
+				}
 				return
 			}
 			t.Errorf("error occurred: %v", err)
@@ -2285,6 +2316,55 @@ func Require(t *testing.T, err error, text ...interface{}) {
 func Fatal(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+// waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch
+// containing msgIdx is found, returning the batch number. Any error is treated
+// as immediately fatal. Calls t.Fatalf on timeout.
+func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.MessageIndex, timeout, interval time.Duration) uint64 {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		batchNum, found, err := node.GetParentChainDataSource().FindInboxBatchContainingMessage(msgIdx)
+		if err != nil {
+			t.Fatalf("FindInboxBatchContainingMessage(%d): %v", msgIdx, err)
+		}
+		if found {
+			return batchNum
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out after %v waiting for batch containing message %d", timeout, msgIdx)
+	return 0 // unreachable
+}
+
+// waitForBatchContainingMessage polls until the latest batch's message count
+// is at least msgPos. Zero batches is treated as not-yet-ready; errors from
+// batch queries are immediately fatal. Calls t.Fatalf on timeout.
+func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbutil.MessageIndex, timeout, interval time.Duration) {
+	t.Helper()
+	var lastBatchCount uint64
+	var lastMsgCount arbutil.MessageIndex
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		batches, err := node.GetParentChainDataSource().GetBatchCount()
+		if err != nil {
+			t.Fatalf("GetBatchCount: %v", err)
+		}
+		lastBatchCount = batches
+		if batches > 0 {
+			haveMessages, err := node.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
+			if err != nil {
+				t.Fatalf("GetBatchMessageCount(%d): %v", batches-1, err)
+			}
+			lastMsgCount = haveMessages
+			if haveMessages >= msgPos {
+				return
+			}
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out after %v waiting for inbox position %d (last state: %d batches, %d messages)", timeout, msgPos, lastBatchCount, lastMsgCount)
 }
 
 func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
@@ -2814,16 +2894,7 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ra
 	}
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
-	for {
-		time.Sleep(250 * time.Millisecond)
-		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-		Require(t, err)
-		haveMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
-		Require(t, err)
-		if haveMessages >= inboxPos {
-			break
-		}
-	}
+	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 60*time.Second, 250*time.Millisecond)
 	var options []inputs.WriterOption
 	options = append(options, inputs.WithTimestampDirEnabled(*testflag.RecordBlockInputsWithTimestampDirEnabled))
 	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testflag.RecordBlockInputsWithBlockIdInFileNameEnabled))

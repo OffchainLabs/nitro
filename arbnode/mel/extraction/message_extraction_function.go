@@ -210,22 +210,21 @@ func extractMessagesImpl(
 		)
 	}
 
-	// Update the delayed message accumulator in the MEL state.
+	// Update the delayed message inbox accumulator in the MEL state.
 	for _, delayed := range delayedMessages {
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
 			return nil, nil, nil, nil, err
 		}
 		state.DelayedMessagesSeen += 1
 	}
-	if len(delayedMessages) > 0 {
-		// Only need to calculate partials once, after all the delayed messages are `seen`
-		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
-			return nil, nil, nil, nil, err
-		}
-	}
 
 	// Extract L2 messages from batches
 	for i, batch := range batches {
+		// #nosec G115
+		expectedBatchSeqNum := batches[0].SequenceNumber + uint64(i)
+		if batch.SequenceNumber != expectedBatchSeqNum {
+			return nil, nil, nil, nil, fmt.Errorf("unexpected batch sequence number %v expected %v", batch.SequenceNumber, expectedBatchSeqNum)
+		}
 		serialized := serializedBatches[i]
 		rawSequencerMsg, err := parseSequencerMessage(
 			ctx,
@@ -259,10 +258,14 @@ func extractMessagesImpl(
 		}
 		state.BatchCount += 1
 		batchMetas = append(batchMetas, &mel.BatchMetadata{
+			Accumulator:         batch.AfterInboxAcc,
 			MessageCount:        arbutil.MessageIndex(state.MsgCount),
-			DelayedMessageCount: state.DelayedMessagesRead,
-			ParentChainBlock:    state.ParentChainBlockNumber,
+			DelayedMessageCount: batch.AfterDelayedCount,
+			ParentChainBlock:    batch.ParentChainBlockNumber,
 		})
+		if batch.AfterDelayedCount != state.DelayedMessagesRead {
+			return nil, nil, nil, nil, fmt.Errorf("batch AfterDelayedCount: %d and MEL state DelayedMessagesRead: %d mismatch", batch.AfterDelayedCount, state.DelayedMessagesRead)
+		}
 	}
 	return state, messages, delayedMessages, batchMetas, nil
 }
