@@ -44,6 +44,8 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
+const filteredTxReportDeliveryTimeout = 5 * time.Second
+
 type TxPreCheckerConfig struct {
 	Strictness             uint  `koanf:"strictness" reload:"hot"`
 	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
@@ -366,7 +368,9 @@ func (c *TxPreChecker) reportFilteredTx(tx *types.Transaction, header *types.Hea
 	}
 	promise := c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
 	go func(txHash common.Hash) {
-		if _, err := promise.Await(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), filteredTxReportDeliveryTimeout)
+		defer cancel()
+		if _, err := promise.Await(ctx); err != nil {
 			log.Error("failed to deliver filtered tx report", "txHash", txHash, "err", err)
 		}
 	}(tx.Hash())
