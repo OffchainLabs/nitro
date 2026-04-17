@@ -119,7 +119,7 @@ func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase)
 		// would fail against the expected cold-access range.
 		gas, err := simple.CheckGasUsed(&bind.CallOpts{Context: ctx}, c.addr, c.in)
 		Require(t, err, "Simple.CheckGasUsed failed for", c.addr)
-		if gas.Cmp(big.NewInt(int64(c.gasMin))) < 0 || gas.Cmp(big.NewInt(int64(c.gasMax))) > 0 {
+		if gas.Cmp(new(big.Int).SetUint64(c.gasMin)) < 0 || gas.Cmp(new(big.Int).SetUint64(c.gasMax)) > 0 {
 			t.Errorf("Precompile %v: gas used %v, expected in [%d, %d]",
 				c.addr, gas, c.gasMin, c.gasMax)
 		}
