@@ -277,6 +277,87 @@ where
     }
 
     /// Handle `eth_call` dispatch of
+    /// `NodeInterface.estimateRetryableTicket(...)`.
+    ///
+    /// Nitro's implementation swaps the executing message for a
+    /// SubmitRetryableTx and re-executes — the result of `eth_call` is
+    /// whatever that swapped tx produces. The submit-retryable's
+    /// observable side effect at eth_call layer is the auto-redeem's
+    /// inner call (`sender → to` with `l2CallValue` and `data`).
+    /// We simulate that equivalent call and return its raw bytes, so
+    /// clients that probe via eth_call get parity-equivalent return
+    /// data without any envelope.
+    async fn simulate_retryable_ticket_call(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+        overrides: alloy_rpc_types_eth::state::EvmOverrides,
+    ) -> Result<alloy_primitives::Bytes, EthApiError>
+    where
+        RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
+    {
+        use alloy_primitives::{Bytes, TxKind};
+        use alloy_rpc_types_eth::TransactionRequest;
+
+        const HEAD_LEN: usize = 4 + 32 * 7;
+        if input.len() < HEAD_LEN {
+            return Err(EthApiError::InvalidParams(
+                "estimateRetryableTicket: calldata too short".into(),
+            ));
+        }
+        let sender = Address::from_slice(&input[4 + 12..4 + 32]);
+        let to_word = &input[68..100];
+        let to = Address::from_slice(&to_word[12..32]);
+        let l2_call_value = U256::from_be_slice(&input[100..132]);
+        let data_offset: usize =
+            U256::from_be_slice(&input[196..228])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: invalid data offset".into(),
+                    )
+                })?;
+        let abi_body = &input[4..];
+        let data: Bytes = if data_offset + 32 <= abi_body.len() {
+            let len: usize = U256::from_be_slice(&abi_body[data_offset..data_offset + 32])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: data length too large".into(),
+                    )
+                })?;
+            if data_offset + 32 + len > abi_body.len() {
+                return Err(EthApiError::InvalidParams(
+                    "estimateRetryableTicket: data out of bounds".into(),
+                ));
+            }
+            Bytes::copy_from_slice(&abi_body[data_offset + 32..data_offset + 32 + len])
+        } else {
+            Bytes::new()
+        };
+
+        let kind = if to == Address::ZERO {
+            TxKind::Create
+        } else {
+            TxKind::Call(to)
+        };
+        let equivalent = TransactionRequest {
+            from: Some(sender),
+            to: Some(kind),
+            value: Some(l2_call_value),
+            input: data.into(),
+            ..Default::default()
+        };
+        let equivalent_req: RpcTxReq<<Rpc as RpcConvert>::Network> = equivalent.into();
+
+        let _permit = self.acquire_owned_blocking_io().await;
+        let res = self.transact_call_at(equivalent_req, at, overrides).await?;
+        <EthApiError as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(
+            res.result,
+        )
+    }
+
+    /// Handle `eth_call` dispatch of
     /// `NodeInterfaceDebug.getRetryable(bytes32 ticketId)` — reads the
     /// retryable record from storage and returns the 7-tuple
     /// `(timeout, from, to, value, beneficiary, tries, data)`.
@@ -1078,21 +1159,17 @@ where
                     }
                 }
 
-                // estimateRetryableTicket: computes submission fee + runs
-                // the constructed SubmitRetryableTx via EstimateGas to return
-                // gas needed. Nitro uses a revert-with-data pattern to return
-                // the result through eth_call. Proper implementation requires
-                // constructing the tx, simulating, and encoding Nitro's
-                // revert-result envelope — substantial work that must match
-                // Nitro's exact error layout so bridges / deposit UIs can
-                // decode correctly. Until then, return a clear error rather
-                // than a partial result that could mislead callers.
-                [0xc3, 0xdc, 0x58, 0x79] => Err(EthApiError::InvalidParams(
-                    "estimateRetryableTicket not yet implemented via RPC — \
-                         requires full Nitro-compatible submit-retryable tx construction \
-                         and revert-with-result encoding"
-                        .into(),
-                )),
+                // estimateRetryableTicket via eth_call. Nitro replaces the
+                // executing message with a SubmitRetryableTx; the call result
+                // is whatever that swapped tx produces. We simulate the
+                // observable equivalent (sender → to with l2CallValue/data)
+                // and return its raw bytes. Real bridges use eth_estimateGas
+                // (handled separately above), where the gas decomposition is
+                // also implemented.
+                [0xc3, 0xdc, 0x58, 0x79] => {
+                    self.simulate_retryable_ticket_call(&input_bytes, at, overrides)
+                        .await
+                }
 
                 // constructOutboxProof(uint64 size, uint64 leaf): scan
                 // ArbSys SendMerkleUpdate / L2ToL1Tx events, build a

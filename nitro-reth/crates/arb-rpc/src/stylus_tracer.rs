@@ -152,19 +152,22 @@ where
     arb_stylus::trace::disable();
 
     let raw = buf.lock().map(|g| g.clone()).unwrap_or_default();
-    let records = raw
-        .into_iter()
-        .map(|r| HostioTraceInfo {
-            name: r.name.to_string(),
-            args: r.args,
-            outs: r.outs,
-            start_ink: r.start_ink,
-            end_ink: r.end_ink,
-            address: r.address,
-            steps: Vec::new(),
-        })
-        .collect();
+    let records = raw.into_iter().map(translate_record).collect();
     (result, records)
+}
+
+/// Recursively translate an `arb_stylus` host record (which can carry
+/// nested sub-call records under `steps`) into the RPC trace shape.
+fn translate_record(r: arb_stylus::trace::HostioRecord) -> HostioTraceInfo {
+    HostioTraceInfo {
+        name: r.name.to_string(),
+        args: r.args,
+        outs: r.outs,
+        start_ink: r.start_ink,
+        end_ink: r.end_ink,
+        address: r.address,
+        steps: r.steps.into_iter().map(translate_record).collect(),
+    }
 }
 
 #[cfg(test)]
