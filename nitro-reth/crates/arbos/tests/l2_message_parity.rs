@@ -27,16 +27,6 @@ fn rlp_encode(payload: &[u8]) -> Vec<u8> {
     out
 }
 
-fn build_unsigned_user_tx(_chain_id: u64) -> Vec<u8> {
-    vec![0u8; 1 + 32 * 5]
-}
-
-fn build_batch_segment(inner: Vec<u8>) -> Vec<u8> {
-    let mut seg = vec![KIND_L2_MESSAGE_BATCH_INNER];
-    seg.extend_from_slice(&inner);
-    rlp_encode(&seg)
-}
-
 fn build_batch_with_inner(inner_segments: Vec<Vec<u8>>) -> Vec<u8> {
     let mut payload = vec![KIND_L2_MESSAGE_BATCH_INNER];
     for seg in inner_segments {

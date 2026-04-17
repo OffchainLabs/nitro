@@ -10,7 +10,7 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
     EvmFactory,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, bob, bob_key, deploy_contract, derive_address, fund_account, ONE_ETH,
     ONE_GWEI,
@@ -242,22 +242,19 @@ fn eip7702_delegation_with_wrong_authority_does_not_install_code() {
     let _ = run_tx(&mut s.harness, s.base_fee, chain_id, tx, alice());
 
     let authority_acct = s.harness.state().cache.accounts.get(&authority).cloned();
-    match authority_acct.and_then(|a| a.account).and_then(|a| a.info.code) {
-        Some(code) => {
-            let raw = code.original_bytes();
-            let starts_with_magic = raw.len() >= 2 && &raw[..2] == &[0xEF, 0x01];
-            let delegated_to_wrong = if raw.len() >= 22 {
-                let addr = Address::from_slice(&raw[2..22]);
-                addr == authority
-            } else {
-                false
-            };
-            assert!(
-                !starts_with_magic || !delegated_to_wrong,
-                "bob should NOT be delegated to himself via signatures from alice"
-            );
-        }
-        None => {}
+    if let Some(code) = authority_acct.and_then(|a| a.account).and_then(|a| a.info.code) {
+        let raw = code.original_bytes();
+        let starts_with_magic = raw.len() >= 2 && raw[..2] == [0xEF, 0x01];
+        let delegated_to_wrong = if raw.len() >= 22 {
+            let addr = Address::from_slice(&raw[2..22]);
+            addr == authority
+        } else {
+            false
+        };
+        assert!(
+            !starts_with_magic || !delegated_to_wrong,
+            "bob should NOT be delegated to himself via signatures from alice"
+        );
     }
 
     let _ = derive_address(alice_key());

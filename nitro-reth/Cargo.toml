@@ -197,6 +197,14 @@ type_complexity = "allow"
 result_unit_err = "allow"
 new_without_default = "allow"
 
+[profile.dev]
+debug = 0
+strip = "debuginfo"
+
+[profile.test]
+debug = 0
+strip = "debuginfo"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

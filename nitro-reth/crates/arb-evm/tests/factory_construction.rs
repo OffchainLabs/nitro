@@ -31,6 +31,7 @@ fn arb_evm_config_exposes_block_assembler() {
 }
 
 #[test]
+#[allow(clippy::default_constructed_unit_structs)]
 fn receipt_builder_is_default_constructible() {
     let _ = ArbReceiptBuilder::default();
     let _ = ArbReceiptBuilder;

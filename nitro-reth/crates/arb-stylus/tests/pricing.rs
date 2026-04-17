@@ -40,6 +40,7 @@ fn keccak_price_grows_per_word_above_two_words() {
 }
 
 #[test]
+#[allow(clippy::identity_op)]
 fn pow_price_for_zero_exponent() {
     let exp = [0u8; 32];
     assert_eq!(pow_price(&exp).0, 3000 + 1 * 17500);

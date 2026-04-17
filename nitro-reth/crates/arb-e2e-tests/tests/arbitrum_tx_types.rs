@@ -11,7 +11,7 @@ use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };
 use arb_e2e_tests::helpers::{
-    alice, balance_of, fund_account, nonce_of, ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT,
+    balance_of, fund_account, nonce_of, ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT,
 };
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};

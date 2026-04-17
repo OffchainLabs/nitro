@@ -8,7 +8,7 @@ use alloy_evm::{
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
 use arb_e2e_tests::helpers::{
     alice, alice_key, bob, bob_key, charlie, charlie_key, fund_account, recover, sign_legacy,
-    ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT,
+    ONE_ETH, ONE_GWEI, RECIPIENT,
 };
 use arb_evm::config::ArbEvmConfig;
 use arb_test_utils::ArbosHarness;

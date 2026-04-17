@@ -135,8 +135,8 @@ fn nonce_skip_rejects_second_tx() {
     ];
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
-    assert_eq!(results[0], true);
-    assert_eq!(results[1], false);
+    assert!(results[0]);
+    assert!(!results[1]);
     assert_eq!(nonce_of(s.harness.state(), alice()), 1);
 }
 
@@ -156,9 +156,9 @@ fn revert_in_middle_does_not_block_subsequent_txs() {
     ];
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
-    assert_eq!(results[0], true);
-    assert_eq!(results[1], false);
-    assert_eq!(results[2], true);
+    assert!(results[0]);
+    assert!(!results[1]);
+    assert!(results[2]);
     assert_eq!(nonce_of(s.harness.state(), alice()), 3);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send * U256::from(2u64));
 }
@@ -206,7 +206,7 @@ fn balance_drains_correctly_when_value_plus_gas_exceeds_balance_mid_block() {
     let results = run_multi_tx_block(&mut s.harness, s.base_fee, s.chain_id, txs);
 
     let successes: usize = results.iter().filter(|&&ok| ok).count();
-    assert!(successes >= 1 && successes <= 2, "expected 1 or 2 successes, got {successes}");
+    assert!((1..=2).contains(&successes), "expected 1 or 2 successes, got {successes}");
     let final_recipient = balance_of(s.harness.state(), RECIPIENT);
     assert!(final_recipient <= send * U256::from(2u64));
 }

@@ -1,4 +1,4 @@
-use alloy_primitives::{address, Address};
+use alloy_primitives::address;
 use arb_stylus::pages::{
     add_stylus_pages, get_stylus_pages, get_stylus_program_count, pop_stylus_program,
     push_stylus_program, reset_stylus_pages, set_stylus_pages_open,

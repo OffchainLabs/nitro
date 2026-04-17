@@ -159,8 +159,8 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
 /// Matches Nitro `L1IncomingMessage.ParseInitMessage`:
 ///   - len == 32: chain_id only (32 bytes), default base fee, no chain config
 ///   - len > 32: chain_id (32) || version (1 byte) || version-specific tail
-///       version 0: chain_config (rest), default base fee
-///       version 1: l1_base_fee (32) || chain_config (rest)
+///   - version 0: chain_config (rest), default base fee
+///   - version 1: l1_base_fee (32) || chain_config (rest)
 ///   - any other length (including empty): error
 pub fn parse_init_message(data: &[u8]) -> io::Result<ParsedInitMessage> {
     let default_base_fee = U256::from(DEFAULT_INITIAL_L1_BASE_FEE);

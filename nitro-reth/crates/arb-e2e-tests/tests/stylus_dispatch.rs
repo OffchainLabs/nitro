@@ -104,11 +104,8 @@ fn stylus_prefix_contract_does_not_cause_evm_invalid_opcode() {
     deploy_contract(s.harness.state(), stylus_addr, invalid_wasm, U256::ZERO);
 
     let result = call(&mut s.harness, s.base_fee, s.chain_id, stylus_addr, alice_key(), 0);
-    match result {
-        Ok(success) => {
-            assert!(!success, "Stylus dispatch with invalid WASM should fail");
-        }
-        Err(_) => {}
+    if let Ok(success) = result {
+        assert!(!success, "Stylus dispatch with invalid WASM should fail");
     }
 }
 
