@@ -405,6 +405,12 @@ func callProgram(
 			evm.StateDB.FilterTx()
 		}
 	}
+	if err != nil && strings.Contains(msg, "memory.fill value exceeds 8 bits") {
+		log.Error("memory.fill value overflow triggered")
+		if evmData.arbosVersion < 59 {
+			evm.StateDB.FilterTx()
+		}
+	}
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}

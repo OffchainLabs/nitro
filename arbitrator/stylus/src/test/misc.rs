@@ -85,6 +85,25 @@ fn test_memory_fill_value_overflow_nonzero() -> Result<()> {
 }
 
 #[test]
+fn test_memory_fill_overflow_native_trap() -> Result<()> {
+    let filename = "tests/memory-fill-overflow.wat";
+    let (compile, _, ink) = test_configs();
+
+    let mut native = NativeInstance::new_test(filename, compile)?;
+
+    let exports = &native.instance.exports;
+    let fill = exports.get_typed_function::<(), ()>(&native.store, "fill_overflow")?;
+    let err = format!("{}", native.call_func(fill, ink).unwrap_err());
+    assert!(
+        err.contains("memory.fill value exceeds 8 bits"),
+        "expected overflow error, got: {}",
+        err,
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_bulk_memory_oob() -> Result<()> {
     let filename = "tests/bulk-memory-oob.wat";
     let (compile, _, ink) = test_configs();
