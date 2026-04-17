@@ -1053,6 +1053,7 @@ dependencies = [
  "arb-primitives",
  "arb-storage",
  "arb-stylus",
+ "arb-test-utils",
  "arbos",
  "reth-chainspec",
  "reth-ethereum-primitives",
