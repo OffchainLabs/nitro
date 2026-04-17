@@ -527,9 +527,7 @@ func ProduceBlockAdvanced(
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
 			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
-				// Capture everything before rollback — addressCheckerState
-				// survives RevertToSnapshot (not journal-tracked) but is lost
-				// once rollbackToGroupCheckpoint replaces the statedb.
+				// Capture everything before rollback — addressCheckerStateß
 				cp := buildState.activeGroupCP
 				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
 				originatingTx := buildState.complete[cp.completeLen]
