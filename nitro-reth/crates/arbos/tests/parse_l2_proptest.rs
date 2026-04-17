@@ -46,9 +46,8 @@ proptest! {
 }
 
 #[test]
-fn empty_message_returns_no_txs() {
-    let res = parse_l2_transactions(3, Address::ZERO, &[], None, None, 42_161).unwrap();
-    assert!(res.is_empty());
+fn empty_l2_message_returns_err() {
+    assert!(parse_l2_transactions(3, Address::ZERO, &[], None, None, 42_161).is_err());
 }
 
 #[test]

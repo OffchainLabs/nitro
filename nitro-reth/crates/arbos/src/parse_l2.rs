@@ -135,6 +135,9 @@ pub fn parse_l2_transactions(
     }
 }
 
+/// Batch-nesting limit matching Nitro (`depth >= 16` → error).
+const MAX_L2_MESSAGE_BATCH_DEPTH: u32 = 16;
+
 #[allow(clippy::only_used_in_recursion)]
 fn parse_l2_message(
     data: &[u8],
@@ -143,9 +146,11 @@ fn parse_l2_message(
     depth: u32,
     chain_id: u64,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
-    const MAX_DEPTH: u32 = 16;
-    if depth > MAX_DEPTH || data.is_empty() {
-        return Ok(vec![]);
+    if data.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "L2 message is empty (missing kind byte)",
+        ));
     }
 
     let kind = data[0];
@@ -186,6 +191,12 @@ fn parse_l2_message(
             Ok(vec![tx])
         }
         L2_MESSAGE_KIND_BATCH => {
+            if depth >= MAX_L2_MESSAGE_BATCH_DEPTH {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "L2 message batches have a max depth of 16",
+                ));
+            }
             let mut reader = Cursor::new(payload);
             let mut txs = Vec::new();
             let mut index: u64 = 0;
