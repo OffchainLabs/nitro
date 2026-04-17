@@ -19,6 +19,7 @@ pub mod nodeinterface_rpc;
 pub mod outbox_proof;
 pub mod receipt;
 pub mod response;
+pub mod stylus_debug;
 pub mod stylus_tracer;
 pub mod transaction;
 pub mod types;

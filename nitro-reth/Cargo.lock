@@ -1260,6 +1260,7 @@ dependencies = [
  "alloy-network",
  "alloy-primitives",
  "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
  "alloy-serde",
  "arb-alloy-consensus",
  "arb-evm",
