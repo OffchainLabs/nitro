@@ -50,6 +50,12 @@ pub trait ArbApi {
     /// merge the EVM opcode trace with the Stylus host calls.
     #[method(name = "traceStylusHostio")]
     async fn trace_stylus_hostio(&self, tx_hash: B256) -> RpcResult<Vec<HostioTraceInfo>>;
+
+    /// Returns the currently-set validated block hash, as propagated
+    /// via `nitroexecution_setFinalityData`. Returns the zero hash
+    /// when no validated marker is set.
+    #[method(name = "getValidatedBlock")]
+    fn get_validated_block(&self) -> RpcResult<B256>;
 }
 
 /// Implementation of the `arb_` RPC namespace.
@@ -57,6 +63,8 @@ pub struct ArbApiHandler<Provider> {
     provider: Provider,
     /// Current maintenance mode status.
     maintenance_status: Arc<parking_lot::RwLock<ArbMaintenanceStatus>>,
+    /// Current validated block hash set by `nitroexecution_setFinalityData`.
+    validated_block: Arc<parking_lot::RwLock<B256>>,
 }
 
 impl<Provider> ArbApiHandler<Provider> {
@@ -65,12 +73,19 @@ impl<Provider> ArbApiHandler<Provider> {
         Self {
             provider,
             maintenance_status: Arc::new(parking_lot::RwLock::new(ArbMaintenanceStatus::default())),
+            validated_block: Arc::new(parking_lot::RwLock::new(B256::ZERO)),
         }
     }
 
     /// Returns a reference to the maintenance status lock for external updates.
     pub fn maintenance_status_handle(&self) -> Arc<parking_lot::RwLock<ArbMaintenanceStatus>> {
         self.maintenance_status.clone()
+    }
+
+    /// Returns a shared handle the block producer uses to push
+    /// validated-block updates from `setFinalityData`.
+    pub fn validated_block_handle(&self) -> Arc<parking_lot::RwLock<B256>> {
+        self.validated_block.clone()
     }
 }
 
@@ -130,17 +145,13 @@ where
 
     async fn trace_stylus_hostio(
         &self,
-        _tx_hash: B256,
+        tx_hash: B256,
     ) -> RpcResult<Vec<crate::stylus_tracer::HostioTraceInfo>> {
-        // Stylus host-I/O trace is captured live during tx execution
-        // via the per-thread trace::ACTIVE buffer. Re-tracing a
-        // historical tx requires replaying it under that buffer
-        // installed — the standard reth `debug_traceTransaction`
-        // pipeline performs the replay but doesn't currently install
-        // our buffer. Returning an empty record set keeps the API
-        // shape stable so clients can call this method and merge with
-        // their `debug_traceTransaction` output without erroring.
-        Ok(Vec::new())
+        Ok(crate::stylus_tracer::take_cached_trace(tx_hash))
+    }
+
+    fn get_validated_block(&self) -> RpcResult<B256> {
+        Ok(*self.validated_block.read())
     }
 
     async fn get_raw_block_metadata(

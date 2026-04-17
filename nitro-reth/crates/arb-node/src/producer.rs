@@ -9,8 +9,9 @@ use std::sync::{
 };
 
 use alloy_consensus::{
-    proofs, transaction::SignerRecoverable, Block, BlockBody, BlockHeader, Header, TxReceipt,
-    EMPTY_OMMER_ROOT_HASH,
+    proofs,
+    transaction::{SignerRecoverable, TxHashRef},
+    Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
 };
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::{
@@ -86,6 +87,10 @@ pub struct ArbBlockProducer<Provider> {
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
     /// Finality markers propagated by `nitroexecution_setFinalityData`.
     finality: Mutex<FinalityMarkers>,
+    /// External shared slot pushed to on every set_finality update so
+    /// the `arb_getValidatedBlock` RPC handler can read it without
+    /// holding a strong reference to the producer.
+    validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<alloy_primitives::B256>>>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -121,6 +126,7 @@ where
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
+            validated_watcher: Mutex::new(None),
         }
     }
 
@@ -448,11 +454,18 @@ where
                     continue;
                 }
             };
-            match executor.execute_transaction_without_commit(recovered) {
+            let tx_hash = *signed_tx.tx_hash();
+            let (exec_outcome, hostio_records) = arb_rpc::stylus_tracer::with_trace_buffer(|| {
+                executor.execute_transaction_without_commit(recovered)
+            });
+            match exec_outcome {
                 Ok(result) => {
                     match executor.commit_transaction(result) {
                         Ok(_gas_used) => {
                             all_txs.push(signed_tx);
+                            if !hostio_records.is_empty() {
+                                arb_rpc::stylus_tracer::cache_trace(tx_hash, hostio_records);
+                            }
 
                             // Drain and execute any scheduled txs (auto-redeems).
                             // After a SubmitRetryable or manual Redeem precompile call,
@@ -473,17 +486,31 @@ where
                                         ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok();
                                     if let Some(retry_tx) = retry_tx {
                                         let retry_signed = retry_tx.clone();
+                                        let retry_hash = *retry_signed.tx_hash();
                                         match retry_tx.try_into_recovered() {
                                             Ok(recovered_retry) => {
-                                                match executor.execute_transaction_without_commit(
-                                                    recovered_retry,
-                                                ) {
+                                                let (retry_outcome, retry_records) =
+                                                    arb_rpc::stylus_tracer::with_trace_buffer(
+                                                        || {
+                                                            executor
+                                                                .execute_transaction_without_commit(
+                                                                    recovered_retry,
+                                                                )
+                                                        },
+                                                    );
+                                                match retry_outcome {
                                                     Ok(retry_result) => {
                                                         match executor
                                                             .commit_transaction(retry_result)
                                                         {
                                                             Ok(_) => {
                                                                 all_txs.push(retry_signed);
+                                                                if !retry_records.is_empty() {
+                                                                    arb_rpc::stylus_tracer::cache_trace(
+                                                                        retry_hash,
+                                                                        retry_records,
+                                                                    );
+                                                                }
                                                             }
                                                             Err(e) => {
                                                                 warn!(
@@ -919,6 +946,16 @@ where
                 ))
             })?;
 
+        // Drain any in-flight flush before unwinding so disk state is consistent.
+        if self.pending_flush.load(Ordering::SeqCst) {
+            if let Some(result) = crate::launcher::try_flush_result() {
+                self.in_memory_state
+                    .remove_persisted_blocks(result.last_num_hash);
+                *self.flushing_trie_input.lock() = None;
+                self.pending_flush.store(false, Ordering::SeqCst);
+            }
+        }
+
         // Walk blocks above target in the in-memory state and gather
         // them as "old" for a reorg. Without them, the canonical head
         // points at the truncated block but consumers still see the
@@ -947,6 +984,27 @@ where
         // extends from the new head.
         self.head_block_num
             .store(target_block_number, Ordering::SeqCst);
+
+        // Also remove persisted blocks above target from disk. The worker
+        // thread runs this serially with flushes to avoid races.
+        if let Some(rx) = crate::launcher::start_unwind(target_block_number) {
+            match rx.recv() {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    return Err(BlockProducerError::Storage(format!(
+                        "unwind above {target_block_number}: {e}"
+                    )));
+                }
+                Err(e) => {
+                    return Err(BlockProducerError::Storage(format!(
+                        "unwind channel closed: {e}"
+                    )));
+                }
+            }
+        }
+
+        // Invalidate any trie-input carrying the now-removed blocks.
+        *self.accumulated_trie_input.lock() = Default::default();
 
         info!(
             target: "block_producer",
@@ -989,11 +1047,19 @@ where
                 self.in_memory_state.set_finalized(sealed);
             }
         }
-        // `validated` is tracked in our own finality markers above.
-        // Reth exposes only safe/finalized publicly; we surface the
-        // validated marker via our own finality_markers() getter.
-        let _ = validated;
+        // `validated` is Arbitrum-specific — reth's canonical state
+        // exposes only safe/finalized. Push to the external watcher
+        // so `arb_getValidatedBlock` RPC returns the latest value.
+        if let Some(h) = validated {
+            if let Some(w) = self.validated_watcher.lock().as_ref() {
+                *w.write() = h;
+            }
+        }
         Ok(())
+    }
+
+    fn attach_validated_watcher(&self, watcher: Arc<parking_lot::RwLock<alloy_primitives::B256>>) {
+        *self.validated_watcher.lock() = Some(watcher);
     }
 }
 

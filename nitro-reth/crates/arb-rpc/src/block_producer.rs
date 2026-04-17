@@ -4,6 +4,8 @@
 //! The concrete implementation lives in `arb-node` where it has access
 //! to the full node infrastructure (database, EVM config, state).
 
+use std::sync::Arc;
+
 use alloy_primitives::B256;
 
 /// Result of producing a block.
@@ -118,4 +120,12 @@ pub trait BlockProducer: Send + Sync + 'static {
     ) -> Result<(), BlockProducerError> {
         Ok(())
     }
+
+    /// Attach an external validated-block watcher. The producer should
+    /// write the current validated marker into the provided shared
+    /// slot on every `set_finality` call so RPC handlers (which hold
+    /// the same handle) can surface the value.
+    ///
+    /// No-op by default; concrete producers override.
+    fn attach_validated_watcher(&self, _watcher: Arc<parking_lot::RwLock<B256>>) {}
 }
