@@ -168,6 +168,8 @@ func TestAnyTrustRekey(t *testing.T) {
 	}
 	l2B, cleanup := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanup()
+
+	builder.L2.RecalibrateNonce(t, builder.L2Info)
 	checkBatchPosting(t, ctx, builder, l2B.Client)
 }
 
