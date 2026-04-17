@@ -690,14 +690,12 @@ where
                 // Nitro's exact error layout so bridges / deposit UIs can
                 // decode correctly. Until then, return a clear error rather
                 // than a partial result that could mislead callers.
-                [0xc3, 0xdc, 0x58, 0x79] => {
-                    Err(EthApiError::InvalidParams(
-                        "estimateRetryableTicket not yet implemented via RPC — \
+                [0xc3, 0xdc, 0x58, 0x79] => Err(EthApiError::InvalidParams(
+                    "estimateRetryableTicket not yet implemented via RPC — \
                          requires full Nitro-compatible submit-retryable tx construction \
                          and revert-with-result encoding"
-                            .into(),
-                    ))
-                }
+                        .into(),
+                )),
 
                 // constructOutboxProof: generates a Merkle proof of an
                 // L2→L1 message send against the outbox tree at the given
@@ -708,13 +706,11 @@ where
                 // it wrong produces invalid withdrawal proofs. Return a
                 // clear error until properly implemented against Nitro's
                 // reference (see arbos/merkleAccumulator + NodeInterface.go).
-                [0x42, 0x69, 0x63, 0x50] => {
-                    Err(EthApiError::InvalidParams(
-                        "constructOutboxProof not yet implemented via RPC — \
+                [0x42, 0x69, 0x63, 0x50] => Err(EthApiError::InvalidParams(
+                    "constructOutboxProof not yet implemented via RPC — \
                          requires L2ToL1Tx log scan + Merkle tree reconstruction"
-                            .into(),
-                    ))
-                }
+                        .into(),
+                )),
 
                 _ => {
                     // Delegate to EVM (precompile returns zero / reverts).
@@ -726,4 +722,3 @@ where
         }
     }
 }
-

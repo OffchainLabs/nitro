@@ -57,8 +57,25 @@ pub fn uint64_to_writer<W: Write>(w: &mut W, val: u64) -> io::Result<()> {
 }
 
 /// Reads a length-prefixed byte string from a reader.
+///
+/// Caps the declared length at `MAX_BYTESTRING_LEN` to prevent an
+/// attacker-controlled prefix from triggering a huge allocation (DoS).
+/// Any L2 message exceeds this is well past the protocol's 256KiB
+/// segment size, so rejecting matches the spec.
 pub fn bytestring_from_reader<R: Read>(r: &mut R) -> io::Result<Vec<u8>> {
-    let len = uint64_from_reader(r)? as usize;
+    /// 1 MiB — generous upper bound; real L2 segments cap at 256 KiB
+    /// (see `MAX_L2_MESSAGE_SIZE`). Keeps headroom for non-segment use
+    /// sites without opening a DoS vector.
+    const MAX_BYTESTRING_LEN: u64 = 1 << 20;
+
+    let len_u64 = uint64_from_reader(r)?;
+    if len_u64 > MAX_BYTESTRING_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("byte-string length {len_u64} exceeds max {MAX_BYTESTRING_LEN}"),
+        ));
+    }
+    let len = len_u64 as usize;
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf)?;
     Ok(buf)

@@ -400,10 +400,18 @@ fn parse_submit_retryable_message(
     let gas_feature_cap = uint256_from_reader(&mut reader)?;
 
     // Data length is encoded as a 32-byte hash, then raw bytes follow.
+    // Cap the declared length at MAX_L2_MESSAGE_SIZE to prevent an
+    // attacker from triggering a huge allocation (DoS).
     let data_length_hash = hash_from_reader(&mut reader)?;
-    let data_length = U256::from_be_bytes(data_length_hash.0)
+    let data_length: usize = U256::from_be_bytes(data_length_hash.0)
         .try_into()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "data length too large"))?;
+    if data_length > MAX_L2_MESSAGE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("data length {data_length} exceeds MAX_L2_MESSAGE_SIZE {MAX_L2_MESSAGE_SIZE}"),
+        ));
+    }
     let mut calldata = vec![0u8; data_length];
     if data_length > 0 {
         io::Read::read_exact(&mut reader, &mut calldata)?;
