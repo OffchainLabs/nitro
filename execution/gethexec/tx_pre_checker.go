@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/retryables"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -65,25 +68,32 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc                 *core.BlockChain
-	config             TxPreCheckerConfigFetcher
-	expressLaneTracker *timeboost.ExpressLaneTracker
-	backend            core.NodeInterfaceBackendAPI
+	bc                       *core.BlockChain
+	config                   TxPreCheckerConfigFetcher
+	expressLaneTracker       *timeboost.ExpressLaneTracker
+	backend                  core.NodeInterfaceBackendAPI
+	filteringReportRPCClient *FilteringReportRPCClient
 }
 
 func NewTxPreChecker(
 	publisher TransactionPublisher,
 	bc *core.BlockChain,
-	config TxPreCheckerConfigFetcher) *TxPreChecker {
+	config TxPreCheckerConfigFetcher,
+	filteringReportRPCClient *FilteringReportRPCClient) *TxPreChecker {
 	return &TxPreChecker{
-		TransactionPublisher: publisher,
-		bc:                   bc,
-		config:               config,
+		TransactionPublisher:     publisher,
+		bc:                       bc,
+		config:                   config,
+		filteringReportRPCClient: filteringReportRPCClient,
 	}
 }
 
 func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {
 	c.backend = backend
+}
+
+func (c *TxPreChecker) SetFilteringReportRPCClient(client *FilteringReportRPCClient) {
+	c.filteringReportRPCClient = client
 }
 
 type NonceError struct {
@@ -315,7 +325,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 	}
 	msg.SkipNonceChecks = true
 
-	_, err = gasestimator.Run(ctx, msg, &gasestimator.Options{
+	_, filteredAddresses, err := gasestimator.Run(ctx, msg, &gasestimator.Options{
 		Config:           c.bc.Config(),
 		Chain:            c.bc,
 		Header:           header,
@@ -324,9 +334,41 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
+		if reportErr := c.reportFilteredTx(tx, header, filteredAddresses); reportErr != nil {
+			log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
+		}
 		return err
 	}
 	// Other execution errors are ignored since the pre-check is only concerned
 	// with address filtering results, not with exact execution results.
+	return nil
+}
+
+func (c *TxPreChecker) reportFilteredTx(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord) error {
+	if c.filteringReportRPCClient == nil {
+		return nil
+	}
+	txRLP, err := tx.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal filtered tx: %w", err)
+	}
+	report := addressfilter.FilteredTxReport{
+		ID:                uuid.Must(uuid.NewV7()).String(),
+		TxHash:            tx.Hash(),
+		TxRLP:             txRLP,
+		FilteredAddresses: filteredAddresses,
+		BlockNumber:       header.Number.Uint64(),
+		ParentBlockHash:   header.ParentHash,
+		PositionInBlock:   0,
+		FilteredAt:        time.Now().UTC(),
+		IsDelayed:         false,
+		DelayedReportData: nil,
+	}
+	promise := c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
+	go func(txHash common.Hash) {
+		if _, err := promise.Await(context.Background()); err != nil {
+			log.Error("failed to deliver filtered tx report", "txHash", txHash, "err", err)
+		}
+	}(tx.Hash())
 	return nil
 }

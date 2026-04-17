@@ -4,6 +4,7 @@
 package gethexec
 
 import (
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -28,10 +29,10 @@ func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transactio
 	touchAddresses(statedb, tx, sender)
 }
 
-func (f *txFilterer) CheckFiltered(statedb *state.StateDB) error {
+func (f *txFilterer) CheckFiltered(statedb *state.StateDB) ([]filter.FilteredAddressRecord, error) {
 	applyEventFilter(f.eventFilter, statedb)
-	if filtered, _ := statedb.IsAddressFiltered(); filtered {
-		return state.ErrArbTxFilter
+	if filtered, records := statedb.IsAddressFiltered(); filtered {
+		return records, state.ErrArbTxFilter
 	}
-	return nil
+	return nil, nil
 }
