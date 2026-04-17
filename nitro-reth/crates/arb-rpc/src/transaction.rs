@@ -46,7 +46,13 @@ impl SignableTxRequest<ArbTransactionSigned> for ArbTransactionRequest {
 
 impl TryIntoSimTx<ArbTransactionSigned> for ArbTransactionRequest {
     fn try_into_sim_tx(self) -> Result<ArbTransactionSigned, ValueError<Self>> {
-        Err(ValueError::new(self, "simulate_v1 not yet supported"))
+        // Build the typed simulation tx via alloy's reference impl (fills in
+        // defaults for missing fields and wraps with a placeholder signature),
+        // then wrap into the Arbitrum envelope.
+        match TransactionRequest::build_typed_simulate_transaction(self.0.clone()) {
+            Ok(envelope) => Ok(ArbTransactionSigned::from_envelope(envelope)),
+            Err(err) => Err(ValueError::new(self, err.to_string())),
+        }
     }
 }
 

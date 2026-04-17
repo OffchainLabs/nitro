@@ -229,11 +229,63 @@ where
     async fn reorg(
         &self,
         msg_idx_of_first_msg_to_add: u64,
-        _new_messages: Vec<RpcMessageWithMetadataAndBlockInfo>,
+        new_messages: Vec<RpcMessageWithMetadataAndBlockInfo>,
         _old_messages: Vec<RpcMessageWithMetadata>,
     ) -> RpcResult<Vec<RpcMessageResult>> {
-        warn!(target: "nitroexecution", msg_idx_of_first_msg_to_add, "Reorg not yet implemented");
-        Err(internal_error("Reorg not yet implemented"))
+        info!(
+            target: "nitroexecution",
+            msg_idx_of_first_msg_to_add,
+            new_msgs = new_messages.len(),
+            "reorg"
+        );
+
+        // Roll back to the last kept block = (first divergent msg) - 1.
+        // Message i corresponds to block (genesis + i), so reset head to
+        // genesis + (msg_idx_of_first_msg_to_add - 1). If the target is
+        // before genesis, reset to genesis.
+        let target_block = msg_idx_of_first_msg_to_add
+            .saturating_sub(1)
+            .saturating_add(self.genesis_block_num);
+
+        self.block_producer
+            .reset_to_block(target_block)
+            .await
+            .map_err(|e| internal_error(format!("reset_to_block: {e}")))?;
+
+        // Replay new messages on top of the rolled-back head.
+        let mut results = Vec::with_capacity(new_messages.len());
+        for (i, wrapped) in new_messages.into_iter().enumerate() {
+            let msg_idx = msg_idx_of_first_msg_to_add + i as u64;
+            let meta = wrapped.message;
+            let l2_msg = decode_l2_msg(&meta.message.l2_msg).map_err(internal_error)?;
+            let batch_data_stats = meta
+                .message
+                .batch_data_tokens
+                .as_ref()
+                .map(|s| (s.length, s.nonzeros));
+            let input = BlockProductionInput {
+                kind: meta.message.header.kind,
+                sender: meta.message.header.sender,
+                l1_block_number: meta.message.header.block_number,
+                l1_timestamp: meta.message.header.timestamp,
+                request_id: meta.message.header.request_id,
+                l1_base_fee: meta.message.header.base_fee_l1,
+                l2_msg,
+                delayed_messages_read: meta.delayed_messages_read,
+                batch_gas_cost: meta.message.batch_gas_cost,
+                batch_data_stats,
+            };
+            let produced = self
+                .block_producer
+                .produce_block(msg_idx, input)
+                .await
+                .map_err(|e| internal_error(format!("reorg replay msg {msg_idx}: {e}")))?;
+            results.push(RpcMessageResult {
+                block_hash: produced.block_hash,
+                send_root: produced.send_root,
+            });
+        }
+        Ok(results)
     }
 
     async fn head_message_index(&self) -> RpcResult<u64> {
@@ -270,6 +322,13 @@ where
         validated: Option<RpcFinalityData>,
     ) -> RpcResult<()> {
         debug!(target: "nitroexecution", ?safe, ?finalized, ?validated, "setFinalityData");
+        self.block_producer
+            .set_finality(
+                safe.map(|f| f.block_hash),
+                finalized.map(|f| f.block_hash),
+                validated.map(|f| f.block_hash),
+            )
+            .map_err(|e| internal_error(format!("set_finality: {e}")))?;
         Ok(())
     }
 

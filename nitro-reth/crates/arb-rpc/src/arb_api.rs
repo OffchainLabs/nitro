@@ -11,7 +11,7 @@ use alloy_rpc_types_eth::BlockNumberOrTag;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 
-use crate::{ArbBlockInfo, ArbMaintenanceStatus};
+use crate::{ArbBlockInfo, ArbMaintenanceStatus, NumberAndBlockMetadata};
 
 /// Arbitrum `arb_` RPC namespace.
 #[rpc(server, namespace = "arb")]
@@ -27,6 +27,18 @@ pub trait ArbApi {
     /// Returns block info for the given block number.
     #[method(name = "getBlockInfo")]
     async fn get_block_info(&self, block_num: u64) -> RpcResult<ArbBlockInfo>;
+
+    /// Returns the raw block metadata for blocks in `[fromBlock, toBlock]`.
+    ///
+    /// Used by Nitro consensus layer for bulk metadata sync. arbreth does
+    /// not persist separate block metadata; each entry's `rawMetadata` is
+    /// empty, matching the Nitro schema for blocks with no sidecar data.
+    #[method(name = "getRawBlockMetadata")]
+    async fn get_raw_block_metadata(
+        &self,
+        from_block: u64,
+        to_block: u64,
+    ) -> RpcResult<Vec<NumberAndBlockMetadata>>;
 }
 
 /// Implementation of the `arb_` RPC namespace.
@@ -103,5 +115,60 @@ where
             send_count,
             send_root,
         })
+    }
+
+    async fn get_raw_block_metadata(
+        &self,
+        from_block: u64,
+        to_block: u64,
+    ) -> RpcResult<Vec<NumberAndBlockMetadata>> {
+        if from_block > to_block {
+            return Err(jsonrpsee::types::ErrorObject::owned(
+                jsonrpsee::types::error::INVALID_PARAMS_CODE,
+                format!("from_block ({from_block}) > to_block ({to_block})"),
+                None::<()>,
+            ));
+        }
+        // Cap the range to protect the node from huge scans. Matches a
+        // reasonable upper bound while still serving typical sync queries.
+        const MAX_RANGE: u64 = 5_000;
+        if to_block.saturating_sub(from_block) + 1 > MAX_RANGE {
+            return Err(jsonrpsee::types::ErrorObject::owned(
+                jsonrpsee::types::error::INVALID_PARAMS_CODE,
+                format!("range exceeds {MAX_RANGE} blocks"),
+                None::<()>,
+            ));
+        }
+        let best = self.provider.best_block_number().map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(
+                jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+                e.to_string(),
+                None::<()>,
+            )
+        })?;
+        let clamped_to = to_block.min(best);
+        let mut out = Vec::with_capacity(
+            (clamped_to.saturating_sub(from_block) + 1).min(MAX_RANGE) as usize,
+        );
+        for block_number in from_block..=clamped_to {
+            // Block must exist — verify via header lookup; else skip.
+            let maybe = self
+                .provider
+                .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(block_number))
+                .map_err(|e| {
+                    jsonrpsee::types::ErrorObject::owned(
+                        jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+                        e.to_string(),
+                        None::<()>,
+                    )
+                })?;
+            if maybe.is_some() {
+                out.push(NumberAndBlockMetadata {
+                    block_number,
+                    raw_metadata: alloy_primitives::Bytes::new(),
+                });
+            }
+        }
+        Ok(out)
     }
 }

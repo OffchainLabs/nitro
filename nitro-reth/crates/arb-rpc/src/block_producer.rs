@@ -82,4 +82,43 @@ pub trait BlockProducer: Send + Sync + 'static {
         msg_idx: u64,
         input: BlockProductionInput,
     ) -> Result<ProducedBlock, BlockProducerError>;
+
+    /// Reset the canonical chain head to the given block number.
+    ///
+    /// Used by `nitroexecution_reorg` to roll back state before replaying
+    /// divergent messages. The concrete implementation should truncate
+    /// blocks above `target_block_number` from the canonical chain,
+    /// making that block the new head. Receipts and transactions above
+    /// the target should be removed.
+    ///
+    /// Default implementation returns an "unsupported" error. Node
+    /// implementations that support reorg should override this.
+    async fn reset_to_block(
+        &self,
+        _target_block_number: u64,
+    ) -> Result<(), BlockProducerError> {
+        Err(BlockProducerError::Unexpected(
+            "reset_to_block not supported by this producer".into(),
+        ))
+    }
+
+    /// Mark finality metadata (safe / finalized / validated block hashes)
+    /// on the canonical chain.
+    ///
+    /// Nitro's consensus layer calls `setFinalityData` periodically to
+    /// propagate finality information derived from L1 confirmations.
+    /// The execution client should store these markers so that RPC
+    /// queries like `eth_getBlockByNumber("finalized")` return the
+    /// correct block.
+    ///
+    /// Default impl is a no-op; node implementations override if they
+    /// support finality tracking.
+    fn set_finality(
+        &self,
+        _safe: Option<B256>,
+        _finalized: Option<B256>,
+        _validated: Option<B256>,
+    ) -> Result<(), BlockProducerError> {
+        Ok(())
+    }
 }

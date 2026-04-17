@@ -63,3 +63,17 @@ pub struct ArbBlockInfo {
 pub struct ArbMaintenanceStatus {
     pub is_running: bool,
 }
+
+/// Nitro-parity response for `arb_getRawBlockMetadata`.
+///
+/// Per block in the queried range, returns the block number and the raw
+/// metadata bytes. In arbreth we currently do not maintain a separate
+/// metadata sidecar (Nitro's `bulkBlockMetadataFetcher`), so the bytes
+/// are empty — consumers should interpret "empty rawMetadata" as "no
+/// metadata stored", which matches the Nitro schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NumberAndBlockMetadata {
+    pub block_number: u64,
+    pub raw_metadata: alloy_primitives::Bytes,
+}
