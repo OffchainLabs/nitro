@@ -412,6 +412,68 @@ func TestGet(t *testing.T) {
 	}
 }
 
+// TestBacklogSizeInBytesReleasesLockOnError ensures backlogSizeInBytes does
+// not leak the segment RLock on its error paths. A leaked RLock would block
+// every future writer on that segment (and, under Go's write-preferring
+// RWMutex, every subsequent reader as well), deadlocking the backlog.
+func TestBacklogSizeInBytesReleasesLockOnError(t *testing.T) {
+	assertLockReleased := func(t *testing.T, name string, seg *backlogSegment) {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			seg.messagesLock.Lock()
+			seg.messagesLock.Unlock()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s.messagesLock was left held after backlogSizeInBytes returned an error", name)
+		}
+	}
+
+	newBacklog := func() *backlog {
+		b := &backlog{config: func() *Config { return &DefaultTestConfig }}
+		b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
+		return b
+	}
+
+	t.Run("EmptyTail", func(t *testing.T) {
+		b := newBacklog()
+		head := newBacklogSegment()
+		head.messages = message.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40})
+		tail := newBacklogSegment()
+		head.nextSegment.Store(tail)
+		b.head.Store(head)
+		b.tail.Store(tail)
+
+		_, err := b.backlogSizeInBytes()
+		const want = "tail segment of the feed backlog is empty"
+		if err == nil || err.Error() != want {
+			t.Fatalf("expected error %q, got %v", want, err)
+		}
+		assertLockReleased(t, "tail", tail)
+		assertLockReleased(t, "head", head)
+	})
+
+	t.Run("EmptyHead", func(t *testing.T) {
+		b := newBacklog()
+		head := newBacklogSegment()
+		tail := newBacklogSegment()
+		tail.messages = message.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40})
+		head.nextSegment.Store(tail)
+		b.head.Store(head)
+		b.tail.Store(tail)
+
+		_, err := b.backlogSizeInBytes()
+		const want = "head segment of the feed backlog is empty"
+		if err == nil || err.Error() != want {
+			t.Fatalf("expected error %q, got %v", want, err)
+		}
+		assertLockReleased(t, "head", head)
+	})
+}
+
 // TestBacklogRaceCondition performs read & write operations in separate
 // goroutines to ensure that the backlog does not have race conditions. The
 // `go test -race` command can be used to test this.
