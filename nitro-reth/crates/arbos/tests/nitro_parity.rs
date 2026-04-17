@@ -458,8 +458,6 @@ mod l1_pricing_surplus {
 mod retryable_submission_fee_overflow {
     use super::*;
 
-    /// Nitro `RetryableSubmissionFee` does NOT cap calldata length. Very large
-    /// values must compute without panic.
     #[test]
     fn submission_fee_handles_large_calldata_without_overflow() {
         let l1 = U256::from(ONE_GWEI);
@@ -469,12 +467,107 @@ mod retryable_submission_fee_overflow {
         assert_eq!(fee, expected);
     }
 
-    /// `1400 + 6 * usize::MAX` would overflow u64. Our impl converts via
-    /// `as u64` which truncates — verify behavior at the edge.
     #[test]
     fn submission_fee_calldata_at_u64_max_does_not_panic() {
         let l1 = U256::from(1u64);
         let len = u64::MAX as usize;
         let _ = retryable_submission_fee(len, l1);
+    }
+
+    #[test]
+    fn submission_fee_with_u256_max_l1_base_fee_does_not_panic() {
+        let _ = retryable_submission_fee(100, U256::MAX);
+    }
+}
+
+mod compute_poster_gas_overflow {
+    use super::*;
+    use arbos::tx_processor::compute_poster_gas;
+
+    #[test]
+    fn compute_poster_gas_with_u256_max_cost_does_not_panic() {
+        let _ = compute_poster_gas(U256::MAX, U256::from(ONE_GWEI), false, U256::ZERO);
+    }
+
+    #[test]
+    fn compute_poster_gas_with_u256_max_cost_estimation_mode_does_not_panic() {
+        let _ = compute_poster_gas(U256::MAX, U256::from(ONE_GWEI), true, U256::from(ONE_GWEI / 2));
+    }
+
+    #[test]
+    fn compute_poster_gas_returns_u64_max_when_cost_overflows() {
+        let huge = U256::MAX;
+        let g = compute_poster_gas(huge, U256::from(1u64), false, U256::ZERO);
+        assert_eq!(g, u64::MAX);
+    }
+}
+
+mod compute_retryable_gas_split_overflow {
+    use super::*;
+    use arbos::tx_processor::compute_retryable_gas_split;
+    use alloy_primitives::Address;
+
+    #[test]
+    fn retryable_gas_split_with_u64_max_gas_does_not_panic() {
+        let _ = compute_retryable_gas_split(
+            u64::MAX,
+            U256::from(ONE_GWEI),
+            Address::ZERO,
+            U256::ZERO,
+            10,
+        );
+    }
+
+    #[test]
+    fn retryable_gas_split_with_max_base_fee_does_not_panic() {
+        let _ = compute_retryable_gas_split(
+            1_000_000,
+            U256::MAX,
+            Address::ZERO,
+            U256::ZERO,
+            10,
+        );
+    }
+}
+
+
+mod retryable_lifecycle_edge_cases {
+    use super::*;
+    use alloy_primitives::{address, B256};
+
+    #[test]
+    fn open_retryable_at_u64_max_timestamp_does_not_panic() {
+        let mut h = ArbosHarness::new().initialize();
+        let rs = h.retryable_state();
+        let id = B256::repeat_byte(0xCC);
+        rs.create_retryable(
+            id,
+            u64::MAX,
+            address!("AAAA000000000000000000000000000000000000"),
+            None,
+            U256::from(1u64),
+            address!("BBBB000000000000000000000000000000000000"),
+            &[],
+        )
+        .unwrap();
+        let _ = rs.open_retryable(id, u64::MAX);
+    }
+
+    #[test]
+    fn create_retryable_with_max_calldata_size() {
+        let mut h = ArbosHarness::new().initialize();
+        let rs = h.retryable_state();
+        let id = B256::repeat_byte(0xDD);
+        let big_data = vec![0xAB; 100_000];
+        let result = rs.create_retryable(
+            id,
+            10_000,
+            address!("AAAA000000000000000000000000000000000000"),
+            None,
+            U256::ZERO,
+            address!("BBBB000000000000000000000000000000000000"),
+            &big_data,
+        );
+        assert!(result.is_ok());
     }
 }

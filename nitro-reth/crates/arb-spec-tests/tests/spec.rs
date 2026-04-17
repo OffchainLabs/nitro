@@ -11,3 +11,8 @@ macro_rules! spec_dir {
 
 spec_dir!(pricing, "pricing");
 spec_dir!(state_transitions, "state_transitions");
+spec_dir!(retryables, "retryables");
+spec_dir!(l1_pricing_dynamics, "l1_pricing_dynamics");
+spec_dir!(address_handling, "address_handling");
+spec_dir!(merkle, "merkle");
+spec_dir!(version_transitions, "version_transitions");
