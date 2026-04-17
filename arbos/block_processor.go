@@ -47,7 +47,6 @@ var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 // captured before the group rollback so TxFailed can build a fully populated
 // FilteredTxReport without late-filling.
 type ErrFilteredCascadingRedeem struct {
-	OriginatingTxHash common.Hash
 	OriginatingTx     *types.Transaction
 	FilteredAddresses []filter.FilteredAddressRecord
 	BlockNumber       uint64
@@ -56,7 +55,7 @@ type ErrFilteredCascadingRedeem struct {
 }
 
 func (e *ErrFilteredCascadingRedeem) Error() string {
-	return fmt.Sprintf("cascading redeem filtered (originating tx: %s)", e.OriginatingTxHash.Hex())
+	return fmt.Sprintf("cascading redeem filtered (originating tx: %s)", e.OriginatingTx.Hash().Hex())
 }
 
 // A helper struct that implements String() by marshalling to JSON.
@@ -535,7 +534,6 @@ func ProduceBlockAdvanced(
 					return nil, nil, nil, err
 				}
 				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{
-					OriginatingTxHash: cp.userTxHash,
 					OriginatingTx:     originatingTx,
 					FilteredAddresses: filteredAddresses,
 					BlockNumber:       header.Number.Uint64(),

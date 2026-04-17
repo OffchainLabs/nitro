@@ -6,16 +6,22 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	filterTypes "github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -24,8 +30,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	filteringReportAPI "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -154,21 +161,51 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	return transactionFiltererAPI
 }
 
-// createFilteringReportService starts a local filtering-report RPC server and
-// configures the builder to send reports to it. Must be called BEFORE builder.Build.
-func createFilteringReportService(t *testing.T, builder *NodeBuilder) *filteringReportAPI.FilteringReportAPI {
+// mockFilteringReportAPI is a test mock that records reports received via the
+// filteringreport_reportFilteredTransactions RPC endpoint.
+type mockFilteringReportAPI struct {
+	mu              sync.Mutex
+	receivedReports []addressfilter.FilteredTxReport
+}
+
+func (m *mockFilteringReportAPI) ReportFilteredTransactions(_ context.Context, reports []addressfilter.FilteredTxReport) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.receivedReports = append(m.receivedReports, reports...)
+	return nil
+}
+
+func (m *mockFilteringReportAPI) ReceivedReports() []addressfilter.FilteredTxReport {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.receivedReports)
+}
+
+// createFilteringReportService starts a local mock filtering-report RPC server
+// and configures the builder to send reports to it. Must be called BEFORE builder.Build.
+func createFilteringReportService(t *testing.T, builder *NodeBuilder) *mockFilteringReportAPI {
 	t.Helper()
-	stackConf := filteringReportAPI.DefaultStackConfig
-	stackConf.HTTPPort = 0
-	stackConf.WSPort = 0
-	stackConf.AuthPort = 0
-	stack, reportAPI, err := filteringReportAPI.NewStack(&stackConf)
+	mockAPI := &mockFilteringReportAPI{}
+	stack, err := node.New(&node.Config{
+		DataDir:     "",
+		HTTPHost:    "127.0.0.1",
+		HTTPPort:    0,
+		WSPort:      0,
+		AuthPort:    0,
+		HTTPModules: []string{gethexec.FilteringReportNamespace},
+		P2P:         p2p.Config{ListenAddr: "", NoDiscovery: true, NoDial: true},
+	})
 	require.NoError(t, err)
-	err = stack.Start()
-	require.NoError(t, err)
+	stack.RegisterAPIs([]rpc.API{{
+		Namespace: gethexec.FilteringReportNamespace,
+		Version:   "1.0",
+		Service:   mockAPI,
+		Public:    true,
+	}})
+	require.NoError(t, stack.Start())
 	t.Cleanup(func() { stack.Close() })
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = stack.HTTPEndpoint()
-	return reportAPI
+	return mockAPI
 }
 
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
@@ -301,17 +338,37 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 
 	reports := reportAPI.ReceivedReports()
 	require.Len(t, reports, 1)
-	require.Equal(t, txHash, reports[0].TxHash)
-	require.True(t, reports[0].IsDelayed)
-	require.NotEmpty(t, reports[0].FilteredAddresses)
-	foundFiltered := false
-	for _, addr := range reports[0].FilteredAddresses {
-		if addr.Address == filteredAddr {
-			foundFiltered = true
+	report := reports[0]
+
+	// Core identity
+	require.Equal(t, txHash, report.TxHash)
+	require.NotEmpty(t, report.ID)
+	require.True(t, report.IsDelayed)
+	require.NotNil(t, report.DelayedReportData, "delayed report data should be set")
+
+	// TxRLP should be populated
+	require.NotEmpty(t, report.TxRLP, "TxRLP should be populated")
+
+	// Block metadata: block number non-zero, parent block hash matches block N-1
+	require.NotZero(t, report.BlockNumber, "block number should be set")
+	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
+	require.NoError(t, err)
+	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash,
+		"parent block hash should match hash of block N-1")
+
+	// Filtered addresses: target address with reason "to" and no EventRuleMatch
+	require.NotEmpty(t, report.FilteredAddresses)
+	foundTo := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredAddr && addr.Reason == filterTypes.ReasonTo {
+			require.Nil(t, addr.EventRuleMatch,
+				"direct address filter should not have EventRuleMatch")
+			foundTo = true
 			break
 		}
 	}
-	require.True(t, foundFiltered, "report should contain the filtered address")
+	require.True(t, foundTo,
+		"report should contain filtered address with reason 'to'")
 }
 
 // TestDelayedMessageFilterBypass verifies that adding tx hash to onchain filter allows tx to proceed.
@@ -2664,6 +2721,91 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status,
 		"filtered tx should have failed receipt status")
+}
+
+// TestDelayedMessageFilterCatchesEventFilterReport verifies that the filtering
+// report includes a non-nil EventRuleMatch when the delayed message is filtered
+// via an event filter rule (not a direct address match).
+func TestDelayedMessageFilterCatchesEventFilterReport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	selector, _, err := eventfilter.CanonicalSelectorFromEvent("Transfer(address,address,uint256)")
+	require.NoError(t, err)
+	rules := []eventfilter.EventRule{{
+		Event:          "Transfer(address,address,uint256)",
+		Selector:       selector,
+		TopicAddresses: []int{1, 2},
+	}}
+
+	arbOSInit := &params.ArbOSInit{TransactionFilteringEnabled: true}
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithArbOSVersion(params.ArbosVersion_60).
+		WithArbOSInit(arbOSInit).
+		WithEventFilterRules(rules)
+	builder.isSequencer = true
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+
+	reportAPI := createFilteringReportService(t, builder)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("FilteredTarget")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	senderAddr := builder.L2Info.GetAddress("Sender")
+	filteredAddr := builder.L2Info.GetAddress("FilteredTarget")
+	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	addrFilter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	callData, err := contractABI.Pack("emitTransfer", senderAddr, filteredAddr)
+	require.NoError(t, err)
+
+	delayedTx := prepareDelayedContractCall(t, builder, "Sender", contractAddr, callData)
+	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	advanceL1ForDelayed(t, ctx, builder)
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
+
+	// Verify report
+	require.Eventually(t, func() bool {
+		return len(reportAPI.ReceivedReports()) > 0
+	}, 5*time.Second, 100*time.Millisecond, "filtering-report should receive reports")
+
+	reports := reportAPI.ReceivedReports()
+	require.Len(t, reports, 1)
+	report := reports[0]
+
+	require.Equal(t, txHash, report.TxHash)
+	require.True(t, report.IsDelayed)
+	require.NotNil(t, report.DelayedReportData)
+	require.NotEmpty(t, report.TxRLP)
+	require.NotZero(t, report.BlockNumber)
+
+	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
+	require.NoError(t, err)
+	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash,
+		"parent block hash should match hash of block N-1")
+
+	// Find the event-rule-triggered filtered address
+	foundEventRule := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredAddr && addr.Reason == filterTypes.ReasonEventRule {
+			require.NotNil(t, addr.EventRuleMatch, "event rule match should be populated")
+			require.Equal(t, "Transfer(address,address,uint256)", addr.EventRuleMatch.MatchedEvent)
+			require.NotNil(t, addr.EventRuleMatch.RawLog, "raw log should be populated")
+			foundEventRule = true
+			break
+		}
+	}
+	require.True(t, foundEventRule,
+		"report should contain filtered address with event_rule reason")
 }
 
 // TestFilteredArbitrumDepositTx verifies that an L1->L2 ETH deposit (ArbitrumDepositTx)

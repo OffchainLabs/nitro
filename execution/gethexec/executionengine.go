@@ -157,7 +157,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		txRLP, err := tx.MarshalBinary()
 		if err != nil {
 			log.Error("error marshalling filtered delayed tx to RLP", "txHash", tx.Hash(), "err", err)
-			txRLP = nil
+			return err
 		}
 		report := addressfilter.FilteredTxReport{
 			ID:                uuid.Must(uuid.NewV7()).String(),
@@ -171,7 +171,9 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 			IsDelayed:         true,
 			DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
 		}
+
 		f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
+
 	}
 	return nil
 }
@@ -190,14 +192,15 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	var txRLP hexutil.Bytes
 	if cascadingErr.OriginatingTx != nil {
 		if b, marshalErr := cascadingErr.OriginatingTx.MarshalBinary(); marshalErr != nil {
-			log.Error("error marshalling originating tx RLP", "txHash", cascadingErr.OriginatingTxHash, "err", marshalErr)
+			log.Error("error marshalling originating tx RLP", "txHash", cascadingErr.OriginatingTx.Hash(), "err", marshalErr)
+			return
 		} else {
 			txRLP = b
 		}
 	}
 	report := addressfilter.FilteredTxReport{
 		ID:                uuid.Must(uuid.NewV7()).String(),
-		TxHash:            cascadingErr.OriginatingTxHash,
+		TxHash:            cascadingErr.OriginatingTx.Hash(),
 		TxRLP:             txRLP,
 		FilteredAddresses: cascadingErr.FilteredAddresses,
 		BlockNumber:       cascadingErr.BlockNumber,

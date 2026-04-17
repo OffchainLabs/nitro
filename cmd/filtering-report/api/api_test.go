@@ -23,7 +23,7 @@ func newTestStack(t *testing.T) *node.Node {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, _, err := NewStack(&stackConfig)
+	stack, err := NewStack(&stackConfig)
 	if err != nil {
 		t.Fatal(err)
 	}

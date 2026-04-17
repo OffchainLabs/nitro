@@ -5,7 +5,6 @@ package api
 
 import (
 	"context"
-	"slices"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -13,10 +12,6 @@ import (
 )
 
 func (a *FilteringReportAPI) ReportFilteredTransactions(_ context.Context, reports []addressfilter.FilteredTxReport) error {
-	a.mu.Lock()
-	a.receivedReports = append(a.receivedReports, reports...)
-	a.mu.Unlock()
-
 	for _, report := range reports {
 		log.Info("Filtered transaction report",
 			"id", report.ID,
@@ -36,11 +31,4 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(_ context.Context, repor
 		}
 	}
 	return nil
-}
-
-// ReceivedReports returns a copy of all reports received so far.
-func (a *FilteringReportAPI) ReceivedReports() []addressfilter.FilteredTxReport {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return slices.Clone(a.receivedReports)
 }
