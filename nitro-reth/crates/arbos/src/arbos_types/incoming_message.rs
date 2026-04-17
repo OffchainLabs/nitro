@@ -155,35 +155,45 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
 }
 
 /// Parses an initialization message to extract chain ID and initial L1 base fee.
+///
+/// Matches Nitro `L1IncomingMessage.ParseInitMessage`:
+///   - len == 32: chain_id only (32 bytes), default base fee, no chain config
+///   - len > 32: chain_id (32) || version (1 byte) || version-specific tail
+///       version 0: chain_config (rest), default base fee
+///       version 1: l1_base_fee (32) || chain_config (rest)
+///   - any other length (including empty): error
 pub fn parse_init_message(data: &[u8]) -> io::Result<ParsedInitMessage> {
-    if data.is_empty() {
+    let default_base_fee = U256::from(DEFAULT_INITIAL_L1_BASE_FEE);
+
+    if data.len() == 32 {
         return Ok(ParsedInitMessage {
-            chain_id: U256::ZERO,
-            initial_l1_base_fee: U256::from(DEFAULT_INITIAL_L1_BASE_FEE),
+            chain_id: U256::from_be_slice(data),
+            initial_l1_base_fee: default_base_fee,
             serialized_chain_config: Vec::new(),
         });
     }
+    if data.len() < 33 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid init message length: {}", data.len()),
+        ));
+    }
 
-    let mut reader = Cursor::new(data);
-
-    // Version byte
-    let mut version_buf = [0u8; 1];
-    reader.read_exact(&mut version_buf)?;
-    let version = version_buf[0];
+    let chain_id = U256::from_be_slice(&data[..32]);
+    let version = data[32];
+    let mut reader = Cursor::new(&data[33..]);
 
     match version {
         0 => {
-            let chain_id = uint256_from_reader(&mut reader)?;
             let mut serialized_chain_config = Vec::new();
             reader.read_to_end(&mut serialized_chain_config)?;
             Ok(ParsedInitMessage {
                 chain_id,
-                initial_l1_base_fee: U256::from(DEFAULT_INITIAL_L1_BASE_FEE),
+                initial_l1_base_fee: default_base_fee,
                 serialized_chain_config,
             })
         }
         1 => {
-            let chain_id = uint256_from_reader(&mut reader)?;
             let initial_l1_base_fee = uint256_from_reader(&mut reader)?;
             let mut serialized_chain_config = Vec::new();
             reader.read_to_end(&mut serialized_chain_config)?;
