@@ -34,6 +34,9 @@ parking_lot = { workspace = true }
 lazy_static = { workspace = true }
 eyre = { workspace = true }
 
+[build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 wat = "1"
 proptest = { workspace = true }
