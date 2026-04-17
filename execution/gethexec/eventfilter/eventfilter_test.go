@@ -182,11 +182,6 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(common.Address{}.Bytes())},
 			expected: 0,
 		},
-		{
-			name:     "duplicate addresses",
-			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(addr1.Bytes())},
-			expected: 1,
-		},
 	}
 
 	for _, tt := range tests {
@@ -306,8 +301,8 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 			}
 
 			resultSet := make(map[common.Address]struct{})
-			for _, a := range result {
-				resultSet[a] = struct{}{}
+			for _, r := range result {
+				resultSet[r.Address] = struct{}{}
 			}
 			for _, want := range tt.wantAddrs {
 				if _, ok := resultSet[want]; !ok {

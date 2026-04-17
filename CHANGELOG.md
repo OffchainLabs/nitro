@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.10.0-rc.7](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.6...v3.10.0-rc.7) - 2026-04-10
+
+### Configuration
+
+- Add `--execution.disable-arbowner-ethcall` flag to disable ArbOwner precompile calls outside on-chain execution. [[PR]](https://github.com/OffchainLabs/nitro/pull/4591)
+- Add `--stylus-target.native-stack-size` config to set the initial Wasmer coroutine stack size for Stylus execution. [[PR]](https://github.com/OffchainLabs/nitro/pull/4538)
+
+### Added
+
+ - `ValidationInputsAt` debug API now includes an `ExpectedEndState` field in the returned JSON, allowing the arbitrator and JIT provers to verify their computed end state when run from the command line with `--json-inputs`. [[PR]](https://github.com/OffchainLabs/nitro/pull/4563)
+- Nitro metrics for MEL and L3 system test. [[PR]](https://github.com/OffchainLabs/nitro/pull/4424)
+- Added support for id-set-filter for address filter reporting. [[PR]](https://github.com/OffchainLabs/nitro/pull/4594)
+- Linter for checking defer usage inside for loops. [[PR]](https://github.com/OffchainLabs/nitro/pull/4616)
+
+### Changed
+
+ - Update the L2 msgs accumulation from merkle tree to a hash-chain based accumulation and implement extracting of message from the accumulator using preimages. [[PR]](https://github.com/OffchainLabs/nitro/pull/4518)
+- Poll parent chain's `eth_config` RPC (EIP-7910) to dynamically fetch blob schedule configuration. [[PR]](https://github.com/OffchainLabs/nitro/pull/4511)
+ - Update the delayed msgs accumulation from merkle tree to a hash-chain based accumulation (Inbox-Outbox) and implement recording of their preimages and subsequently reading them using preimages. [[PR]](https://github.com/OffchainLabs/nitro/pull/4520)
+- Change hashing algorithm for address filtering feature to match the provider specs. [[PR]](https://github.com/OffchainLabs/nitro/pull/4586)
+- Log submitted express lane transactions like eth_sendRawTransaction. [[PR]](https://github.com/OffchainLabs/nitro/pull/4588)
+- Preallocate slice capacity across codebase to reduce memory allocations. [[PR]](https://github.com/OffchainLabs/nitro/pull/4605)
+- Update Stylus SDK to v0.10.3. [[PR]](https://github.com/OffchainLabs/nitro/pull/4621)
+ - Replace InboxReader and InboxTracker implementation with Message extractor code. [[PR]](https://github.com/OffchainLabs/nitro/pull/4593)
+- Force net.Dialer to use "tcp4" instead of falling back to "tcp6". [[PR]](https://github.com/OffchainLabs/nitro/pull/4611)
+- Update Go to 1.25.9 in Dockerfile. [[PR]](https://github.com/OffchainLabs/nitro/pull/4625)
+
+### Fixed
+
+- Execution RPC client correctly handles ResultNotFound error. [[PR]](https://github.com/OffchainLabs/nitro/pull/4580)
+- Fixed flakiness in `TestRetryableFilteringStylusSandwichRollback`. [[PR]](https://github.com/OffchainLabs/nitro/pull/4599)
+- Add some micro-optimization to hashing of address filter implementation. [[PR]](https://github.com/OffchainLabs/nitro/pull/4600)
+- Fix deadlock in `StopWaiterSafe.stopAndWaitImpl` by releasing `RLock` before blocking on `waitChan`. [[PR]](https://github.com/OffchainLabs/nitro/pull/4604)
+- Re-enable erc20 test. [[PR]](https://github.com/OffchainLabs/nitro/pull/4621)
+- Fix Wasmer stack pool reusing stale smaller stacks after a stack size change. [[PR]](https://github.com/OffchainLabs/nitro/pull/4538)
+- Automatically detect native stack overflow during Stylus execution and recover. [[PR]](https://github.com/OffchainLabs/nitro/pull/4538)
+
+### Internal
+
+- Introduce rustfmt.toml. [[PR]](https://github.com/OffchainLabs/nitro/pull/4579)
+ - Extract C-FFI related code from prover crate to prover-ffi. [[PR]](https://github.com/OffchainLabs/nitro/pull/4570)
+- Added additional tests for stylus contracts redeems. [[PR]](https://github.com/OffchainLabs/nitro/pull/4564)
+- Tx pre-checker uses gas estimation dry-run to detect filtered addresses before forwarding. [[PR]](https://github.com/OffchainLabs/nitro/pull/4583)
+- Replace TransactionFiltererAPI mutex with channel-based sequential processing and simplify Filter to not return a transaction hash. [[PR]](https://github.com/OffchainLabs/nitro/pull/4428)
+
 ## [v3.10.0-rc.6](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.5...v3.10.0-rc.6) - 2026-03-27
 
 ### Configuration
