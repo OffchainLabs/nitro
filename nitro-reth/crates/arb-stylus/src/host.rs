@@ -56,6 +56,8 @@ pub fn storage_load_bytes32<E: EvmApi>(
     dest_ptr: u32,
 ) -> MaybeEscape {
     let mut info = hostio!(&mut env);
+    let trace_on = crate::trace::is_active();
+    let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::STORAGE_LOAD_BASE_INK)?;
     let arbos_version = info.env.evm_data.arbos_version;
     // Preserve wrong behavior for old arbos versions
@@ -75,6 +77,17 @@ pub fn storage_load_bytes32<E: EvmApi>(
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, value.as_slice())?;
+    if trace_on {
+        let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
+        crate::trace::record(
+            "storage_load_bytes32",
+            alloy_primitives::Bytes::copy_from_slice(key.as_slice()),
+            alloy_primitives::Bytes::copy_from_slice(value.as_slice()),
+            start_ink,
+            end_ink,
+            None,
+        );
+    }
     Ok(())
 }
 

@@ -1268,6 +1268,7 @@ dependencies = [
  "async-trait",
  "eyre",
  "jsonrpsee",
+ "jsonrpsee-http-client",
  "jsonrpsee-types",
  "parking_lot",
  "reth-chainspec",

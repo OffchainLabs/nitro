@@ -1,26 +1,18 @@
-//! `arbtrace_*` RPC namespace — forwards pre-Nitro trace requests to a
-//! configured classic (pre-Nitro) node.
-//!
-//! Arbitrum's `arbtrace_*` methods mirror the Parity/OpenEthereum trace
-//! API but are constrained to blocks before the Nitro genesis fork.
-//! Nitro itself doesn't implement them against its own chain — it
-//! forwards to a classic-node RPC endpoint when configured, or returns
-//! an error if no endpoint is set (see `execution/gethexec/api.go:350`).
-//!
-//! We replicate that behavior exactly: expose the 8 methods on the
-//! `arbtrace` namespace, return an "arbtrace calls forwarding not
-//! configured" error when no fallback URL is provided, and reject
-//! block numbers past the Nitro genesis block.
+//! `arbtrace_*` namespace — forwards pre-Nitro trace requests to a
+//! configured classic-node RPC endpoint.
+
+use std::sync::Arc;
 
 use jsonrpsee::{
-    core::RpcResult,
+    core::{client::ClientT, RpcResult},
     proc_macros::rpc,
     types::{error::INTERNAL_ERROR_CODE, ErrorObject},
 };
+use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
+use parking_lot::Mutex;
 use serde_json::{self as json, value::RawValue, Value as JsonValue};
-use std::sync::Arc;
+use std::time::Duration;
 
-/// Error surface for arbtrace-forwarding operations.
 fn forwarding_not_configured() -> ErrorObject<'static> {
     ErrorObject::owned(
         INTERNAL_ERROR_CODE,
@@ -37,22 +29,27 @@ fn block_unsupported_by_classic(block_num: i64, genesis: u64) -> ErrorObject<'st
     )
 }
 
-/// Configuration for the `arbtrace` namespace.
+fn http_error(e: impl std::fmt::Display) -> ErrorObject<'static> {
+    ErrorObject::owned(
+        INTERNAL_ERROR_CODE,
+        format!("arbtrace forwarding failed: {e}"),
+        None::<()>,
+    )
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ArbTraceConfig {
-    /// URL of the pre-Nitro classic node to forward requests to. When
-    /// None, every `arbtrace_*` method returns
-    /// "forwarding not configured" per Nitro's canonical behavior.
+    /// URL of the pre-Nitro classic node to forward requests to.
     pub fallback_client_url: Option<String>,
-    /// Nitro genesis block number. Requests targeting blocks above this
-    /// are rejected without contacting the classic node.
+    /// Timeout for forwarded RPC calls.
+    pub fallback_client_timeout: Option<Duration>,
+    /// Nitro genesis block number; requests past this are rejected
+    /// without hitting the classic node.
     pub genesis_block_num: u64,
 }
 
-/// `arbtrace` RPC namespace.
 #[rpc(server, namespace = "arbtrace")]
 pub trait ArbTraceApi {
-    /// trace_call equivalent against a historical (pre-Nitro) block.
     #[method(name = "call")]
     async fn call(
         &self,
@@ -61,7 +58,6 @@ pub trait ArbTraceApi {
         block_num_or_hash: Box<RawValue>,
     ) -> RpcResult<JsonValue>;
 
-    /// trace_callMany equivalent.
     #[method(name = "callMany")]
     async fn call_many(
         &self,
@@ -69,7 +65,6 @@ pub trait ArbTraceApi {
         block_num_or_hash: Box<RawValue>,
     ) -> RpcResult<JsonValue>;
 
-    /// trace_replayBlockTransactions equivalent.
     #[method(name = "replayBlockTransactions")]
     async fn replay_block_transactions(
         &self,
@@ -77,7 +72,6 @@ pub trait ArbTraceApi {
         trace_types: Box<RawValue>,
     ) -> RpcResult<JsonValue>;
 
-    /// trace_replayTransaction equivalent.
     #[method(name = "replayTransaction")]
     async fn replay_transaction(
         &self,
@@ -85,45 +79,73 @@ pub trait ArbTraceApi {
         trace_types: Box<RawValue>,
     ) -> RpcResult<JsonValue>;
 
-    /// trace_transaction equivalent.
     #[method(name = "transaction")]
     async fn transaction(&self, tx_hash: Box<RawValue>) -> RpcResult<JsonValue>;
 
-    /// trace_get equivalent — retrieves a sub-trace at a given path.
     #[method(name = "get")]
     async fn get(&self, tx_hash: Box<RawValue>, path: Box<RawValue>) -> RpcResult<JsonValue>;
 
-    /// trace_block equivalent.
     #[method(name = "block")]
     async fn block(&self, block_num_or_hash: Box<RawValue>) -> RpcResult<JsonValue>;
 
-    /// trace_filter equivalent.
     #[method(name = "filter")]
     async fn filter(&self, filter: Box<RawValue>) -> RpcResult<JsonValue>;
 }
 
-/// Handler implementing the `arbtrace` namespace. Forwards to the
-/// configured classic node when one is set, otherwise returns
-/// "forwarding not configured".
-#[derive(Debug, Clone)]
+/// Lazy HTTP client backed by `jsonrpsee-http-client`.
 pub struct ArbTraceHandler {
     config: Arc<ArbTraceConfig>,
+    client: Mutex<Option<Arc<HttpClient>>>,
+}
+
+impl std::fmt::Debug for ArbTraceHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArbTraceHandler")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Clone for ArbTraceHandler {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            client: Mutex::new(self.client.lock().clone()),
+        }
+    }
 }
 
 impl ArbTraceHandler {
     pub fn new(config: ArbTraceConfig) -> Self {
         Self {
             config: Arc::new(config),
+            client: Mutex::new(None),
         }
+    }
+
+    fn get_client(&self) -> Result<Arc<HttpClient>, ErrorObject<'static>> {
+        if let Some(c) = self.client.lock().as_ref() {
+            return Ok(c.clone());
+        }
+        let url = self
+            .config
+            .fallback_client_url
+            .as_ref()
+            .ok_or_else(forwarding_not_configured)?;
+        let mut builder = HttpClientBuilder::default();
+        if let Some(t) = self.config.fallback_client_timeout {
+            builder = builder.request_timeout(t);
+        }
+        let client = builder.build(url).map_err(http_error)?;
+        let arc = Arc::new(client);
+        *self.client.lock() = Some(arc.clone());
+        Ok(arc)
     }
 
     fn check_block_supported_by_classic(
         &self,
         block_num_or_hash: &RawValue,
     ) -> Result<(), ErrorObject<'static>> {
-        // Parse JSON — accept either a hex block number, a tag (latest,
-        // earliest, …), or a { "blockHash": "..." } object. Only reject
-        // when the value is clearly a number above genesis.
         let parsed: JsonValue = json::from_str(block_num_or_hash.get()).unwrap_or(JsonValue::Null);
         if let Some(s) = parsed.as_str() {
             if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
@@ -140,22 +162,18 @@ impl ArbTraceHandler {
         Ok(())
     }
 
-    /// All 8 `arbtrace_*` methods share a common tail: "not configured"
-    /// since arbreth has no fallback RPC client wired yet. Extracted so
-    /// the trait impls stay tight.
-    fn forward_not_configured(&self) -> RpcResult<JsonValue> {
-        if self.config.fallback_client_url.is_none() {
-            return Err(forwarding_not_configured());
+    async fn forward(&self, method: &str, params: Vec<Box<RawValue>>) -> RpcResult<JsonValue> {
+        let client = self.get_client()?;
+        let mut array_params = jsonrpsee::core::params::ArrayParams::new();
+        for raw in params {
+            let v: JsonValue = serde_json::from_str(raw.get()).unwrap_or(JsonValue::Null);
+            array_params.insert(v).map_err(http_error)?;
         }
-        // TODO: when a fallback client is wired, issue a JSON-RPC
-        // request via reqwest/jsonrpsee-http-client and return the
-        // RawMessage back. For now, we explicitly signal that the
-        // classic node integration isn't yet available.
-        Err(ErrorObject::owned(
-            INTERNAL_ERROR_CODE,
-            "arbtrace classic-node forwarding is not yet implemented",
-            None::<()>,
-        ))
+        let resp: JsonValue = client
+            .request(method, array_params)
+            .await
+            .map_err(http_error)?;
+        Ok(resp)
     }
 }
 
@@ -163,54 +181,65 @@ impl ArbTraceHandler {
 impl ArbTraceApiServer for ArbTraceHandler {
     async fn call(
         &self,
-        _call_args: Box<RawValue>,
-        _trace_types: Box<RawValue>,
+        call_args: Box<RawValue>,
+        trace_types: Box<RawValue>,
         block_num_or_hash: Box<RawValue>,
     ) -> RpcResult<JsonValue> {
         self.check_block_supported_by_classic(&block_num_or_hash)?;
-        self.forward_not_configured()
+        self.forward(
+            "arbtrace_call",
+            vec![call_args, trace_types, block_num_or_hash],
+        )
+        .await
     }
 
     async fn call_many(
         &self,
-        _calls: Box<RawValue>,
+        calls: Box<RawValue>,
         block_num_or_hash: Box<RawValue>,
     ) -> RpcResult<JsonValue> {
         self.check_block_supported_by_classic(&block_num_or_hash)?;
-        self.forward_not_configured()
+        self.forward("arbtrace_callMany", vec![calls, block_num_or_hash])
+            .await
     }
 
     async fn replay_block_transactions(
         &self,
         block_num_or_hash: Box<RawValue>,
-        _trace_types: Box<RawValue>,
+        trace_types: Box<RawValue>,
     ) -> RpcResult<JsonValue> {
         self.check_block_supported_by_classic(&block_num_or_hash)?;
-        self.forward_not_configured()
+        self.forward(
+            "arbtrace_replayBlockTransactions",
+            vec![block_num_or_hash, trace_types],
+        )
+        .await
     }
 
     async fn replay_transaction(
         &self,
-        _tx_hash: Box<RawValue>,
-        _trace_types: Box<RawValue>,
+        tx_hash: Box<RawValue>,
+        trace_types: Box<RawValue>,
     ) -> RpcResult<JsonValue> {
-        self.forward_not_configured()
+        self.forward("arbtrace_replayTransaction", vec![tx_hash, trace_types])
+            .await
     }
 
-    async fn transaction(&self, _tx_hash: Box<RawValue>) -> RpcResult<JsonValue> {
-        self.forward_not_configured()
+    async fn transaction(&self, tx_hash: Box<RawValue>) -> RpcResult<JsonValue> {
+        self.forward("arbtrace_transaction", vec![tx_hash]).await
     }
 
-    async fn get(&self, _tx_hash: Box<RawValue>, _path: Box<RawValue>) -> RpcResult<JsonValue> {
-        self.forward_not_configured()
+    async fn get(&self, tx_hash: Box<RawValue>, path: Box<RawValue>) -> RpcResult<JsonValue> {
+        self.forward("arbtrace_get", vec![tx_hash, path]).await
     }
 
     async fn block(&self, block_num_or_hash: Box<RawValue>) -> RpcResult<JsonValue> {
         self.check_block_supported_by_classic(&block_num_or_hash)?;
-        self.forward_not_configured()
+        self.forward("arbtrace_block", vec![block_num_or_hash])
+            .await
     }
 
-    async fn filter(&self, _filter: Box<RawValue>) -> RpcResult<JsonValue> {
-        self.forward_not_configured()
+    async fn filter(&self, filter: Box<RawValue>) -> RpcResult<JsonValue> {
+        self.forward("arbtrace_filter", vec![filter]).await
     }
 }

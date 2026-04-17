@@ -32,6 +32,7 @@ reth-tasks = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-transaction-pool = { workspace = true }
 jsonrpsee = { workspace = true }
+jsonrpsee-http-client = { workspace = true }
 jsonrpsee-types = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }

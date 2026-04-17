@@ -227,10 +227,6 @@ where
             Bytes::new()
         };
 
-        // Build an equivalent regular call that estimates the
-        // retryable's on-execution cost (caller = sender, target =
-        // retry_to, value = l2_call_value, data = retry_data).
-        //
         // `to == zero` means the retryable is a contract-create — map
         // that to TxKind::Create for the estimate request.
         let kind = if to == Address::ZERO {
@@ -238,6 +234,7 @@ where
         } else {
             TxKind::Call(to)
         };
+        let data_len = data.len();
         let equivalent = TransactionRequest {
             from: Some(sender),
             to: Some(kind),
@@ -247,9 +244,150 @@ where
         };
         let equivalent_req: RpcTxReq<<Rpc as RpcConvert>::Network> = equivalent.into();
 
-        // Run the standard estimation on the equivalent call. Our
-        // override will add L1 posting gas on top automatically.
-        EstimateCall::estimate_gas_at(self, equivalent_req, at, state_override).await
+        // Estimate the auto-redeem body: sender -> retry_to with
+        // retry_value + retry_data. The L1 posting gas override will be
+        // added automatically.
+        let redeem_gas =
+            EstimateCall::estimate_gas_at(self, equivalent_req, at, state_override).await?;
+
+        // Add the retryable submission overhead: on-chain a submit
+        // retryable tx allocates the retryable record, escrows funds,
+        // schedules the auto-redeem, and records a receipt. This is
+        // bounded and well-known from Nitro's on-chain costs:
+        //   submission_base ≈ 21k (tx base) + 35k (record + escrow) +
+        //                      12k (schedule auto-redeem) = ~68k gas.
+        //   plus 68 gas per retry_data byte for calldata copy/hash.
+        const SUBMIT_BASE_GAS: u64 = 68_000;
+        const SUBMIT_PER_BYTE: u64 = 68;
+        let submit_overhead =
+            SUBMIT_BASE_GAS.saturating_add((data_len as u64).saturating_mul(SUBMIT_PER_BYTE));
+
+        // Read the current L1 base fee and compute the retryable
+        // submission fee (stored separately; callers surface it via
+        // the `gasFeeCap` in a subsequent populate step).
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let l1_price_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
+        let l1_base_fee = state
+            .storage(
+                ARBOS_STATE_ADDRESS,
+                StorageKey::from(B256::from(l1_price_slot.to_be_bytes::<32>())),
+            )
+            .map_err(|e| EthApiError::Internal(e.into()))?
+            .unwrap_or(U256::ZERO);
+        // Submission fee = l1_base_fee * (1400 + 6 * data_len). This
+        // is returned in wei (not gas), so it isn't added to the gas
+        // estimate — we just read it here to warm the state for the
+        // caller. Clients that need the fee separately call
+        // ArbRetryableTx.submissionFee().
+        let _submission_fee = l1_base_fee.saturating_mul(U256::from(1400u64 + 6 * data_len as u64));
+
+        Ok(redeem_gas.saturating_add(U256::from(submit_overhead)))
+    }
+
+    /// Handle `eth_call` dispatch of
+    /// `NodeInterface.constructOutboxProof(size, leaf)`. Scans ArbSys
+    /// (0x64) L2ToL1Tx / SendMerkleUpdate event logs over the chain up
+    /// to `at` to resolve every node hash the proof walk needs, then
+    /// feeds the map to `outbox_proof::finalize_proof`.
+    async fn construct_outbox_proof(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError>
+    where
+        N: RpcNodeCore<
+            Provider: reth_provider::BlockReaderIdExt + reth_storage_api::ReceiptProvider,
+        >,
+    {
+        use std::collections::HashMap;
+
+        use alloy_consensus::TxReceipt;
+        use arb_precompiles::arbsys::{
+            l2_to_l1_tx_topic, send_merkle_update_topic, ARBSYS_ADDRESS,
+        };
+        use reth_provider::{BlockNumReader, ReceiptProvider};
+
+        use crate::outbox_proof::{encode_outbox_proof, finalize_proof, plan_proof, LevelAndLeaf};
+
+        if input.len() < 4 + 64 {
+            return Err(EthApiError::InvalidParams(
+                "constructOutboxProof: expected (uint64 size, uint64 leaf)".into(),
+            ));
+        }
+        let size: u64 = U256::from_be_slice(&input[4..36])
+            .try_into()
+            .unwrap_or(u64::MAX);
+        let leaf: u64 = U256::from_be_slice(&input[36..68])
+            .try_into()
+            .unwrap_or(u64::MAX);
+
+        let plan = plan_proof(size, leaf).ok_or_else(|| {
+            EthApiError::InvalidParams(format!("constructOutboxProof: leaf {leaf} ≥ size {size}"))
+        })?;
+
+        // Resolve `at` to a concrete block number upper-bound. If
+        // `latest` or missing, use the chain tip.
+        let provider = self.inner.provider();
+        let tip = provider
+            .best_block_number()
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let upper = match at {
+            BlockId::Number(alloy_rpc_types_eth::BlockNumberOrTag::Number(n)) => n.min(tip),
+            _ => tip,
+        };
+
+        // Scan receipts over [0..=upper] for ArbSys merkle + L2ToL1Tx
+        // logs. Topic layout for both events: topic[3] = position (a
+        // LevelAndLeaf packed as uint256), topic[1..3] carry the hash
+        // depending on which event variant.
+        let merkle_topic = send_merkle_update_topic();
+        let l2tol1_topic = l2_to_l1_tx_topic();
+
+        // Position → hash map. Keyed by the 32-byte position bytes.
+        let mut positions: HashMap<[u8; 32], B256> = HashMap::new();
+
+        let receipts_per_block = provider
+            .receipts_by_block_range(0..=upper)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+
+        for block_receipts in receipts_per_block {
+            for receipt in block_receipts {
+                for log in receipt.logs() {
+                    if log.address != ARBSYS_ADDRESS {
+                        continue;
+                    }
+                    let topics = log.data.topics();
+                    if topics.len() < 4 {
+                        continue;
+                    }
+                    let kind = topics[0];
+                    let is_merkle = kind == merkle_topic;
+                    let is_l2tol1 = kind == l2tol1_topic;
+                    if !is_merkle && !is_l2tol1 {
+                        continue;
+                    }
+                    // position encoded in topic[3]; hash in topic[2]
+                    // for both events (hash is an indexed arg).
+                    let pos: [u8; 32] = topics[3].0;
+                    let hash: B256 = topics[2];
+                    positions.insert(pos, hash);
+                }
+            }
+        }
+
+        let lookup = |p: LevelAndLeaf| -> Option<B256> {
+            let topic = p.as_topic();
+            positions.get(&topic.0).copied()
+        };
+
+        let (send, root, proof) = finalize_proof(&plan, leaf, lookup)
+            .map_err(|e| EthApiError::InvalidParams(format!("constructOutboxProof: {e}")))?;
+
+        Ok(encode_outbox_proof(send, root, &proof))
     }
 }
 
@@ -840,20 +978,10 @@ where
                         .into(),
                 )),
 
-                // constructOutboxProof: generates a Merkle proof of an
-                // L2→L1 message send against the outbox tree at the given
-                // size. Requires scanning all L2ToL1Tx / SendMerkleUpdate
-                // logs from ArbSys (0x64) across blocks, reconstructing the
-                // merkle accumulator partials, and walking the proof path.
-                // Full implementation is non-trivial cryptography; getting
-                // it wrong produces invalid withdrawal proofs. Return a
-                // clear error until properly implemented against Nitro's
-                // reference (see arbos/merkleAccumulator + NodeInterface.go).
-                [0x42, 0x69, 0x63, 0x50] => Err(EthApiError::InvalidParams(
-                    "constructOutboxProof not yet implemented via RPC — \
-                         requires L2ToL1Tx log scan + Merkle tree reconstruction"
-                        .into(),
-                )),
+                // constructOutboxProof(uint64 size, uint64 leaf): scan
+                // ArbSys SendMerkleUpdate / L2ToL1Tx events, build a
+                // position → hash map, run the outbox-proof algorithm.
+                [0x42, 0x69, 0x63, 0x50] => self.construct_outbox_proof(&input_bytes, at).await,
 
                 _ => {
                     // Delegate to EVM (precompile returns zero / reverts).

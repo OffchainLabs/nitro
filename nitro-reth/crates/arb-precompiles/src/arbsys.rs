@@ -66,11 +66,11 @@ fn keccak_gas(byte_count: u64) -> u64 {
 }
 
 // Event topics.
-fn l2_to_l1_tx_topic() -> B256 {
+pub fn l2_to_l1_tx_topic() -> B256 {
     keccak256(b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)")
 }
 
-fn send_merkle_update_topic() -> B256 {
+pub fn send_merkle_update_topic() -> B256 {
     keccak256(b"SendMerkleUpdate(uint256,bytes32,uint256)")
 }
 

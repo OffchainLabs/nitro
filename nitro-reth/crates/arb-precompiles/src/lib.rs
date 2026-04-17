@@ -18,7 +18,7 @@ mod arbowner;
 mod arbownerpublic;
 mod arbretryabletx;
 mod arbstatistics;
-mod arbsys;
+pub mod arbsys;
 mod arbwasm;
 mod arbwasmcache;
 mod nodeinterface;

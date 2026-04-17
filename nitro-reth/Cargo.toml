@@ -164,6 +164,7 @@ cc = "1"
 sha2 = "0.10"
 jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"
+jsonrpsee-http-client = "0.26.0"
 dyn-clone = "1"
 wasmer = { path = "vendor/wasmer/lib/api", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
