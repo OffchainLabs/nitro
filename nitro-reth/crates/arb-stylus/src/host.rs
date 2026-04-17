@@ -20,6 +20,7 @@ macro_rules! hostio {
 
 /// Read the program's arguments into WASM memory.
 pub fn read_args<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("read_args", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::READ_ARGS_BASE_INK)?;
     let args = info.env.args.clone();
@@ -34,6 +35,7 @@ pub fn write_result<E: EvmApi>(
     ptr: u32,
     len: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("write_result", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::WRITE_RESULT_BASE_INK)?;
     info.pay_for_read(len)?;
@@ -45,6 +47,7 @@ pub fn write_result<E: EvmApi>(
 
 /// Exit the program early with a status code.
 pub fn exit_early<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, status: u32) -> MaybeEscape {
+    crate::trace::record_leaf("exit_early", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Err(Escape::Exit(status))
 }
@@ -97,6 +100,11 @@ pub fn storage_cache_bytes32<E: EvmApi>(
     key_ptr: u32,
     value_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf(
+        "storage_cache_bytes32",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::STORAGE_CACHE_BASE_INK)?;
     info.require_gas(evm_gas::SSTORE_SENTRY_GAS + evm_gas::STORAGE_CACHE_REQUIRED_ACCESS_GAS)?;
@@ -116,6 +124,11 @@ pub fn storage_flush_cache<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     clear: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf(
+        "storage_flush_cache",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::STORAGE_FLUSH_BASE_INK)?;
     info.require_gas(evm_gas::SSTORE_SENTRY_GAS)?;
@@ -140,6 +153,11 @@ pub fn transient_load_bytes32<E: EvmApi>(
     key_ptr: u32,
     dest_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf(
+        "transient_load_bytes32",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::TRANSIENT_LOAD_BASE_INK)?;
     info.buy_gas(evm_gas::TLOAD_GAS)?;
@@ -159,6 +177,11 @@ pub fn transient_store_bytes32<E: EvmApi>(
     key_ptr: u32,
     value_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf(
+        "transient_store_bytes32",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::TRANSIENT_STORE_BASE_INK)?;
     info.buy_gas(evm_gas::TSTORE_GAS)?;
@@ -185,6 +208,7 @@ pub fn call_contract<E: EvmApi>(
     gas: u64,
     ret_len_ptr: u32,
 ) -> Result<u8, Escape> {
+    crate::trace::record_leaf("call_contract", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::CALL_CONTRACT_BASE_INK)?;
     info.pay_for_read(calldata_len)?;
@@ -214,6 +238,11 @@ pub fn delegate_call_contract<E: EvmApi>(
     gas: u64,
     ret_len_ptr: u32,
 ) -> Result<u8, Escape> {
+    crate::trace::record_leaf(
+        "delegate_call_contract",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::CALL_CONTRACT_BASE_INK)?;
     info.pay_for_read(calldata_len)?;
@@ -242,6 +271,11 @@ pub fn static_call_contract<E: EvmApi>(
     gas: u64,
     ret_len_ptr: u32,
 ) -> Result<u8, Escape> {
+    crate::trace::record_leaf(
+        "static_call_contract",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::CALL_CONTRACT_BASE_INK)?;
     info.pay_for_read(calldata_len)?;
@@ -270,6 +304,7 @@ pub fn create1<E: EvmApi>(
     contract_ptr: u32,
     ret_len_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("create1", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::CREATE1_BASE_INK)?;
     info.pay_for_read(code_len)?;
@@ -305,6 +340,7 @@ pub fn create2<E: EvmApi>(
     contract_ptr: u32,
     ret_len_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("create2", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::CREATE2_BASE_INK)?;
     info.pay_for_read(code_len)?;
@@ -338,6 +374,7 @@ pub fn read_return_data<E: EvmApi>(
     offset: u32,
     size: u32,
 ) -> Result<u32, Escape> {
+    crate::trace::record_leaf("read_return_data", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::READ_RETURN_DATA_BASE_INK)?;
     let max = info.env.evm_return_data_len.saturating_sub(offset);
@@ -358,6 +395,7 @@ pub fn read_return_data<E: EvmApi>(
 
 /// Get the size of the return data.
 pub fn return_data_size<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
+    crate::trace::record_leaf("return_data_size", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::RETURN_DATA_SIZE_BASE_INK)?;
     Ok(info.env.evm_return_data_len)
@@ -370,6 +408,7 @@ pub fn emit_log<E: EvmApi>(
     data_len: u32,
     topics: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("emit_log", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::EMIT_LOG_BASE_INK)?;
     if topics > 4 || data_len < topics * 32 {
@@ -391,6 +430,7 @@ pub fn account_balance<E: EvmApi>(
     addr_ptr: u32,
     dest_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("account_balance", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::ACCOUNT_BALANCE_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
@@ -413,6 +453,7 @@ pub fn account_code<E: EvmApi>(
     size: u32,
     dest_ptr: u32,
 ) -> Result<u32, Escape> {
+    crate::trace::record_leaf("account_code", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::ACCOUNT_CODE_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
@@ -441,6 +482,7 @@ pub fn account_code_size<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
 ) -> Result<u32, Escape> {
+    crate::trace::record_leaf("account_code_size", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::ACCOUNT_CODE_SIZE_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
@@ -462,6 +504,7 @@ pub fn account_codehash<E: EvmApi>(
     addr_ptr: u32,
     dest_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("account_codehash", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::ACCOUNT_CODE_HASH_BASE_INK)?;
     info.require_gas(evm_gas::COLD_ACCOUNT_GAS)?;
@@ -478,6 +521,7 @@ pub fn account_codehash<E: EvmApi>(
 
 /// Get remaining EVM gas.
 pub fn evm_gas_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+    crate::trace::record_leaf("evm_gas_left", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::EVM_GAS_LEFT_BASE_INK)?;
     let ink = info.ink_ready()?;
@@ -486,6 +530,7 @@ pub fn evm_gas_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resul
 
 /// Get remaining ink.
 pub fn evm_ink_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+    crate::trace::record_leaf("evm_ink_left", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::EVM_INK_LEFT_BASE_INK)?;
     Ok(info.ink_ready()?.0)
@@ -493,6 +538,7 @@ pub fn evm_ink_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resul
 
 /// Write the block base fee.
 pub fn block_basefee<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("block_basefee", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::BLOCK_BASEFEE_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.block_basefee.as_slice())?;
@@ -501,6 +547,7 @@ pub fn block_basefee<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u3
 
 /// Get the chain ID.
 pub fn chainid<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+    crate::trace::record_leaf("chainid", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::CHAIN_ID_BASE_INK)?;
     Ok(info.env.evm_data.chain_id)
@@ -508,6 +555,7 @@ pub fn chainid<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64
 
 /// Write the block coinbase address.
 pub fn block_coinbase<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("block_coinbase", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::BLOCK_COINBASE_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.block_coinbase.as_slice())?;
@@ -516,6 +564,7 @@ pub fn block_coinbase<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u
 
 /// Get the block gas limit.
 pub fn block_gas_limit<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+    crate::trace::record_leaf("block_gas_limit", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::BLOCK_GAS_LIMIT_BASE_INK)?;
     Ok(info.env.evm_data.block_gas_limit)
@@ -523,6 +572,7 @@ pub fn block_gas_limit<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Re
 
 /// Get the block number.
 pub fn block_number<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+    crate::trace::record_leaf("block_number", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::BLOCK_NUMBER_BASE_INK)?;
     Ok(info.env.evm_data.block_number)
@@ -530,6 +580,7 @@ pub fn block_number<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resul
 
 /// Get the block timestamp.
 pub fn block_timestamp<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+    crate::trace::record_leaf("block_timestamp", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::BLOCK_TIMESTAMP_BASE_INK)?;
     Ok(info.env.evm_data.block_timestamp)
@@ -540,6 +591,7 @@ pub fn contract_address<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("contract_address", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::ADDRESS_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.contract_address.as_slice())?;
@@ -552,6 +604,7 @@ pub fn math_div<E: EvmApi>(
     a_ptr: u32,
     b_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("math_div", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MATH_DIV_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
@@ -567,6 +620,7 @@ pub fn math_mod<E: EvmApi>(
     a_ptr: u32,
     b_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("math_mod", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MATH_MOD_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
@@ -582,6 +636,7 @@ pub fn math_pow<E: EvmApi>(
     base_ptr: u32,
     exp_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("math_pow", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MATH_POW_BASE_INK)?;
     let base = U256::from_be_bytes(info.read_fixed::<32>(base_ptr)?);
@@ -600,6 +655,7 @@ pub fn math_add_mod<E: EvmApi>(
     b_ptr: u32,
     mod_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("math_add_mod", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MATH_ADD_MOD_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
@@ -621,6 +677,7 @@ pub fn math_mul_mod<E: EvmApi>(
     b_ptr: u32,
     mod_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("math_mul_mod", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MATH_MUL_MOD_BASE_INK)?;
     let a = U256::from_be_bytes(info.read_fixed::<32>(a_ptr)?);
@@ -637,6 +694,7 @@ pub fn math_mul_mod<E: EvmApi>(
 
 /// Get the reentrant counter.
 pub fn msg_reentrant<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
+    crate::trace::record_leaf("msg_reentrant", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MSG_REENTRANT_BASE_INK)?;
     Ok(info.env.evm_data.reentrant)
@@ -644,6 +702,7 @@ pub fn msg_reentrant<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resu
 
 /// Write the message sender address.
 pub fn msg_sender<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("msg_sender", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MSG_SENDER_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.msg_sender.as_slice())?;
@@ -652,6 +711,7 @@ pub fn msg_sender<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) 
 
 /// Write the message value.
 pub fn msg_value<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("msg_value", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::MSG_VALUE_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.msg_value.as_slice())?;
@@ -660,6 +720,7 @@ pub fn msg_value<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -
 
 /// Write the transaction gas price.
 pub fn tx_gas_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("tx_gas_price", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::TX_GAS_PRICE_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.tx_gas_price.as_slice())?;
@@ -668,6 +729,7 @@ pub fn tx_gas_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32
 
 /// Get the ink price.
 pub fn tx_ink_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
+    crate::trace::record_leaf("tx_ink_price", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::TX_INK_PRICE_BASE_INK)?;
     Ok(info.pricing().ink_price)
@@ -675,6 +737,7 @@ pub fn tx_ink_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resul
 
 /// Write the transaction origin address.
 pub fn tx_origin<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
+    crate::trace::record_leaf("tx_origin", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::TX_ORIGIN_BASE_INK)?;
     info.write_slice(ptr, info.env.evm_data.tx_origin.as_slice())?;
@@ -686,6 +749,11 @@ pub fn pay_for_memory_grow<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     pages: u16,
 ) -> MaybeEscape {
+    crate::trace::record_leaf(
+        "pay_for_memory_grow",
+        Default::default(),
+        Default::default(),
+    );
     let mut info = hostio!(&mut env);
     if pages == 0 {
         info.buy_ink(hio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
@@ -707,6 +775,7 @@ pub fn native_keccak256<E: EvmApi>(
     input_len: u32,
     output_ptr: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("native_keccak256", Default::default(), Default::default());
     let mut info = hostio!(&mut env);
     info.pay_for_keccak(input_len)?;
     let data = info.read_slice(input_ptr, input_len)?;
@@ -723,6 +792,7 @@ pub fn console_log_text<E: EvmApi>(
     ptr: u32,
     len: u32,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("console_log_text", Default::default(), Default::default());
     let info = hostio!(&mut env);
     let text = info.read_slice(ptr, len)?;
     if let Ok(s) = std::str::from_utf8(&text) {
@@ -736,6 +806,7 @@ pub fn console_log<E: EvmApi, T: std::fmt::Display>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     value: T,
 ) -> MaybeEscape {
+    crate::trace::record_leaf("console_log", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     tracing::debug!(target: "stylus", "{value}");
     Ok(())
@@ -746,6 +817,7 @@ pub fn console_tee<E: EvmApi, T: Copy + std::fmt::Display>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     value: T,
 ) -> Result<T, Escape> {
+    crate::trace::record_leaf("console_tee", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     tracing::debug!(target: "stylus", "{value}");
     Ok(value)
@@ -753,18 +825,21 @@ pub fn console_tee<E: EvmApi, T: Copy + std::fmt::Display>(
 
 /// No-op host function (debug only).
 pub fn null_host<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
+    crate::trace::record_leaf("null_host", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Ok(())
 }
 
 /// Start a benchmark measurement (debug only).
 pub fn start_benchmark<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
+    crate::trace::record_leaf("start_benchmark", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Ok(())
 }
 
 /// End a benchmark measurement (debug only).
 pub fn end_benchmark<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
+    crate::trace::record_leaf("end_benchmark", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Ok(())
 }

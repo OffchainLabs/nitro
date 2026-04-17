@@ -80,6 +80,16 @@ pub fn is_active() -> bool {
     ACTIVE.with(|slot| slot.borrow().is_some())
 }
 
+/// Convenience wrapper for host functions that want to record the
+/// call name with optional args + outs and no ink delta (e.g., leaf
+/// host functions that never block or touch state).
+#[inline]
+pub fn record_leaf(name: &'static str, args: Bytes, outs: Bytes) {
+    if is_active() {
+        record(name, args, outs, 0, 0, None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

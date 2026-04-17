@@ -7,11 +7,13 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+arb-alloy-consensus = { workspace = true }
 arb-primitives = { workspace = true }
 arb-precompiles = { workspace = true }
 arb-evm = { workspace = true }
 arb-payload = { workspace = true }
 alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
 alloy-network = { workspace = true }
@@ -44,7 +46,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-arb-alloy-consensus = { workspace = true }
 
 [lints]
 workspace = true

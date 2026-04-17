@@ -1255,6 +1255,7 @@ name = "arb-rpc"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-eips",
  "alloy-evm",
  "alloy-network",
  "alloy-primitives",

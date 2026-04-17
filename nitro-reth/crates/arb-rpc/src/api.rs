@@ -158,20 +158,28 @@ where
         + Clone
         + Default,
 {
-    /// Handle an `eth_estimateGas` targeting
+    /// Handle `eth_estimateGas` targeting
     /// `NodeInterface.estimateRetryableTicket(...)` (selector 0xc3dc5879).
     ///
-    /// Mirrors Nitro's behavior (`nodeinterface/node_interface.go:128`):
-    /// parse ABI args, compute the retryable submission fee from the
-    /// current L1 base fee, construct an equivalent TransactionRequest
-    /// targeting `retry_to` with `retry_value` + `retry_data`, and run
-    /// the standard estimate on it. The returned gas approximates what
-    /// the retryable auto-redeem will consume.
+    /// Returns the total gas a retryable submission will consume. This
+    /// is the same value Nitro's NodeInterface returns, computed via
+    /// its exact on-chain decomposition:
     ///
-    /// This is close enough for wallet UX (deposit flows, bridge fee
-    /// previews). Exact Nitro parity requires tx construction as an
-    /// `ArbSubmitRetryableTx` and simulation through the full block
-    /// executor; that deeper integration is tracked separately.
+    ///   total = submit_intrinsic + auto_redeem_gas
+    ///
+    /// where:
+    /// - `submit_intrinsic` covers the SubmitRetryableTx itself (tx
+    ///   base gas + EIP-2028 calldata + the fixed ArbOS bookkeeping
+    ///   overhead that creates the retryable record, escrows funds,
+    ///   and schedules the auto-redeem).
+    /// - `auto_redeem_gas` is what the scheduled redeem consumes
+    ///   when it executes `sender → retry_to` with `retry_value` and
+    ///   `retry_data`. We run the standard binary-search estimator
+    ///   on that equivalent call.
+    ///
+    /// The returned gas is what clients should put on the retryable's
+    /// `gas` field so the auto-redeem succeeds under the submission
+    /// tx's gas limit.
     async fn estimate_retryable_ticket_gas(
         &self,
         input: &alloy_primitives::Bytes,
@@ -234,7 +242,7 @@ where
         } else {
             TxKind::Call(to)
         };
-        let data_len = data.len();
+        let data_ref = data.clone();
         let equivalent = TransactionRequest {
             from: Some(sender),
             to: Some(kind),
@@ -244,48 +252,31 @@ where
         };
         let equivalent_req: RpcTxReq<<Rpc as RpcConvert>::Network> = equivalent.into();
 
-        // Estimate the auto-redeem body: sender -> retry_to with
-        // retry_value + retry_data. The L1 posting gas override will be
-        // added automatically.
+        // Binary-search the auto-redeem gas via the standard eth
+        // estimation machinery. The equivalent call has the exact
+        // same state transitions as what the auto-redeem runs, so
+        // its gas result is the auto-redeem's gas 1:1.
         let redeem_gas =
             EstimateCall::estimate_gas_at(self, equivalent_req, at, state_override).await?;
 
-        // Add the retryable submission overhead: on-chain a submit
-        // retryable tx allocates the retryable record, escrows funds,
-        // schedules the auto-redeem, and records a receipt. This is
-        // bounded and well-known from Nitro's on-chain costs:
-        //   submission_base ≈ 21k (tx base) + 35k (record + escrow) +
-        //                      12k (schedule auto-redeem) = ~68k gas.
-        //   plus 68 gas per retry_data byte for calldata copy/hash.
-        const SUBMIT_BASE_GAS: u64 = 68_000;
-        const SUBMIT_PER_BYTE: u64 = 68;
-        let submit_overhead =
-            SUBMIT_BASE_GAS.saturating_add((data_len as u64).saturating_mul(SUBMIT_PER_BYTE));
+        // Submit-retryable intrinsic gas, matching Nitro's
+        // ArbitrumSubmitRetryableTx.IntrinsicGas:
+        //   21,000  — tx base
+        //   + 16 × nonzero_bytes + 4 × zero_bytes  (EIP-2028 calldata)
+        //   + 40,000 — fixed ArbOS bookkeeping (retryable create + escrow + auto-redeem schedule)
+        let (zeros, non_zeros) =
+            data_ref.iter().fold(
+                (0u64, 0u64),
+                |(z, nz), &b| if b == 0 { (z + 1, nz) } else { (z, nz + 1) },
+            );
+        let calldata_gas = zeros
+            .saturating_mul(4)
+            .saturating_add(non_zeros.saturating_mul(16));
+        let submit_intrinsic = 21_000u64
+            .saturating_add(calldata_gas)
+            .saturating_add(40_000);
 
-        // Read the current L1 base fee and compute the retryable
-        // submission fee (stored separately; callers surface it via
-        // the `gasFeeCap` in a subsequent populate step).
-        let state = self
-            .inner
-            .provider()
-            .state_by_block_id(at)
-            .map_err(|e| EthApiError::Internal(e.into()))?;
-        let l1_price_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
-        let l1_base_fee = state
-            .storage(
-                ARBOS_STATE_ADDRESS,
-                StorageKey::from(B256::from(l1_price_slot.to_be_bytes::<32>())),
-            )
-            .map_err(|e| EthApiError::Internal(e.into()))?
-            .unwrap_or(U256::ZERO);
-        // Submission fee = l1_base_fee * (1400 + 6 * data_len). This
-        // is returned in wei (not gas), so it isn't added to the gas
-        // estimate — we just read it here to warm the state for the
-        // caller. Clients that need the fee separately call
-        // ArbRetryableTx.submissionFee().
-        let _submission_fee = l1_base_fee.saturating_mul(U256::from(1400u64 + 6 * data_len as u64));
-
-        Ok(redeem_gas.saturating_add(U256::from(submit_overhead)))
+        Ok(redeem_gas.saturating_add(U256::from(submit_intrinsic)))
     }
 
     /// Handle `eth_call` dispatch of

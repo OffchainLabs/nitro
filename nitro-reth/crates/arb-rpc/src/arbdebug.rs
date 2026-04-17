@@ -15,7 +15,7 @@ use jsonrpsee::{
     proc_macros::rpc,
     types::{error::INTERNAL_ERROR_CODE, ErrorObject},
 };
-use reth_provider::{BlockReaderIdExt, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, ReceiptProvider, StateProviderFactory};
 use serde::{Deserialize, Serialize};
 
 // Field offsets mirror Nitro's storage layout (arbos/l1_pricing,
@@ -161,7 +161,11 @@ fn compute_step(start: u64, end: u64, bound: u64) -> (u64, u64, u64) {
     if span == 0 || bound == 0 {
         return (start, 1, 0);
     }
-    let step = if span > bound { span.div_ceil(bound) } else { 1 };
+    let step = if span > bound {
+        span.div_ceil(bound)
+    } else {
+        1
+    };
     let samples = span.div_ceil(step).min(bound);
     let first = end.saturating_sub(step.saturating_mul(samples.saturating_sub(1)));
     (first, step, samples)
@@ -169,8 +173,23 @@ fn compute_step(start: u64, end: u64, bound: u64) -> (u64, u64, u64) {
 
 impl<Provider> ArbDebugHandler<Provider>
 where
-    Provider: StateProviderFactory + BlockReaderIdExt + Clone + 'static,
+    Provider: StateProviderFactory + BlockReaderIdExt + ReceiptProvider + Clone + 'static,
 {
+    /// Total gas consumed in the given block, summed from the last
+    /// receipt's `cumulative_gas_used`.
+    fn block_gas_used(&self, block: u64) -> Result<u64, ErrorObject<'static>> {
+        use alloy_consensus::TxReceipt;
+        let receipts = self
+            .provider
+            .receipts_by_block(alloy_eips::BlockHashOrNumber::Number(block))
+            .map_err(internal_err)?
+            .unwrap_or_default();
+        Ok(receipts
+            .last()
+            .map(|r| r.cumulative_gas_used())
+            .unwrap_or(0))
+    }
+
     fn check_enabled(&self) -> Result<(), ErrorObject<'static>> {
         if self.config.block_range_bound == 0 {
             return Err(internal_err("arbdebug disabled (block_range_bound = 0)"));
@@ -220,7 +239,8 @@ where
 #[async_trait::async_trait]
 impl<Provider> ArbDebugApiServer for ArbDebugHandler<Provider>
 where
-    Provider: StateProviderFactory + BlockReaderIdExt + Clone + Send + Sync + 'static,
+    Provider:
+        StateProviderFactory + BlockReaderIdExt + ReceiptProvider + Clone + Send + Sync + 'static,
 {
     async fn pricing_model(&self, start: u64, end: u64) -> RpcResult<PricingModelHistory> {
         self.check_enabled()?;
@@ -247,9 +267,7 @@ where
                     .try_into()
                     .unwrap_or(0u64),
             );
-            // gas_used per-block is not persistent in ArbOS storage; leave
-            // as 0 until we plumb it through the block receipts index.
-            gas_used.push(0);
+            gas_used.push(self.block_gas_used(b)?);
             l1_base_fee_estimate.push(self.read_l1_field(b, L1_PRICE_PER_UNIT_OFFSET)?);
             l1_last_surplus.push(self.read_l1_field(b, L1_LAST_SURPLUS_OFFSET)?);
             l1_funds_due.push(self.read_l1_field(b, L1_L1_FEES_AVAILABLE_OFFSET)?);
