@@ -9,8 +9,8 @@
 use crate::{
     run::RunProgram,
     test::{
-        check_instrumentation, random_bytes20, random_bytes32, random_ink, run_machine, run_native,
-        test_compile_config, test_configs, TestInstance,
+        api::TestEvmApi, check_instrumentation, random_bytes20, random_bytes32, random_ink,
+        run_machine, run_native, test_compile_config, test_configs, TestInstance,
     },
 };
 use arbutil::{
@@ -34,7 +34,7 @@ use prover::{
 };
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 use wasmer::wasmparser::Operator;
-use wasmer::{CompilerConfig, ExportIndex, Imports, Pages, Store};
+use wasmer::{CompilerConfig, ExportIndex, Imports, Pages, Store, Target};
 use wasmer_compiler_singlepass::Singlepass;
 
 #[test]
@@ -301,6 +301,45 @@ fn test_heap() -> Result<()> {
     compile.bounds.heap_bound = Pages(0);
     _ = TestInstance::new_with_evm("tests/memory.wat", &compile, config).unwrap_err();
     _ = Machine::from_user_path(Path::new("tests/memory.wat"), &compile).unwrap_err();
+    Ok(())
+}
+
+#[test]
+fn test_memory_grow_overflow_compatibility() -> Result<()> {
+    let (mut compile, config, _) = test_configs();
+    compile.bounds.heap_bound = Pages(128);
+    compile.pricing.costs = |_, _| 0;
+
+    let run_overflow = |arbos_version: u64, pages: u32| -> Result<UserOutcomeKind> {
+        let (mut evm, mut evm_data) = TestEvmApi::new(compile.clone());
+        evm_data.arbos_version = arbos_version;
+        let mut native = TestInstance::from_path(
+            "tests/memory-grow-overflow.wat",
+            evm.clone(),
+            evm_data,
+            &compile,
+            config,
+            Target::default(),
+        )?;
+        let footprint = native.memory().ty(&native.store).minimum.0 as u16;
+        evm.set_pages(footprint);
+        let outcome = native.run_main(
+            &pages.to_le_bytes(),
+            config,
+            config.pricing.gas_to_ink(Gas(u32::MAX.into())),
+        )?;
+        Ok(outcome.kind())
+    };
+
+    assert_eq!(run_overflow(51, 4096)?, UserOutcomeKind::OutOfInk);
+    assert_eq!(run_overflow(51, 1 << 16)?, UserOutcomeKind::Success);
+    assert_eq!(
+        run_overflow(51, (1 << 16) + 4096)?,
+        UserOutcomeKind::Success
+    );
+    assert_eq!(run_overflow(51, (1 << 16) + 1)?, UserOutcomeKind::OutOfInk);
+    assert_eq!(run_overflow(59, 1 << 16)?, UserOutcomeKind::OutOfInk);
+
     Ok(())
 }
 

@@ -996,6 +996,10 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// Pays for new pages as needed before the memory.grow opcode is invoked.
     fn pay_for_memory_grow(&mut self, pages: u32) -> Result<(), Self::Err> {
         if pages > u16::MAX as u32 {
+            if pages & 0xfff == 0 && self.evm_data().arbos_version < 59 {
+                self.buy_ink(hostio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
+                return trace!("pay_for_memory_grow", self, be!(0u16), &[]);
+            }
             let _ = self.buy_gas(Gas(u64::MAX));
             return Err(eyre!("memory.grow pages exceed u16").into());
         }
