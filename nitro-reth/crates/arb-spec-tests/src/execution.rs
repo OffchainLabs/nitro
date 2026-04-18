@@ -19,6 +19,11 @@ pub struct ExecutionFixture {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Optional inline chain spec JSON. When present the runner spawns
+    /// a fresh arbreth process against this genesis so the fixture is
+    /// self-contained from L2 block 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genesis: Option<serde_json::Value>,
     pub messages: Vec<ExecutionMessage>,
     #[serde(default)]
     pub expected: ExecutionExpectations,
