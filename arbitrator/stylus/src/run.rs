@@ -9,6 +9,7 @@ use arbutil::evm::user::UserOutcome;
 use eyre::{eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
+use wasmer_types::TrapCode;
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
@@ -88,6 +89,11 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
+                // Check for native stack overflow first. The metered stack counter may
+                // also read zero coincidentally, so this check must precede the OutOfStack path.
+                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
+                    return Ok(NativeStackOverflow);
+                }
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }

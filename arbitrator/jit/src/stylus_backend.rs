@@ -154,6 +154,7 @@ pub fn exec_wasm(
 
         let ink_left = match outcome.as_ref() {
             Ok(UserOutcome::OutOfStack) => Ink(0), // take all ink when out of stack
+            Ok(UserOutcome::NativeStackOverflow) => Ink(0), // take all ink on native stack overflow
             _ => instance.ink_left().into(),
         };
 
