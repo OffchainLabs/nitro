@@ -399,9 +399,9 @@ func callProgram(
 
 	depth := evm.Depth()
 	if status == userNativeStackOverflow {
-		// A native (host) stack overflow during stylus execution is a consensus-breaking
+		// A native (host) stack overflow during stylus execution is a consensus
 		// failure: a node that cannot finish a call would produce different state than
-		// nodes that can. Panic rather than risk divergence.
+		// nodes that can.
 		log.Error("stylus native stack overflow", "program", address, "module", moduleHash, "depth", depth)
 		panic(fmt.Sprintf("stylus native stack overflow (program=%v, module=%v, depth=%d)", address, moduleHash, depth))
 	}
