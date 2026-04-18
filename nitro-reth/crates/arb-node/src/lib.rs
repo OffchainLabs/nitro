@@ -178,9 +178,9 @@ where
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
 
-    // Override debug_traceTransaction to support Nitro's `stylusTracer`
-    // named option. The forwarder delegates every other tracer kind to
-    // reth's built-in handler so default behavior is preserved.
+    // Override debug_traceTransaction so the `stylusTracer` named
+    // option returns the cached host-I/O records; everything else
+    // forwards to the standard handler.
     {
         let debug_api = ctx.registry.debug_api();
         let forwarder: arb_rpc::stylus_debug::DebugForwarder =

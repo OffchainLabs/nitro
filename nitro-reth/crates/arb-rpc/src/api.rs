@@ -158,26 +158,8 @@ where
         + Clone
         + Default,
 {
-    /// Handle `eth_estimateGas` targeting
-    /// `NodeInterface.estimateRetryableTicket(...)` (selector 0xc3dc5879).
-    ///
-    /// Returns the total gas a retryable submission will consume. This
-    /// is the same value Nitro's NodeInterface returns, computed via
-    /// its exact on-chain decomposition:
-    ///
-    ///   total = submit_intrinsic + auto_redeem_gas
-    ///
-    /// where:
-    /// - `submit_intrinsic` covers the SubmitRetryableTx itself (tx base gas + EIP-2028 calldata +
-    ///   the fixed ArbOS bookkeeping overhead that creates the retryable record, escrows funds, and
-    ///   schedules the auto-redeem).
-    /// - `auto_redeem_gas` is what the scheduled redeem consumes when it executes `sender →
-    ///   retry_to` with `retry_value` and `retry_data`. We run the standard binary-search estimator
-    ///   on that equivalent call.
-    ///
-    /// The returned gas is what clients should put on the retryable's
-    /// `gas` field so the auto-redeem succeeds under the submission
-    /// tx's gas limit.
+    /// Gas estimate for `NodeInterface.estimateRetryableTicket` —
+    /// `submit_intrinsic + auto_redeem_gas`.
     async fn estimate_retryable_ticket_gas(
         &self,
         input: &alloy_primitives::Bytes,
@@ -276,17 +258,9 @@ where
         Ok(redeem_gas.saturating_add(U256::from(submit_intrinsic)))
     }
 
-    /// Handle `eth_call` dispatch of
-    /// `NodeInterface.estimateRetryableTicket(...)`.
-    ///
-    /// Nitro's implementation swaps the executing message for a
-    /// SubmitRetryableTx and re-executes — the result of `eth_call` is
-    /// whatever that swapped tx produces. The submit-retryable's
-    /// observable side effect at eth_call layer is the auto-redeem's
-    /// inner call (`sender → to` with `l2CallValue` and `data`).
-    /// We simulate that equivalent call and return its raw bytes, so
-    /// clients that probe via eth_call get parity-equivalent return
-    /// data without any envelope.
+    /// `eth_call` of `NodeInterface.estimateRetryableTicket(...)` —
+    /// simulates the auto-redeem inner call (`sender → to` with
+    /// `l2CallValue` and `data`) and returns its raw bytes.
     async fn simulate_retryable_ticket_call(
         &self,
         input: &alloy_primitives::Bytes,
@@ -712,6 +686,38 @@ where
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
 {
+    /// `eth_gasPrice` returns just the latest base fee — there is no
+    /// priority-fee market on this chain.
+    fn gas_price(&self) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send
+    where
+        Self: reth_rpc_eth_api::helpers::LoadBlock,
+    {
+        use alloy_consensus::BlockHeader;
+        use reth_storage_api::{BlockNumReader, HeaderProvider};
+        async move {
+            let best = self
+                .provider()
+                .best_block_number()
+                .map_err(|e| EthApiError::Internal(e.into()))?;
+            let header_opt = HeaderProvider::sealed_header(self.provider(), best)
+                .map_err(|e| EthApiError::Internal(e.into()))?;
+            let base_fee = match header_opt {
+                Some(sealed) => sealed.header().base_fee_per_gas().unwrap_or_default(),
+                None => 0,
+            };
+            Ok(U256::from(base_fee))
+        }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn suggested_priority_fee(
+        &self,
+    ) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send
+    where
+        Self: 'static,
+    {
+        async move { Ok(U256::ZERO) }
+    }
 }
 
 impl<N, Rpc> Trace for ArbEthApi<N, Rpc>
@@ -1159,13 +1165,7 @@ where
                     }
                 }
 
-                // estimateRetryableTicket via eth_call. Nitro replaces the
-                // executing message with a SubmitRetryableTx; the call result
-                // is whatever that swapped tx produces. We simulate the
-                // observable equivalent (sender → to with l2CallValue/data)
-                // and return its raw bytes. Real bridges use eth_estimateGas
-                // (handled separately above), where the gas decomposition is
-                // also implemented.
+                // estimateRetryableTicket via eth_call.
                 [0xc3, 0xdc, 0x58, 0x79] => {
                     self.simulate_retryable_ticket_call(&input_bytes, at, overrides)
                         .await

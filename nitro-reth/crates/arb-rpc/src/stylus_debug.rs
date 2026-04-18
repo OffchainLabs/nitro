@@ -1,22 +1,9 @@
-//! `debug_traceTransaction` override that adds Nitro's `stylusTracer`
+//! `debug_traceTransaction` override that adds the `stylusTracer`
 //! named tracer.
 //!
-//! Nitro registers a `"stylusTracer"` named tracer with go-ethereum's
-//! tracer plugin system. Clients call:
-//!
-//! ```text
-//! debug_traceTransaction(tx_hash, {"tracer": "stylusTracer"})
-//! ```
-//!
-//! and receive the captured Stylus host-I/O records inline. We
-//! short-circuit that case to the same cache `arb_traceStylusHostio`
-//! drains; every other tracer name is forwarded to the standard reth
-//! debug handler so behavior is otherwise unchanged.
-//!
-//! Wiring lives in `arb-node` — it constructs the inner reth `DebugApi`
-//! from the registry, wraps it in [`StylusDebugHandler`], and calls
-//! `add_or_replace_configured` so the override replaces the stock
-//! `debug_traceTransaction` across all configured transports.
+//! When `opts.tracer == "stylusTracer"` the cached Stylus host-I/O
+//! records for `tx_hash` are returned as a JSON array; every other
+//! tracer name forwards to the standard handler unchanged.
 
 use alloy_primitives::B256;
 use alloy_rpc_types_trace::geth::{GethDebugTracerType, GethDebugTracingOptions, GethTrace};
@@ -24,17 +11,11 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 
 use crate::stylus_tracer::take_cached_trace;
 
-/// `"stylusTracer"` — Nitro's named tracer constant.
 pub const STYLUS_TRACER_NAME: &str = "stylusTracer";
 
 /// `debug_*` namespace override exposing the `stylusTracer` option.
 #[rpc(server, namespace = "debug")]
 pub trait StylusDebug {
-    /// `debug_traceTransaction` with `stylusTracer` support.
-    ///
-    /// When `opts.tracer == "stylusTracer"`, returns the cached host-I/O
-    /// records for `tx_hash` as a JSON array (matching Nitro's wire
-    /// shape). Otherwise delegates to the standard reth handler.
     #[method(name = "traceTransaction")]
     async fn trace_transaction(
         &self,
@@ -43,9 +24,7 @@ pub trait StylusDebug {
     ) -> RpcResult<GethTrace>;
 }
 
-/// Async forwarder used to delegate non-stylus tracer requests to the
-/// standard reth debug handler. The wiring layer in `arb-node` boxes a
-/// closure capturing the live `DebugApi<EthApi>` instance.
+/// Async forwarder for non-stylus tracer requests.
 pub type DebugForwarder = std::sync::Arc<
     dyn Fn(
             B256,
@@ -56,8 +35,6 @@ pub type DebugForwarder = std::sync::Arc<
         + Sync,
 >;
 
-/// Concrete handler. Stores the forwarder; intercepts only the
-/// `stylusTracer` case.
 pub struct StylusDebugHandler {
     forwarder: DebugForwarder,
 }
@@ -69,7 +46,6 @@ impl std::fmt::Debug for StylusDebugHandler {
 }
 
 impl StylusDebugHandler {
-    /// Build a handler from a forwarder closure.
     pub fn new(forwarder: DebugForwarder) -> Self {
         Self { forwarder }
     }

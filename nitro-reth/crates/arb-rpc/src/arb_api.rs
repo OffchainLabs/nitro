@@ -22,7 +22,8 @@ pub trait ArbApi {
     #[method(name = "maintenanceStatus")]
     fn maintenance_status(&self) -> RpcResult<ArbMaintenanceStatus>;
 
-    /// Checks publisher health. Returns an error if unhealthy.
+    /// Publisher health check. Errors when the node is not configured
+    /// as a transaction publisher (the executor-only mode here).
     #[method(name = "checkPublisherHealth")]
     fn check_publisher_health(&self) -> RpcResult<()>;
 
@@ -30,40 +31,38 @@ pub trait ArbApi {
     #[method(name = "getBlockInfo")]
     async fn get_block_info(&self, block_num: u64) -> RpcResult<ArbBlockInfo>;
 
-    /// Returns the raw block metadata for blocks in `[fromBlock, toBlock]`.
-    ///
-    /// Used by Nitro consensus layer for bulk metadata sync. arbreth does
-    /// not persist separate block metadata; each entry's `rawMetadata` is
-    /// empty, matching the Nitro schema for blocks with no sidecar data.
+    /// Raw block metadata for blocks in `[fromBlock, toBlock]`. The
+    /// `rawMetadata` field is empty since no sidecar data is tracked.
     #[method(name = "getRawBlockMetadata")]
     async fn get_raw_block_metadata(
         &self,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumberOrTag,
+        to_block: BlockNumberOrTag,
     ) -> RpcResult<Vec<NumberAndBlockMetadata>>;
 
-    /// Returns the Stylus host-I/O trace for a previously-executed
-    /// transaction. Empty if the tx didn't invoke any Stylus contracts
-    /// or hasn't been re-traced yet.
-    ///
-    /// Pairs with `debug_traceTransaction` — clients call both and
-    /// merge the EVM opcode trace with the Stylus host calls.
+    /// Stylus host-I/O trace for a previously-executed transaction.
+    /// Empty if no Stylus contracts were invoked.
     #[method(name = "traceStylusHostio")]
     async fn trace_stylus_hostio(&self, tx_hash: B256) -> RpcResult<Vec<HostioTraceInfo>>;
 
-    /// Returns the currently-set validated block hash, as propagated
-    /// via `nitroexecution_setFinalityData`. Returns the zero hash
-    /// when no validated marker is set.
+    /// Currently-set validated block hash. Zero hash when unset.
     #[method(name = "getValidatedBlock")]
     fn get_validated_block(&self) -> RpcResult<B256>;
+
+    /// L1 confirmations for the L2 block at `block_num`. Returns 0
+    /// without an L1 reader.
+    #[method(name = "getL1Confirmations")]
+    async fn get_l1_confirmations(&self, block_num: u64) -> RpcResult<u64>;
+
+    /// L1 batch number containing the L2 block at `block_num`. Errors
+    /// without an L1 batch index.
+    #[method(name = "findBatchContainingBlock")]
+    async fn find_batch_containing_block(&self, block_num: u64) -> RpcResult<u64>;
 }
 
-/// Implementation of the `arb_` RPC namespace.
 pub struct ArbApiHandler<Provider> {
     provider: Provider,
-    /// Current maintenance mode status.
     maintenance_status: Arc<parking_lot::RwLock<ArbMaintenanceStatus>>,
-    /// Current validated block hash set by `nitroexecution_setFinalityData`.
     validated_block: Arc<parking_lot::RwLock<B256>>,
 }
 
@@ -99,8 +98,11 @@ where
     }
 
     fn check_publisher_health(&self) -> RpcResult<()> {
-        // Sequencer health is always OK for a full node.
-        Ok(())
+        Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            "publishing transactions not supported by this endpoint",
+            None::<()>,
+        ))
     }
 
     async fn get_block_info(&self, block_num: u64) -> RpcResult<ArbBlockInfo> {
@@ -154,50 +156,74 @@ where
         Ok(*self.validated_block.read())
     }
 
+    async fn get_l1_confirmations(&self, _block_num: u64) -> RpcResult<u64> {
+        Ok(0)
+    }
+
+    async fn find_batch_containing_block(&self, block_num: u64) -> RpcResult<u64> {
+        Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            format!("no batch index available for block {block_num}"),
+            None::<()>,
+        ))
+    }
+
     async fn get_raw_block_metadata(
         &self,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumberOrTag,
+        to_block: BlockNumberOrTag,
     ) -> RpcResult<Vec<NumberAndBlockMetadata>> {
-        if from_block > to_block {
+        let internal = |e: alloy_rpc_types_eth::ConversionError| {
+            jsonrpsee::types::ErrorObject::owned(
+                jsonrpsee::types::error::INVALID_PARAMS_CODE,
+                e.to_string(),
+                None::<()>,
+            )
+        };
+        let provider_err = |e: reth_provider::ProviderError| {
+            jsonrpsee::types::ErrorObject::owned(
+                jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+                e.to_string(),
+                None::<()>,
+            )
+        };
+        let best = self.provider.best_block_number().map_err(provider_err)?;
+        let resolve = |bn: BlockNumberOrTag| -> Result<u64, _> {
+            match bn {
+                BlockNumberOrTag::Number(n) => Ok(n),
+                BlockNumberOrTag::Earliest => Ok(0),
+                BlockNumberOrTag::Latest
+                | BlockNumberOrTag::Safe
+                | BlockNumberOrTag::Finalized
+                | BlockNumberOrTag::Pending => Ok(best),
+            }
+            .map_err(internal)
+        };
+        let from = resolve(from_block)?;
+        let to = resolve(to_block)?;
+        if from > to {
             return Err(jsonrpsee::types::ErrorObject::owned(
                 jsonrpsee::types::error::INVALID_PARAMS_CODE,
-                format!("from_block ({from_block}) > to_block ({to_block})"),
+                format!("from_block ({from}) > to_block ({to})"),
                 None::<()>,
             ));
         }
-        // Cap the range to protect the node from huge scans. Matches a
-        // reasonable upper bound while still serving typical sync queries.
         const MAX_RANGE: u64 = 5_000;
-        if to_block.saturating_sub(from_block) + 1 > MAX_RANGE {
+        if to.saturating_sub(from) + 1 > MAX_RANGE {
             return Err(jsonrpsee::types::ErrorObject::owned(
                 jsonrpsee::types::error::INVALID_PARAMS_CODE,
                 format!("range exceeds {MAX_RANGE} blocks"),
                 None::<()>,
             ));
         }
-        let best = self.provider.best_block_number().map_err(|e| {
-            jsonrpsee::types::ErrorObject::owned(
-                jsonrpsee::types::error::INTERNAL_ERROR_CODE,
-                e.to_string(),
-                None::<()>,
-            )
-        })?;
-        let clamped_to = to_block.min(best);
+        let clamped_to = to.min(best);
         let mut out =
-            Vec::with_capacity((clamped_to.saturating_sub(from_block) + 1).min(MAX_RANGE) as usize);
-        for block_number in from_block..=clamped_to {
-            // Block must exist — verify via header lookup; else skip.
+            Vec::with_capacity((clamped_to.saturating_sub(from) + 1).min(MAX_RANGE) as usize);
+        for block_number in from..=clamped_to {
             let maybe = self
                 .provider
                 .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(block_number))
-                .map_err(|e| {
-                    jsonrpsee::types::ErrorObject::owned(
-                        jsonrpsee::types::error::INTERNAL_ERROR_CODE,
-                        e.to_string(),
-                        None::<()>,
-                    )
-                })?;
+                .map_err(provider_err)?;
             if maybe.is_some() {
                 out.push(NumberAndBlockMetadata {
                     block_number,
