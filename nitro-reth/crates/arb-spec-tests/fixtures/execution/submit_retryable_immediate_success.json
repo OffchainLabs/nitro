@@ -52,8 +52,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 32,
-          "timestamp": 1776546915,
+          "blockNumber": 31,
+          "timestamp": 1776548483,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -66,8 +66,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 32,
-          "timestamp": 1776546915,
+          "blockNumber": 31,
+          "timestamp": 1776548483,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -78,54 +78,35 @@
     {
       "message": {
         "header": {
-          "kind": 13,
-          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 33,
-          "timestamp": 1776546946,
+          "kind": 9,
+          "sender": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
+          "blockNumber": 32,
+          "timestamp": 1776548513,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
-          "baseFeeL1": 2140386389
+          "baseFeeL1": 2465887471
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9IKzhqdNyrZ7ZvisB7Twg2XTdJXdI1L/W37qc1QtaE6ueQepy+kn67UsDT+90MDRpwaoXjrIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf5O0VQAAAAAAAAAA",
-        "batchGasCost": 42194,
-        "batchDataTokens": {
-          "length": 172,
-          "nonzeros": 120
-        }
+        "l2Msg": "AAAAAAAAAAAAAAAADHCfNA8LsuNhIp40W34mmZ0JaasAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADTwhvOzO2hAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACOG8m/BAAAAAAAAAAAAAAAAAADw7nHlbU+hNkjIZmXUV5mhqBsEawAAAAAAAAAAAAAAAPDuceVtT6E2SMhmZdRXmaGoGwRrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEk+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAO5rKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEMkIyiA=="
       },
       "delayedMessagesRead": 2
     },
     {
       "message": {
         "header": {
-          "kind": 9,
-          "sender": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
-          "blockNumber": 34,
-          "timestamp": 1776546947,
-          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
-          "baseFeeL1": 1877668993
-        },
-        "l2Msg": "AAAAAAAAAAAAAAAADHCfNA8LsuNhIp40W34mmZ0JaasAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADTwhvOzO2hAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACOG8m/BAAAAAAAAAAAAAAAAAADw7nHlbU+hNkjIZmXUV5mhqBsEawAAAAAAAAAAAAAAAPDuceVtT6E2SMhmZdRXmaGoGwRrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEk+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAO5rKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEMkIyiA=="
-      },
-      "delayedMessagesRead": 3
-    },
-    {
-      "message": {
-        "header": {
           "kind": 13,
           "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 35,
-          "timestamp": 1776546948,
-          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000003",
-          "baseFeeL1": 1646003811
+          "blockNumber": 39,
+          "timestamp": 1776548520,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 972392415
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9ISzhqdNyrZ7ZvisB7Twg2XTdJXdIwfvW5Z127T5j4KjoeC4D+H+fThais6u/aFFGjEu9oKdAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYhwGYwAAAAAAAAAA",
-        "batchGasCost": 44048,
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+qizhqdNyrZ7ZvisB7Twg2XTdJXdI1VUPFGNKxPa/ICzhsQdAi6IWwUxEWb8ZfhKSKGfJ7TaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOfWH3wAAAAAAAAAA",
+        "batchGasCost": 45812,
         "batchDataTokens": {
-          "length": 274,
-          "nonzeros": 239
+          "length": 388,
+          "nonzeros": 346
         }
       },
-      "delayedMessagesRead": 4
+      "delayedMessagesRead": 3
     }
   ],
   "expected": {
@@ -141,9 +122,6 @@
       },
       {
         "number": 4
-      },
-      {
-        "number": 5
       }
     ],
     "balances": [

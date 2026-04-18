@@ -1,0 +1,303 @@
+{
+  "name": "stylus_precompile_setters_round_trip",
+  "description": "ArbOwner setters drive ArbWasm getters: ExpiryDays/BlockCacheSize/FreePages/InitCostScalar/InkPrice/KeepaliveDays/MaxStackDepth/PageGas/PageLimit.",
+  "genesis": {
+    "alloc": {
+      "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      },
+      "0xaF24Ca6c2831f4d4F629418b50C227DF0885613A": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "config": {
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 31,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 1,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgwGPSZQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcCAoGXo68J2vTMOhFqV6j1TGX1q96Z8F5hYg44nQcYJ0RF8oETFae6eRX1Np2pyGaRHLSgqjOsK500fwQUkQGkLxg/5"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroBgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKSqxoAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAaCkljXlzFXesc7pklG9VO3Bd65MDZcNsrc1UupJOpqWsqA16Ys+t/896Np+Rj/BboPT/ZMwtwsNdpYagHVlDeVw7A=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 35,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroCgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKQ4DxRXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGTAAaDWwiTE07Y8rXTsbGYjrdeOY4+ufSpNC7N6UCRiqkStAKAEcl3RqkSj/lhBhgDuPi7IXMpFGGtoByWnj0bBb6WOew=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 36,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroDgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKQ/N6hGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPAgKDviJ7QhRhvekiW8ANmsHji7ZhFdizfwEcMzzJALWRByaBYxRib8gkxOjptfi5UoefcDb5Mcs4QXAUFnX42D0kodg=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 36,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroEgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKRn4HGPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAgKBKkkSs7a+Kih9D81kTp3E1UNB3nlY9k+Gtc4hD5myue6A06gNiqjebh++1o+cyXeyjgf1D8HzxBB62SPGcVNETxA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 37,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroFgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKSMHU/aAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXAAaCalGjuEmC1aq6/EJL1Gb+6jCH+8mtZBCglgbEztkaUVKA3iAuTA2rzMseF71itfaDAcDHL6f1v9+PHQa0DJx7oAw=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 37,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroGgIQL68IAgsWAlAAAAAAAAAAAAAAAAAAAAAAAAABwgKQqnL4+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAaAzqQUIwHWDk1B5C7l/ZOzAUK3YqX/fqTPP6jHjktBu1qBsem5NdbzCAiB8ffKjcf+9CYURsn42z3mvJDLfLBNG0w=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 37,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroHgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKRFZ8yOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbAgKASgQB2rDs7Z5rcz7m9Cib0rf2aYboIe82tw3iQAR7k3qAmDF62cwzAJ1ofCfiw4y+4sOG8t0QEOhJJrtV3esJn3w=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 39,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroIgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKSqphngAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfAgKAj4k5wbae513cN4XSYBsM/P1PEws2S4V/b0kpAPskZHqAMeE4N+5Gr79aZatzBMn0LaVFOd6izio4PYSFJZxxlVw=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 39,
+          "timestamp": 1776548487,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4jYMGSroJgIQL68IAgsWclAAAAAAAAAAAAAAAAAAAAAAAAABwgKRllTgaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAjAgKD6BcLutBCgwNLcQDWopbJ85LN6XEKvrr6S0G1w+U8gg6AfvZjJsyhOXfdWTl9q2fK7tnrOdhvW6ifhu7OTnyHtgg=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "gas_used": 84264
+      },
+      {
+        "number": 2,
+        "gas_used": 21204
+      },
+      {
+        "number": 3,
+        "gas_used": 21204
+      },
+      {
+        "number": 4,
+        "gas_used": 21204
+      },
+      {
+        "number": 5,
+        "gas_used": 21204
+      },
+      {
+        "number": 6,
+        "gas_used": 21204
+      },
+      {
+        "number": 7,
+        "gas_used": 21192
+      },
+      {
+        "number": 8,
+        "gas_used": 21204
+      },
+      {
+        "number": 9,
+        "gas_used": 21204
+      },
+      {
+        "number": 10,
+        "gas_used": 21204
+      }
+    ],
+    "eth_calls": [
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x309f6555",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x7af6e819",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000064"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x4490c19d",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000003"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x5fc94c0b",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000004"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0xd1c17abc",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000005"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x0a936455",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x8ccfaa70",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x7af4ba49",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000007"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x9786f96e",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000008"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0x11c82ae8",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000024febd0a"
+      },
+      {
+        "to": "0x0000000000000000000000000000000000000071",
+        "data": "0xa996e0c2",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000002"
+      }
+    ]
+  }
+}

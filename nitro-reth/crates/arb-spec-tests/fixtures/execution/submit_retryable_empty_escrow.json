@@ -53,7 +53,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 30,
-          "timestamp": 1776546918,
+          "timestamp": 1776548483,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -67,7 +67,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 30,
-          "timestamp": 1776546918,
+          "timestamp": 1776548483,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -81,9 +81,9 @@
           "kind": 9,
           "sender": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
           "blockNumber": 31,
-          "timestamp": 1776546948,
+          "timestamp": 1776548513,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
-          "baseFeeL1": 2819792193
+          "baseFeeL1": 2820383898
         },
         "l2Msg": "AAAAAAAAAAAAAAAADHCfNA8LsuNhIp40W34mmZ0JaasAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADTwhvOzO2hAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACOG8m/BAAAAAAAAAAAAAAAAAADw7nHlbU+hNkjIZmXUV5mhqBsEawAAAAAAAAAAAAAAAPDuceVtT6E2SMhmZdRXmaGoGwRrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEk+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAO5rKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEMkIyiA=="
       },
@@ -94,16 +94,16 @@
         "header": {
           "kind": 13,
           "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 32,
-          "timestamp": 1776546949,
+          "blockNumber": 33,
+          "timestamp": 1776548515,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
-          "baseFeeL1": 2471900423
+          "baseFeeL1": 2164205475
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9IWzhqdNyrZ7ZvisB7Twg2XTdJXdI6rLZkp/6tT/VMOQT5tkL3Ms9XvmLta2WhlG3GF17o7dAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAk1Y1BwAAAAAAAAAA",
-        "batchGasCost": 45840,
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+qOzhqdNyrZ7ZvisB7Twg2XTdJXdI56IHcnVZZNL42GmhuJig5T7O0uYiLxNJwgM27OeDrkpAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgP8nowAAAAAAAAAA",
+        "batchGasCost": 45816,
         "batchDataTokens": {
           "length": 389,
-          "nonzeros": 348
+          "nonzeros": 346
         }
       },
       "delayedMessagesRead": 3

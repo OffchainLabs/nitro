@@ -52,8 +52,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 27,
-          "timestamp": 1776546916,
+          "blockNumber": 31,
+          "timestamp": 1776548486,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -66,8 +66,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 27,
-          "timestamp": 1776546916,
+          "blockNumber": 31,
+          "timestamp": 1776548486,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -80,8 +80,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 27,
-          "timestamp": 1776546916,
+          "blockNumber": 31,
+          "timestamp": 1776548486,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -94,8 +94,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
-          "timestamp": 1776546916,
+          "blockNumber": 31,
+          "timestamp": 1776548486,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -106,33 +106,33 @@
     {
       "message": {
         "header": {
-          "kind": 13,
-          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 28,
-          "timestamp": 1776546942,
+          "kind": 3,
+          "sender": "0x8f34c8862920797d81916d62c274dd9217114f39",
+          "blockNumber": 32,
+          "timestamp": 1776548517,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
-          "baseFeeL1": 4158675638
+          "baseFeeL1": 2465887471
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9H6zhqdNyrZ7ZvisB7Twg2XTdJXdI9szj3FiNO4wMSlKQvcTPywPtdT28XifKXLIGWaJyE1WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9+BatgAAAAAAAAAA",
-        "batchGasCost": 42194,
-        "batchDataTokens": {
-          "length": 172,
-          "nonzeros": 120
-        }
+        "l2Msg": "BAL4dIMGSroBhAvrwgCEC+vCAIN6EgCUqOGJjRlxPfYLWwN1+nhQE3ogMi6GCgEjF7AAgMCAoEzTM2do/jntedAYwHdP8HrJlVfaEEQuo0xBL3QnAHpwoDBq31KcVd5KsjqWDo3ggwYnIjpSWNmDJfbcyiJg/as9"
       },
       "delayedMessagesRead": 2
     },
     {
       "message": {
         "header": {
-          "kind": 3,
-          "sender": "0x8f34c8862920797d81916d62c274dd9217114f39",
-          "blockNumber": 29,
-          "timestamp": 1776546943,
+          "kind": 13,
+          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
+          "blockNumber": 33,
+          "timestamp": 1776548518,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
-          "baseFeeL1": 3648273329
+          "baseFeeL1": 2161136012
         },
-        "l2Msg": "BAL4dIMGSroBhAvrwgCEC+vCAIN6EgCUqOGJjRlxPfYLWwN1+nhQE3ogMi6GCgEjF7AAgMCAoEzTM2do/jntedAYwHdP8HrJlVfaEEQuo0xBL3QnAHpwoDBq31KcVd5KsjqWDo3ggwYnIjpSWNmDJfbcyiJg/as9"
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+qazhqdNyrZ7ZvisB7Twg2XTdJXdI5Ht5CZxHedfQaN4NYGTI/VVIMViDtYvIHedbXya3rSHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgNBRjAAAAAAAAAAA",
+        "batchGasCost": 45816,
+        "batchDataTokens": {
+          "length": 389,
+          "nonzeros": 346
+        }
       },
       "delayedMessagesRead": 3
     },
@@ -141,16 +141,16 @@
         "header": {
           "kind": 13,
           "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 30,
-          "timestamp": 1776546944,
+          "blockNumber": 38,
+          "timestamp": 1776548523,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000003",
-          "baseFeeL1": 3197409550
+          "baseFeeL1": 1112298545
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9ICzhqdNyrZ7ZvisB7Twg2XTdJXdI1Xy7TkyVS/OKb6eBDLwx32AVhW5D5FSkbXdh190fVYCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAvpSZDgAAAAAAAAAA",
-        "batchGasCost": 48064,
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+quzhqdNyrZ7ZvisB7Twg2XTdJXdI7HCN6wbZSoyJ7UD6pistdxQqlu5RxJg28EElasKK7SMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQkxUMQAAAAAAAAAA",
+        "batchGasCost": 44422,
         "batchDataTokens": {
-          "length": 525,
-          "nonzeros": 486
+          "length": 303,
+          "nonzeros": 260
         }
       },
       "delayedMessagesRead": 4
