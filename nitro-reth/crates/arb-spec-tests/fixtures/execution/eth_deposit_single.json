@@ -1,13 +1,13 @@
 {
-  "name": "eth_deposit_credits_recipient",
-  "description": "A single L1 ETH deposit message (kind=12) credits the recipient with the deposited amount and produces a block.",
+  "name": "eth_deposit_single",
+  "description": "Single L1 ETH deposit credits the recipient with the full amount.",
   "messages": [
     {
       "message": {
         "header": {
           "kind": 12,
           "sender": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "blockNumber": 1,
+          "blockNumber": 100,
           "timestamp": 1700000000,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
           "baseFeeL1": null
@@ -16,13 +16,18 @@
         "batchDataTokens": null,
         "batchGasCost": null
       },
-      "delayedMessagesRead": 1
+      "delayedMessagesRead": 1,
+      "msgIdx": 1
     }
   ],
   "expected": {
     "blocks": [
-      { "number": 1 }
+      {
+        "number": 1,
+        "gas_used": 0
+      }
     ],
+    "storage": [],
     "balances": [
       {
         "address": "0x2222222222222222222222222222222222222222",
