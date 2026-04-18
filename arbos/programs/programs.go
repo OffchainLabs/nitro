@@ -55,6 +55,7 @@ var dataPricerKey = []byte{3}
 var cacheManagersKey = []byte{4}
 
 var ErrProgramActivation = errors.New("program activation failed")
+var ErrNativeStackOverflow = errors.New("native stack overflow")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -594,6 +595,7 @@ const (
 	userFailure
 	userOutOfInk
 	userOutOfStack
+	userNativeStackOverflow
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
@@ -609,6 +611,11 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
+	case userNativeStackOverflow:
+		// This should never be reached — callProgram panics
+		// before calling toResult when status is userNativeStackOverflow.
+		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
+		return nil, "", ErrNativeStackOverflow
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted

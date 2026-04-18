@@ -4,7 +4,6 @@
 package programs
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 
@@ -510,14 +509,8 @@ func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.Messag
 	}
 
 	var limit uint16
-	if raw := statedb.Database().ArbNodeConfig(); raw != nil {
-		if cfg, ok := raw.(*ArbNodeConfig); ok {
-			limit = cfg.MaxOpenPages
-		} else {
-			// Internal wiring bug — fail-open to preserve pre-feature behavior.
-			log.Error("ArbNodeConfig unexpected type; page limit inactive",
-				"type", fmt.Sprintf("%T", raw))
-		}
+	if cfg := GetArbNodeConfig(statedb); cfg != nil {
+		limit = cfg.MaxOpenPages
 	} else {
 		log.Debug("ArbNodeConfig not set; page limit inactive")
 	}
