@@ -1,6 +1,6 @@
 {
-  "name": "zero_value_transfer",
-  "description": "Zero-value transfer must still create the recipient account at zero balance.",
+  "name": "arbaddresstable_size_zero",
+  "description": "ArbAddressTable.size() at genesis is 0.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,40 +52,12 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
+          "blockNumber": 0,
           "timestamp": 1776544243,
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4boMGSrqAgIQL68IAgwGPSZQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcCAoGXo68J2vTMOhFqV6j1TGX1q96Z8F5hYg44nQcYJ0RF8oETFae6eRX1Np2pyGaRHLSgqjOsK500fwQUkQGkLxg/5"
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
-          "timestamp": 1776544243,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL5AXCDBkq6AYCEC+vCAIMDZoiUAAAAAAAAAAAAAAAAAAAAAAAAAHCAuQEEzA1VagAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcnDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMNQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOThwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYagDAgKCyH8qEwBWsmm9VFkklYSFtiro5eKAK6AO6c7MLfgk2D6AoPMSp7ziXAv3uqck2ncl2Pj3G69V+mIUzXjS4wRh/ew=="
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
-          "timestamp": 1776544243,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL4boMGSrqAhAvrwgCEC+vCAIN6EgCUQCHmbLcmzoWropdg8yGFbmvQ8viAgMCAoBRdX4+fsosGfA+1NtgYO/JTyS+z++zg4lQryhX0obRAoE+RNtzy27HoemuI2wUu3OxSIltzPK3y4bA+lg5kFvDS"
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgxmFqJQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcABoHy22QNkSTUA7OBSgbB624OfWCnigPherzik97HMn+EqoDumaDjDOpWZVsxbgg6RGkcS9g8Bgh+/2oorLf4/SI64"
       },
       "delayedMessagesRead": 1
     }
@@ -94,19 +66,14 @@
     "blocks": [
       {
         "number": 1
-      },
-      {
-        "number": 2
-      },
-      {
-        "number": 3
       }
     ],
-    "balances": [
+    "eth_calls": [
       {
-        "address": "0x4021e66cb726ce85aba29760f321856e6bd0f2f8",
+        "to": "0x0000000000000000000000000000000000000066",
+        "data": "0x949d225d",
         "at_block": "latest",
-        "value": "0"
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
       }
     ]
   }

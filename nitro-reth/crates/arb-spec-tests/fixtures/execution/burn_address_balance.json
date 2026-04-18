@@ -1,6 +1,6 @@
 {
-  "name": "chain_of_transfers",
-  "description": "Faucet → A → B → C chain: each hop leaves predictable balances after gas.",
+  "name": "burn_address_balance",
+  "description": "Sending to 0xdEaD credits the address with the value verbatim.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,7 +52,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 29,
+          "blockNumber": 32,
           "timestamp": 1776544243,
           "requestId": null,
           "baseFeeL1": 0
@@ -66,7 +66,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 29,
+          "blockNumber": 32,
           "timestamp": 1776544243,
           "requestId": null,
           "baseFeeL1": 0
@@ -80,40 +80,12 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 29,
+          "blockNumber": 32,
           "timestamp": 1776544243,
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4dYMGSrqAhAvrwgCEC+vCAIN6EgCUFboNx82Cxr7oUR0/UOovW4bUde2HI4byb8EAAIDAAaD8LjYP9fJRJVKbwFTng/yBOmG+vkWQbKZglzCmjDq4m6B/wOuzZDuohKf42tLONk6urRfIt/qdyy3cWoWBGGqG+Q=="
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776544243,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL4dYMGSrqAhAvrwgCEC+vCAIN6EgCUVTLmPRFwikiBeq6OdORPFG55bXeHEcN5N+CAAIDAgKCBPb2vI9Jl7IJrxKFWxmSCW4c/3IsrhovR3bmhcUnNqaB5JDkwTlF9TMGifPLGhlnlRCxqxrUdQCETbO10ZOlokw=="
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 31,
-          "timestamp": 1776544243,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL4dYMGSrqAhAvrwgCEC+vCAIN6EgCUWLv27RGtyhTGVVYFNEaRvzfvr5aHBxr9SY0AAIDAgKBih1SPkcy76dOgph1CZqsCMpPckVaJ8mLErIOQ+koLe6BwG1xEPH4we41BkbIbESpUCs0ha8o/Da+j3BvjiWA1IQ=="
+        "l2Msg": "BAL4coMGSrqAhAvrwgCEC+vCAIN6EgCUAAAAAAAAAAAAAAAAAAAAAAAA3q2EB1vNFYDAAaA4pVywvXtsvOAtonzg8id4tSE4HBnnwvHbyEeEWZajB6B62/0Rqax5aycu4AJ5WHxh8K0hiNgAFXWFXgv5SSBswg=="
       },
       "delayedMessagesRead": 1
     }
@@ -128,29 +100,13 @@
       },
       {
         "number": 3
-      },
-      {
-        "number": 4
-      },
-      {
-        "number": 5
       }
     ],
     "balances": [
       {
-        "address": "0x15ba0dc7cd82c6bee8511d3f50ea2f5b86d475ed",
+        "address": "0x000000000000000000000000000000000000dead",
         "at_block": "latest",
-        "value": "4997899370000000"
-      },
-      {
-        "address": "0x5532e63d11708a48817aae8e74e44f146e796d77",
-        "at_block": "latest",
-        "value": "2997899370000000"
-      },
-      {
-        "address": "0x58bbf6ed11adca14c6555605344691bf37efaf96",
-        "at_block": "latest",
-        "value": "2000000000000000"
+        "value": "123456789"
       }
     ]
   }

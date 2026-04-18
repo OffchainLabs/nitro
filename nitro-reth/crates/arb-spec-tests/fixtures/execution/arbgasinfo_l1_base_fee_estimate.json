@@ -1,6 +1,6 @@
 {
-  "name": "contract_tx_deploys_invalid_byte",
-  "description": "ArbitrumContractTx deploys a single 0xFE byte and the contract is reachable at the deterministic address.",
+  "name": "arbgasinfo_l1_base_fee_estimate",
+  "description": "ArbGasInfo.getL1BaseFeeEstimate() returns the L1 base fee.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,26 +52,12 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 29,
-          "timestamp": 1776544244,
+          "blockNumber": 0,
+          "timestamp": 1776544242,
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUAAAAAAAAAAAAAAAAAAASNBI0EjSIDeC2s6dkAACAwICgmI432axES3FkhBC949eS/W+Hp8JLva5AuT5q9ECStH+gY33NW9zEBLMPq7DeSdXPEgR4D5i4MhEQlQaL1VymKyM="
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0x0000000000000000000000000000123412341234",
-          "blockNumber": 0,
-          "timestamp": 0,
-          "requestId": "0x0100000000000000000000000000000000000000000000000000000000000000",
-          "baseFeeL1": 0
-        },
-        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYP5gAFNgAWAA8w=="
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgxmFqJQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcABoHy22QNkSTUA7OBSgbB624OfWCnigPherzik97HMn+EqoDumaDjDOpWZVsxbgg6RGkcS9g8Bgh+/2oorLf4/SI64"
       },
       "delayedMessagesRead": 1
     }
@@ -80,24 +66,14 @@
     "blocks": [
       {
         "number": 1
-      },
-      {
-        "number": 2
       }
     ],
-    "storage": [
+    "eth_calls": [
       {
-        "address": "0x733a0385eb916548e1a2087f038f0de75043bef7",
-        "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "to": "0x000000000000000000000000000000000000006c",
+        "data": "0xf5d6ded7",
         "at_block": "latest",
-        "value": "0"
-      }
-    ],
-    "balances": [
-      {
-        "address": "0x733a0385eb916548e1a2087f038f0de75043bef7",
-        "at_block": "latest",
-        "value": "0"
+        "result": "0x0000000000000000000000000000000000000000000000000000000ba43b7400"
       }
     ]
   }
