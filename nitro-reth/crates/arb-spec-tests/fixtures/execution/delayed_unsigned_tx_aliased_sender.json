@@ -1,0 +1,201 @@
+{
+  "name": "delayed_unsigned_tx_aliased_sender",
+  "description": "Inbox.sendUnsignedTransaction delivers an ArbitrumUnsignedTx to L2 under the aliased L1 sender's nonce; with no filter installed the recipient receives the value.",
+  "genesis": {
+    "alloc": {
+      "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      },
+      "0xaF24Ca6c2831f4d4F629418b50C227DF0885613A": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "config": {
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 51,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 1,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776546920,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgwGPSZQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcCAoGXo68J2vTMOhFqV6j1TGX1q96Z8F5hYg44nQcYJ0RF8oETFae6eRX1Np2pyGaRHLSgqjOsK500fwQUkQGkLxg/5"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776546920,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL5AXCDBkq6AYCEC+vCAIMDZoiUAAAAAAAAAAAAAAAAAAAAAAAAAHCAuQEEzA1VagAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcnDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMNQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOThwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYagDAgKCyH8qEwBWsmm9VFkklYSFtiro5eKAK6AO6c7MLfgk2D6AoPMSp7ziXAv3uqck2ncl2Pj3G69V+mIUzXjS4wRh/ew=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 34,
+          "timestamp": 1776546920,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4doMGSroChAvrwgCEC+vCAIN6EgCUjzTIhikgeX2BkW1iwnTdkhcRTzmIDeC2s6dkAACAwICgXWcSZSMu/lKvhrtn016L+xZG2vul0oQKWIVuNp8j9IOgShHQnUjEgnuP/KddfAa57SkRKzupMQJdIvZEvfcnofE="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 13,
+          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
+          "blockNumber": 34,
+          "timestamp": 1776546952,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 1885422439
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9IizhqdNyrZ7ZvisB7Twg2XTdJXdI09Rr+75dzQfUcF0fSjZRakPdLwzs8YoA+yENIK+6iKaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcGFDZwAAAAAAAAAA",
+        "batchGasCost": 42194,
+        "batchDataTokens": {
+          "length": 172,
+          "nonzeros": 120
+        }
+      },
+      "delayedMessagesRead": 2
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 13,
+          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
+          "blockNumber": 35,
+          "timestamp": 1776546953,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 1653995926
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9ImzhqdNyrZ7ZvisB7Twg2XTdJXdI2IB/6pCsd5UxtWWEdLiKaNl2GIkgk4IoD7es1AMMJuLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYpX5lgAAAAAAAAAA",
+        "batchGasCost": 43996,
+        "batchDataTokens": {
+          "length": 273,
+          "nonzeros": 235
+        }
+      },
+      "delayedMessagesRead": 3
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0x8f34c8862920797d81916d62c274dd9217114f39",
+          "blockNumber": 36,
+          "timestamp": 1776546954,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000003",
+          "baseFeeL1": 1451074005
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAehIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAvrwgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAh5my3Js6Fq6KXYPMhhW5r0PL4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6NSlEAA="
+      },
+      "delayedMessagesRead": 4
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 13,
+          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
+          "blockNumber": 38,
+          "timestamp": 1776546956,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000004",
+          "baseFeeL1": 1112767056
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj9IyzhqdNyrZ7ZvisB7Twg2XTdJXdI6BF5elKKdHGF5it52aJf2SVMiFft+yP2vdiC2wVn3x8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQlN6UAAAAAAAAAAA",
+        "batchGasCost": 42502,
+        "batchDataTokens": {
+          "length": 180,
+          "nonzeros": 143
+        }
+      },
+      "delayedMessagesRead": 5
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1
+      },
+      {
+        "number": 2
+      },
+      {
+        "number": 3
+      },
+      {
+        "number": 4
+      },
+      {
+        "number": 5
+      },
+      {
+        "number": 6
+      },
+      {
+        "number": 7
+      }
+    ],
+    "balances": [
+      {
+        "address": "0x8f34c8862920797d81916d62c274dd9217114f39",
+        "at_block": "latest",
+        "value": "999996900000000000"
+      },
+      {
+        "address": "0x4021e66cb726ce85aba29760f321856e6bd0f2f8",
+        "at_block": "latest",
+        "value": "1000000000000"
+      }
+    ]
+  }
+}

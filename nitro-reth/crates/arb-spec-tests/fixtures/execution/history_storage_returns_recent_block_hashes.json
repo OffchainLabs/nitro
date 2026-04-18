@@ -1,0 +1,194 @@
+{
+  "name": "history_storage_returns_recent_block_hashes",
+  "description": "After driving the chain forward, params.HistoryStorageAddress returns the canonical block hash for recent block numbers.",
+  "genesis": {
+    "alloc": {
+      "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      },
+      "0xaF24Ca6c2831f4d4F629418b50C227DF0885613A": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "config": {
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 51,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 1,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgxmFqJQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcABoHy22QNkSTUA7OBSgbB624OfWCnigPherzik97HMn+EqoDumaDjDOpWZVsxbgg6RGkcS9g8Bgh+/2oorLf4/SI64"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAhAvrwgCEC+vCAIN6EgCUryTKbCgx9NT2KUGLUMIn3wiFYToBgMABoBAsh5hywhj/U9TDxSgST0ZyFJuk5sEAAcn0kT0eb6Q2oCOJInaT431v5pUmkTpmEyTBl8wpEKrmbaqW04mKY7mM"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSroBhAvrwgCEC+vCAIN6EgCUryTKbCgx9NT2KUGLUMIn3wiFYToBgMABoERKW3Do5pY6RyPDNP9cn7nxI76SWMuObIXKE47SUkKFoBuUr0MSYzyd0/9WhW5Wmkx2pST3fE6MTsOW5624pmLX"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSroChAvrwgCEC+vCAIN6EgCUryTKbCgx9NT2KUGLUMIn3wiFYToBgMABoDdrgg8PDnS5QThCXu1wff9y7AL+55E1yVkhBO/64oyioHldYdoVE2DCH0uLQJ5831pt4p4MHoTOCnwMXmMVZVIe"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSroDhAvrwgCEC+vCAIN6EgCUryTKbCgx9NT2KUGLUMIn3wiFYToBgMCAoBt3HtoVlM8pFy4YnD27T6T5GUZrpvoR3i7emnnjES19oEYB2dyDDrnTgAZowr/cOJGDiiofSCiFlAaE5eqtCadx"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSroEhAvrwgCEC+vCAIN6EgCUryTKbCgx9NT2KUGLUMIn3wiFYToBgMABoFRzOrTKrR4uxM81/9dtZThYBcEvPx1MADmjYgOWPo2hoHaMUcQOmQZmCZ5d4BS+sWF6CU1TNpFA95jPY2R9BNX9"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546915,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSroFhAvrwgCEC+vCAIN6EgCUryTKbCgx9NT2KUGLUMIn3wiFYToBgMCAoBgYnGiiIc9ZR1Dg8p81L4/yO3VxigPp+5qoqK+wsMeaoFfeopxwtsJSSTFdm4wbe9dIu2+k7E6HvxXxCeAVxPAk"
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1
+      },
+      {
+        "number": 2
+      },
+      {
+        "number": 3
+      },
+      {
+        "number": 4
+      },
+      {
+        "number": 5
+      },
+      {
+        "number": 6
+      },
+      {
+        "number": 7
+      }
+    ],
+    "eth_calls": [
+      {
+        "to": "0x0000f90827f1c53a10cb7a02335b175320002935",
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "at_block": "latest",
+        "result": "0x7bad0d1ff3506d0237c3af87fb1a5c4711478b73e776c16bb6045bafbdfda40b"
+      },
+      {
+        "to": "0x0000f90827f1c53a10cb7a02335b175320002935",
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "at_block": "latest",
+        "result": "0xcce96f48aec3b41499ad46f055d7354ec39b30210ea64ae2234d439fe226c827"
+      },
+      {
+        "to": "0x0000f90827f1c53a10cb7a02335b175320002935",
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000003",
+        "at_block": "latest",
+        "result": "0x37cfb7d2c60067cb12c3df68de6ba108aca735eaf23160344a791acb1b553907"
+      }
+    ]
+  }
+}

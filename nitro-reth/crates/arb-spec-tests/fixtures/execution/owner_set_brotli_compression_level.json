@@ -1,0 +1,97 @@
+{
+  "name": "owner_set_brotli_compression_level",
+  "description": "ArbOwner.setBrotliCompressionLevel persists; ArbOwnerPublic reads it back.",
+  "genesis": {
+    "alloc": {
+      "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      },
+      "0xaF24Ca6c2831f4d4F629418b50C227DF0885613A": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "config": {
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 51,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 1,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546918,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgxmFqJQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcABoHy22QNkSTUA7OBSgbB624OfWCnigPherzik97HMn+EqoDumaDjDOpWZVsxbgg6RGkcS9g8Bgh+/2oorLf4/SI64"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776546918,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4joMGSroBgIQL68IAgx3cTpQAAAAAAAAAAAAAAAAAAAAAAAAAcICkU5kSbwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALwAGg1pdRXaauQ2DOowq7JQGhir5ItHbzIZP3HULKv4etzVmgN77q9n60oNiLVK3UYAtqThWCtzs2Byl+u6RYp3VE/Rs="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1
+      },
+      {
+        "number": 2
+      }
+    ],
+    "eth_calls": [
+      {
+        "to": "0x000000000000000000000000000000000000006b",
+        "data": "0x22d499c7",
+        "at_block": "latest",
+        "result": "0x000000000000000000000000000000000000000000000000000000000000000b"
+      }
+    ]
+  }
+}
