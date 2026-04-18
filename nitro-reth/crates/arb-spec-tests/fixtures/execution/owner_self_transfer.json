@@ -1,6 +1,6 @@
 {
-  "name": "l2_transfer_credits_recipient",
-  "description": "L2 faucet → user transfer credits the recipient",
+  "name": "owner_self_transfer",
+  "description": "Self-transfer is a no-op for net balance (only gas spent).",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -85,7 +85,7 @@
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUfiPIhikgeX2BkW1iwnTdkhcRPiiIBvBbWdOyAACAwAGgYs1ogIov0mbTNIEg97XTpxaiCMiF0nslqHiyhldxpkyger7Bk8+HRsoDwYNM+yRvgzoEfUjoCipKwhKQuBomTEw="
+        "l2Msg": "BAL4coMGSroChAvrwgCEC+vCAIN6EgCUJuVUqKz5ADuDSVx/RfBu3LgD1OOEO5rKAIDAgKATldV8EZbB4/zO7ExmMd5fN07Y3xAJtZtn8EFt2WJhU6AKBZPc7kQr8iPyT8zSEHfraxBN8ho2OBK77RbpLSrPpA=="
       },
       "delayedMessagesRead": 1
     }
@@ -104,9 +104,9 @@
     ],
     "balances": [
       {
-        "address": "0x7e23c8862920797d81916d62c274dd9217113e28",
+        "address": "0x26e554a8acf9003b83495c7f45f06edcb803d4e3",
         "at_block": "latest",
-        "value": "500000000000000000"
+        "value": "115792089237316195423570985008687907853269984665640564039457583995158729639927"
       }
     ]
   }

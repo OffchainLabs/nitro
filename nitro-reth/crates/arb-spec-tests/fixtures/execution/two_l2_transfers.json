@@ -1,6 +1,6 @@
 {
-  "name": "l2_transfer_credits_recipient",
-  "description": "L2 faucet → user transfer credits the recipient",
+  "name": "two_l2_transfers",
+  "description": "Two sequential L2 transfers credit two recipients",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,7 +52,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 27,
+          "blockNumber": 33,
           "timestamp": 1776541624,
           "requestId": null,
           "baseFeeL1": 0
@@ -66,7 +66,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
+          "blockNumber": 33,
           "timestamp": 1776541624,
           "requestId": null,
           "baseFeeL1": 0
@@ -80,12 +80,26 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
+          "blockNumber": 33,
           "timestamp": 1776541624,
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUfiPIhikgeX2BkW1iwnTdkhcRPiiIBvBbWdOyAACAwAGgYs1ogIov0mbTNIEg97XTpxaiCMiF0nslqHiyhldxpkyger7Bk8+HRsoDwYNM+yRvgzoEfUjoCipKwhKQuBomTEw="
+        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUvprsB4p+EoqP4eZDNNYc84pdNwWIA3gtrOnZAACAwAGgi0A53rBgNOcGnl8Mr6jUgUj+sgn2n7tR8mA3mlE3dM6gbQJU9HPHfAEu6Wbu0kZRQvNptxMpAwsOo19yHG8ISgo="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776541624,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4doMGSroBhAvrwgCEC+vCAIN6EgCUzcugI6Zk23CTTJMYDCi+tii+O7CIA3gtrOnZAACAwICgoDSpcwANi9S3dfZUGfa3sM2Q6c9f9oFHO2Xd9vSQpAqgFF2WizSENKDdW/3YHTbCN9L/6U3SQAx0jneALACtYDo="
       },
       "delayedMessagesRead": 1
     }
@@ -100,13 +114,21 @@
       },
       {
         "number": 3
+      },
+      {
+        "number": 4
       }
     ],
     "balances": [
       {
-        "address": "0x7e23c8862920797d81916d62c274dd9217113e28",
+        "address": "0xbe9aec078a7e128a8fe1e64334d61cf38a5d3705",
         "at_block": "latest",
-        "value": "500000000000000000"
+        "value": "250000000000000000"
+      },
+      {
+        "address": "0xcdcba023a664db70934c93180c28beb628be3bb0",
+        "at_block": "latest",
+        "value": "250000000000000000"
       }
     ]
   }

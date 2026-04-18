@@ -1,6 +1,6 @@
 {
-  "name": "l2_transfer_credits_recipient",
-  "description": "L2 faucet → user transfer credits the recipient",
+  "name": "contract_tx_deploys_invalid_byte",
+  "description": "ArbitrumContractTx deploys a single 0xFE byte and the contract is reachable at the deterministic address.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,12 +52,12 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 27,
+          "blockNumber": 26,
           "timestamp": 1776541624,
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4boMGSrqAgIQL68IAgwGPSZQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcCAoGXo68J2vTMOhFqV6j1TGX1q96Z8F5hYg44nQcYJ0RF8oETFae6eRX1Np2pyGaRHLSgqjOsK500fwQUkQGkLxg/5"
+        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUAAAAAAAAAAAAAAAAAAASNBI0EjSIDeC2s6dkAACAwICgmI432axES3FkhBC949eS/W+Hp8JLva5AuT5q9ECStH+gY33NW9zEBLMPq7DeSdXPEgR4D5i4MhEQlQaL1VymKyM="
       },
       "delayedMessagesRead": 1
     },
@@ -65,27 +65,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
-          "timestamp": 1776541624,
-          "requestId": null,
+          "sender": "0x0000000000000000000000000000123412341234",
+          "blockNumber": 0,
+          "timestamp": 0,
+          "requestId": "0x0100000000000000000000000000000000000000000000000000000000000000",
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL5AXCDBkq6AYCEC+vCAIMDZoiUAAAAAAAAAAAAAAAAAAAAAAAAAHCAuQEEzA1VagAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcnDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMNQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOThwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYagDAgKCyH8qEwBWsmm9VFkklYSFtiro5eKAK6AO6c7MLfgk2D6AoPMSp7ziXAv3uqck2ncl2Pj3G69V+mIUzXjS4wRh/ew=="
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
-          "timestamp": 1776541624,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUfiPIhikgeX2BkW1iwnTdkhcRPiiIBvBbWdOyAACAwAGgYs1ogIov0mbTNIEg97XTpxaiCMiF0nslqHiyhldxpkyger7Bk8+HRsoDwYNM+yRvgzoEfUjoCipKwhKQuBomTEw="
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYP5gAFNgAWAA8w=="
       },
       "delayedMessagesRead": 1
     }
@@ -97,16 +83,21 @@
       },
       {
         "number": 2
-      },
+      }
+    ],
+    "storage": [
       {
-        "number": 3
+        "address": "0x733a0385eb916548e1a2087f038f0de75043bef7",
+        "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "at_block": "latest",
+        "value": "0"
       }
     ],
     "balances": [
       {
-        "address": "0x7e23c8862920797d81916d62c274dd9217113e28",
+        "address": "0x733a0385eb916548e1a2087f038f0de75043bef7",
         "at_block": "latest",
-        "value": "500000000000000000"
+        "value": "0"
       }
     ]
   }

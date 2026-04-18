@@ -1,6 +1,6 @@
 {
-  "name": "l2_transfer_credits_recipient",
-  "description": "L2 faucet → user transfer credits the recipient",
+  "name": "eth_deposit_via_inbox",
+  "description": "L1 Inbox.depositEth0 credits the aliased L1 sender on L2",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,7 +52,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 27,
+          "blockNumber": 31,
           "timestamp": 1776541624,
           "requestId": null,
           "baseFeeL1": 0
@@ -66,26 +66,12 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
+          "blockNumber": 32,
           "timestamp": 1776541624,
           "requestId": null,
           "baseFeeL1": 0
         },
         "l2Msg": "BAL5AXCDBkq6AYCEC+vCAIMDZoiUAAAAAAAAAAAAAAAAAAAAAAAAAHCAuQEEzA1VagAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcnDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMNQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOThwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYagDAgKCyH8qEwBWsmm9VFkklYSFtiro5eKAK6AO6c7MLfgk2D6AoPMSp7ziXAv3uqck2ncl2Pj3G69V+mIUzXjS4wRh/ew=="
-      },
-      "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 28,
-          "timestamp": 1776541624,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL4doMGSrqAhAvrwgCEC+vCAIN6EgCUfiPIhikgeX2BkW1iwnTdkhcRPiiIBvBbWdOyAACAwAGgYs1ogIov0mbTNIEg97XTpxaiCMiF0nslqHiyhldxpkyger7Bk8+HRsoDwYNM+yRvgzoEfUjoCipKwhKQuBomTEw="
       },
       "delayedMessagesRead": 1
     }
@@ -97,16 +83,13 @@
       },
       {
         "number": 2
-      },
-      {
-        "number": 3
       }
     ],
     "balances": [
       {
-        "address": "0x7e23c8862920797d81916d62c274dd9217113e28",
+        "address": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
         "at_block": "latest",
-        "value": "500000000000000000"
+        "value": "0"
       }
     ]
   }
