@@ -1,22 +1,21 @@
 # Stage 1: Builder
 FROM rust:1.93-bookworm AS builder
 
-# Install build dependencies
 RUN apt-get update && apt-get install -y \
     clang \
     libclang-dev \
     cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# Copy workspace manifests first for dependency caching
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY bin/ bin/
-COPY vendor/ vendor/
+COPY .gitmodules ./
+COPY brotli/ brotli/
 
-# Build release binary
 RUN cargo build --release -p arb-reth
 
 # Stage 2: Runtime

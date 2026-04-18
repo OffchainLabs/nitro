@@ -16,13 +16,13 @@ alloy-primitives = { workspace = true }
 
 # Wasmer
 wasmer = { workspace = true }
-wasmer-compiler = { path = "../../vendor/wasmer/lib/compiler" }
-wasmer-types = { path = "../../vendor/wasmer/lib/types" }
+wasmer-compiler = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "6b15433d83f951555c24f0c56dc05e4751b0cc76" }
+wasmer-types = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "6b15433d83f951555c24f0c56dc05e4751b0cc76" }
 wasmparser = { workspace = true }
 
 nitro-prover = { workspace = true }
 nitro-arbutil = { workspace = true }
-nitro-brotli = { package = "nitro-brotli", path = "../../vendor/nitro-crates/brotli" }
+nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4", features = ["cc_brotli"] }
 
 # Revm
 revm = { workspace = true }

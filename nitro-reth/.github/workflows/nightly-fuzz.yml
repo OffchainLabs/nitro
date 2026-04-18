@@ -16,6 +16,8 @@ jobs:
       PROPTEST_CASES: "10000"
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -36,6 +38,8 @@ jobs:
           - decode_internal_tx
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:

@@ -1338,10 +1338,10 @@ dependencies = [
  "arb-primitives",
  "arbos",
  "arbutil",
+ "brotli 0.1.0",
  "cc",
  "eyre",
  "lazy_static",
- "nitro-brotli",
  "parking_lot",
  "proptest",
  "prover",
@@ -1350,7 +1350,7 @@ dependencies = [
  "tracing",
  "wasmer",
  "wasmer-compiler",
- "wasmer-types",
+ "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
  "wasmparser 0.121.2",
  "wat",
 ]
@@ -1404,6 +1404,7 @@ dependencies = [
 [[package]]
 name = "arbutil"
 version = "0.1.0"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
 dependencies = [
  "digest 0.10.7",
  "eyre",
@@ -2197,6 +2198,16 @@ dependencies = [
 
 [[package]]
 name = "brotli"
+version = "0.1.0"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+dependencies = [
+ "cc",
+ "lazy_static",
+ "num_enum",
+]
+
+[[package]]
+name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bd8b9603c7aa97359dbd97ecf258968c95f3adddd6db2f7e7a5bef101c84560"
@@ -2589,7 +2600,7 @@ version = "0.4.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb7b51a7d9c967fc26773061ba86150f19c50c0d65c887cb1fbe295fd16619b7"
 dependencies = [
- "brotli",
+ "brotli 8.0.2",
  "compression-core",
  "flate2",
  "memchr",
@@ -3897,6 +3908,7 @@ dependencies = [
 [[package]]
 name = "forward"
 version = "0.1.0"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
 dependencies = [
  "eyre",
  "structopt",
@@ -5772,15 +5784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nitro-brotli"
-version = "0.1.0"
-dependencies = [
- "cc",
- "lazy_static",
- "num_enum",
-]
-
-[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6689,10 +6692,12 @@ dependencies = [
 [[package]]
 name = "prover"
 version = "0.1.0"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
 dependencies = [
  "arbutil",
  "bincode",
  "bitvec",
+ "brotli 0.1.0",
  "derivative",
  "digest 0.10.7",
  "enum-iterator 2.3.0",
@@ -6703,7 +6708,6 @@ dependencies = [
  "lazy_static",
  "libc",
  "lru 0.16.3",
- "nitro-brotli",
  "nom",
  "num",
  "num-derive",
@@ -6720,7 +6724,7 @@ dependencies = [
  "static_assertions",
  "structopt",
  "validation",
- "wasmer-types",
+ "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4)",
  "wasmparser 0.121.2",
  "wat",
 ]
@@ -11888,9 +11892,10 @@ dependencies = [
 [[package]]
 name = "validation"
 version = "0.1.0"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
 dependencies = [
  "arbutil",
- "nitro-brotli",
+ "brotli 0.1.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -12119,6 +12124,7 @@ dependencies = [
 [[package]]
 name = "wasmer"
 version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -12137,7 +12143,7 @@ dependencies = [
  "wasmer-compiler",
  "wasmer-compiler-cranelift",
  "wasmer-derive",
- "wasmer-types",
+ "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
  "wasmer-vm",
  "winapi",
 ]
@@ -12145,6 +12151,7 @@ dependencies = [
 [[package]]
 name = "wasmer-compiler"
 version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
 dependencies = [
  "backtrace",
  "bytes",
@@ -12161,7 +12168,7 @@ dependencies = [
  "shared-buffer",
  "smallvec",
  "thiserror 1.0.69",
- "wasmer-types",
+ "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
  "wasmer-vm",
  "wasmparser 0.121.2",
  "winapi",
@@ -12170,6 +12177,7 @@ dependencies = [
 [[package]]
 name = "wasmer-compiler-cranelift"
 version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -12181,12 +12189,13 @@ dependencies = [
  "target-lexicon",
  "tracing",
  "wasmer-compiler",
- "wasmer-types",
+ "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
 ]
 
 [[package]]
 name = "wasmer-derive"
 version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -12197,6 +12206,22 @@ dependencies = [
 [[package]]
 name = "wasmer-types"
 version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
+dependencies = [
+ "bytecheck",
+ "enum-iterator 0.7.0",
+ "enumset",
+ "indexmap 1.9.3",
+ "more-asserts 0.2.2",
+ "rkyv",
+ "target-lexicon",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "wasmer-types"
+version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
 dependencies = [
  "bytecheck",
  "enum-iterator 0.7.0",
@@ -12211,6 +12236,7 @@ dependencies = [
 [[package]]
 name = "wasmer-vm"
 version = "4.2.8"
+source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
 dependencies = [
  "backtrace",
  "cc",
@@ -12230,7 +12256,7 @@ dependencies = [
  "region",
  "scopeguard",
  "thiserror 1.0.69",
- "wasmer-types",
+ "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
  "winapi",
 ]
 
