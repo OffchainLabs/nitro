@@ -1,6 +1,6 @@
 {
-  "name": "owner_self_transfer",
-  "description": "Self-transfer is a no-op for net balance (only gas spent).",
+  "name": "eip1559_transfer_exact_value",
+  "description": "A PrepareTx transfer of exactly 12345 wei credits the recipient that exact amount.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,7 +52,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 32,
+          "blockNumber": 33,
           "timestamp": 1776543871,
           "requestId": null,
           "baseFeeL1": 0
@@ -66,7 +66,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 32,
+          "blockNumber": 33,
           "timestamp": 1776543871,
           "requestId": null,
           "baseFeeL1": 0
@@ -85,7 +85,7 @@
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4coMGSroChAvrwgCEC+vCAIN6EgCUJuVUqKz5ADuDSVx/RfBu3LgD1OOEO5rKAIDAgKATldV8EZbB4/zO7ExmMd5fN07Y3xAJtZtn8EFt2WJhU6AKBZPc7kQr8iPyT8zSEHfraxBN8ho2OBK77RbpLSrPpA=="
+        "l2Msg": "BAL4cIMGSrqAhAvrwgCEC+vCAIN6EgCUvw4qNlVyNM5DjHrXeY0keNqTzyGCMDmAwICgNL3a3i4/p2htne2YkAqjKuMizwpE9eEvjVVhdT1v8OGgfNhpRuda+NzSF3H/1zqWVLVksU+4qYqM5Und7w2mxt8="
       },
       "delayedMessagesRead": 1
     }
@@ -104,9 +104,9 @@
     ],
     "balances": [
       {
-        "address": "0x26e554a8acf9003b83495c7f45f06edcb803d4e3",
+        "address": "0xbf0e2a36557234ce438c7ad7798d2478da93cf21",
         "at_block": "latest",
-        "value": "115792089237316195423570985008687907853269984665640564039457583995158729639927"
+        "value": "12345"
       }
     ]
   }

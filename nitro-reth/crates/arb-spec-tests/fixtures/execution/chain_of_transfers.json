@@ -1,6 +1,6 @@
 {
-  "name": "owner_self_transfer",
-  "description": "Self-transfer is a no-op for net balance (only gas spent).",
+  "name": "chain_of_transfers",
+  "description": "Faucet → A → B → C chain: each hop leaves predictable balances after gas.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -52,7 +52,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 32,
+          "blockNumber": 31,
           "timestamp": 1776543871,
           "requestId": null,
           "baseFeeL1": 0
@@ -66,7 +66,7 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 32,
+          "blockNumber": 31,
           "timestamp": 1776543871,
           "requestId": null,
           "baseFeeL1": 0
@@ -85,7 +85,35 @@
           "requestId": null,
           "baseFeeL1": 0
         },
-        "l2Msg": "BAL4coMGSroChAvrwgCEC+vCAIN6EgCUJuVUqKz5ADuDSVx/RfBu3LgD1OOEO5rKAIDAgKATldV8EZbB4/zO7ExmMd5fN07Y3xAJtZtn8EFt2WJhU6AKBZPc7kQr8iPyT8zSEHfraxBN8ho2OBK77RbpLSrPpA=="
+        "l2Msg": "BAL4dYMGSrqAhAvrwgCEC+vCAIN6EgCUFboNx82Cxr7oUR0/UOovW4bUde2HI4byb8EAAIDAAaD8LjYP9fJRJVKbwFTng/yBOmG+vkWQbKZglzCmjDq4m6B/wOuzZDuohKf42tLONk6urRfIt/qdyy3cWoWBGGqG+Q=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776543871,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4dYMGSrqAhAvrwgCEC+vCAIN6EgCUVTLmPRFwikiBeq6OdORPFG55bXeHEcN5N+CAAIDAgKCBPb2vI9Jl7IJrxKFWxmSCW4c/3IsrhovR3bmhcUnNqaB5JDkwTlF9TMGifPLGhlnlRCxqxrUdQCETbO10ZOlokw=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 34,
+          "timestamp": 1776543871,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4dYMGSrqAhAvrwgCEC+vCAIN6EgCUWLv27RGtyhTGVVYFNEaRvzfvr5aHBxr9SY0AAIDAgKBih1SPkcy76dOgph1CZqsCMpPckVaJ8mLErIOQ+koLe6BwG1xEPH4we41BkbIbESpUCs0ha8o/Da+j3BvjiWA1IQ=="
       },
       "delayedMessagesRead": 1
     }
@@ -100,13 +128,29 @@
       },
       {
         "number": 3
+      },
+      {
+        "number": 4
+      },
+      {
+        "number": 5
       }
     ],
     "balances": [
       {
-        "address": "0x26e554a8acf9003b83495c7f45f06edcb803d4e3",
+        "address": "0x15ba0dc7cd82c6bee8511d3f50ea2f5b86d475ed",
         "at_block": "latest",
-        "value": "115792089237316195423570985008687907853269984665640564039457583995158729639927"
+        "value": "4997899370000000"
+      },
+      {
+        "address": "0x5532e63d11708a48817aae8e74e44f146e796d77",
+        "at_block": "latest",
+        "value": "2997899370000000"
+      },
+      {
+        "address": "0x58bbf6ed11adca14c6555605344691bf37efaf96",
+        "at_block": "latest",
+        "value": "2000000000000000"
       }
     ]
   }

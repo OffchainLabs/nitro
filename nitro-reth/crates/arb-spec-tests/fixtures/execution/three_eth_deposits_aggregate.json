@@ -1,6 +1,6 @@
 {
-  "name": "owner_self_transfer",
-  "description": "Self-transfer is a no-op for net balance (only gas spent).",
+  "name": "three_eth_deposits_aggregate",
+  "description": "Three distinct L1 deposits to the same aliased L2 address aggregate correctly.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -74,20 +74,6 @@
         "l2Msg": "BAL5AXCDBkq6AYCEC+vCAIMDZoiUAAAAAAAAAAAAAAAAAAAAAAAAAHCAuQEEzA1VagAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcnDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMNQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOThwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYagDAgKCyH8qEwBWsmm9VFkklYSFtiro5eKAK6AO6c7MLfgk2D6AoPMSp7ziXAv3uqck2ncl2Pj3G69V+mIUzXjS4wRh/ew=="
       },
       "delayedMessagesRead": 1
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 33,
-          "timestamp": 1776543871,
-          "requestId": null,
-          "baseFeeL1": 0
-        },
-        "l2Msg": "BAL4coMGSroChAvrwgCEC+vCAIN6EgCUJuVUqKz5ADuDSVx/RfBu3LgD1OOEO5rKAIDAgKATldV8EZbB4/zO7ExmMd5fN07Y3xAJtZtn8EFt2WJhU6AKBZPc7kQr8iPyT8zSEHfraxBN8ho2OBK77RbpLSrPpA=="
-      },
-      "delayedMessagesRead": 1
     }
   ],
   "expected": {
@@ -97,16 +83,13 @@
       },
       {
         "number": 2
-      },
-      {
-        "number": 3
       }
     ],
     "balances": [
       {
-        "address": "0x26e554a8acf9003b83495c7f45f06edcb803d4e3",
+        "address": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
         "at_block": "latest",
-        "value": "115792089237316195423570985008687907853269984665640564039457583995158729639927"
+        "value": "0"
       }
     ]
   }
