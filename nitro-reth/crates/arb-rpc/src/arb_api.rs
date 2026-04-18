@@ -216,21 +216,9 @@ where
                 None::<()>,
             ));
         }
-        let clamped_to = to.min(best);
-        let mut out =
-            Vec::with_capacity((clamped_to.saturating_sub(from) + 1).min(MAX_RANGE) as usize);
-        for block_number in from..=clamped_to {
-            let maybe = self
-                .provider
-                .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(block_number))
-                .map_err(provider_err)?;
-            if maybe.is_some() {
-                out.push(NumberAndBlockMetadata {
-                    block_number,
-                    raw_metadata: alloy_primitives::Bytes::new(),
-                });
-            }
-        }
-        Ok(out)
+        // No sidecar metadata is tracked — return an empty list so the
+        // wire shape matches a node with no metadata stored.
+        let _ = (from, to, best);
+        Ok(Vec::new())
     }
 }
