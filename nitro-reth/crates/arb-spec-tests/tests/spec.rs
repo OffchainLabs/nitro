@@ -1,4 +1,4 @@
-use arb_spec_tests::{run_dir, runner::fixtures_root};
+use arb_spec_tests::{run_dir, run_execution_dir, runner::fixtures_root};
 
 macro_rules! spec_dir {
     ($name:ident, $dir:literal) => {
@@ -16,3 +16,8 @@ spec_dir!(l1_pricing_dynamics, "l1_pricing_dynamics");
 spec_dir!(address_handling, "address_handling");
 spec_dir!(merkle, "merkle");
 spec_dir!(version_transitions, "version_transitions");
+
+#[test]
+fn execution() {
+    run_execution_dir(&fixtures_root().join("execution"));
+}

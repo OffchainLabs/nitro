@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 walkdir = "2"
 thiserror = { workspace = true }
 hex = { workspace = true }
+ureq = { version = "2", default-features = false }
 
 [lints]
 workspace = true
