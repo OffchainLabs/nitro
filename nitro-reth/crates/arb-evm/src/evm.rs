@@ -494,8 +494,17 @@ where
             Ok(Some(result)) => {
                 let success = result.result.is_ok();
                 let output = result.output.to_vec();
-                let gas_used = gas.saturating_sub(result.gas.remaining());
-                let refund = result.gas.refunded();
+                // On failure (revert, OOG, error) a non-reverting callee has
+                // returned gas left in result.gas, but a precompile that
+                // signalled OOG/PrecompileError leaves `result.gas` untouched
+                // (see alloy-evm precompile runner). Ethereum semantics charge
+                // the caller for all gas forwarded on non-revert failures.
+                let gas_used = if success || matches!(result.result, InstructionResult::Revert) {
+                    gas.saturating_sub(result.gas.remaining())
+                } else {
+                    gas
+                };
+                let refund = if success { result.gas.refunded() } else { 0 };
                 if success {
                     context.journaled_state.inner.checkpoint_commit();
                 } else {
@@ -513,7 +522,7 @@ where
                 context.journaled_state.inner.checkpoint_revert(checkpoint);
                 return SubCallResult {
                     output: Vec::new(),
-                    gas_cost: 0,
+                    gas_cost: gas,
                     success: false,
                     refund: 0,
                 };

@@ -582,10 +582,11 @@ impl EvmApi for StylusEvmApi {
             self.call_value, // forward current call value
         );
 
-        // A DELEGATECALL child shares our storage context, so any writes it
-        // made may have changed slots we had cached. Drop the per-call
-        // storage cache so the next access re-reads from the journal.
-        self.storage_cache.slots.clear();
+        // Do not invalidate the per-call storage cache after DELEGATECALL.
+        // The on-chain gas schedule (via `EvmApiRequestor`) does not invalidate
+        // either; dropping clean entries forces the next read of the same slot
+        // to re-pay SLOAD + EVM_API_INK (~60k legacy gas) instead of the
+        // cache-hit cost.
 
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
@@ -640,10 +641,10 @@ impl EvmApi for StylusEvmApi {
             U256::ZERO,
         );
 
-        // STATICCALL is nominally read-only, but a sub-call it performs may
-        // transitively DELEGATECALL back into our storage context. Drop the
-        // cache to be safe.
-        self.storage_cache.slots.clear();
+        // STATICCALL cannot mutate storage — invalidating cache here is
+        // unambiguously wrong and drives the gas schedule out of parity with
+        // the on-chain cost (re-paying SLOAD + EVM_API_INK per repeated
+        // read across the call).
 
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);

@@ -1535,8 +1535,8 @@ where
         // this correction via a thread-local.
         let mut tx_env = tx_env;
         let gas_deduction = poster_gas.saturating_add(compute_hold_gas);
-        let evm_gas_limit_before = revm::context_interface::Transaction::gas_limit(&tx_env);
         if gas_deduction > 0 {
+            let evm_gas_limit_before = revm::context_interface::Transaction::gas_limit(&tx_env);
             tx_env.set_gas_limit(evm_gas_limit_before.saturating_sub(gas_deduction));
         }
 
