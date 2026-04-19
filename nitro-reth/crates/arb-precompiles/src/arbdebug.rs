@@ -78,9 +78,10 @@ fn handle_become_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
         sstore(input, size_slot, U256::from(new_size))?;
     }
 
-    // OpenArbosState burn (800 for the version SLOAD) +
-    // AddressSet.Add: 2 SLOAD (IsMember + size.Get) + 3 SSTORE (member, byAddress, size).
-    let gas_used = SLOAD_GAS + 2 * SLOAD_GAS + 3 * SSTORE_GAS;
+    // Matches Nitro's precompile framework + AddressSet.Add gas accounting:
+    // OpenArbosState (800) + chainOwners sub-storage open (800) + Add body
+    // (2 SLOAD + 3 SSTORE = 1600 + 60000).
+    let gas_used = 2 * SLOAD_GAS + 2 * SLOAD_GAS + 3 * SSTORE_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
         Vec::new().into(),
