@@ -213,19 +213,21 @@ fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
         revm::primitives::TxKind::Call,
     );
     env.data = tx.input().clone();
-    env.gas_priority_fee = Some(0);
 
     if is_system_tx {
         env.gas_price = 0;
+        env.gas_priority_fee = Some(0);
         env.value = U256::ZERO;
         if env.gas_limit == 0 {
             env.gas_limit = 1_000_000;
         }
     } else if is_submit_retryable {
         env.gas_price = 0;
+        env.gas_priority_fee = Some(0);
         env.value = U256::ZERO;
     } else {
         env.gas_price = tx.max_fee_per_gas();
+        env.gas_priority_fee = tx.max_priority_fee_per_gas();
         env.value = tx.value();
     }
 

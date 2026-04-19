@@ -1052,6 +1052,8 @@ where
                     };
 
                     // EIP-2935: Store parent block hash for ArbOS >= 40.
+                    // The slot is computed from the L2 block number (matching the
+                    // history-storage contract, which calls ArbSys.arbBlockNumber).
                     if is_start_block
                         && arb_state.arbos_version()
                             >= arb_chainspec::arbos_version::ARBOS_VERSION_40
@@ -1059,7 +1061,7 @@ where
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         process_parent_block_hash(
                             unsafe { &mut *state_ptr },
-                            ctx.block_number,
+                            self.arb_ctx.l2_block_number,
                             ctx.prev_hash,
                         );
                     }
@@ -1663,6 +1665,19 @@ where
         // effective gas price after tip drop.
         let upfront_gas_price: u128 = revm::context_interface::Transaction::gas_price(&tx_env);
 
+        // Effective tip per gas (per EIP-1559): min(max_priority_fee, max_fee - base_fee).
+        // This is what revm mints to coinbase. Used by commit_transaction to
+        // redirect coinbase tip to network when CollectTips() is true.
+        let effective_tip_per_gas: u128 = {
+            let bf: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
+            let max_fee: u128 = upfront_gas_price; // gas_price() returns max_fee_per_gas for EIP-1559
+            let max_priority: u128 =
+                revm::context_interface::Transaction::max_priority_fee_per_gas(&tx_env)
+                    .unwrap_or(0);
+            let max_minus_bf = max_fee.saturating_sub(bf);
+            max_priority.min(max_minus_bf)
+        };
+
         // Drop the priority fee tip: cap gas price to the base fee.
         // For ArbOS versions where CollectTips() = false (most pre-v60 + v60+
         // when tip-collection is disabled), capping makes GASPRICE return the
@@ -1977,15 +1992,9 @@ where
             .saturating_add(MultiGas::computation_gas(evm_gas_used));
 
         // Capture effective tip per gas (gas_price - base_fee, clamped >= 0).
-        // Capture the actual tip per gas (gas_fee_cap - base_fee, clamped >= 0).
-        // commit_transaction routes this wei amount to networkFeeAccount per
-        // Nitro semantics regardless of drop-tip:
-        //   * capped_gas_price = true  (drop_tip path): revm only saw base_fee,
-        //     so commit must additionally burn tip*gas_used from sender.
-        //   * capped_gas_price = false: revm already minted tip*gas_used to
-        //     coinbase, so commit transfers it from coinbase to network.
-        let bf: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
-        let coinbase_tip_per_gas: u128 = upfront_gas_price.saturating_sub(bf);
+        // The effective tip per gas captured before EVM execution. Used by
+        // commit_transaction to redirect coinbase's tip mint to network.
+        let coinbase_tip_per_gas: u128 = effective_tip_per_gas;
         let capped_gas_price = should_drop_tip;
 
         self.pending_tx = Some(PendingArbTx {
@@ -2048,13 +2057,6 @@ where
         let gas_used = self.inner.commit_transaction(output)?;
 
         // Redirect coinbase tip to networkFeeAccount when CollectTips() = true.
-        // Nitro's geth-fork state_transition.go drops the tip via
-        //   st.msg.GasPrice = st.evm.Context.BaseFee
-        //   st.msg.GasTipCap = common.Big0
-        // when !CollectTips(). When CollectTips() is true, msg.GasPrice retains
-        // the full price; revm mints tip*gas_used to coinbase. Per Nitro's
-        // tipReceipient = NetworkFeeAccount, the tip should accrue there
-        // instead of to our coinbase (= batch_poster_address).
         if let Some(ref p) = pending {
             if !p.capped_gas_price && p.coinbase_tip_per_gas > 0 && gas_used > 0 {
                 let coinbase = self.arb_ctx.coinbase;

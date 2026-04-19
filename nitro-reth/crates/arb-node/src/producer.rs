@@ -1254,7 +1254,13 @@ fn augment_bundle_from_cache(
                     .collect();
 
             if info_changed || !storage_changes.is_empty() {
-                let original_info = None;
+                let original_info = original.as_ref().map(|a| revm::state::AccountInfo {
+                    balance: a.balance,
+                    nonce: a.nonce,
+                    code_hash: a.bytecode_hash.unwrap_or(alloy_primitives::KECCAK256_EMPTY),
+                    code: None,
+                    account_id: None,
+                });
 
                 let status = if original.is_some() {
                     revm_database::AccountStatus::Changed
