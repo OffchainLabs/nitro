@@ -14,6 +14,7 @@ mod arbgasinfo;
 mod arbinfo;
 mod arbnativetokenmanager;
 mod arbosacts;
+mod arbostest;
 mod arbowner;
 mod arbownerpublic;
 mod arbretryabletx;
@@ -39,6 +40,7 @@ pub use arbnativetokenmanager::{
     create_arbnativetokenmanager_precompile, ARBNATIVETOKENMANAGER_ADDRESS,
 };
 pub use arbosacts::{create_arbosacts_precompile, ARBOSACTS_ADDRESS};
+pub use arbostest::{create_arbostest_precompile, ARBOSTEST_ADDRESS};
 pub use arbowner::{create_arbowner_precompile, ARBOWNER_ADDRESS};
 pub use arbownerpublic::{create_arbownerpublic_precompile, ARBOWNERPUBLIC_ADDRESS};
 pub use arbretryabletx::{
@@ -94,10 +96,14 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
     })
 }
 
-// ── ArbOS version thread-local ──────────────────────────────────────
+// ── ArbOS version (process-wide) ────────────────────────────────────
+// Process-wide because tokio offloads EVM execution onto a blocking thread
+// pool; thread-locals set on the reactor thread don't propagate.
+
+static GLOBAL_ARBOS_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 thread_local! {
-    /// Current ArbOS version, set by the block executor before transaction execution.
+    /// Per-thread fast-path mirror for ArbOS version (kept in sync via set_arbos_version).
     static ARBOS_VERSION: Cell<u64> = const { Cell::new(0) };
     /// L1 block number for the NUMBER opcode, from ArbOS state after StartBlock.
     static L1_BLOCK_NUMBER_FOR_EVM: Cell<u64> = const { Cell::new(0) };
@@ -195,12 +201,21 @@ pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256>
 
 /// Set the current ArbOS version for precompile version gating.
 pub fn set_arbos_version(version: u64) {
+    GLOBAL_ARBOS_VERSION.store(version, std::sync::atomic::Ordering::Relaxed);
     ARBOS_VERSION.with(|v| v.set(version));
 }
 
 /// Get the current ArbOS version.
 pub fn get_arbos_version() -> u64 {
-    ARBOS_VERSION.with(|v| v.get())
+    let local = ARBOS_VERSION.with(|v| v.get());
+    if local != 0 {
+        return local;
+    }
+    let global = GLOBAL_ARBOS_VERSION.load(std::sync::atomic::Ordering::Relaxed);
+    if global != 0 {
+        ARBOS_VERSION.with(|v| v.set(global));
+    }
+    global
 }
 
 /// Set the L1 block number for the NUMBER opcode.
@@ -459,6 +474,7 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
             create_arbfunctiontable_precompile(),
         ),
         (ARBOSACTS_ADDRESS, create_arbosacts_precompile()),
+        (ARBOSTEST_ADDRESS, create_arbostest_precompile()),
         (ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile()),
         (ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile()),
         (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),

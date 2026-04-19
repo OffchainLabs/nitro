@@ -88,6 +88,10 @@ where
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
 
+        // Publish ArbOS version for precompile dispatch (eth_call/estimateGas paths
+        // construct the EVM here without going through the block executor).
+        arb_precompiles::set_arbos_version(arbos_version);
+
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
         let prevrandao = B256::from(U256::from(1));
@@ -120,6 +124,8 @@ where
         let chain_id = self.chain_spec.chain().id();
         let arbos_version = arbos_version_from_mix_hash(&attributes.prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
+
+        arb_precompiles::set_arbos_version(arbos_version);
 
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
@@ -191,6 +197,8 @@ where
         let prev_randao = payload.payload.as_v1().prev_randao;
         let arbos_version = arbos_version_from_mix_hash(&prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
+
+        arb_precompiles::set_arbos_version(arbos_version);
 
         let cfg_env = arb_cfg_env(self.chain_spec.chain().id(), spec, arbos_version);
 
