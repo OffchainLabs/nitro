@@ -37,6 +37,15 @@ const CODEHASH_IS_CACHED: [u8; 4] = [0xa7, 0x2f, 0x17, 0x9b]; // codehashIsCache
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
 
+const WARM_SLOAD_GAS: u64 = 100;
+const COLD_ACCOUNT_ACCESS_GAS: u64 = 2600;
+const SSTORE_SET_GAS: u64 = 20_000;
+const SSTORE_RESET_GAS: u64 = 5_000;
+
+/// LOG3 for UpdateProgramCache(address,bytes32,bool):
+/// base 375 + 3 topics * 375 + 32 bytes data * 8.
+const EMIT_UPDATE_PROGRAM_CACHE_GAS: u64 = 375 + 3 * 375 + 32 * 8;
+
 /// AddressSet by_address sub-key.
 const BY_ADDRESS_KEY: &[u8] = &[0];
 
@@ -238,34 +247,37 @@ fn program_data_slot(codehash: B256) -> U256 {
     map_slot_b256(data_key.as_slice(), &codehash)
 }
 
-/// Mirrors Nitro hasAccess(c): caller must be a cache manager OR a chain owner.
+/// Caller must be a cache manager OR chain owner. Returns `(has_access, gas)`:
+/// `gas` is 1 SLOAD if the caller is a cache manager (short-circuit), else
+/// 2 SLOADs (cache-managers probe then chain-owners probe).
 fn caller_has_cache_access(
     input: &mut PrecompileInput<'_>,
     caller: Address,
-) -> Result<bool, PrecompileError> {
+) -> Result<(bool, u64), PrecompileError> {
     let cm_key = cache_managers_key();
     let cm_by_addr = derive_subspace_key(cm_key.as_slice(), BY_ADDRESS_KEY);
     let addr_hash = address_to_b256(caller);
     let cm_slot = map_slot_b256(cm_by_addr.as_slice(), &addr_hash);
     if sload_field(input, cm_slot)? != U256::ZERO {
-        return Ok(true);
+        return Ok((true, SLOAD_GAS));
     }
 
     let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
     let owner_by_addr = derive_subspace_key(owner_key.as_slice(), BY_ADDRESS_KEY);
     let owner_slot = map_slot_b256(owner_by_addr.as_slice(), &addr_hash);
-    Ok(sload_field(input, owner_slot)? != U256::ZERO)
+    let is_owner = sload_field(input, owner_slot)? != U256::ZERO;
+    Ok((is_owner, 2 * SLOAD_GAS))
 }
 
-/// Mirrors Nitro Programs.SetProgramCached, but limited to on-chain state:
-/// updates the `cached` byte of the program word and emits UpdateProgramCache.
-/// The off-chain Stylus LRU cache management (cacheProgram / evictProgram in
-/// Nitro) is a runtime concern that doesn't affect block state.
+/// `pre_set_gas` lets the caller include an extra charge that must be paid on
+/// every exit path (e.g., the GetCodeHash access cost for `cacheProgram`).
 fn set_program_cached(
     input: &mut PrecompileInput<'_>,
     codehash: B256,
     cache: bool,
+    pre_set_gas: u64,
 ) -> PrecompileResult {
+    let data_len = input.data.len();
     let caller = input.caller;
     let now: u64 = input
         .internals()
@@ -273,22 +285,31 @@ fn set_program_cached(
         .try_into()
         .unwrap_or(0u64);
 
+    let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
+    let boilerplate_gas = args_cost + SLOAD_GAS + pre_set_gas;
+
     load_arbos(input)?;
 
-    if !caller_has_cache_access(input, caller)? {
+    let (has_access, access_gas) = caller_has_cache_access(input, caller)?;
+    if !has_access {
         return crate::burn_all_revert(input.gas);
     }
 
     let (params_version, expiry_days) = read_program_params(input)?;
+
     let prog_slot = program_data_slot(codehash);
     let mut prog_word = sload_field(input, prog_slot)?.to_be_bytes::<32>();
     let prog_version = u16::from_be_bytes([prog_word[0], prog_word[1]]);
+    let prog_init_cost = u16::from_be_bytes([prog_word[2], prog_word[3]]);
     let activated_at_hours =
         ((prog_word[8] as u32) << 16) | ((prog_word[9] as u32) << 8) | prog_word[10] as u32;
     let age_seconds = hours_to_age(now, activated_at_hours);
     let expiry_seconds = (expiry_days as u64).saturating_mul(86_400);
     let expired = age_seconds > expiry_seconds;
     let already_cached = prog_word[14] != 0;
+
+    // Matches the early-return point before any mutation.
+    let after_get_program_gas = boilerplate_gas + access_gas + WARM_SLOAD_GAS + SLOAD_GAS;
 
     if cache && prog_version != params_version {
         let mut args = Vec::with_capacity(64);
@@ -305,19 +326,21 @@ fn set_program_cached(
         return crate::sol_error_revert_with_args(program_expired_selector(), &args, input.gas);
     }
     if already_cached == cache {
-        // No-op
         return Ok(PrecompileOutput::new(
-            (3 * SLOAD_GAS + COPY_GAS).min(input.gas),
+            after_get_program_gas.min(input.gas),
             Vec::new().into(),
         ));
     }
 
-    // Update byte 14 and write back.
     prog_word[14] = if cache { 1 } else { 0 };
     let new_word = U256::from_be_bytes(prog_word);
     sstore_field(input, prog_slot, new_word)?;
+    let sstore_gas = if new_word == U256::ZERO {
+        SSTORE_RESET_GAS
+    } else {
+        SSTORE_SET_GAS
+    };
 
-    // Emit UpdateProgramCache(address indexed manager, bytes32 indexed codehash, bool cached).
     let topic1 = address_to_b256(caller);
     let mut event_data = Vec::with_capacity(32);
     event_data.extend_from_slice(&U256::from(cache as u64).to_be_bytes::<32>());
@@ -327,7 +350,11 @@ fn set_program_cached(
         event_data.into(),
     ));
 
-    let gas_used = 3 * SLOAD_GAS + crate::abi_word_u64(0).len() as u64 + 20_000 + COPY_GAS;
+    let gas_used = after_get_program_gas
+        + EMIT_UPDATE_PROGRAM_CACHE_GAS
+        + prog_init_cost as u64
+        + SLOAD_GAS
+        + sstore_gas;
     Ok(PrecompileOutput::new(
         gas_used.min(input.gas),
         Vec::new().into(),
@@ -353,10 +380,11 @@ fn handle_cache_codehash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&data[4..36]);
     let codehash = B256::from(bytes);
-    set_program_cached(input, codehash, true)
+    set_program_cached(input, codehash, true, 0)
 }
 
-/// cacheProgram(address): looks up the program's codehash and caches it.
+/// cacheProgram(address) reads the code hash from an account, which costs
+/// ColdAccountAccessCostEIP2929 even when the slot is already warm.
 fn handle_cache_program(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
@@ -370,7 +398,7 @@ fn handle_cache_program(input: &mut PrecompileInput<'_>) -> PrecompileResult {
             .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
         acct.data.info.code_hash
     };
-    set_program_cached(input, codehash, true)
+    set_program_cached(input, codehash, true, COLD_ACCOUNT_ACCESS_GAS)
 }
 
 /// evictCodehash(bytes32): clears the cached flag.
@@ -382,5 +410,5 @@ fn handle_evict_codehash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&data[4..36]);
     let codehash = B256::from(bytes);
-    set_program_cached(input, codehash, false)
+    set_program_cached(input, codehash, false, 0)
 }
