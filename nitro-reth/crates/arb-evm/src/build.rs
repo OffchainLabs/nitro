@@ -389,6 +389,9 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
                 .is_increased_calldata_price_enabled()
                 .unwrap_or(false);
 
+        // Tip-collection flag (ArbOS >= 60).
+        let collect_tips_enabled = arb_state.collect_tips().unwrap_or(false);
+
         let hooks = DefaultArbOsHooks::new(
             self.arb_ctx.coinbase,
             arbos_version,
@@ -400,6 +403,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             false,
             self.arb_ctx.l1_base_fee,
             calldata_pricing_increase_enabled,
+            collect_tips_enabled,
         );
         self.arb_hooks = Some(hooks);
     }

@@ -82,22 +82,68 @@ impl TxProcessor {
 
     /// Whether the tip should be dropped (version-gated behavior).
     pub fn drop_tip(&self, arbos_version: u64) -> bool {
-        arbos_version != 9 || self.delayed_inbox
+        self.drop_tip_with_collect(arbos_version, false)
+    }
+
+    /// Drop-tip decision matching Nitro's CollectTips():
+    /// - delayed inbox: always drop
+    /// - v9: never drop (collect)
+    /// - v10..v59: always drop
+    /// - v60+: drop iff collect_tips_enabled is false
+    pub fn drop_tip_with_collect(&self, arbos_version: u64, collect_tips_enabled: bool) -> bool {
+        if self.delayed_inbox {
+            return true;
+        }
+        if arbos_version == 9 {
+            return false;
+        }
+        if arbos_version < 60 {
+            return true;
+        }
+        !collect_tips_enabled
     }
 
     /// Get the effective gas price paid.
     pub fn get_paid_gas_price(&self, arbos_version: u64, base_fee: U256, gas_price: U256) -> U256 {
-        if arbos_version != 9 {
-            base_fee
-        } else {
+        self.get_paid_gas_price_with_collect(arbos_version, base_fee, gas_price, false)
+    }
+
+    /// Effective paid gas price, accounting for v60+ collect-tips behavior.
+    pub fn get_paid_gas_price_with_collect(
+        &self,
+        arbos_version: u64,
+        base_fee: U256,
+        gas_price: U256,
+        collect_tips_enabled: bool,
+    ) -> U256 {
+        // Nitro: GetPaidGasPrice returns full gas price when CollectTips() else basefee.
+        if !self.drop_tip_with_collect(arbos_version, collect_tips_enabled) {
             gas_price
+        } else {
+            base_fee
         }
     }
 
     /// The GASPRICE opcode return value.
     pub fn gas_price_op(&self, arbos_version: u64, base_fee: U256, gas_price: U256) -> U256 {
+        self.gas_price_op_with_collect(arbos_version, base_fee, gas_price, false)
+    }
+
+    /// GASPRICE opcode value, accounting for v60+ collect-tips behavior.
+    pub fn gas_price_op_with_collect(
+        &self,
+        arbos_version: u64,
+        base_fee: U256,
+        gas_price: U256,
+        collect_tips_enabled: bool,
+    ) -> U256 {
         if arbos_version >= 3 {
-            self.get_paid_gas_price(arbos_version, base_fee, gas_price)
+            self.get_paid_gas_price_with_collect(
+                arbos_version,
+                base_fee,
+                gas_price,
+                collect_tips_enabled,
+            )
         } else {
             gas_price
         }

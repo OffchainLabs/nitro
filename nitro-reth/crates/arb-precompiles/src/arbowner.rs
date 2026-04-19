@@ -68,6 +68,9 @@ const ADD_WASM_CACHE_MANAGER: [u8; 4] = [0xff, 0xdc, 0xa5, 0x15];
 const REMOVE_WASM_CACHE_MANAGER: [u8; 4] = [0xbf, 0x19, 0x73, 0x22];
 const SET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xf1, 0xfe, 0x1a, 0x70];
 const SET_CALLDATA_PRICE_INCREASE: [u8; 4] = [0x8e, 0xb9, 0x11, 0xd9]; // setCalldataPriceIncrease(bool)
+const SET_COLLECT_TIPS: [u8; 4] = [0xa8, 0x58, 0xdb, 0xe2]; // setCollectTips(bool)
+const COLLECT_TIPS_OFFSET: u64 = 11; // collectTipsOffset in arbosState (root field 11)
+const ARBOS_VERSION_60: u64 = 60;
 const ADD_TRANSACTION_FILTERER: [u8; 4] = [0x59, 0xc8, 0x7a, 0xcc]; // addTransactionFilterer(address)
 const REMOVE_TRANSACTION_FILTERER: [u8; 4] = [0x67, 0xad, 0xa0, 0x89]; // removeTransactionFilterer(address)
 const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x59, 0x5f, 0xbb, 0x5a]; // getAllTransactionFilterers()
@@ -375,6 +378,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             handle_set_calldata_price_increase(&mut input)
+        }
+        SET_COLLECT_TIPS => {
+            if let Some(r) = crate::check_method_version(gas_limit, ARBOS_VERSION_60, 0) {
+                return r;
+            }
+            handle_set_collect_tips(&mut input)
         }
 
         // ── Transaction filtering (all ArbOS >= 60) ──────────────
@@ -1732,6 +1741,25 @@ fn handle_set_calldata_price_increase(input: &mut PrecompileInput<'_>) -> Precom
     sstore_field(input, features_slot, updated)?;
 
     let gas_used = SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
+fn handle_set_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return crate::burn_all_revert(input.gas);
+    }
+    let gas_limit = input.gas;
+    let value = if U256::from_be_slice(&data[4..36]) != U256::ZERO {
+        U256::from(1u64)
+    } else {
+        U256::ZERO
+    };
+    sstore_field(input, root_slot(COLLECT_TIPS_OFFSET), value)?;
+    let gas_used = SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
         Vec::new().into(),
