@@ -26,6 +26,7 @@ const INIT_COST_SCALAR: [u8; 4] = [0x5f, 0xc9, 0x4c, 0x0b]; // initCostScalar()
 const EXPIRY_DAYS: [u8; 4] = [0x30, 0x9f, 0x65, 0x55]; // expiryDays()
 const KEEPALIVE_DAYS: [u8; 4] = [0x0a, 0x93, 0x64, 0x55]; // keepaliveDays()
 const BLOCK_CACHE_SIZE: [u8; 4] = [0x7a, 0xf6, 0xe8, 0x19]; // blockCacheSize()
+const ACTIVATION_GAS: [u8; 4] = [0x22, 0x78, 0xc2, 0x78]; // activationGas()
 const ACTIVATE_PROGRAM: [u8; 4] = [0x58, 0xc7, 0x80, 0xc2]; // activateProgram(address)
 const CODEHASH_KEEPALIVE: [u8; 4] = [0xc6, 0x89, 0xba, 0xd5]; // codehashKeepalive(bytes32)
 const CODEHASH_VERSION: [u8; 4] = [0xd7, 0x0c, 0x0c, 0xa7]; // codehashVersion(bytes32)
@@ -182,6 +183,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let params = load_params_word(&mut input)?;
             let size = u16::from_be_bytes([params[23], params[24]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(size))
+        }
+        ACTIVATION_GAS => {
+            // Reads from a separate Programs.activationGas slot (not the packed params word).
+            let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+            let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
+            let slot = map_slot(activation_key.as_slice(), 0);
+            let gas = sload_field(&mut input, slot)?;
+            ok_u256(SLOAD_GAS + COPY_GAS, gas)
         }
         // Program queries by codehash.
         CODEHASH_VERSION => {

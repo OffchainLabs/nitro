@@ -64,6 +64,7 @@ const SET_WASM_EXPIRY_DAYS: [u8; 4] = [0xaa, 0xc6, 0x80, 0x18];
 const SET_WASM_KEEPALIVE_DAYS: [u8; 4] = [0x2a, 0x9c, 0xbe, 0x3e];
 const SET_WASM_BLOCK_CACHE_SIZE: [u8; 4] = [0x38, 0x0f, 0x14, 0x57];
 const SET_WASM_MAX_SIZE: [u8; 4] = [0x45, 0x5e, 0xc2, 0xeb];
+const SET_WASM_ACTIVATION_GAS: [u8; 4] = [0xa0, 0xa3, 0x24, 0x97]; // setWasmActivationGas(uint64)
 const ADD_WASM_CACHE_MANAGER: [u8; 4] = [0xff, 0xdc, 0xa5, 0x15];
 const REMOVE_WASM_CACHE_MANAGER: [u8; 4] = [0xbf, 0x19, 0x73, 0x22];
 const SET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xf1, 0xfe, 0x1a, 0x70];
@@ -349,6 +350,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MaxWasmSize, val as u64)
+        }
+        // SetWasmActivationGas: ArbOS >= 30 (separate Programs.activationGas slot)
+        SET_WASM_ACTIVATION_GAS => {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+                return r;
+            }
+            if data.len() < 36 {
+                return crate::burn_all_revert(gas_limit);
+            }
+            let val = U256::from_be_slice(&data[4..36]);
+            sstore_field(&mut input, programs_activation_gas_slot(), val)?;
+            Ok(PrecompileOutput::new(0, Vec::new().into()))
         }
         // SetMaxStylusContractFragments: ArbOS >= 60
         SET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
@@ -1023,6 +1036,13 @@ fn programs_params_slot() -> U256 {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), &[0]); // PARAMS_KEY = [0]
     map_slot(params_key.as_slice(), 0)
+}
+
+/// Compute the storage slot for Programs.activationGas (sub-storage key [5], slot 0).
+fn programs_activation_gas_slot() -> U256 {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
+    map_slot(activation_key.as_slice(), 0)
 }
 
 /// Read the packed programs params word from storage.
