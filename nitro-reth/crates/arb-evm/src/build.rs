@@ -231,6 +231,11 @@ struct PendingArbTx {
     stylus_data_fee: U256,
     /// Retry tx context for end-tx retryable processing.
     retry_context: Option<PendingRetryContext>,
+    /// Effective tip per gas (gas_fee_cap - base_fee, clamped to >=0) that revm
+    /// will mint to coinbase. Captured before any tip-drop cap so commit_transaction
+    /// can redirect from coinbase to networkFeeAccount per Nitro semantics.
+    /// Zero when the tip was capped via tx_env.set_gas_price(base_fee).
+    coinbase_tip_per_gas: u128,
 }
 
 /// Context for a retry tx that needs end-tx processing after EVM execution.
@@ -530,6 +535,7 @@ where
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 stylus_data_fee: U256::ZERO,
                 retry_context: None,
+                coinbase_tip_per_gas: 0,
             });
 
             return Ok(EthTxResult {
@@ -601,6 +607,7 @@ where
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 stylus_data_fee: U256::ZERO,
                 retry_context: None,
+                coinbase_tip_per_gas: 0,
             });
 
             return Ok(EthTxResult {
@@ -803,6 +810,7 @@ where
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             stylus_data_fee: U256::ZERO,
             retry_context: None,
+            coinbase_tip_per_gas: 0,
         });
 
         // Construct synthetic execution result. Filtered retryables always
@@ -1139,6 +1147,7 @@ where
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 stylus_data_fee: U256::ZERO,
                 retry_context: None,
+                coinbase_tip_per_gas: 0,
             });
 
             // Internal tx errors are fatal — abort block production.
@@ -1217,6 +1226,7 @@ where
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 stylus_data_fee: U256::ZERO,
                 retry_context: None,
+                coinbase_tip_per_gas: 0,
             });
 
             // Filtered deposits produce a failed receipt (status=0) via
@@ -1311,6 +1321,7 @@ where
                                     gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                     stylus_data_fee: U256::ZERO,
                                     retry_context: None,
+                                    coinbase_tip_per_gas: 0,
                                 });
                                 return Ok(EthTxResult {
                                     result: revm::context::result::ResultAndState {
@@ -1372,6 +1383,7 @@ where
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 stylus_data_fee: U256::ZERO,
                                 retry_context: None,
+                                coinbase_tip_per_gas: 0,
                             });
                             let err_msg = format!("retryable ticket {} not found", info.ticket_id,);
                             return Ok(EthTxResult {
@@ -1401,6 +1413,7 @@ where
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 stylus_data_fee: U256::ZERO,
                                 retry_context: None,
+                                coinbase_tip_per_gas: 0,
                             });
                             return Ok(EthTxResult {
                                 result: revm::context::result::ResultAndState {
@@ -1571,6 +1584,7 @@ where
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             stylus_data_fee: U256::ZERO,
                             retry_context,
+                            coinbase_tip_per_gas: 0,
                         });
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
@@ -1606,6 +1620,7 @@ where
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             stylus_data_fee: U256::ZERO,
                             retry_context,
+                            coinbase_tip_per_gas: 0,
                         });
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
@@ -1634,8 +1649,12 @@ where
         let upfront_gas_price: u128 = revm::context_interface::Transaction::gas_price(&tx_env);
 
         // Drop the priority fee tip: cap gas price to the base fee.
-        // In Arbitrum, fees go to network/infra accounts via EndTxHook, not to coinbase.
-        // Without this, revm's reward_beneficiary sends the tip to coinbase.
+        // For ArbOS versions where CollectTips() = false (most pre-v60 + v60+
+        // when tip-collection is disabled), capping makes GASPRICE return the
+        // base fee. When CollectTips() = true (v9 or v60+ with the flag set),
+        // we leave gas_price intact so GASPRICE returns the full price; revm
+        // mints the tip to coinbase (= batch_poster) which is post-EVM
+        // redirected to the network fee account by commit_transaction.
         let should_drop_tip = self
             .arb_hooks
             .as_ref()
@@ -1942,6 +1961,20 @@ where
         let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
             .saturating_add(MultiGas::computation_gas(evm_gas_used));
 
+        // Capture effective tip per gas (gas_price - base_fee, clamped >= 0).
+        // For drop_tip=false paths revm minted tip*gas_used to coinbase. We
+        // redirect that to networkFeeAccount in commit_transaction (per Nitro
+        // semantics: tip → networkFeeAccount, not coinbase = batch_poster).
+        // For drop_tip=true paths we already capped gas_price = base_fee, so
+        // revm minted nothing to coinbase — leave the field zero so commit
+        // skips the redirect.
+        let coinbase_tip_per_gas: u128 = if should_drop_tip {
+            0
+        } else {
+            let bf: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
+            upfront_gas_price.saturating_sub(bf)
+        };
+
         self.pending_tx = Some(PendingArbTx {
             sender,
             tx_gas_limit,
@@ -1953,6 +1986,7 @@ where
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             stylus_data_fee,
             retry_context,
+            coinbase_tip_per_gas,
         });
 
         Ok(output)
@@ -1998,6 +2032,28 @@ where
 
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
+
+        // Redirect any priority-fee tip from coinbase to network_fee_account.
+        // revm reward_beneficiary mints `tip * gas_used` to coinbase. Per Nitro
+        // (geth fork state_transition.go) this should accrue to the network fee
+        // account, not the batch poster (which serves as our coinbase). This
+        // only applies when we did NOT cap the gas price (drop_tip = false).
+        if let Some(ref p) = pending {
+            if p.coinbase_tip_per_gas > 0 && gas_used > 0 {
+                let coinbase = self.arb_ctx.coinbase;
+                let net_acct = self.arb_ctx.network_fee_account;
+                if coinbase != net_acct {
+                    let tip_amount = U256::from(p.coinbase_tip_per_gas)
+                        .saturating_mul(U256::from(gas_used));
+                    let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                    if get_balance(db, coinbase) >= tip_amount {
+                        transfer_balance(db, coinbase, net_acct, tip_amount);
+                        self.touched_accounts.insert(coinbase);
+                        self.touched_accounts.insert(net_acct);
+                    }
+                }
+            }
+        }
 
         // Stylus activation data fee: sender → network (via cache, post-commit).
         // Value was zeroed in tx_env so sender still has the ETH.
