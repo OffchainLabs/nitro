@@ -320,7 +320,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             let val = read_u32_param(data)?;
-            write_stylus_param(&mut input, StylusField::InitCostScalar, val as u64)
+            // Nitro stores DivCeil(percent, 2). Reader multiplies by 2 to recover the percent.
+            let stored = (val as u64).saturating_add(1) / 2;
+            write_stylus_param(&mut input, StylusField::InitCostScalar, stored)
         }
         SET_WASM_EXPIRY_DAYS => {
             if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
