@@ -52,13 +52,15 @@ fn does_tx_type_alias_covers_expected_types() {
 
 #[test]
 fn tx_type_has_poster_costs_excludes_deposit_retry_internal_submit() {
-    for t in [0x64u8, 0x68, 0x69, 0x6A] {
+    // Matches Nitro util.TxTypeHasPosterCosts: only standard EOA-signed types
+    // pay poster costs; all Arbitrum-specific types do not.
+    for t in [0x64u8, 0x65, 0x66, 0x68, 0x69, 0x6A] {
         assert!(
             !tx_type_has_poster_costs(t),
             "type {t:#x} should not have poster costs"
         );
     }
-    for t in [0x00u8, 0x01, 0x02, 0x04, 0x65, 0x66] {
+    for t in [0x00u8, 0x01, 0x02, 0x04] {
         assert!(
             tx_type_has_poster_costs(t),
             "type {t:#x} should have poster costs"

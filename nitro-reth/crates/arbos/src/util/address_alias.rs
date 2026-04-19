@@ -54,20 +54,18 @@ pub fn does_tx_type_alias(tx_type: u8) -> bool {
 
 /// Whether a transaction type incurs L1 poster costs and standard fee distribution.
 ///
-/// In Nitro, the GasChargingHook sets SkipL1Charging=false for ALL on-chain txs,
-/// meaning poster gas is computed for every tx that enters the EVM. Only types that
-/// end early in StartTxHook (deposit, internal, submit-retryable) never reach the
-/// gas charging phase. RetryTx has its own special gas/fee handling.
-///
-/// UnsignedTx (0x65) and ContractTx (0x66) are L1→L2 messages that execute through
-/// the normal EVM path and MUST have poster costs and fee distribution, matching
-/// standard user txs.
+/// Matches Nitro's util.TxTypeHasPosterCosts: only standard EOA-signed tx types
+/// (Legacy / EIP-2930 / EIP-1559) pay poster costs. All Arbitrum-specific tx
+/// types (deposit, unsigned, contract, retry, submit-retryable, internal) skip
+/// L1 charging.
 pub fn tx_type_has_poster_costs(tx_type: u8) -> bool {
     !matches!(
         tx_type,
-        0x64  // ArbitrumDepositTx — ends early in StartTxHook
-        | 0x68 // ArbitrumRetryTx — has its own fee path in EndTxHook
-        | 0x69 // ArbitrumSubmitRetryableTx — ends early in StartTxHook
-        | 0x6a // ArbitrumInternalTx — ends early in StartTxHook
+        0x64  // ArbitrumDepositTx
+        | 0x65 // ArbitrumUnsignedTx
+        | 0x66 // ArbitrumContractTx
+        | 0x68 // ArbitrumRetryTx
+        | 0x69 // ArbitrumSubmitRetryableTx
+        | 0x6a // ArbitrumInternalTx
     )
 }

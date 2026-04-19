@@ -2224,9 +2224,15 @@ where
                         }
                     }
                 }
-            } else if pending.has_poster_costs {
-                // Normal tx: fee distribution. Includes UnsignedTx / ContractTx,
-                // which also carry poster costs.
+            } else if matches!(
+                pending.arb_tx_type,
+                None | Some(ArbTxType::ArbitrumLegacyTx)
+                    | Some(ArbTxType::ArbitrumUnsignedTx)
+                    | Some(ArbTxType::ArbitrumContractTx)
+            ) {
+                // Normal tx fee distribution: standard EOA-signed txs, plus
+                // UnsignedTx/ContractTx (L1->L2 messages that pass through normal
+                // EVM gas charging). Poster cost is zero for the latter two.
                 let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
 
                 let fee_dist = self.arb_hooks.as_ref().map(|hooks| {
