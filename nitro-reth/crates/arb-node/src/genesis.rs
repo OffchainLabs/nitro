@@ -162,13 +162,10 @@ pub fn initialize_arbos_state<D: Database>(
     let mut arb_state = ArbosState::open(state_ptr, SystemBurner::new(None, false))
         .map_err(|_| "failed to open ArbOS state after initial setup")?;
 
-    // Add chain owner.
-    if chain_owner != Address::ZERO {
-        arb_state
-            .chain_owners
-            .add(chain_owner)
-            .map_err(|_| "failed to add chain owner")?;
-    }
+    arb_state
+        .chain_owners
+        .add(chain_owner)
+        .map_err(|_| "failed to add chain owner")?;
 
     // Run version upgrade from 1 to target (first_time=true).
     if target_arbos_version > 1 {
