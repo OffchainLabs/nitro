@@ -1417,7 +1417,8 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
         sstore_field(input, len_slot, U256::from(i + 1))?;
     }
 
-    let gas_used = (count * 4 + 2) * SSTORE_GAS + count * SLOAD_GAS + COPY_GAS;
+    // OpenArbosState SLOAD + body SSTOREs/SLOADs + result COPY.
+    let gas_used = SLOAD_GAS + (count * 4 + 2) * SSTORE_GAS + count * SLOAD_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
         Vec::new().into(),
@@ -1759,7 +1760,8 @@ fn handle_set_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult 
         U256::ZERO
     };
     sstore_field(input, root_slot(COLLECT_TIPS_OFFSET), value)?;
-    let gas_used = SSTORE_GAS + COPY_GAS;
+    // OpenArbosState SLOAD + body SSTORE + result COPY.
+    let gas_used = SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
         Vec::new().into(),
