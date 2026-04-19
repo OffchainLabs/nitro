@@ -64,9 +64,9 @@ impl ModuleMiddleware for StartMover {
             });
             info.function_names.clear();
         }
-        tracing::warn!(target: "stylus",
+        tracing::debug!(target: "stylus",
             had_start, exports_before, exports_after = info.exports.len(),
-            "STARTMOVER applied");
+            "StartMover applied");
         Ok(())
     }
 
