@@ -354,6 +354,9 @@ fn arb_cfg_env(chain_id: u64, spec: SpecId, arbos_version: u64) -> CfgEnv {
     // whose gas_fee_cap may not follow standard EIP-1559 rules.
     // Also needed for debug_traceTransaction to replay these tx types.
     cfg.disable_base_fee = true;
+    // Disable EIP-7825 per-tx gas cap. Arbitrum uses ArbOS-controlled
+    // PerTxGasLimit instead, applied during the gas-charging hook.
+    cfg.tx_gas_limit_cap = Some(u64::MAX);
     cfg
 }
 
