@@ -1,8 +1,8 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use rand::Rng;
 use caller_env::{ExecEnv, GuestPtr, wavmio::WavmIo};
+use rand::Rng;
 use wasmer::FunctionEnvMut;
 
 use crate::{memory::Sp1MemAccess, replay::CustomEnvData};
