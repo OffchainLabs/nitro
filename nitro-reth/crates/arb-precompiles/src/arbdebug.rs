@@ -25,6 +25,10 @@ const PANIC: [u8; 4] = [0x47, 0x00, 0xd3, 0x05];
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
+const COPY_GAS: u64 = 3;
+const LOG_GAS: u64 = 375;
+const LOG_TOPIC_GAS: u64 = 375;
+const LOG_DATA_GAS: u64 = 8;
 
 pub fn create_arbdebug_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbdebug"), handler)
@@ -100,6 +104,11 @@ fn handle_events(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let caller = input.caller;
     let value_received = input.value;
 
+    input
+        .internals_mut()
+        .load_account(ARBOS_STATE_ADDRESS)
+        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+
     emit_basic_event(input, !flag, value);
     emit_mixed_event(input, flag, !flag, value, ARBDEBUG_ADDRESS, caller);
 
@@ -107,7 +116,17 @@ fn handle_events(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(B256::left_padding_from(caller.as_slice()).as_slice());
     out.extend_from_slice(&value_received.to_be_bytes::<32>());
 
-    Ok(PrecompileOutput::new(gas_limit.min(3000), out.into()))
+    let arg_words = (data.len() as u64).saturating_sub(4).div_ceil(32);
+    let result_words = (out.len() as u64).div_ceil(32);
+    let basic_log_gas = LOG_GAS + LOG_TOPIC_GAS * 2 + LOG_DATA_GAS * 32;
+    let mixed_log_gas = LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * 64;
+    let gas_cost = SLOAD_GAS
+        + COPY_GAS * arg_words
+        + basic_log_gas
+        + mixed_log_gas
+        + COPY_GAS * result_words;
+
+    Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
 
 fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
