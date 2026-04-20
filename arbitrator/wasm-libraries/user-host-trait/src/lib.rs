@@ -1001,7 +1001,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
             let _ = self.buy_gas(Gas(u64::MAX));
             return Err(eyre!("memory.grow pages exceed u16").into());
         } else {
-            if pages & 0xfff == 0 {
+            if pages & 0xffff == 0 {
                 self.buy_ink(hostio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
                 return trace!("pay_for_memory_grow", self, be!(0u16), &[]);
             }
