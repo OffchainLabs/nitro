@@ -489,3 +489,10 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 	}
 	return nil
 }
+
+// Sets the constant gas charge applied before each Stylus contract activation.
+// Defaults to zero. Can be raised to deter DOS via activations, or set to a
+// value exceeding the block gas limit to block all activations entirely.
+func (con ArbOwner) SetWasmActivationGas(c ctx, _ mech, gas uint64) error {
+	return c.State.Programs().SetActivationGas(gas)
+}

@@ -405,6 +405,10 @@ func callProgram(
 		panic(fmt.Sprintf("stylus native stack overflow (program=%v, module=%v, depth=%d)", address, moduleHash, depth))
 	}
 	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
+	if err != nil && strings.Contains(msg, "memory.fill value exceeds 8 bits") {
+		log.Info("memory.fill value overflow triggered")
+		evm.StateDB.FilterTx()
+	}
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}

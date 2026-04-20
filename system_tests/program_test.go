@@ -3090,3 +3090,19 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	)
 	Require(t, err)
 }
+
+func TestProgramMemoryFillOverflow(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	overflowAddr := deployWasm(t, ctx, auth, l2client, watFile("memory-fill-overflow"))
+
+	tx := l2info.PrepareTxTo("Owner", &overflowAddr, 1e9, nil, nil)
+	err := l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		t.Fatal("should get filtered, got: ", err)
+	}
+}
