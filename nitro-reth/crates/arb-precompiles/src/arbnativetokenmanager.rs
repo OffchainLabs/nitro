@@ -31,6 +31,9 @@ const COPY_GAS: u64 = 3;
 /// Gas cost for mint/burn: WarmStorageReadCost + CallValueTransferGas.
 const MINT_BURN_GAS: u64 = 100 + 9000;
 
+/// LOG2 with one 32-byte data word: base + 2 topics + data.
+const EVENT_GAS: u64 = 375 + 2 * 375 + 8 * 32;
+
 pub fn create_arbnativetokenmanager_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbnativetokenmanager"), handler)
 }
@@ -125,7 +128,7 @@ fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         event_data.into(),
     ));
 
-    let gas_used = (SLOAD_GAS + MINT_BURN_GAS + COPY_GAS).min(gas_limit);
+    let gas_used = (SLOAD_GAS + SLOAD_GAS + MINT_BURN_GAS + EVENT_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }
 
@@ -173,6 +176,6 @@ fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         event_data.into(),
     ));
 
-    let gas_used = (SLOAD_GAS + MINT_BURN_GAS + COPY_GAS).min(gas_limit);
+    let gas_used = (SLOAD_GAS + SLOAD_GAS + MINT_BURN_GAS + EVENT_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }

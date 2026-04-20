@@ -36,7 +36,10 @@
         "DataAvailabilityCommittee": false,
         "InitialArbOSVersion": 32,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
-        "GenesisBlockNum": 0
+        "GenesisBlockNum": 0,
+        "ArbOSInit": {
+          "nativeTokenSupplyManagementEnabled": true
+        }
       }
     },
     "difficulty": "0x1",

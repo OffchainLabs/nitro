@@ -311,6 +311,7 @@ where
                     chain_id,
                     genesis::INITIAL_ARBOS_VERSION,
                     genesis::DEFAULT_CHAIN_OWNER,
+                    genesis::ArbOSInit::default(),
                 )
                 .map_err(BlockProducerError::Execution)?;
             } else {

@@ -55,13 +55,31 @@ impl ChainSpecParser for ArbChainSpecParser {
             .and_then(Value::as_str)
             .and_then(|s| Address::from_str(s.trim_start_matches("0x")).ok())
             .unwrap_or(Address::ZERO);
+        let arbos_init = parse_arbos_init(&value);
 
         if initial_arbos > 0 && chain_id > 0 {
-            inject_arbos_alloc(&mut value, chain_id, initial_arbos, initial_owner)?;
+            inject_arbos_alloc(&mut value, chain_id, initial_arbos, initial_owner, arbos_init)?;
         }
 
         let augmented = serde_json::to_string(&value)?;
         EthereumChainSpecParser::parse(&augmented)
+    }
+}
+
+fn parse_arbos_init(value: &Value) -> genesis::ArbOSInit {
+    let native = value
+        .pointer("/config/arbitrum/ArbOSInit/nativeTokenSupplyManagementEnabled")
+        .or_else(|| value.pointer("/config/arbitrum/nativeTokenSupplyManagementEnabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let filtering = value
+        .pointer("/config/arbitrum/ArbOSInit/transactionFilteringEnabled")
+        .or_else(|| value.pointer("/config/arbitrum/transactionFilteringEnabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    genesis::ArbOSInit {
+        native_token_supply_management_enabled: native,
+        transaction_filtering_enabled: filtering,
     }
 }
 
@@ -70,6 +88,7 @@ fn inject_arbos_alloc(
     chain_id: u64,
     arbos_version: u64,
     chain_owner: Address,
+    arbos_init: genesis::ArbOSInit,
 ) -> eyre::Result<()> {
     let alloc_obj = value
         .as_object_mut()
@@ -86,7 +105,7 @@ fn inject_arbos_alloc(
         return Ok(());
     }
 
-    let entries = compute_arbos_alloc(chain_id, arbos_version, chain_owner)?;
+    let entries = compute_arbos_alloc(chain_id, arbos_version, chain_owner, arbos_init)?;
     for (addr, account) in entries {
         let key = address_lower_no_prefix(addr);
         if alloc_obj.contains_key(&key) || alloc_obj.contains_key(&format!("0x{key}")) {
@@ -116,6 +135,7 @@ pub fn compute_arbos_alloc(
     chain_id: u64,
     arbos_version: u64,
     chain_owner: Address,
+    arbos_init: genesis::ArbOSInit,
 ) -> eyre::Result<Vec<(Address, GenesisAccount)>> {
     let mut state: State<EmptyDB> = StateBuilder::new()
         .with_database(EmptyDB::default())
@@ -128,8 +148,15 @@ pub fn compute_arbos_alloc(
         serialized_chain_config: Vec::new(),
     };
 
-    genesis::initialize_arbos_state(&mut state, &init_msg, chain_id, arbos_version, chain_owner)
-        .map_err(|e| eyre!("initialize_arbos_state: {e}"))?;
+    genesis::initialize_arbos_state(
+        &mut state,
+        &init_msg,
+        chain_id,
+        arbos_version,
+        chain_owner,
+        arbos_init,
+    )
+    .map_err(|e| eyre!("initialize_arbos_state: {e}"))?;
 
     state.merge_transitions(BundleRetention::PlainState);
     let bundle = state.take_bundle();

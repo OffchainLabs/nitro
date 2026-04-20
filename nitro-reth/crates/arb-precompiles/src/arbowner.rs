@@ -491,32 +491,32 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         _ => return crate::burn_all_revert(gas_limit),
     };
-    // Owner-precompile calls are free (gas_used = 0) regardless of outcome.
-    // Reverts must be preserved so bad input is reported, not silently accepted.
-    // ArbOS < 11 emits OwnerActs on read-only getters too; from v11 on, only
-    // write methods do.
-    let result = result.map(|output| {
-        if output.reverted {
-            return PrecompileOutput::new_reverted(0, output.bytes);
+    let result = match result {
+        Ok(output) => {
+            if output.reverted {
+                Ok(PrecompileOutput::new_reverted(0, output.bytes))
+            } else {
+                let arbos_version = crate::get_arbos_version();
+                let is_read_only = matches!(
+                    selector,
+                    GET_NETWORK_FEE_ACCOUNT
+                        | GET_INFRA_FEE_ACCOUNT
+                        | IS_CHAIN_OWNER
+                        | GET_ALL_CHAIN_OWNERS
+                        | IS_TRANSACTION_FILTERER
+                        | GET_ALL_TRANSACTION_FILTERERS
+                        | IS_NATIVE_TOKEN_OWNER
+                        | GET_ALL_NATIVE_TOKEN_OWNERS
+                        | GET_FILTERED_FUNDS_RECIPIENT
+                );
+                if !is_read_only || arbos_version < 11 {
+                    emit_owner_acts(&mut input, &selector, data);
+                }
+                Ok(PrecompileOutput::new(0, output.bytes))
+            }
         }
-        let arbos_version = crate::get_arbos_version();
-        let is_read_only = matches!(
-            selector,
-            GET_NETWORK_FEE_ACCOUNT
-                | GET_INFRA_FEE_ACCOUNT
-                | IS_CHAIN_OWNER
-                | GET_ALL_CHAIN_OWNERS
-                | IS_TRANSACTION_FILTERER
-                | GET_ALL_TRANSACTION_FILTERERS
-                | IS_NATIVE_TOKEN_OWNER
-                | GET_ALL_NATIVE_TOKEN_OWNERS
-                | GET_FILTERED_FUNDS_RECIPIENT
-        );
-        if !is_read_only || arbos_version < 11 {
-            emit_owner_acts(&mut input, &selector, data);
-        }
-        PrecompileOutput::new(0, output.bytes)
-    });
+        Err(_) => Ok(PrecompileOutput::new_reverted(0, Default::default())),
+    };
     crate::gas_check(gas_limit, result)
 }
 
