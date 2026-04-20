@@ -285,6 +285,81 @@ where
         ))
     }
 
+    /// Combined gas estimator matching Arbitrum's `DoEstimateGas`: the
+    /// binary search operates on total gas (L2 compute + L1 poster) so the
+    /// 64/63 optimistic multiplier and 0.015 error ratio apply to the
+    /// combined figure. Each simulation passes `total − l1_gas` as the L2
+    /// gas limit, mirroring Nitro's `GasChargingHook` poster deduction.
+    async fn estimate_arb_combined_gas(
+        &self,
+        inner_req: RpcTxReq<<Rpc as RpcConvert>::Network>,
+        gas_for_l1: u64,
+        at: BlockId,
+        state_override: Option<StateOverride>,
+    ) -> Result<u64, EthApiError>
+    where
+        RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
+    {
+        use alloy_rpc_types_eth::state::EvmOverrides;
+
+        const CALL_STIPEND: u64 = 2300;
+        const ERROR_RATIO: f64 = 0.015;
+
+        let rpc_gas_cap = self.call_gas_limit();
+
+        let simulate = async |req_gas: u64| -> Result<(u64, bool), EthApiError> {
+            let mut req = inner_req.clone();
+            req.as_mut().gas = Some(req_gas);
+            let _permit = self.acquire_owned_blocking_io().await;
+            let res = self
+                .transact_call_at(req, at, EvmOverrides::state(state_override.clone()))
+                .await?;
+            Ok((res.result.gas_used(), res.result.is_success()))
+        };
+
+        let compute_cap = rpc_gas_cap.saturating_sub(gas_for_l1).max(1);
+        let (used_compute, success_first) = simulate(compute_cap).await?;
+        if !success_first {
+            return Ok(rpc_gas_cap);
+        }
+
+        let used_total = used_compute.saturating_add(gas_for_l1);
+        let mut lo = used_total.saturating_sub(1);
+        let mut hi = rpc_gas_cap.max(used_total);
+
+        let optimistic = used_total.saturating_add(CALL_STIPEND).saturating_mul(64) / 63;
+        if optimistic < hi {
+            let compute_limit = optimistic.saturating_sub(gas_for_l1);
+            let (_, ok) = simulate(compute_limit).await?;
+            if ok {
+                hi = optimistic;
+            } else {
+                lo = optimistic;
+            }
+        }
+
+        while lo + 1 < hi {
+            let ratio = (hi - lo) as f64 / hi as f64;
+            if ratio < ERROR_RATIO {
+                break;
+            }
+            let mut mid = lo + (hi - lo) / 2;
+            let two_lo = lo.saturating_mul(2);
+            if mid > two_lo {
+                mid = two_lo;
+            }
+            let compute_limit = mid.saturating_sub(gas_for_l1);
+            let (_, ok) = simulate(compute_limit).await?;
+            if ok {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+
+        Ok(hi)
+    }
+
     /// Gas estimate for `NodeInterface.estimateRetryableTicket` —
     /// `submit_intrinsic + auto_redeem_gas`.
     async fn estimate_retryable_ticket_gas(
@@ -1305,17 +1380,9 @@ where
                     };
                     let inner_req: RpcTxReq<<Rpc as RpcConvert>::Network> = inner_request.into();
 
-                    let compute_gas = EstimateCall::estimate_gas_at(
-                        self,
-                        inner_req,
-                        at,
-                        overrides.state,
-                    )
-                    .await?;
-                    let total: u64 = compute_gas
-                        .saturating_add(U256::from(gas_for_l1))
-                        .try_into()
-                        .unwrap_or(u64::MAX);
+                    let total = self
+                        .estimate_arb_combined_gas(inner_req, gas_for_l1, at, overrides.state)
+                        .await?;
 
                     Ok(encode_gas_estimate_components(
                         total, gas_for_l1, basefee, l1_price,
