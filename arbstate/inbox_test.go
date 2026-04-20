@@ -5,6 +5,7 @@ package arbstate
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -73,5 +74,57 @@ func TestParseSequencerMessage_LongAnyTrustNoReaderErrors(t *testing.T) {
 				t.Fatal("expected error for AnyTrust message with no reader configured, got nil")
 			}
 		})
+	}
+}
+
+func TestParseSequencerMessage_MinimalHeader(t *testing.T) {
+	ctx := context.Background()
+	// Messages shorter than 40 bytes must return an error
+	_, err := ParseSequencerMessage(ctx, 0, common.Hash{}, make([]byte, 39), nil, daprovider.KeysetValidate)
+	if err == nil {
+		t.Fatal("expected error for message shorter than 40 bytes")
+	}
+}
+
+func TestParseSequencerMessage_EmptyPayload(t *testing.T) {
+	ctx := context.Background()
+	// Exactly 40 bytes = valid header with empty payload
+	data := make([]byte, 40)
+	msg, err := ParseSequencerMessage(ctx, 0, common.Hash{}, data, nil, daprovider.KeysetValidate)
+	if err != nil {
+		t.Fatalf("expected no error for empty payload, got: %v", err)
+	}
+	if len(msg.Segments) != 0 {
+		t.Fatalf("expected empty segments for empty payload, got %d segments", len(msg.Segments))
+	}
+}
+
+func TestParseSequencerMessage_HeaderFieldParsing(t *testing.T) {
+	ctx := context.Background()
+	data := make([]byte, 40)
+	binary.BigEndian.PutUint64(data[0:8], 100)  // MinTimestamp
+	binary.BigEndian.PutUint64(data[8:16], 200) // MaxTimestamp
+	binary.BigEndian.PutUint64(data[16:24], 10) // MinL1Block
+	binary.BigEndian.PutUint64(data[24:32], 20) // MaxL1Block
+	binary.BigEndian.PutUint64(data[32:40], 5)  // AfterDelayedMessages
+
+	msg, err := ParseSequencerMessage(ctx, 0, common.Hash{}, data, nil, daprovider.KeysetValidate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg.MinTimestamp != 100 {
+		t.Errorf("MinTimestamp = %d, want 100", msg.MinTimestamp)
+	}
+	if msg.MaxTimestamp != 200 {
+		t.Errorf("MaxTimestamp = %d, want 200", msg.MaxTimestamp)
+	}
+	if msg.MinL1Block != 10 {
+		t.Errorf("MinL1Block = %d, want 10", msg.MinL1Block)
+	}
+	if msg.MaxL1Block != 20 {
+		t.Errorf("MaxL1Block = %d, want 20", msg.MaxL1Block)
+	}
+	if msg.AfterDelayedMessages != 5 {
+		t.Errorf("AfterDelayedMessages = %d, want 5", msg.AfterDelayedMessages)
 	}
 }
