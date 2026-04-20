@@ -55,7 +55,10 @@ pub use arbsys::{
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
-pub use nodeinterface::{create_nodeinterface_precompile, NODE_INTERFACE_ADDRESS};
+pub use nodeinterface::{
+    build_fake_tx_bytes, compute_l1_gas_for_estimate, create_nodeinterface_precompile,
+    decode_estimate_args, NODE_INTERFACE_ADDRESS,
+};
 pub use nodeinterface_debug::{
     create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
 };

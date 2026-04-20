@@ -33,7 +33,8 @@ use reth_transaction_pool::{
 use tracing::trace;
 
 use arb_precompiles::storage_slot::{
-    subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    root_slot, subspace_slot, ARBOS_STATE_ADDRESS, BROTLI_COMPRESSION_LEVEL_OFFSET,
+    CHAIN_ID_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
 };
 
 /// Type alias matching reth's `SignersForRpc`.
@@ -46,6 +47,9 @@ const L1_PRICE_PER_UNIT: u64 = 7;
 
 /// L2 pricing field offset for base fee.
 const L2_BASE_FEE: u64 = 2;
+
+/// L2 pricing field offset for minimum base fee.
+const L2_MIN_BASE_FEE: u64 = 3;
 
 /// Non-zero calldata gas cost per byte (EIP-2028).
 const TX_DATA_NON_ZERO_GAS: u64 = 16;
@@ -1002,8 +1006,8 @@ where
     {
         async move {
             use crate::nodeinterface_rpc::{
-                encode_gas_estimate_components, encode_l2_block_range, gas_estimate_data_len,
-                NODE_INTERFACE_ADDRESS, SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
+                encode_gas_estimate_components, encode_l2_block_range, NODE_INTERFACE_ADDRESS,
+                SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
                 SEL_L2_BLOCK_RANGE_FOR_L1,
             };
             use alloy_primitives::{Address, TxKind};
@@ -1052,56 +1056,56 @@ where
 
             match selector {
                 SEL_GAS_ESTIMATE_COMPONENTS | SEL_GAS_ESTIMATE_L1_COMPONENT => {
-                    // Run a real eth_estimateGas binary search for the total.
-                    // The tx data we want to estimate is the `bytes` param
-                    // embedded in the call; we don't have direct access to
-                    // it here, so we use the inner tx request calldata as a
-                    // proxy for estimation. The L1 component is derived
-                    // from the embedded `bytes` param length.
-                    let data_len = gas_estimate_data_len(&input_bytes);
+                    use alloy_rpc_types_eth::TransactionRequest;
 
-                    // Read L1 price and L2 basefee from ArbOS state.
-                    let state = self
-                        .inner
-                        .provider()
-                        .state_by_block_id(at)
-                        .map_err(|e| EthApiError::Internal(e.into()))?;
-                    let l1_price_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
-                    let l1_price = state
-                        .storage(
-                            ARBOS_STATE_ADDRESS,
-                            StorageKey::from(B256::from(l1_price_slot.to_be_bytes::<32>())),
-                        )
-                        .map_err(|e| EthApiError::Internal(e.into()))?
-                        .unwrap_or_default();
-                    let basefee_slot = subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE);
-                    let basefee = state
-                        .storage(
-                            ARBOS_STATE_ADDRESS,
-                            StorageKey::from(B256::from(basefee_slot.to_be_bytes::<32>())),
-                        )
-                        .map_err(|e| EthApiError::Internal(e.into()))?
-                        .unwrap_or_default();
+                    let (inner_to, inner_creation, inner_data) =
+                        arb_precompiles::decode_estimate_args(&input_bytes).ok_or_else(|| {
+                            EthApiError::InvalidParams(
+                                "gasEstimateComponents: malformed calldata".into(),
+                            )
+                        })?;
 
-                    // Compute gas-for-L1 from ArbOS pricing.
-                    let gas_for_l1 = if basefee.is_zero() || l1_price.is_zero() {
-                        0u64
-                    } else {
-                        let l1_fee = l1_price
-                            .saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS))
-                            .saturating_mul(U256::from(data_len));
-                        // Only gasEstimateComponents applies padding.
-                        let padded = if selector == SEL_GAS_ESTIMATE_COMPONENTS {
-                            l1_fee.saturating_mul(U256::from(GAS_ESTIMATION_L1_PRICE_PADDING))
-                                / U256::from(10_000u64)
-                        } else {
-                            l1_fee
+                    let (l1_price, basefee, min_basefee, chain_id_u, brotli_level) = {
+                        let state = self
+                            .inner
+                            .provider()
+                            .state_by_block_id(at)
+                            .map_err(|e| EthApiError::Internal(e.into()))?;
+                        let read = |slot: U256| -> Result<U256, EthApiError> {
+                            Ok(state
+                                .storage(
+                                    ARBOS_STATE_ADDRESS,
+                                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                                )
+                                .map_err(|e| EthApiError::Internal(e.into()))?
+                                .unwrap_or_default())
                         };
-                        (padded / basefee).try_into().unwrap_or(u64::MAX)
+                        let l1_price =
+                            read(subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+                        let basefee = read(subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
+                        let min_basefee =
+                            read(subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+                        let chain_id_u: u64 =
+                            read(root_slot(CHAIN_ID_OFFSET))?.try_into().unwrap_or(0);
+                        let brotli_level: u64 = read(root_slot(BROTLI_COMPRESSION_LEVEL_OFFSET))?
+                            .try_into()
+                            .unwrap_or(0);
+                        (l1_price, basefee, min_basefee, chain_id_u, brotli_level)
                     };
 
+                    let gas_for_l1 = arb_precompiles::compute_l1_gas_for_estimate(
+                        chain_id_u,
+                        inner_to,
+                        inner_creation,
+                        U256::ZERO,
+                        inner_data.clone(),
+                        l1_price,
+                        basefee,
+                        min_basefee,
+                        brotli_level,
+                    );
+
                     if selector == SEL_GAS_ESTIMATE_L1_COMPONENT {
-                        // Returns (uint64, uint256, uint256).
                         let mut out = vec![0u8; 96];
                         out[24..32].copy_from_slice(&gas_for_l1.to_be_bytes());
                         out[32..64].copy_from_slice(&basefee.to_be_bytes::<32>());
@@ -1109,12 +1113,31 @@ where
                         return Ok(alloy_primitives::Bytes::from(out));
                     }
 
-                    // For gasEstimateComponents, compute the full estimate by
-                    // issuing an inner estimate_gas_at with the embedded call.
-                    // We approximate: the full estimate is the caller's
-                    // current request's compute-gas estimate.
-                    let compute_gas =
-                        EstimateCall::estimate_gas_at(self, request, at, overrides.state).await?;
+                    let kind = if inner_creation {
+                        TxKind::Create
+                    } else {
+                        TxKind::Call(inner_to)
+                    };
+                    let from = request
+                        .as_ref()
+                        .from
+                        .unwrap_or(Address::ZERO);
+                    let inner_request = TransactionRequest {
+                        from: Some(from),
+                        to: Some(kind),
+                        value: Some(U256::ZERO),
+                        input: alloy_primitives::Bytes::from(inner_data).into(),
+                        ..Default::default()
+                    };
+                    let inner_req: RpcTxReq<<Rpc as RpcConvert>::Network> = inner_request.into();
+
+                    let compute_gas = EstimateCall::estimate_gas_at(
+                        self,
+                        inner_req,
+                        at,
+                        overrides.state,
+                    )
+                    .await?;
                     let total: u64 = compute_gas
                         .saturating_add(U256::from(gas_for_l1))
                         .try_into()

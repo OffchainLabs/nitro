@@ -62,12 +62,18 @@ pub fn run_execution_dir(dir: &Path) {
         return;
     }
     assert!(dir.exists(), "fixture dir missing: {}", dir.display());
+    let filter = std::env::var("ARB_SPEC_FILTER").ok();
     let mut failures = Vec::new();
     let mut count = 0;
     for entry in WalkDir::new(dir).into_iter().filter_map(Result::ok) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
+        }
+        if let Some(f) = &filter {
+            if !path.to_string_lossy().contains(f) {
+                continue;
+            }
         }
         count += 1;
         if let Err(e) = run_execution_fixture(path, rpc_url.as_deref()) {

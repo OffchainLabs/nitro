@@ -1,5 +1,6 @@
+use alloy_consensus::{transaction::SignerRecoverable, SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
@@ -33,16 +34,11 @@ const L1_PRICE_PER_UNIT: u64 = 7;
 
 // L2 pricing field offsets.
 const L2_BASE_FEE: u64 = 2;
+const L2_MIN_BASE_FEE: u64 = 3;
 
 // Gas costs.
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
-
-/// Non-zero calldata gas cost per byte.
-const TX_DATA_NON_ZERO_GAS: u64 = 16;
-
-/// Padding applied to L1 fee estimates (110% = 11000 bips).
-const GAS_ESTIMATION_L1_PRICE_PADDING_BIPS: u64 = 11000;
 
 pub fn create_nodeinterface_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("nodeinterface"), handler)
@@ -98,11 +94,14 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
     let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
+    let min_basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+    let chain_id_u256 = sload_field(input, root_slot(crate::storage_slot::CHAIN_ID_OFFSET))?;
+    let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
+    let brotli_level = sload_field(input, root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET))?
+        .try_into()
+        .unwrap_or(0u64);
 
-    // Compute L1 gas cost for a simple transaction.
-    // PosterDataCost computes the L1 fee from the message data, then divides by basefee.
-    // Here we estimate using the calldata from the input parameters.
-    let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee);
+    let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee, min_basefee, chain_id, brotli_level);
 
     let mut out = Vec::with_capacity(128);
     // gasEstimate: 0 (full estimate requires eth_estimateGas)
@@ -129,8 +128,14 @@ fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> Precompi
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
     let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
+    let min_basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+    let chain_id_u256 = sload_field(input, root_slot(crate::storage_slot::CHAIN_ID_OFFSET))?;
+    let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
+    let brotli_level = sload_field(input, root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET))?
+        .try_into()
+        .unwrap_or(0u64);
 
-    let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee);
+    let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee, min_basefee, chain_id, brotli_level);
 
     let mut out = Vec::with_capacity(96);
     // gasEstimateForL1
@@ -228,38 +233,138 @@ fn handle_legacy_lookup_empty(input: &PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(COPY_GAS.min(input.gas), out.into()))
 }
 
-/// Estimate L1 gas from calldata in the input.
-///
-/// Computes: posterDataCost = l1PricePerUnit * txDataNonZeroGas * calldataLen
-/// Then applies 110% padding and divides by basefee.
-fn estimate_l1_gas(input: &PrecompileInput<'_>, l1_price: U256, basefee: U256) -> u64 {
-    // Extract the `bytes data` parameter from calldata.
-    // ABI: selector(4) + address(32) + bool(32) + offset(32) + length(32) + data...
-    let calldata_len = if input.data.len() > 4 + 32 + 32 + 32 + 32 {
-        let len_offset = 4 + 32 + 32 + 32;
-        let len_bytes = &input.data[len_offset..len_offset + 32];
-        U256::from_be_slice(len_bytes).try_into().unwrap_or(0u64)
-    } else {
-        0u64
+fn estimate_l1_gas(
+    input: &PrecompileInput<'_>,
+    l1_price: U256,
+    basefee: U256,
+    min_basefee: U256,
+    chain_id: ChainId,
+    brotli_level: u64,
+) -> u64 {
+    let (to_addr, contract_creation, data) = match decode_estimate_args(input.data) {
+        Some(v) => v,
+        None => return 0,
     };
+    compute_l1_gas_for_estimate(
+        chain_id,
+        to_addr,
+        contract_creation,
+        U256::ZERO,
+        data,
+        l1_price,
+        basefee,
+        min_basefee,
+        brotli_level,
+    )
+}
 
+/// Mirrors Nitro's GasEstimateComponents L1-pricing path:
+/// build a fake EIP-1559 tx, brotli-compress its RLP, pad units by
+/// `(units + 256) * 1.01`, multiply by `pricePerUnit`, pad posterCost by
+/// `1.10`, then divide by `max(basefee * 7/8, minBaseFee)`.
+pub fn compute_l1_gas_for_estimate(
+    chain_id: ChainId,
+    to: Address,
+    contract_creation: bool,
+    value: U256,
+    data: Bytes,
+    l1_price: U256,
+    basefee: U256,
+    min_basefee: U256,
+    brotli_level: u64,
+) -> u64 {
     if basefee.is_zero() || l1_price.is_zero() {
         return 0;
     }
+    let tx_bytes = build_fake_tx_bytes(chain_id, to, contract_creation, value, data);
+    let raw_units = arbos::l1_pricing::poster_units_from_bytes(&tx_bytes, brotli_level);
+    let padded_units = raw_units
+        .saturating_add(arbos::l1_pricing::ESTIMATION_PADDING_UNITS)
+        .saturating_mul(10_000 + arbos::l1_pricing::ESTIMATION_PADDING_BASIS_POINTS)
+        / 10_000;
+    let poster_cost = l1_price.saturating_mul(U256::from(padded_units));
+    let posting_padded = poster_cost.saturating_mul(U256::from(11_000u64)) / U256::from(10_000u64);
+    let adjusted = basefee.saturating_mul(U256::from(7u64)) / U256::from(8u64);
+    let gas_price = if adjusted < min_basefee { min_basefee } else { adjusted };
+    if gas_price.is_zero() {
+        return 0;
+    }
+    (posting_padded / gas_price).try_into().unwrap_or(u64::MAX)
+}
 
-    // L1 fee = l1PricePerUnit * txDataNonZeroGas * dataLength
-    let l1_fee = l1_price
-        .saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS))
-        .saturating_mul(U256::from(calldata_len));
+/// Decode `gasEstimateComponents(address,bool,bytes)` calldata into
+/// `(to, contractCreation, data)`.
+pub fn decode_estimate_args(data: &[u8]) -> Option<(Address, bool, Bytes)> {
+    if data.len() < 4 + 4 * 32 {
+        return None;
+    }
+    let to = Address::from_slice(&data[16..36]);
+    let creation = data[4 + 32 + 31] != 0;
+    let bytes_offset: usize = U256::from_be_slice(&data[4 + 64..4 + 96]).try_into().ok()?;
+    let bytes_pos = 4usize.checked_add(bytes_offset)?;
+    if data.len() < bytes_pos + 32 {
+        return None;
+    }
+    let bytes_len: usize = U256::from_be_slice(&data[bytes_pos..bytes_pos + 32])
+        .try_into()
+        .ok()?;
+    let data_start = bytes_pos + 32;
+    if data.len() < data_start + bytes_len {
+        return None;
+    }
+    Some((
+        to,
+        creation,
+        Bytes::copy_from_slice(&data[data_start..data_start + bytes_len]),
+    ))
+}
 
-    // Apply padding (110% = 11000/10000 bips).
-    let padded = l1_fee.saturating_mul(U256::from(GAS_ESTIMATION_L1_PRICE_PADDING_BIPS))
-        / U256::from(10000u64);
+/// Build the byte sequence that Nitro's `makeFakeTxForMessage` produces
+/// for a gas-estimation message: the EIP-2718 envelope of an EIP-1559 tx
+/// with hard-coded random nonce/tip/feeCap/gas/sig fields.
+pub fn build_fake_tx_bytes(
+    chain_id: ChainId,
+    to: Address,
+    contract_creation: bool,
+    value: U256,
+    data: Bytes,
+) -> Vec<u8> {
+    let nonce = u64::from_be_bytes(keccak256(b"Nonce")[..8].try_into().unwrap());
+    let max_priority = u128::from(u32::from_be_bytes(
+        keccak256(b"GasTipCap")[..4].try_into().unwrap(),
+    ));
+    let max_fee = u128::from(u32::from_be_bytes(
+        keccak256(b"GasFeeCap")[..4].try_into().unwrap(),
+    ));
+    let gas_limit = u64::from(u32::from_be_bytes(
+        keccak256(b"Gas")[..4].try_into().unwrap(),
+    ));
+    let r = U256::from_be_bytes(keccak256(b"R").0);
+    let s = U256::from_be_bytes(keccak256(b"S").0);
 
-    // Convert to gas units: gasForL1 = paddedFee / basefee
-    let gas_for_l1 = padded / basefee;
+    let kind = if contract_creation {
+        revm::primitives::TxKind::Create
+    } else {
+        revm::primitives::TxKind::Call(to)
+    };
 
-    gas_for_l1.try_into().unwrap_or(u64::MAX)
+    let tx = TxEip1559 {
+        chain_id,
+        nonce,
+        gas_limit,
+        max_fee_per_gas: max_fee,
+        max_priority_fee_per_gas: max_priority,
+        to: kind,
+        value,
+        access_list: Default::default(),
+        input: data,
+    };
+
+    let signature = Signature::new(r, s, false);
+    let signed = tx.into_signed(signature);
+    use alloy_eips::eip2718::Encodable2718;
+    let envelope = TxEnvelope::Eip1559(signed);
+    envelope.encoded_2718()
 }
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {

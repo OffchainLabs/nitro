@@ -1201,13 +1201,17 @@ dependencies = [
 name = "arb-precompiles"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
  "alloy-evm",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-sol-types",
  "arb-alloy-predeploys",
  "arb-chainspec",
  "arb-primitives",
  "arb-stylus",
+ "arbos",
  "hex",
  "revm",
  "revm-primitives",
