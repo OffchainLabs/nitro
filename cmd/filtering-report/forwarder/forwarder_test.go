@@ -213,7 +213,20 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 // queue has exactly one message for the forwarder to process.
 func sendOneReport(t *testing.T, client *rpc.Client) {
 	t.Helper()
-	reports := []addressfilter.FilteredTxReport{{TxHash: common.HexToHash("0x01")}}
+	reports := []addressfilter.FilteredTxReport{
+		{
+			ID:                "",
+			TxHash:            common.HexToHash("0x01"),
+			TxRLP:             nil,
+			FilteredAddresses: nil,
+			BlockNumber:       0,
+			ParentBlockHash:   common.Hash{},
+			PositionInBlock:   0,
+			FilteredAt:        time.Time{},
+			IsDelayed:         false,
+			DelayedReportData: nil,
+		},
+	}
 	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
 		t.Fatal(err)
 	}
