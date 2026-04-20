@@ -71,7 +71,7 @@ fn handle_become_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
 
     let existing = sload(input, member_slot)?;
-    if existing == U256::ZERO {
+    let gas_used = if existing == U256::ZERO {
         let size_slot = map_slot(set_key.as_slice(), 0);
         let size = sload(input, size_slot)?;
         let new_size = u64::try_from(size).unwrap_or(0) + 1;
@@ -80,12 +80,12 @@ fn handle_become_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
         sstore(input, new_pos_slot, U256::from_be_slice(caller.as_slice()))?;
         sstore(input, member_slot, U256::from(new_size))?;
         sstore(input, size_slot, U256::from(new_size))?;
-    }
 
-    // Matches Nitro's precompile framework + AddressSet.Add gas accounting:
-    // OpenArbosState (800) + chainOwners sub-storage open (800) + Add body
-    // (2 SLOAD + 3 SSTORE = 1600 + 60000).
-    let gas_used = 2 * SLOAD_GAS + 2 * SLOAD_GAS + 3 * SSTORE_GAS;
+        4 * SLOAD_GAS + 3 * SSTORE_GAS
+    } else {
+        2 * SLOAD_GAS
+    };
+
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
         Vec::new().into(),
