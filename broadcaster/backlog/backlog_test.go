@@ -46,6 +46,7 @@ func validateBroadcastMessage(t *testing.T, bm *message.BroadcastMessage, expect
 	actualCount := len(bm.Messages)
 	if actualCount != expectedCount {
 		t.Errorf("number of messages returned (%d) does not equal the expected number of messages (%d)", actualCount, expectedCount)
+		return
 	}
 
 	s := arbmath.MaxInt(start, 40)
