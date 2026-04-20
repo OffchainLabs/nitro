@@ -7,6 +7,17 @@ export TOP=$SCRIPT_DIR/../..
 
 cd "$TOP"
 
+# On macOS, point secp256k1-sys (and any other cc-rs crate) at the SP1-provided
+# RISC-V toolchain. Without these, the host ar/ranlib produce an empty
+# libsecp256k1.a (ELF objects can't be indexed by macOS ranlib) and linking
+# the SP1 program fails with undefined rustsecp256k1_v0_10_0_* symbols. Linux
+# hosts handle the cross-compile archive fine and don't need these overrides.
+if [ "$(uname -s)" = "Darwin" ]; then
+    export RISCV_GNU_TOOLCHAIN="$HOME/.sp1/riscv"
+    export AR_riscv64im_unknown_none_elf="$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ar"
+    export RANLIB_riscv64im_unknown_none_elf="$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ranlib"
+fi
+
 # Download RISC-V C toolchain if needed
 if [ ! -d "$HOME/.sp1/riscv" ]; then
     # Force reinstallation of sp1up, so we can pickup latest sp1up updates for rv64im toolchain
