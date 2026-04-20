@@ -1267,7 +1267,25 @@ func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
 		}
 	}
 
-	runCall := func(program common.Address, pages uint32, shouldSucceed bool) {
+	runEthCall := func(program common.Address, pages uint32, shouldSucceed bool) {
+		t.Helper()
+		data := binary.LittleEndian.AppendUint32(nil, pages)
+		msg := ethereum.CallMsg{
+			To:   &program,
+			Gas:  1e9,
+			Data: data,
+		}
+		_, err := l2client.CallContract(ctx, msg, nil)
+		if shouldSucceed {
+			Require(t, err, "pages", pages)
+			return
+		}
+		if err == nil {
+			Fatal(t, "pages", pages, "eth_call should have failed")
+		}
+	}
+
+	runTx := func(program common.Address, pages uint32, shouldSucceed bool) {
 		t.Helper()
 		data := binary.LittleEndian.AppendUint32(nil, pages)
 		tx := l2info.PrepareTxTo("Owner", &program, 1e9, nil, data)
@@ -1280,22 +1298,15 @@ func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
 		EnsureTxFailed(t, ctx, l2client, tx)
 	}
 
-	runFilteredCall := func(program common.Address, pages uint32) {
-		t.Helper()
-		data := binary.LittleEndian.AppendUint32(nil, pages)
-		tx := l2info.PrepareTxTo("Faucet", &program, 1e9, nil, data)
-		err := l2client.SendTransaction(ctx, tx)
-		if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
-			Fatal(t, "pages", pages, "should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
-		}
-	}
-
 	checkStylusVersion(2)
-	overflowV2 := deployWasm(t, ctx, auth, l2client, watFile("memory-grow-overflow"))
-	runCall(overflowV2, 1<<16, true)
-	runCall(overflowV2, (1<<16)+4096, true)
-	runCall(overflowV2, (1<<16)+1, false)
-	runFilteredCall(overflowV2, 4096)
+	payForMemoryGrowV2 := deployWasm(t, ctx, auth, l2client, watFile("pay-for-memory-grow"))
+	for pages := uint32(0); pages <= (1 << 16); pages++ {
+		shouldSucceed := pages <= 127 || pages == (1<<16)
+		runEthCall(payForMemoryGrowV2, pages, shouldSucceed)
+	}
+	runEthCall(payForMemoryGrowV2, (1<<16)+1, true)
+	runTx(payForMemoryGrowV2, 1<<16, true)
+	runTx(payForMemoryGrowV2, (1<<16)+1, true)
 
 	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, params.ArbosVersion_59, 0)
 	Require(t, err)
@@ -1306,8 +1317,9 @@ func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
 	checkArbOSVersion(t, builder.L2, params.ArbosVersion_59, "after ArbOS 59 upgrade")
 	checkStylusVersion(3)
 
-	overflowV3 := deployWasm(t, ctx, auth, l2client, watFile("memory-grow-overflow"))
-	runCall(overflowV3, 1<<16, false)
+	payForMemoryGrowV3 := deployWasm(t, ctx, auth, l2client, watFile("pay-for-memory-grow"))
+	runEthCall(payForMemoryGrowV3, 1<<16, false)
+	runEthCall(payForMemoryGrowV3, (1<<16)+1, false)
 }
 
 func testMaxStylusOpenPages(t *testing.T, jit bool) {

@@ -310,11 +310,11 @@ fn test_memory_grow_overflow_compatibility() -> Result<()> {
     compile.bounds.heap_bound = Pages(128);
     compile.pricing.costs = |_, _| 0;
 
-    let run_overflow = |arbos_version: u64, pages: u32| -> Result<UserOutcomeKind> {
-        let (mut evm, mut evm_data) = TestEvmApi::new(compile.clone());
+    let make_runner = |arbos_version: u64| -> Result<(TestInstance, TestEvmApi, u16)> {
+        let (evm, mut evm_data) = TestEvmApi::new(compile.clone());
         evm_data.arbos_version = arbos_version;
-        let mut native = TestInstance::from_path(
-            "tests/memory-grow-overflow.wat",
+        let native = TestInstance::from_path(
+            "tests/pay-for-memory-grow.wat",
             evm.clone(),
             evm_data,
             &compile,
@@ -322,6 +322,13 @@ fn test_memory_grow_overflow_compatibility() -> Result<()> {
             Target::default(),
         )?;
         let footprint = native.memory().ty(&native.store).minimum.0 as u16;
+        Ok((native, evm, footprint))
+    };
+    let run_pay_for_memory_grow = |native: &mut TestInstance,
+                                   evm: &mut TestEvmApi,
+                                   footprint: u16,
+                                   pages: u32|
+     -> Result<UserOutcomeKind> {
         evm.set_pages(footprint);
         let outcome = native.run_main(
             &pages.to_le_bytes(),
@@ -331,14 +338,45 @@ fn test_memory_grow_overflow_compatibility() -> Result<()> {
         Ok(outcome.kind())
     };
 
-    assert_eq!(run_overflow(51, 4096)?, UserOutcomeKind::OutOfInk);
-    assert_eq!(run_overflow(51, 1 << 16)?, UserOutcomeKind::Success);
+    for pages in 0..=((1 << 16) + 1) {
+        let (mut arbos51_native, mut arbos51_evm, arbos51_footprint) = make_runner(51)?;
+        let want = if pages <= 127 || pages == (1 << 16) || pages == (1 << 16) + 1 {
+            UserOutcomeKind::Success
+        } else {
+            UserOutcomeKind::OutOfInk
+        };
+        assert_eq!(
+            run_pay_for_memory_grow(
+                &mut arbos51_native,
+                &mut arbos51_evm,
+                arbos51_footprint,
+                pages
+            )?,
+            want,
+            "arbos 51 pages={pages}"
+        );
+    }
+
+    let (mut arbos59_native, mut arbos59_evm, arbos59_footprint) = make_runner(59)?;
     assert_eq!(
-        run_overflow(51, (1 << 16) + 4096)?,
-        UserOutcomeKind::Success
+        run_pay_for_memory_grow(
+            &mut arbos59_native,
+            &mut arbos59_evm,
+            arbos59_footprint,
+            1 << 16
+        )?,
+        UserOutcomeKind::OutOfInk
     );
-    assert_eq!(run_overflow(51, (1 << 16) + 1)?, UserOutcomeKind::OutOfInk);
-    assert_eq!(run_overflow(59, 1 << 16)?, UserOutcomeKind::OutOfInk);
+    let (mut arbos59_native, mut arbos59_evm, arbos59_footprint) = make_runner(59)?;
+    assert_eq!(
+        run_pay_for_memory_grow(
+            &mut arbos59_native,
+            &mut arbos59_evm,
+            arbos59_footprint,
+            (1 << 16) + 1,
+        )?,
+        UserOutcomeKind::OutOfInk
+    );
 
     Ok(())
 }
