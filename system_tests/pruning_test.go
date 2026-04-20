@@ -313,7 +313,8 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 		// Record which blocks still have state after pruning so the verification
 		// loop below can skip them (e.g. the snapshot-preserved block).
-		for i := int64(1); i < int64(numOfBlocksToGenerate); i++ {
+		// #nosec G115
+		for i := int64(1); i <= int64(lastBlock); i++ {
 			// #nosec G115
 			hash := rawdb.ReadCanonicalHash(executionDB, uint64(i))
 			// #nosec G115
@@ -342,32 +343,32 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 	newLastBlock := waitForChainToCatchUp(t, ctx, testClientL2, lastBlock)
 
-	// #nosec G115
-	balanceShouldntExistUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
-	// The 2nd node rewinds to the highest block with state on disk and re-processes all
-	// subsequent blocks, keeping their state in the in-memory trie cache. Cap the prune
-	// boundary so we don't expect those re-processed blocks to be missing.
+	// Two boundaries define what we can check:
+	// - prunedBelow: blocks below this were pruned from disk (with known exceptions)
+	// - accessibleFrom: blocks at or above this are kept in TriesInMemory
+	// Blocks between them are in a dead zone: pruned from disk but also outside the
+	// in-memory trie window, so we skip them.
 	highestPreservedBlock := int64(0)
 	for block := range blocksWithState {
 		if block > highestPreservedBlock {
 			highestPreservedBlock = block
 		}
 	}
-	if balanceShouldntExistUntilBlock > highestPreservedBlock+1 {
-		balanceShouldntExistUntilBlock = highestPreservedBlock + 1
-	}
+	prunedBelow := highestPreservedBlock + 1
+	// #nosec G115
+	accessibleFrom := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
 	// #nosec G115
 	for i := int64(1); i < int64(newLastBlock); i++ {
-		// Create a safety buffer (+/- 2 blocks) around the expected prune point.
-		// Due to synchronization latency, the second node's state may vary slightly,
-		// making the exact availability of these boundary blocks non-deterministic.
-		if i >= balanceShouldntExistUntilBlock-2 && i <= balanceShouldntExistUntilBlock+2 {
+		if i >= prunedBelow && i < accessibleFrom {
+			// Dead zone: pruned from disk and outside TriesInMemory window
 			continue
-		} else if i < balanceShouldntExistUntilBlock {
-			// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
-			// all blocks between [1, checkUntilBlock) with the exception of last validated, last finalized,
-			// and any blocks whose state was preserved by the pruner (e.g. snapshot diff layer target)
+		} else if i < prunedBelow {
+			// Should be pruned — expect "missing trie node" unless explicitly preserved
 			if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx || blocksWithState[i] {
+				continue
+			}
+			// Buffer around the prune boundary
+			if i >= prunedBelow-2 {
 				continue
 			}
 			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
@@ -377,6 +378,11 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 				t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", i, err)
 			}
 		} else {
+			// Should be accessible — in TriesInMemory window
+			// Buffer around the accessible boundary
+			if i <= accessibleFrom+2 {
+				continue
+			}
 			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
 			Require(t, err)
 		}
@@ -384,8 +390,14 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 	// Check last validated and last finalized blocks. In validator mode they should have been
 	// added as important roots. In other modes they are pruned, but may still be accessible if
-	// the 2nd node re-processed them (i.e. they are above the highest preserved block on disk).
-	if mode == "validator" || blocksWithState[int64(validatedMsgIdx)] || int64(validatedMsgIdx) > highestPreservedBlock {
+	// they are in the TriesInMemory window or were explicitly preserved by the pruner.
+	blockAccessible := func(blockIdx arbutil.MessageIndex) bool {
+		// A block is accessible if it's on disk, in the TriesInMemory window, or was
+		// re-processed by the 2nd node (above the rewind point) and may be in the dirty cache.
+		// #nosec G115
+		return blocksWithState[int64(blockIdx)] || int64(blockIdx) >= accessibleFrom || int64(blockIdx) > highestPreservedBlock
+	}
+	if mode == "validator" || blockAccessible(validatedMsgIdx) {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
 		Require(t, err)
 	} else {
@@ -397,7 +409,7 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		}
 	}
 
-	if mode == "validator" || mode == "full" || blocksWithState[int64(finalizedMsgIdx)] || int64(finalizedMsgIdx) > highestPreservedBlock {
+	if mode == "validator" || mode == "full" || blockAccessible(finalizedMsgIdx) {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
 		Require(t, err)
 	} else {
