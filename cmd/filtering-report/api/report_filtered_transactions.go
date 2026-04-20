@@ -16,6 +16,7 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(_ context.Context, repor
 		log.Info("Filtered transaction report",
 			"id", report.ID,
 			"txHash", report.TxHash,
+			"chainId", report.ChainID,
 			"blockNumber", report.BlockNumber,
 			"positionInBlock", report.PositionInBlock,
 			"isDelayed", report.IsDelayed,

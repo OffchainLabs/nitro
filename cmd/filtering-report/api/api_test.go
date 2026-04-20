@@ -73,6 +73,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 			Address:      common.HexToAddress("0xdead"),
 			FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil},
 		}},
+		ChainID:           42161,
 		BlockNumber:       42,
 		ParentBlockHash:   common.Hash{},
 		PositionInBlock:   0,
