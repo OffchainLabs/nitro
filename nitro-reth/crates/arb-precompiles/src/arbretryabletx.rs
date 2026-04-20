@@ -394,9 +394,10 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(hash_input);
 
+    let backlog_reservation = compute_backlog_update_cost(input)?;
+
     let gas_used_so_far = crate::get_precompile_gas();
 
-    let backlog_reservation = compute_backlog_update_cost(input)?;
     let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
     if gas_remaining < future_gas_costs + TX_GAS {
@@ -445,20 +446,14 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-/// Actual gas consumed by the trailing ShrinkBacklog call, matching the
-/// EIP-2929/EIP-2200 storage costs Nitro charges at runtime. For v51 with
-/// N single-gas constraints all at zero backlog, Nitro charges
-/// `2 * SLOAD + N * (SLOAD + SSTORE_RESET)`: one SLOAD for the length, one
-/// SLOAD for the GasModelToUse cold check, and a per-constraint
-/// SLOAD-then-SSTORE pair where the SSTORE pays the reset cost.
 fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
-    let arbos_version = read_arbos_version(input)?;
+    let arbos_version = crate::get_arbos_version();
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
         return Ok(arbos::l2_pricing::MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
     }
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
-        let len = read_gas_constraints_length(input)?;
+        let len = read_gas_constraints_length_free(input)?;
         if len > 0 {
             return Ok(2 * SLOAD_GAS + len.saturating_mul(SLOAD_GAS + SSTORE_RESET_GAS));
         }
@@ -466,12 +461,9 @@ fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, P
     Ok(SLOAD_GAS + SSTORE_GAS)
 }
 
-/// Mirrors Nitro `L2PricingState.BacklogUpdateCost`: the gas reservation
-/// for the trailing ShrinkBacklog/GrowBacklog call. Version-gated and
-/// constraint-count-aware.
 fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
-    let arbos_version = read_arbos_version(input)?;
+    let arbos_version = crate::get_arbos_version();
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
         return Ok(arbos::l2_pricing::MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
     }
@@ -490,6 +482,19 @@ fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, P
     }
     result += SLOAD_GAS + SSTORE_GAS;
     Ok(result)
+}
+
+fn read_gas_constraints_length_free(
+    input: &mut PrecompileInput<'_>,
+) -> Result<u64, PrecompileError> {
+    let l2_subspace_key = derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE);
+    let gas_constraints_subspace_key = derive_subspace_key(l2_subspace_key.as_slice(), &[0]);
+    let len_slot = vector_length_slot(&gas_constraints_subspace_key);
+    let val = input
+        .internals_mut()
+        .sload(ARBOS_STATE_ADDRESS, len_slot)
+        .map_err(|_| PrecompileError::other("sload failed"))?;
+    Ok(val.data.try_into().unwrap_or(0))
 }
 
 fn read_arbos_version(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
