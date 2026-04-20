@@ -47,13 +47,27 @@
   },
   "messages": [
     {
-      "msgIdx": 1,
+      "msgIdx": 0,
+      "message": {
+        "header": {
+          "kind": 11,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 0,
+          "timestamp": 0,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGSroAeyJjaGFpbklkIjo0MTIzNDYsImhvbWVzdGVhZEJsb2NrIjowLCJkYW9Gb3JrU3VwcG9ydCI6dHJ1ZSwiZWlwMTUwQmxvY2siOjAsImVpcDE1NUJsb2NrIjowLCJlaXAxNThCbG9jayI6MCwiYnl6YW50aXVtQmxvY2siOjAsImNvbnN0YW50aW5vcGxlQmxvY2siOjAsInBldGVyc2J1cmdCbG9jayI6MCwiaXN0YW5idWxCbG9jayI6MCwibXVpckdsYWNpZXJCbG9jayI6MCwiYmVybGluQmxvY2siOjAsImxvbmRvbkJsb2NrIjowLCJkZXBvc2l0Q29udHJhY3RBZGRyZXNzIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwiY2xpcXVlIjp7InBlcmlvZCI6MCwiZXBvY2giOjB9LCJhcmJpdHJ1bSI6eyJFbmFibGVBcmJPUyI6dHJ1ZSwiQWxsb3dEZWJ1Z1ByZWNvbXBpbGVzIjp0cnVlLCJEYXRhQXZhaWxhYmlsaXR5Q29tbWl0dGVlIjpmYWxzZSwiSW5pdGlhbEFyYk9TVmVyc2lvbiI6NTEsIkluaXRpYWxDaGFpbk93bmVyIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwiR2VuZXNpc0Jsb2NrTnVtIjowfX0="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
       "message": {
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548485,
+          "timestamp": 1776671981,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -67,7 +81,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548485,
+          "timestamp": 1776671981,
           "requestId": null,
           "baseFeeL1": 0
         },

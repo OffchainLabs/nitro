@@ -47,13 +47,27 @@
   },
   "messages": [
     {
-      "msgIdx": 1,
+      "msgIdx": 0,
+      "message": {
+        "header": {
+          "kind": 11,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 0,
+          "timestamp": 0,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGSroAeyJjaGFpbklkIjo0MTIzNDYsImhvbWVzdGVhZEJsb2NrIjowLCJkYW9Gb3JrU3VwcG9ydCI6dHJ1ZSwiZWlwMTUwQmxvY2siOjAsImVpcDE1NUJsb2NrIjowLCJlaXAxNThCbG9jayI6MCwiYnl6YW50aXVtQmxvY2siOjAsImNvbnN0YW50aW5vcGxlQmxvY2siOjAsInBldGVyc2J1cmdCbG9jayI6MCwiaXN0YW5idWxCbG9jayI6MCwibXVpckdsYWNpZXJCbG9jayI6MCwiYmVybGluQmxvY2siOjAsImxvbmRvbkJsb2NrIjowLCJkZXBvc2l0Q29udHJhY3RBZGRyZXNzIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwiY2xpcXVlIjp7InBlcmlvZCI6MCwiZXBvY2giOjB9LCJhcmJpdHJ1bSI6eyJFbmFibGVBcmJPUyI6dHJ1ZSwiQWxsb3dEZWJ1Z1ByZWNvbXBpbGVzIjp0cnVlLCJEYXRhQXZhaWxhYmlsaXR5Q29tbWl0dGVlIjpmYWxzZSwiSW5pdGlhbEFyYk9TVmVyc2lvbiI6NTEsIkluaXRpYWxDaGFpbk93bmVyIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwiR2VuZXNpc0Jsb2NrTnVtIjowfX0="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
       "message": {
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -67,7 +81,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -81,7 +95,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -95,7 +109,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -109,7 +123,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -123,7 +137,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -137,7 +151,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776548486,
+          "timestamp": 1776671983,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -175,19 +189,19 @@
         "to": "0x0000f90827f1c53a10cb7a02335b175320002935",
         "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
         "at_block": "latest",
-        "result": "0x174d20a4cb062d92c0fcb71ee9d4d1f945cb4a6b0ec1ab11a90649b1360c0c49"
+        "result": "0x850357567e73d8d2217affa0422e62415415f87d52f48ad18f8da83bd4a57d50"
       },
       {
         "to": "0x0000f90827f1c53a10cb7a02335b175320002935",
         "data": "0x0000000000000000000000000000000000000000000000000000000000000002",
         "at_block": "latest",
-        "result": "0xcb1427c108917c2a73c8daae9fa4c850fcfa11d4dde45a34db1f785710f75ddc"
+        "result": "0xb02c43292302cd60ab1c5b600a0e49869f4c54057717a9c155ff5587753d076b"
       },
       {
         "to": "0x0000f90827f1c53a10cb7a02335b175320002935",
         "data": "0x0000000000000000000000000000000000000000000000000000000000000003",
         "at_block": "latest",
-        "result": "0x8a07728f68b8a1601aa3b2a7c1c9f7f7e384a44066c8639b4351349299092787"
+        "result": "0x552d5c97dfafb3a9c0e653f4721fc748c89a6e45fc9a7d89936a9c065f153292"
       }
     ]
   }

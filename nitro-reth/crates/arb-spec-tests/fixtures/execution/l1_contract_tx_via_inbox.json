@@ -47,13 +47,27 @@
   },
   "messages": [
     {
-      "msgIdx": 1,
+      "msgIdx": 0,
+      "message": {
+        "header": {
+          "kind": 11,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 28,
+          "timestamp": 1776672013,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "baseFeeL1": 3694781266
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGSroBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAF7ImNoYWluSWQiOjQxMjM0NiwiaG9tZXN0ZWFkQmxvY2siOjAsImRhb0ZvcmtTdXBwb3J0Ijp0cnVlLCJlaXAxNTBCbG9jayI6MCwiZWlwMTU1QmxvY2siOjAsImVpcDE1OEJsb2NrIjowLCJieXphbnRpdW1CbG9jayI6MCwiY29uc3RhbnRpbm9wbGVCbG9jayI6MCwicGV0ZXJzYnVyZ0Jsb2NrIjowLCJpc3RhbmJ1bEJsb2NrIjowLCJtdWlyR2xhY2llckJsb2NrIjowLCJiZXJsaW5CbG9jayI6MCwibG9uZG9uQmxvY2siOjAsImRlcG9zaXRDb250cmFjdEFkZHJlc3MiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJjbGlxdWUiOnsicGVyaW9kIjowLCJlcG9jaCI6MH0sImFyYml0cnVtIjp7IkVuYWJsZUFyYk9TIjp0cnVlLCJBbGxvd0RlYnVnUHJlY29tcGlsZXMiOnRydWUsIkRhdGFBdmFpbGFiaWxpdHlDb21taXR0ZWUiOmZhbHNlLCJJbml0aWFsQXJiT1NWZXJzaW9uIjo1MSwiSW5pdGlhbENoYWluT3duZXIiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJHZW5lc2lzQmxvY2tOdW0iOjB9fQ=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
       "message": {
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776548482,
+          "blockNumber": 32,
+          "timestamp": 1776671986,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -66,8 +80,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776548482,
+          "blockNumber": 32,
+          "timestamp": 1776671986,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -80,8 +94,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776548482,
+          "blockNumber": 34,
+          "timestamp": 1776671986,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -94,8 +108,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 31,
-          "timestamp": 1776548482,
+          "blockNumber": 35,
+          "timestamp": 1776671986,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -108,71 +122,19 @@
         "header": {
           "kind": 13,
           "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 31,
-          "timestamp": 1776548512,
+          "blockNumber": 33,
+          "timestamp": 1776672018,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
-          "baseFeeL1": 2820142315
+          "baseFeeL1": 2155889055
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+qCzhqdNyrZ7ZvisB7Twg2XTdJXdI2JgZAQFm78Wd2UY5x4xn02A7Eh4HX+PUeICgBWe1zICAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqBf06wAAAAAAAAAA",
-        "batchGasCost": 45828,
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnl3RKzhqdNyrZ7ZvisB7Twg2XTdJXdI7eM2G4FozS1DdnOimZQcrr645N4GtzHqX8h6O2bxg3uAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgIBBnwAAAAAAAAAA",
+        "batchGasCost": 42194,
         "batchDataTokens": {
-          "length": 389,
-          "nonzeros": 347
+          "length": 172,
+          "nonzeros": 120
         }
       },
       "delayedMessagesRead": 2
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 13,
-          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 32,
-          "timestamp": 1776548513,
-          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
-          "baseFeeL1": 2474167305
-        },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+qGzhqdNyrZ7ZvisB7Twg2XTdJXdIwWR64PkYgTBjRdHVqH+ftF690j2T5tiKdh/kEG1ytYZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAk3jMCQAAAAAAAAAA",
-        "batchGasCost": 42502,
-        "batchDataTokens": {
-          "length": 180,
-          "nonzeros": 143
-        }
-      },
-      "delayedMessagesRead": 3
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 3,
-          "sender": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
-          "blockNumber": 32,
-          "timestamp": 1776548513,
-          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000003",
-          "baseFeeL1": 2474167305
-        },
-        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0JAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABfXhAAAAAAAAAAAAAAAAABkkWCvZnP08ru2pE24t/Pewx+PCQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARMJfugAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
-      },
-      "delayedMessagesRead": 4
-    },
-    {
-      "message": {
-        "header": {
-          "kind": 13,
-          "sender": "0xb386a74dcab67b66f8ac07b4f08365d37495dd23",
-          "blockNumber": 35,
-          "timestamp": 1776548516,
-          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000004",
-          "baseFeeL1": 1665248803
-        },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGnj+qSzhqdNyrZ7ZvisB7Twg2XTdJXdIy6RBBeb7B9SfIemd9cJeFH6mk+qDgEktp8w6BpkAWWqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY0GuIwAAAAAAAAAA",
-        "batchGasCost": 85136,
-        "batchDataTokens": {
-          "length": 2818,
-          "nonzeros": 2775
-        }
-      },
-      "delayedMessagesRead": 5
     }
   ],
   "expected": {
@@ -191,22 +153,13 @@
       },
       {
         "number": 5
-      },
-      {
-        "number": 6
-      },
-      {
-        "number": 7
-      },
-      {
-        "number": 8
       }
     ],
     "balances": [
       {
         "address": "0xc035ca6c2831f4d4f629418b50c227df0885724b",
         "at_block": "latest",
-        "value": "999996702800000000"
+        "value": "1000000000000000000"
       },
       {
         "address": "0x649160af6673f4f2bbb6a44db8b7f3dec31f8f09",

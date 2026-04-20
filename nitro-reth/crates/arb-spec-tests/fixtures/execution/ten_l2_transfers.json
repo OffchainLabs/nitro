@@ -47,13 +47,27 @@
   },
   "messages": [
     {
-      "msgIdx": 1,
+      "msgIdx": 0,
+      "message": {
+        "header": {
+          "kind": 11,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 24,
+          "timestamp": 1776672003,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "baseFeeL1": 6303362410
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGSroBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAF7ImNoYWluSWQiOjQxMjM0NiwiaG9tZXN0ZWFkQmxvY2siOjAsImRhb0ZvcmtTdXBwb3J0Ijp0cnVlLCJlaXAxNTBCbG9jayI6MCwiZWlwMTU1QmxvY2siOjAsImVpcDE1OEJsb2NrIjowLCJieXphbnRpdW1CbG9jayI6MCwiY29uc3RhbnRpbm9wbGVCbG9jayI6MCwicGV0ZXJzYnVyZ0Jsb2NrIjowLCJpc3RhbmJ1bEJsb2NrIjowLCJtdWlyR2xhY2llckJsb2NrIjowLCJiZXJsaW5CbG9jayI6MCwibG9uZG9uQmxvY2siOjAsImRlcG9zaXRDb250cmFjdEFkZHJlc3MiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJjbGlxdWUiOnsicGVyaW9kIjowLCJlcG9jaCI6MH0sImFyYml0cnVtIjp7IkVuYWJsZUFyYk9TIjp0cnVlLCJBbGxvd0RlYnVnUHJlY29tcGlsZXMiOnRydWUsIkRhdGFBdmFpbGFiaWxpdHlDb21taXR0ZWUiOmZhbHNlLCJJbml0aWFsQXJiT1NWZXJzaW9uIjo1MSwiSW5pdGlhbENoYWluT3duZXIiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJHZW5lc2lzQmxvY2tOdW0iOjB9fQ=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
       "message": {
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776548481,
+          "blockNumber": 29,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -66,8 +80,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776548481,
+          "blockNumber": 29,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -80,8 +94,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 30,
-          "timestamp": 1776548481,
+          "blockNumber": 29,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -94,8 +108,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 33,
-          "timestamp": 1776548481,
+          "blockNumber": 30,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -108,8 +122,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 34,
-          "timestamp": 1776548481,
+          "blockNumber": 31,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -122,8 +136,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 34,
-          "timestamp": 1776548481,
+          "blockNumber": 32,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -136,8 +150,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 35,
-          "timestamp": 1776548481,
+          "blockNumber": 33,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -150,8 +164,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 37,
-          "timestamp": 1776548481,
+          "blockNumber": 34,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -164,8 +178,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 37,
-          "timestamp": 1776548481,
+          "blockNumber": 35,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -178,8 +192,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 39,
-          "timestamp": 1776548481,
+          "blockNumber": 35,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -192,8 +206,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 39,
-          "timestamp": 1776548481,
+          "blockNumber": 37,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -206,8 +220,8 @@
         "header": {
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
-          "blockNumber": 41,
-          "timestamp": 1776548481,
+          "blockNumber": 37,
+          "timestamp": 1776671980,
           "requestId": null,
           "baseFeeL1": 0
         },
