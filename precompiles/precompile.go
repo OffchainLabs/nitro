@@ -572,6 +572,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	for _, method := range ArbWasm.methods {
 		method.arbosVersion = ArbWasm.arbosVersion
 	}
+	ArbWasm.methodsByName["ActivationGas"].arbosVersion = params.ArbosVersion_59
 
 	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
 	ArbWasmCache := insert(MakePrecompile(precompilesgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
@@ -643,6 +644,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40
 
 	ArbOwner.methodsByName["SetWasmMaxSize"].arbosVersion = params.ArbosVersion_40
+	ArbOwner.methodsByName["SetWasmActivationGas"].arbosVersion = params.ArbosVersion_59
 
 	ArbOwner.methodsByName["SetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["AddNativeTokenOwner"].arbosVersion = params.ArbosVersion_41

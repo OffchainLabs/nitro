@@ -209,6 +209,38 @@ func TestArbOwner(t *testing.T) {
 	}
 }
 
+func TestArbWasmActivationGas(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_59
+	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
+	Require(t, err)
+	Require(t, state.ChainOwners().Add(caller))
+
+	arbOwner := &ArbOwner{}
+	arbWasm := &ArbWasm{}
+	callCtx := testContext(caller, evm)
+
+	// default is zero
+	gas, err := arbWasm.ActivationGas(callCtx, evm)
+	Require(t, err)
+	if gas != 0 {
+		Fail(t, "expected default activation gas 0, got", gas)
+	}
+
+	// set and read back
+	const testGas = uint64(5_000_000)
+	Require(t, arbOwner.SetWasmActivationGas(callCtx, evm, testGas))
+
+	gas, err = arbWasm.ActivationGas(callCtx, evm)
+	Require(t, err)
+	if gas != testGas {
+		Fail(t, "expected activation gas", testGas, "got", gas)
+	}
+}
+
 func TestArbOwnerSetChainConfig(t *testing.T) {
 	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.NewMessageGasEstimationContext())
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
