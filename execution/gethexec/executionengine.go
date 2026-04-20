@@ -157,7 +157,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		txRLP, err := tx.MarshalBinary()
 		if err != nil {
 			log.Error("error marshalling filtered delayed tx to RLP", "txHash", tx.Hash(), "err", err)
-			return err
+			txRLP = nil
 		}
 		report := addressfilter.FilteredTxReport{
 			ID:                uuid.Must(uuid.NewV7()).String(),

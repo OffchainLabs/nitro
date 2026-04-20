@@ -102,14 +102,14 @@ type groupCheckpoint struct {
 	userTxsProcessed     int
 	completeLen          int
 	receiptsLen          int
-	userTxHash           common.Hash
+	userTx               *types.Transaction
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
@@ -122,7 +122,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 		userTxsProcessed:     s.userTxsProcessed,
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
-		userTxHash:           userTxHash,
+		userTx:               userTx,
 	}
 	return nil
 }
@@ -504,7 +504,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, snap, tx); err != nil {
 							return err
 						}
 					}
@@ -529,12 +529,11 @@ func ProduceBlockAdvanced(
 				// Capture everything before rollback — addressCheckerStateß
 				cp := buildState.activeGroupCP
 				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
-				originatingTx := buildState.complete[cp.completeLen]
 				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
 					return nil, nil, nil, err
 				}
 				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{
-					OriginatingTx:     originatingTx,
+					OriginatingTx:     cp.userTx,
 					FilteredAddresses: filteredAddresses,
 					BlockNumber:       header.Number.Uint64(),
 					ParentBlockHash:   header.ParentHash,
