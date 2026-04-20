@@ -116,12 +116,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_PRICES_IN_WEI | GET_PRICES_IN_WEI_WITH_AGG => handle_prices_in_wei(&mut input),
         GET_GAS_ACCOUNTING_PARAMS => handle_gas_accounting_params(&mut input),
         GET_CURRENT_TX_L1_FEES => {
-            // Nitro reads c.txProcessor.PosterFee (in-memory, no storage access).
-            // We use a thread-local set by the executor to avoid extra sloads
-            // that would charge EVM gas and cause gasUsed to differ.
             let gas_limit = input.gas;
-            let fee_wei = crate::get_current_tx_poster_fee();
-            let fee = U256::from(fee_wei);
+            let fee = U256::from(crate::get_current_tx_poster_fee());
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),

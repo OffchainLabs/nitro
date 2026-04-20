@@ -57,6 +57,9 @@ const TX_DATA_NON_ZERO_GAS: u64 = 16;
 /// Padding applied to L1 fee estimates (110% = 11000 bips).
 const GAS_ESTIMATION_L1_PRICE_PADDING: u64 = 11000;
 
+/// Selector for `ArbGasInfo.getCurrentTxL1GasFees()`.
+const SEL_GET_CURRENT_TX_L1_FEES: &[u8] = &[0xc6, 0xf7, 0xde, 0x0e];
+
 /// Arbitrum Eth API wrapping the standard reth EthApiInner.
 ///
 /// This wrapper overrides gas estimation to add L1 posting costs.
@@ -162,6 +165,57 @@ where
         + Clone
         + Default,
 {
+    fn compute_eth_call_current_tx_l1_fees(
+        &self,
+        request: RpcTxReq<<Rpc as RpcConvert>::Network>,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError> {
+        let inner = request.as_ref();
+        let (to, contract_creation) = match inner.to {
+            Some(alloy_primitives::TxKind::Call(addr)) => (addr, false),
+            Some(alloy_primitives::TxKind::Create) => (Address::ZERO, true),
+            None => (Address::ZERO, false),
+        };
+        let value = inner.value.unwrap_or(U256::ZERO);
+        let data: alloy_primitives::Bytes = inner.input.input().cloned().unwrap_or_default();
+
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let read = |slot: U256| -> Result<U256, EthApiError> {
+            Ok(state
+                .storage(
+                    ARBOS_STATE_ADDRESS,
+                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                )
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or_default())
+        };
+        let l1_price = read(subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+        if l1_price.is_zero() {
+            return Ok(alloy_primitives::Bytes::from(vec![0u8; 32]));
+        }
+        let chain_id_u: u64 = read(root_slot(CHAIN_ID_OFFSET))?.try_into().unwrap_or(0);
+        let brotli_level: u64 = read(root_slot(BROTLI_COMPRESSION_LEVEL_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+
+        let tx_bytes =
+            arb_precompiles::build_fake_tx_bytes(chain_id_u, to, contract_creation, value, data);
+        let raw_units = arbos::l1_pricing::poster_units_from_bytes(&tx_bytes, brotli_level);
+        let padded_units = raw_units
+            .saturating_add(arbos::l1_pricing::ESTIMATION_PADDING_UNITS)
+            .saturating_mul(10_000 + arbos::l1_pricing::ESTIMATION_PADDING_BASIS_POINTS)
+            / 10_000;
+        let poster_fee = l1_price.saturating_mul(U256::from(padded_units));
+
+        Ok(alloy_primitives::Bytes::from(
+            poster_fee.to_be_bytes::<32>().to_vec(),
+        ))
+    }
+
     /// Gas estimate for `NodeInterface.estimateRetryableTicket` —
     /// `submit_intrinsic + auto_redeem_gas`.
     async fn estimate_retryable_ticket_gas(
@@ -1020,6 +1074,24 @@ where
             };
             let is_ni = target == Some(NODE_INTERFACE_ADDRESS);
             let is_ni_debug = target == Some(arb_precompiles::NODE_INTERFACE_DEBUG_ADDRESS);
+
+            // ArbGasInfo.getCurrentTxL1GasFees: Nitro returns
+            // `c.txProcessor.PosterFee`, populated by GasChargingHook for
+            // every tx including eth_call simulations. The precompile
+            // can't see the eth_call's outer message, so compute the
+            // PosterFee here from the request envelope using the same
+            // fake-tx + brotli + (units+256)*1.01 formula.
+            if target == Some(arb_precompiles::ARBGASINFO_ADDRESS) {
+                let input_bytes =
+                    request.as_ref().input.input().cloned().unwrap_or_default();
+                if input_bytes.len() == 4 && input_bytes.as_ref() == SEL_GET_CURRENT_TX_L1_FEES {
+                    return self.compute_eth_call_current_tx_l1_fees(
+                        request,
+                        block_number.unwrap_or_default(),
+                    );
+                }
+            }
+
             if !is_ni && !is_ni_debug {
                 let _permit = self.acquire_owned_blocking_io().await;
                 let res = self
