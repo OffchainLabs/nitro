@@ -67,7 +67,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -81,7 +81,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -95,7 +95,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -109,7 +109,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -123,7 +123,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -137,7 +137,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -151,7 +151,7 @@
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
           "blockNumber": 0,
-          "timestamp": 1776671981,
+          "timestamp": 1776704703,
           "requestId": null,
           "baseFeeL1": 0
         },
@@ -163,25 +163,32 @@
   "expected": {
     "blocks": [
       {
-        "number": 1
+        "number": 1,
+        "gas_used": 1020264
       },
       {
-        "number": 2
+        "number": 2,
+        "gas_used": 966664
       },
       {
-        "number": 3
+        "number": 3,
+        "gas_used": 1485332
       },
       {
-        "number": 4
+        "number": 4,
+        "gas_used": 1939800
       },
       {
-        "number": 5
+        "number": 5,
+        "gas_used": 1221432
       },
       {
-        "number": 6
+        "number": 6,
+        "gas_used": 1021000
       },
       {
-        "number": 7
+        "number": 7,
+        "gas_used": 1233288
       }
     ],
     "balances": [
