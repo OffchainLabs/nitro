@@ -60,6 +60,21 @@ const GAS_ESTIMATION_L1_PRICE_PADDING: u64 = 11000;
 /// Selector for `ArbGasInfo.getCurrentTxL1GasFees()`.
 const SEL_GET_CURRENT_TX_L1_FEES: &[u8] = &[0xc6, 0xf7, 0xde, 0x0e];
 
+/// Apply Arbitrum's L1→L2 address aliasing (offset by
+/// 0x1111000000000000000000000000000000001111).
+fn apply_l1_to_l2_alias(addr: Address) -> Address {
+    let mut offset = [0u8; 32];
+    offset[12] = 0x11;
+    offset[13] = 0x11;
+    offset[30] = 0x11;
+    offset[31] = 0x11;
+    let lhs = U256::from_be_slice(addr.as_slice());
+    let rhs = U256::from_be_bytes(offset);
+    let sum = lhs.wrapping_add(rhs);
+    let bytes = sum.to_be_bytes::<32>();
+    Address::from_slice(&bytes[12..32])
+}
+
 /// Selector for `ArbGasInfo.getL1PricingUnitsSinceUpdate()`.
 const SEL_GET_L1_PRICING_UNITS_SINCE_UPDATE: &[u8] = &[0xef, 0xf0, 0x13, 0x06];
 
@@ -370,20 +385,20 @@ where
         Ok(redeem_gas.saturating_add(U256::from(submit_intrinsic)))
     }
 
-    /// `eth_call` of `NodeInterface.estimateRetryableTicket(...)` —
-    /// simulates the auto-redeem inner call (`sender → to` with
-    /// `l2CallValue` and `data`) and returns its raw bytes.
+    /// `eth_call` of `NodeInterface.estimateRetryableTicket(...)`:
+    /// synthesize the ArbitrumSubmitRetryableTx that Nitro builds for
+    /// this call and return its EIP-2718 envelope hash (the ticket ID).
     async fn simulate_retryable_ticket_call(
         &self,
         input: &alloy_primitives::Bytes,
         at: BlockId,
-        overrides: alloy_rpc_types_eth::state::EvmOverrides,
+        _overrides: alloy_rpc_types_eth::state::EvmOverrides,
     ) -> Result<alloy_primitives::Bytes, EthApiError>
     where
         RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
     {
-        use alloy_primitives::{Bytes, TxKind};
-        use alloy_rpc_types_eth::TransactionRequest;
+        use alloy_primitives::{keccak256, Bytes};
+        use arb_alloy_consensus::{tx::ArbSubmitRetryableTx, ArbTxEnvelope};
 
         const HEAD_LEN: usize = 4 + 32 * 7;
         if input.len() < HEAD_LEN {
@@ -392,9 +407,11 @@ where
             ));
         }
         let sender = Address::from_slice(&input[4 + 12..4 + 32]);
-        let to_word = &input[68..100];
-        let to = Address::from_slice(&to_word[12..32]);
+        let deposit = U256::from_be_slice(&input[36..68]);
+        let to = Address::from_slice(&input[68 + 12..100]);
         let l2_call_value = U256::from_be_slice(&input[100..132]);
+        let excess_fee_refund = Address::from_slice(&input[132 + 12..164]);
+        let call_value_refund = Address::from_slice(&input[164 + 12..196]);
         let data_offset: usize =
             U256::from_be_slice(&input[196..228])
                 .try_into()
@@ -422,25 +439,48 @@ where
             Bytes::new()
         };
 
-        let kind = if to == Address::ZERO {
-            TxKind::Create
-        } else {
-            TxKind::Call(to)
+        let l1_base_fee = {
+            let state = self
+                .inner
+                .provider()
+                .state_by_block_id(at)
+                .map_err(|e| EthApiError::Internal(e.into()))?;
+            let slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
+            state
+                .storage(
+                    ARBOS_STATE_ADDRESS,
+                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                )
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or_default()
         };
-        let equivalent = TransactionRequest {
-            from: Some(sender),
-            to: Some(kind),
-            value: Some(l2_call_value),
-            input: data.into(),
-            ..Default::default()
-        };
-        let equivalent_req: RpcTxReq<<Rpc as RpcConvert>::Network> = equivalent.into();
 
-        let _permit = self.acquire_owned_blocking_io().await;
-        let res = self.transact_call_at(equivalent_req, at, overrides).await?;
-        <EthApiError as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(
-            res.result,
-        )
+        let aliased_from = apply_l1_to_l2_alias(sender);
+        let max_submission_fee = arbos::retryables::retryable_submission_fee(data.len(), l1_base_fee);
+        let retry_to = if to == Address::ZERO { None } else { Some(to) };
+
+        let gas_cap = self.inner.gas_cap();
+        let gas = gas_cap;
+
+        let tx = ArbSubmitRetryableTx {
+            chain_id: U256::ZERO,
+            request_id: B256::ZERO,
+            from: aliased_from,
+            l1_base_fee,
+            deposit_value: deposit,
+            gas_fee_cap: U256::ZERO,
+            gas,
+            retry_to,
+            retry_value: l2_call_value,
+            beneficiary: call_value_refund,
+            max_submission_fee,
+            fee_refund_addr: excess_fee_refund,
+            retry_data: data,
+        };
+        let envelope = ArbTxEnvelope::SubmitRetryable(tx);
+        let encoded = envelope.encode_typed();
+        let hash = keccak256(&encoded);
+        Ok(alloy_primitives::Bytes::from(hash.0.to_vec()))
     }
 
     /// Handle `eth_call` dispatch of
