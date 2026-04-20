@@ -71,6 +71,7 @@ const L1_FEES_AVAILABLE: u64 = 11;
 // L2 pricing field offsets (within L2 pricing subspace).
 const L2_SPEED_LIMIT: u64 = 0;
 const L2_PER_BLOCK_GAS_LIMIT: u64 = 1;
+const L2_BASE_FEE: u64 = 2;
 const L2_MIN_BASE_FEE: u64 = 3;
 const L2_GAS_BACKLOG: u64 = 4;
 const L2_PRICING_INERTIA: u64 = 5;
@@ -325,15 +326,20 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
 
-    // Nitro precompiles/ArbGasInfo.go::GetPricesInWeiWithAggregator reads l2GasPrice from
-    // evm.Context.BaseFee (or BaseFeeInBlock if set). The storage L2_BASE_FEE field is the
-    // *previous* block's base fee — using it here gives the wrong answer mid-block.
-    let l2_gas_price = U256::from(input.internals().block_env().basefee());
-
+    // Nitro reads `evm.Context.BaseFeeInBlock ?? BaseFee`. Reth zeros
+    // the BlockEnv basefee for eth_call without a gas price, so when
+    // we see 0 we fall back to the storage slot (written by StartBlock,
+    // so it always reflects the current block's basefee).
+    let block_basefee = U256::from(input.internals().block_env().basefee());
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
     let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+    let l2_gas_price = if block_basefee.is_zero() {
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?
+    } else {
+        block_basefee
+    };
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
@@ -383,12 +389,15 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let data_len = input.data.len();
     let gas_limit = input.gas;
 
-    // Same fix as handle_prices_in_wei: l2GasPrice comes from evm.Context.BaseFee.
-    let l2_gas_price = U256::from(input.internals().block_env().basefee());
-
+    let block_basefee = U256::from(input.internals().block_env().basefee());
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+    let l2_gas_price = if block_basefee.is_zero() {
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?
+    } else {
+        block_basefee
+    };
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
