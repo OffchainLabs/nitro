@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -51,8 +52,8 @@ func (c *Config) Validate() error {
 	if c.SQSWaitTimeSeconds < 0 {
 		return fmt.Errorf("sqs-wait-time-seconds must be non-negative, got %d", c.SQSWaitTimeSeconds)
 	}
-	if c.InitialBackoff < 0 {
-		return fmt.Errorf("initial-backoff must be non-negative, got %s", c.InitialBackoff)
+	if c.InitialBackoff <= 0 {
+		return fmt.Errorf("initial-backoff must be positive, got %s", c.InitialBackoff)
 	}
 	if c.MaxBackoff < c.InitialBackoff {
 		return fmt.Errorf("max-backoff (%s) must be >= initial-backoff (%s)", c.MaxBackoff, c.InitialBackoff)
@@ -62,6 +63,9 @@ func (c *Config) Validate() error {
 	}
 	if c.SQSVisibilityTimeout <= 0 {
 		return fmt.Errorf("sqs-visibility-timeout must be positive, got %s", c.SQSVisibilityTimeout)
+	}
+	if c.ExternalEndpoint.Timeout <= 0 {
+		return fmt.Errorf("external-endpoint.timeout must be positive, got %s", c.ExternalEndpoint.Timeout)
 	}
 	if err := c.ExternalEndpoint.Validate(); err != nil {
 		return err
@@ -82,15 +86,39 @@ func (c *Config) Validate() error {
 // attempts. Used by Validate to guarantee the retry window fits inside the
 // SQS visibility timeout, so a message can't be retried in-process and
 // redelivered to another worker concurrently.
+//
+// All arithmetic is saturation-guarded: if a misconfiguration (e.g. huge
+// max-retries or huge max-backoff/timeout) would overflow time.Duration, the
+// function returns math.MaxInt64 so Validate fails closed rather than
+// under-estimating the budget.
 func (c *Config) worstCaseRetryBudget() time.Duration {
 	var totalBackoff time.Duration
 	delay := c.InitialBackoff
 	for i := uint(0); i < c.MaxRetries; i++ {
-		totalBackoff += min(delay, c.MaxBackoff)
-		delay = time.Duration(float64(delay) * c.BackoffMultiplier)
+		step := min(delay, c.MaxBackoff)
+		if totalBackoff > math.MaxInt64-step {
+			return math.MaxInt64
+		}
+		totalBackoff += step
+		if delay < c.MaxBackoff {
+			next := time.Duration(float64(delay) * c.BackoffMultiplier)
+			if next <= delay {
+				delay = c.MaxBackoff
+			} else {
+				delay = next
+			}
+		}
 	}
-	// #nosec G115 -- MaxRetries is a small config value, attempt count fits in time.Duration math.
-	totalRequestTime := time.Duration(c.MaxRetries+1) * c.ExternalEndpoint.Timeout
+	timeout := c.ExternalEndpoint.Timeout
+	// #nosec G115 -- MaxRetries is a small config value; overflow to negative would be caught by the divisor check below.
+	attempts := time.Duration(c.MaxRetries) + 1
+	if timeout > 0 && attempts > math.MaxInt64/timeout {
+		return math.MaxInt64
+	}
+	totalRequestTime := attempts * timeout
+	if totalBackoff > math.MaxInt64-totalRequestTime {
+		return math.MaxInt64
+	}
 	return totalBackoff + totalRequestTime
 }
 
@@ -153,12 +181,23 @@ func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 	delay := r.config.InitialBackoff
 	for attempt := uint(0); attempt <= r.config.MaxRetries; attempt++ {
 		if attempt > 0 {
+			timer := time.NewTimer(min(delay, r.config.MaxBackoff))
 			select {
 			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
 				return ctx.Err()
-			case <-time.After(min(delay, r.config.MaxBackoff)):
+			case <-timer.C:
 			}
-			delay = time.Duration(float64(delay) * r.config.BackoffMultiplier)
+			if delay < r.config.MaxBackoff {
+				next := time.Duration(float64(delay) * r.config.BackoffMultiplier)
+				if next <= delay {
+					delay = r.config.MaxBackoff
+				} else {
+					delay = next
+				}
+			}
 		}
 		retry, err := r.doForwardAttempt(ctx, body)
 		if err == nil {
@@ -168,7 +207,9 @@ func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 		if !retry || ctx.Err() != nil {
 			return lastErr
 		}
-		log.Debug("External endpoint call failed, will retry", "err", err, "attempt", attempt, "maxRetries", r.config.MaxRetries)
+		if attempt < r.config.MaxRetries {
+			log.Debug("External endpoint call failed, will retry", "err", err, "attempt", attempt, "maxRetries", r.config.MaxRetries)
+		}
 	}
 	return lastErr
 }

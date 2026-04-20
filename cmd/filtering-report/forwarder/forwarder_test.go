@@ -246,7 +246,7 @@ func TestForwarder_RetriesOn5xxThenSucceeds(t *testing.T) {
 	}
 }
 
-func TestForwarder_ExhaustsRetriesOn5xxLeavesMessage(t *testing.T) {
+func TestForwarder_ExhaustsRetriesOn5xxDoesNotDelete(t *testing.T) {
 	var hits atomic.Int32
 	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -271,7 +271,7 @@ func TestForwarder_ExhaustsRetriesOn5xxLeavesMessage(t *testing.T) {
 	}
 }
 
-func TestForwarder_Non4xxNotRetried(t *testing.T) {
+func TestForwarder_4xxNotRetried(t *testing.T) {
 	var hits atomic.Int32
 	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -366,5 +366,41 @@ func TestConfig_Validate_AcceptsBudgetWithinVisibilityTimeout(t *testing.T) {
 	cfg.ExternalEndpoint = genericconf.HTTPClientConfig{URL: "http://example.com", Timeout: 5 * time.Second}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected default config to validate, got %v", err)
+	}
+}
+
+func TestConfig_Validate_RejectsZeroExternalEndpointTimeout(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.ExternalEndpoint = genericconf.HTTPClientConfig{URL: "http://example.com", Timeout: 0}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "external-endpoint.timeout") {
+		t.Fatalf("expected external-endpoint.timeout validation error, got %v", err)
+	}
+}
+
+func TestConfig_Validate_RejectsZeroInitialBackoff(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.ExternalEndpoint = genericconf.HTTPClientConfig{URL: "http://example.com", Timeout: 5 * time.Second}
+	cfg.InitialBackoff = 0
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "initial-backoff") {
+		t.Fatalf("expected initial-backoff validation error, got %v", err)
+	}
+}
+
+func TestConfig_Validate_RejectsOverflowRetryBudget(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.ExternalEndpoint = genericconf.HTTPClientConfig{URL: "http://example.com", Timeout: time.Hour}
+	// Picking values large enough that (MaxRetries+1) * Timeout overflows
+	// int64 nanoseconds forces worstCaseRetryBudget to saturate to MaxInt64,
+	// which must then exceed any sane SQSVisibilityTimeout.
+	cfg.MaxRetries = 1_000_000
+	cfg.SQSVisibilityTimeout = 24 * time.Hour
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "sqs-visibility-timeout") {
+		t.Fatalf("expected sqs-visibility-timeout validation error on overflow, got %v", err)
 	}
 }
