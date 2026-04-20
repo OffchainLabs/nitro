@@ -494,9 +494,12 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 	}
 	txRLP, err := tx.MarshalBinary()
 	if err != nil {
-		// No need to return error here because MessageFromTxes will prevent a block to be produced in case of
-		// marshalling issues.
+		// MarshalBinary should essentially never fail for a well-formed transaction already
+		// in memory. We log instead of returning an error so that the caller can return a
+		// plain ErrArbTxFilter, avoiding exposure of internal operation errors (e.g.
+		// marshalling failures) to end users.
 		log.Error("failed to marshal transaction for filtered tx report", "err", err, "txHash", tx.Hash())
+		return
 	}
 	report := addressfilter.FilteredTxReport{
 		ID:                uuid.Must(uuid.NewV7()).String(),

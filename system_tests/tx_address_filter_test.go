@@ -382,6 +382,101 @@ func TestAddressFilterEventRuleReport(t *testing.T) {
 	}
 }
 
+func TestAddressFilterPostTxFilterReport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start in-process filtering-report RPC server that captures reports
+	reportStack, capturer := newCapturingReportStack(t)
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = reportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	testStartTime := time.Now()
+
+	// Deploy two contracts: a caller (not filtered) and a target (will be filtered)
+	_, caller := deployAddressFilterTestContract(t, ctx, builder)
+	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
+
+	// Set up filter to block the target contract address
+	addrFilter := newHashedChecker([]common.Address{targetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	// CALL to filtered target triggers postTxFilter (the target address is reached
+	// via the CALL opcode during execution, not from the tx's To field)
+	reportCountBefore := len(capturer.getReports())
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	_, err := caller.CallTarget(&auth, targetAddr)
+	if err == nil {
+		t.Fatal("expected CALL to filtered address to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// contract binding returns nil tx on RPC error, so match by count
+	report := waitForNewReport(t, capturer, reportCountBefore)
+	if report == nil {
+		t.Fatal("expected report to not be nil")
+	}
+	if report.ID == "" {
+		t.Fatal("report ID should not be empty")
+	}
+	if report.TxHash == (common.Hash{}) {
+		t.Fatal("report TxHash should not be zero")
+	}
+	if len(report.TxRLP) == 0 {
+		t.Fatal("report TxRLP should not be empty")
+	}
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	if report.FilteredAt.Before(testStartTime) {
+		t.Fatalf("report FilteredAt %v is before test start %v", report.FilteredAt, testStartTime)
+	}
+	if report.BlockNumber == 0 {
+		t.Fatal("report BlockNumber should be non-zero")
+	}
+	parentHeader, err := builder.L2.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(report.BlockNumber-1))
+	Require(t, err)
+	if report.ParentBlockHash != parentHeader.Hash() {
+		t.Fatalf("report ParentBlockHash %s != hash of block %d: %s",
+			report.ParentBlockHash.Hex(), report.BlockNumber-1, parentHeader.Hash().Hex())
+	}
+
+	// Verify filtered address is present with correct reason and no EventRuleMatch
+	foundTarget := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == targetAddr {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter via CALL")
+			}
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Fatalf("report should contain filtered target address %s", targetAddr.Hex())
+	}
+
+	// Verify no spurious report for a clean CALL to a non-filtered target
+	reportCountBefore = len(capturer.getReports())
+	cleanTargetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
+	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err := caller.CallTarget(&auth, cleanTargetAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	time.Sleep(500 * time.Millisecond)
+	if len(capturer.getReports()) != reportCountBefore {
+		t.Fatalf("expected no new reports for clean CALL, got %d new", len(capturer.getReports())-reportCountBefore)
+	}
+}
+
 func deployAddressFilterTestContract(t *testing.T, ctx context.Context, builder *NodeBuilder) (common.Address, *localgen.AddressFilterTest) {
 	t.Helper()
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
