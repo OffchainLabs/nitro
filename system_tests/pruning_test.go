@@ -313,8 +313,15 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 		// Record which blocks still have state after pruning so the verification
 		// loop below can skip them (e.g. the snapshot-preserved block).
+		// Scan up to the actual chain head in the DB (which may be higher than
+		// lastBlock if more blocks were produced between reading lastBlock and stopping the node).
+		headBlock := rawdb.ReadHeadBlock(executionDB)
+		scanUntil := lastBlock
+		if headBlock != nil && headBlock.NumberU64() > scanUntil {
+			scanUntil = headBlock.NumberU64()
+		}
 		// #nosec G115
-		for i := int64(1); i <= int64(lastBlock); i++ {
+		for i := int64(1); i <= int64(scanUntil); i++ {
 			// #nosec G115
 			hash := rawdb.ReadCanonicalHash(executionDB, uint64(i))
 			// #nosec G115
