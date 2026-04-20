@@ -17,6 +17,7 @@ junitfile=""
 log=true
 race=false
 cover=false
+coverprofile=""
 consensus_execution_in_same_process_use_rpc=false
 test_mel=false
 flaky=false
@@ -65,6 +66,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cover)
       cover=true
+      shift
+      ;;
+    --coverprofile)
+      shift
+      check_missing_value $# "$1" "--coverprofile"
+      coverprofile=$1
       shift
       ;;
     --consensus_execution_in_same_process_use_rpc)
@@ -143,7 +150,11 @@ if [ "$race" == true ]; then
 fi
 
 if [ "$cover" == true ]; then
-  cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+  if [ "$coverprofile" == "" ]; then
+    coverprofile="coverage.txt"
+  fi
+  printf -v escaped_coverprofile '%q' "$coverprofile"
+  cmd="$cmd -coverprofile=$escaped_coverprofile -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
 if [ "$reduce_parallelism" == true ]; then

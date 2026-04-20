@@ -244,6 +244,7 @@ type ExecutionEngine struct {
 	addressChecker                 state.AddressChecker
 	eventFilter                    *eventfilter.EventFilter
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
+	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
 }
 
@@ -266,6 +267,7 @@ func NewExecutionEngine(
 	exposeMultiGas bool,
 	disableDelayedSequencingFilter bool,
 	addressChecker state.AddressChecker,
+	filteringReportRPCClient *FilteringReportRPCClient,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                             bc,
@@ -276,6 +278,7 @@ func NewExecutionEngine(
 		syncTillBlock:                  syncTillBlock,
 		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 		addressChecker:                 addressChecker,
+		filteringReportRPCClient:       filteringReportRPCClient,
 	}
 }
 

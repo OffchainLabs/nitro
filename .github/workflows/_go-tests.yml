@@ -104,14 +104,14 @@ jobs:
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --coverprofile coverage-a.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
 
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --coverprofile coverage-b.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
 
       # --------------------- PATHDB MEL MODE ---------------------
@@ -242,7 +242,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
+          files: ./coverage.txt,./coverage-a.txt,./coverage-b.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 

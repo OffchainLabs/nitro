@@ -929,26 +929,34 @@ func TestMELMigrationFromLegacyNode(t *testing.T) {
 	}
 
 	// Phase 3: Post-migration operations
-	// Wait for the execution layer to fully execute all messages MEL has extracted.
-	// We need to wait until the node's pending nonce reflects the fully executed state.
+	// Wait for the execution engine to fully process all messages including any
+	// delayed messages being sequenced after migration. We wait until both the
+	// consensus message count and execution head stabilize together.
 	{
-		ownerAddr := builder.L2Info.GetAddress("Owner")
 		timeout := time.NewTimer(30 * time.Second)
 		defer timeout.Stop()
-		tick := time.NewTicker(100 * time.Millisecond)
+		tick := time.NewTicker(200 * time.Millisecond)
 		defer tick.Stop()
-		var lastNonce uint64
+		var lastMsgCount arbutil.MessageIndex
+		stableCount := 0
 		for {
-			nonce, err := builder.L2.Client.NonceAt(ctx, ownerAddr, nil)
-			if err == nil && nonce > 0 && nonce == lastNonce {
-				// Nonce stabilized — execution has caught up
-				break
+			msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+			Require(t, err)
+			execHead, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+			if err == nil && execHead+1 >= msgCount && msgCount == lastMsgCount {
+				stableCount++
+				if stableCount >= 3 {
+					break
+				}
+			} else {
+				stableCount = 0
 			}
-			lastNonce = nonce
+			lastMsgCount = msgCount
 			select {
 			case <-tick.C:
 			case <-timeout.C:
-				t.Fatalf("timed out waiting for execution to catch up, last nonce: %d", lastNonce)
+				currentHead, _ := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+				t.Fatalf("timed out waiting for execution to stabilize: execHead=%d, msgCount=%d", currentHead, msgCount)
 			}
 		}
 	}
