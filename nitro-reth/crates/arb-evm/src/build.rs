@@ -2057,19 +2057,31 @@ where
         let gas_used = self.inner.commit_transaction(output)?;
 
         // Redirect coinbase tip to networkFeeAccount when CollectTips() = true.
+        // Nitro's geth-fork only mints `tip * (gas_used - posterGas)` to coinbase
+        // (state_transition.go) — the posterGas portion is burned. revm doesn't
+        // know about posterGas and mints the full `tip * gas_used`, so we transfer
+        // only the compute portion to the network and burn the rest from coinbase.
         if let Some(ref p) = pending {
             if !p.capped_gas_price && p.coinbase_tip_per_gas > 0 && gas_used > 0 {
                 let coinbase = self.arb_ctx.coinbase;
                 let net_acct = self.arb_ctx.network_fee_account;
-                if coinbase != net_acct {
-                    let tip_amount = U256::from(p.coinbase_tip_per_gas)
-                        .saturating_mul(U256::from(gas_used));
-                    let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                    if get_balance(db, coinbase) >= tip_amount {
-                        transfer_balance(db, coinbase, net_acct, tip_amount);
-                        self.touched_accounts.insert(coinbase);
-                        self.touched_accounts.insert(net_acct);
-                    }
+                let compute_gas = gas_used.saturating_sub(p.poster_gas);
+                let tip_to_network = U256::from(p.coinbase_tip_per_gas)
+                    .saturating_mul(U256::from(compute_gas));
+                let tip_to_burn = U256::from(p.coinbase_tip_per_gas)
+                    .saturating_mul(U256::from(p.poster_gas.min(gas_used)));
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                if !tip_to_burn.is_zero() && get_balance(db, coinbase) >= tip_to_burn {
+                    burn_balance(db, coinbase, tip_to_burn);
+                    self.touched_accounts.insert(coinbase);
+                }
+                if coinbase != net_acct
+                    && !tip_to_network.is_zero()
+                    && get_balance(db, coinbase) >= tip_to_network
+                {
+                    transfer_balance(db, coinbase, net_acct, tip_to_network);
+                    self.touched_accounts.insert(coinbase);
+                    self.touched_accounts.insert(net_acct);
                 }
             }
         }
