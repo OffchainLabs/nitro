@@ -136,7 +136,7 @@ impl ArbOsHooks for DefaultArbOsHooks {
             .gas_charging_hook(&mut gas_remaining, ctx.intrinsic_gas, &params)?;
 
         // L1 calldata gas is tracked as a multi-gas dimension.
-        let multi_gas = MultiGas::l1_calldata_gas(self.tx_proc.poster_gas);
+        let multi_gas = MultiGas::single_dim_gas(self.tx_proc.poster_gas);
 
         Ok(GasChargingResult {
             poster_cost: self.tx_proc.poster_fee,

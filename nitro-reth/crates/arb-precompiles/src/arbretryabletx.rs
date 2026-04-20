@@ -5,7 +5,7 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 use crate::storage_slot::{
     current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot, root_slot,
     vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
-    ROOT_STORAGE_KEY, VERSION_OFFSET,
+    ROOT_STORAGE_KEY,
 };
 
 /// ArbRetryableTx precompile address (0x6e).
@@ -495,11 +495,6 @@ fn read_gas_constraints_length_free(
         .sload(ARBOS_STATE_ADDRESS, len_slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
     Ok(val.data.try_into().unwrap_or(0))
-}
-
-fn read_arbos_version(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
-    let val = sload_field(input, root_slot(VERSION_OFFSET))?;
-    Ok(val.try_into().unwrap_or(0))
 }
 
 fn read_gas_constraints_length(

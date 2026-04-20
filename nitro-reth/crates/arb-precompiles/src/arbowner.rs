@@ -1270,7 +1270,7 @@ const CONSTRAINT_WINDOW: u64 = 1;
 const CONSTRAINT_BACKLOG: u64 = 2;
 const MGC_MAX_WEIGHT: u64 = 3;
 const MGC_WEIGHTS_BASE: u64 = 4;
-const NUM_RESOURCE_KINDS: u64 = 8;
+const NUM_RESOURCE_KINDS: u64 = 9;
 const GAS_CONSTRAINTS_MAX_NUM: usize = 20;
 const MAX_PRICING_EXPONENT_BIPS: u64 = 85_000;
 
@@ -1524,7 +1524,7 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
                 .unwrap_or(0);
 
         // Parse resource weights.
-        let mut weights = [0u64; 8];
+        let mut weights = [0u64; 9];
         let mut max_weight = 0u64;
         for r in 0..num_resources {
             let r_start = resources_start + 32 + r * 64;

@@ -3,7 +3,7 @@ use proptest::prelude::*;
 
 fn multigas_strategy() -> impl Strategy<Value = MultiGas> {
     (
-        prop::array::uniform8(any::<u64>()),
+        prop::array::uniform9(any::<u64>()),
         any::<u64>(),
         any::<u64>(),
     )
@@ -56,10 +56,10 @@ fn saturating_sub_caps_at_zero() {
 fn from_pairs_aggregates_kinds() {
     let g = MultiGas::from_pairs(&[
         (ResourceKind::Computation, 100),
-        (ResourceKind::StorageAccess, 200),
+        (ResourceKind::StorageAccessRead, 200),
     ]);
     assert_eq!(g.get(ResourceKind::Computation), 100);
-    assert_eq!(g.get(ResourceKind::StorageAccess), 200);
+    assert_eq!(g.get(ResourceKind::StorageAccessRead), 200);
     assert_eq!(g.get(ResourceKind::HistoryGrowth), 0);
 }
 

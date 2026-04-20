@@ -95,7 +95,7 @@ fn multi_gas_constraints_add_open_clear() {
     for i in 0..N {
         let w = weights(&[
             (ResourceKind::Computation, 10 + i),
-            (ResourceKind::StorageAccess, 20 + i),
+            (ResourceKind::StorageAccessRead, 20 + i),
         ]);
         p.add_multi_gas_constraint(100 * i + 1, (100 * i + 2) as u32, 100 * i + 3, &w)
             .unwrap();
@@ -113,7 +113,7 @@ fn multi_gas_constraints_add_open_clear() {
             10 + i
         );
         assert_eq!(
-            c.resource_weight(ResourceKind::StorageAccess).unwrap(),
+            c.resource_weight(ResourceKind::StorageAccessRead).unwrap(),
             20 + i
         );
     }
@@ -131,12 +131,12 @@ fn multi_gas_constraints_exponents() {
 
     p.add_multi_gas_constraint(100, 10, 100, &weights(&[(ResourceKind::Computation, 1)]))
         .unwrap();
-    p.add_multi_gas_constraint(40, 20, 200, &weights(&[(ResourceKind::StorageAccess, 2)]))
+    p.add_multi_gas_constraint(40, 20, 200, &weights(&[(ResourceKind::StorageAccessRead, 2)]))
         .unwrap();
 
     let exps = p.calc_multi_gas_constraints_exponents().unwrap();
     assert_eq!(exps[ResourceKind::Computation as usize], 1000);
-    assert_eq!(exps[ResourceKind::StorageAccess as usize], 2500);
+    assert_eq!(exps[ResourceKind::StorageAccessRead as usize], 2500);
 }
 
 #[test]

@@ -1586,7 +1586,7 @@ where
                         increment_nonce(db, sender);
                         self.touched_accounts.insert(sender);
                         let gas_used = poster_gas + gas_to_consume;
-                        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
+                        let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
                             .saturating_add(MultiGas::computation_gas(gas_to_consume));
                         self.pending_tx = Some(PendingArbTx {
                             sender,
@@ -1623,7 +1623,7 @@ where
                             .saturating_sub(poster_gas)
                             .saturating_sub(compute_hold_gas);
                         let gas_used = tx_gas_limit;
-                        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
+                        let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
                             .saturating_add(MultiGas::computation_gas(gas_remaining));
                         self.pending_tx = Some(PendingArbTx {
                             sender,
@@ -1988,7 +1988,7 @@ where
             }
         }
 
-        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
+        let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
             .saturating_add(MultiGas::computation_gas(evm_gas_used));
 
         // Capture effective tip per gas (gas_price - base_fee, clamped >= 0).
@@ -2383,7 +2383,7 @@ where
                     // growth we only want compute gas in the multi-gas.
                     let used_multi_gas = pending
                         .charged_multi_gas
-                        .saturating_sub(MultiGas::l1_calldata_gas(pending.poster_gas));
+                        .saturating_sub(MultiGas::single_dim_gas(pending.poster_gas));
 
                     let state_ptr: *mut State<DB> = db as *mut State<DB>;
                     if let Ok(arb_state) =
