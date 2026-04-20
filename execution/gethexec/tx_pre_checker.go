@@ -94,10 +94,6 @@ func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {
 	c.backend = backend
 }
 
-func (c *TxPreChecker) SetFilteringReportRPCClient(client *FilteringReportRPCClient) {
-	c.filteringReportRPCClient = client
-}
-
 type NonceError struct {
 	sender     common.Address
 	txNonce    uint64
@@ -327,18 +323,20 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 	}
 	msg.SkipNonceChecks = true
 
-	_, filteredAddresses, err := gasestimator.Run(ctx, msg, &gasestimator.Options{
+	_, err = gasestimator.Run(ctx, msg, &gasestimator.Options{
 		Config:           c.bc.Config(),
 		Chain:            c.bc,
 		Header:           header,
 		State:            statedb,
 		Backend:          c.backend,
 		RunScheduledTxes: retryables.RunScheduledTxes,
+		ReportFilteredTx: func(_ context.Context, records []filter.FilteredAddressRecord) {
+			if reportErr := c.reportFilteredTx(tx, header, records); reportErr != nil {
+				log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
+			}
+		},
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
-		if reportErr := c.reportFilteredTx(tx, header, filteredAddresses); reportErr != nil {
-			log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
-		}
 		return err
 	}
 	// Other execution errors are ignored since the pre-check is only concerned
@@ -367,12 +365,13 @@ func (c *TxPreChecker) reportFilteredTx(tx *types.Transaction, header *types.Hea
 		DelayedReportData: nil,
 	}
 	promise := c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
-	go func(txHash common.Hash) {
-		ctx, cancel := context.WithTimeout(context.Background(), filteredTxReportDeliveryTimeout)
+	txHash := tx.Hash()
+	c.filteringReportRPCClient.LaunchThread(func(ctx context.Context) {
+		awaitCtx, cancel := context.WithTimeout(ctx, filteredTxReportDeliveryTimeout)
 		defer cancel()
-		if _, err := promise.Await(ctx); err != nil {
+		if _, err := promise.Await(awaitCtx); err != nil {
 			log.Error("failed to deliver filtered tx report", "txHash", txHash, "err", err)
 		}
-	}(tx.Hash())
+	})
 	return nil
 }

@@ -32,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -64,8 +63,10 @@ func waitForForwarderSync(t *testing.T, ctx context.Context, forwarder *TestClie
 }
 
 // buildPrecheckerFilterNodes creates a sequencer node A and a forwarder node B
-// for prechecker filter testing. Node B forwards to A via IPC.
-func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
+// for prechecker filter testing. Node B forwards to A via IPC. If reportURL is
+// non-empty, the forwarder's TxPreChecker is wired to send filtered tx reports
+// to that URL.
+func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, reportURL string, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
 	t.Helper()
 	ipcPath := tmpPath(t, "test.ipc")
 
@@ -97,6 +98,9 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	if len(eventRules) > 0 {
 		execConfigB.TransactionFiltering.EventFilter.Rules = eventRules
 	}
+	if reportURL != "" {
+		execConfigB.TransactionFiltering.FilteringReportRPCClient.URL = reportURL
+	}
 
 	forwarder, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -116,7 +120,7 @@ func TestPrecheckerFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -162,7 +166,7 @@ func TestPrecheckerFilterCleanTxPasses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User1")
@@ -188,7 +192,7 @@ func TestPrecheckerFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User1")
@@ -221,7 +225,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 		},
 	}
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, rules...)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "", rules...)
 	defer cleanup()
 
 	// Deploy contract through sequencer and wait for forwarder to sync
@@ -268,7 +272,7 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Deploy contract through sequencer as retryable destination
@@ -314,7 +318,7 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Contract A: the retryable destination (will be filtered)
@@ -406,7 +410,7 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Deploy wrapper (neutral) and filteredTarget contracts
@@ -536,18 +540,8 @@ func TestPrecheckerFilterReport(t *testing.T) {
 
 	reportURL, collector := startTestReportServer(t, ctx)
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, reportURL)
 	defer cleanup()
-
-	// Wire report client into forwarder's prechecker
-	reportConfig := gethexec.DefaultFilteringReportRPCClientConfig
-	reportConfig.URL = reportURL
-	reportClient := gethexec.NewFilteringReportRPCClient(func() *rpcclient.ClientConfig {
-		return &reportConfig
-	})
-	Require(t, reportClient.Start(ctx))
-	defer reportClient.StopAndWait()
-	forwarder.ExecNode.TxPreChecker.SetFilteringReportRPCClient(reportClient)
 
 	builder.L2Info.GenerateAccount("FilteredUser")
 	builder.L2Info.GenerateAccount("NormalUser")
