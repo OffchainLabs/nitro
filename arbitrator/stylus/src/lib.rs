@@ -269,7 +269,7 @@ pub unsafe extern "C" fn stylus_call(
         Ok(outcome) => write_outcome(output, outcome),
     };
     let ink_left = match status {
-        UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
+        UserOutcomeKind::OutOfStack | UserOutcomeKind::NativeStackOverflow => Ink(0),
         _ => instance.ink_left().into(),
     };
     *gas = pricing.ink_to_gas(ink_left).0;

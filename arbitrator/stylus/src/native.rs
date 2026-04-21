@@ -160,6 +160,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
 
     fn from_module(module: Module, mut store: Store, env: WasmEnv<D, E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
+        store.objects_mut().set_stylus_version(env.compile.version);
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
             ($func:expr) => {
@@ -432,7 +433,7 @@ pub fn module(
             "tx_gas_price" => stub!(|_: u32|),
             "tx_ink_price" => stub!(u32 <- ||),
             "tx_origin" => stub!(|_: u32|),
-            "pay_for_memory_grow" => stub!(|_: u16|),
+            "pay_for_memory_grow" => stub!(|_: u32|),
             "native_keccak256" => stub!(|_: u32, _: u32, _: u32|),
         },
     };

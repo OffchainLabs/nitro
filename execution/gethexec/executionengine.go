@@ -210,6 +210,10 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
+		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
+		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
+	})
 	return nil
 }
 
@@ -556,7 +560,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageCommitContext(s.wasmTargets),
+		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -667,7 +671,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -712,7 +716,12 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+//
+// isDelayedSequencing indicates the sequencer is actively building a block from
+// a delayed-inbox message (called by sequenceDelayedMessageWithBlockMutex).
+// Regular live sequencing of directly-received L2 transactions (which happens
+// in sequenceTransactionsWithBlockMutex) does not go through this function.
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isDelayedSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -747,9 +756,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isMsgForPrefetch {
+	switch {
+	case isDelayedSequencing:
+		runCtx = core.NewMessageDelayedSequencingContext(s.wasmTargets)
+	case isMsgForPrefetch:
 		runCtx = core.NewMessagePrefetchContext()
-	} else {
+	default:
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 	block, receipts, err := arbos.ProduceBlock(
@@ -947,14 +959,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
 		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false, false)
 	if err != nil {
 		return nil, err
 	}

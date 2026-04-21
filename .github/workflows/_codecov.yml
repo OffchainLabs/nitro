@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Download JUnit reports
         uses: actions/download-artifact@v6

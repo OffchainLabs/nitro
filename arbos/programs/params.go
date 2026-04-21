@@ -110,11 +110,16 @@ func (p Programs) Params() (*StylusParams, error) {
 	} else {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
+	// Slot 0 layout (32 bytes): 25 base bytes + 4 (MaxWasmSize) + 1 (MaxFragmentCount) = 30 bytes used.
+	// 2 bytes remain in slot 0. A new field of ≤ 2 bytes can be appended here;
+	// a larger field must start at the beginning of slot 1 with 2 bytes of explicit
+	// zero-padding appended first to stay slot-aligned.
 	return stylusParams, nil
 }
 
-// Writes the params to permanent storage.
-func (p *StylusParams) Save() error {
+// Writes the params to permanent storage. If persistToStorage is false, the params
+// are not actually written but the equivalent storage gas is still charged.
+func (p *StylusParams) Save(persistToStorage bool) error {
 	if p.backingStorage == nil {
 		log.Error("tried to Save invalid StylusParams")
 		return errors.New("invalid StylusParams")
@@ -139,6 +144,7 @@ func (p *StylusParams) Save() error {
 	if p.arbosVersion >= params.ArbosVersion_40 {
 		data = append(data, arbmath.Uint32ToBytes(p.MaxWasmSize)...)
 	}
+	// Slot 0 is 30/32 bytes full here. See the matching comment in Params() before adding fields.
 
 	slot := uint64(0)
 	for len(data) != 0 {
@@ -148,8 +154,17 @@ func (p *StylusParams) Save() error {
 
 		word := common.Hash{}
 		copy(word[:], info) // right-pad with zeros
-		if err := p.backingStorage.SetByUint64(slot, word); err != nil {
-			return err
+		if persistToStorage {
+			if err := p.backingStorage.SetByUint64(slot, word); err != nil {
+				return err
+			}
+		} else {
+			if err := p.backingStorage.Burner().Burn(multigas.ResourceKindStorageAccess, storage.WriteCost(word)); err != nil {
+				return err
+			}
+			if info := p.backingStorage.Burner().TracingInfo(); info != nil {
+				info.RecordStorageSet(p.backingStorage.GetStorageSlot(util.UintToHash(slot)), word)
+			}
 		}
 		slot += 1
 	}
@@ -165,8 +180,14 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 		p.Version = 2
 		p.MinInitGas = v2MinInitGas
 		return nil
+	case 3:
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 3
+		return nil
 	default:
-		return fmt.Errorf("unsupported upgrade to %d. Only 2 is supported", version)
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 and 3 are supported", version)
 	}
 }
 
@@ -214,5 +235,5 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 	if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
-	_ = stylusParams.Save()
+	_ = stylusParams.Save(true)
 }

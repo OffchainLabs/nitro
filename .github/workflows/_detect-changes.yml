@@ -23,6 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
           submodules: recursive
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth

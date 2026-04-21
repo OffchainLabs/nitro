@@ -18,8 +18,8 @@ use prover::{
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
-    imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store, Target,
+    imports, wasmparser::Operator, AsStoreMut, CompilerConfig, Function, FunctionEnv, Imports,
+    Instance, Module, Store, Target,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -37,6 +37,7 @@ type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
         let mut store = compile.store(Target::default(), false);
+        store.objects_mut().set_stylus_version(compile.version);
         let imports = imports! {
             "test" => {
                 "noop" => Function::new_typed(&mut store, || {}),
@@ -167,10 +168,25 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         HashMap::default(),
         Arc::new(|_, _, _| panic!("tried to read preimage")),
         Some(stylus_data),
+        compile.version,
     )?;
     mach.set_ink(Ink(u64::MAX));
     mach.set_stack(u32::MAX);
     Ok(mach)
+}
+
+fn run_machine_read_memory(
+    path: &str,
+    compile: &CompileConfig,
+    func: &str,
+    ink: Ink,
+    addr: u32,
+    len: u32,
+) -> Result<Vec<u8>> {
+    let mut machine = new_test_machine(path, compile)?;
+    let module = machine.find_module("user")?;
+    machine.call_user_func(func, vec![], ink)?;
+    machine.read_memory(module, addr, len).map(|s| s.to_vec())
 }
 
 fn run_native(native: &mut TestInstance, args: &[u8], ink: Ink) -> Result<Vec<u8>> {

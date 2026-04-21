@@ -273,7 +273,7 @@ func TestStylusUpgrade(t *testing.T) {
 }
 
 func testStylusUpgrade(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
 	defer cleanup()
 
 	ctx := builder.ctx
@@ -292,6 +292,8 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
 	ensure(arbOwner.SetInkPrice(&auth, 1))
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	keccakAddr := deployContract(t, ctx, auth, l2client, wasm)
@@ -339,28 +341,73 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 		return receipt.BlockNumber.Uint64()
 	}
 
+	checkStylusVersion := func(wantStylusVersion uint16) {
+		t.Helper()
+
+		stylusVersion, err := arbWasm.StylusVersion(nil)
+		Require(t, err)
+		if stylusVersion != wantStylusVersion {
+			Fatal(t, "unexpected stylus version", "got", stylusVersion, "want", wantStylusVersion)
+		}
+	}
+
+	checkProgramVersion := func(wantProgramVersion uint16) {
+		t.Helper()
+
+		programVersion, err := arbWasm.ProgramVersion(nil, keccakAddr)
+		Require(t, err)
+		if programVersion != wantProgramVersion {
+			Fatal(t, "unexpected program version", "got", programVersion, "want", wantProgramVersion)
+		}
+	}
+
 	// Calling the contract pre-activation should fail.
 	blockFail1 := checkFailWith("ProgramNotActivated")
+	checkStylusVersion(1)
 
 	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+	checkStylusVersion(1)
+	checkProgramVersion(1)
 
 	blockSuccess1 := checkSucceeds()
 
-	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 31, 0)
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, params.ArbosVersion_31, 0)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// generate traffic to perform the upgrade
 	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+	checkArbOSVersion(t, builder.L2, params.ArbosVersion_31, "after ArbOS 31 upgrade")
+	checkStylusVersion(2)
 
 	blockFail2 := checkFailWith("ProgramNeedsUpgrade")
 
 	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+	checkStylusVersion(2)
+	checkProgramVersion(2)
 
 	blockSuccess2 := checkSucceeds()
 
-	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
+	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, params.ArbosVersion_59, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate traffic to perform the upgrade
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+	checkArbOSVersion(t, builder.L2, params.ArbosVersion_59, "after ArbOS 59 upgrade")
+	checkStylusVersion(3)
+
+	blockFail3 := checkFailWith("ProgramNeedsUpgrade")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+	checkStylusVersion(3)
+	checkProgramVersion(3)
+
+	blockSuccess3 := checkSucceeds()
+
+	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2, blockFail3, blockSuccess3}, jit, builder)
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -1188,6 +1235,278 @@ func testMemory(t *testing.T, jit bool) {
 	}
 
 	validateBlocks(t, 3, jit, builder)
+}
+
+func TestProgramMaxStylusOpenPages(t *testing.T) {
+	testMaxStylusOpenPages(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesNative(t *testing.T) {
+	testMaxStylusOpenPages(t, false)
+}
+
+func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_51)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+	defer cleanup()
+
+	checkStylusVersion := func(want uint16) {
+		t.Helper()
+		got, err := arbWasm.StylusVersion(nil)
+		Require(t, err)
+		if got != want {
+			Fatal(t, "unexpected stylus version", "got", got, "want", want)
+		}
+	}
+
+	runEthCall := func(program common.Address, pages uint32, shouldSucceed bool) {
+		t.Helper()
+		data := binary.LittleEndian.AppendUint32(nil, pages)
+		msg := ethereum.CallMsg{
+			To:   &program,
+			Gas:  1e9,
+			Data: data,
+		}
+		_, err := l2client.CallContract(ctx, msg, nil)
+		if shouldSucceed {
+			Require(t, err, "pages", pages)
+			return
+		}
+		if err == nil {
+			Fatal(t, "pages", pages, "eth_call should have failed")
+		}
+	}
+
+	runTx := func(program common.Address, pages uint32, shouldSucceed bool) {
+		t.Helper()
+		data := binary.LittleEndian.AppendUint32(nil, pages)
+		tx := l2info.PrepareTxTo("Owner", &program, 1e9, nil, data)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		if shouldSucceed {
+			_, err := EnsureTxSucceeded(ctx, l2client, tx)
+			Require(t, err, "pages", pages)
+			return
+		}
+		EnsureTxFailed(t, ctx, l2client, tx)
+	}
+
+	checkStylusVersion(2)
+	payForMemoryGrowV2 := deployWasm(t, ctx, auth, l2client, watFile("pay-for-memory-grow"))
+	for pages := uint32(0); pages <= (1 << 16); pages++ {
+		shouldSucceed := pages <= 127 || pages == (1<<16)
+		runEthCall(payForMemoryGrowV2, pages, shouldSucceed)
+	}
+	runEthCall(payForMemoryGrowV2, (1<<16)+1, true)
+	runTx(payForMemoryGrowV2, 1<<16, true)
+	runTx(payForMemoryGrowV2, (1<<16)+1, true)
+
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, params.ArbosVersion_59, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+	checkArbOSVersion(t, builder.L2, params.ArbosVersion_59, "after ArbOS 59 upgrade")
+	checkStylusVersion(3)
+
+	payForMemoryGrowV3 := deployWasm(t, ctx, auth, l2client, watFile("pay-for-memory-grow"))
+	runEthCall(payForMemoryGrowV3, 1<<16, false)
+	runEthCall(payForMemoryGrowV3, (1<<16)+1, false)
+}
+
+func testMaxStylusOpenPages(t *testing.T, jit bool) {
+	const pageLimit uint16 = 20
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Deploy mem-write.wat: starts with 0 pages, grows 1 + (arg[0]-1) pages at runtime.
+	memWriteAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/mem-write"))
+
+	underLimitArgs := []byte{5}
+	overLimitArgs := []byte{30}
+
+	// eth_call: under limit (5 pages) should succeed
+	msg := ethereum.CallMsg{
+		To:   &memWriteAddr,
+		Gas:  32000000,
+		Data: underLimitArgs,
+	}
+	_, err := l2client.CallContract(ctx, msg, nil)
+	Require(t, err, "eth_call with pages under limit should succeed")
+
+	// eth_call: over limit (30 pages) should fail with out of gas
+	msg.Data = overLimitArgs
+	_, err = l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call with pages over limit should have failed with 'out of gas', got:", err)
+	}
+
+	// On-chain under limit should succeed (test this before over-limit to avoid nonce issues)
+	tx := l2info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, underLimitArgs)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err, "on-chain tx with pages under limit should succeed")
+
+	// On-chain over limit should fail.
+	// FilterTx() causes the sequencer to reject the tx entirely (not included in a block),
+	// so SendTransaction itself returns an error rather than producing a failed receipt.
+	// We match on state.ErrArbTxFilter.Error() (rather than a literal string) so that
+	// the test tracks the sentinel if it's ever reworded.
+	tx = l2info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, overLimitArgs)
+	err = l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	}
+}
+
+func TestProgramDelayedInboxPageLimitBypass(t *testing.T) {
+	testDelayedInboxPageLimitBypass(t, true)
+}
+
+func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
+	testDelayedInboxPageLimitBypass(t, false)
+}
+
+// testDelayedInboxPageLimitBypass verifies that a Stylus call which would
+// exceed MaxStylusOpenPages lands on-chain when delivered via the delayed
+// inbox (censorship resistance). Delayed-inbox messages cannot be filtered
+// post-commitment, so addPages must skip FilterTx for them.
+//
+// This exercises the wiring in executionengine.createBlockFromNextMessage:
+// sequenceDelayedMessageWithBlockMutex passes isDelayedSequencing=true,
+// producing a MessageRunContext where IsSequencing() is false, which causes
+// addPages to fall through to the exempt branch. If that wiring regresses
+// (e.g. back to NewMessageSequencingContext), FilterTx fires inside
+// ProduceBlock, block production fails with ErrArbTxFilter, the delayed
+// message never lands, and EnsureTxSucceeded below times out.
+func testDelayedInboxPageLimitBypass(t *testing.T, jit bool) {
+	const pageLimit uint16 = 20
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	defer cleanup()
+
+	// mem-write grows 1 + (arg[0]-1) pages. 21 > 20 so it exceeds the limit,
+	// but only by one page so normal-gas execution fits comfortably in 1e9.
+	memWriteAddr := deployWasm(t, ctx, auth, builder.L2.Client, watFile("grow/mem-write"))
+	overLimitArgs := []byte{21}
+
+	delayedTx := builder.L2Info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, overLimitArgs)
+	// SendSignedTxViaL1 posts delayedTx to the delayed inbox on L1, advances
+	// L1 to trigger delayed-message sequencing on L2, and asserts the L2 tx
+	// succeeded. With the fix, it lands and runs normally; without the fix,
+	// block production would stall on ErrArbTxFilter and this would fail.
+	builder.L1.SendSignedTx(t, builder.L2.Client, delayedTx, builder.L1Info)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprint(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprint(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintNative(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprint(t, false)
+}
+
+func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
+	// grow-120.wat has a fixed 120-page initial footprint and does NOT call
+	// memory.grow at runtime, so the addPages hostio in api.go never fires.
+	// This isolates the CallProgram-entry page-limit check in
+	// arbos/programs/programs.go.
+	const pageLimit uint16 = 50
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Activation uses params.PageLimit (default 128) against 0 open pages, so
+	// a 120-page footprint deploys successfully; the node-level 50-page
+	// MaxOpenPages gate only applies at CallProgram entry.
+	fixed120Addr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+
+	// eth_call: 120-page footprint > 50-page limit, off-chain branch → OOG.
+	msg := ethereum.CallMsg{
+		To:  &fixed120Addr,
+		Gas: 32000000,
+	}
+	_, err := l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call with initial footprint over limit should have failed with 'out of gas', got:", err)
+	}
+
+	// Sequenced tx: sequencing branch → FilterTx, sequencer rejects before inclusion.
+	tx := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
+	err = l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	}
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprintConsensus(t, true)
+}
+
+func TestProgramMaxStylusOpenPagesInitialFootprintConsensusNative(t *testing.T) {
+	testMaxStylusOpenPagesInitialFootprintConsensus(t, false)
+}
+
+func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool) {
+	// Exercises the chain-level consensus cap (StylusParams.PageLimit, ArbOS >= 59)
+	// at the CallProgram-entry path. grow-120.wat has a fixed 120-page footprint
+	// and no memory.grow, so the addPages hostio never fires. The node-level
+	// MaxOpenPages cap is left at its default (0 = disabled), isolating the
+	// consensus check.
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_59)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Deploy at the default PageLimit (128); 120-page footprint activates.
+	fixed120Addr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+
+	// Lower PageLimit below the footprint via ArbOwner so subsequent calls
+	// trip the consensus cap at CallProgram entry.
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetWasmPageLimit(&auth, 50)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// eth_call: 120 > 50 → consensus cap OOGs at CallProgram entry.
+	msg := ethereum.CallMsg{To: &fixed120Addr, Gas: 32000000}
+	_, err = l2client.CallContract(ctx, msg, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of gas") {
+		Fatal(t, "eth_call over consensus PageLimit should have failed with 'out of gas', got:", err)
+	}
+
+	// Sequenced tx: the consensus cap OOGs WITHOUT calling FilterTx, so the
+	// sequencer must include the tx and produce a failed receipt (every replay
+	// node will reach the same OOG). This is the key behavioral distinction
+	// from the node-level MaxOpenPages sequencer path, which does FilterTx and
+	// rejects before inclusion.
+	tx2 := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
+	Require(t, l2client.SendTransaction(ctx, tx2))
+	EnsureTxFailed(t, ctx, l2client, tx2)
 }
 
 func TestProgramActivateFails(t *testing.T) {
@@ -2811,4 +3130,20 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 		wasmModuleRoot,
 	)
 	Require(t, err)
+}
+
+func TestProgramMemoryFillOverflow(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	overflowAddr := deployWasm(t, ctx, auth, l2client, watFile("memory-fill-overflow"))
+
+	tx := l2info.PrepareTxTo("Owner", &overflowAddr, 1e9, nil, nil)
+	err := l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		t.Fatal("should get filtered, got: ", err)
+	}
 }

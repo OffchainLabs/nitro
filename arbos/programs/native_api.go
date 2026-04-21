@@ -28,6 +28,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -48,8 +49,10 @@ func newApi(
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
+	runCtx *core.MessageRunContext,
+	stylusParams *StylusParams,
 ) NativeApi {
-	handler := newApiClosures(evm, tracingInfo, scope, memoryModel)
+	handler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
 	apiId := apiIds.Add(1)
 	id := usize(apiId)
 	api := NativeApi{

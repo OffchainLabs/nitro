@@ -39,11 +39,13 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm64         string   `koanf:"arm64"`
-	Amd64         string   `koanf:"amd64"`
-	Host          string   `koanf:"host"`
-	ExtraArchs    []string `koanf:"extra-archs"`
-	AllowFallback bool     `koanf:"allow-fallback"`
+	Arm64              string   `koanf:"arm64"`
+	Amd64              string   `koanf:"amd64"`
+	Host               string   `koanf:"host"`
+	ExtraArchs         []string `koanf:"extra-archs"`
+	AllowFallback      bool     `koanf:"allow-fallback"`
+	MaxStylusOpenPages uint16   `koanf:"max-stylus-open-pages"`
+	MaxStylusCallDepth uint16   `koanf:"max-stylus-call-depth"`
 
 	wasmTargets []rawdb.WasmTarget
 }
@@ -53,6 +55,11 @@ func (c *StylusTargetConfig) WasmTargets() []rawdb.WasmTarget {
 }
 
 func (c *StylusTargetConfig) Validate() error {
+	nodeCfg := programs.ArbNodeConfig{
+		MaxOpenPages:       c.MaxStylusOpenPages,
+		MaxStylusCallDepth: c.MaxStylusCallDepth,
+	}
+	nodeCfg.Validate()
 	targetsSet := make(map[rawdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {
 		target := rawdb.WasmTarget(arch)
@@ -76,11 +83,13 @@ func (c *StylusTargetConfig) Validate() error {
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64:         programs.DefaultTargetDescriptionArm,
-	Amd64:         programs.DefaultTargetDescriptionX86,
-	Host:          "",
-	ExtraArchs:    []string{string(rawdb.TargetWavm)},
-	AllowFallback: true,
+	Arm64:              programs.DefaultTargetDescriptionArm,
+	Amd64:              programs.DefaultTargetDescriptionX86,
+	Host:               "",
+	ExtraArchs:         []string{string(rawdb.TargetWavm)},
+	AllowFallback:      true,
+	MaxStylusOpenPages: 128, // fits the default stylus pageLimit; 0 disables the limit
+	MaxStylusCallDepth: 0,   // 0 disables the limit
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -89,6 +98,8 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
+	f.Uint16(prefix+".max-stylus-open-pages", DefaultStylusTargetConfig.MaxStylusOpenPages, "max open WASM pages per tx; exceeding the limit rejects non-on-chain calls and filters sequencer-committed txs (delayed inbox is exempt); 0 disables the limit")
+	f.Uint16(prefix+".max-stylus-call-depth", DefaultStylusTargetConfig.MaxStylusCallDepth, "max number of Stylus frames simultaneously on the call stack (counts only Stylus frames; EVM frames between two Stylus frames do not decrement it); exceeding the limit rejects non-on-chain calls; 0 disables the limit")
 }
 
 type TxIndexerConfig struct {

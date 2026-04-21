@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -358,12 +359,13 @@ func callProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	evmData *EvmData,
-	stylusParams *ProgParams,
+	progParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
+	stylusParams *StylusParams,
 ) ([]byte, error) {
 	db := evm.StateDB
-	debug := stylusParams.DebugMode
+	debug := progParams.DebugMode
 
 	if len(localAsm) == 0 {
 		log.Error("missing asm", "program", address, "module", moduleHash)
@@ -379,14 +381,14 @@ func callProgram(
 		}
 	}
 
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
 	defer evmApi.drop()
 
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
 		goSlice(localAsm),
 		goSlice(calldata),
-		stylusParams.encode(),
+		progParams.encode(),
 		evmApi.cNative,
 		evmData.encode(),
 		cbool(debug),
@@ -396,7 +398,18 @@ func callProgram(
 	))
 
 	depth := evm.Depth()
+	if status == userNativeStackOverflow {
+		// A native (host) stack overflow during stylus execution is a consensus
+		// failure: a node that cannot finish a call would produce different state than
+		// nodes that can.
+		log.Error("stylus native stack overflow", "program", address, "module", moduleHash, "depth", depth)
+		panic(fmt.Sprintf("stylus native stack overflow (program=%v, module=%v, depth=%d)", address, moduleHash, depth))
+	}
 	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
+	if err != nil && strings.Contains(msg, "memory.fill value exceeds 8 bits") {
+		log.Info("memory.fill value overflow triggered")
+		evm.StateDB.FilterTx()
+	}
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}

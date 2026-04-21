@@ -27,6 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false

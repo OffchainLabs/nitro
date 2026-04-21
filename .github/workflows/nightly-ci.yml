@@ -29,6 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
           submodules: recursive
 
       - name: Setup CI
@@ -38,7 +39,7 @@ jobs:
         run: make build test-go-deps -j
 
       - name: Build all lint dependencies
-        run: make -j build-node-deps
+        run: make -j8 build-node-deps
 
       - name: Lint
         uses: golangci/golangci-lint-action@v9

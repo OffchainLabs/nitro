@@ -33,6 +33,7 @@ type Programs struct {
 	moduleHashes   *storage.Storage
 	dataPricer     *DataPricer
 	cacheManagers  *addressSet.AddressSet
+	activationGas  storage.StorageBackedUint64
 }
 
 type Program struct {
@@ -53,8 +54,10 @@ var programDataKey = []byte{1}
 var moduleHashesKey = []byte{2}
 var dataPricerKey = []byte{3}
 var cacheManagersKey = []byte{4}
+var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
+var ErrNativeStackOverflow = errors.New("native stack overflow")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -77,7 +80,21 @@ func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenCachedSubStorage(dataPricerKey)),
 		cacheManagers:  addressSet.OpenAddressSet(sto.OpenCachedSubStorage(cacheManagersKey)),
+		activationGas:  sto.OpenSubStorage(activationGasKey).OpenStorageBackedUint64(0),
 	}
+}
+
+// ActivationGas returns the constant gas charge burned at the start of each Stylus activation.
+func (p Programs) ActivationGas() (uint64, error) {
+	if p.ArbosVersion < gethParams.ArbosVersion_59 {
+		return 0, nil
+	}
+	return p.activationGas.Get()
+}
+
+// SetActivationGas sets the constant gas charge burned at the start of each Stylus activation.
+func (p Programs) SetActivationGas(gas uint64) error {
+	return p.activationGas.Set(gas)
 }
 
 func (p Programs) DataPricer() *DataPricer {
@@ -214,6 +231,16 @@ func (p Programs) CallProgram(
 	if !cached {
 		callCost = arbmath.SaturatingUAdd(callCost, program.initGas(params))
 	}
+	// Penalize programs whose static footprint alone exceeds the page caps.
+	// The cumulative `open + footprint` case is handled at the addPages
+	// hostio (once the program actually grows memory); checking cumulative
+	// here too would falsely reject legitimate nested calls where the outer
+	// frame has already consumed pages via memory.grow. On exceed, the helper
+	// returns math.MaxUint64 which saturates callCost to MaxUint64 so BurnGas
+	// below fails with vm.ErrOutOfGas.
+	penalty := enforceStylusPageLimit(evm, statedb, runCtx, program.footprint, contract.Address(), params, pageLimitCallProgram)
+	callCost = arbmath.SaturatingUAdd(callCost, penalty)
+
 	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
 	}
@@ -251,7 +278,7 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx, params)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -584,6 +611,7 @@ const (
 	userFailure
 	userOutOfInk
 	userOutOfStack
+	userNativeStackOverflow
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
@@ -599,6 +627,11 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
+	case userNativeStackOverflow:
+		// This should never be reached — callProgram panics
+		// before calling toResult when status is userNativeStackOverflow.
+		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
+		return nil, "", ErrNativeStackOverflow
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
