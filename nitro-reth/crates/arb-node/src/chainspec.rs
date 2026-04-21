@@ -57,6 +57,12 @@ impl ChainSpecParser for ArbChainSpecParser {
             .unwrap_or(Address::ZERO);
         let arbos_init = parse_arbos_init(&value);
 
+        let allow_debug = value
+            .pointer("/config/arbitrum/AllowDebugPrecompiles")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        arb_precompiles::set_allow_debug_precompiles(allow_debug);
+
         if initial_arbos > 0 && chain_id > 0 {
             inject_arbos_alloc(&mut value, chain_id, initial_arbos, initial_owner, arbos_init)?;
         }

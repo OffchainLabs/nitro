@@ -221,6 +221,19 @@ pub fn get_arbos_version() -> u64 {
     global
 }
 
+static ALLOW_DEBUG_PRECOMPILES: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Set whether ArbDebug / ArbosTest debug precompiles are callable. Driven
+/// by the chain spec's `AllowDebugPrecompiles` flag.
+pub fn set_allow_debug_precompiles(allow: bool) {
+    ALLOW_DEBUG_PRECOMPILES.store(allow, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn allow_debug_precompiles() -> bool {
+    ALLOW_DEBUG_PRECOMPILES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Set the L1 block number for the NUMBER opcode.
 pub fn set_l1_block_number_for_evm(number: u64) {
     L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.set(number));

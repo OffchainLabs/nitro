@@ -37,6 +37,9 @@ pub fn create_arbdebug_precompile() -> DynPrecompile {
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
+    if !crate::allow_debug_precompiles() {
+        return crate::burn_all_revert(gas_limit);
+    }
     if data.len() < 4 {
         return crate::burn_all_revert(gas_limit);
     }
