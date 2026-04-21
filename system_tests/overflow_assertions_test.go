@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol"
