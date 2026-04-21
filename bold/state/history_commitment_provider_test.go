@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/stretchr/testify/require"
+
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func Test_computeRequiredNumberOfHashes(t *testing.T) {

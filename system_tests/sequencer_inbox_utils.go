@@ -1,6 +1,8 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+//go:build challengetest && !race
+
 package arbtest
 
 import (
@@ -61,8 +63,8 @@ func PrintSequencerInboxMessage(t *testing.T, label string, message []byte) {
 
 	// Print header details
 	t.Logf("Header (40 bytes):")
-	t.Logf("  MinTimestamp:             %d (%s)", header.MinTimestamp, time.Unix(int64(header.MinTimestamp), 0).UTC())
-	t.Logf("  MaxTimestamp:             %d (%s)", header.MaxTimestamp, time.Unix(int64(header.MaxTimestamp), 0).UTC())
+	t.Logf("  MinTimestamp:             %d (%s)", header.MinTimestamp, time.Unix(int64(header.MinTimestamp), 0).UTC()) // nolint:gosec
+	t.Logf("  MaxTimestamp:             %d (%s)", header.MaxTimestamp, time.Unix(int64(header.MaxTimestamp), 0).UTC()) // nolint:gosec
 	t.Logf("  MinBlockNumber:           %d", header.MinBlockNumber)
 	t.Logf("  MaxBlockNumber:           %d", header.MaxBlockNumber)
 	t.Logf("  AfterDelayedMessagesRead: %d", header.AfterDelayedMessagesRead)
@@ -136,7 +138,7 @@ func CompareSequencerInboxMessages(t *testing.T, msgA, msgB []byte) {
 		if a == b {
 			t.Logf("  ✓ %s: %d (match)", name, a)
 		} else {
-			t.Logf("  ❌ %s: A=%d, B=%d (differ by %d)", name, a, b, int64(a)-int64(b))
+			t.Logf("  ❌ %s: A=%d, B=%d (differ by %d)", name, a, b, int64(a)-int64(b)) // nolint:gosec
 		}
 	}
 
