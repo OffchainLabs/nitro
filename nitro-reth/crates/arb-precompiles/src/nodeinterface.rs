@@ -1,4 +1,4 @@
-use alloy_consensus::{transaction::SignerRecoverable, SignableTransaction, TxEip1559, TxEnvelope};
+use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
@@ -60,16 +60,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GAS_ESTIMATE_L1_COMPONENT => handle_gas_estimate_l1_component(&mut input),
         NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
         BLOCK_L1_NUM => handle_block_l1_num(&mut input),
-        // Batch-fetcher-dependent methods. When no batch fetcher is available
-        // (validators, replayers, or nodes not following L1), Nitro returns 0.
-        // This matches Nitro's `ExecEngine.GetBatchFetcher()` returning nil →
-        // returning 0 instead of erroring, so bridge tooling can distinguish
-        // "unknown/pending" from "method not implemented".
+        // Batch-fetcher-dependent methods: return 0 when no batch fetcher is
+        // wired (validators, replayers, nodes not following L1) so bridge
+        // tooling can distinguish "unknown/pending" from "not implemented".
         GET_L1_CONFIRMATIONS => handle_zero_u64(&input),
         FIND_BATCH_CONTAINING_BLOCK => handle_zero_u64(&input),
-        // Pre-Nitro legacy outbox lookup — arbreth has no classic chain to
-        // look up, so return empty encoded tuple (all zero words). Matches
-        // the behavior of a Nitro node with no classic outbox configured.
+        // Legacy classic-chain outbox lookup — no classic chain, so return
+        // the 9-element all-zero tuple.
         LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => handle_legacy_lookup_empty(&input),
         // Still RPC-layer only (need header scans or tx construction).
         L2_BLOCK_RANGE_FOR_L1 | ESTIMATE_RETRYABLE_TICKET | CONSTRUCT_OUTBOX_PROOF => {
@@ -187,7 +184,7 @@ fn handle_block_l1_num(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 /// Encode a single uint64/uint256 zero — used when batch-fetcher methods
-/// can't resolve data and return 0 (matching Nitro with no batch fetcher).
+/// can't resolve data.
 fn handle_zero_u64(input: &PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(
         COPY_GAS.min(input.gas),
@@ -195,8 +192,8 @@ fn handle_zero_u64(input: &PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-/// legacyLookupMessageBatchProof returns the 9-value tuple with all zeros /
-/// empty bytes, matching a Nitro node with no classic outbox configured.
+/// legacyLookupMessageBatchProof returns the 9-value all-zero tuple —
+/// arbreth has no classic-chain outbox to look up.
 ///
 /// ABI return:
 ///   (bytes32[] proof, uint256 path, address l2Sender, address l1Dest,
@@ -258,8 +255,7 @@ fn estimate_l1_gas(
     )
 }
 
-/// Mirrors Nitro's GasEstimateComponents L1-pricing path:
-/// build a fake EIP-1559 tx, brotli-compress its RLP, pad units by
+/// L1 gas estimate: brotli-compress a fake EIP-1559 tx, pad units by
 /// `(units + 256) * 1.01`, multiply by `pricePerUnit`, pad posterCost by
 /// `1.10`, then divide by `max(basefee * 7/8, minBaseFee)`.
 pub fn compute_l1_gas_for_estimate(
@@ -319,9 +315,9 @@ pub fn decode_estimate_args(data: &[u8]) -> Option<(Address, bool, Bytes)> {
     ))
 }
 
-/// Build the byte sequence that Nitro's `makeFakeTxForMessage` produces
-/// for a gas-estimation message: the EIP-2718 envelope of an EIP-1559 tx
-/// with hard-coded random nonce/tip/feeCap/gas/sig fields.
+/// Build the EIP-2718 envelope of a fake EIP-1559 tx used to size the
+/// calldata payload for gas estimation (hard-coded random
+/// nonce/tip/feeCap/gas/sig fields).
 pub fn build_fake_tx_bytes(
     chain_id: ChainId,
     to: Address,

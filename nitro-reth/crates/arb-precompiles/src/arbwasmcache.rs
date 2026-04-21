@@ -229,8 +229,8 @@ fn sstore_field(
     Ok(())
 }
 
-/// Mirrors Nitro arbos/programs/programs.go::Programs.Params for the fields we
-/// need: `version` (bytes 0-1) and `expiry_days` (bytes 19-20) of slot 0.
+/// Read `version` (bytes 0-1) and `expiry_days` (bytes 19-20) from slot 0
+/// of the Programs.Params storage word.
 fn read_program_params(input: &mut PrecompileInput<'_>) -> Result<(u16, u16), PrecompileError> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);

@@ -216,8 +216,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         self.brotli_compression_level.set(level)
     }
 
-    /// Whether tip collection is enabled (post-ArbOS 60).
-    /// Returns false for ArbOS < 60 (per Nitro's CollectTips).
+    /// Whether tip collection is enabled. Always false before ArbOS 60.
     pub fn collect_tips(&self) -> Result<bool, ()> {
         if self.arbos_version < 60 {
             return Ok(false);

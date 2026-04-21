@@ -1243,8 +1243,7 @@ where
     let gas_price = U256::from(context.tx.gas_price());
     let value = inputs.value.get();
 
-    // Stylus's block.number must be the L1 block number, not the L2 block number.
-    // Nitro uses `evm.ProcessingHook.L1BlockNumber(evm.Context)` for this field.
+    // Stylus's block.number is the L1 block number, not the L2 block number.
     let l1_block_number = arb_precompiles::get_l1_block_number_for_evm();
 
     EvmData {

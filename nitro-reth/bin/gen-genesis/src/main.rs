@@ -5,7 +5,7 @@ use revm::database::{EmptyDB, State, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use serde_json::{json, Map, Value};
 
-use arb_node::genesis::{initialize_arbos_state, INITIAL_ARBOS_VERSION};
+use arb_node::genesis::{initialize_arbos_state, ArbOSInit, INITIAL_ARBOS_VERSION};
 use arbos::arbos_types::ParsedInitMessage;
 
 /// Arbitrum Sepolia chain owner.
@@ -38,6 +38,7 @@ fn main() {
         CHAIN_ID,
         INITIAL_ARBOS_VERSION,
         SEPOLIA_CHAIN_OWNER,
+        ArbOSInit::default(),
     )
     .expect("failed to initialize ArbOS state");
 

@@ -289,7 +289,7 @@ where
     /// binary search operates on total gas (L2 compute + L1 poster) so the
     /// 64/63 optimistic multiplier and 0.015 error ratio apply to the
     /// combined figure. Each simulation passes `total − l1_gas` as the L2
-    /// gas limit, mirroring Nitro's `GasChargingHook` poster deduction.
+    /// gas limit so the poster-gas deduction is accounted for.
     async fn estimate_arb_combined_gas(
         &self,
         inner_req: RpcTxReq<<Rpc as RpcConvert>::Network>,
@@ -461,8 +461,8 @@ where
     }
 
     /// `eth_call` of `NodeInterface.estimateRetryableTicket(...)`:
-    /// synthesize the ArbitrumSubmitRetryableTx that Nitro builds for
-    /// this call and return its EIP-2718 envelope hash (the ticket ID).
+    /// synthesize the ArbitrumSubmitRetryableTx that corresponds to this
+    /// call and return its EIP-2718 envelope hash (the ticket ID).
     async fn simulate_retryable_ticket_call(
         &self,
         input: &alloy_primitives::Bytes,
@@ -1244,12 +1244,10 @@ where
             let is_ni = target == Some(NODE_INTERFACE_ADDRESS);
             let is_ni_debug = target == Some(arb_precompiles::NODE_INTERFACE_DEBUG_ADDRESS);
 
-            // ArbGasInfo.getCurrentTxL1GasFees: Nitro returns
-            // `c.txProcessor.PosterFee`, populated by GasChargingHook for
-            // every tx including eth_call simulations. The precompile
-            // can't see the eth_call's outer message, so compute the
-            // PosterFee here from the request envelope using the same
-            // fake-tx + brotli + (units+256)*1.01 formula.
+            // ArbGasInfo.getCurrentTxL1GasFees needs the poster fee for
+            // this eth_call. The precompile can't see the outer message,
+            // so compute the poster fee from the request envelope using
+            // the same fake-tx + brotli + (units+256)*1.01 formula.
             if target == Some(arb_precompiles::ARBGASINFO_ADDRESS) {
                 let input_bytes =
                     request.as_ref().input.input().cloned().unwrap_or_default();
@@ -1375,7 +1373,7 @@ where
                         from: Some(from),
                         to: Some(kind),
                         value: Some(U256::ZERO),
-                        input: alloy_primitives::Bytes::from(inner_data).into(),
+                        input: inner_data.into(),
                         ..Default::default()
                     };
                     let inner_req: RpcTxReq<<Rpc as RpcConvert>::Network> = inner_request.into();

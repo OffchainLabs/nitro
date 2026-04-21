@@ -3,7 +3,7 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot, root_slot,
+    current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
     vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
     ROOT_STORAGE_KEY,
 };
@@ -226,7 +226,7 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let timeout = sload_field(input, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
-    // Match Nitro: OpenRetryable returns nil if timeout == 0 OR timeout < currentTime.
+    // Ticket is missing or already expired.
     if timeout_u64 == 0 || timeout_u64 < current_timestamp {
         return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
     }

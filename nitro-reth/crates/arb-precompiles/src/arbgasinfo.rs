@@ -322,10 +322,9 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
 
-    // Nitro reads `evm.Context.BaseFeeInBlock ?? BaseFee`. Reth zeros
-    // the BlockEnv basefee for eth_call without a gas price, so when
-    // we see 0 we fall back to the storage slot (written by StartBlock,
-    // so it always reflects the current block's basefee).
+    // Reth zeros BlockEnv basefee for eth_call without a gas price;
+    // fall back to the L2PricingState slot (written at StartBlock) so
+    // eth_call returns the current block's basefee.
     let block_basefee = U256::from(input.internals().block_env().basefee());
     load_arbos(input)?;
 
@@ -353,8 +352,7 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
     // OpenArbosState SLOAD + 2 body SLOADs (L1_PRICE_PER_UNIT, L2_MIN_BASE_FEE)
-    // + copy gas for args and 6-word return tuple. l2GasPrice comes from
-    // evm.Context.BaseFee (free). Matches Nitro burn exactly at 2418 gas.
+    // + copy gas for args and 6-word return tuple. Total 2418 gas.
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))

@@ -221,10 +221,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         },
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
-        // Nitro precompiles/ArbOwner.go::SetMaxBlockGasLimit and SetMaxTxGasLimit
-        // call L2PricingState.SetMaxPerBlockGasLimit / SetMaxPerTxGasLimit
-        // unconditionally. The fields live at slots 1 and 7 respectively in the
-        // l2pricing offset enum and exist regardless of ArbOS version.
+        // SetMax* write L2PricingState slots 1/7 unconditionally; the slots
+        // exist regardless of ArbOS version.
         SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
         SET_MAX_TX_GAS_LIMIT => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
         SET_L2_GAS_PRICING_INERTIA => match input.data.get(4..36) {
@@ -320,7 +318,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             let val = read_u32_param(data)?;
-            // Nitro stores DivCeil(percent, 2). Reader multiplies by 2 to recover the percent.
+            // Stored as DivCeil(percent, 2); the reader multiplies by 2.
             let stored = (val as u64).saturating_add(1) / 2;
             write_stylus_param(&mut input, StylusField::InitCostScalar, stored)
         }

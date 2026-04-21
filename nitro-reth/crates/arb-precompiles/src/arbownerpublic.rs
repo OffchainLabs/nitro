@@ -35,7 +35,6 @@ const GET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0x49, 0xcc, 0xda, 0xff];
 const GET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xe5, 0xa7, 0xf8, 0x93];
 const GET_COLLECT_TIPS: [u8; 4] = [0x8e, 0x34, 0xa6, 0x4d];
 
-// Default StylusParams.MaxFragmentCount (initialMaxFragmentCount in nitro).
 const INITIAL_MAX_FRAGMENT_COUNT: u8 = 2;
 // ArbOS version where MaxFragmentCount was introduced.
 const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 60;
@@ -75,8 +74,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match selector {
         GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        // Nitro precompiles/ArbOwnerPublic.go::GetInfraFeeAccount returns
-        // NetworkFeeAccount when ArbOSVersion < 6, otherwise InfraFeeAccount.
+        // ArbOS < 6 has no separate infra fee account; fall back to network.
         GET_INFRA_FEE_ACCOUNT => {
             if crate::get_arbos_version() < 6 {
                 read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
@@ -91,9 +89,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
         RECTIFY_CHAIN_OWNER => handle_rectify_chain_owner(&mut input),
-        // Nitro precompiles/ArbOwnerPublic.go does NOT version-gate any of the
-        // following; they just call the underlying state, which returns the
-        // zero value when uninitialized.
+        // Not version-gated: underlying state returns zero when uninitialized.
         IS_NATIVE_TOKEN_OWNER => handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE),
         IS_TRANSACTION_FILTERER => handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE),
         GET_ALL_NATIVE_TOKEN_OWNERS => {

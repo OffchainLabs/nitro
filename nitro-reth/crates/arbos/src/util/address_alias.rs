@@ -52,12 +52,10 @@ pub fn does_tx_type_alias(tx_type: u8) -> bool {
     matches!(tx_type, 0x65 | 0x66 | 0x68)
 }
 
-/// Whether a transaction type incurs L1 poster costs and standard fee distribution.
-///
-/// Matches Nitro's util.TxTypeHasPosterCosts: only standard EOA-signed tx types
-/// (Legacy / EIP-2930 / EIP-1559) pay poster costs. All Arbitrum-specific tx
-/// types (deposit, unsigned, contract, retry, submit-retryable, internal) skip
-/// L1 charging.
+/// Whether a transaction type incurs L1 poster costs. Only standard
+/// EOA-signed tx types (Legacy / EIP-2930 / EIP-1559) pay; all
+/// Arbitrum-specific types (deposit, unsigned, contract, retry,
+/// submit-retryable, internal) skip L1 charging.
 pub fn tx_type_has_poster_costs(tx_type: u8) -> bool {
     !matches!(
         tx_type,

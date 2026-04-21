@@ -1,8 +1,8 @@
 //! ArbOS genesis state initialization.
 //!
 //! Initializes the ArbOS system state in the database when the chain boots.
-//! This runs when the first message (Kind=11, Initialize) is received from
-//! the Nitro consensus sidecar.
+//! Runs when the first message (Kind=11, Initialize) is received from the
+//! consensus sidecar.
 
 use alloy_primitives::{address, Address, Bytes, B256, U256};
 use revm::{database::State, Database};
