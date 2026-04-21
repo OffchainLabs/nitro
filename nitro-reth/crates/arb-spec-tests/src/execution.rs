@@ -71,7 +71,10 @@ pub struct ExpectedEthCall {
     pub data: Bytes,
     #[serde(default = "default_block_tag")]
     pub at_block: String,
-    pub result: Bytes,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<Bytes>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_block_hash_of: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,10 +255,34 @@ fn verify_eth_call(client: &RpcClient, exp: &ExpectedEthCall) -> Result<(), Spec
     let got: Bytes = client
         .call("eth_call", params)
         .map_err(|e| SpecError::Assertion(format!("eth_call {}: {e}", exp.to)))?;
-    if got != exp.result {
+
+    let expected = match (&exp.result, &exp.result_block_hash_of) {
+        (Some(r), None) => r.clone(),
+        (None, Some(block_tag)) => {
+            let b: serde_json::Value = client
+                .call("eth_getBlockByNumber", serde_json::json!([block_tag, false]))
+                .map_err(|e| {
+                    SpecError::Assertion(format!("eth_getBlockByNumber {block_tag}: {e}"))
+                })?;
+            let hash_str = b.get("hash").and_then(|v| v.as_str()).ok_or_else(|| {
+                SpecError::Assertion(format!("block {block_tag} missing hash"))
+            })?;
+            let bytes = alloy_primitives::hex::decode(hash_str.trim_start_matches("0x"))
+                .map_err(|e| SpecError::Assertion(format!("decode hash {hash_str}: {e}")))?;
+            Bytes::from(bytes)
+        }
+        _ => {
+            return Err(SpecError::Assertion(format!(
+                "eth_call {}: exactly one of `result` / `result_block_hash_of` must be set",
+                exp.to
+            )))
+        }
+    };
+
+    if got != expected {
         return Err(SpecError::Assertion(format!(
             "eth_call {} at {} — got {}, want {}",
-            exp.to, exp.at_block, got, exp.result,
+            exp.to, exp.at_block, got, expected,
         )));
     }
     Ok(())
