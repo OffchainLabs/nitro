@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/cmd/transaction-filterer/pruner"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -46,6 +47,7 @@ type TransactionFiltererConfig struct {
 	ChainId   int64                    `koanf:"chain-id"`
 	Wallet    genericconf.WalletConfig `koanf:"wallet"`
 	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
+	Pruning   pruner.Config            `koanf:"pruning"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -85,6 +87,7 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	Auth:          genericconf.AuthRPCConfigDefault,
 	ChainId:       412346, // nitro-testnode chainid
 	Sequencer:     rpcclient.DefaultClientConfig,
+	Pruning:       pruner.DefaultConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -108,6 +111,7 @@ func addFlags(f *pflag.FlagSet) {
 	f.Int64("chain-id", DefaultTransactionFiltererConfig.ChainId, "chain ID of the chain being filtered")
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
+	pruner.ConfigAddOptions("pruning", f)
 }
 
 func parseConfig(args []string) (*TransactionFiltererConfig, error) {
@@ -122,6 +126,9 @@ func parseConfig(args []string) (*TransactionFiltererConfig, error) {
 
 	var config TransactionFiltererConfig
 	if err := confighelpers.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+	if err := config.Pruning.Validate(); err != nil {
 		return nil, err
 	}
 	if config.Conf.Dump {
@@ -215,6 +222,26 @@ func mainImpl() int {
 		return 1
 	}
 	defer api.StopAndWait()
+
+	if config.Pruning.Enable {
+		parentChainRPCConfigFetcher := func() *rpcclient.ClientConfig { return &config.Pruning.ParentChain }
+		parentChainRPCClient := rpcclient.NewRpcClient(parentChainRPCConfigFetcher, nil)
+		if err := parentChainRPCClient.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "error starting parent chain rpc client: %v\n", err)
+			return 1
+		}
+		defer parentChainRPCClient.Close()
+		parentChainClient := ethclient.NewClient(parentChainRPCClient)
+		defer parentChainClient.Close()
+
+		pr, err := pruner.New(&config.Pruning, parentChainClient, sequencerClient, txOpts, big.NewInt(config.ChainId))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error creating pruner: %v\n", err)
+			return 1
+		}
+		pr.Start(ctx)
+		defer pr.StopAndWait()
+	}
 
 	err = stack.Start()
 	if err != nil {
