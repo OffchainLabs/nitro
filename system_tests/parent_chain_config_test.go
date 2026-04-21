@@ -81,10 +81,10 @@ func TestParentChainEthConfigPolling(t *testing.T) {
 	}
 }
 
-// TestParentChainEthConfigForkTransition verifies that the ParentChain poller
+// TestParentChainEthConfigForkTransitionFlaky verifies that the ParentChain poller
 // detects when the parent chain transitions through a fork that changes the
 // blob schedule (e.g., Osaka -> BPO1).
-func TestParentChainEthConfigForkTransition(t *testing.T) {
+func TestParentChainEthConfigForkTransitionFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

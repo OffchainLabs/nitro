@@ -63,11 +63,6 @@ jobs:
     # Per-job hard cap so a hung test terminates with a Go stack trace rather
     # than GitHub killing the runner (which yields no useful diagnostics).
     timeout-minutes: 150
-    env:
-      # gotestsum --rerun-fails masks flakes and eats wall-clock. Only enable
-      # it on PR events so developers aren't blocked by noise; protected
-      # branches (master / merge_group) get honest signal.
-      RERUN_FAILS_FLAG: ${{ github.event_name == 'pull_request' && '--rerun-fails' || '' }}
     services:
       redis:
         image: redis
@@ -107,8 +102,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 120m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-pathdb.xml
       # --------------------- DEFAULTS MODE ---------------------
 
       - name: run tests without race detection and hash state scheme (A-batch)
@@ -116,15 +110,13 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --cover --coverprofile coverage-a.txt --test_state_scheme hash
-          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]' $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --cover --coverprofile coverage-b.txt --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]' $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
       # --------------------- PATHDB MEL MODE ---------------------
 
       - name: run tests without race detection and path state scheme (MEL)
@@ -132,8 +124,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 120m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb-mel.xml --test_mel $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-pathdb-mel.xml --test_mel
       # --------------------- DEFAULTS MEL MODE ---------------------
 
       - name: run tests without race detection and hash state scheme (A-batch, MEL)
@@ -141,15 +132,13 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel
       - name: run tests without race detection and hash state scheme (B-batch, MEL)
         if: inputs.run-defaults-b-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel $RERUN_FAILS_FLAG
-      
+          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
@@ -158,13 +147,21 @@ jobs:
 
       # --------------------- FLAKY MODE --------------------------
 
-      - name: run flaky tests
+      # Flaky tests retry once (via gotestsum.sh) and block on failure: if a test
+      # fails even after a retry, it's not just flaky — it's broken.
+      - name: run flaky tests (hash state scheme)
         if: inputs.run-flaky
-        continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --flaky
-          --junitfile test-results/junit-flaky.xml
+          --junitfile test-results/junit-flaky-hash.xml
+
+      - name: run flaky tests (path state scheme)
+        if: inputs.run-flaky
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme path --flaky
+          --junitfile test-results/junit-flaky-path.xml
 
       # --------------------- CHALLENGE MODES ---------------------
 
@@ -228,14 +225,12 @@ jobs:
         if: inputs.run-pebble-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
-          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism
       - name: run pebble tests (B-batch)
         if: inputs.run-pebble-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
-          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism $RERUN_FAILS_FLAG
-
+          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
       - name: Process JUnit XML logs
