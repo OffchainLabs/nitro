@@ -406,12 +406,6 @@ func callProgram(
 		panic(fmt.Sprintf("stylus native stack overflow (program=%v, module=%v, depth=%d)", address, moduleHash, depth))
 	}
 	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
-	if err != nil && strings.Contains(msg, "memory.grow pages exceed u16") {
-		log.Error("memory.grow pages overflow triggered")
-		if evmData.arbosVersion < 59 {
-			evm.StateDB.FilterTx()
-		}
-	}
 	if err != nil && strings.Contains(msg, "memory.fill value exceeds 8 bits") {
 		log.Info("memory.fill value overflow triggered")
 		evm.StateDB.FilterTx()
