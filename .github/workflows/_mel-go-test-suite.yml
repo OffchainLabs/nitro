@@ -1,0 +1,21 @@
+---
+name: mel-go-test-suite
+on:
+  workflow_call:
+
+# MEL test modes are gated out of default CI because they triple runner contention
+# on the shared arbitrator-ci pool. Opt in per-PR with the `test-mel` label (see
+# ci.yml) or wait for the scheduled nightly run (see nightly-ci.yml).
+jobs:
+  main:
+    strategy:
+      fail-fast: false
+      matrix:
+        test-mode: [defaults-A-MEL, defaults-B-MEL, pathdb-MEL]
+    uses: ./.github/workflows/_go-tests.yml
+    secrets: inherit
+    with:
+      run-name: ${{ matrix.test-mode }}
+      run-defaults-a-mel: ${{ matrix.test-mode == 'defaults-A-MEL' }}
+      run-defaults-b-mel: ${{ matrix.test-mode == 'defaults-B-MEL' }}
+      run-pathdb-mel: ${{ matrix.test-mode == 'pathdb-MEL' }}

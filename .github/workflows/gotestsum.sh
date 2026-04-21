@@ -22,6 +22,7 @@ consensus_execution_in_same_process_use_rpc=false
 test_mel=false
 flaky=false
 reduce_parallelism=false
+rerun_fails=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -100,6 +101,10 @@ while [[ $# -gt 0 ]]; do
       reduce_parallelism=true
       shift
       ;;
+    --rerun-fails)
+      rerun_fails=true
+      shift
+      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -115,8 +120,15 @@ if [ "$flaky" == true ]; then
   fi
 fi
 
-# Add the gotestsum flags first
-cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"./...\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
+# Add the gotestsum flags first.
+# --rerun-fails is opt-in so protected branches (master / merge_group) get honest
+# signal instead of silently hiding flakes, while PR events can still opt in via
+# the workflow to reduce developer friction. See .github/workflows/_go-tests.yml.
+gotestsum_flags="--format short-verbose --packages=\"./...\" --no-color=false"
+if [ "$rerun_fails" == true ]; then
+  gotestsum_flags="$gotestsum_flags --rerun-fails=1 --rerun-fails-max-failures=30"
+fi
+cmd="stdbuf -oL gotestsum $gotestsum_flags"
 
 if [ "$junitfile" != "" ]; then
   cmd="$cmd --junitfile \"$junitfile\""

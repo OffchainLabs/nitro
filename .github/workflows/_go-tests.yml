@@ -60,6 +60,14 @@ jobs:
   go-tests:
     name: Go tests
     runs-on: arbitrator-ci
+    # Per-job hard cap so a hung test terminates with a Go stack trace rather
+    # than GitHub killing the runner (which yields no useful diagnostics).
+    timeout-minutes: 150
+    env:
+      # gotestsum --rerun-fails masks flakes and eats wall-clock. Only enable
+      # it on PR events so developers aren't blocked by noise; protected
+      # branches (master / merge_group) get honest signal.
+      RERUN_FAILS_FLAG: ${{ github.event_name == 'pull_request' && '--rerun-fails' || '' }}
     services:
       redis:
         image: redis
@@ -82,6 +90,9 @@ jobs:
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
+          # Scale pollUntil / retryUntilFound timeouts for loaded shared CI runners.
+          # Consumed by system_tests helpers (see getTestTimeoutScale in common_test.go).
+          echo "NITRO_TEST_TIMEOUT_SCALE=2.0" >> "$GITHUB_ENV"
 
       - name: Build
         run: make -j8 build test-go-deps
@@ -95,8 +106,8 @@ jobs:
         if: inputs.run-pathdb
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml
+          --tags cionly --timeout 120m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb.xml $RERUN_FAILS_FLAG
 
       # --------------------- DEFAULTS MODE ---------------------
 
@@ -105,14 +116,14 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --cover --coverprofile coverage-a.txt --test_state_scheme hash
-          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
+          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]' $RERUN_FAILS_FLAG
 
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --cover --coverprofile coverage-b.txt --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
+          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]' $RERUN_FAILS_FLAG
 
       # --------------------- PATHDB MEL MODE ---------------------
 
@@ -120,8 +131,8 @@ jobs:
         if: inputs.run-pathdb-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb-mel.xml --test_mel
+          --tags cionly --timeout 120m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-mel.xml --test_mel $RERUN_FAILS_FLAG
 
       # --------------------- DEFAULTS MEL MODE ---------------------
 
@@ -130,14 +141,14 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel
+          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel $RERUN_FAILS_FLAG
 
       - name: run tests without race detection and hash state scheme (B-batch, MEL)
         if: inputs.run-defaults-b-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel
+          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel $RERUN_FAILS_FLAG
       
       - name: run redis tests
         if: inputs.run-defaults-a
@@ -216,14 +227,14 @@ jobs:
       - name: run pebble tests (A-batch)
         if: inputs.run-pebble-a
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
+          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism $RERUN_FAILS_FLAG
 
       - name: run pebble tests (B-batch)
         if: inputs.run-pebble-b
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
+          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism $RERUN_FAILS_FLAG
 
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
