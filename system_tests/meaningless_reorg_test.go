@@ -19,7 +19,6 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
-	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.nodeConfig.BatchPoster.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -46,7 +45,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
+	metadata, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(1)
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
 	if metadata.ParentChainBlock != originalBatchBlock {
@@ -59,18 +58,32 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 	// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 	// Therefore, we make a bunch of small blocks to prevent the code from running.
-	for j := uint64(0); j < 70; j++ {
-		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info)
-	}
+	builder.L1.AdvanceBlocks(t, 70, builder.L1Info)
 
 	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "before reorg")
 
+	currHead, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
 	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
 	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
 	Require(t, err)
 
-	// Produce a new l1Block so that the batch ends up in a different l1Block than before
-	builder.L1.TransferBalance(t, "User", "User", common.Big1, builder.L1Info)
+	// Check that reorg was processed so that correct pending nonce is set
+	for i := 0; ; i++ {
+		if i >= 500 {
+			Fatal(t, "Failed to see reorg in L1")
+		}
+		newHead, err := builder.L1.Client.BlockNumber(ctx)
+		Require(t, err)
+		if newHead < currHead {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	builder.L1.RecalibrateNonce(t, builder.L1Info)
+	// Produce new l1Blocks so that the batch ends up in a different l1Block than before
+	// #nosec G115
+	builder.L1.AdvanceBlocks(t, int(currHead-parentBlock.NumberU64()+5), builder.L1Info)
 
 	tx, err = seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, common.Big0, common.Big0)
 	Require(t, err)
@@ -88,17 +101,25 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch reorg from L1")
 		}
-		metadata, err = builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			batchCount, err := builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+			Require(t, err)
+			if batchCount <= 1 {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+		}
+		metadata, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(1)
 		Require(t, err)
 		if metadata.ParentChainBlock == newBatchBlock {
 			break
 		} else if metadata.ParentChainBlock != originalBatchBlock {
-			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", metadata.ParentChainBlock)
+			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", newBatchBlock)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, _, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
 	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)

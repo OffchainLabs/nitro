@@ -2,7 +2,8 @@ FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
-    git clone https://github.com/emscripten-core/emsdk.git && \
+    git clone --depth 1 --branch 3.1.46 https://github.com/emscripten-core/emsdk.git && \
+    test "$(git -C emsdk rev-parse HEAD)" = "93360d3670018769b424e4e8f1d3d9b26d32c977" && \
     cd emsdk && \
     ./emsdk install 3.1.7 && \
     ./emsdk activate 3.1.7
@@ -67,7 +68,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.25.8.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.25.9.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -301,6 +302,7 @@ COPY --from=node-builder  /workspace/target/bin/anytrusttool    /usr/local/bin/
 RUN ln -s /usr/local/bin/anytrusttool /usr/local/bin/datool
 COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/transaction-filterer  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/filtering-report  /usr/local/bin/
 COPY --from=contracts-builder  /workspace/contracts/  /contracts/
 COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -34,7 +35,10 @@ import (
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
@@ -47,11 +51,12 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm64         string   `koanf:"arm64"`
-	Amd64         string   `koanf:"amd64"`
-	Host          string   `koanf:"host"`
-	ExtraArchs    []string `koanf:"extra-archs"`
-	AllowFallback bool     `koanf:"allow-fallback"`
+	Arm64           string   `koanf:"arm64"`
+	Amd64           string   `koanf:"amd64"`
+	Host            string   `koanf:"host"`
+	ExtraArchs      []string `koanf:"extra-archs"`
+	AllowFallback   bool     `koanf:"allow-fallback"`
+	NativeStackSize uint64   `koanf:"native-stack-size"`
 
 	wasmTargets []rawdb.WasmTarget
 }
@@ -80,15 +85,22 @@ func (c *StylusTargetConfig) Validate() error {
 			return targets[i] < targets[j]
 		})
 	c.wasmTargets = targets
+	if c.NativeStackSize != 0 {
+		if c.NativeStackSize < programs.MinNativeStackSize || c.NativeStackSize > programs.MaxNativeStackSize {
+			return fmt.Errorf("native-stack-size must be between %d and %d bytes (or 0 for default), got %d",
+				programs.MinNativeStackSize, programs.MaxNativeStackSize, c.NativeStackSize)
+		}
+	}
 	return nil
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64:         programs.DefaultTargetDescriptionArm,
-	Amd64:         programs.DefaultTargetDescriptionX86,
-	Host:          "",
-	ExtraArchs:    []string{string(rawdb.TargetWavm)},
-	AllowFallback: true,
+	Arm64:           programs.DefaultTargetDescriptionArm,
+	Amd64:           programs.DefaultTargetDescriptionX86,
+	Host:            "",
+	ExtraArchs:      []string{string(rawdb.TargetWavm)},
+	AllowFallback:   true,
+	NativeStackSize: 0, // 0 means use the Wasmer default (1 MB)
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -97,6 +109,7 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
+	f.Uint64(prefix+".native-stack-size", DefaultStylusTargetConfig.NativeStackSize, "initial native stack size in bytes for Wasmer coroutines used by Stylus execution (0 = default 1MB)")
 }
 
 type TxIndexerConfig struct {
@@ -120,26 +133,71 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
+type TransactionFilteringConfig struct {
+	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
+	EnableETHCallFilter            bool                          `koanf:"enable-ethcall-filter"`
+	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
+	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
+}
+
+func (c *TransactionFilteringConfig) Validate() error {
+	if err := c.EventFilter.Validate(); err != nil {
+		return fmt.Errorf("invalid event filter config: %w", err)
+	}
+	if err := c.AddressFilter.Validate(); err != nil {
+		return fmt.Errorf("error validating address-filter config: %w", err)
+	}
+	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
+	}
+	if err := c.FilteringReportRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
+	}
+	return nil
+}
+
+var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	DisableDelayedSequencingFilter: false,
+	EnableETHCallFilter:            true,
+	EventFilter:                    eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                  addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
+}
+
+func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
+	f.Bool(prefix+".enable-ethcall-filter", DefaultTransactionFilteringConfig.EnableETHCallFilter, "enable address filtering for eth_estimateGas and eth_call")
+	EventFilterAddOptions(prefix+".event-filter", f)
+	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
+}
+
 type Config struct {
-	ParentChainReader           headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig        `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig    `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig        `koanf:"forwarder"`
-	ForwardingTarget            string                 `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string               `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig          `koanf:"caching"`
-	RPC                         arbitrum.Config        `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig        `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                   `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig      `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig     `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64                 `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64                 `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig      `koanf:"vmtrace"`
-	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
-	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
-	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
+	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig        `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig         `koanf:"tx-pre-checker" reload:"hot"`
+	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
+	Forwarder                   ForwarderConfig            `koanf:"forwarder"`
+	ForwardingTarget            string                     `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                   `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig              `koanf:"caching"`
+	RPC                         arbitrum.Config            `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig            `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                       `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig          `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig         `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                     `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                     `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig          `koanf:"vmtrace"`
+	ExposeMultiGas              bool                       `koanf:"expose-multi-gas"`
+	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
+	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
+	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
 
 	forwardingTarget string
 }
@@ -161,6 +219,9 @@ func (c *Config) Validate() error {
 	}
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
+	}
+	if err := c.TransactionFiltering.Validate(); err != nil {
+		return err
 	}
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
@@ -184,6 +245,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
+	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
@@ -191,6 +253,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
+	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
@@ -220,6 +283,7 @@ var ConfigDefault = Config{
 	ForwardingTarget:          "",
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
+	TransactionFiltering:      DefaultTransactionFilteringConfig,
 	Caching:                   DefaultCachingConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	SyncMonitor:               DefaultSyncMonitorConfig,
@@ -230,6 +294,7 @@ var ConfigDefault = Config{
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
+	DisableArbOwnerEthCall:      false,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -265,6 +330,9 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
+	filteringReportRPCClient *FilteringReportRPCClient
+	AddressFilterService     *addressfilter.FilterService
+	EventFilter              *eventfilter.EventFilter
 }
 
 func CreateExecutionNode(
@@ -279,7 +347,30 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter)
+	var err error
+
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
+	if err != nil {
+		return nil, err
+	}
+	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create address filter service: %w", err)
+	}
+	var addressChecker state.AddressChecker
+	if addressFilterService != nil {
+		addressChecker = addressFilterService.GetAddressChecker()
+	}
+
+	var filteringReportRPCClient *FilteringReportRPCClient
+	if config.TransactionFiltering.FilteringReportRPCClient.URL != "" {
+		filteringReportConfigFetcher := func() *rpcclient.ClientConfig {
+			return &configFetcher.Get().TransactionFiltering.FilteringReportRPCClient
+		}
+		filteringReportRPCClient = NewFilteringReportRPCClient(filteringReportConfigFetcher)
+	}
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -291,7 +382,6 @@ func CreateExecutionNode(
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
-	var err error
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
@@ -305,7 +395,14 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, seqParentChain)
+		if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+			filtererConfigFetcher := func() *rpcclient.ClientConfig {
+				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
+			}
+			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		}
+		sequencer, err = NewSequencer(
+			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
 		if err != nil {
 			return nil, err
 		}
@@ -333,10 +430,15 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme)
+	var backendTxFilterer core.TxFilterer
+	if config.TransactionFiltering.EnableETHCallFilter {
+		backendTxFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+	}
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme, backendTxFilterer)
 	if err != nil {
 		return nil, err
 	}
+	txPreChecker.SetAPIBackend(backend.APIBackend())
 
 	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 
@@ -368,6 +470,9 @@ func CreateExecutionNode(
 		ParentChain:              seqParentChain,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		filteringReportRPCClient: filteringReportRPCClient,
+		AddressFilterService:     addressFilterService,
+		EventFilter:              eventFilter,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -442,6 +547,13 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.Promis
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.configFetcher.Get()
+	if config.DisableArbOwnerEthCall {
+		ownerPC := gethhook.GetOwnerPrecompile()
+		if ownerPC == nil {
+			return fmt.Errorf("cannot enable disable-arbowner-ethcall: ArbOwner precompile not found")
+		}
+		ownerPC.SetDisableEthCall(true)
+	}
 	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
@@ -458,6 +570,11 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	err = n.Backend.APIBackend().SetSyncBackend(n.SyncMonitor)
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
+	}
+	if n.AddressFilterService != nil {
+		if err := n.AddressFilterService.Initialize(ctx); err != nil {
+			return fmt.Errorf("error initializing address filter service: %w", err)
+		}
 	}
 
 	return nil
@@ -478,6 +595,16 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		if err := n.consensusRPCClient.Start(ctx); err != nil {
 			return fmt.Errorf("error starting consensus rpc client: %w", err)
 		}
+	}
+
+	if n.filteringReportRPCClient != nil {
+		if err := n.filteringReportRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting filtering report RPC client: %w", err)
+		}
+	}
+
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.Start(ctx)
 	}
 
 	err = n.ExecEngine.Start(ctx)
@@ -503,6 +630,10 @@ func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
 		return
 	}
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.StopAndWait()
+	}
+
 	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
@@ -521,6 +652,9 @@ func (n *ExecutionNode) StopAndWait() {
 	}
 	if n.consensusRPCClient != nil {
 		n.consensusRPCClient.StopAndWait()
+	}
+	if n.filteringReportRPCClient != nil {
+		n.filteringReportRPCClient.StopAndWait()
 	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {

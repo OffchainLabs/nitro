@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -53,7 +54,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	// Wait for headMelState to be finalized to avoid initializing delayed message backlog
+	// Wait for headMelState to be finalized
 	for {
 		latestFinalized, err := l1Reader.Client().BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 		Require(t, err)
@@ -64,7 +65,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	reorgEventChan := make(chan uint64, 1)
@@ -197,7 +199,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
@@ -338,7 +341,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	reorgEventChan := make(chan uint64, 1)
@@ -530,6 +534,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
+		DontParalellise().
 		WithDelayBuffer(threshold)
 
 	builder.nodeConfig.MessageExtraction.Enable = true
@@ -626,32 +631,27 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
-	{
-		timeout := time.NewTimer(time.Minute)
-		defer timeout.Stop()
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			// Verify that both MEL and TxStreamer detected the reorg
-			if logHandler.WasLogged("MEL detected L1 reorg") && logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
-				break
-			}
-			select {
-			case <-tick.C:
-			case <-timeout.C:
-				t.Fatalf("timed out waiting for MEL and TransactionStreamer to detect reorg")
-			}
+	// Wait for the reorg to complete: MEL and TxStreamer reorg logs, then check balance.
+	var reorgLogsFound bool
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if logHandler.WasLogged("MEL detected L1 reorg") &&
+			logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+			reorgLogsFound = true
+			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	// Verify that after reorg handling, resulting balance in the account is correct
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if !reorgLogsFound {
+		t.Fatal("timed out waiting for reorg logs")
+	}
+	expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
+	bal, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
 	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+		t.Fatalf("BalanceAt: %v", err)
 	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	if bal.Cmp(expectedBalance) != 0 {
+		t.Fatalf("balance=%v, want %v", bal, expectedBalance)
 	}
 }
 
@@ -690,7 +690,8 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	// TODO: tx streamer to be used here when ready to run the node using mel thus replacing inbox reader-tracker code
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
@@ -749,15 +750,9 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	if newInitialState.ParentChainBlockHash != lastState.ParentChainBlockHash {
 		t.Fatalf("head mel state ParentChainBlockHash mismatch. Want: %s, Have: %s", lastState.ParentChainBlockHash, newInitialState.ParentChainBlockHash)
 	}
-	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, extractor.GetFinalizedDelayedMessagesRead)
-	Require(t, err)
-	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
-	Require(t, err)
-	newInitialState.SetDelayedMessageBacklog(delayedMessageBacklog)
-	newInitialState.SetReadCountFromBacklog(newInitialState.DelayedMessagesSeen) // skip checking against accumulator- not the purpose of this test
 	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagesSeen; i++ {
-		// Validates the pending unread delayed messages via accumulator
-		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(newInitialState, newInitialState.DelayedMessagesRead)
+		// Validates the delayed messages saved by MEL match the inbox tracker
+		delayedMsgSavedByMel, err := extractor.GetDelayedMessage(i)
 		Require(t, err)
 		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
@@ -765,6 +760,263 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
 		t.Logf("validated delayed message of index: %d", i)
+	}
+}
+
+// TestMELMigrationFromLegacyNode verifies that a node previously running with
+// the legacy inbox reader/tracker can be seamlessly migrated to MEL.
+//
+// Test plan:
+//
+//	Phase 1 — Legacy node operation (MEL disabled):
+//	  1. Build a sequencer node with MEL disabled
+//	  2. Send L2 transactions and post a batch
+//	  3. Send delayed messages (via L1 delayed inbox) and post a batch that consumes them
+//	  4. Send additional delayed messages WITHOUT posting a batch, so that
+//	     delayedSeen > delayedRead (unread delayed messages exist)
+//	  5. Record the pre-migration state (delayed counts, batch count, msg count)
+//	  6. Advance L1 until the finalized block is past all legacy data
+//
+//	Phase 2 — Restart with MEL enabled:
+//	  7. Enable MEL in config and restart the node (RestartL2Node preserves the DB)
+//	  8. The migration in validateAndInitializeDBForMEL should:
+//	     - Read legacy batch/delayed counts from old DB schema keys
+//	     - Query the on-chain bridge contract for the authoritative delayed message count
+//	     - Construct and save an initial MEL state with correct counts and accumulator
+//	  9. Wait for MEL to catch up to the latest parent chain block
+//	 10. Verify MEL state has batch/msg counts matching pre-migration batched data
+//
+//	Phase 3 — Post-migration operations:
+//	 11. Wait for the execution layer to fully process MEL extracted messages
+//	 12. Send new L2 transactions (verifies sequencer works after migration)
+//	 13. Send ETH deposits as delayed messages (verifies delayed inbox works)
+//	 14. Post a batch that consumes the unread legacy delayed messages + new deposits
+//	 15. Wait for MEL to process the new batch
+//	 16. Verify MEL state shows increased counts for batches, messages, and delayed reads
+func TestMELMigrationFromLegacyNode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Phase 1: Build node with MEL disabled (legacy mode)
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithDelayBuffer(0)
+	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.MessageExtraction.Enable = false
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Send some L2 transactions
+	for i := 0; i < 5; i++ {
+		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+	}
+
+	// Post a batch to include these L2 txs
+	forceBatchPost(t, ctx, builder)
+
+	// Send delayed messages via L1 and wait for inbox reader to process them
+	delayedInboxContract, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+	// Capture streamer message count before sending delayed messages so we can
+	// detect when the delayed sequencer has processed them.
+	preBatchMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	sendDelayedMessagesViaL1(t, ctx, builder, delayedInboxContract, 5)
+
+	// Wait for the delayed sequencer to process the delayed messages into L2 messages
+	// in the streamer. sendDelayedMessagesViaL1 only waits for the inbox tracker to see
+	// them, not for the delayed sequencer to sequence them.
+	{
+		timeout := time.NewTimer(30 * time.Second)
+		defer timeout.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+			Require(t, err)
+			if msgCount > preBatchMsgCount {
+				break
+			}
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				t.Fatalf("timed out waiting for delayed messages to be sequenced into streamer: msgCount=%d, preBatchMsgCount=%d", msgCount, preBatchMsgCount)
+			}
+		}
+	}
+
+	// Post a batch to consume some of these delayed messages
+	forceBatchPost(t, ctx, builder)
+
+	// Send MORE delayed messages WITHOUT posting batches (to create delayedSeen > delayedRead)
+	sendDelayedMessagesViaL1(t, ctx, builder, delayedInboxContract, 3)
+
+	// Record pre-migration state
+	preMigrationDelayedCount, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	Require(t, err)
+	preMigrationBatchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+	Require(t, err)
+	lastBatchMeta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(preMigrationBatchCount - 1)
+	Require(t, err)
+	preMigrationDelayedRead := lastBatchMeta.DelayedMessageCount
+
+	t.Logf("Pre-migration state: delayedCount=%d, delayedRead=%d, batchCount=%d, batchedMsgCount=%d",
+		preMigrationDelayedCount, preMigrationDelayedRead, preMigrationBatchCount, lastBatchMeta.MessageCount)
+
+	// Verify we have unread delayed messages (delayedSeen > delayedRead)
+	if preMigrationDelayedCount <= preMigrationDelayedRead {
+		t.Fatalf("Expected unread delayed messages: delayedCount=%d should be > delayedRead=%d",
+			preMigrationDelayedCount, preMigrationDelayedRead)
+	}
+
+	// Advance L1 until the finalized block is past the last batch's parent chain block.
+	// This ensures the migration will include all legacy data.
+	lastBatchBlock := lastBatchMeta.ParentChainBlock
+	{
+		timeout := time.NewTimer(30 * time.Second)
+		defer timeout.Stop()
+		for {
+			finalizedHeader, err := builder.L1.Client.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+			Require(t, err)
+			if finalizedHeader.Number.Uint64() >= lastBatchBlock {
+				t.Logf("Finalized block %d >= last batch block %d", finalizedHeader.Number.Uint64(), lastBatchBlock)
+				break
+			}
+			AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 10)
+			select {
+			case <-timeout.C:
+				t.Fatalf("timed out waiting for finalized block to catch up to last batch block %d", lastBatchBlock)
+			default:
+			}
+		}
+	}
+
+	// Phase 2: Restart with MEL enabled
+	builder.nodeConfig.MessageExtraction.Enable = true
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+	builder.RestartL2Node(t)
+
+	// Wait for MEL to catch up
+	select {
+	case <-builder.L2.ConsensusNode.MessageExtractor.CaughtUp():
+		t.Log("MEL caught up after migration")
+	case <-time.After(2 * time.Minute):
+		t.Fatal("timed out waiting for MEL to catch up after migration")
+	}
+
+	// Verify migration state
+	melExtractor := builder.L2.ConsensusNode.MessageExtractor
+	headState, err := melExtractor.GetHeadState()
+	Require(t, err)
+	t.Logf("Post-migration MEL state: delayedSeen=%d, delayedRead=%d, batchCount=%d, msgCount=%d, parentChainBlock=%d",
+		headState.DelayedMessagesSeen, headState.DelayedMessagesRead, headState.BatchCount, headState.MsgCount, headState.ParentChainBlockNumber)
+
+	if headState.BatchCount < preMigrationBatchCount {
+		t.Fatalf("MEL batch count %d is less than pre-migration batch count %d", headState.BatchCount, preMigrationBatchCount)
+	}
+	// Compare MEL msg count against the last batch's message count (not TxStreamer's count,
+	// which includes unbatched messages from the delayed sequencer that MEL hasn't seen on L1 yet).
+	preMigrationBatchedMsgCount := uint64(lastBatchMeta.MessageCount)
+	if headState.MsgCount < preMigrationBatchedMsgCount {
+		t.Fatalf("MEL msg count %d is less than pre-migration batched msg count %d", headState.MsgCount, preMigrationBatchedMsgCount)
+	}
+
+	// Phase 3: Post-migration operations
+	// Wait for the execution engine to fully process all messages including any
+	// delayed messages being sequenced after migration. We wait until both the
+	// consensus message count and execution head stabilize together.
+	{
+		timeout := time.NewTimer(30 * time.Second)
+		defer timeout.Stop()
+		tick := time.NewTicker(200 * time.Millisecond)
+		defer tick.Stop()
+		var lastMsgCount arbutil.MessageIndex
+		stableCount := 0
+		for {
+			msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+			Require(t, err)
+			execHead, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+			if err == nil && execHead+1 >= msgCount && msgCount == lastMsgCount {
+				stableCount++
+				if stableCount >= 3 {
+					break
+				}
+			} else {
+				stableCount = 0
+			}
+			lastMsgCount = msgCount
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				currentHead, _ := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+				t.Fatalf("timed out waiting for execution to stabilize: execHead=%d, msgCount=%d", currentHead, msgCount)
+			}
+		}
+	}
+	// Recalibrate L2 nonces — the restarted node's execution state may differ from
+	// pre-migration because MEL only processes batched messages, not unbatched ones.
+	builder.L2.RecalibrateNonce(t, builder.L2Info)
+	ownerNonce := builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Load()
+	t.Logf("Owner nonce after recalibration: %d", ownerNonce)
+
+	// Send more L2 transactions
+	for i := 0; i < 3; i++ {
+		builder.L2.TransferBalance(t, "Owner", "User2", big.NewInt(1e12), builder.L2Info)
+	}
+
+	// Send ETH deposits as delayed messages post-migration (deposits don't need L2 nonce management)
+	for i := 0; i < 2; i++ {
+		depositTxOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+		depositTxOpts.Value = big.NewInt(1e16)
+		l1tx, err := delayedInboxContract.DepositEth439370b1(&depositTxOpts)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, builder.L1.Client, l1tx)
+		Require(t, err)
+	}
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+
+	// Post batches (which should consume the unread delayed messages + new deposits)
+	forceBatchPost(t, ctx, builder)
+
+	// Wait for MEL to process the new batch
+	postBatchState, err := melExtractor.GetHeadState()
+	Require(t, err)
+	timeout := time.NewTimer(2 * time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for postBatchState.BatchCount <= headState.BatchCount {
+		select {
+		case <-tick.C:
+			postBatchState, err = melExtractor.GetHeadState()
+			Require(t, err)
+		case <-timeout.C:
+			t.Fatalf("timed out waiting for MEL to process new batch. current batch count: %d, expected > %d",
+				postBatchState.BatchCount, headState.BatchCount)
+		}
+	}
+
+	t.Logf("Final MEL state: delayedSeen=%d, delayedRead=%d, batchCount=%d, msgCount=%d",
+		postBatchState.DelayedMessagesSeen, postBatchState.DelayedMessagesRead, postBatchState.BatchCount, postBatchState.MsgCount)
+
+	// Verify counts increased
+	if postBatchState.BatchCount <= headState.BatchCount {
+		t.Fatalf("MEL batch count did not increase: %d", postBatchState.BatchCount)
+	}
+	if postBatchState.MsgCount <= headState.MsgCount {
+		t.Fatalf("MEL msg count did not increase: %d", postBatchState.MsgCount)
+	}
+	// The new batch should have consumed the unread delayed messages from migration + new delayed messages
+	if postBatchState.DelayedMessagesRead <= preMigrationDelayedRead {
+		t.Fatalf("MEL delayed messages read did not increase past pre-migration: %d <= %d",
+			postBatchState.DelayedMessagesRead, preMigrationDelayedRead)
 	}
 }
 
@@ -854,6 +1106,68 @@ func forceDelayedBatchPosting(
 
 	CheckBatchCount(t, builder, initialBatchCount+1)
 	// Reset the max delay.
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+}
+
+// sendDelayedMessagesViaL1 sends numMsgs delayed messages through the L1 delayed inbox,
+// advances L1, and waits for the inbox reader to process them.
+func sendDelayedMessagesViaL1(
+	t *testing.T,
+	ctx context.Context,
+	builder *NodeBuilder,
+	delayedInbox *bridgegen.Inbox,
+	numMsgs int,
+) {
+	t.Helper()
+	countBefore, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	Require(t, err)
+	for i := 0; i < numMsgs; i++ {
+		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(int64(i+1)*1e6), nil)
+		txBytes, err := tx.MarshalBinary()
+		Require(t, err)
+		txWrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txBytes...)
+		usertxopts := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+		l1tx, err := delayedInbox.SendL2Message(&usertxopts, txWrapped)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, builder.L1.Client, l1tx)
+		Require(t, err)
+	}
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	waitForDelayedCount(t, ctx, builder, countBefore+uint64(numMsgs)) // #nosec G115
+}
+
+// waitForDelayedCount polls the inbox tracker until the delayed message count reaches the expected value.
+func waitForDelayedCount(t *testing.T, ctx context.Context, builder *NodeBuilder, expected uint64) {
+	t.Helper()
+	timeout := time.NewTimer(30 * time.Second)
+	defer timeout.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		count, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+		Require(t, err)
+		if count >= expected {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			t.Fatalf("timed out waiting for delayed count: got %d, want %d", count, expected)
+		}
+	}
+}
+
+// forceBatchPost triggers a batch post and resets MaxDelay back to high.
+func forceBatchPost(t *testing.T, ctx context.Context, builder *NodeBuilder) {
+	t.Helper()
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
+	if !posted {
+		t.Fatal("sequencer batch was not posted")
+	}
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
 	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 }
