@@ -497,9 +497,7 @@ fn read_gas_constraints_length_free(
     Ok(val.data.try_into().unwrap_or(0))
 }
 
-fn read_gas_constraints_length(
-    input: &mut PrecompileInput<'_>,
-) -> Result<u64, PrecompileError> {
+fn read_gas_constraints_length(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
     let l2_subspace_key = derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE);
     let gas_constraints_subspace_key = derive_subspace_key(l2_subspace_key.as_slice(), &[0]);
     let len_slot = vector_length_slot(&gas_constraints_subspace_key);

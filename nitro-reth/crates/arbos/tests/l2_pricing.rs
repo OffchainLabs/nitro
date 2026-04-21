@@ -131,8 +131,13 @@ fn multi_gas_constraints_exponents() {
 
     p.add_multi_gas_constraint(100, 10, 100, &weights(&[(ResourceKind::Computation, 1)]))
         .unwrap();
-    p.add_multi_gas_constraint(40, 20, 200, &weights(&[(ResourceKind::StorageAccessRead, 2)]))
-        .unwrap();
+    p.add_multi_gas_constraint(
+        40,
+        20,
+        200,
+        &weights(&[(ResourceKind::StorageAccessRead, 2)]),
+    )
+    .unwrap();
 
     let exps = p.calc_multi_gas_constraints_exponents().unwrap();
     assert_eq!(exps[ResourceKind::Computation as usize], 1000);

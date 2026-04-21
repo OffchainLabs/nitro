@@ -260,13 +260,17 @@ fn verify_eth_call(client: &RpcClient, exp: &ExpectedEthCall) -> Result<(), Spec
         (Some(r), None) => r.clone(),
         (None, Some(block_tag)) => {
             let b: serde_json::Value = client
-                .call("eth_getBlockByNumber", serde_json::json!([block_tag, false]))
+                .call(
+                    "eth_getBlockByNumber",
+                    serde_json::json!([block_tag, false]),
+                )
                 .map_err(|e| {
                     SpecError::Assertion(format!("eth_getBlockByNumber {block_tag}: {e}"))
                 })?;
-            let hash_str = b.get("hash").and_then(|v| v.as_str()).ok_or_else(|| {
-                SpecError::Assertion(format!("block {block_tag} missing hash"))
-            })?;
+            let hash_str = b
+                .get("hash")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| SpecError::Assertion(format!("block {block_tag} missing hash")))?;
             let bytes = alloy_primitives::hex::decode(hash_str.trim_start_matches("0x"))
                 .map_err(|e| SpecError::Assertion(format!("decode hash {hash_str}: {e}")))?;
             Bytes::from(bytes)

@@ -2081,8 +2081,8 @@ where
                 let coinbase = self.arb_ctx.coinbase;
                 let net_acct = self.arb_ctx.network_fee_account;
                 let compute_gas = gas_used.saturating_sub(p.poster_gas);
-                let tip_to_network = U256::from(p.coinbase_tip_per_gas)
-                    .saturating_mul(U256::from(compute_gas));
+                let tip_to_network =
+                    U256::from(p.coinbase_tip_per_gas).saturating_mul(U256::from(compute_gas));
                 if coinbase != net_acct && !tip_to_network.is_zero() {
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     if get_balance(db, coinbase) >= tip_to_network {

@@ -123,11 +123,8 @@ fn handle_events(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let result_words = (out.len() as u64).div_ceil(32);
     let basic_log_gas = LOG_GAS + LOG_TOPIC_GAS * 2 + LOG_DATA_GAS * 32;
     let mixed_log_gas = LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * 64;
-    let gas_cost = SLOAD_GAS
-        + COPY_GAS * arg_words
-        + basic_log_gas
-        + mixed_log_gas
-        + COPY_GAS * result_words;
+    let gas_cost =
+        SLOAD_GAS + COPY_GAS * arg_words + basic_log_gas + mixed_log_gas + COPY_GAS * result_words;
 
     Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
@@ -140,8 +137,18 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     }
     let zero_value = B256::ZERO;
     emit_basic_event(input, false, zero_value);
-    emit_mixed_event(input, true, false, zero_value, ARBDEBUG_ADDRESS, input.caller);
-    Ok(PrecompileOutput::new(input.gas.min(3000), Vec::new().into()))
+    emit_mixed_event(
+        input,
+        true,
+        false,
+        zero_value,
+        ARBDEBUG_ADDRESS,
+        input.caller,
+    );
+    Ok(PrecompileOutput::new(
+        input.gas.min(3000),
+        Vec::new().into(),
+    ))
 }
 
 fn handle_custom_revert(input: &PrecompileInput<'_>) -> PrecompileResult {
@@ -164,11 +171,7 @@ fn sload(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Precompile
     Ok(v.data)
 }
 
-fn sstore(
-    input: &mut PrecompileInput<'_>,
-    slot: U256,
-    value: U256,
-) -> Result<(), PrecompileError> {
+fn sstore(input: &mut PrecompileInput<'_>, slot: U256, value: U256) -> Result<(), PrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)

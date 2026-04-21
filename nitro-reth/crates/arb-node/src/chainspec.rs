@@ -64,7 +64,13 @@ impl ChainSpecParser for ArbChainSpecParser {
         arb_precompiles::set_allow_debug_precompiles(allow_debug);
 
         if initial_arbos > 0 && chain_id > 0 {
-            inject_arbos_alloc(&mut value, chain_id, initial_arbos, initial_owner, arbos_init)?;
+            inject_arbos_alloc(
+                &mut value,
+                chain_id,
+                initial_arbos,
+                initial_owner,
+                arbos_init,
+            )?;
         }
 
         let augmented = serde_json::to_string(&value)?;

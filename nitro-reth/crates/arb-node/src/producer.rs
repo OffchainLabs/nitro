@@ -295,9 +295,9 @@ where
         // Apply cached ArbOS Init during block 1.
         // Two cases:
         //   - ArbOS not yet initialized (no chainspec alloc): full init from message.
-        //   - ArbOS already initialized (chainspec did it with placeholder L1 base
-        //     fee): override the L1 price_per_unit slot with the value from the
-        //     init message, since chainspec has no way to know the real value.
+        //   - ArbOS already initialized (chainspec did it with placeholder L1 base fee): override
+        //     the L1 price_per_unit slot with the value from the init message, since chainspec has
+        //     no way to know the real value.
         if let Some(init_msg) = self.cached_init.lock().take() {
             if !genesis::is_arbos_initialized(&mut db) {
                 info!(
@@ -322,8 +322,7 @@ where
                     "ArbOS already initialized; overriding L1 price_per_unit from Init message"
                 );
                 let state_ptr = &mut db as *mut _;
-                if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                {
+                if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
                     let _ = arb_state
                         .l1_pricing_state
                         .set_price_per_unit(init_msg.initial_l1_base_fee);

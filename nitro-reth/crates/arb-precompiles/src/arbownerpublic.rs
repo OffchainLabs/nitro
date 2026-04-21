@@ -130,9 +130,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            handle_max_stylus_fragments(&mut input)
-        }
+        GET_MAX_STYLUS_CONTRACT_FRAGMENTS => handle_max_stylus_fragments(&mut input),
         GET_COLLECT_TIPS => handle_get_collect_tips(&mut input),
         _ => return crate::burn_all_revert(gas_limit),
     };

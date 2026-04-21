@@ -531,7 +531,8 @@ where
         };
 
         let aliased_from = apply_l1_to_l2_alias(sender);
-        let max_submission_fee = arbos::retryables::retryable_submission_fee(data.len(), l1_base_fee);
+        let max_submission_fee =
+            arbos::retryables::retryable_submission_fee(data.len(), l1_base_fee);
         let retry_to = if to == Address::ZERO { None } else { Some(to) };
 
         let gas_cap = self.inner.gas_cap();
@@ -1249,8 +1250,7 @@ where
             // so compute the poster fee from the request envelope using
             // the same fake-tx + brotli + (units+256)*1.01 formula.
             if target == Some(arb_precompiles::ARBGASINFO_ADDRESS) {
-                let input_bytes =
-                    request.as_ref().input.input().cloned().unwrap_or_default();
+                let input_bytes = request.as_ref().input.input().cloned().unwrap_or_default();
                 if input_bytes.len() == 4 && input_bytes.as_ref() == SEL_GET_CURRENT_TX_L1_FEES {
                     return self.compute_eth_call_current_tx_l1_fees(
                         request,
@@ -1327,8 +1327,7 @@ where
                                 .map_err(|e| EthApiError::Internal(e.into()))?
                                 .unwrap_or_default())
                         };
-                        let l1_price =
-                            read(subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+                        let l1_price = read(subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
                         let basefee = read(subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
                         let min_basefee =
                             read(subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
@@ -1365,10 +1364,7 @@ where
                     } else {
                         TxKind::Call(inner_to)
                     };
-                    let from = request
-                        .as_ref()
-                        .from
-                        .unwrap_or(Address::ZERO);
+                    let from = request.as_ref().from.unwrap_or(Address::ZERO);
                     let inner_request = TransactionRequest {
                         from: Some(from),
                         to: Some(kind),

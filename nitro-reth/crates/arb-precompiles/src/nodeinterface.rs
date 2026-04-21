@@ -94,11 +94,21 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
     let min_basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
     let chain_id_u256 = sload_field(input, root_slot(crate::storage_slot::CHAIN_ID_OFFSET))?;
     let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
-    let brotli_level = sload_field(input, root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET))?
-        .try_into()
-        .unwrap_or(0u64);
+    let brotli_level = sload_field(
+        input,
+        root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET),
+    )?
+    .try_into()
+    .unwrap_or(0u64);
 
-    let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee, min_basefee, chain_id, brotli_level);
+    let gas_for_l1 = estimate_l1_gas(
+        input,
+        l1_price,
+        basefee,
+        min_basefee,
+        chain_id,
+        brotli_level,
+    );
 
     let mut out = Vec::with_capacity(128);
     // gasEstimate: 0 (full estimate requires eth_estimateGas)
@@ -128,11 +138,21 @@ fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> Precompi
     let min_basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
     let chain_id_u256 = sload_field(input, root_slot(crate::storage_slot::CHAIN_ID_OFFSET))?;
     let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
-    let brotli_level = sload_field(input, root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET))?
-        .try_into()
-        .unwrap_or(0u64);
+    let brotli_level = sload_field(
+        input,
+        root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET),
+    )?
+    .try_into()
+    .unwrap_or(0u64);
 
-    let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee, min_basefee, chain_id, brotli_level);
+    let gas_for_l1 = estimate_l1_gas(
+        input,
+        l1_price,
+        basefee,
+        min_basefee,
+        chain_id,
+        brotli_level,
+    );
 
     let mut out = Vec::with_capacity(96);
     // gasEstimateForL1
@@ -281,7 +301,11 @@ pub fn compute_l1_gas_for_estimate(
     let poster_cost = l1_price.saturating_mul(U256::from(padded_units));
     let posting_padded = poster_cost.saturating_mul(U256::from(11_000u64)) / U256::from(10_000u64);
     let adjusted = basefee.saturating_mul(U256::from(7u64)) / U256::from(8u64);
-    let gas_price = if adjusted < min_basefee { min_basefee } else { adjusted };
+    let gas_price = if adjusted < min_basefee {
+        min_basefee
+    } else {
+        adjusted
+    };
     if gas_price.is_zero() {
         return 0;
     }

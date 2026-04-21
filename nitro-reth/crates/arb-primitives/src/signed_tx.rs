@@ -641,15 +641,18 @@ impl ConsensusTx for ArbTransactionSigned {
         match &self.transaction {
             ArbTypedTransaction::Legacy(tx) => tx.gas_price,
             ArbTypedTransaction::Eip2930(tx) => tx.gas_price,
-            ArbTypedTransaction::Eip1559(tx) => {
-                core::cmp::min(tx.max_fee_per_gas, bf.saturating_add(tx.max_priority_fee_per_gas))
-            }
-            ArbTypedTransaction::Eip7702(tx) => {
-                core::cmp::min(tx.max_fee_per_gas, bf.saturating_add(tx.max_priority_fee_per_gas))
-            }
-            ArbTypedTransaction::Eip4844(tx) => {
-                core::cmp::min(tx.max_fee_per_gas, bf.saturating_add(tx.max_priority_fee_per_gas))
-            }
+            ArbTypedTransaction::Eip1559(tx) => core::cmp::min(
+                tx.max_fee_per_gas,
+                bf.saturating_add(tx.max_priority_fee_per_gas),
+            ),
+            ArbTypedTransaction::Eip7702(tx) => core::cmp::min(
+                tx.max_fee_per_gas,
+                bf.saturating_add(tx.max_priority_fee_per_gas),
+            ),
+            ArbTypedTransaction::Eip4844(tx) => core::cmp::min(
+                tx.max_fee_per_gas,
+                bf.saturating_add(tx.max_priority_fee_per_gas),
+            ),
             // Arbitrum-internal types: gas price is determined elsewhere.
             _ => bf,
         }
@@ -658,15 +661,18 @@ impl ConsensusTx for ArbTransactionSigned {
     fn effective_tip_per_gas(&self, base_fee: u64) -> Option<u128> {
         let bf = base_fee as u128;
         match &self.transaction {
-            ArbTypedTransaction::Eip1559(tx) => {
-                Some(core::cmp::min(tx.max_priority_fee_per_gas, tx.max_fee_per_gas.saturating_sub(bf)))
-            }
-            ArbTypedTransaction::Eip7702(tx) => {
-                Some(core::cmp::min(tx.max_priority_fee_per_gas, tx.max_fee_per_gas.saturating_sub(bf)))
-            }
-            ArbTypedTransaction::Eip4844(tx) => {
-                Some(core::cmp::min(tx.max_priority_fee_per_gas, tx.max_fee_per_gas.saturating_sub(bf)))
-            }
+            ArbTypedTransaction::Eip1559(tx) => Some(core::cmp::min(
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas.saturating_sub(bf),
+            )),
+            ArbTypedTransaction::Eip7702(tx) => Some(core::cmp::min(
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas.saturating_sub(bf),
+            )),
+            ArbTypedTransaction::Eip4844(tx) => Some(core::cmp::min(
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas.saturating_sub(bf),
+            )),
             _ => None,
         }
     }
