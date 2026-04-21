@@ -532,6 +532,34 @@ func startTestReportServer(t *testing.T, ctx context.Context) (string, *testRepo
 	return "http://" + listener.Addr().String(), collector
 }
 
+// lookupSubmissionTxHash finds the ArbitrumSubmitRetryableTx hash from an L1 receipt
+// by parsing the delayed message.
+func lookupSubmissionTxHash(t *testing.T, ctx context.Context, builder *NodeBuilder, l1Receipt *types.Receipt) common.Hash {
+	t.Helper()
+
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	require.NoError(t, err)
+
+	messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, messages, "no delayed messages found")
+
+	for _, message := range messages {
+		if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
+			continue
+		}
+		txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
+		require.NoError(t, err)
+		for _, tx := range txs {
+			if tx.Type() == types.ArbitrumSubmitRetryableTxType {
+				return tx.Hash()
+			}
+		}
+	}
+	t.Fatal("no retryable submission tx found in delayed messages")
+	return common.Hash{}
+}
+
 // TestPrecheckerFilterReport verifies that the prechecker sends a
 // FilteredTxReport to the filtering-report service when a tx is filtered.
 func TestPrecheckerFilterReport(t *testing.T) {
@@ -582,30 +610,37 @@ func TestPrecheckerFilterReport(t *testing.T) {
 	}
 }
 
-// lookupSubmissionTxHash finds the ArbitrumSubmitRetryableTx hash from an L1 receipt
-// by parsing the delayed message.
-func lookupSubmissionTxHash(t *testing.T, ctx context.Context, builder *NodeBuilder, l1Receipt *types.Receipt) common.Hash {
-	t.Helper()
+// TestPrecheckerFilterNoReportWhenClean verifies that no FilteredTxReport is
+// sent to the filtering-report service when a tx is not filtered.
+func TestPrecheckerFilterNoReportWhenClean(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
-	require.NoError(t, err)
+	reportURL, collector := startTestReportServer(t, ctx)
 
-	messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
-	require.NoError(t, err)
-	require.NotEmpty(t, messages, "no delayed messages found")
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, reportURL)
+	defer cleanup()
 
-	for _, message := range messages {
-		if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
-			continue
-		}
-		txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
-		require.NoError(t, err)
-		for _, tx := range txs {
-			if tx.Type() == types.ArbitrumSubmitRetryableTxType {
-				return tx.Hash()
-			}
-		}
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	builder.L2Info.GenerateAccount("AnotherUser")
+	_, fundReceipt := builder.L2.TransferBalance(t, "Owner", "AnotherUser", big.NewInt(1e18), builder.L2Info)
+	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+
+	// Clean tx between non-filtered addresses should forward and succeed
+	tx := builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := forwarder.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	select {
+	case reports := <-collector.Reports:
+		t.Fatalf("unexpected filtered tx report for clean tx: %+v", reports)
+	case <-time.After(2 * time.Second):
 	}
-	t.Fatal("no retryable submission tx found in delayed messages")
-	return common.Hash{}
 }

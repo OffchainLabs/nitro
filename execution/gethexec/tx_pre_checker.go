@@ -44,8 +44,6 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
-const filteredTxReportDeliveryTimeout = 5 * time.Second
-
 type TxPreCheckerConfig struct {
 	Strictness             uint  `koanf:"strictness" reload:"hot"`
 	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
@@ -331,9 +329,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		Backend:          c.backend,
 		RunScheduledTxes: retryables.RunScheduledTxes,
 		ReportFilteredTx: func(_ context.Context, records []filter.FilteredAddressRecord) {
-			if reportErr := c.reportFilteredTx(tx, header, records); reportErr != nil {
-				log.Error("failed to build filtered tx report", "txHash", tx.Hash(), "err", reportErr)
-			}
+			c.reportFilteredTx(tx, header, records)
 		},
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
@@ -344,17 +340,19 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 	return nil
 }
 
-func (c *TxPreChecker) reportFilteredTx(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord) error {
+func (c *TxPreChecker) reportFilteredTx(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord) {
 	if c.filteringReportRPCClient == nil {
-		return nil
+		return
 	}
+	txHash := tx.Hash()
 	txRLP, err := tx.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("failed to marshal filtered tx: %w", err)
+		log.Error("failed to marshal filtered tx", "txHash", txHash, "err", err)
+		return
 	}
 	report := addressfilter.FilteredTxReport{
 		ID:                uuid.Must(uuid.NewV7()).String(),
-		TxHash:            tx.Hash(),
+		TxHash:            txHash,
 		TxRLP:             txRLP,
 		FilteredAddresses: filteredAddresses,
 		BlockNumber:       header.Number.Uint64(),
@@ -365,13 +363,9 @@ func (c *TxPreChecker) reportFilteredTx(tx *types.Transaction, header *types.Hea
 		DelayedReportData: nil,
 	}
 	promise := c.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
-	txHash := tx.Hash()
 	c.filteringReportRPCClient.LaunchThread(func(ctx context.Context) {
-		awaitCtx, cancel := context.WithTimeout(ctx, filteredTxReportDeliveryTimeout)
-		defer cancel()
-		if _, err := promise.Await(awaitCtx); err != nil {
+		if _, err := promise.Await(ctx); err != nil {
 			log.Error("failed to deliver filtered tx report", "txHash", txHash, "err", err)
 		}
 	})
-	return nil
 }
