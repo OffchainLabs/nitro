@@ -3,6 +3,9 @@ name: nitro-arbitrator
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   arbitrator:
     name: Run Arbitrator tests
@@ -13,10 +16,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PRIVATE_REPO_PAT }}
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -29,17 +35,17 @@ jobs:
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup emsdk
-        uses: mymindstorm/setup-emsdk@v14
+        uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021  # v14
         with:
           # Make sure to set a version number!
-          version: 3.1.6
+          version: 3.1.7
           # This is the name of the cache folder.
           # The cache folder will be placed in the build directory,
           #  so make sure it doesn't conflict with anything!
           no-cache: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2
         with:
           tool: nextest@0.9
 

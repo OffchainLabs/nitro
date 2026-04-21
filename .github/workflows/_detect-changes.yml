@@ -11,6 +11,9 @@ on:
         description: 'True if Bold Legacy or related files changed.'
         value: ${{ jobs.changes.outputs.bold_legacy_changed }}
 
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Detect file changes
@@ -21,16 +24,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PRIVATE_REPO_PAT }}
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+
       - name: Determine if Arbitrator or Bold Legacy changed
         id: changed
-        uses: tj-actions/changed-files@v46.0.5
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c  # v46.0.5
         with:
           files_yaml: |
             arbitrator:

@@ -15,10 +15,13 @@ jobs:
     runs-on: ubuntu-4
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PRIVATE_REPO_PAT }}
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -27,7 +30,7 @@ jobs:
         run: make build test-go-deps -j
 
       - id: list
-        uses: shogo82148/actions-go-fuzz/list@v1
+        uses: shogo82148/actions-go-fuzz/list@9ff10977e72bc65876413aba399202b1fbc16e99  # v1
     outputs:
       fuzz-tests: ${{steps.list.outputs.fuzz-tests}}
 
@@ -41,11 +44,18 @@ jobs:
         include: ${{fromJson(needs.list.outputs.fuzz-tests)}}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+
       - uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"
-      - uses: shogo82148/actions-go-fuzz/run@v1
+      - uses: shogo82148/actions-go-fuzz/run@9ff10977e72bc65876413aba399202b1fbc16e99  # v1
         with:
           packages: ${{ matrix.package }}
           fuzz-regexp: ${{ matrix.func }}

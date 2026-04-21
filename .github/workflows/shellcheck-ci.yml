@@ -9,6 +9,9 @@ on:
   push:
     branches: [master, main]
 
+permissions:
+  contents: read
+
 jobs:
   shellcheck:
     name: Run ShellCheck
@@ -16,12 +19,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT }}
+        uses: actions/checkout@v6
 
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+        # No version tags exist for this action; pinned to the current master SHA.
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca  # master
         with:
           ignore_paths: >-
             ./fastcache/**
