@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults-A-MEL, defaults-B-MEL, pathdb-MEL]
+        test-mode: [defaults-A-MEL, defaults-B-MEL, pathdb-MEL, flaky-MEL]
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
     with:
@@ -19,3 +19,4 @@ jobs:
       run-defaults-a-mel: ${{ matrix.test-mode == 'defaults-A-MEL' }}
       run-defaults-b-mel: ${{ matrix.test-mode == 'defaults-B-MEL' }}
       run-pathdb-mel: ${{ matrix.test-mode == 'pathdb-MEL' }}
+      run-flaky-mel: ${{ matrix.test-mode == 'flaky-MEL' }}

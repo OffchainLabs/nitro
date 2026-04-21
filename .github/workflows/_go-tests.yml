@@ -55,6 +55,9 @@ on:
       run-pathdb-mel:
         required: false
         type: boolean
+      run-flaky-mel:
+        required: false
+        type: boolean
 
 jobs:
   go-tests:
@@ -162,6 +165,20 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme path --flaky
           --junitfile test-results/junit-flaky-path.xml
+
+      - name: run flaky tests (hash state scheme, MEL)
+        if: inputs.run-flaky-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --flaky --test_mel
+          --junitfile test-results/junit-flaky-mel-hash.xml
+
+      - name: run flaky tests (path state scheme, MEL)
+        if: inputs.run-flaky-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme path --flaky --test_mel
+          --junitfile test-results/junit-flaky-mel-path.xml
 
       # --------------------- CHALLENGE MODES ---------------------
 
