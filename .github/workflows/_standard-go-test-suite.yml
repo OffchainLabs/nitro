@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults-A, defaults-B, flaky, pathdb, challenge, stylus, l3challenge, defaults-A-MEL, defaults-B-MEL, pathdb-MEL]
+        test-mode: [defaults-A, defaults-B, flaky, pathdb-A, pathdb-B, challenge, stylus, l3challenge, defaults-A-MEL, defaults-B-MEL, pathdb-A-MEL, pathdb-B-MEL]
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
     with:
@@ -16,10 +16,12 @@ jobs:
       run-defaults-a: ${{ matrix.test-mode == 'defaults-A' }}
       run-defaults-b: ${{ matrix.test-mode == 'defaults-B' }}
       run-flaky: ${{ matrix.test-mode == 'flaky' }}
-      run-pathdb: ${{ matrix.test-mode == 'pathdb' }}
+      run-pathdb-a: ${{ matrix.test-mode == 'pathdb-A' }}
+      run-pathdb-b: ${{ matrix.test-mode == 'pathdb-B' }}
       run-challenge: ${{ matrix.test-mode == 'challenge' }}
       run-stylus: ${{ matrix.test-mode == 'stylus' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
       run-defaults-a-mel: ${{ matrix.test-mode == 'defaults-A-MEL' }}
       run-defaults-b-mel: ${{ matrix.test-mode == 'defaults-B-MEL' }}
-      run-pathdb-mel: ${{ matrix.test-mode == 'pathdb-MEL' }}
+      run-pathdb-a-mel: ${{ matrix.test-mode == 'pathdb-A-MEL' }}
+      run-pathdb-b-mel: ${{ matrix.test-mode == 'pathdb-B-MEL' }}
