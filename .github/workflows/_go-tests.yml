@@ -16,7 +16,10 @@ on:
       run-flaky:
         required: false
         type: boolean
-      run-pathdb:
+      run-pathdb-a:
+        required: false
+        type: boolean
+      run-pathdb-b:
         required: false
         type: boolean
       run-stylus:
@@ -52,7 +55,10 @@ on:
       run-defaults-b-mel:
         required: false
         type: boolean
-      run-pathdb-mel:
+      run-pathdb-a-mel:
+        required: false
+        type: boolean
+      run-pathdb-b-mel:
         required: false
         type: boolean
 
@@ -91,12 +97,19 @@ jobs:
 
       # --------------------- PATHDB MODE ---------------------
 
-      - name: run tests without race detection and path state scheme
-        if: inputs.run-pathdb
+      - name: run tests without race detection and path state scheme (A-batch)
+        if: inputs.run-pathdb-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml
+          --junitfile test-results/junit-pathdb-a.xml --run '^Test[A-L]' --reduce-parallelism
+
+      - name: run tests without race detection and path state scheme (B-batch)
+        if: inputs.run-pathdb-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-b.xml --skip '^Test[A-L]' --reduce-parallelism
 
       # --------------------- DEFAULTS MODE ---------------------
 
@@ -116,12 +129,19 @@ jobs:
 
       # --------------------- PATHDB MEL MODE ---------------------
 
-      - name: run tests without race detection and path state scheme (MEL)
-        if: inputs.run-pathdb-mel
+      - name: run tests without race detection and path state scheme (A-batch, MEL)
+        if: inputs.run-pathdb-a-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb-mel.xml --test_mel
+          --junitfile test-results/junit-pathdb-a-mel.xml --run '^Test[A-L]' --reduce-parallelism --test_mel
+
+      - name: run tests without race detection and path state scheme (B-batch, MEL)
+        if: inputs.run-pathdb-b-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-b-mel.xml --skip '^Test[A-L]' --reduce-parallelism --test_mel
 
       # --------------------- DEFAULTS MEL MODE ---------------------
 
