@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // Gets the local timer of an edge at a block number, T. If T is earlier than the edge's creation,
@@ -51,16 +51,16 @@ func (ht *RoyalChallengeTree) LocalTimer(ctx context.Context, e protocol.ReadOnl
 
 // Gets the minimum creation block number across all of an edge's rivals. If an edge
 // has no rivals, this minimum is undefined.
-func (ht *RoyalChallengeTree) EarliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) option.Option[uint64] {
+func (ht *RoyalChallengeTree) EarliestCreatedRivalBlockNumber(e protocol.ReadOnlyEdge) containers.Option[uint64] {
 	rivals := ht.rivalsWithCreationTimes(e)
 	creationBlocks := make([]uint64, len(rivals))
-	earliestCreatedRivalBlock := option.None[uint64]()
+	earliestCreatedRivalBlock := containers.None[uint64]()
 	for i, r := range rivals {
 		creationBlocks[i] = uint64(r.createdAtBlock)
 		if earliestCreatedRivalBlock.IsNone() {
-			earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
+			earliestCreatedRivalBlock = containers.Some(uint64(r.createdAtBlock))
 		} else if uint64(r.createdAtBlock) < earliestCreatedRivalBlock.Unwrap() {
-			earliestCreatedRivalBlock = option.Some(uint64(r.createdAtBlock))
+			earliestCreatedRivalBlock = containers.Some(uint64(r.createdAtBlock))
 		}
 	}
 	return earliestCreatedRivalBlock

@@ -313,13 +313,13 @@ type Node struct {
 	ConsensusDB              ethdb.Database
 	Stack                    *node.Node
 	ExecutionClient          execution.ExecutionClient
-	ExecutionSequencer       execution.ExecutionSequencer
+	ExecutionSequencer       containers.Option[execution.ExecutionSequencer]
 	ExecutionRecorder        execution.ExecutionRecorder
 	L1Reader                 *headerreader.HeaderReader
 	ParentChain              *parent.ParentChain
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
-	BlobReader               daprovider.BlobReader
+	BlobReader               containers.Option[daprovider.BlobReader]
 	MessageExtractor         *melrunner.MessageExtractor
 	InboxReader              *InboxReader
 	InboxTracker             *InboxTracker
@@ -601,7 +601,7 @@ func getDAProviders(
 	ctx context.Context,
 	config *Config,
 	txStreamer *TransactionStreamer,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	dataSigner signature.DataSignerFunc,
@@ -718,8 +718,8 @@ func getDAProviders(
 		}
 	}
 
-	if blobReader != nil {
-		if err := dapRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
+	if blobReader.IsSome() {
+		if err := dapRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader.Unwrap())); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
 		}
 	}
@@ -1140,16 +1140,16 @@ func getSeqCoordinator(
 	bpVerifier *contracts.AddressVerifier,
 	txStreamer *TransactionStreamer,
 	syncMonitor *SyncMonitor,
-	exec execution.ExecutionSequencer,
+	exec containers.Option[execution.ExecutionSequencer],
 ) (*SeqCoordinator, error) {
 	var coordinator *SeqCoordinator
 	if config.SeqCoordinator.Enable {
-		if exec == nil {
+		if exec.IsNone() {
 			return nil, errors.New("sequencer coordinator requires an execution sequencer")
 		}
 
 		var err error
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec.Unwrap(), syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
@@ -1269,11 +1269,11 @@ func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
 	delayedMessageFetcher DelayedMessageFetcher,
 	delayedBridge *DelayedBridge,
-	exec execution.ExecutionSequencer,
+	exec containers.Option[execution.ExecutionSequencer],
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if exec == nil {
+	if exec.IsNone() {
 		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
@@ -1281,7 +1281,7 @@ func getDelayedSequencer(
 		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec.Unwrap(), coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1289,10 +1289,10 @@ func getNodeParentChainReaderDisabled(
 	consensusDB ethdb.Database,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
-	executionSequencer execution.ExecutionSequencer,
+	executionSequencer containers.Option[execution.ExecutionSequencer],
 	executionRecorder execution.ExecutionRecorder,
 	txStreamer *TransactionStreamer,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	broadcastServer *broadcaster.Broadcaster,
 	broadcastClients *broadcastclients.BroadcastClients,
 	coordinator *SeqCoordinator,
@@ -1348,7 +1348,7 @@ func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
-	executionSequencer execution.ExecutionSequencer,
+	executionSequencer containers.Option[execution.ExecutionSequencer],
 	executionRecorder execution.ExecutionRecorder,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1360,7 +1360,7 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	latestWasmModuleRoot common.Hash,
 	parentChain *parent.ParentChain,
 ) (*Node, error) {
@@ -1615,7 +1615,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	latestWasmModuleRoot common.Hash,
 	parentChain *parent.ParentChain,
 ) (*Node, error) {
@@ -1626,7 +1626,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, containers.None[execution.ExecutionSequencer](), nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
 	if err != nil {
 		return nil, err
 	}
@@ -1647,13 +1647,13 @@ func CreateConsensusNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	latestWasmModuleRoot common.Hash,
 	parentChain *parent.ParentChain,
 ) (*Node, error) {
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
-	var executionSequencer execution.ExecutionSequencer
+	var executionSequencer containers.Option[execution.ExecutionSequencer]
 	var arbOSVersionGetter execution.ArbOSVersionGetter
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
@@ -1661,11 +1661,12 @@ func CreateConsensusNode(
 		executionClient = rpcClient
 		executionRecorder = rpcClient
 		arbOSVersionGetter = rpcClient
-		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
+		// RPC client does not implement ExecutionSequencer.
+		executionSequencer = containers.None[execution.ExecutionSequencer]()
 	} else {
 		executionClient = fullExecutionClient
 		executionRecorder = fullExecutionClient
-		executionSequencer = fullExecutionClient
+		executionSequencer = containers.Some[execution.ExecutionSequencer](fullExecutionClient)
 		arbOSVersionGetter = fullExecutionClient
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
@@ -1683,8 +1684,8 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
 	}
-	if n.BlobReader != nil {
-		err = n.BlobReader.Initialize(ctx)
+	if n.BlobReader.IsSome() {
+		err = n.BlobReader.Unwrap().Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing blob reader: %w", err)
 		}
@@ -1733,8 +1734,8 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
-	} else if n.ExecutionSequencer != nil {
-		n.ExecutionSequencer.Activate()
+	} else if n.ExecutionSequencer.IsSome() {
+		n.ExecutionSequencer.Unwrap().Activate()
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)

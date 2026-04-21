@@ -4,6 +4,7 @@
 package challenge
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ccoveille/go-safecast"
@@ -18,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type stackParams struct {
@@ -205,12 +207,13 @@ func NewChallengeStack(
 
 	var err error
 	// Create the api database.
-	var apiDB db.Database
+	apiDB := containers.None[db.Database]()
 	if params.apiDBPath != "" {
-		apiDB, err = db.NewDatabase(params.apiDBPath)
+		newDB, err := db.NewDatabase(params.apiDBPath)
 		if err != nil {
 			return nil, err
 		}
+		apiDB = containers.Some[db.Database](newDB)
 		provider.UpdateAPIDatabase(apiDB)
 	}
 	maxGetLogBlocks, err := safecast.ToUint64(params.maxGetLogBlocks)
@@ -236,7 +239,10 @@ func NewChallengeStack(
 	// Create the api backend server.
 	var api *server.Server
 	if params.apiAddr != "" {
-		bknd := backend.NewBackend(apiDB, parent, watcher)
+		if apiDB.IsNone() {
+			return nil, errors.New("api address set without an api database")
+		}
+		bknd := backend.NewBackend(apiDB.Unwrap(), parent, watcher)
 		api, err = server.New(params.apiAddr, bknd)
 		if err != nil {
 			return nil, err
@@ -255,8 +261,8 @@ func NewChallengeStack(
 			assertions.WithMinimumGapToParentAssertion(params.minGapToParent),
 			assertions.WithMaxGetLogBlocks(maxGetLogBlocks),
 		}
-		if apiDB != nil {
-			amOpts = append(amOpts, assertions.WithAPIDB(apiDB))
+		if apiDB.IsSome() {
+			amOpts = append(amOpts, assertions.WithAPIDB(apiDB.Unwrap()))
 		}
 		if params.enableFastConfirmation {
 			amOpts = append(amOpts, assertions.WithFastConfirmation())

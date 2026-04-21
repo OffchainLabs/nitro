@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
@@ -214,13 +215,13 @@ func createNodeBWithSharedContracts(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), 0, parentChain)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 
 	// Create node using the same addresses as the first node
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, nil /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
+	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, containers.None[daprovider.BlobReader]() /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
@@ -867,7 +868,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
-		nil, // Api db
+		containers.None[db.Database](), // Api db
 	)
 
 	evilHistoryProvider := state.NewHistoryCommitmentProvider(
@@ -882,7 +883,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManagerB,
-		nil, // Api db
+		containers.None[db.Database](), // Api db
 	)
 
 	stackOpts := []challenge.StackOpt{

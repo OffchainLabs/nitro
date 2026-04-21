@@ -23,10 +23,10 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/events"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -540,7 +540,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(bisectTo)),
+				UpToHeight:                  util_containers.Some(state.Height(bisectTo)),
 			},
 		)
 		if commitErr != nil {
@@ -551,7 +551,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(endHeight)),
+				UpToHeight:                  util_containers.Some(state.Height(endHeight)),
 			},
 			state.Height(bisectTo),
 		)
@@ -579,7 +579,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 		&state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: challengeOriginHeights,
-			UpToHeight:                  option.Some(state.Height(bisectTo)),
+			UpToHeight:                  util_containers.Some(state.Height(bisectTo)),
 		},
 	)
 	if commitErr != nil {
@@ -590,7 +590,7 @@ func (et *Tracker) DetermineBisectionHistoryWithProof(
 		&state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: challengeOriginHeights,
-			UpToHeight:                  option.Some(state.Height(endHeight)),
+			UpToHeight:                  util_containers.Some(state.Height(endHeight)),
 		},
 		state.Height(bisectTo),
 	)
@@ -657,7 +657,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{fromBlockChallengeHeight},
-				UpToHeight:                  option.None[state.Height](),
+				UpToHeight:                  util_containers.None[state.Height](),
 			},
 		)
 		if err != nil {
@@ -668,7 +668,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{fromBlockChallengeHeight},
-				UpToHeight:                  option.Some(state.Height(endHistory.Height)),
+				UpToHeight:                  util_containers.Some(state.Height(endHistory.Height)),
 			},
 			state.Height(0),
 		)
@@ -680,7 +680,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{fromBlockChallengeHeight},
-				UpToHeight:                  option.Some(state.Height(0)),
+				UpToHeight:                  util_containers.Some(state.Height(0)),
 			},
 		)
 		if err != nil {
@@ -691,7 +691,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(fromBlockChallengeHeight + 1),
+				UpToHeight:                  util_containers.Some(fromBlockChallengeHeight + 1),
 			},
 		)
 		if err != nil {
@@ -702,7 +702,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           et.associatedAssertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(fromBlockChallengeHeight),
+				UpToHeight:                  util_containers.Some(fromBlockChallengeHeight),
 			},
 		)
 		if err != nil {
@@ -717,7 +717,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 		request := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: heights,
-			UpToHeight:                  option.None[state.Height](),
+			UpToHeight:                  util_containers.None[state.Height](),
 		}
 		endHistory, err = et.stateProvider.HistoryCommitment(
 			ctx,
@@ -729,7 +729,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 		request = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: heights,
-			UpToHeight:                  option.Some(state.Height(endHistory.Height)),
+			UpToHeight:                  util_containers.Some(state.Height(endHistory.Height)),
 		}
 		startEndPrefixProof, err = et.stateProvider.PrefixProof(
 			ctx,
@@ -742,7 +742,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 		request = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: heights,
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  util_containers.Some(state.Height(0)),
 		}
 		startHistory, err = et.stateProvider.HistoryCommitment(
 			ctx,
@@ -754,7 +754,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 		request = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: heights[:len(heights)-1],
-			UpToHeight:                  option.Some(state.Height(endHeight)),
+			UpToHeight:                  util_containers.Some(state.Height(endHeight)),
 		}
 		endParentCommitment, err = et.stateProvider.HistoryCommitment(
 			ctx,
@@ -766,7 +766,7 @@ func (et *Tracker) openSubchallenge(ctx context.Context) error {
 		request = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           et.associatedAssertionMetadata,
 			UpperChallengeOriginHeights: heights[:len(heights)-1],
-			UpToHeight:                  option.Some(state.Height(startHeight)),
+			UpToHeight:                  util_containers.Some(state.Height(startHeight)),
 		}
 		startParentCommitment, err = et.stateProvider.HistoryCommitment(
 			ctx,

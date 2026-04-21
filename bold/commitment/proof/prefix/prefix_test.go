@@ -20,12 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 
 	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestAppendCompleteSubTree(t *testing.T) {
@@ -110,12 +110,12 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 			BatchLimit: 10,
 		},
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(state.Height(fromMessageNumber)),
+		UpToHeight:                  containers.Some(state.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
-	req.UpToHeight = option.Some(state.Height(toMessageNumber))
+	req.UpToHeight = containers.Some(state.Height(toMessageNumber))
 	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
@@ -184,12 +184,12 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 			BatchLimit: 10,
 		},
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(state.Height(fromMessageNumber)),
+		UpToHeight:                  containers.Some(state.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
-	req.UpToHeight = option.Some(state.Height(toMessageNumber))
+	req.UpToHeight = containers.Some(state.Height(toMessageNumber))
 	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
@@ -266,7 +266,7 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 			BatchLimit: batch,
 		},
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.None[state.Height](),
+		UpToHeight:                  containers.None[state.Height](),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(f, err)
@@ -278,7 +278,7 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 	toMessageNumber := state.Height(7)
 
 	req.AssertionMetadata.FromState.PosInBatch = 0
-	req.UpToHeight = option.Some(toMessageNumber)
+	req.UpToHeight = containers.Some(toMessageNumber)
 	packedProof, err := manager.PrefixProof(ctx, req, fromMessageNumber)
 	require.NoError(f, err)
 

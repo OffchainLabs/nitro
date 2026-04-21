@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/challenge/tree/mock"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/mocks"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func simpleAssertionMetadata() *state.AssociatedAssertionMetadata {
@@ -87,7 +87,7 @@ func TestAddEdge(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(end)),
+				UpToHeight:                  containers.Some(state.Height(end)),
 			},
 			state.History{
 				Height:     uint64(start),
@@ -101,7 +101,7 @@ func TestAddEdge(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(end)),
+				UpToHeight:                  containers.Some(state.Height(end)),
 			},
 			state.History{
 				Height:     uint64(end),
@@ -127,7 +127,7 @@ func TestAddEdge(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(endHeight)),
+				UpToHeight:                  containers.Some(state.Height(endHeight)),
 			},
 			state.History{
 				Height:     uint64(endHeight),
@@ -168,7 +168,7 @@ func TestAddEdge(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(endHeight)),
+				UpToHeight:                  containers.Some(state.Height(endHeight)),
 			},
 			state.History{
 				Height:     uint64(startHeight),
@@ -182,7 +182,7 @@ func TestAddEdge(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(endHeight)),
+				UpToHeight:                  containers.Some(state.Height(endHeight)),
 			},
 			state.History{
 				Height:     uint64(endHeight),
@@ -225,7 +225,7 @@ func TestAddEdge(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(endHeight)),
+				UpToHeight:                  containers.Some(state.Height(endHeight)),
 			},
 			state.History{
 				Height:     uint64(endHeight),

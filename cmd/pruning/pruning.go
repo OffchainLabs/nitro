@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"reflect"
 	"regexp"
 	"strings"
 
@@ -32,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type importantRoots struct {
@@ -83,7 +83,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool, minRoot
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initConfig *conf.InitConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool, minRootDistance uint64) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initConfig *conf.InitConfig, l1Client containers.Option[*ethclient.Client], rollupAddrs chaininfo.RollupAddresses, validatorRequired bool, minRootDistance uint64) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(executionDB)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
@@ -102,10 +102,10 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initCon
 		return nil, err
 	}
 	if initConfig.Prune == "validator" {
-		if l1Client == nil || reflect.ValueOf(l1Client).IsNil() {
+		if l1Client.IsNone() {
 			return nil, errors.New("an L1 connection is required for validator pruning")
 		}
-		confirmedHash, err := getLatestConfirmedHash(ctx, rollupAddrs, l1Client)
+		confirmedHash, err := getLatestConfirmedHash(ctx, rollupAddrs, l1Client.Unwrap())
 		if err != nil {
 			return nil, err
 		}
@@ -246,11 +246,14 @@ func PruneExecutionDBWithDistance(ctx context.Context, executionDB ethdb.Databas
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}
-
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), executionDB, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired, minRootDistance)
+	l1ClientOpt := containers.None[*ethclient.Client]()
+	if l1Client != nil {
+		l1ClientOpt = containers.Some(l1Client)
+	}
+	root, err := findImportantRoots(ctx, executionDB, initConfig, l1ClientOpt, rollupAddrs, validatorRequired, minRootDistance)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}

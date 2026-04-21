@@ -4,7 +4,7 @@
 // Package option defines a generic option type as a way of representing
 // "nothingness" or "something" in a type-safe way. This is useful for
 // representing optional values without the need for nil checks or pointers.
-package option
+package containers
 
 type Option[T any] struct {
 	value *T

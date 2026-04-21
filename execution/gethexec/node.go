@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -340,7 +339,7 @@ func CreateExecutionNode(
 	stack *node.Node,
 	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
-	l1client *ethclient.Client,
+	l1client containers.Option[*ethclient.Client],
 	configFetcher ConfigFetcher,
 	syncTillBlock uint64,
 	seqParentChain *parent.ParentChain,
@@ -383,9 +382,10 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
-	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
-		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
+	if l1client.IsSome() {
+		l1clientUnwrapped := l1client.Unwrap()
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1clientUnwrapped)
+		parentChainReader, err = headerreader.New(ctx, l1clientUnwrapped, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}

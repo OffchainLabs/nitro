@@ -11,10 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // Assertion is a wrapper around the binding to the type
@@ -27,13 +27,13 @@ type Assertion struct {
 	createdAt uint64
 
 	// Fields that are eventually constant like status, firstChildBlock etc.
-	// These are set to option.None until they are in the final state, after which they are set
+	// These are set to containers.None until they are in the final state, after which they are set
 	// to the final value and never changed again (this saves us the on-chain call)
-	prevId           option.Option[protocol.AssertionHash] // This is set the first time prevId is called
-	firstChildBlock  option.Option[uint64]                 // Once the assertion has a first child, this is set
-	secondChildBlock option.Option[uint64]                 // Once the assertion has a second child, this is set
-	isFirstChild     bool                                  // Once the assertion is determined to be a first child, this is set
-	isConfirmed      bool                                  // Once the assertion is confirmed, this is set
+	prevId           containers.Option[protocol.AssertionHash] // This is set the first time prevId is called
+	firstChildBlock  containers.Option[uint64]                 // Once the assertion has a first child, this is set
+	secondChildBlock containers.Option[uint64]                 // Once the assertion has a second child, this is set
+	isFirstChild     bool                                      // Once the assertion is determined to be a first child, this is set
+	isConfirmed      bool                                      // Once the assertion is confirmed, this is set
 }
 
 func (a *Assertion) Id() protocol.AssertionHash {
@@ -48,7 +48,7 @@ func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) 
 	if err != nil {
 		return protocol.AssertionHash{}, err
 	}
-	a.prevId = option.Some(creationInfo.ParentAssertionHash)
+	a.prevId = containers.Some(creationInfo.ParentAssertionHash)
 	return a.prevId.Unwrap(), nil
 }
 
@@ -79,10 +79,10 @@ func (a *Assertion) inner(ctx context.Context, opts *bind.CallOpts) (*rollupgen.
 	}
 	// Update the assertion with the latest data, if they are in now in constant state.
 	if assertionNode.FirstChildBlock > 0 {
-		a.firstChildBlock = option.Some(assertionNode.FirstChildBlock)
+		a.firstChildBlock = containers.Some(assertionNode.FirstChildBlock)
 	}
 	if assertionNode.SecondChildBlock > 0 {
-		a.secondChildBlock = option.Some(assertionNode.SecondChildBlock)
+		a.secondChildBlock = containers.Some(assertionNode.SecondChildBlock)
 	}
 	if assertionNode.IsFirstChild {
 		a.isFirstChild = true
@@ -147,7 +147,7 @@ type specEdge struct {
 	id                   [32]byte
 	mutualId             [32]byte
 	manager              *specChallengeManager
-	miniStaker           option.Option[common.Address]
+	miniStaker           containers.Option[common.Address]
 	inner                challengeV2gen.ChallengeEdge
 	startHeight          uint64
 	endHeight            uint64
@@ -155,14 +155,14 @@ type specEdge struct {
 	assertionHash        protocol.AssertionHash
 
 	// Fields that are eventually constant like status, hasRival etc.
-	// These are set to option.None until they are in the final state, after which they are set
+	// These are set to containers.None until they are in the final state, after which they are set
 	// to the final value and never changed again (this saves us the on-chain call)
-	timeUnrivaled     option.Option[uint64]          // Once edge has a rival, this is set
-	hasRival          bool                           // Once edge has a rival, this is set
-	isConfirmed       bool                           // Once the edge is confirmed, this is set
-	confirmedAtBlock  option.Option[uint64]          // Once the edge is confirmed, this is set
-	lowerChild        option.Option[protocol.EdgeId] // Once the edge has a lower child, this is set
-	upperChild        option.Option[protocol.EdgeId] // Once the edge has an upper child, this is set
-	hasLengthOneRival bool                           // Once the edge has a rival of length 1, this is set
-	verifiedHonest    bool                           // Whether or not the edge has been verified as honest.
+	timeUnrivaled     containers.Option[uint64]          // Once edge has a rival, this is set
+	hasRival          bool                               // Once edge has a rival, this is set
+	isConfirmed       bool                               // Once the edge is confirmed, this is set
+	confirmedAtBlock  containers.Option[uint64]          // Once the edge is confirmed, this is set
+	lowerChild        containers.Option[protocol.EdgeId] // Once the edge has a lower child, this is set
+	upperChild        containers.Option[protocol.EdgeId] // Once the edge has an upper child, this is set
+	hasLengthOneRival bool                               // Once the edge has a rival of length 1, this is set
+	verifiedHonest    bool                               // Whether or not the edge has been verified as honest.
 }

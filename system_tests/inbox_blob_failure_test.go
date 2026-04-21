@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // failingBlobReader wraps a real BlobReader and can be configured to fail.
@@ -100,7 +101,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 
 	// Build follower with failing blob reader
 	wrappedBlobReader := &failingBlobReader{
-		inner:     builder.L1.L1BlobReader,
+		inner:     builder.L1.L1BlobReader.Unwrap(),
 		returnErr: errors.New("simulated blob fetch failure"),
 	}
 
@@ -108,7 +109,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	nodeConfigB.MessageExtraction.Enable = true
 	testClientB, cleanupB := builder.Build2ndNodeWithBlobReader(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
-	}, wrappedBlobReader)
+	}, containers.Some[daprovider.BlobReader](wrappedBlobReader))
 	defer cleanupB()
 
 	// Wait for follower to attempt sync
@@ -247,7 +248,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 }
 
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
-func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader daprovider.BlobReader) (*TestClient, func()) {
+func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader containers.Option[daprovider.BlobReader]) (*TestClient, func()) {
 	t.Helper()
 	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L2 == nil {

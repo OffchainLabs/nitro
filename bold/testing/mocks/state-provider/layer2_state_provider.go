@@ -21,8 +21,9 @@ import (
 	"github.com/offchainlabs/nitro/bold/commitment/history"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
-	"github.com/offchainlabs/nitro/bold/testing"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
@@ -73,7 +74,7 @@ func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBac
 	for _, o := range opts {
 		o(s)
 	}
-	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
+	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, containers.None[db.Database]())
 	s.HistoryCommitmentProvider = *commitmentProvider
 	return s, nil
 }
@@ -157,7 +158,7 @@ func NewForSimpleMachine(
 	for _, o := range opts {
 		o(s)
 	}
-	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
+	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, containers.None[db.Database]())
 	s.HistoryCommitmentProvider = *commitmentProvider
 	totalWavmOpcodes := uint64(1)
 	for _, h := range s.challengeLeafHeights[1:] {
@@ -213,7 +214,7 @@ func NewForSimpleMachine(
 	return s, nil
 }
 
-func (s *L2StateBackend) UpdateAPIDatabase(database db.Database) {
+func (s *L2StateBackend) UpdateAPIDatabase(database containers.Option[db.Database]) {
 	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, database)
 	s.HistoryCommitmentProvider = *commitmentProvider
 }

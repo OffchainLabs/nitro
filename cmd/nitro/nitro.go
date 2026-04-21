@@ -60,6 +60,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -277,9 +278,10 @@ func mainImpl() int {
 	})
 
 	var rollupAddrs chaininfo.RollupAddresses
+	l1ClientOpt := containers.None[*ethclient.Client]()
 	var l1Client *ethclient.Client
 	var l1Reader *headerreader.HeaderReader
-	var blobReader daprovider.BlobReader
+	var blobReader containers.Option[daprovider.BlobReader]
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -288,6 +290,7 @@ func mainImpl() int {
 			log.Crit("couldn't connect to L1", "err", err)
 		}
 		l1Client = ethclient.NewClient(rpcClient)
+		l1ClientOpt = containers.Some(l1Client)
 		l1ChainId, err := l1Client.ChainID(ctx)
 		if err != nil {
 			log.Crit("couldn't read L1 chainid", "err", err)
@@ -316,7 +319,7 @@ func mainImpl() int {
 			if err != nil {
 				log.Crit("failed to initialize blob client", "err", err)
 			}
-			blobReader = blobClient
+			blobReader = containers.Some[daprovider.BlobReader](blobClient)
 		}
 	}
 
@@ -533,7 +536,7 @@ func mainImpl() int {
 			stack,
 			executionDB,
 			l2BlockChain,
-			l1Client,
+			l1ClientOpt,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 			parentChain,

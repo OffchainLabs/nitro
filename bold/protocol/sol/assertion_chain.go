@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/retry"
@@ -34,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/testgen"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -721,7 +721,7 @@ func TryConfirmingAssertion(
 	confirmableAfterBlock uint64,
 	chain protocol.AssertionChain,
 	averageTimeForBlockCreation time.Duration,
-	winningEdgeId option.Option[protocol.EdgeId],
+	winningEdgeId util_containers.Option[protocol.EdgeId],
 ) (bool, error) {
 	status, err := chain.AssertionStatus(ctx, assertionHash)
 	if err != nil {

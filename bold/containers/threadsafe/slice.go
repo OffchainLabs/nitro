@@ -8,7 +8,7 @@ package threadsafe
 import (
 	"sync"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type Slice[V any] struct {
@@ -26,13 +26,13 @@ func (s *Slice[V]) Push(v V) {
 	s.items = append(s.items, v)
 }
 
-func (s *Slice[V]) Get(i int) option.Option[V] {
+func (s *Slice[V]) Get(i int) containers.Option[V] {
 	s.RLock()
 	defer s.RUnlock()
 	if i >= len(s.items) {
-		return option.None[V]()
+		return containers.None[V]()
 	}
-	return option.Some(s.items[i])
+	return containers.Some(s.items[i])
 }
 
 func (s *Slice[V]) Len() int {

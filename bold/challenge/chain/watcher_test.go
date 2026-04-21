@@ -13,12 +13,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/mocks"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func simpleAssertionMetadata() *state.AssociatedAssertionMetadata {
@@ -82,9 +82,9 @@ func TestWatcher_processEdgeConfirmation(t *testing.T) {
 
 	mockChallengeManager.On(
 		"GetEdge", ctx, edgeId,
-	).Return(option.Some(protocol.SpecEdge(edge)), nil)
+	).Return(containers.Some(protocol.SpecEdge(edge)), nil)
 
-	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))
+	edge.On("ClaimId").Return(containers.Some(protocol.ClaimId(assertionHash.Hash)))
 	edge.On("Id").Return(edgeId)
 	edge.On("GetChallengeLevel").Return(protocol.ChallengeLevel(1), nil)
 	edge.On(
@@ -173,12 +173,12 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 
 	mockChallengeManager.On(
 		"GetEdge", ctx, edgeId,
-	).Return(option.Some(protocol.SpecEdge(edge)), nil)
+	).Return(containers.Some(protocol.SpecEdge(edge)), nil)
 
 	edge.On("Id").Return(edgeId)
 	edge.On("OriginId").Return(originId)
 	edge.On("CreatedAtBlock").Return(uint64(0), nil)
-	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))
+	edge.On("ClaimId").Return(containers.Some(protocol.ClaimId(assertionHash.Hash)))
 	edge.On("MutualId").Return(protocol.MutualId{})
 	edge.On("GetChallengeLevel").Return(protocol.NewBlockChallengeLevel(), nil)
 	edge.On("GetReversedChallengeLevel").Return(protocol.ChallengeLevel(2), nil)
@@ -199,7 +199,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		&state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some[state.Height](4),
+			UpToHeight:                  containers.Some[state.Height](4),
 		},
 		state.History{
 			Height:     uint64(0),
@@ -213,7 +213,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		&state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some[state.Height](4),
+			UpToHeight:                  containers.Some[state.Height](4),
 		},
 		state.History{
 			Height:     uint64(4),
@@ -282,7 +282,7 @@ func TestWatcher_AddVerifiedHonestEdge(t *testing.T) {
 	edge.On("OriginId").Return(originId)
 	createdAt := uint64(5)
 	edge.On("CreatedAtBlock").Return(createdAt, nil)
-	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))
+	edge.On("ClaimId").Return(containers.Some(protocol.ClaimId(assertionHash.Hash)))
 	edge.On("OriginId").Return(protocol.OriginId{})
 	edge.On("MutualId").Return(protocol.MutualId{})
 	edge.On("GetChallengeLevel").Return(protocol.NewBlockChallengeLevel(), nil)

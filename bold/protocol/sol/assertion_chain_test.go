@@ -15,15 +15,15 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/state"
-	"github.com/offchainlabs/nitro/bold/testing"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestNewEmptyStake(t *testing.T) {
@@ -319,14 +319,14 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           assertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(0)),
+				UpToHeight:                  containers.Some(state.Height(0)),
 			},
 		)
 		require.NoError(t, startErr)
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
+			UpToHeight:                  containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
 		}
 		endCommit, endErr := stateManager.HistoryCommitment(
 			ctx,
@@ -453,14 +453,14 @@ func TestIsChallengeComplete(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           assertionMetadata,
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(0)),
+				UpToHeight:                  containers.Some(state.Height(0)),
 			},
 		)
 		require.NoError(t, startErr)
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
+			UpToHeight:                  containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
 		}
 		endCommit, endErr := stateManager.HistoryCommitment(
 			ctx,

@@ -15,14 +15,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
-	"github.com/offchainlabs/nitro/bold/testing"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	challenge_testing "github.com/offchainlabs/nitro/bold/testing"
+	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func simpleAssertionMetadata() *state.AssociatedAssertionMetadata {
@@ -49,12 +49,12 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, startErr)
 
-		req.UpToHeight = option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
+		req.UpToHeight = containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
 		endCommit, endErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endErr)
 
@@ -102,14 +102,14 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(bisectHeight)),
+			UpToHeight:                  containers.Some(state.Height(bisectHeight)),
 		}
 		honestBisectCommit, err := createdData.HonestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, err)
 		req = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
+			UpToHeight:                  containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight)),
 		}
 		honestProof, err := createdData.HonestStateManager.PrefixProof(ctx, req, state.Height(bisectHeight))
 		require.NoError(t, err)
@@ -156,14 +156,14 @@ func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 			req := &state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(height / 2)),
+				UpToHeight:                  containers.Some(state.Height(height / 2)),
 			}
 			honestBisectCommit, err := honestStateManager.HistoryCommitment(ctx, req)
 			require.NoError(t, err)
 			prefixCommitReq := &state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(height)),
+				UpToHeight:                  containers.Some(state.Height(height)),
 			}
 			honestProof, err := honestStateManager.PrefixProof(
 				ctx,
@@ -204,11 +204,11 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	req := &state.HistoryCommitmentRequest{
 		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(state.Height(0)),
+		UpToHeight:                  containers.Some(state.Height(0)),
 	}
 	start, err := createdData.HonestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
-	req.UpToHeight = option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
+	req.UpToHeight = containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
 	end, err := createdData.HonestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 	prefixProof, err := createdData.HonestStateManager.PrefixProof(ctx, req, state.Height(0))
@@ -233,11 +233,11 @@ func TestEdgeChallengeManager_Bisect(t *testing.T) {
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight / 2)),
+			UpToHeight:                  containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight / 2)),
 		}
 		honestBisectCommit, err := honestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, err)
-		req.UpToHeight = option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
+		req.UpToHeight = containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
 		honestProof, err := honestStateManager.PrefixProof(ctx, req, challenge_testing.LevelZeroBlockEdgeHeight/2)
 		require.NoError(t, err)
 		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
@@ -284,21 +284,21 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(bisectTo),
+			UpToHeight:                  containers.Some(bisectTo),
 		}
 		var err error
 		honestBisectCommit, honestErr := honestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, honestErr)
-		req.UpToHeight = option.Some(state.Height(blockHeight))
+		req.UpToHeight = containers.Some(state.Height(blockHeight))
 		honestProof, honestProofErr := honestStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, honestProofErr)
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
-		req.UpToHeight = option.Some(bisectTo)
+		req.UpToHeight = containers.Some(bisectTo)
 		evilBisectCommit, bisectErr := evilStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, bisectErr)
-		req.UpToHeight = option.Some(state.Height(blockHeight))
+		req.UpToHeight = containers.Some(state.Height(blockHeight))
 		evilProof, evilErr := evilStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, evilErr)
 		evilEdge, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
@@ -317,11 +317,11 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 	req := &state.HistoryCommitmentRequest{
 		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []state.Height{0},
-		UpToHeight:                  option.Some(state.Height(0)),
+		UpToHeight:                  containers.Some(state.Height(0)),
 	}
 	startCommit, startErr := honestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, startErr)
-	req.UpToHeight = option.None[state.Height]()
+	req.UpToHeight = containers.None[state.Height]()
 	endCommit, endErr := honestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, endErr)
 	require.Equal(t, startCommit.LastLeaf, endCommit.FirstLeaf)
@@ -329,18 +329,18 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 	req = &state.HistoryCommitmentRequest{
 		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(state.Height(0)),
+		UpToHeight:                  containers.Some(state.Height(0)),
 	}
 	startParentCommitment, parentErr := honestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, parentErr)
-	req.UpToHeight = option.Some(state.Height(1))
+	req.UpToHeight = containers.Some(state.Height(1))
 	endParentCommitment, endParentErr := honestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, endParentErr)
 
 	req = &state.HistoryCommitmentRequest{
 		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []state.Height{0},
-		UpToHeight:                  option.Some(state.Height(endCommit.Height)),
+		UpToHeight:                  containers.Some(state.Height(endCommit.Height)),
 	}
 	startEndPrefixProof, proofErr := honestStateManager.PrefixProof(ctx, req, 0)
 	require.NoError(t, proofErr)
@@ -439,11 +439,11 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 	req := &state.HistoryCommitmentRequest{
 		AssertionMetadata:           simpleAssertionMetadata(),
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(bisectTo),
+		UpToHeight:                  containers.Some(bisectTo),
 	}
 	honestBisectCommit, err := honestStateManager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
-	req.UpToHeight = option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
+	req.UpToHeight = containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
 	honestProof, err := honestStateManager.PrefixProof(ctx, req, bisectTo)
 	require.NoError(t, err)
 	honestChildren1, honestChildren2, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
@@ -487,11 +487,11 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, startErr)
-		req.UpToHeight = option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
+		req.UpToHeight = containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
 		endCommit, endErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endErr)
 		prefixProof, proofErr := stateManager.PrefixProof(ctx, req, 0)
@@ -665,11 +665,11 @@ func setupBisectionScenario(
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, startErr)
-		req.UpToHeight = option.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
+		req.UpToHeight = containers.Some(state.Height(challenge_testing.LevelZeroBlockEdgeHeight))
 		endCommit, endErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endErr)
 		prefixProof, proofErr := stateManager.PrefixProof(ctx, req, 0)
@@ -753,21 +753,21 @@ func setupOneStepProofScenario(
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(bisectTo),
+			UpToHeight:                  containers.Some(bisectTo),
 		}
 		honestBisectCommit, honestErr := honestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, honestErr)
-		req.UpToHeight = option.Some(state.Height(blockHeight))
+		req.UpToHeight = containers.Some(state.Height(blockHeight))
 		honestProof, honestProofErr := honestStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, honestProofErr)
 		var err error
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
-		req.UpToHeight = option.Some(bisectTo)
+		req.UpToHeight = containers.Some(bisectTo)
 		evilBisectCommit, bisectErr := evilStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, bisectErr)
-		req.UpToHeight = option.Some(state.Height(blockHeight))
+		req.UpToHeight = containers.Some(state.Height(blockHeight))
 		evilProof, evilErr := evilStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, evilErr)
 		evilEdge, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
@@ -788,11 +788,11 @@ func setupOneStepProofScenario(
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, startErr)
-		req.UpToHeight = option.None[state.Height]()
+		req.UpToHeight = containers.None[state.Height]()
 		endCommit, endErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endErr)
 		require.Equal(t, startCommit.LastLeaf, endCommit.FirstLeaf)
@@ -800,18 +800,18 @@ func setupOneStepProofScenario(
 		req = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startParentCommitment, parentErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, parentErr)
-		req.UpToHeight = option.Some(state.Height(1))
+		req.UpToHeight = containers.Some(state.Height(1))
 		endParentCommitment, endParentErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endParentErr)
 
 		req = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0},
-			UpToHeight:                  option.Some(state.Height(endCommit.Height)),
+			UpToHeight:                  containers.Some(state.Height(endCommit.Height)),
 		}
 		startEndPrefixProof, proofErr := stateManager.PrefixProof(ctx, req, 0)
 		require.NoError(t, proofErr)
@@ -850,22 +850,22 @@ func setupOneStepProofScenario(
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0},
-			UpToHeight:                  option.Some(bisectTo),
+			UpToHeight:                  containers.Some(bisectTo),
 		}
 		honestBisectCommit, bisectErr := honestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, bisectErr)
 
-		req.UpToHeight = option.Some(state.Height(bigStepHeight))
+		req.UpToHeight = containers.Some(state.Height(bigStepHeight))
 		honestProof, honestErr := honestStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, honestErr)
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
-		req.UpToHeight = option.Some(bisectTo)
+		req.UpToHeight = containers.Some(bisectTo)
 		evilBisectCommit, bisectErr := evilStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, bisectErr)
 
-		req.UpToHeight = option.Some(state.Height(bigStepHeight))
+		req.UpToHeight = containers.Some(state.Height(bigStepHeight))
 		evilProof, evilErr := evilStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, evilErr)
 		evilEdge, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
@@ -897,31 +897,31 @@ func setupOneStepProofScenario(
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0, 0},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startCommit, startErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, startErr)
 
-		req.UpToHeight = option.None[state.Height]()
+		req.UpToHeight = containers.None[state.Height]()
 		endCommit, endErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endErr)
 
 		req = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  containers.Some(state.Height(0)),
 		}
 		startParentCommitment, parentErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, parentErr)
 
-		req.UpToHeight = option.Some(state.Height(1))
+		req.UpToHeight = containers.Some(state.Height(1))
 		endParentCommitment, endParentErr := stateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, endParentErr)
 
 		req = &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0, 0},
-			UpToHeight:                  option.Some(state.Height(endCommit.Height)),
+			UpToHeight:                  containers.Some(state.Height(endCommit.Height)),
 		}
 		startEndPrefixProof, prefixErr := stateManager.PrefixProof(ctx, req, 0)
 		require.NoError(t, prefixErr)
@@ -982,23 +982,23 @@ func setupOneStepProofScenario(
 		req := &state.HistoryCommitmentRequest{
 			AssertionMetadata:           simpleAssertionMetadata(),
 			UpperChallengeOriginHeights: []state.Height{0, 0},
-			UpToHeight:                  option.Some(bisectTo),
+			UpToHeight:                  containers.Some(bisectTo),
 		}
 
 		honestBisectCommit, bisectErr := honestStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, bisectErr)
 
-		req.UpToHeight = option.Some(state.Height(smallStepHeight))
+		req.UpToHeight = containers.Some(state.Height(smallStepHeight))
 		honestProof, proofErr := honestStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, proofErr)
 		honestEdge, _, err = honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
 		require.NoError(t, err)
 
-		req.UpToHeight = option.Some(bisectTo)
+		req.UpToHeight = containers.Some(bisectTo)
 		evilBisectCommit, evilBisectErr := evilStateManager.HistoryCommitment(ctx, req)
 		require.NoError(t, evilBisectErr)
 
-		req.UpToHeight = option.Some(state.Height(smallStepHeight))
+		req.UpToHeight = containers.Some(state.Height(smallStepHeight))
 		evilProof, evilProofErr := evilStateManager.PrefixProof(ctx, req, bisectTo)
 		require.NoError(t, evilProofErr)
 		evilEdge, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)

@@ -971,7 +971,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		Require(t, err)
 		require.NotZero(t, l1Block.BlobGasUsed)
 
-		restoredBlobs, err := builder.L1.L1BlobReader.GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
+		restoredBlobs, err := builder.L1.L1BlobReader.Unwrap().GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
 		Require(t, err)
 		require.Len(t, restoredBlobs, 1)
 	}

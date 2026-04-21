@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func (m *Manager) syncAssertions(ctx context.Context) {
@@ -169,11 +169,11 @@ func (m *Manager) processAllAssertionsInRange(
 				*filterOpts.End,
 			)
 		}
-		assertionOpt, err := retry.UntilSucceeds(ctx, func() (option.Option[*protocol.AssertionCreatedInfo], error) {
+		assertionOpt, err := retry.UntilSucceeds(ctx, func() (containers.Option[*protocol.AssertionCreatedInfo], error) {
 			item, innerErr := m.extractAssertionFromEvent(ctx, it.Event)
 			if innerErr != nil {
 				log.Error("Could not extract assertion from event", "err", innerErr)
-				return option.None[*protocol.AssertionCreatedInfo](), innerErr
+				return containers.None[*protocol.AssertionCreatedInfo](), innerErr
 			}
 			return item, nil
 		})
@@ -249,8 +249,8 @@ func (m *Manager) processAllAssertionsInRange(
 func (m *Manager) extractAssertionFromEvent(
 	ctx context.Context,
 	event *rollupgen.RollupUserLogicAssertionCreated,
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+) (containers.Option[*protocol.AssertionCreatedInfo], error) {
+	none := containers.None[*protocol.AssertionCreatedInfo]()
 	if event.AssertionHash == (common.Hash{}) {
 		log.Warn("Encountered an assertion with a zero hash",
 			"creationEvent", fmt.Sprintf("%+v", event),
@@ -265,7 +265,7 @@ func (m *Manager) extractAssertionFromEvent(
 	if creationInfo.ParentAssertionHash.Hash == (common.Hash{}) {
 		return none, nil
 	}
-	return option.Some(creationInfo), nil
+	return containers.Some(creationInfo), nil
 }
 
 // Finds all canonical assertions from an ordered list by creation time.
@@ -453,15 +453,15 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 func (m *Manager) maybePostRivalAssertion(
 	ctx context.Context,
 	canonicalParent *protocol.AssertionCreatedInfo,
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+) (containers.Option[*protocol.AssertionCreatedInfo], error) {
+	none := containers.None[*protocol.AssertionCreatedInfo]()
 	// Post what we believe is the correct assertion that follows the ancestor we agree with.
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
 		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
+	var assertionOpt containers.Option[protocol.Assertion]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -510,13 +510,13 @@ func (m *Manager) maybePostRivalAssertion(
 				log.Error("Could not save assertion to DB", "err", err2)
 			}
 		}()
-		return option.Some(creationInfo), nil
+		return containers.Some(creationInfo), nil
 	}
 	return none, nil
 }
 
 func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.AssertionCreatedInfo) error {
-	if api.IsNil(m.apiDB) {
+	if m.apiDB.IsNone() {
 		return nil
 	}
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
@@ -546,7 +546,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 	if err != nil {
 		return err
 	}
-	return m.apiDB.InsertAssertion(&api.JsonAssertion{
+	return m.apiDB.Unwrap().InsertAssertion(&api.JsonAssertion{
 		Hash:                     assertionHash.Hash,
 		ConfirmPeriodBlocks:      creationInfo.ConfirmPeriodBlocks,
 		RequiredStake:            creationInfo.RequiredStake.String(),

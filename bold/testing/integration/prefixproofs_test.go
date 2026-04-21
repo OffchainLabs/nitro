@@ -20,11 +20,11 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/commitment/history"
 	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestPrefixProofGeneration(t *testing.T) {
@@ -165,12 +165,12 @@ func computeLegacyPrefixProof(t *testing.T, ctx context.Context, numHashes uint6
 			BatchLimit: 10,
 		},
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(state.Height(fromMessageNumber)),
+		UpToHeight:                  containers.Some(state.Height(fromMessageNumber)),
 	}
 	loCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 
-	req.UpToHeight = option.Some(state.Height(numHashes - 1))
+	req.UpToHeight = containers.Some(state.Height(numHashes - 1))
 	hiCommit, err := manager.HistoryCommitment(ctx, req)
 	require.NoError(t, err)
 

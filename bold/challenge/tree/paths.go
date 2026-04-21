@@ -13,8 +13,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 type ComputePathWeightArgs struct {
@@ -295,15 +295,15 @@ func (s *stack[T]) push(x T) {
 	s.dll.PushBack(x)
 }
 
-func (s *stack[T]) pop() option.Option[T] {
+func (s *stack[T]) pop() util_containers.Option[T] {
 	if s.dll.Len() == 0 {
-		return option.None[T]()
+		return util_containers.None[T]()
 	}
 	tail := s.dll.Back()
 	val := tail.Value
 	s.dll.Remove(tail)
 	// nolint:errcheck
-	return option.Some(val.(T))
+	return util_containers.Some(val.(T))
 }
 
 type unsigned interface {
