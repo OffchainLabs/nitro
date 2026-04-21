@@ -763,7 +763,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	}
 }
 
-// TestMELMigrationFromLegacyNode verifies that a node previously running with
+// TestMELMigrationFromLegacyNodeFlaky verifies that a node previously running with
 // the legacy inbox reader/tracker can be seamlessly migrated to MEL.
 //
 // Test plan:
@@ -793,7 +793,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 //	 14. Post a batch that consumes the unread legacy delayed messages + new deposits
 //	 15. Wait for MEL to process the new batch
 //	 16. Verify MEL state shows increased counts for batches, messages, and delayed reads
-func TestMELMigrationFromLegacyNode(t *testing.T) {
+func TestMELMigrationFromLegacyNodeFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

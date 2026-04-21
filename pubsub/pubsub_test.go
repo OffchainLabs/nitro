@@ -229,7 +229,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 	return wantResponses, wantErrors
 }
 
-func TestRedisProduceComplex(t *testing.T) {
+func TestRedisProduceComplexFlaky(t *testing.T) {
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
 	t.Parallel()
 	for _, tc := range []struct {
