@@ -85,7 +85,7 @@ impl TxProcessor {
         self.drop_tip_with_collect(arbos_version, false)
     }
 
-    /// Drop-tip decision matching Nitro's CollectTips():
+    /// Drop-tip decision:
     /// - delayed inbox: always drop
     /// - v9: never drop (collect)
     /// - v10..v59: always drop
@@ -116,7 +116,7 @@ impl TxProcessor {
         gas_price: U256,
         collect_tips_enabled: bool,
     ) -> U256 {
-        // Nitro: GetPaidGasPrice returns full gas price when CollectTips() else basefee.
+        // Pay full gas price when tip collection is active, else basefee.
         if !self.drop_tip_with_collect(arbos_version, collect_tips_enabled) {
             gas_price
         } else {
@@ -302,26 +302,18 @@ impl TxProcessor {
         let gas_used = params.gas_used;
         let base_fee = params.base_fee;
 
-        let total_cost = base_fee.saturating_mul(U256::from(gas_used));
-        let mut compute_cost = total_cost.saturating_sub(self.poster_fee);
-        let mut poster_fee = self.poster_fee;
-
-        if total_cost < self.poster_fee {
-            tracing::error!(
-                gas_used,
-                ?base_fee,
-                poster_fee = ?self.poster_fee,
-                "total cost < poster cost"
-            );
-            poster_fee = U256::ZERO;
-            compute_cost = total_cost;
-        }
+        // `compute_cost = basefee × compute_gas` directly. A `total_cost -
+        // poster_fee` formulation leaks `tip × posterGas` out of the network
+        // mint whenever poster_fee is priced at `actualGasPrice` (CollectTips
+        // true) while total_cost uses basefee.
+        let compute_gas = gas_used.saturating_sub(self.poster_gas);
+        let mut compute_cost = base_fee.saturating_mul(U256::from(compute_gas));
+        let poster_fee = self.poster_fee;
 
         let mut infra_fee_amount = U256::ZERO;
 
         if params.arbos_version > 4 && params.infra_fee_account != Address::ZERO {
             let infra_fee = params.min_base_fee.min(base_fee);
-            let compute_gas = gas_used.saturating_sub(self.poster_gas);
             infra_fee_amount = infra_fee.saturating_mul(U256::from(compute_gas));
             compute_cost = compute_cost.saturating_sub(infra_fee_amount);
         }
