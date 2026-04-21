@@ -414,7 +414,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
-		b.nodeConfig.MessageExtraction.Enable = true
+		b.nodeConfig.MessageExtraction.Enable = *testflag.MelFlag
 	} else {
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
