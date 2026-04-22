@@ -1,7 +1,11 @@
 #!/bin/sh
-# Rewrite OffchainLabs/* submodule URLs to their -private variants for
-# repos listed in .private-submodules.conf, optionally embed GITHUB_TOKEN
-# into github.com URLs for auth, then sync + update submodules.
+# CI-only. Invoked by .github/actions/init-submodules and .github/buildspec.yml;
+# do not run locally. For dev use `make init-submodules`, which goes through
+# scripts/configure-private-submodules.sh (no in-tree .gitmodules rewrite).
+#
+# Rewrites OffchainLabs/* submodule URLs to their -private variants for
+# repos listed in .private-submodules.conf, optionally embeds GITHUB_TOKEN
+# into github.com URLs for auth, then syncs + updates submodules.
 #
 # The token is baked into the URL (not a credential helper) so it's
 # naturally inherited by the git subprocesses that clone/fetch inside

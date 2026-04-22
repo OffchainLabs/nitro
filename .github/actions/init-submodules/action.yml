@@ -40,7 +40,7 @@ runs:
           echo "::error::PRIVATE_REPO_PAT contains unexpected characters; check the secret for stray whitespace."
           exit 1
         fi
-        GITHUB_TOKEN="$TOKEN" scripts/init-submodules.sh
+        GITHUB_TOKEN="$TOKEN" scripts/ci-init-submodules.sh
 
     - name: Initialize submodules (public)
       if: "!endsWith(github.repository, '-private')"

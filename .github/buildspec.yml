@@ -33,7 +33,7 @@ phases:
             exit 1
           fi
           rm -f /tmp/github-app-key.pem
-          scripts/init-submodules.sh
+          scripts/ci-init-submodules.sh
         else
           git submodule update --init --recursive
         fi
