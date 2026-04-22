@@ -1177,7 +1177,7 @@ func testMemory(t *testing.T, jit bool) {
 	}
 
 	// check footprint can induce a revert
-	args = arbmath.ConcatByteSlices([]byte{122}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
+	args = arbmath.ConcatByteSlices([]byte{120}, growCallAddr[:], []byte{0}, common.Address{}.Bytes())
 	expectFailure(growCallAddr, args, oneEth)
 
 	// check same call would have succeeded with fewer pages
@@ -1507,6 +1507,102 @@ func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool) {
 	tx2 := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
 	Require(t, l2client.SendTransaction(ctx, tx2))
 	EnsureTxFailed(t, ctx, l2client, tx2)
+}
+
+func TestProgramNestedStylusCumulativeFootprint(t *testing.T) {
+	testNestedStylusCumulativeFootprint(t, true)
+}
+
+func TestProgramNestedStylusCumulativeFootprintNative(t *testing.T) {
+	testNestedStylusCumulativeFootprint(t, false)
+}
+
+// testNestedStylusCumulativeFootprint exercises the CallProgram-entry
+// page-limit check on the NESTED path: an outer Stylus program grows
+// memory, then calls an inner program whose static footprint alone fits
+// under PageLimit but whose cumulative open+footprint does not. Without
+// the cumulative check, the inner's static-footprint reservation bypasses
+// the addPages hostio and silently breaches the cap. With the fix, the
+// inner OOGs at CallProgram entry; outer sees a failed call_contract,
+// returns a non-zero user_entrypoint value, and reverts. This test
+// targets the consensus cap (StylusParams.PageLimit, ArbOS >= 59), so
+// the sequencer includes the tx and it fails on-chain rather than being
+// FilterTx'd.
+func testNestedStylusCumulativeFootprint(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_59)
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Inner: 120-page static footprint, no memory.grow — so the addPages
+	// hostio never fires for it.
+	innerAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+	// Outer: grows memory by calldata[0] pages (initial footprint 4), then
+	// calls the address at calldata[1..21] with calldata[21:] as inner
+	// calldata. See arbitrator/stylus/tests/grow/grow-and-call.wat.
+	outerAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-and-call"))
+
+	// Default PageLimit = 128. Outer grows 10 pages → open = 4 + 10 = 14.
+	// Inner footprint = 120. Cumulative at inner CallProgram = 134 > 128.
+	// Inner calldata length is 0 — grow-120 ignores its input.
+	calldata := append([]byte{10}, innerAddr.Bytes()...)
+
+	// eth_call: inner OOGs at CallProgram entry on the consensus path
+	// (ArbOS >= 59). call_contract in outer returns non-zero → outer's
+	// user_entrypoint returns non-zero → outer reverts. eth_call surfaces
+	// "execution reverted" (not "out of gas", because outer is not OOG —
+	// only the inner sub-call is).
+	msg := ethereum.CallMsg{To: &outerAddr, Gas: 32000000, Data: calldata}
+	if _, err := l2client.CallContract(ctx, msg, nil); err == nil || !strings.Contains(err.Error(), "execution reverted") {
+		Fatal(t, "nested call exceeding cumulative PageLimit should have reverted, got:", err)
+	}
+
+	// Sequenced tx: consensus cap OOGs WITHOUT calling FilterTx, so the
+	// sequencer must include the tx and produce a failed receipt.
+	tx := l2info.PrepareTxTo("Owner", &outerAddr, 1e9, nil, calldata)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	EnsureTxFailed(t, ctx, l2client, tx)
+}
+
+func TestProgramNestedStylusCumulativeFootprintNodeLevel(t *testing.T) {
+	testNestedStylusCumulativeFootprintNodeLevel(t, true)
+}
+
+func TestProgramNestedStylusCumulativeFootprintNodeLevelNative(t *testing.T) {
+	testNestedStylusCumulativeFootprintNodeLevel(t, false)
+}
+
+// Same nested-call scenario, but exercises the node-level MaxOpenPages
+// cap rather than the consensus cap. In a sequencing runCtx, FilterTx
+// fires inside the inner frame, marking the whole tx for exclusion so
+// the sequencer rejects it with ErrArbTxFilter before inclusion.
+func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool) {
+	const pageLimit uint16 = 128
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+	})
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	innerAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-120"))
+	outerAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-and-call"))
+
+	// Outer grows 10 pages → open = 14. Inner footprint = 120. Cumulative
+	// = 134 > 128. Inner calldata length is 0.
+	calldata := append([]byte{10}, innerAddr.Bytes()...)
+
+	// Sequenced tx: inner's CallProgram-entry check sees cumulative 134
+	// in a sequencing runCtx → FilterTx + OOG. The whole tx is dropped.
+	tx := l2info.PrepareTxTo("Owner", &outerAddr, 1e9, nil, calldata)
+	err := l2client.SendTransaction(ctx, tx)
+	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+		Fatal(t, "sequenced tx exceeding cumulative MaxOpenPages should have been filtered, got:", err)
+	}
 }
 
 func TestProgramActivateFails(t *testing.T) {
