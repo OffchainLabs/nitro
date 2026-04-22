@@ -235,7 +235,23 @@ func TestForwarder_DeleteError(t *testing.T) {
 	queueClient := &sqsclient.MockQueueClient{
 		DeleteErr: fmt.Errorf("simulated SQS delete error"),
 	}
-	_ = queueClient.Send(t.Context(), `{"test":"message"}`)
+	rpcClient := newTestStack(t, queueClient)
+
+	reports := []addressfilter.FilteredTxReport{{
+		ID:                "",
+		TxHash:            common.HexToHash("0x01"),
+		TxRLP:             nil,
+		FilteredAddresses: nil,
+		BlockNumber:       0,
+		ParentBlockHash:   common.Hash{},
+		PositionInBlock:   0,
+		FilteredAt:        time.Time{},
+		IsDelayed:         false,
+		DelayedReportData: nil,
+	}}
+	if err := rpcClient.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
+		t.Fatal(err)
+	}
 
 	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(t.Context())
