@@ -22,6 +22,7 @@
 set -eu
 
 # shellcheck source=scripts/lib-private-submodules.sh
+# shellcheck disable=SC1091  # CI runs shellcheck without -x, so it cannot follow the source.
 . "$(dirname "$0")/lib-private-submodules.sh"
 
 strict=0
