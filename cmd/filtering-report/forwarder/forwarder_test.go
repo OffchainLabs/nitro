@@ -42,7 +42,8 @@ func newTestStack(t *testing.T, queueClient *sqsclient.MockQueueClient) *rpc.Cli
 	return client
 }
 
-func newTestForwarder(queueClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
+func newTestForwarder(t *testing.T, queueClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
+	t.Helper()
 	config := &Config{
 		Workers:            1,
 		PollInterval:       time.Second,
@@ -52,7 +53,11 @@ func newTestForwarder(queueClient *sqsclient.MockQueueClient, endpointURL string
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 	}
-	return New(config, queueClient)
+	fwd, err := New(config, queueClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fwd
 }
 
 func TestForwarder_ForwardsMessages(t *testing.T) {
@@ -106,7 +111,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
+	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(ctx)
 	forwarder.pollAndForward(ctx)
 
@@ -166,7 +171,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
+	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(ctx)
 
 	deleted := queueClient.DeletedReceiptHandles()
@@ -185,7 +190,7 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 
 	queueClient := &sqsclient.MockQueueClient{}
 
-	forwarder := newTestForwarder(queueClient, externalEndpointServer.URL)
+	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(t.Context())
 
 	if externalEndpointServerCalled {

@@ -5,6 +5,7 @@ package forwarder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,12 +59,18 @@ type Forwarder struct {
 	httpClient  *http.Client
 }
 
-func New(config *Config, queueClient sqsclient.QueueClient) *Forwarder {
+func New(config *Config, queueClient sqsclient.QueueClient) (*Forwarder, error) {
+	if config == nil {
+		return nil, errors.New("config must not be nil")
+	}
+	if queueClient == nil {
+		return nil, errors.New("queueClient must not be nil")
+	}
 	return &Forwarder{
 		config:      config,
 		queueClient: queueClient,
 		httpClient:  &http.Client{Timeout: config.ExternalEndpoint.Timeout},
-	}
+	}, nil
 }
 
 func (r *Forwarder) Start(ctx context.Context) {
