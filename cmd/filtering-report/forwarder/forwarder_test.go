@@ -5,6 +5,7 @@ package forwarder
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -202,5 +203,23 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 	}
 	if interval != forwarder.config.PollInterval {
 		t.Fatalf("expected poll interval %v on empty queue, got %v", forwarder.config.PollInterval, interval)
+	}
+}
+
+func TestForwarder_ReceiveError(t *testing.T) {
+	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("expected no HTTP calls when Receive fails")
+	}))
+	defer externalEndpointServer.Close()
+
+	queueClient := &sqsclient.MockQueueClient{
+		ReceiveErr: fmt.Errorf("simulated SQS error"),
+	}
+
+	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	interval := forwarder.pollAndForward(t.Context())
+
+	if interval != forwarder.config.PollInterval {
+		t.Fatalf("expected poll interval %v on receive error, got %v", forwarder.config.PollInterval, interval)
 	}
 }

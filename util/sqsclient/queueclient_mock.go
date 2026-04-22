@@ -16,6 +16,7 @@ type MockQueueClient struct {
 	queue                 []sqstypes.Message
 	msgCounter            int
 	deletedReceiptHandles []string
+	ReceiveErr            error
 }
 
 func (m *MockQueueClient) Send(_ context.Context, body string) error {
@@ -35,6 +36,9 @@ func (m *MockQueueClient) Send(_ context.Context, body string) error {
 func (m *MockQueueClient) Receive(_ context.Context, _ int32, maxMessages int32) ([]sqstypes.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.ReceiveErr != nil {
+		return nil, m.ReceiveErr
+	}
 	limit := int(maxMessages)
 	if limit < 1 || limit > 10 {
 		return nil, fmt.Errorf("invalid parameter: MaxNumberOfMessages must be between 1 and 10, got %d", limit)
