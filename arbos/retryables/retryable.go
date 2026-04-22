@@ -115,21 +115,33 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		// Or the user is out of gas
 		return nil, err
 	}
-	// Starting at ArbosVersion_60, existence is determined by the effective
-	// expiry (stored timeout + remaining keepalive windows). Before v60,
-	// Keepalive could leave a retryable logically alive but unreachable via
-	// OpenRetryable until TryToReapOneRetryable advanced the stored timeout.
-	effectiveTimeout := timeout
-	if rs.ArbosVersion >= params.ArbosVersion_60 {
-		windowsLeft, err := windowsLeftStorage.Get()
-		if err != nil {
-			return nil, err
+	// Only consult timeoutWindowsLeft when the stored timeout has already
+	// expired. If the stored timeout is still in the future the retryable is
+	// definitely alive, and skipping the SLOAD keeps gas byte-for-byte
+	// identical to pre-ArbosVersion_60 behavior on the hot path (every
+	// OpenRetryable call on a live ticket, including precompile-driven
+	// cascading redeems). The branch is deterministic across nodes because
+	// both `timeout` (SLOAD) and `currentTimestamp` (block header time) are
+	// consensus-replicated, so reading the extra slot only in the expired
+	// branch does not affect consensus.
+	if timeout < currentTimestamp {
+		// Stored timeout has passed. Pre-v60: reap. At v60+: Keepalive may
+		// have incremented timeoutWindowsLeft (extending the effective
+		// lifetime) without TryToReapOneRetryable having advanced the stored
+		// timeout yet. Consult the effective expiry so the retryable stays
+		// reachable during that window
+		effectiveTimeout := timeout
+		if rs.ArbosVersion >= params.ArbosVersion_60 {
+			windowsLeft, err := windowsLeftStorage.Get()
+			if err != nil {
+				return nil, err
+			}
+			effectiveTimeout = timeout + windowsLeft*RetryableLifetimeSeconds
 		}
-		effectiveTimeout = timeout + windowsLeft*RetryableLifetimeSeconds
-	}
-	if effectiveTimeout < currentTimestamp {
-		// the timeout has expired and the retryable will soon be reaped
-		return nil, nil
+		if effectiveTimeout < currentTimestamp {
+			// the timeout has expired and the retryable will soon be reaped
+			return nil, nil
+		}
 	}
 	return &Retryable{
 		id:                 id,
