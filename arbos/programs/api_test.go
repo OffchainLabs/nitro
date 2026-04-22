@@ -532,3 +532,39 @@ func TestEnforce_Consensus_NilRunCtx_StillEnforced(t *testing.T) {
 	penalty := enforceStylusPageLimit(evm, statedb, nil, 20, common.Address{1}, sp, pageLimitAddPages)
 	require.Equal(t, uint64(math.MaxUint64), penalty, "consensus check must fire even with nil runCtx")
 }
+
+// The following tests pin the cumulative-footprint semantics that
+// programs.CallProgram relies on: the helper is fed `open + footprint` and
+// must decide OOG/allow against that cumulative value, matching the
+// addPages hostio's behavior. A regression that reverted CallProgram to
+// passing raw footprint would pass these helper-level tests; the
+// integration tests in system_tests/program_test.go guard that call site.
+func TestEnforce_CallProgram_CumulativeFootprint_OverConsensusLimit(t *testing.T) {
+	// Outer frame has already consumed 24 open pages; inner footprint 120.
+	// Neither alone exceeds PageLimit=128, but cumulative 24+120=144 does.
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 128}
+	newOpen := arbmath.SaturatingUAdd(uint16(24), uint16(120))
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), newOpen, common.Address{1}, sp, pageLimitCallProgram)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "cumulative 144 > 128 should OOG on consensus path")
+	require.False(t, statedb.IsTxFiltered(), "consensus path must not FilterTx")
+}
+
+func TestEnforce_CallProgram_CumulativeFootprint_UnderConsensusLimit(t *testing.T) {
+	// Same split but PageLimit raised so cumulative fits.
+	evm, statedb := buildEnforceTestArgs(t, 0, true, params.ArbosVersion_59)
+	sp := &StylusParams{PageLimit: 200}
+	newOpen := arbmath.SaturatingUAdd(uint16(24), uint16(120))
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), newOpen, common.Address{1}, sp, pageLimitCallProgram)
+	require.Equal(t, uint64(0), penalty, "cumulative 144 <= 200 should allow")
+}
+
+func TestEnforce_CallProgram_CumulativeFootprint_OverNodeLimit_Sequencing(t *testing.T) {
+	// Mirrors the node-level MaxOpenPages path: in a sequencing context,
+	// cumulative-exceed must OOG AND call FilterTx.
+	evm, statedb := buildEnforceTestArgs(t, 128, true, 0)
+	newOpen := arbmath.SaturatingUAdd(uint16(24), uint16(120))
+	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageSequencingContext(nil), newOpen, common.Address{1}, nil, pageLimitCallProgram)
+	require.Equal(t, uint64(math.MaxUint64), penalty, "cumulative 144 > 128 must OOG in sequencing")
+	require.True(t, statedb.IsTxFiltered(), "node path must FilterTx in sequencing")
+}
