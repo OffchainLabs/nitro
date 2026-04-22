@@ -4,7 +4,6 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
-use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_primitives::Address;
 use revm::{database::State, Database};
 use revm_database::{AccountStatus as CacheAccountStatus, TransitionAccount};
@@ -78,15 +77,29 @@ pub fn drain_and_apply<DB: Database>(state: &mut State<DB>) {
 
         let new_status = match (pre_empty, cur_empty) {
             (true, true) => continue,
-            (true, false) => entry.previous_status.on_created(),
-            (false, true) => entry.previous_status.on_touched_empty_post_eip161(),
-            (false, false) => {
-                let prev = entry.previous_info.as_ref();
-                let had_no_nonce_and_code = prev
-                    .map(|i| i.nonce == 0 && i.code_hash == KECCAK_EMPTY)
-                    .unwrap_or(true);
-                entry.previous_status.on_changed(had_no_nonce_and_code)
-            }
+            (true, false) => match entry.previous_status {
+                CacheAccountStatus::Destroyed
+                | CacheAccountStatus::DestroyedAgain
+                | CacheAccountStatus::DestroyedChanged => CacheAccountStatus::DestroyedChanged,
+                _ => CacheAccountStatus::InMemoryChange,
+            },
+            (false, true) => match entry.previous_status {
+                CacheAccountStatus::LoadedNotExisting => continue,
+                CacheAccountStatus::DestroyedAgain | CacheAccountStatus::DestroyedChanged => {
+                    CacheAccountStatus::DestroyedAgain
+                }
+                _ => CacheAccountStatus::Destroyed,
+            },
+            (false, false) => match entry.previous_status {
+                CacheAccountStatus::Loaded => CacheAccountStatus::Changed,
+                CacheAccountStatus::LoadedNotExisting | CacheAccountStatus::LoadedEmptyEIP161 => {
+                    CacheAccountStatus::InMemoryChange
+                }
+                CacheAccountStatus::DestroyedAgain
+                | CacheAccountStatus::Destroyed
+                | CacheAccountStatus::DestroyedChanged => CacheAccountStatus::DestroyedChanged,
+                other => other,
+            },
         };
 
         let goes_destroyed = matches!(
