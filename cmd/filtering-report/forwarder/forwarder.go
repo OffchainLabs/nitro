@@ -84,7 +84,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	}
 	msg := msgs[0]
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-		log.Warn("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
+		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
 		return 0
 	}
 	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
