@@ -182,11 +182,14 @@ pub fn storage_flush_cache<E: EvmApi>(
         .evm_api
         .flush_storage_cache(clear != 0, Gas(gas_left.0 + 1))
         .map_err(|e| Escape::Internal(e.to_string()))?;
-    if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
-        info.buy_gas(gas_cost.0)?;
-    }
+    // Only buy gas on success: a partial flush's gas is reverted with the
+    // call. Charging it here would burn ink that should be returned to the
+    // caller as part of the revert refund.
     if status != UserOutcomeKind::Success {
         return Escape::logical("storage flush failed");
+    }
+    if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+        info.buy_gas(gas_cost.0)?;
     }
     Ok(())
 }
