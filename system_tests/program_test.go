@@ -1083,7 +1083,16 @@ func TestProgramMemory(t *testing.T) {
 }
 
 func testMemory(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	// Disable the node-level MaxStylusOpenPages cap (default 128 coincides
+	// with the consensus PageLimit). The "footprint can induce a revert"
+	// case below relies on gas saturation pushing a nested Stylus call to
+	// OOG on-chain so validateBlocks can prove the failing block. With the
+	// default cap enabled, the cumulative-footprint check at CallProgram
+	// entry would FilterTx the tx before inclusion. MaxStylusOpenPages
+	// filtering is covered by testMaxStylusOpenPages.
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.execConfig.StylusTarget.MaxStylusOpenPages = 0
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
