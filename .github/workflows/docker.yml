@@ -69,6 +69,26 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
+      - name: Build nitro-node-slim-stripped docker
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
+        with:
+          target: nitro-node-slim-stripped
+          push: true
+          context: .
+          tags: localhost:5000/nitro-node-slim-stripped:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Build nitro-node-stripped docker
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
+        with:
+          target: nitro-node-stripped
+          push: true
+          context: .
+          tags: localhost:5000/nitro-node-stripped:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
       - name: Start background nitro-testnode
         shell: bash
         run: |
