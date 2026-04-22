@@ -21,4 +21,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - run: cargo nextest run -p arb-spec-tests --profile ci
+      # Execution fixtures need a release binary spawned per-fixture.
+      # Without ARB_SPEC_BINARY the runner silently skips them.
+      - name: Build arb-reth (release)
+        run: cargo build --release -p arb-reth
+      - name: Run spec tests
+        env:
+          ARB_SPEC_BINARY: ${{ github.workspace }}/target/release/arb-reth
+        run: cargo nextest run -p arb-spec-tests --profile ci
