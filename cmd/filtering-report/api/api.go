@@ -42,6 +42,14 @@ func NewStack(stackConfig *node.Config) (*node.Node, error) {
 		return nil, err
 	}
 
+	apis := []rpc.API{{
+		Namespace: gethexec.FilteringReportNamespace,
+		Version:   "1.0",
+		Service:   &FilteringReportAPI{},
+		Public:    true,
+	}}
+	stack.RegisterAPIs(apis)
+
 	stack.RegisterHandler("liveness", "/liveness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -16,7 +16,10 @@ on:
       run-flaky:
         required: false
         type: boolean
-      run-pathdb:
+      run-pathdb-a:
+        required: false
+        type: boolean
+      run-pathdb-b:
         required: false
         type: boolean
       run-stylus:
@@ -44,6 +47,18 @@ on:
         required: false
         type: boolean
       run-pebble-b:
+        required: false
+        type: boolean
+      run-defaults-a-mel:
+        required: false
+        type: boolean
+      run-defaults-b-mel:
+        required: false
+        type: boolean
+      run-pathdb-a-mel:
+        required: false
+        type: boolean
+      run-pathdb-b-mel:
         required: false
         type: boolean
 
@@ -82,12 +97,19 @@ jobs:
 
       # --------------------- PATHDB MODE ---------------------
 
-      - name: run tests without race detection and path state scheme
-        if: inputs.run-pathdb
+      - name: run tests without race detection and path state scheme (A-batch)
+        if: inputs.run-pathdb-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml
+          --junitfile test-results/junit-pathdb-a.xml --run '^Test[A-L]' --reduce-parallelism
+
+      - name: run tests without race detection and path state scheme (B-batch)
+        if: inputs.run-pathdb-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-b.xml --skip '^Test[A-L]' --reduce-parallelism
 
       # --------------------- DEFAULTS MODE ---------------------
 
@@ -95,15 +117,47 @@ jobs:
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --coverprofile coverage-a.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
 
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --coverprofile coverage-b.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
+
+      # --------------------- PATHDB MEL MODE ---------------------
+
+      - name: run tests without race detection and path state scheme (A-batch, MEL)
+        if: inputs.run-pathdb-a-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-a-mel.xml --run '^Test[A-L]' --reduce-parallelism --test_mel
+
+      - name: run tests without race detection and path state scheme (B-batch, MEL)
+        if: inputs.run-pathdb-b-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-b-mel.xml --skip '^Test[A-L]' --reduce-parallelism --test_mel
+
+      # --------------------- DEFAULTS MEL MODE ---------------------
+
+      - name: run tests without race detection and hash state scheme (A-batch, MEL)
+        if: inputs.run-defaults-a-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel
+
+      - name: run tests without race detection and hash state scheme (B-batch, MEL)
+        if: inputs.run-defaults-b-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel
       
       - name: run redis tests
         if: inputs.run-defaults-a
@@ -208,7 +262,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
+          files: ./coverage.txt,./coverage-a.txt,./coverage-b.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
