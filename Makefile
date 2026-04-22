@@ -158,7 +158,7 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 .PHONY: init-submodules
 init-submodules:
 	scripts/configure-private-submodules.sh
-	git submodule update --init --recursive
+	scripts/submodule-update-private.sh
 	scripts/configure-private-submodules.sh
 
 .PHONY: check-submodules

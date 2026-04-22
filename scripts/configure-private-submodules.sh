@@ -17,6 +17,10 @@
 
 set -eu
 
+# shellcheck source=scripts/lib-private-submodules.sh
+# shellcheck disable=SC1091  # CI runs shellcheck without -x, so it cannot follow the source.
+. "$(dirname "$0")/lib-private-submodules.sh"
+
 CONF=".private-submodules.conf"
 
 # Check origin before touching config so unrelated forks are a true
@@ -38,18 +42,7 @@ case "$rc" in
     exit 1
     ;;
 esac
-# Anchoring rules out wrapper URLs like https://evil.com/github.com/....
-# CodeStar-connected CodeBuild checks out via codestar-connections.<region>
-# .amazonaws.com/git-http/<account>/<region>/<conn-id>/<owner>/<repo>, so
-# without a branch for it this script would skip rewrites on CodeBuild.
-origin_owner_repo=$(printf '%s' "$remote_url" | sed -E '
-  s,^https?://([^@/]+@)?github\.com/,,
-  s,^ssh://([^@]+@)?github\.com(:[0-9]+)?/,,
-  s,^git@github\.com:,,
-  s,^https?://([^@/]+@)?codestar-connections\.[^/]+\.amazonaws\.com/git-http/[^/]+/[^/]+/[^/]+/,,
-  s,\.git$,,
-  s,/+$,,
-' | tr '[:upper:]' '[:lower:]')
+origin_owner_repo=$(normalize_github_url "$remote_url")
 if [ "$origin_owner_repo" != "offchainlabs/nitro-private" ]; then
   echo "$(basename "$0"): origin is '${remote_url}', not OffchainLabs/nitro-private; skipping private-fork rewrites." >&2
   exit 0
@@ -63,6 +56,77 @@ if [ ! -f .gitmodules ]; then
   echo "ERROR: .gitmodules not found (cwd=$(pwd)). Run this script from the repo root." >&2
   exit 1
 fi
+
+# Absolute path to the repo root so the hook installer can resolve
+# scripts/pre-push-private-check.sh regardless of where the hook is run
+# from (parent or submodule).
+repo_root=$(pwd -P)
+hook_script="${repo_root}/scripts/pre-push-private-check.sh"
+
+# detect_prefers_ssh sets `prefers_ssh` to 0 or 1 — see lib for rationale.
+# When 1 we fold both public URL forms as multi-valued insteadOf on the
+# SSH-private base key and aim pushurl at SSH-private, so a dev with a
+# global HTTPS→SSH rewrite keeps using SSH auth without being shadowed by
+# a more-specific HTTPS→HTTPS-private rule. CI has no such global rule
+# → prefers_ssh=0. The explicit default here matches the lib's own
+# initial assignment and makes the variable's existence obvious to
+# readers (and to static analyzers).
+prefers_ssh=0
+detect_prefers_ssh
+
+# install_pre_push_hook <target-git-dir>
+#
+# Writes a one-line shell hook that execs pre-push-private-check.sh. If
+# an existing hook is present and wasn't installed by us (no sentinel),
+# skip with a warning rather than clobber a developer's own hook — they
+# can integrate the check manually by sourcing / calling the script.
+install_pre_push_hook() {
+  tgt_git_dir=$1
+  tgt_hooks_dir="${tgt_git_dir}/hooks"
+  tgt_hook="${tgt_hooks_dir}/pre-push"
+  sentinel="# nitro-private: pre-push-private-check"
+
+  if [ ! -x "$hook_script" ]; then
+    echo "ERROR: $hook_script missing or not executable" >&2
+    return 1
+  fi
+
+  mkdir -p "$tgt_hooks_dir" || {
+    echo "ERROR: failed to create $tgt_hooks_dir" >&2
+    return 1
+  }
+
+  if [ -e "$tgt_hook" ] && ! grep -qF "$sentinel" "$tgt_hook" 2>/dev/null; then
+    echo "WARNING: $tgt_hook exists and wasn't installed by this script; leaving it alone." >&2
+    echo "         Integrate '$hook_script \"\$@\"' into your hook to re-enable the private-push guard." >&2
+    return 0
+  fi
+
+  # Write atomically (tmp + mv) so a killed script never leaves a
+  # half-written hook that would break all future pushes.
+  tmp="${tgt_hook}.tmp.$$"
+  cat > "$tmp" <<EOF
+#!/bin/sh
+$sentinel
+# Installed by scripts/configure-private-submodules.sh.
+# Blocks accidental pushes to public OffchainLabs remotes from a
+# -private workspace. See the target script for the bypass knobs.
+exec "$hook_script" "\$@"
+EOF
+  chmod +x "$tmp"
+  mv "$tmp" "$tgt_hook"
+}
+
+# Parent-scope hook: protects the nitro-private repo itself from an
+# accidental push to OffchainLabs/nitro. Submodule-scope hooks are
+# installed inside the submodule loop below (only reachable once the
+# submodule has been initialized).
+parent_git_dir=$(git rev-parse --git-dir)
+case "$parent_git_dir" in
+  /*) ;;
+  *) parent_git_dir="${repo_root}/${parent_git_dir}" ;;
+esac
+install_pre_push_hook "$parent_git_dir"
 
 # Clear only the insteadof keys we manage, not the whole url.<base> section
 # (which may hold unrelated keys like pushInsteadOf). Input-file checks
@@ -176,13 +240,30 @@ while IFS= read -r key; do
     *)           in_conf=0 ;;
   esac
 
+  # Under prefers_ssh=1 the HTTPS-public URL is routed through the
+  # SSH-private base key (so both insteadOf values and pushurl hit SSH
+  # auth); under prefers_ssh=0 they stay on their own HTTPS-private base
+  # key and HTTPS auth. See detect_prefers_ssh in the lib.
+  if [ "$prefers_ssh" = "1" ]; then
+    https_target=$ssh_private
+    pushurl_target=$ssh_private
+  else
+    https_target=$new_url
+    pushurl_target=$new_url
+  fi
+
   if [ "$in_conf" = "1" ]; then
-    if ! git config "url.${new_url}.insteadOf" "$url"; then
-      echo "ERROR: Failed to configure URL rewrite for submodule '${name}'" >&2
+    # --add here serves two purposes: (1) under prefers_ssh=1 both values
+    # land on the same base key (multi-valued), (2) under prefers_ssh=0
+    # it behaves like a single-value set because the top-level cleanup
+    # sweep already cleared the key. Parent scope is cleared there;
+    # submodule scope is cleared below.
+    if ! git config --add "url.${https_target}.insteadOf" "$url"; then
+      echo "ERROR: Failed to configure HTTPS→-private rewrite for submodule '${name}'" >&2
       exit 1
     fi
-    if ! git config "url.${ssh_private}.insteadOf" "$ssh_public"; then
-      echo "ERROR: Failed to configure SSH URL rewrite for submodule '${name}'" >&2
+    if ! git config --add "url.${ssh_private}.insteadOf" "$ssh_public"; then
+      echo "ERROR: Failed to configure SSH→-private rewrite for submodule '${name}'" >&2
       exit 1
     fi
     # Parent-local insteadOf isn't visible to git operations run from
@@ -192,27 +273,56 @@ while IFS= read -r key; do
     # belt-and-suspenders: even if the rewrite is later cleared, pushes
     # still target -private rather than falling back to public.
     if [ "$submodule_initialized" = "1" ]; then
-      if ! git -C "$path" config "url.${new_url}.insteadOf" "$url"; then
-        echo "ERROR: Failed to configure submodule-local URL rewrite for '${name}'" >&2
+      # Wipe existing submodule-scope insteadOf values first: a previous
+      # run under the opposite prefers_ssh setting may have left the base
+      # key populated, and `--add` would then append to a stale entry.
+      # rc=5 is "no such key" (expected).
+      for base_key in "url.${new_url}.insteadOf" "url.${ssh_private}.insteadOf"; do
+        rc=0
+        git -C "$path" config --unset-all "$base_key" || rc=$?
+        case "$rc" in 0|5) ;;
+          *) echo "ERROR: Failed to clear '$base_key' in '$path' (rc=$rc)" >&2; exit 1 ;;
+        esac
+      done
+      if ! git -C "$path" config --add "url.${https_target}.insteadOf" "$url"; then
+        echo "ERROR: Failed to configure submodule-local HTTPS→-private rewrite for '${name}'" >&2
         exit 1
       fi
-      if ! git -C "$path" config "url.${ssh_private}.insteadOf" "$ssh_public"; then
-        echo "ERROR: Failed to configure submodule-local SSH URL rewrite for '${name}'" >&2
+      if ! git -C "$path" config --add "url.${ssh_private}.insteadOf" "$ssh_public"; then
+        echo "ERROR: Failed to configure submodule-local SSH→-private rewrite for '${name}'" >&2
         exit 1
       fi
-      if ! git -C "$path" config remote.origin.pushurl "$new_url"; then
+      if ! git -C "$path" config remote.origin.pushurl "$pushurl_target"; then
         echo "ERROR: Failed to set remote.origin.pushurl for '${name}'" >&2
         exit 1
       fi
+      # The submodule's own hooks live under its git-dir (typically
+      # .git/modules/<name>/hooks/ for a normal submodule). The guard
+      # runs when a dev invokes `git push` from inside the submodule —
+      # where parent-scope pushurl and insteadOf rules are invisible, so
+      # a cleared submodule-scope rewrite would otherwise send the push
+      # to the public remote without any warning.
+      rc=0
+      sub_git_dir=$(git -C "$path" rev-parse --git-dir 2>&1) || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        echo "ERROR: git -C '$path' rev-parse --git-dir failed (rc=$rc): $sub_git_dir" >&2
+        exit 1
+      fi
+      case "$sub_git_dir" in
+        /*) ;;
+        *) sub_git_dir="${repo_root}/${path}/${sub_git_dir}" ;;
+      esac
+      install_pre_push_hook "$sub_git_dir"
     fi
   elif [ "$submodule_initialized" = "1" ]; then
     # Not in conf: drop any submodule-local rule / pushurl we may have
     # set on a previous run, so removing an entry actually stops routing
-    # through the -private remote. rc=5 is "no such key" (expected if
-    # the key was never set or already unset).
+    # through the -private remote. --unset-all (not --unset) so the
+    # multi-valued SSH-base key written under prefers_ssh=1 is fully
+    # cleared. rc=5 is "no such key" (expected).
     for stale_key in "url.${new_url}.insteadOf" "url.${ssh_private}.insteadOf"; do
       rc=0
-      git -C "$path" config --unset "$stale_key" || rc=$?
+      git -C "$path" config --unset-all "$stale_key" || rc=$?
       case "$rc" in
         0|5) ;;
         *)
@@ -221,14 +331,15 @@ while IFS= read -r key; do
           ;;
       esac
     done
-    # Only clear pushurl if it still points at the -private URL we would
-    # have written; leave unrelated values (e.g., a developer's manual
-    # override) untouched.
+    # Only clear pushurl if it still points at a -private URL form we
+    # would have written (either HTTPS-private or SSH-private, depending
+    # on whether prefers_ssh was set on the run that planted it). Leave
+    # unrelated values (e.g., a developer's manual override) untouched.
     rc=0
     cur_pushurl=$(git -C "$path" config --get remote.origin.pushurl) || rc=$?
     case "$rc" in
       0)
-        if [ "$cur_pushurl" = "$new_url" ]; then
+        if [ "$cur_pushurl" = "$new_url" ] || [ "$cur_pushurl" = "$ssh_private" ]; then
           rc2=0
           git -C "$path" config --unset remote.origin.pushurl || rc2=$?
           case "$rc2" in
