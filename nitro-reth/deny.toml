@@ -24,6 +24,7 @@ ignore = [
     "RUSTSEC-2020-0168", # mach unmaintained - transitive via vendored wasmer
     "RUSTSEC-2026-0098", # rustls-webpki URI name constraints - transitive via reth
     "RUSTSEC-2026-0099", # rustls-webpki wildcard name constraints - transitive via reth
+    "RUSTSEC-2026-0105", # core2 unmaintained - transitive via reth/discv5/multihash
 ]
 
 [licenses]
