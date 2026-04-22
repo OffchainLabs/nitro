@@ -135,6 +135,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 					EventRuleMatch: nil,
 				},
 			}},
+			ChainID:           0,
 			BlockNumber:       42,
 			ParentBlockHash:   common.Hash{},
 			PositionInBlock:   0,
