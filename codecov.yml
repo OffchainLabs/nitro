@@ -6,6 +6,133 @@ coverage:
 github_checks:
   annotations: false
 comment:
-  layout: "diff"
+  layout: "header, diff, components"
   behavior: once
   after_n_builds: 2
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project # in this case every component that doens't have a status defined will have a project type one
+        target: 30
+  individual_components:
+    - component_id: module_stf
+      name: STF
+      paths:
+        # Message arrival and Block Creation
+        - arbnode/**
+        - execution/gethexec/**
+        # Core ArbOS (block production, tx processing, consensus engine)
+        - arbos/**
+        # Precompiles (L2 precompiled contracts executed during EVM txs)
+        - precompiles/**
+        # Geth hooks (deterministic execution context for Arbitrum)
+        - gethhook/**
+        # Inbox multiplexing and batch deserialization
+        - arbstate/**
+        # Data availability (DA provider registry, AnyTrust tree/util)
+        - daprovider/**
+        # Batch compression/decompression
+        - arbcompress/**
+        # WASM I/O for replay binary
+        - wavmio/**
+        # BLS signatures (AnyTrust keyset validation)
+        - blsSignatures/**
+        # Generated precompile bindings
+        - solgen/go/precompilesgen/**
+        # Chain config lookup
+        - cmd/chaininfo/**
+        # State transfer (ArbOS initialization)
+        - statetransfer/**
+        # Replay binary entry point
+        - cmd/replay/**
+        # Shared utilities on the deterministic path
+        - arbutil/**
+        - util/arbmath/**
+        - util/blobs/**
+        - util/containers/**
+        - util/merkletree/**
+        - zeroheavy/**
+    - component_id: module_gas
+      name: Gas
+      paths:
+        # L1 data cost pricing (poster fees, price per unit adjustment)
+        - arbos/l1pricing/**
+        # L2 computation gas pricing (base fee, gas backlog, multi-gas constraints)
+        - arbos/l2pricing/**
+        # Gas burning and multi-dimensional metering interface
+        - arbos/burn/**
+        # Stylus/WASM gas metering (ink pricing, data storage costs)
+        - arbos/programs/**
+        # Retryable ticket submission fee calculation
+        - arbos/retryables/**
+        # Central pricing state (L1PricingState, L2PricingState)
+        - arbos/arbosState/**
+        # Storage layer backing pricing state
+        - arbos/storage/**
+        # Root arbos files: tx_processor (gas charging/refunds), block_processor (block gas limits), internal_tx (pricing updates)
+        - arbos/*
+        # ArbOS utilities (transfers, tracing for gas accounting)
+        - arbos/util/**
+        # Gas-related precompiles (ArbGasInfo, ArbOwner gas params)
+        - precompiles/**
+        # Geth integration (creates TxProcessor for gas charging hooks)
+        - gethhook/**
+        # Safe math primitives for gas calculations
+        - util/arbmath/**
+    - component_id: module_filteredtx
+      name: FilteredTx
+      paths:
+        # On-chain filtered transaction hash registry
+        - arbos/filteredTransactions/**
+        # Off-chain address filter service (S3-synced hash list, async address checking)
+        - execution/gethexec/addressfilter/**
+        # Event-based address extraction for filtering
+        - execution/gethexec/eventfilter/**
+        # Transaction filtering adapter for eth_call/eth_estimateGas
+        - execution/gethexec/tx_filterer.go
+        # RPC client to the transaction-filterer service
+        - execution/gethexec/transaction_filterer_client.go
+        # Precompile for on-chain filter management (add/remove/query filtered tx hashes)
+        - precompiles/ArbFilteredTransactionsManager.go
+        - precompiles/ArbFilteredTransactionsManager_test.go
+        # Standalone transaction-filterer service (receives hashes, submits to precompile)
+        - cmd/transaction-filterer/**
+        # S3 syncer used by address filter to poll restricted address hashes
+        - util/s3syncer/**
+        # ArbOS state accessors for filtering (TransactionFilterers, FilteredFundsRecipient)
+        - arbos/arbosState/**
+        # Address set used for authorized transaction filterers
+        - arbos/addressSet/**
+        # Storage backend for filtered transaction state
+        - arbos/storage/**
+    - component_id: module_startup
+      name: Startup
+      paths:
+        # Configuration and CLI
+        - cmd/nitro/config/**
+        - cmd/util/**
+        - cmd/chaininfo/**
+        - cmd/genericconf/**
+        - cmd/conf/**
+        # Parent Chain connection
+        - util/rpcclient/**
+        - util/headerreader/**
+        - solgen/go/**
+        # Validator setup
+        - staker/legacy/**
+        - staker/validatorwallet/**
+        - validator/valnode/**
+        - arbnode/resourcemanager/**
+        # Execution Layer
+        - cmd/nitro/init/**
+        - execution/gethexec/**
+        - execution/nodeinterface/**
+        #Consensus Layer
+        - arbnode/**
+        - daprovider/**
+        # Startup Orchestration
+        - execution_consensus/**
+        - blocks_reexecutor/**
+        - util/signature/**
+        - util/iostat/**
