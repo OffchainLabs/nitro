@@ -3,6 +3,9 @@ name: nitro-go-tests
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   go-tests:
     name: Full Go tests (matrix)
@@ -19,10 +22,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PRIVATE_REPO_PAT }}
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -94,7 +100,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: startsWith(matrix.test-mode, 'defaults')
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt

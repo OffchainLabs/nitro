@@ -155,6 +155,16 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
+.PHONY: init-submodules
+init-submodules:
+	scripts/configure-private-submodules.sh
+	scripts/submodule-update-private.sh
+	scripts/configure-private-submodules.sh
+
+.PHONY: check-submodules
+check-submodules:
+	@scripts/check-submodules.sh
+
 .PHONY: push
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
