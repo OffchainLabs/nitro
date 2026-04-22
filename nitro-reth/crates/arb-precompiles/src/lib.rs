@@ -114,6 +114,11 @@ thread_local! {
     /// Used by precompiles (e.g., ArbSys.isTopLevelCall) to determine
     /// the call stack position. Reset to 0 at transaction start.
     static EVM_CALL_DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// msg.sender per call frame, indexed by depth-1. Pushed on
+    /// frame_init, popped on frame_return_result. Used by ArbSys to
+    /// resolve `Contracts[depth-2].Caller()`.
+    static CALLER_STACK: std::cell::RefCell<Vec<alloy_primitives::Address>> =
+        const { std::cell::RefCell::new(Vec::new()) };
     /// Current block timestamp, set before transaction execution.
     /// Used by ArbWasm to compute program age for expiry checks.
     static BLOCK_TIMESTAMP: Cell<u64> = const { Cell::new(0) };
@@ -323,6 +328,28 @@ pub fn set_evm_depth(depth: usize) {
 /// Get the current EVM call depth.
 pub fn get_evm_depth() -> usize {
     EVM_CALL_DEPTH.with(|v| v.get())
+}
+
+pub fn push_caller_frame(caller: alloy_primitives::Address) {
+    CALLER_STACK.with(|s| s.borrow_mut().push(caller));
+}
+
+pub fn pop_caller_frame() {
+    CALLER_STACK.with(|s| {
+        s.borrow_mut().pop();
+    });
+}
+
+pub fn reset_caller_stack() {
+    CALLER_STACK.with(|s| s.borrow_mut().clear());
+}
+
+/// msg.sender of the frame at `depth` (1-indexed). `None` outside range.
+pub fn caller_at_depth(depth: usize) -> Option<alloy_primitives::Address> {
+    if depth == 0 {
+        return None;
+    }
+    CALLER_STACK.with(|s| s.borrow().get(depth - 1).copied())
 }
 
 /// Set the current block timestamp for precompile queries.

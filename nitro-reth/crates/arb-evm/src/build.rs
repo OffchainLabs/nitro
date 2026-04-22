@@ -992,6 +992,7 @@ where
         crate::evm::reset_stylus_pages();
         arb_precompiles::set_poster_balance_correction(U256::ZERO);
         arb_precompiles::set_current_tx_sender(Address::ZERO);
+        arb_precompiles::reset_caller_stack();
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
             hooks.tx_proc.poster_gas = 0;
