@@ -1,0 +1,46 @@
+**/.github
+.make
+**/.dockerignore
+**/Dockerfile
+**/.gitignore
+**/.git
+**/.gitmodules
+go-ethereum/tests
+contracts/build
+contracts/cache/
+safe-smart-account/build/
+solgen/go
+**/node_modules
+
+target/**/*
+!target/machines
+!target/machines/*
+!target/machines/**/*
+brotli/buildfiles/**/*
+
+# these are used by environment outside the docker:
+nitro-testnode/**/*
+
+# Arbitrator ignores
+crates/tools/module_roots
+crates/tools/pricer
+
+# Rust outputs
+crates/stylus/tests/*/target/
+crates/wasm-testsuite/target/
+crates/wasm-libraries/target/
+crates/tools/wasmer/target/
+crates/tools/wasm-tools/
+crates/tools/pricers/
+crates/tools/module_roots/
+crates/tools/stylus_benchmark
+crates/langs/rust/target/
+crates/langs/bf/target/
+
+# Compiled files
+**/*.o
+**/*.a
+*.wasm
+
+# external tools and IDEs
+.vscode
