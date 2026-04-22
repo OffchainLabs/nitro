@@ -55,12 +55,14 @@ pub fn run_execution_dir(dir: &Path) {
     let rpc_url = std::env::var(RPC_URL_ENV).ok();
     let has_binary = std::env::var(BINARY_ENV).is_ok();
     if rpc_url.is_none() && !has_binary {
-        // On CI we want a hard failure so the suite can't silently no-op
-        // when nobody set ARB_SPEC_BINARY. Locally a missing binary is a
-        // valid "I didn't build release" state, so just skip with a notice.
-        if std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok() {
+        // The dedicated spec-tests workflow opts in to running execution
+        // fixtures by setting ARB_SPEC_REQUIRE_BINARY=1; if it's set and
+        // we got here the workflow is misconfigured, so panic. The generic
+        // workspace test job and local runs without a release binary fall
+        // through to the skip notice.
+        if std::env::var("ARB_SPEC_REQUIRE_BINARY").is_ok() {
             panic!(
-                "execution fixtures under {} need {RPC_URL_ENV} or {BINARY_ENV} set on CI",
+                "execution fixtures under {} need {RPC_URL_ENV} or {BINARY_ENV} set",
                 dir.display()
             );
         }

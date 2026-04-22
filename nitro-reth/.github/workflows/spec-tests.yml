@@ -28,4 +28,5 @@ jobs:
       - name: Run spec tests
         env:
           ARB_SPEC_BINARY: ${{ github.workspace }}/target/release/arb-reth
+          ARB_SPEC_REQUIRE_BINARY: "1"
         run: cargo nextest run -p arb-spec-tests --profile ci
