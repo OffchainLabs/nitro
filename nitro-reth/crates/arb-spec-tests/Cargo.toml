@@ -1,0 +1,22 @@
+[package]
+name = "arb-spec-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "JSON-fixture conformance tests for arbreth"
+
+[dependencies]
+arb-test-utils = { workspace = true }
+arbos = { workspace = true }
+arb-storage = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+walkdir = "2"
+thiserror = { workspace = true }
+hex = { workspace = true }
+ureq = { version = "2", default-features = false }
+
+[lints]
+workspace = true

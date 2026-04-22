@@ -4,31 +4,31 @@ use core::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Resource kinds for multi-dimensional gas metering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum ResourceKind {
     Unknown = 0,
     Computation = 1,
     HistoryGrowth = 2,
-    StorageAccess = 3,
-    StorageGrowth = 4,
-    L1Calldata = 5,
-    L2Calldata = 6,
-    WasmComputation = 7,
+    StorageAccessRead = 3,
+    StorageAccessWrite = 4,
+    StorageGrowth = 5,
+    SingleDim = 6,
+    L2Calldata = 7,
+    WasmComputation = 8,
 }
 
-/// Number of resource kinds.
-pub const NUM_RESOURCE_KIND: usize = 8;
+pub const NUM_RESOURCE_KIND: usize = 9;
 
 impl ResourceKind {
     pub const ALL: [ResourceKind; NUM_RESOURCE_KIND] = [
         ResourceKind::Unknown,
         ResourceKind::Computation,
         ResourceKind::HistoryGrowth,
-        ResourceKind::StorageAccess,
+        ResourceKind::StorageAccessRead,
+        ResourceKind::StorageAccessWrite,
         ResourceKind::StorageGrowth,
-        ResourceKind::L1Calldata,
+        ResourceKind::SingleDim,
         ResourceKind::L2Calldata,
         ResourceKind::WasmComputation,
     ];
@@ -38,11 +38,12 @@ impl ResourceKind {
             0 => Some(Self::Unknown),
             1 => Some(Self::Computation),
             2 => Some(Self::HistoryGrowth),
-            3 => Some(Self::StorageAccess),
-            4 => Some(Self::StorageGrowth),
-            5 => Some(Self::L1Calldata),
-            6 => Some(Self::L2Calldata),
-            7 => Some(Self::WasmComputation),
+            3 => Some(Self::StorageAccessRead),
+            4 => Some(Self::StorageAccessWrite),
+            5 => Some(Self::StorageGrowth),
+            6 => Some(Self::SingleDim),
+            7 => Some(Self::L2Calldata),
+            8 => Some(Self::WasmComputation),
             _ => None,
         }
     }
@@ -54,9 +55,10 @@ impl fmt::Display for ResourceKind {
             Self::Unknown => write!(f, "Unknown"),
             Self::Computation => write!(f, "Computation"),
             Self::HistoryGrowth => write!(f, "HistoryGrowth"),
-            Self::StorageAccess => write!(f, "StorageAccess"),
+            Self::StorageAccessRead => write!(f, "StorageAccessRead"),
+            Self::StorageAccessWrite => write!(f, "StorageAccessWrite"),
             Self::StorageGrowth => write!(f, "StorageGrowth"),
-            Self::L1Calldata => write!(f, "L1Calldata"),
+            Self::SingleDim => write!(f, "SingleDim"),
             Self::L2Calldata => write!(f, "L2Calldata"),
             Self::WasmComputation => write!(f, "WasmComputation"),
         }
@@ -116,16 +118,20 @@ impl MultiGas {
         Self::new(ResourceKind::HistoryGrowth, amount)
     }
 
-    pub fn storage_access_gas(amount: u64) -> Self {
-        Self::new(ResourceKind::StorageAccess, amount)
+    pub fn storage_access_read_gas(amount: u64) -> Self {
+        Self::new(ResourceKind::StorageAccessRead, amount)
+    }
+
+    pub fn storage_access_write_gas(amount: u64) -> Self {
+        Self::new(ResourceKind::StorageAccessWrite, amount)
     }
 
     pub fn storage_growth_gas(amount: u64) -> Self {
         Self::new(ResourceKind::StorageGrowth, amount)
     }
 
-    pub fn l1_calldata_gas(amount: u64) -> Self {
-        Self::new(ResourceKind::L1Calldata, amount)
+    pub fn single_dim_gas(amount: u64) -> Self {
+        Self::new(ResourceKind::SingleDim, amount)
     }
 
     pub fn l2_calldata_gas(amount: u64) -> Self {
@@ -321,15 +327,16 @@ impl Sub for MultiGas {
 impl Serialize for MultiGas {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("MultiGas", 10)?;
+        let mut s = serializer.serialize_struct("MultiGas", 11)?;
         s.serialize_field("unknown", &format!("{:#x}", self.gas[0]))?;
         s.serialize_field("computation", &format!("{:#x}", self.gas[1]))?;
         s.serialize_field("historyGrowth", &format!("{:#x}", self.gas[2]))?;
-        s.serialize_field("storageAccess", &format!("{:#x}", self.gas[3]))?;
-        s.serialize_field("storageGrowth", &format!("{:#x}", self.gas[4]))?;
-        s.serialize_field("l1Calldata", &format!("{:#x}", self.gas[5]))?;
-        s.serialize_field("l2Calldata", &format!("{:#x}", self.gas[6]))?;
-        s.serialize_field("wasmComputation", &format!("{:#x}", self.gas[7]))?;
+        s.serialize_field("storageAccessRead", &format!("{:#x}", self.gas[3]))?;
+        s.serialize_field("storageAccessWrite", &format!("{:#x}", self.gas[4]))?;
+        s.serialize_field("storageGrowth", &format!("{:#x}", self.gas[5]))?;
+        s.serialize_field("singleDim", &format!("{:#x}", self.gas[6]))?;
+        s.serialize_field("l2Calldata", &format!("{:#x}", self.gas[7]))?;
+        s.serialize_field("wasmComputation", &format!("{:#x}", self.gas[8]))?;
         s.serialize_field("refund", &format!("{:#x}", self.refund))?;
         s.serialize_field("total", &format!("{:#x}", self.total))?;
         s.end()
@@ -348,11 +355,13 @@ impl<'de> Deserialize<'de> for MultiGas {
             #[serde(default)]
             history_growth: HexU64,
             #[serde(default)]
-            storage_access: HexU64,
+            storage_access_read: HexU64,
+            #[serde(default)]
+            storage_access_write: HexU64,
             #[serde(default)]
             storage_growth: HexU64,
             #[serde(default)]
-            l1_calldata: HexU64,
+            single_dim: HexU64,
             #[serde(default)]
             l2_calldata: HexU64,
             #[serde(default)]
@@ -369,9 +378,10 @@ impl<'de> Deserialize<'de> for MultiGas {
                 h.unknown.0,
                 h.computation.0,
                 h.history_growth.0,
-                h.storage_access.0,
+                h.storage_access_read.0,
+                h.storage_access_write.0,
                 h.storage_growth.0,
-                h.l1_calldata.0,
+                h.single_dim.0,
                 h.l2_calldata.0,
                 h.wasm_computation.0,
             ],

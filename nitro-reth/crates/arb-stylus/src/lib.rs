@@ -18,6 +18,7 @@ pub mod native;
 pub mod pages;
 pub mod pricing;
 pub mod run;
+pub mod trace;
 
 pub use cache::InitCache;
 pub use config::{CompileConfig, StylusConfig};

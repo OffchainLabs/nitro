@@ -6,13 +6,21 @@
 
 pub mod api;
 pub mod arb_api;
+pub mod arbdebug;
+pub mod arbtimeboost;
+pub mod arbtrace;
 pub mod block_producer;
 pub mod builder;
+pub mod conditional_tx;
 pub mod header;
 pub mod nitro_execution;
 pub mod nitro_execution_handler;
+pub mod nodeinterface_rpc;
+pub mod outbox_proof;
 pub mod receipt;
 pub mod response;
+pub mod stylus_debug;
+pub mod stylus_tracer;
 pub mod transaction;
 pub mod types;
 
@@ -62,4 +70,18 @@ pub struct ArbBlockInfo {
 #[serde(rename_all = "camelCase")]
 pub struct ArbMaintenanceStatus {
     pub is_running: bool,
+}
+
+/// Nitro-parity response for `arb_getRawBlockMetadata`.
+///
+/// Per block in the queried range, returns the block number and the raw
+/// metadata bytes. In arbreth we currently do not maintain a separate
+/// metadata sidecar (Nitro's `bulkBlockMetadataFetcher`), so the bytes
+/// are empty — consumers should interpret "empty rawMetadata" as "no
+/// metadata stored", which matches the Nitro schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NumberAndBlockMetadata {
+    pub block_number: u64,
+    pub raw_metadata: alloy_primitives::Bytes,
 }

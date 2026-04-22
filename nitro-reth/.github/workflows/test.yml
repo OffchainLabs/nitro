@@ -9,12 +9,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: unit tests
+  nextest:
+    name: unit tests (nextest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Run unit + integration tests
+        run: cargo nextest run --workspace --profile ci
+
+  doctests:
+    name: doctests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test --doc --workspace

@@ -1,0 +1,21 @@
+# nextest configuration. Mirrors reth's pattern: a fast default profile for
+# PRs and a slower profile that runs everything (including spec-tests) on
+# scheduled CI.
+
+[profile.default]
+# Keep PR runs snappy: 60s per test is plenty for unit tests; if anything
+# wants longer it should be tagged as slow and gated by the `ci` profile.
+slow-timeout = { period = "30s", terminate-after = 2 }
+fail-fast = false
+
+# Retry once on transient failures (typically I/O flakes); true failures
+# repro reliably so this rarely hides bugs.
+retries = 1
+
+[profile.ci]
+# Run everything, no early exit, longer timeouts for fixture-heavy suites.
+slow-timeout = { period = "60s", terminate-after = 4 }
+fail-fast = false
+retries = 0
+failure-output = "immediate-final"
+status-level = "all"

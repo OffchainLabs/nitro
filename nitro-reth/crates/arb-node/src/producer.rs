@@ -9,8 +9,9 @@ use std::sync::{
 };
 
 use alloy_consensus::{
-    proofs, transaction::SignerRecoverable, Block, BlockBody, BlockHeader, Header, TxReceipt,
-    EMPTY_OMMER_ROOT_HASH,
+    proofs,
+    transaction::{SignerRecoverable, TxHashRef},
+    Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
 };
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::{
@@ -84,6 +85,19 @@ pub struct ArbBlockProducer<Provider> {
     pending_flush: AtomicBool,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
+    /// Finality markers propagated by `nitroexecution_setFinalityData`.
+    finality: Mutex<FinalityMarkers>,
+    /// External shared slot pushed to on every set_finality update so
+    /// the `arb_getValidatedBlock` RPC handler can read it without
+    /// holding a strong reference to the producer.
+    validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<alloy_primitives::B256>>>>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct FinalityMarkers {
+    safe: Option<alloy_primitives::B256>,
+    finalized: Option<alloy_primitives::B256>,
+    validated: Option<alloy_primitives::B256>,
 }
 
 impl<Provider> ArbBlockProducer<Provider>
@@ -111,7 +125,21 @@ where
             pending_flush: AtomicBool::new(false),
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
+            finality: Mutex::new(FinalityMarkers::default()),
+            validated_watcher: Mutex::new(None),
         }
+    }
+
+    /// Currently-tracked finality markers (for RPC / debugging use).
+    pub fn finality_markers(
+        &self,
+    ) -> (
+        Option<alloy_primitives::B256>,
+        Option<alloy_primitives::B256>,
+        Option<alloy_primitives::B256>,
+    ) {
+        let f = self.finality.lock();
+        (f.safe, f.finalized, f.validated)
     }
 }
 
@@ -264,7 +292,12 @@ where
 
         let chain_id = self.chain_spec.chain().id();
 
-        // Apply cached ArbOS Init during block 1 if not already in genesis.
+        // Apply cached ArbOS Init during block 1.
+        // Two cases:
+        //   - ArbOS not yet initialized (no chainspec alloc): full init from message.
+        //   - ArbOS already initialized (chainspec did it with placeholder L1 base fee): override
+        //     the L1 price_per_unit slot with the value from the init message, since chainspec has
+        //     no way to know the real value.
         if let Some(init_msg) = self.cached_init.lock().take() {
             if !genesis::is_arbos_initialized(&mut db) {
                 info!(
@@ -278,13 +311,22 @@ where
                     chain_id,
                     genesis::INITIAL_ARBOS_VERSION,
                     genesis::DEFAULT_CHAIN_OWNER,
+                    genesis::ArbOSInit::default(),
                 )
                 .map_err(BlockProducerError::Execution)?;
             } else {
-                debug!(
+                use arbos::{arbos_state::ArbosState, burn::SystemBurner};
+                info!(
                     target: "block_producer",
-                    "ArbOS already initialized in genesis alloc, skipping Init"
+                    initial_l1_base_fee = %init_msg.initial_l1_base_fee,
+                    "ArbOS already initialized; overriding L1 price_per_unit from Init message"
                 );
+                let state_ptr = &mut db as *mut _;
+                if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                    let _ = arb_state
+                        .l1_pricing_state
+                        .set_price_per_unit(init_msg.initial_l1_base_fee);
+                }
             }
         }
 
@@ -426,11 +468,18 @@ where
                     continue;
                 }
             };
-            match executor.execute_transaction_without_commit(recovered) {
+            let tx_hash = *signed_tx.tx_hash();
+            let (exec_outcome, hostio_records) = arb_rpc::stylus_tracer::with_trace_buffer(|| {
+                executor.execute_transaction_without_commit(recovered)
+            });
+            match exec_outcome {
                 Ok(result) => {
                     match executor.commit_transaction(result) {
                         Ok(_gas_used) => {
                             all_txs.push(signed_tx);
+                            if !hostio_records.is_empty() {
+                                arb_rpc::stylus_tracer::cache_trace(tx_hash, hostio_records);
+                            }
 
                             // Drain and execute any scheduled txs (auto-redeems).
                             // After a SubmitRetryable or manual Redeem precompile call,
@@ -451,17 +500,31 @@ where
                                         ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok();
                                     if let Some(retry_tx) = retry_tx {
                                         let retry_signed = retry_tx.clone();
+                                        let retry_hash = *retry_signed.tx_hash();
                                         match retry_tx.try_into_recovered() {
                                             Ok(recovered_retry) => {
-                                                match executor.execute_transaction_without_commit(
-                                                    recovered_retry,
-                                                ) {
+                                                let (retry_outcome, retry_records) =
+                                                    arb_rpc::stylus_tracer::with_trace_buffer(
+                                                        || {
+                                                            executor
+                                                                .execute_transaction_without_commit(
+                                                                    recovered_retry,
+                                                                )
+                                                        },
+                                                    );
+                                                match retry_outcome {
                                                     Ok(retry_result) => {
                                                         match executor
                                                             .commit_transaction(retry_result)
                                                         {
                                                             Ok(_) => {
                                                                 all_txs.push(retry_signed);
+                                                                if !retry_records.is_empty() {
+                                                                    arb_rpc::stylus_tracer::cache_trace(
+                                                                        retry_hash,
+                                                                        retry_records,
+                                                                    );
+                                                                }
                                                             }
                                                             Err(e) => {
                                                                 warn!(
@@ -874,6 +937,144 @@ where
 
         self.produce_block_with_execution(&input, parsed_txs)
     }
+
+    async fn reset_to_block(&self, target_block_number: u64) -> Result<(), BlockProducerError> {
+        let _lock = self.produce_lock.lock();
+        let current = self.head_block_num.load(Ordering::SeqCst);
+        if target_block_number > current {
+            return Err(BlockProducerError::Unexpected(format!(
+                "reset target {target_block_number} > current head {current}"
+            )));
+        }
+        if target_block_number == current {
+            return Ok(());
+        }
+
+        let header = self
+            .provider
+            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(target_block_number))
+            .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?
+            .ok_or_else(|| {
+                BlockProducerError::Unexpected(format!(
+                    "reset target block {target_block_number} not found"
+                ))
+            })?;
+
+        // Drain any in-flight flush before unwinding so disk state is consistent.
+        if self.pending_flush.load(Ordering::SeqCst) {
+            if let Some(result) = crate::launcher::try_flush_result() {
+                self.in_memory_state
+                    .remove_persisted_blocks(result.last_num_hash);
+                *self.flushing_trie_input.lock() = None;
+                self.pending_flush.store(false, Ordering::SeqCst);
+            }
+        }
+
+        // Walk blocks above target in the in-memory state and gather
+        // them as "old" for a reorg. Without them, the canonical head
+        // points at the truncated block but consumers still see the
+        // stale blocks in memory.
+        let mut old_blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>> = Vec::new();
+        for bn in (target_block_number + 1)..=current {
+            if let Some(state) = self.in_memory_state.state_by_number(bn) {
+                old_blocks.push(state.block());
+            }
+        }
+
+        // Reorg with no new blocks => pure rollback.
+        if !old_blocks.is_empty() {
+            self.in_memory_state
+                .update_chain(reth_chain_state::NewCanonicalChain::Reorg {
+                    new: Vec::new(),
+                    old: old_blocks,
+                });
+        }
+
+        // Anchor the canonical head at the rolled-back block so RPC
+        // queries like eth_blockNumber return the correct value.
+        self.in_memory_state.set_canonical_head(header.clone());
+
+        // Reset the block producer's counter so the next digestMessage
+        // extends from the new head.
+        self.head_block_num
+            .store(target_block_number, Ordering::SeqCst);
+
+        // Also remove persisted blocks above target from disk. The worker
+        // thread runs this serially with flushes to avoid races.
+        if let Some(rx) = crate::launcher::start_unwind(target_block_number) {
+            match rx.recv() {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    return Err(BlockProducerError::Storage(format!(
+                        "unwind above {target_block_number}: {e}"
+                    )));
+                }
+                Err(e) => {
+                    return Err(BlockProducerError::Storage(format!(
+                        "unwind channel closed: {e}"
+                    )));
+                }
+            }
+        }
+
+        // Invalidate any trie-input carrying the now-removed blocks.
+        *self.accumulated_trie_input.lock() = Default::default();
+
+        info!(
+            target: "block_producer",
+            target = target_block_number,
+            hash = %header.hash(),
+            old_count = current - target_block_number,
+            "reset head"
+        );
+        Ok(())
+    }
+
+    fn set_finality(
+        &self,
+        safe: Option<alloy_primitives::B256>,
+        finalized: Option<alloy_primitives::B256>,
+        validated: Option<alloy_primitives::B256>,
+    ) -> Result<(), BlockProducerError> {
+        let mut f = self.finality.lock();
+        if safe.is_some() {
+            f.safe = safe;
+        }
+        if finalized.is_some() {
+            f.finalized = finalized;
+        }
+        if validated.is_some() {
+            f.validated = validated;
+        }
+        drop(f);
+
+        // Propagate to reth's canonical in-memory state so
+        // eth_getBlockByNumber("safe" | "finalized") returns the
+        // correct header.
+        if let Some(h) = safe {
+            if let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
+                self.in_memory_state.set_safe(sealed);
+            }
+        }
+        if let Some(h) = finalized {
+            if let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
+                self.in_memory_state.set_finalized(sealed);
+            }
+        }
+        // `validated` is Arbitrum-specific — reth's canonical state
+        // exposes only safe/finalized. Push to the external watcher
+        // so `arb_getValidatedBlock` RPC returns the latest value.
+        if let Some(h) = validated {
+            if let Some(w) = self.validated_watcher.lock().as_ref() {
+                *w.write() = h;
+            }
+        }
+        Ok(())
+    }
+
+    fn attach_validated_watcher(&self, watcher: Arc<parking_lot::RwLock<alloy_primitives::B256>>) {
+        *self.validated_watcher.lock() = Some(watcher);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1067,7 +1268,13 @@ fn augment_bundle_from_cache(
                     .collect();
 
             if info_changed || !storage_changes.is_empty() {
-                let original_info = None;
+                let original_info = original.as_ref().map(|a| revm::state::AccountInfo {
+                    balance: a.balance,
+                    nonce: a.nonce,
+                    code_hash: a.bytecode_hash.unwrap_or(alloy_primitives::KECCAK256_EMPTY),
+                    code: None,
+                    account_id: None,
+                });
 
                 let status = if original.is_some() {
                     revm_database::AccountStatus::Changed

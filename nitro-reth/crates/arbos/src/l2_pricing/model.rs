@@ -306,17 +306,12 @@ impl<D: Database> L2PricingState<D> {
         }
     }
 
-    /// Get multi-gas current-block base fee per resource kind.
-    ///
-    /// L1Calldata kind is always forced to the global base fee,
-    /// and any zero fee is replaced with the global base fee.
     pub fn get_multi_gas_base_fee_per_resource(&self) -> Result<[U256; NUM_RESOURCE_KIND], ()> {
         let base_fee = self.base_fee_wei()?;
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
         let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
         for kind in ResourceKind::ALL {
-            // L1Calldata always uses the global base fee.
-            if kind == ResourceKind::L1Calldata {
+            if kind == ResourceKind::SingleDim {
                 fees[kind as usize] = base_fee;
                 continue;
             }

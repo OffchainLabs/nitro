@@ -9,9 +9,13 @@ license.workspace = true
 arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
 arb-stylus = { workspace = true }
+arbos = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 alloy-sol-types = { workspace = true }
 alloy-evm = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-rlp = { workspace = true }
 arb-alloy-predeploys = { workspace = true }
 revm = { workspace = true }
 revm-primitives = { workspace = true }

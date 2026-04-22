@@ -1,8 +1,8 @@
 //! ArbOS genesis state initialization.
 //!
 //! Initializes the ArbOS system state in the database when the chain boots.
-//! This runs when the first message (Kind=11, Initialize) is received from
-//! the Nitro consensus sidecar.
+//! Runs when the first message (Kind=11, Initialize) is received from the
+//! consensus sidecar.
 
 use alloy_primitives::{address, Address, Bytes, B256, U256};
 use revm::{database::State, Database};
@@ -56,12 +56,19 @@ pub const DEFAULT_CHAIN_OWNER: Address = address!("00000000000000000000000000000
 /// - Chain owner and chain config
 ///
 /// The `init_msg` comes from parsing the L1 Initialize message (Kind=11).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ArbOSInit {
+    pub native_token_supply_management_enabled: bool,
+    pub transaction_filtering_enabled: bool,
+}
+
 pub fn initialize_arbos_state<D: Database>(
     state: &mut State<D>,
     init_msg: &ParsedInitMessage,
     chain_id: u64,
     target_arbos_version: u64,
     chain_owner: Address,
+    arbos_init: ArbOSInit,
 ) -> Result<(), String> {
     let state_ptr: *mut State<D> = state as *mut State<D>;
 
@@ -162,12 +169,20 @@ pub fn initialize_arbos_state<D: Database>(
     let mut arb_state = ArbosState::open(state_ptr, SystemBurner::new(None, false))
         .map_err(|_| "failed to open ArbOS state after initial setup")?;
 
-    // Add chain owner.
-    if chain_owner != Address::ZERO {
+    arb_state
+        .chain_owners
+        .add(chain_owner)
+        .map_err(|_| "failed to add chain owner")?;
+
+    if arbos_init.native_token_supply_management_enabled {
         arb_state
-            .chain_owners
-            .add(chain_owner)
-            .map_err(|_| "failed to add chain owner")?;
+            .set_native_token_management_from_time(1)
+            .map_err(|_| "failed to set native token enabled from time")?;
+    }
+    if arbos_init.transaction_filtering_enabled {
+        arb_state
+            .set_transaction_filtering_from_time(1)
+            .map_err(|_| "failed to set transaction filtering from time")?;
     }
 
     // Run version upgrade from 1 to target (first_time=true).

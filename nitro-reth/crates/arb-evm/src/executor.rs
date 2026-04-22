@@ -40,6 +40,9 @@ pub struct DefaultArbOsHooks {
     pub l1_base_fee: U256,
     /// Whether calldata pricing increase feature is enabled (ArbOS >= 40 + feature flag).
     pub calldata_pricing_increase_enabled: bool,
+    /// Whether tip collection is enabled (ArbOS >= 60 + state flag).
+    /// When true, the priority-fee tip is paid to coinbase rather than dropped.
+    pub collect_tips_enabled: bool,
 }
 
 impl DefaultArbOsHooks {
@@ -54,6 +57,7 @@ impl DefaultArbOsHooks {
         is_eth_call: bool,
         l1_base_fee: U256,
         calldata_pricing_increase_enabled: bool,
+        collect_tips_enabled: bool,
     ) -> Self {
         Self {
             tx_proc: TxProcessor::new(coinbase),
@@ -67,6 +71,7 @@ impl DefaultArbOsHooks {
             is_eth_call,
             l1_base_fee,
             calldata_pricing_increase_enabled,
+            collect_tips_enabled,
         }
     }
 
@@ -131,7 +136,7 @@ impl ArbOsHooks for DefaultArbOsHooks {
             .gas_charging_hook(&mut gas_remaining, ctx.intrinsic_gas, &params)?;
 
         // L1 calldata gas is tracked as a multi-gas dimension.
-        let multi_gas = MultiGas::l1_calldata_gas(self.tx_proc.poster_gas);
+        let multi_gas = MultiGas::single_dim_gas(self.tx_proc.poster_gas);
 
         Ok(GasChargingResult {
             poster_cost: self.tx_proc.poster_fee,
@@ -161,12 +166,17 @@ impl ArbOsHooks for DefaultArbOsHooks {
     }
 
     fn drop_tip(&self) -> bool {
-        self.tx_proc.drop_tip(self.arbos_version)
+        self.tx_proc
+            .drop_tip_with_collect(self.arbos_version, self.collect_tips_enabled)
     }
 
     fn gas_price_op(&self, gas_price: U256, base_fee: U256) -> U256 {
-        self.tx_proc
-            .gas_price_op(self.arbos_version, base_fee, gas_price)
+        self.tx_proc.gas_price_op_with_collect(
+            self.arbos_version,
+            base_fee,
+            gas_price,
+            self.collect_tips_enabled,
+        )
     }
 
     fn msg_is_non_mutating(&self) -> bool {

@@ -110,16 +110,31 @@ pub fn parse_l2_transactions(
         L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, poster, request_id, 0, chain_id),
         L1_MESSAGE_TYPE_END_OF_BLOCK => Ok(vec![]),
         L1_MESSAGE_TYPE_L2_FUNDED_BY_L1 => {
-            let request_id = request_id.unwrap_or(B256::ZERO);
+            let request_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue L2 funded by L1 tx without L1 request id",
+                )
+            })?;
             parse_l2_funded_by_l1(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_SUBMIT_RETRYABLE => {
-            let request_id = request_id.unwrap_or(B256::ZERO);
+            let request_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue submit retryable tx without L1 request id",
+                )
+            })?;
             let l1_base_fee = l1_base_fee.unwrap_or(U256::ZERO);
             parse_submit_retryable_message(l2_msg, poster, request_id, l1_base_fee)
         }
         L1_MESSAGE_TYPE_ETH_DEPOSIT => {
-            let request_id = request_id.unwrap_or(B256::ZERO);
+            let request_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue deposit tx without L1 request id",
+                )
+            })?;
             parse_eth_deposit_message(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_BATCH_POSTING_REPORT => {
@@ -135,6 +150,9 @@ pub fn parse_l2_transactions(
     }
 }
 
+/// Batch-nesting limit matching Nitro (`depth >= 16` → error).
+const MAX_L2_MESSAGE_BATCH_DEPTH: u32 = 16;
+
 #[allow(clippy::only_used_in_recursion)]
 fn parse_l2_message(
     data: &[u8],
@@ -143,9 +161,11 @@ fn parse_l2_message(
     depth: u32,
     chain_id: u64,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
-    const MAX_DEPTH: u32 = 16;
-    if depth > MAX_DEPTH || data.is_empty() {
-        return Ok(vec![]);
+    if data.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "L2 message is empty (missing kind byte)",
+        ));
     }
 
     let kind = data[0];
@@ -186,10 +206,17 @@ fn parse_l2_message(
             Ok(vec![tx])
         }
         L2_MESSAGE_KIND_BATCH => {
+            if depth >= MAX_L2_MESSAGE_BATCH_DEPTH {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "L2 message batches have a max depth of 16",
+                ));
+            }
             let mut reader = Cursor::new(payload);
             let mut txs = Vec::new();
             let mut index: u64 = 0;
-            while let Ok(segment) = bytestring_from_reader(&mut reader) {
+            while let Ok(segment) = bytestring_from_reader(&mut reader, MAX_L2_MESSAGE_SIZE as u64)
+            {
                 if segment.len() > MAX_L2_MESSAGE_SIZE {
                     break;
                 }
@@ -374,10 +401,18 @@ fn parse_submit_retryable_message(
     let gas_feature_cap = uint256_from_reader(&mut reader)?;
 
     // Data length is encoded as a 32-byte hash, then raw bytes follow.
+    // Cap the declared length at MAX_L2_MESSAGE_SIZE to prevent an
+    // attacker from triggering a huge allocation (DoS).
     let data_length_hash = hash_from_reader(&mut reader)?;
-    let data_length = U256::from_be_bytes(data_length_hash.0)
+    let data_length: usize = U256::from_be_bytes(data_length_hash.0)
         .try_into()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "data length too large"))?;
+    if data_length > MAX_L2_MESSAGE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("data length {data_length} exceeds MAX_L2_MESSAGE_SIZE {MAX_L2_MESSAGE_SIZE}"),
+        ));
+    }
     let mut calldata = vec![0u8; data_length];
     if data_length > 0 {
         io::Read::read_exact(&mut reader, &mut calldata)?;

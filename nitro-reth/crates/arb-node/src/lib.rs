@@ -5,6 +5,7 @@
 
 pub mod addons;
 pub mod args;
+pub mod chainspec;
 pub mod consensus;
 pub mod engine;
 pub mod genesis;
@@ -21,6 +22,7 @@ use alloy_consensus::Header;
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use arb_rpc::{
+    stylus_debug::{StylusDebugHandler, StylusDebugServer},
     ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler,
 };
 use reth_chain_state::CanonicalInMemoryState;
@@ -31,7 +33,6 @@ use reth_node_builder::{
     BuilderContext, FullNodeComponents, FullNodeTypes, Node, NodeAdapter, NodeTypes,
 };
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
-use reth_rpc_eth_api::EthApiTypes;
 use reth_storage_api::{CanonChainTracker, EthStorage};
 
 use arb_evm::ArbEvmConfig;
@@ -168,10 +169,34 @@ where
                       + InMemoryStateAccess<Primitives = ArbPrimitives>
                       + CanonChainTracker<Header = Header>,
     >,
-    EthApi: EthApiTypes,
+    EthApi: reth_rpc_eth_api::FullEthApiTypes
+        + reth_rpc_eth_api::helpers::TraceExt
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
+
+    // Override debug_traceTransaction so the `stylusTracer` named
+    // option returns the cached host-I/O records; everything else
+    // forwards to the standard handler.
+    {
+        let debug_api = ctx.registry.debug_api();
+        let forwarder: arb_rpc::stylus_debug::DebugForwarder =
+            std::sync::Arc::new(move |tx_hash, opts| {
+                let api = debug_api.clone();
+                Box::pin(async move {
+                    api.debug_trace_transaction(tx_hash, opts.unwrap_or_default())
+                        .await
+                        .map_err(Into::into)
+                })
+            });
+        let stylus_debug = StylusDebugHandler::new(forwarder);
+        ctx.modules
+            .add_or_replace_configured(stylus_debug.into_rpc())?;
+    }
 
     let chain_spec: Arc<ChainSpec> = ctx.config().chain.clone();
     let evm_config = ArbEvmConfig::new(chain_spec.clone());

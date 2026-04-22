@@ -40,7 +40,7 @@ impl
 }
 
 /// Extract Arbitrum-specific extension fields from a transaction.
-fn arb_tx_fields(
+pub fn arb_tx_fields(
     tx: &ArbTypedTransaction,
 ) -> std::collections::BTreeMap<String, serde_json::Value> {
     let mut fields = std::collections::BTreeMap::new();

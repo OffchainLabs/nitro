@@ -17,6 +17,8 @@ arb-stylus = { workspace = true }
 arb-txpool = { workspace = true }
 arbos = { workspace = true }
 alloy-genesis = { workspace = true }
+reth-cli = { workspace = true }
+reth-ethereum-cli = { workspace = true }
 serde_json = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-rlp = { workspace = true }

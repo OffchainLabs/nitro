@@ -613,28 +613,68 @@ impl ConsensusTx for ArbTransactionSigned {
     }
 
     fn max_priority_fee_per_gas(&self) -> Option<u128> {
-        Some(0)
-    }
-
-    fn max_fee_per_blob_gas(&self) -> Option<u128> {
-        Some(0)
-    }
-
-    fn priority_fee_or_price(&self) -> u128 {
-        self.gas_price().unwrap_or(0)
-    }
-
-    fn effective_gas_price(&self, base_fee: Option<u64>) -> u128 {
         match &self.transaction {
-            ArbTypedTransaction::Legacy(tx) => tx.gas_price,
-            ArbTypedTransaction::Eip2930(tx) => tx.gas_price,
-            // All other types: effective_gas_price = basefee (DropTip behavior).
-            _ => base_fee.unwrap_or(0) as u128,
+            ArbTypedTransaction::Eip1559(tx) => Some(tx.max_priority_fee_per_gas),
+            ArbTypedTransaction::Eip4844(tx) => Some(tx.max_priority_fee_per_gas),
+            ArbTypedTransaction::Eip7702(tx) => Some(tx.max_priority_fee_per_gas),
+            // Legacy / 2930 / Arbitrum-internal types have no priority fee.
+            _ => None,
         }
     }
 
-    fn effective_tip_per_gas(&self, _base_fee: u64) -> Option<u128> {
-        Some(0)
+    fn max_fee_per_blob_gas(&self) -> Option<u128> {
+        match &self.transaction {
+            ArbTypedTransaction::Eip4844(tx) => Some(tx.max_fee_per_blob_gas),
+            _ => None,
+        }
+    }
+
+    fn priority_fee_or_price(&self) -> u128 {
+        match self.max_priority_fee_per_gas() {
+            Some(p) => p,
+            None => self.gas_price().unwrap_or(0),
+        }
+    }
+
+    fn effective_gas_price(&self, base_fee: Option<u64>) -> u128 {
+        let bf = base_fee.unwrap_or(0) as u128;
+        match &self.transaction {
+            ArbTypedTransaction::Legacy(tx) => tx.gas_price,
+            ArbTypedTransaction::Eip2930(tx) => tx.gas_price,
+            ArbTypedTransaction::Eip1559(tx) => core::cmp::min(
+                tx.max_fee_per_gas,
+                bf.saturating_add(tx.max_priority_fee_per_gas),
+            ),
+            ArbTypedTransaction::Eip7702(tx) => core::cmp::min(
+                tx.max_fee_per_gas,
+                bf.saturating_add(tx.max_priority_fee_per_gas),
+            ),
+            ArbTypedTransaction::Eip4844(tx) => core::cmp::min(
+                tx.max_fee_per_gas,
+                bf.saturating_add(tx.max_priority_fee_per_gas),
+            ),
+            // Arbitrum-internal types: gas price is determined elsewhere.
+            _ => bf,
+        }
+    }
+
+    fn effective_tip_per_gas(&self, base_fee: u64) -> Option<u128> {
+        let bf = base_fee as u128;
+        match &self.transaction {
+            ArbTypedTransaction::Eip1559(tx) => Some(core::cmp::min(
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas.saturating_sub(bf),
+            )),
+            ArbTypedTransaction::Eip7702(tx) => Some(core::cmp::min(
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas.saturating_sub(bf),
+            )),
+            ArbTypedTransaction::Eip4844(tx) => Some(core::cmp::min(
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas.saturating_sub(bf),
+            )),
+            _ => None,
+        }
     }
 
     fn is_dynamic_fee(&self) -> bool {
@@ -734,7 +774,10 @@ impl ConsensusTx for ArbTransactionSigned {
     }
 
     fn authorization_list(&self) -> Option<&[alloy_eips::eip7702::SignedAuthorization]> {
-        None
+        match &self.transaction {
+            ArbTypedTransaction::Eip7702(tx) => Some(&tx.authorization_list),
+            _ => None,
+        }
     }
 }
 

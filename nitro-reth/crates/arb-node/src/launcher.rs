@@ -63,6 +63,15 @@ static FLUSH_HANDLE: OnceLock<FlushHandle> = OnceLock::new();
 static PARALLEL_STATE_ROOT_FN: OnceLock<ParallelStateRootFn> = OnceLock::new();
 
 /// Request sent to the background persistence thread.
+pub enum PersistenceRequest {
+    Flush(FlushRequest),
+    Unwind {
+        target: u64,
+        done: crossbeam_channel::Sender<Result<(), String>>,
+    },
+}
+
+/// Flush payload: buffered blocks to persist.
 pub struct FlushRequest {
     pub blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>>,
     pub last_num_hash: alloy_eips::BlockNumHash,
@@ -77,7 +86,7 @@ pub struct FlushResult {
 
 /// Handle to the background persistence thread.
 struct FlushHandle {
-    sender: std::sync::mpsc::Sender<FlushRequest>,
+    sender: std::sync::mpsc::Sender<PersistenceRequest>,
     result_rx: crossbeam_channel::Receiver<FlushResult>,
 }
 
@@ -101,10 +110,27 @@ pub fn engine_handle() -> Option<&'static ConsensusEngineHandle<ArbEngineTypes>>
 /// Send blocks to the background persistence thread (non-blocking).
 pub fn start_flush(request: FlushRequest) {
     if let Some(handle) = FLUSH_HANDLE.get() {
-        if let Err(e) = handle.sender.send(request) {
+        if let Err(e) = handle.sender.send(PersistenceRequest::Flush(request)) {
             error!(target: "reth::cli", "Failed to send flush request: {e}");
         }
     }
+}
+
+/// Send an unwind request to the background persistence thread and return a
+/// receiver for the result. Blocks from `target + 1` onward (and their
+/// execution state + trie state) are removed from disk. This runs on the
+/// same thread as flushes to avoid races with in-flight persistence.
+pub fn start_unwind(target: u64) -> Option<crossbeam_channel::Receiver<Result<(), String>>> {
+    let handle = FLUSH_HANDLE.get()?;
+    let (done_tx, done_rx) = crossbeam_channel::bounded(1);
+    if let Err(e) = handle.sender.send(PersistenceRequest::Unwind {
+        target,
+        done: done_tx,
+    }) {
+        error!(target: "reth::cli", "Failed to send unwind request: {e}");
+        return None;
+    }
+    Some(done_rx)
 }
 
 /// Check if a background flush completed (non-blocking).
@@ -318,51 +344,84 @@ impl ArbEngineLauncher {
         };
 
         // Spawn background persistence thread (like reth's PersistenceHandle).
-        // Receives flush requests via channel, calls save_blocks(Full) + commit(),
-        // sends result back. The producer continues producing while flush runs.
+        // Handles flush and unwind requests serially — same thread guarantees
+        // no races between saving new blocks and rolling back.
         {
             use reth_provider::{DatabaseProviderFactory, SaveBlocksMode};
-            use reth_storage_api::DBProvider;
+            use reth_storage_api::{BlockExecutionWriter, DBProvider};
 
             let pf = ctx.provider_factory().clone();
-            let (req_tx, req_rx) = std::sync::mpsc::channel::<FlushRequest>();
+            let (req_tx, req_rx) = std::sync::mpsc::channel::<PersistenceRequest>();
             let (res_tx, res_rx) = crossbeam_channel::bounded::<FlushResult>(1);
 
             std::thread::Builder::new()
                 .name("arb-persistence".into())
                 .spawn(move || {
                     while let Ok(req) = req_rx.recv() {
-                        let start = std::time::Instant::now();
-                        let count = req.blocks.len();
-                        let last = req.last_num_hash;
+                        match req {
+                            PersistenceRequest::Flush(flush) => {
+                                let start = std::time::Instant::now();
+                                let count = flush.blocks.len();
+                                let last = flush.last_num_hash;
 
-                        let result = (|| -> Result<(), String> {
-                            let provider_rw = pf
-                                .database_provider_rw()
-                                .map_err(|e| format!("database_provider_rw: {e}"))?;
-                            provider_rw
-                                .save_blocks(req.blocks, SaveBlocksMode::Full)
-                                .map_err(|e| format!("save_blocks: {e}"))?;
-                            provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
-                            Ok(())
-                        })();
+                                let result = (|| -> Result<(), String> {
+                                    let provider_rw = pf
+                                        .database_provider_rw()
+                                        .map_err(|e| format!("database_provider_rw: {e}"))?;
+                                    provider_rw
+                                        .save_blocks(flush.blocks, SaveBlocksMode::Full)
+                                        .map_err(|e| format!("save_blocks: {e}"))?;
+                                    provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
+                                    Ok(())
+                                })();
 
-                        match result {
-                            Ok(()) => {
-                                let _ = res_tx.send(FlushResult {
-                                    last_num_hash: last,
-                                    count,
-                                    duration: start.elapsed(),
-                                });
+                                match result {
+                                    Ok(()) => {
+                                        let _ = res_tx.send(FlushResult {
+                                            last_num_hash: last,
+                                            count,
+                                            duration: start.elapsed(),
+                                        });
+                                    }
+                                    Err(e) => {
+                                        error!(target: "reth::cli", "Background flush failed: {e}");
+                                        let _ = res_tx.send(FlushResult {
+                                            last_num_hash: last,
+                                            count: 0, // signal failure
+                                            duration: start.elapsed(),
+                                        });
+                                    }
+                                }
                             }
-                            Err(e) => {
-                                error!(target: "reth::cli", "Background flush failed: {e}");
-                                // Send result anyway so producer can detect and recover
-                                let _ = res_tx.send(FlushResult {
-                                    last_num_hash: last,
-                                    count: 0, // signal failure
-                                    duration: start.elapsed(),
-                                });
+                            PersistenceRequest::Unwind { target, done } => {
+                                let start = std::time::Instant::now();
+                                let result = (|| -> Result<(), String> {
+                                    let provider_rw = pf
+                                        .database_provider_rw()
+                                        .map_err(|e| format!("database_provider_rw: {e}"))?;
+                                    provider_rw
+                                        .remove_block_and_execution_above(target)
+                                        .map_err(|e| {
+                                            format!("remove_block_and_execution_above: {e}")
+                                        })?;
+                                    provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
+                                    Ok(())
+                                })();
+                                match &result {
+                                    Ok(()) => info!(
+                                        target: "reth::cli",
+                                        target,
+                                        duration_ms = start.elapsed().as_millis(),
+                                        "Persisted unwind complete"
+                                    ),
+                                    Err(e) => error!(
+                                        target: "reth::cli",
+                                        target,
+                                        err = %e,
+                                        "Persisted unwind failed"
+                                    ),
+                                }
+                                let _ = done.send(result);
                             }
                         }
                     }

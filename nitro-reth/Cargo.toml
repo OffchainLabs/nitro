@@ -9,12 +9,15 @@ members = [
     "crates/arb-payload",
     "crates/arb-rpc",
     "crates/arb-txpool",
+    "crates/arb-e2e-tests",
+    "crates/arb-spec-tests",
     "crates/arb-stylus",
+    "crates/arb-test-utils",
     "crates/arbos",
     "bin/arb-reth",
     "bin/gen-genesis",
 ]
-exclude = ["vendor"]
+exclude = ["brotli", "fuzz"]
 resolver = "2"
 
 [workspace.package]
@@ -36,6 +39,7 @@ arb-rpc = { path = "crates/arb-rpc" }
 arb-txpool = { path = "crates/arb-txpool" }
 
 arb-stylus = { path = "crates/arb-stylus" }
+arb-test-utils = { path = "crates/arb-test-utils" }
 arbos = { path = "crates/arbos" }
 
 # Reth SDK (official)
@@ -109,6 +113,7 @@ alloy-network = { version = "1.7" }
 alloy-rlp = { version = "0.3", features = ["derive"] }
 alloy-rpc-types = { version = "1.7" }
 alloy-rpc-types-engine = { version = "1.7" }
+alloy-rpc-types-trace = { version = "1.7" }
 alloy-serde = { version = "1.7" }
 alloy-sol-types = { version = "1.5" }
 alloy-trie = { version = "0.9" }
@@ -160,13 +165,13 @@ cc = "1"
 sha2 = "0.10"
 jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"
+jsonrpsee-http-client = "0.26.0"
 dyn-clone = "1"
-wasmer = { path = "vendor/wasmer/lib/api", default-features = false, features = ["sys", "cranelift"] }
+wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "6b15433d83f951555c24f0c56dc05e4751b0cc76", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
 
-# Nitro Stylus crates (vendored from OffchainLabs/nitro @ d7fe12c77)
-nitro-prover = { package = "prover", path = "vendor/nitro-crates/prover", default-features = false }
-nitro-arbutil = { package = "arbutil", path = "vendor/nitro-crates/arbutil" }
+nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4", default-features = false }
+nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4" }
 
 # Transitive deps for Nitro crates
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
@@ -175,6 +180,7 @@ ruint2 = "1.9.0"
 
 # Test deps
 rstest = "0.26"
+proptest = "1"
 
 [workspace.lints.rust]
 unused_must_use = "deny"
@@ -191,6 +197,12 @@ too_many_arguments = "allow"
 type_complexity = "allow"
 result_unit_err = "allow"
 new_without_default = "allow"
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0
 
 [profile.release]
 lto = "thin"

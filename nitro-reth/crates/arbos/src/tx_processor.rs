@@ -82,22 +82,68 @@ impl TxProcessor {
 
     /// Whether the tip should be dropped (version-gated behavior).
     pub fn drop_tip(&self, arbos_version: u64) -> bool {
-        arbos_version != 9 || self.delayed_inbox
+        self.drop_tip_with_collect(arbos_version, false)
+    }
+
+    /// Drop-tip decision:
+    /// - delayed inbox: always drop
+    /// - v9: never drop (collect)
+    /// - v10..v59: always drop
+    /// - v60+: drop iff collect_tips_enabled is false
+    pub fn drop_tip_with_collect(&self, arbos_version: u64, collect_tips_enabled: bool) -> bool {
+        if self.delayed_inbox {
+            return true;
+        }
+        if arbos_version == 9 {
+            return false;
+        }
+        if arbos_version < 60 {
+            return true;
+        }
+        !collect_tips_enabled
     }
 
     /// Get the effective gas price paid.
     pub fn get_paid_gas_price(&self, arbos_version: u64, base_fee: U256, gas_price: U256) -> U256 {
-        if arbos_version != 9 {
-            base_fee
-        } else {
+        self.get_paid_gas_price_with_collect(arbos_version, base_fee, gas_price, false)
+    }
+
+    /// Effective paid gas price, accounting for v60+ collect-tips behavior.
+    pub fn get_paid_gas_price_with_collect(
+        &self,
+        arbos_version: u64,
+        base_fee: U256,
+        gas_price: U256,
+        collect_tips_enabled: bool,
+    ) -> U256 {
+        // Pay full gas price when tip collection is active, else basefee.
+        if !self.drop_tip_with_collect(arbos_version, collect_tips_enabled) {
             gas_price
+        } else {
+            base_fee
         }
     }
 
     /// The GASPRICE opcode return value.
     pub fn gas_price_op(&self, arbos_version: u64, base_fee: U256, gas_price: U256) -> U256 {
+        self.gas_price_op_with_collect(arbos_version, base_fee, gas_price, false)
+    }
+
+    /// GASPRICE opcode value, accounting for v60+ collect-tips behavior.
+    pub fn gas_price_op_with_collect(
+        &self,
+        arbos_version: u64,
+        base_fee: U256,
+        gas_price: U256,
+        collect_tips_enabled: bool,
+    ) -> U256 {
         if arbos_version >= 3 {
-            self.get_paid_gas_price(arbos_version, base_fee, gas_price)
+            self.get_paid_gas_price_with_collect(
+                arbos_version,
+                base_fee,
+                gas_price,
+                collect_tips_enabled,
+            )
         } else {
             gas_price
         }
@@ -256,26 +302,18 @@ impl TxProcessor {
         let gas_used = params.gas_used;
         let base_fee = params.base_fee;
 
-        let total_cost = base_fee.saturating_mul(U256::from(gas_used));
-        let mut compute_cost = total_cost.saturating_sub(self.poster_fee);
-        let mut poster_fee = self.poster_fee;
-
-        if total_cost < self.poster_fee {
-            tracing::error!(
-                gas_used,
-                ?base_fee,
-                poster_fee = ?self.poster_fee,
-                "total cost < poster cost"
-            );
-            poster_fee = U256::ZERO;
-            compute_cost = total_cost;
-        }
+        // `compute_cost = basefee × compute_gas` directly. A `total_cost -
+        // poster_fee` formulation leaks `tip × posterGas` out of the network
+        // mint whenever poster_fee is priced at `actualGasPrice` (CollectTips
+        // true) while total_cost uses basefee.
+        let compute_gas = gas_used.saturating_sub(self.poster_gas);
+        let mut compute_cost = base_fee.saturating_mul(U256::from(compute_gas));
+        let poster_fee = self.poster_fee;
 
         let mut infra_fee_amount = U256::ZERO;
 
         if params.arbos_version > 4 && params.infra_fee_account != Address::ZERO {
             let infra_fee = params.min_base_fee.min(base_fee);
-            let compute_gas = gas_used.saturating_sub(self.poster_gas);
             infra_fee_amount = infra_fee.saturating_mul(U256::from(compute_gas));
             compute_cost = compute_cost.saturating_sub(infra_fee_amount);
         }

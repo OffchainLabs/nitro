@@ -7,13 +7,18 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+arb-alloy-consensus = { workspace = true }
 arb-primitives = { workspace = true }
 arb-precompiles = { workspace = true }
+arb-stylus = { workspace = true }
+arbos = { workspace = true }
 arb-evm = { workspace = true }
 arb-payload = { workspace = true }
 alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
+alloy-rpc-types-trace = { workspace = true }
 alloy-network = { workspace = true }
 alloy-serde = { workspace = true }
 alloy-evm = { workspace = true }
@@ -32,6 +37,7 @@ reth-tasks = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-transaction-pool = { workspace = true }
 jsonrpsee = { workspace = true }
+jsonrpsee-http-client = { workspace = true }
 jsonrpsee-types = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }
@@ -41,6 +47,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
 
 [lints]
 workspace = true

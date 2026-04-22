@@ -1,6 +1,6 @@
 fn main() {
     let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let brotli_dir = manifest_dir.join("../../vendor/brotli");
+    let brotli_dir = manifest_dir.join("../../brotli");
     let include_dir = brotli_dir.join("c/include");
 
     cc::Build::new()

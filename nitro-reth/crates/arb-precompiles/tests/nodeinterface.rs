@@ -108,13 +108,16 @@ fn gas_estimate_l1_component_returns_basefee_and_l1_price() {
 }
 
 #[test]
-fn rpc_only_methods_return_revert() {
+fn rpc_only_methods_still_revert() {
+    // These methods require full chain access (header scans, tx construction,
+    // log filtering) that the precompile can't perform. They revert with
+    // "method only available via RPC" and are expected to be handled by an
+    // RPC interception layer. See nodeinterface_conformance.rs for the
+    // methods we DO resolve (returning zero/defaults to match Nitro when
+    // batch fetcher is nil).
     for sig in [
         "l2BlockRangeForL1(uint64)",
         "constructOutboxProof(uint64,uint64)",
-        "findBatchContainingBlock(uint64)",
-        "getL1Confirmations(bytes32)",
-        "legacyLookupMessageBatchProof(uint256,uint64)",
     ] {
         let run = PrecompileTest::new()
             .arbos_version(30)

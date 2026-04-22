@@ -71,6 +71,7 @@ const L1_FEES_AVAILABLE: u64 = 11;
 // L2 pricing field offsets (within L2 pricing subspace).
 const L2_SPEED_LIMIT: u64 = 0;
 const L2_PER_BLOCK_GAS_LIMIT: u64 = 1;
+const L2_BASE_FEE: u64 = 2;
 const L2_MIN_BASE_FEE: u64 = 3;
 const L2_GAS_BACKLOG: u64 = 4;
 const L2_PRICING_INERTIA: u64 = 5;
@@ -115,12 +116,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_PRICES_IN_WEI | GET_PRICES_IN_WEI_WITH_AGG => handle_prices_in_wei(&mut input),
         GET_GAS_ACCOUNTING_PARAMS => handle_gas_accounting_params(&mut input),
         GET_CURRENT_TX_L1_FEES => {
-            // Nitro reads c.txProcessor.PosterFee (in-memory, no storage access).
-            // We use a thread-local set by the executor to avoid extra sloads
-            // that would charge EVM gas and cause gasUsed to differ.
             let gas_limit = input.gas;
-            let fee_wei = crate::get_current_tx_poster_fee();
-            let fee = U256::from(fee_wei);
+            let fee = U256::from(crate::get_current_tx_poster_fee());
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),
@@ -325,15 +322,19 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
 
-    // Nitro precompiles/ArbGasInfo.go::GetPricesInWeiWithAggregator reads l2GasPrice from
-    // evm.Context.BaseFee (or BaseFeeInBlock if set). The storage L2_BASE_FEE field is the
-    // *previous* block's base fee — using it here gives the wrong answer mid-block.
-    let l2_gas_price = U256::from(input.internals().block_env().basefee());
-
+    // Reth zeros BlockEnv basefee for eth_call without a gas price;
+    // fall back to the L2PricingState slot (written at StartBlock) so
+    // eth_call returns the current block's basefee.
+    let block_basefee = U256::from(input.internals().block_env().basefee());
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
     let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+    let l2_gas_price = if block_basefee.is_zero() {
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?
+    } else {
+        block_basefee
+    };
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
@@ -351,8 +352,7 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
     // OpenArbosState SLOAD + 2 body SLOADs (L1_PRICE_PER_UNIT, L2_MIN_BASE_FEE)
-    // + copy gas for args and 6-word return tuple. l2GasPrice comes from
-    // evm.Context.BaseFee (free). Matches Nitro burn exactly at 2418 gas.
+    // + copy gas for args and 6-word return tuple. Total 2418 gas.
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
@@ -383,12 +383,15 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let data_len = input.data.len();
     let gas_limit = input.gas;
 
-    // Same fix as handle_prices_in_wei: l2GasPrice comes from evm.Context.BaseFee.
-    let l2_gas_price = U256::from(input.internals().block_env().basefee());
-
+    let block_basefee = U256::from(input.internals().block_env().basefee());
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+    let l2_gas_price = if block_basefee.is_zero() {
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?
+    } else {
+        block_basefee
+    };
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));

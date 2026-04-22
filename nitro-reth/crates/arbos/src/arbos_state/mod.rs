@@ -37,6 +37,7 @@ const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
 const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
 const TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
 const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
+const COLLECT_TIPS_OFFSET: u64 = 11;
 
 // Subspace IDs for partitioned storage.
 const L1_PRICING_SUBSPACE: &[u8] = &[0];
@@ -84,6 +85,7 @@ pub struct ArbosState<D, B: Burner> {
     pub features: Features<D>,
     pub filtered_funds_recipient: StorageBackedAddress<D>,
     pub filtered_transactions: FilteredTransactionsState<D>,
+    pub collect_tips: StorageBackedUint64<D>,
 }
 
 impl<D: Database, B: Burner> ArbosState<D, B> {
@@ -184,6 +186,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 B256::ZERO,
                 FILTERED_TX_STATE_ADDRESS,
             )),
+            collect_tips: StorageBackedUint64::new(state, B256::ZERO, COLLECT_TIPS_OFFSET),
             backing_storage,
             burner,
         })
@@ -211,6 +214,14 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
 
     pub fn set_brotli_compression_level(&self, level: u64) -> Result<(), ()> {
         self.brotli_compression_level.set(level)
+    }
+
+    /// Whether tip collection is enabled. Always false before ArbOS 60.
+    pub fn collect_tips(&self) -> Result<bool, ()> {
+        if self.arbos_version < 60 {
+            return Ok(false);
+        }
+        Ok(self.collect_tips.get()? != 0)
     }
 
     pub fn chain_id(&self) -> Result<U256, ()> {

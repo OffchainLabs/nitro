@@ -211,12 +211,21 @@ pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, String> {
         ));
     }
     let args = &data[4..];
+    let l1_block_number = u256_to_u64(&args[32..64], "l1_block_number")?;
+    let l2_block_number = u256_to_u64(&args[64..96], "l2_block_number")?;
+    let time_passed = u256_to_u64(&args[96..128], "time_passed")?;
     Ok(StartBlockData {
         l1_base_fee: U256::from_be_slice(&args[0..32]),
-        l1_block_number: U256::from_be_slice(&args[32..64]).to::<u64>(),
-        l2_block_number: U256::from_be_slice(&args[64..96]).to::<u64>(),
-        time_passed: U256::from_be_slice(&args[96..128]).to::<u64>(),
+        l1_block_number,
+        l2_block_number,
+        time_passed,
     })
+}
+
+fn u256_to_u64(slice: &[u8], field: &str) -> Result<u64, String> {
+    U256::from_be_slice(slice)
+        .try_into()
+        .map_err(|_| format!("{field} does not fit in u64"))
 }
 
 fn decode_batch_posting_report(data: &[u8]) -> Result<BatchPostingReportData, String> {
@@ -229,9 +238,9 @@ fn decode_batch_posting_report(data: &[u8]) -> Result<BatchPostingReportData, St
     }
     let args = &data[4..];
     Ok(BatchPostingReportData {
-        batch_timestamp: U256::from_be_slice(&args[0..32]).to::<u64>(),
+        batch_timestamp: u256_to_u64(&args[0..32], "batch_timestamp")?,
         batch_poster: Address::from_slice(&args[44..64]),
-        batch_data_gas: U256::from_be_slice(&args[96..128]).to::<u64>(),
+        batch_data_gas: u256_to_u64(&args[96..128], "batch_data_gas")?,
         l1_base_fee: U256::from_be_slice(&args[128..160]),
     })
 }
@@ -246,11 +255,11 @@ fn decode_batch_posting_report_v2(data: &[u8]) -> Result<BatchPostingReportV2Dat
     }
     let args = &data[4..];
     Ok(BatchPostingReportV2Data {
-        batch_timestamp: U256::from_be_slice(&args[0..32]).to::<u64>(),
+        batch_timestamp: u256_to_u64(&args[0..32], "batch_timestamp")?,
         batch_poster: Address::from_slice(&args[44..64]),
-        batch_calldata_length: U256::from_be_slice(&args[96..128]).to::<u64>(),
-        batch_calldata_non_zeros: U256::from_be_slice(&args[128..160]).to::<u64>(),
-        batch_extra_gas: U256::from_be_slice(&args[160..192]).to::<u64>(),
+        batch_calldata_length: u256_to_u64(&args[96..128], "batch_calldata_length")?,
+        batch_calldata_non_zeros: u256_to_u64(&args[128..160], "batch_calldata_non_zeros")?,
+        batch_extra_gas: u256_to_u64(&args[160..192], "batch_extra_gas")?,
         l1_base_fee: U256::from_be_slice(&args[192..224]),
     })
 }

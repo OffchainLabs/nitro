@@ -64,10 +64,14 @@ const SET_WASM_EXPIRY_DAYS: [u8; 4] = [0xaa, 0xc6, 0x80, 0x18];
 const SET_WASM_KEEPALIVE_DAYS: [u8; 4] = [0x2a, 0x9c, 0xbe, 0x3e];
 const SET_WASM_BLOCK_CACHE_SIZE: [u8; 4] = [0x38, 0x0f, 0x14, 0x57];
 const SET_WASM_MAX_SIZE: [u8; 4] = [0x45, 0x5e, 0xc2, 0xeb];
+const SET_WASM_ACTIVATION_GAS: [u8; 4] = [0xa0, 0xa3, 0x24, 0x97]; // setWasmActivationGas(uint64)
 const ADD_WASM_CACHE_MANAGER: [u8; 4] = [0xff, 0xdc, 0xa5, 0x15];
 const REMOVE_WASM_CACHE_MANAGER: [u8; 4] = [0xbf, 0x19, 0x73, 0x22];
 const SET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xf1, 0xfe, 0x1a, 0x70];
 const SET_CALLDATA_PRICE_INCREASE: [u8; 4] = [0x8e, 0xb9, 0x11, 0xd9]; // setCalldataPriceIncrease(bool)
+const SET_COLLECT_TIPS: [u8; 4] = [0xa8, 0x58, 0xdb, 0xe2]; // setCollectTips(bool)
+const COLLECT_TIPS_OFFSET: u64 = 11; // collectTipsOffset in arbosState (root field 11)
+const ARBOS_VERSION_60: u64 = 60;
 const ADD_TRANSACTION_FILTERER: [u8; 4] = [0x59, 0xc8, 0x7a, 0xcc]; // addTransactionFilterer(address)
 const REMOVE_TRANSACTION_FILTERER: [u8; 4] = [0x67, 0xad, 0xa0, 0x89]; // removeTransactionFilterer(address)
 const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x59, 0x5f, 0xbb, 0x5a]; // getAllTransactionFilterers()
@@ -217,10 +221,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         },
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
-        // Nitro precompiles/ArbOwner.go::SetMaxBlockGasLimit and SetMaxTxGasLimit
-        // call L2PricingState.SetMaxPerBlockGasLimit / SetMaxPerTxGasLimit
-        // unconditionally. The fields live at slots 1 and 7 respectively in the
-        // l2pricing offset enum and exist regardless of ArbOS version.
+        // SetMax* write L2PricingState slots 1/7 unconditionally; the slots
+        // exist regardless of ArbOS version.
         SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
         SET_MAX_TX_GAS_LIMIT => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
         SET_L2_GAS_PRICING_INERTIA => match input.data.get(4..36) {
@@ -316,7 +318,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             let val = read_u32_param(data)?;
-            write_stylus_param(&mut input, StylusField::InitCostScalar, val as u64)
+            // Stored as DivCeil(percent, 2); the reader multiplies by 2.
+            let stored = (val as u64).saturating_add(1) / 2;
+            write_stylus_param(&mut input, StylusField::InitCostScalar, stored)
         }
         SET_WASM_EXPIRY_DAYS => {
             if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
@@ -347,6 +351,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MaxWasmSize, val as u64)
         }
+        // SetWasmActivationGas: ArbOS >= 30 (separate Programs.activationGas slot)
+        SET_WASM_ACTIVATION_GAS => {
+            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+                return r;
+            }
+            if data.len() < 36 {
+                return crate::burn_all_revert(gas_limit);
+            }
+            let val = U256::from_be_slice(&data[4..36]);
+            sstore_field(&mut input, programs_activation_gas_slot(), val)?;
+            Ok(PrecompileOutput::new(0, Vec::new().into()))
+        }
         // SetMaxStylusContractFragments: ArbOS >= 60
         SET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
             if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
@@ -375,6 +391,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             handle_set_calldata_price_increase(&mut input)
+        }
+        SET_COLLECT_TIPS => {
+            if let Some(r) = crate::check_method_version(gas_limit, ARBOS_VERSION_60, 0) {
+                return r;
+            }
+            handle_set_collect_tips(&mut input)
         }
 
         // ── Transaction filtering (all ArbOS >= 60) ──────────────
@@ -467,32 +489,32 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         _ => return crate::burn_all_revert(gas_limit),
     };
-    // Owner-precompile calls are free (gas_used = 0) regardless of outcome.
-    // Reverts must be preserved so bad input is reported, not silently accepted.
-    // ArbOS < 11 emits OwnerActs on read-only getters too; from v11 on, only
-    // write methods do.
-    let result = result.map(|output| {
-        if output.reverted {
-            return PrecompileOutput::new_reverted(0, output.bytes);
+    let result = match result {
+        Ok(output) => {
+            if output.reverted {
+                Ok(PrecompileOutput::new_reverted(0, output.bytes))
+            } else {
+                let arbos_version = crate::get_arbos_version();
+                let is_read_only = matches!(
+                    selector,
+                    GET_NETWORK_FEE_ACCOUNT
+                        | GET_INFRA_FEE_ACCOUNT
+                        | IS_CHAIN_OWNER
+                        | GET_ALL_CHAIN_OWNERS
+                        | IS_TRANSACTION_FILTERER
+                        | GET_ALL_TRANSACTION_FILTERERS
+                        | IS_NATIVE_TOKEN_OWNER
+                        | GET_ALL_NATIVE_TOKEN_OWNERS
+                        | GET_FILTERED_FUNDS_RECIPIENT
+                );
+                if !is_read_only || arbos_version < 11 {
+                    emit_owner_acts(&mut input, &selector, data);
+                }
+                Ok(PrecompileOutput::new(0, output.bytes))
+            }
         }
-        let arbos_version = crate::get_arbos_version();
-        let is_read_only = matches!(
-            selector,
-            GET_NETWORK_FEE_ACCOUNT
-                | GET_INFRA_FEE_ACCOUNT
-                | IS_CHAIN_OWNER
-                | GET_ALL_CHAIN_OWNERS
-                | IS_TRANSACTION_FILTERER
-                | GET_ALL_TRANSACTION_FILTERERS
-                | IS_NATIVE_TOKEN_OWNER
-                | GET_ALL_NATIVE_TOKEN_OWNERS
-                | GET_FILTERED_FUNDS_RECIPIENT
-        );
-        if !is_read_only || arbos_version < 11 {
-            emit_owner_acts(&mut input, &selector, data);
-        }
-        PrecompileOutput::new(0, output.bytes)
-    });
+        Err(_) => Ok(PrecompileOutput::new_reverted(0, Default::default())),
+    };
     crate::gas_check(gas_limit, result)
 }
 
@@ -1016,6 +1038,13 @@ fn programs_params_slot() -> U256 {
     map_slot(params_key.as_slice(), 0)
 }
 
+/// Compute the storage slot for Programs.activationGas (sub-storage key [5], slot 0).
+fn programs_activation_gas_slot() -> U256 {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
+    map_slot(activation_key.as_slice(), 0)
+}
+
 /// Read the packed programs params word from storage.
 fn read_stylus_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], PrecompileError> {
     let slot = programs_params_slot();
@@ -1239,7 +1268,7 @@ const CONSTRAINT_WINDOW: u64 = 1;
 const CONSTRAINT_BACKLOG: u64 = 2;
 const MGC_MAX_WEIGHT: u64 = 3;
 const MGC_WEIGHTS_BASE: u64 = 4;
-const NUM_RESOURCE_KINDS: u64 = 8;
+const NUM_RESOURCE_KINDS: u64 = 9;
 const GAS_CONSTRAINTS_MAX_NUM: usize = 20;
 const MAX_PRICING_EXPONENT_BIPS: u64 = 85_000;
 
@@ -1408,7 +1437,8 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
         sstore_field(input, len_slot, U256::from(i + 1))?;
     }
 
-    let gas_used = (count * 4 + 2) * SSTORE_GAS + count * SLOAD_GAS + COPY_GAS;
+    // OpenArbosState SLOAD + body SSTOREs/SLOADs + result COPY.
+    let gas_used = SLOAD_GAS + (count * 4 + 2) * SSTORE_GAS + count * SLOAD_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
         Vec::new().into(),
@@ -1492,7 +1522,7 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
                 .unwrap_or(0);
 
         // Parse resource weights.
-        let mut weights = [0u64; 8];
+        let mut weights = [0u64; 9];
         let mut max_weight = 0u64;
         for r in 0..num_resources {
             let r_start = resources_start + 32 + r * 64;
@@ -1731,6 +1761,26 @@ fn handle_set_calldata_price_increase(input: &mut PrecompileInput<'_>) -> Precom
     };
     sstore_field(input, features_slot, updated)?;
 
+    let gas_used = SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
+fn handle_set_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return crate::burn_all_revert(input.gas);
+    }
+    let gas_limit = input.gas;
+    let value = if U256::from_be_slice(&data[4..36]) != U256::ZERO {
+        U256::from(1u64)
+    } else {
+        U256::ZERO
+    };
+    sstore_field(input, root_slot(COLLECT_TIPS_OFFSET), value)?;
+    // OpenArbosState SLOAD + body SSTORE + result COPY.
     let gas_used = SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),

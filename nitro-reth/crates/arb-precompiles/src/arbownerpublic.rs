@@ -5,8 +5,8 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
     CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
-    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, ROOT_STORAGE_KEY,
-    TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
+    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -33,6 +33,15 @@ const GET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x3c, 0xaa, 0x5f, 0x12]; // getFi
 const IS_CALLDATA_PRICE_INCREASE_ENABLED: [u8; 4] = [0x2a, 0xa9, 0x55, 0x1e];
 const GET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0x49, 0xcc, 0xda, 0xff];
 const GET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xe5, 0xa7, 0xf8, 0x93];
+const GET_COLLECT_TIPS: [u8; 4] = [0x8e, 0x34, 0xa6, 0x4d];
+
+const INITIAL_MAX_FRAGMENT_COUNT: u8 = 2;
+// ArbOS version where MaxFragmentCount was introduced.
+const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 60;
+// ArbOS version where collectTips storage flag was introduced.
+const ARBOS_VERSION_COLLECT_TIPS: u64 = 60;
+// collectTipsOffset in arbosState (root field offset 11).
+const COLLECT_TIPS_OFFSET: u64 = 11;
 
 // ArbOS state offsets (from arbosState).
 const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
@@ -65,8 +74,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match selector {
         GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        // Nitro precompiles/ArbOwnerPublic.go::GetInfraFeeAccount returns
-        // NetworkFeeAccount when ArbOSVersion < 6, otherwise InfraFeeAccount.
+        // ArbOS < 6 has no separate infra fee account; fall back to network.
         GET_INFRA_FEE_ACCOUNT => {
             if crate::get_arbos_version() < 6 {
                 read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
@@ -81,9 +89,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
         RECTIFY_CHAIN_OWNER => handle_rectify_chain_owner(&mut input),
-        // Nitro precompiles/ArbOwnerPublic.go does NOT version-gate any of the
-        // following; they just call the underlying state, which returns the
-        // zero value when uninitialized.
+        // Not version-gated: underlying state returns zero when uninitialized.
         IS_NATIVE_TOKEN_OWNER => handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE),
         IS_TRANSACTION_FILTERER => handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE),
         GET_ALL_NATIVE_TOKEN_OWNERS => {
@@ -124,11 +130,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            // OAS(800) + Params() burn(100) + resultCost(3).
-            let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
-        }
+        GET_MAX_STYLUS_CONTRACT_FRAGMENTS => handle_max_stylus_fragments(&mut input),
+        GET_COLLECT_TIPS => handle_get_collect_tips(&mut input),
         _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
@@ -379,5 +382,51 @@ fn handle_get_all_set_members(
     Ok(PrecompileOutput::new(
         ((2 + max_members) * SLOAD_GAS + (2 + max_members) * COPY_GAS).min(gas_limit),
         out.into(),
+    ))
+}
+
+fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    if crate::get_arbos_version() < ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
+        return Ok(PrecompileOutput::new(
+            (SLOAD_GAS + COPY_GAS).min(gas_limit),
+            vec![0u8; 32].into(),
+        ));
+    }
+    load_arbos(input)?;
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let params_key = derive_subspace_key(programs_key.as_slice(), &[0]);
+    let params_slot = map_slot(params_key.as_slice(), 0);
+    let val = sload_field(input, params_slot)?;
+    let bytes = val.to_be_bytes::<32>();
+    let mut count = bytes[29];
+    if count == 0 {
+        count = INITIAL_MAX_FRAGMENT_COUNT;
+    }
+    let mut out = [0u8; 32];
+    out[31] = count;
+    Ok(PrecompileOutput::new(
+        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        out.to_vec().into(),
+    ))
+}
+
+fn handle_get_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    if crate::get_arbos_version() < ARBOS_VERSION_COLLECT_TIPS {
+        return Ok(PrecompileOutput::new(
+            COPY_GAS.min(gas_limit),
+            vec![0u8; 32].into(),
+        ));
+    }
+    load_arbos(input)?;
+    let value = sload_field(input, root_slot(COLLECT_TIPS_OFFSET))?;
+    let mut out = [0u8; 32];
+    if !value.is_zero() {
+        out[31] = 1;
+    }
+    Ok(PrecompileOutput::new(
+        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        out.to_vec().into(),
     ))
 }

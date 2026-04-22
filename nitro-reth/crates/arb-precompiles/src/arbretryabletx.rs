@@ -4,7 +4,8 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
-    ARBOS_STATE_ADDRESS, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+    vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
+    ROOT_STORAGE_KEY,
 };
 
 /// ArbRetryableTx precompile address (0x6e).
@@ -53,6 +54,7 @@ fn not_callable_selector() -> [u8; 4] {
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const SSTORE_ZERO_GAS: u64 = 5_000;
+const SSTORE_RESET_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 const TX_GAS: u64 = 21_000;
 const LOG_GAS: u64 = 375;
@@ -224,7 +226,7 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let timeout = sload_field(input, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
-    // Match Nitro: OpenRetryable returns nil if timeout == 0 OR timeout < currentTime.
+    // Ticket is missing or already expired.
     if timeout_u64 == 0 || timeout_u64 < current_timestamp {
         return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
     }
@@ -392,9 +394,10 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(hash_input);
 
+    let backlog_reservation = compute_backlog_update_cost(input)?;
+
     let gas_used_so_far = crate::get_precompile_gas();
 
-    let backlog_reservation = SLOAD_GAS + SSTORE_GAS;
     let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
     if gas_remaining < future_gas_costs + TX_GAS {
@@ -404,16 +407,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
 
-    let actual_backlog_cost = {
-        let current_backlog = crate::get_current_gas_backlog();
-        let new_backlog = current_backlog.saturating_sub(gas_to_donate);
-        let write_cost = if new_backlog == 0 {
-            SSTORE_ZERO_GAS
-        } else {
-            SSTORE_GAS
-        };
-        SLOAD_GAS + write_cost
-    };
+    let actual_backlog_cost = compute_actual_backlog_cost(input)?;
 
     let max_refund = U256::MAX;
     let submission_fee_refund = U256::ZERO;
@@ -439,7 +433,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         event_data.into(),
     ));
 
-    // Total gas = pre-donate charges + event + donated gas + actual backlog cost + resultCost
+    // Total gas = pre-donate charges + event + donated gas + reserved backlog + resultCost
     let total_gas = gas_used_so_far
         + REDEEM_SCHEDULED_EVENT_COST
         + gas_to_donate
@@ -450,6 +444,65 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         total_gas.min(gas_limit),
         retry_tx_hash.to_vec().into(),
     ))
+}
+
+fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+    use arb_chainspec::arbos_version as arb_ver;
+    let arbos_version = crate::get_arbos_version();
+    if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
+        return Ok(arbos::l2_pricing::MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
+    }
+    if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
+        let len = read_gas_constraints_length_free(input)?;
+        if len > 0 {
+            return Ok(2 * SLOAD_GAS + len.saturating_mul(SLOAD_GAS + SSTORE_RESET_GAS));
+        }
+    }
+    Ok(SLOAD_GAS + SSTORE_GAS)
+}
+
+fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+    use arb_chainspec::arbos_version as arb_ver;
+    let arbos_version = crate::get_arbos_version();
+    if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
+        return Ok(arbos::l2_pricing::MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
+    }
+
+    let mut result = 0u64;
+    if arbos_version >= arb_ver::ARBOS_VERSION_50 {
+        result += SLOAD_GAS;
+    }
+    if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
+        let len = read_gas_constraints_length(input)?;
+        if len > 0 {
+            result += SLOAD_GAS;
+            result += len.saturating_mul(SLOAD_GAS + SSTORE_GAS);
+            return Ok(result);
+        }
+    }
+    result += SLOAD_GAS + SSTORE_GAS;
+    Ok(result)
+}
+
+fn read_gas_constraints_length_free(
+    input: &mut PrecompileInput<'_>,
+) -> Result<u64, PrecompileError> {
+    let l2_subspace_key = derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE);
+    let gas_constraints_subspace_key = derive_subspace_key(l2_subspace_key.as_slice(), &[0]);
+    let len_slot = vector_length_slot(&gas_constraints_subspace_key);
+    let val = input
+        .internals_mut()
+        .sload(ARBOS_STATE_ADDRESS, len_slot)
+        .map_err(|_| PrecompileError::other("sload failed"))?;
+    Ok(val.data.try_into().unwrap_or(0))
+}
+
+fn read_gas_constraints_length(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+    let l2_subspace_key = derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE);
+    let gas_constraints_subspace_key = derive_subspace_key(l2_subspace_key.as_slice(), &[0]);
+    let len_slot = vector_length_slot(&gas_constraints_subspace_key);
+    let val = sload_field(input, len_slot)?;
+    Ok(val.try_into().unwrap_or(0))
 }
 
 /// Keepalive adds one lifetime period to the ticket's expiry.
