@@ -14,7 +14,6 @@ use revm::database::{EmptyDB, State, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use serde_json::Value;
 
-use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::arbos_types::ParsedInitMessage;
 
 use crate::genesis;
@@ -110,21 +109,55 @@ fn inject_arbos_alloc(
         .as_object_mut()
         .ok_or_else(|| eyre!("alloc is not a JSON object"))?;
 
-    let arbos_addr_key = address_lower_no_prefix(ARBOS_STATE_ADDRESS);
-    if alloc_obj.contains_key(&arbos_addr_key)
-        || alloc_obj.contains_key(&format!("0x{arbos_addr_key}"))
-    {
-        return Ok(());
-    }
-
     let entries = compute_arbos_alloc(chain_id, arbos_version, chain_owner, arbos_init)?;
     for (addr, account) in entries {
         let key = address_lower_no_prefix(addr);
-        if alloc_obj.contains_key(&key) || alloc_obj.contains_key(&format!("0x{key}")) {
-            continue;
+        let prefixed = format!("0x{key}");
+        let existing_key = if alloc_obj.contains_key(&key) {
+            Some(key.clone())
+        } else if alloc_obj.contains_key(&prefixed) {
+            Some(prefixed.clone())
+        } else {
+            None
+        };
+        let injected = serde_json::to_value(&account)?;
+        match existing_key {
+            None => {
+                alloc_obj.insert(prefixed, injected);
+            }
+            Some(k) => {
+                // Merge injected entry into the user-supplied one. User-set
+                // fields (balance, nonce, code, individual storage slots)
+                // win on conflict so fixture overrides replace bootstrap
+                // values; injected fields fill in anything the user didn't
+                // specify.
+                let user = alloc_obj.get_mut(&k).unwrap();
+                if !user.is_object() || !injected.is_object() {
+                    continue;
+                }
+                let user_obj = user.as_object_mut().unwrap();
+                let injected_obj = injected.as_object().unwrap();
+                for (field, val) in injected_obj {
+                    if field == "storage" {
+                        continue;
+                    }
+                    user_obj.entry(field.clone()).or_insert(val.clone());
+                }
+                let injected_storage = injected
+                    .get("storage")
+                    .and_then(|s| s.as_object())
+                    .cloned()
+                    .unwrap_or_default();
+                let storage = user_obj
+                    .entry("storage")
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()))
+                    .as_object_mut()
+                    .ok_or_else(|| eyre!("alloc[{k}].storage is not an object"))?;
+                for (slot, val) in injected_storage {
+                    storage.entry(slot).or_insert(val);
+                }
+            }
         }
-        let json = serde_json::to_value(account)?;
-        alloc_obj.insert(format!("0x{key}"), json);
     }
     Ok(())
 }
