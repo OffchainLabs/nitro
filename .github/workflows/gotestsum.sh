@@ -115,12 +115,8 @@ if [ "$flaky" == true ]; then
   fi
 fi
 
-# Add the gotestsum flags first.
-# Only the flaky set retries. Everywhere else, failures surface on the first run.
-cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"./...\" --no-color=false"
-if [ "$flaky" == true ]; then
-  cmd="$cmd --rerun-fails=1 --rerun-fails-max-failures=30"
-fi
+# Add the gotestsum flags first
+cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"./...\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
 
 if [ "$junitfile" != "" ]; then
   cmd="$cmd --junitfile \"$junitfile\""

@@ -688,7 +688,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	}
 }
 
-func TestBatchPosterWithDelayProofsAndBacklogFlaky(t *testing.T) {
+func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

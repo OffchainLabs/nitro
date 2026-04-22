@@ -41,7 +41,7 @@ func (f *failingBlobReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// TestInboxReaderBlobFailureWithDelayedMessageFlaky tests the race condition described in NIT-4065:
+// TestInboxReaderBlobFailureWithDelayedMessage tests the race condition described in NIT-4065:
 // "don't read a batch-posting-report if you cannot read the batch posted"
 //
 // The issue: When a batch is posted to L1, a batch-posting-report delayed message is created.
@@ -54,7 +54,7 @@ func (f *failingBlobReader) Initialize(ctx context.Context) error {
 // 2. After re-enabling blob fetching, follower resumes syncing
 // 3. Follower can sync new batches and delayed messages normally
 // 4. Final block hashes match between sequencer and follower
-func TestInboxReaderBlobFailureWithDelayedMessageFlaky(t *testing.T) {
+func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

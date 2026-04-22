@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-func TestMeaninglessBatchReorgFlaky(t *testing.T) {
+func TestMeaninglessBatchReorg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
