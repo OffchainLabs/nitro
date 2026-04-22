@@ -2033,7 +2033,7 @@ where
         Ok(output)
     }
 
-    fn commit_transaction(&mut self, mut output: Self::Result) -> Result<u64, BlockExecutionError> {
+    fn commit_transaction(&mut self, output: Self::Result) -> Result<u64, BlockExecutionError> {
         // Extract info needed for fee distribution before the output is consumed.
         let pending = self.pending_tx.take();
         let gas_used_total = output.result.result.gas_used();
@@ -2063,14 +2063,6 @@ where
                             self.expected_balance_delta.saturating_sub(val_i128);
                     }
                 }
-            }
-        }
-
-        {
-            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            let extra = crate::state_overlay::drain_and_restore(db);
-            for (addr, account) in extra {
-                output.result.state.entry(addr).or_insert(account);
             }
         }
 
@@ -2530,19 +2522,14 @@ where
                 crate::state_overlay::record_pre_touch(db, *addr);
                 if let Some(cached) = db.cache.accounts.get_mut(addr) {
                     cached.account = None;
-                    cached.status = revm::database::states::AccountStatus::Destroyed;
                 }
             }
             self.finalise_deleted.extend(to_remove);
         }
 
         {
-            use revm::DatabaseCommit;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            let extra = crate::state_overlay::drain_and_restore(db);
-            if !extra.is_empty() {
-                db.commit(extra);
-            }
+            crate::state_overlay::drain_and_apply(db);
         }
 
         Ok(gas_used)
