@@ -134,7 +134,8 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.88.0-slim-bookworm AS prover-builder
+# Factored out of prover-builder so the stripped variant doesn't depend on it.
+FROM rust:1.88.0-slim-bookworm AS prover-builder-base
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -177,6 +178,8 @@ COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN touch -a -m arbitrator/prover/src/lib.rs
+
+FROM prover-builder-base AS prover-builder
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
@@ -250,7 +253,8 @@ RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
 RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
-FROM golang:1.25-bookworm AS node-builder
+# Factored out of node-builder so the stripped variant doesn't depend on it.
+FROM golang:1.25-bookworm AS node-builder-base
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -275,9 +279,11 @@ COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-acc
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
-COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
+
+FROM node-builder-base AS node-builder
+COPY --from=prover-export / target/
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
@@ -417,14 +423,9 @@ FROM nitro-node AS nitro-node-default
 # with debug info and symbols removed:
 #   Go:   -ldflags="-s -w" -trimpath      (STRIP=1 make flag)
 #   Rust: [profile.stripped] in arbitrator/Cargo.toml (strip = symbols)
-# Stages inherit from their unstripped counterparts to reuse source + dep
-# caches, then rebuild the outputs with STRIP=1. The non-stripped artifacts
-# are rm'd first because Make targets at target/bin/<name> exist from the
-# parent stage and would otherwise be skipped as up-to-date.
 # ---------------------------------------------------------------------------
 
-FROM prover-builder AS prover-builder-stripped
-RUN rm -f target/bin/prover target/bin/jit target/lib/libstylus.a
+FROM prover-builder-base AS prover-builder-stripped
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-jit
@@ -432,34 +433,9 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-jit
 FROM scratch AS prover-export-stripped
 COPY --from=prover-builder-stripped /workspace/target/ /
 
-FROM node-builder AS node-builder-stripped
-# Wipe the artifacts we will rebuild or re-copy stripped. If a future change
-# adds another scratch export COPY'd into target/ at the top of node-builder,
-# mirror it in the COPYs below so the rm doesn't silently drop it.
-RUN rm -rf target/bin target/lib
-COPY --from=prover-header-export / target/
-COPY --from=brotli-library-export / target/
+FROM node-builder-base AS node-builder-stripped
 COPY --from=prover-export-stripped / target/
-RUN mkdir -p target/bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build
-# Assert every binary in target/bin/ is stripped. Guards against the failure
-# mode where the rm above (in this stage or in prover-builder-stripped) misses
-# a path, Make sees the pre-existing (unstripped) target as up-to-date under
-# the order-only DEP_PREDICATE, and the stripped rebuild silently no-ops.
-RUN apt-get update && apt-get install -y --no-install-recommends file && rm -rf /var/lib/apt/lists/* && \
-    set -e && \
-    checked=0 && \
-    for bin in target/bin/*; do \
-      [ -f "$bin" ] || continue; \
-      checked=$((checked+1)); \
-      out=$(file "$bin"); \
-      if printf '%s' "$out" | grep -q 'not stripped'; then \
-        echo "ERROR: $bin is not stripped" >&2; \
-        printf '%s\n' "$out" >&2; \
-        exit 1; \
-      fi; \
-    done && \
-    [ "$checked" -gt 0 ] || { echo "ERROR: no binaries found in target/bin/" >&2; exit 1; }
 
 FROM nitro-node-slim-base AS nitro-node-slim-stripped
 USER root
