@@ -275,7 +275,7 @@ func TestChallengeToErroredOSP(t *testing.T) {
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
-func TestChallengeToFailedErroredOSPFlaky(t *testing.T) {
+func TestChallengeToFailedErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
 	IncorrectMachine := NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
