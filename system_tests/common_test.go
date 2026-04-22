@@ -2350,9 +2350,12 @@ func Fatal(t *testing.T, printables ...interface{}) {
 
 // waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch
 // containing msgIdx is found, returning the batch number. Any error is treated
-// as immediately fatal. Calls t.Fatalf on timeout.
+// as immediately fatal. Calls t.Fatalf on timeout. The caller-supplied timeout
+// is scaled by NITRO_TEST_TIMEOUT_SCALE so loaded CI runners get proportional
+// headroom without every call site needing its own bump.
 func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.MessageIndex, timeout, interval time.Duration) uint64 {
 	t.Helper()
+	timeout = time.Duration(float64(timeout) * getTestTimeoutScale())
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		batchNum, found, err := node.GetParentChainDataSource().FindInboxBatchContainingMessage(msgIdx)
