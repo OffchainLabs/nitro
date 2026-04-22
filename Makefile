@@ -27,8 +27,20 @@ ifneq ($(origin NITRO_MODIFIED),undefined)
  GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
 endif
 
+# Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go
+# build, and switches cargo to the stripped profile (strip = symbols).
+# Used by the nitro-node-*-stripped Docker targets.
+CARGO_PROFILE = release
+ifeq ($(STRIP),1)
+ GOLANG_LDFLAGS += -s -w
+ CARGO_PROFILE = stripped
+endif
+
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
  GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
+endif
+ifeq ($(STRIP),1)
+ GOLANG_PARAMS += -trimpath
 endif
 
 UNAME_S := $(shell uname -s)
@@ -369,18 +381,18 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
-	install arbitrator/target/release/prover $@
+	cargo build --manifest-path arbitrator/Cargo.toml --profile $(CARGO_PROFILE) --bin prover ${CARGOFLAGS}
+	install arbitrator/target/$(CARGO_PROFILE)/prover $@
 
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
-	install arbitrator/target/release/libstylus.a $@
+	cargo build --manifest-path arbitrator/Cargo.toml --profile $(CARGO_PROFILE) --lib -p stylus ${CARGOFLAGS}
+	install arbitrator/target/$(CARGO_PROFILE)/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release -p jit ${CARGOFLAGS}
-	install arbitrator/target/release/jit $@
+	cargo build --manifest-path arbitrator/Cargo.toml --profile $(CARGO_PROFILE) -p jit ${CARGOFLAGS}
+	install arbitrator/target/$(CARGO_PROFILE)/jit $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)

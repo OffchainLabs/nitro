@@ -396,3 +396,113 @@ USER user
 
 FROM nitro-node AS nitro-node-default
 # Just to ensure nitro-node-dist is default
+
+# ---------------------------------------------------------------------------
+# Stripped variants: same contents as nitro-node-slim / nitro-node but built
+# with debug info and symbols removed:
+#   Go:   -ldflags="-s -w" -trimpath      (STRIP=1 make flag)
+#   Rust: [profile.stripped] in arbitrator/Cargo.toml (strip = symbols)
+# Stages inherit from their unstripped counterparts to reuse source + dep
+# caches, then rebuild the outputs with STRIP=1. The non-stripped artifacts
+# are rm'd first because Make targets at target/bin/<name> exist from the
+# parent stage and would otherwise be skipped as up-to-date.
+# ---------------------------------------------------------------------------
+
+FROM prover-builder AS prover-builder-stripped
+RUN rm -f target/bin/prover target/bin/jit target/lib/libstylus.a
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-lib
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-jit
+
+FROM scratch AS prover-export-stripped
+COPY --from=prover-builder-stripped /workspace/target/ /
+
+FROM node-builder AS node-builder-stripped
+# Wipe the artifacts we will rebuild or re-copy stripped. If a future change
+# adds another scratch export COPY'd into target/ at the top of node-builder,
+# mirror it in the COPYs below so the rm doesn't silently drop it.
+RUN rm -rf target/bin target/lib
+COPY --from=prover-header-export / target/
+COPY --from=brotli-library-export / target/
+COPY --from=prover-export-stripped / target/
+RUN mkdir -p target/bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build
+# Assert every binary in target/bin/ is stripped. Guards against the failure
+# mode where the rm above (in this stage or in prover-builder-stripped) misses
+# a path, Make sees the pre-existing (unstripped) target as up-to-date under
+# the order-only DEP_PREDICATE, and the stripped rebuild silently no-ops.
+RUN apt-get update && apt-get install -y --no-install-recommends file && rm -rf /var/lib/apt/lists/* && \
+    set -e && \
+    checked=0 && \
+    for bin in target/bin/*; do \
+      [ -f "$bin" ] || continue; \
+      checked=$((checked+1)); \
+      out=$(file "$bin"); \
+      if printf '%s' "$out" | grep -q 'not stripped'; then \
+        echo "ERROR: $bin is not stripped" >&2; \
+        printf '%s\n' "$out" >&2; \
+        exit 1; \
+      fi; \
+    done && \
+    [ "$checked" -gt 0 ] || { echo "ERROR: no binaries found in target/bin/" >&2; exit 1; }
+
+FROM debian:bookworm-slim AS nitro-node-slim-stripped
+WORKDIR /home/user
+COPY --from=node-builder-stripped /workspace/target/bin/nitro /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/relay /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/nitro-val /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/prover /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/dbconv /usr/local/bin/
+COPY ./scripts/convert-databases.bash /usr/local/bin/
+COPY --from=machine-versions /workspace/machines /home/user/target/machines
+COPY ./scripts/validate-wasm-module-root.sh .
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    ca-certificates \
+    wabt \
+    sysstat && \
+    /usr/sbin/update-ca-certificates && \
+    useradd -s /bin/bash user && \
+    mkdir -p /home/user/l1keystore && \
+    mkdir -p /home/user/.arbitrum/local/nitro && \
+    chown -R user:user /home/user && \
+    chmod -R 555 /home/user/target/machines && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
+    echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf && \
+    nitro --version
+
+USER user
+WORKDIR /home/user/
+ENTRYPOINT [ "/usr/local/bin/nitro" ]
+
+FROM nitro-node-slim-stripped AS nitro-node-stripped
+USER root
+COPY --from=prover-export-stripped /bin/jit                        /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/daprovider  /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/bidder-client  /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/el-proxy  /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/genesis-generator  /usr/local/bin/
+COPY --from=contracts-builder  /workspace/contracts/  /contracts/
+COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/
+COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
+RUN rm -rf /workspace/target/legacy-machines/latest
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
+    nitro --version
+ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/home/user/target/machines"]
+
+USER user
