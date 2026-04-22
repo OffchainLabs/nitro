@@ -17,6 +17,7 @@ type MockQueueClient struct {
 	msgCounter            int
 	deletedReceiptHandles []string
 	ReceiveErr            error
+	DeleteErr             error
 }
 
 func (m *MockQueueClient) Send(_ context.Context, body string) error {
@@ -56,6 +57,9 @@ func (m *MockQueueClient) Receive(_ context.Context, _ int32, maxMessages int32)
 func (m *MockQueueClient) Delete(_ context.Context, receiptHandle string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.DeleteErr != nil {
+		return m.DeleteErr
+	}
 	m.deletedReceiptHandles = append(m.deletedReceiptHandles, receiptHandle)
 	return nil
 }

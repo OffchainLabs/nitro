@@ -223,3 +223,31 @@ func TestForwarder_ReceiveError(t *testing.T) {
 		t.Fatalf("expected poll interval %v on receive error, got %v", forwarder.config.PollInterval, interval)
 	}
 }
+
+func TestForwarder_DeleteError(t *testing.T) {
+	var endpointCalled bool
+	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		endpointCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalEndpointServer.Close()
+
+	queueClient := &sqsclient.MockQueueClient{
+		DeleteErr: fmt.Errorf("simulated SQS delete error"),
+	}
+	_ = queueClient.Send(t.Context(), `{"test":"message"}`)
+
+	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	interval := forwarder.pollAndForward(t.Context())
+
+	if !endpointCalled {
+		t.Fatal("expected forward to succeed before delete failure")
+	}
+	deleted := queueClient.DeletedReceiptHandles()
+	if len(deleted) != 0 {
+		t.Fatalf("expected 0 deletes on delete error, got %d", len(deleted))
+	}
+	if interval != 0 {
+		t.Fatalf("expected immediate re-poll (0) on delete error, got %v", interval)
+	}
+}
