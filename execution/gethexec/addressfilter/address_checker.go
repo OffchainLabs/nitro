@@ -36,8 +36,8 @@ type HashedAddressCheckerState struct {
 }
 
 type workItem struct {
-	record *filter.FilteredAddressRecord
-	state  *HashedAddressCheckerState
+	addr  *filter.FilteredAddressWithReason
+	state *HashedAddressCheckerState
 }
 
 // NewHashedAddressChecker constructs a new checker backed by a HashStore.
@@ -75,9 +75,16 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
-func (c *HashedAddressChecker) processRecord(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
-	restricted := c.store.IsRestricted(record.Address)
-	state.report(record, restricted)
+func (c *HashedAddressChecker) processItem(item workItem) {
+	defer item.state.pending.Done()
+	restricted, filterSetID := c.store.IsRestricted(item.addr.Address)
+	if restricted {
+		record := filter.FilteredAddressRecord{
+			FilterSetID:               filterSetID.String(),
+			FilteredAddressWithReason: *item.addr,
+		}
+		item.state.report(&record)
+	}
 }
 
 // worker runs for the lifetime of the checker; workChan is never closed.
@@ -87,39 +94,41 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case item := <-c.workChan:
-			c.processRecord(item.record, item.state)
+			c.processItem(item)
 		}
 	}
 }
 
-func (s *HashedAddressCheckerState) TouchAddress(record *filter.FilteredAddressRecord) {
+func (s *HashedAddressCheckerState) TouchAddress(touched *filter.FilteredAddressWithReason) {
 	s.pending.Add(1)
 
 	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
-		s.report(nil, true)
+		s.report(nil)
+		s.pending.Done()
 		return
 	}
 
 	select {
-	case s.checker.workChan <- workItem{record: record, state: s}:
+	case s.checker.workChan <- workItem{addr: touched, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
-		s.report(nil, true)
+		s.report(nil)
+		s.pending.Done()
 	}
 }
 
-func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord, filtered bool) {
-	if filtered {
-		s.mu.Lock()
-		s.filtered = true
-		if record != nil {
-			s.filteredAddresses = append(s.filteredAddresses, *record)
-		}
-		s.mu.Unlock()
+// report records a filtered address. Called when the address is confirmed
+// restricted, or conservatively during shutdown when restriction cannot be verified.
+// record may be nil when the restriction status is unknown (e.g. during shutdown).
+func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord) {
+	s.mu.Lock()
+	s.filtered = true
+	if record != nil {
+		s.filteredAddresses = append(s.filteredAddresses, *record)
 	}
-	s.pending.Done()
+	s.mu.Unlock()
 }
 
 func (s *HashedAddressCheckerState) IsFiltered() (bool, []filter.FilteredAddressRecord) {

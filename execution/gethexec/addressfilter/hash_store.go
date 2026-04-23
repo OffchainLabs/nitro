@@ -75,23 +75,22 @@ func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, hashes []common.Hash, di
 	h.data.Store(newData) // Atomic pointer swap
 }
 
-// IsRestricted checks if an address is in the restricted list.
-// Results are cached in the LRU cache for faster subsequent lookups.
-// This method is safe to call concurrently.
-func (h *HashStore) IsRestricted(addr common.Address) bool {
+// IsRestricted returns whether the address is restricted and the filter set ID,
+// both read from the same snapshot.
+func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {
 	data := h.data.Load() // Atomic load - no lock needed
 	if data.salt == uuid.Nil {
-		return false // Not initialized
+		return false, uuid.Nil // Not initialized
 	}
 
 	// Check cache first (cache is per-data snapshot)
 	if restricted, ok := data.cache.Get(addr); ok {
-		return restricted
+		return restricted, data.id
 	}
 	_, restricted := data.hashes[HashWithPrefix(data.hashInputPrefix, addr)]
 	// Cache the result
 	data.cache.Add(addr, restricted)
-	return restricted
+	return restricted, data.id
 }
 
 // Digest Return the digest of the current loaded hashstore.
