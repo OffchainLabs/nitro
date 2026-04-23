@@ -51,3 +51,4 @@ docs/node_modules/
 .claude/
 .env.alchemy
 target-install/
+crates/arb-precompiles/.gen/

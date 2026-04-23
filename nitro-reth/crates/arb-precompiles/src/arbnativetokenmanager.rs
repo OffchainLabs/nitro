@@ -1,29 +1,21 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_primitives::{Address, Log, B256, U256};
+use alloy_sol_types::{SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::storage_slot::{
-    derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbNativeTokenManager,
+    storage_slot::{
+        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
-
-fn native_token_minted_topic() -> B256 {
-    keccak256("NativeTokenMinted(address,uint256)")
-}
-
-fn native_token_burned_topic() -> B256 {
-    keccak256("NativeTokenBurned(address,uint256)")
-}
 
 /// ArbNativeTokenManager precompile address (0x73).
 pub const ARBNATIVETOKENMANAGER_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x73,
 ]);
-
-// Function selectors.
-const MINT_NATIVE_TOKEN: [u8; 4] = [0xa6, 0xf0, 0xf7, 0xc7]; // mintNativeToken(uint256)
-const BURN_NATIVE_TOKEN: [u8; 4] = [0x1c, 0x67, 0x9a, 0x3c]; // burnNativeToken(uint256)
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
@@ -39,28 +31,26 @@ pub fn create_arbnativetokenmanager_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
-    // ArbNativeTokenManager requires ArbOS >= 41.
     if let Some(result) =
         crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_41)
     {
         return result;
     }
 
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(input.gas);
-    }
+    let gas_limit = input.gas;
+    crate::init_precompile_gas(input.data.len());
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
-
-    crate::init_precompile_gas(data.len());
-
-    let result = match selector {
-        MINT_NATIVE_TOKEN => handle_mint(&mut input),
-        BURN_NATIVE_TOKEN => handle_burn(&mut input),
-        _ => return crate::burn_all_revert(input.gas),
+    let call = match IArbNativeTokenManager::ArbNativeTokenManagerCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
     };
-    crate::gas_check(input.gas, result)
+
+    use IArbNativeTokenManager::ArbNativeTokenManagerCalls;
+    let result = match call {
+        ArbNativeTokenManagerCalls::mintNativeToken(c) => handle_mint(&mut input, c.amount),
+        ArbNativeTokenManagerCalls::burnNativeToken(c) => handle_burn(&mut input, c.amount),
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -96,15 +86,8 @@ fn is_native_token_owner(
     Ok(val != U256::ZERO)
 }
 
-/// Mint native tokens to the caller's account.
-fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let amount = U256::from_be_slice(&data[4..36]);
     let caller = input.caller;
     load_arbos(input)?;
 
@@ -112,19 +95,19 @@ fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         return Err(PrecompileError::other("caller is not a native token owner"));
     }
 
-    // Add balance to the caller.
     input
         .internals_mut()
         .balance_incr(caller, amount)
         .map_err(|e| PrecompileError::other(format!("balance_incr: {e:?}")))?;
 
-    // Emit NativeTokenMinted(address indexed to, uint256 amount).
     let topic1 = B256::left_padding_from(caller.as_slice());
-    let mut event_data = Vec::with_capacity(32);
-    event_data.extend_from_slice(&amount.to_be_bytes::<32>());
+    let event_data = amount.to_be_bytes::<32>().to_vec();
     input.internals_mut().log(Log::new_unchecked(
         ARBNATIVETOKENMANAGER_ADDRESS,
-        vec![native_token_minted_topic(), topic1],
+        vec![
+            IArbNativeTokenManager::NativeTokenMinted::SIGNATURE_HASH,
+            topic1,
+        ],
         event_data.into(),
     ));
 
@@ -132,15 +115,8 @@ fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }
 
-/// Burn native tokens from the caller's account.
-fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let amount = U256::from_be_slice(&data[4..36]);
     let caller = input.caller;
     load_arbos(input)?;
 
@@ -148,7 +124,6 @@ fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         return Err(PrecompileError::other("caller is not a native token owner"));
     }
 
-    // Check balance sufficiency.
     let acct = input
         .internals_mut()
         .load_account(caller)
@@ -159,20 +134,20 @@ fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         return Err(PrecompileError::other("burn amount exceeds balance"));
     }
 
-    // Set new balance.
     let new_balance = current_balance - amount;
     input
         .internals_mut()
         .set_balance(caller, new_balance)
         .map_err(|e| PrecompileError::other(format!("set_balance: {e:?}")))?;
 
-    // Emit NativeTokenBurned(address indexed from, uint256 amount).
     let topic1 = B256::left_padding_from(caller.as_slice());
-    let mut event_data = Vec::with_capacity(32);
-    event_data.extend_from_slice(&amount.to_be_bytes::<32>());
+    let event_data = amount.to_be_bytes::<32>().to_vec();
     input.internals_mut().log(Log::new_unchecked(
         ARBNATIVETOKENMANAGER_ADDRESS,
-        vec![native_token_burned_topic(), topic1],
+        vec![
+            IArbNativeTokenManager::NativeTokenBurned::SIGNATURE_HASH,
+            topic1,
+        ],
         event_data.into(),
     ));
 

@@ -1,10 +1,12 @@
 use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
+use alloy_sol_types::SolInterface;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     arbsys::get_cached_l1_block_number,
+    interfaces::INodeInterface,
     storage_slot::{
         root_slot, subspace_slot, ARBOS_STATE_ADDRESS, GENESIS_BLOCK_NUM_OFFSET,
         L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
@@ -16,18 +18,6 @@ pub const NODE_INTERFACE_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0xc8,
 ]);
-
-// Function selectors.
-const GAS_ESTIMATE_COMPONENTS: [u8; 4] = [0xc9, 0x4e, 0x6e, 0xeb];
-const GAS_ESTIMATE_L1_COMPONENT: [u8; 4] = [0x77, 0xd4, 0x88, 0xa2];
-const NITRO_GENESIS_BLOCK: [u8; 4] = [0x93, 0xa2, 0xfe, 0x21];
-const BLOCK_L1_NUM: [u8; 4] = [0x6f, 0x27, 0x5e, 0xf2];
-const L2_BLOCK_RANGE_FOR_L1: [u8; 4] = [0x48, 0xe7, 0xf8, 0x11];
-const ESTIMATE_RETRYABLE_TICKET: [u8; 4] = [0xc3, 0xdc, 0x58, 0x79];
-const CONSTRUCT_OUTBOX_PROOF: [u8; 4] = [0x42, 0x69, 0x63, 0x50];
-const FIND_BATCH_CONTAINING_BLOCK: [u8; 4] = [0x81, 0xf1, 0xad, 0xaf];
-const GET_L1_CONFIRMATIONS: [u8; 4] = [0xe5, 0xca, 0x23, 0x8c];
-const LEGACY_LOOKUP_MESSAGE_BATCH_PROOF: [u8; 4] = [0x89, 0x49, 0x62, 0x70];
 
 // L1 pricing field offsets.
 const L1_PRICE_PER_UNIT: u64 = 7;
@@ -46,33 +36,30 @@ pub fn create_nodeinterface_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(gas_limit);
-    }
+    crate::init_precompile_gas(input.data.len());
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    let call = match INodeInterface::NodeInterfaceCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
 
-    crate::init_precompile_gas(data.len());
-
-    let result = match selector {
-        GAS_ESTIMATE_COMPONENTS => handle_gas_estimate_components(&mut input),
-        GAS_ESTIMATE_L1_COMPONENT => handle_gas_estimate_l1_component(&mut input),
-        NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
-        BLOCK_L1_NUM => handle_block_l1_num(&mut input),
+    use INodeInterface::NodeInterfaceCalls as Calls;
+    let result = match call {
+        Calls::gasEstimateComponents(_) => handle_gas_estimate_components(&mut input),
+        Calls::gasEstimateL1Component(_) => handle_gas_estimate_l1_component(&mut input),
+        Calls::nitroGenesisBlock(_) => handle_nitro_genesis_block(&mut input),
+        Calls::blockL1Num(c) => handle_block_l1_num(&input, c.l2BlockNum),
         // Batch-fetcher-dependent methods: return 0 when no batch fetcher is
-        // wired (validators, replayers, nodes not following L1) so bridge
-        // tooling can distinguish "unknown/pending" from "not implemented".
-        GET_L1_CONFIRMATIONS => handle_zero_u64(&input),
-        FIND_BATCH_CONTAINING_BLOCK => handle_zero_u64(&input),
-        // Legacy classic-chain outbox lookup — no classic chain, so return
-        // the 9-element all-zero tuple.
-        LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => handle_legacy_lookup_empty(&input),
-        // Still RPC-layer only (need header scans or tx construction).
-        L2_BLOCK_RANGE_FOR_L1 | ESTIMATE_RETRYABLE_TICKET | CONSTRUCT_OUTBOX_PROOF => {
+        // wired so bridge tooling can distinguish "unknown/pending" from
+        // "not implemented".
+        Calls::getL1Confirmations(_) => handle_zero_u64(&input),
+        Calls::findBatchContainingBlock(_) => handle_zero_u64(&input),
+        Calls::legacyLookupMessageBatchProof(_) => handle_legacy_lookup_empty(&input),
+        Calls::l2BlockRangeForL1(_)
+        | Calls::estimateRetryableTicket(_)
+        | Calls::constructOutboxProof(_) => {
             Err(PrecompileError::other("method only available via RPC"))
         }
-        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -181,22 +168,8 @@ fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResu
     ))
 }
 
-/// blockL1Num(uint64 blockNum) → uint64
-///
-/// Returns the L1 block number associated with the given L2 block.
-/// Uses the cached L1→L2 block mapping populated during block execution.
-fn handle_block_l1_num(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 4 + 32 {
-        return crate::burn_all_revert(input.gas);
-    }
-
-    let block_num: u64 = U256::from_be_slice(&data[4..36])
-        .try_into()
-        .unwrap_or(u64::MAX);
-
+fn handle_block_l1_num(input: &PrecompileInput<'_>, block_num: u64) -> PrecompileResult {
     let l1_block = get_cached_l1_block_number(block_num).unwrap_or(0);
-
     Ok(PrecompileOutput::new(
         COPY_GAS.min(input.gas),
         U256::from(l1_block).to_be_bytes::<32>().to_vec().into(),

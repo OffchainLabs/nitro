@@ -43,6 +43,18 @@ pub fn calldata(sig: &str, args: &[B256]) -> Bytes {
     Bytes::from(buf)
 }
 
+/// ABI-encode `(address,bool,bytes)` — the shape shared by `gasEstimateComponents`
+/// and `gasEstimateL1Component`. `bytes` is zero-length.
+pub fn calldata_estimate(sig: &str) -> Bytes {
+    let mut buf = Vec::with_capacity(4 + 4 * 32);
+    buf.extend_from_slice(&selector(sig));
+    buf.extend_from_slice(word_address(Address::ZERO).as_slice());
+    buf.extend_from_slice(word_u256(U256::ZERO).as_slice());
+    buf.extend_from_slice(word_u256(U256::from(96u64)).as_slice()); // offset to `bytes` tail
+    buf.extend_from_slice(word_u256(U256::ZERO).as_slice()); // bytes length = 0
+    Bytes::from(buf)
+}
+
 pub fn word_u256(v: U256) -> B256 {
     B256::from(v.to_be_bytes::<32>())
 }

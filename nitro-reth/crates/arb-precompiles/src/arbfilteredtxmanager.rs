@@ -1,30 +1,21 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_primitives::{Address, Log, B256, U256};
+use alloy_sol_types::{SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::storage_slot::{
-    derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
-    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
+use crate::{
+    interfaces::IArbFilteredTxManager,
+    storage_slot::{
+        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+        ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
+    },
 };
-
-fn filtered_added_topic() -> B256 {
-    keccak256("FilteredTransactionAdded(bytes32)")
-}
-
-fn filtered_deleted_topic() -> B256 {
-    keccak256("FilteredTransactionDeleted(bytes32)")
-}
 
 /// ArbFilteredTransactionsManager precompile address (0x74).
 pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x74,
 ]);
-
-// Function selectors.
-const ADD_FILTERED_TX: [u8; 4] = [0xcb, 0x47, 0x04, 0x91]; // addFilteredTransaction(bytes32)
-const DELETE_FILTERED_TX: [u8; 4] = [0xd2, 0x63, 0x74, 0xb1]; // deleteFilteredTransaction(bytes32)
-const IS_TX_FILTERED: [u8; 4] = [0x85, 0xc7, 0x33, 0xa4]; // isTransactionFiltered(bytes32)
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
@@ -38,29 +29,28 @@ pub fn create_arbfilteredtxmanager_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
-    // ArbFilteredTransactionsManager requires ArbOS >= 60 (TransactionFiltering).
     if let Some(result) = crate::check_precompile_version(
         arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
     ) {
         return result;
     }
 
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(input.gas);
-    }
+    let gas_limit = input.gas;
+    crate::init_precompile_gas(input.data.len());
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    let call =
+        match IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls::abi_decode(input.data) {
+            Ok(c) => c,
+            Err(_) => return crate::burn_all_revert(gas_limit),
+        };
 
-    crate::init_precompile_gas(data.len());
-
-    let result = match selector {
-        ADD_FILTERED_TX => handle_add_filtered_tx(&mut input),
-        DELETE_FILTERED_TX => handle_delete_filtered_tx(&mut input),
-        IS_TX_FILTERED => handle_is_tx_filtered(&mut input),
-        _ => return crate::burn_all_revert(input.gas),
+    use IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls as Calls;
+    let result = match call {
+        Calls::addFilteredTransaction(c) => handle_add_filtered_tx(&mut input, c.txHash),
+        Calls::deleteFilteredTransaction(c) => handle_delete_filtered_tx(&mut input, c.txHash),
+        Calls::isTransactionFiltered(c) => handle_is_tx_filtered(&mut input, c.txHash),
     };
-    crate::gas_check(input.gas, result)
+    crate::gas_check(gas_limit, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -126,15 +116,8 @@ fn is_transaction_filterer(
     Ok(val != U256::ZERO)
 }
 
-/// Check if a transaction hash is in the filtered transactions list.
-fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let tx_hash = B256::from_slice(&data[4..36]);
     load_accounts(input)?;
 
     let slot = filtered_tx_slot(&tx_hash);
@@ -151,15 +134,8 @@ fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-/// Add a transaction hash to the filtered transactions list.
-fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let tx_hash = B256::from_slice(&data[4..36]);
     let caller = input.caller;
     load_accounts(input)?;
 
@@ -174,7 +150,10 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     input.internals_mut().log(Log::new_unchecked(
         ARBFILTEREDTXMANAGER_ADDRESS,
-        vec![filtered_added_topic(), tx_hash],
+        vec![
+            IArbFilteredTxManager::FilteredTransactionAdded::SIGNATURE_HASH,
+            tx_hash,
+        ],
         Default::default(),
     ));
 
@@ -185,15 +164,8 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-/// Delete a transaction hash from the filtered transactions list.
-fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let tx_hash = B256::from_slice(&data[4..36]);
     let caller = input.caller;
     load_accounts(input)?;
 
@@ -208,7 +180,10 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     input.internals_mut().log(Log::new_unchecked(
         ARBFILTEREDTXMANAGER_ADDRESS,
-        vec![filtered_deleted_topic(), tx_hash],
+        vec![
+            IArbFilteredTxManager::FilteredTransactionDeleted::SIGNATURE_HASH,
+            tx_hash,
+        ],
         Default::default(),
     ));
 

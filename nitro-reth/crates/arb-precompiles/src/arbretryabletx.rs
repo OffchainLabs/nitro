@@ -1,11 +1,15 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::storage_slot::{
-    current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
-    vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbRetryableTx,
+    storage_slot::{
+        current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
+        vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbRetryableTx precompile address (0x6e).
@@ -13,16 +17,6 @@ pub const ARBRETRYABLETX_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x6e,
 ]);
-
-// Function selectors.
-const REDEEM: [u8; 4] = [0xed, 0xa1, 0x12, 0x2c];
-const GET_LIFETIME: [u8; 4] = [0x81, 0xe6, 0xe0, 0x83];
-const GET_TIMEOUT: [u8; 4] = [0x9f, 0x10, 0x25, 0xc6];
-const KEEPALIVE: [u8; 4] = [0xf0, 0xb2, 0x1a, 0x41];
-const GET_BENEFICIARY: [u8; 4] = [0xba, 0x20, 0xdd, 0xa4];
-const CANCEL: [u8; 4] = [0xc4, 0xd2, 0x52, 0xf5];
-const GET_CURRENT_REDEEMER: [u8; 4] = [0xde, 0x4b, 0xa2, 0xb3];
-const SUBMIT_RETRYABLE: [u8; 4] = [0xc9, 0xf9, 0x5d, 0x32];
 
 /// Default retryable lifetime: 7 days in seconds.
 const RETRYABLE_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -39,17 +33,6 @@ const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 
 /// Timeout queue subspace key within the retryables storage.
 const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
-
-/// SolError selectors (keccak256 of error signature, first 4 bytes).
-fn no_ticket_with_id_selector() -> [u8; 4] {
-    let hash = keccak256(b"NoTicketWithID()");
-    [hash[0], hash[1], hash[2], hash[3]]
-}
-
-fn not_callable_selector() -> [u8; 4] {
-    let hash = keccak256(b"NotCallable()");
-    [hash[0], hash[1], hash[2], hash[3]]
-}
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
@@ -68,30 +51,20 @@ const REDEEM_SCHEDULED_DATA_BYTES: u64 = 128;
 const REDEEM_SCHEDULED_EVENT_COST: u64 =
     LOG_GAS + 4 * LOG_TOPIC_GAS + LOG_DATA_GAS * REDEEM_SCHEDULED_DATA_BYTES;
 
-/// Backlog update cost: read + write. Write cost depends on whether
-/// the new value is zero (StorageClearCost=5000) or non-zero (StorageWriteCost=20000).
-/// This is computed dynamically in handle_redeem based on current backlog.
-///
-/// TicketCreated event topic0.
-/// keccak256("TicketCreated(bytes32)")
 pub fn ticket_created_topic() -> B256 {
-    keccak256("TicketCreated(bytes32)")
+    IArbRetryableTx::TicketCreated::SIGNATURE_HASH
 }
 
-/// RedeemScheduled event topic0.
-/// keccak256("RedeemScheduled(bytes32,bytes32,uint64,uint64,address,uint256,uint256)")
 pub fn redeem_scheduled_topic() -> B256 {
-    keccak256("RedeemScheduled(bytes32,bytes32,uint64,uint64,address,uint256,uint256)")
+    IArbRetryableTx::RedeemScheduled::SIGNATURE_HASH
 }
 
-/// LifetimeExtended event topic0. keccak256("LifetimeExtended(bytes32,uint256)")
 pub fn lifetime_extended_topic() -> B256 {
-    keccak256("LifetimeExtended(bytes32,uint256)")
+    IArbRetryableTx::LifetimeExtended::SIGNATURE_HASH
 }
 
-/// Canceled event topic0. keccak256("Canceled(bytes32)")
 pub fn canceled_topic() -> B256 {
-    keccak256("Canceled(bytes32)")
+    IArbRetryableTx::Canceled::SIGNATURE_HASH
 }
 
 pub fn create_arbretryabletx_precompile() -> DynPrecompile {
@@ -99,27 +72,24 @@ pub fn create_arbretryabletx_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(input.gas);
-    }
-
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
     let gas_limit = input.gas;
+    crate::init_precompile_gas(input.data.len());
 
-    crate::init_precompile_gas(data.len());
+    let call = match IArbRetryableTx::ArbRetryableTxCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
 
-    let result = match selector {
-        GET_LIFETIME => {
+    use IArbRetryableTx::ArbRetryableTxCalls as Calls;
+    let result = match call {
+        Calls::getLifetime(_) => {
             let lifetime = U256::from(RETRYABLE_LIFETIME_SECONDS);
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 lifetime.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        GET_CURRENT_REDEEMER => {
-            // Read the current redeemer from scratch storage slot.
-            // The executor writes refund_to here before retry tx execution.
+        Calls::getCurrentRedeemer(_) => {
             let internals = input.internals_mut();
             internals
                 .load_account(ARBOS_STATE_ADDRESS)
@@ -133,15 +103,15 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 redeemer.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        SUBMIT_RETRYABLE => {
-            return crate::sol_error_revert(not_callable_selector(), gas_limit);
+        Calls::submitRetryable(_) => {
+            let data = IArbRetryableTx::NotCallable {}.abi_encode();
+            return crate::sol_error_revert(data, gas_limit);
         }
-        GET_TIMEOUT => handle_get_timeout(&mut input),
-        GET_BENEFICIARY => handle_get_beneficiary(&mut input),
-        REDEEM => handle_redeem(&mut input),
-        KEEPALIVE => handle_keepalive(&mut input),
-        CANCEL => handle_cancel(&mut input),
-        _ => return crate::burn_all_revert(gas_limit),
+        Calls::getTimeout(c) => handle_get_timeout(&mut input, c.ticketId),
+        Calls::getBeneficiary(c) => handle_get_beneficiary(&mut input, c.ticketId),
+        Calls::redeem(c) => handle_redeem(&mut input, c.ticketId),
+        Calls::keepalive(c) => handle_keepalive(&mut input, c.ticketId),
+        Calls::cancel(c) => handle_cancel(&mut input, c.ticketId),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -202,16 +172,9 @@ fn open_retryable(
     Ok(Some(ticket_key))
 }
 
-/// GetTimeout returns the effective timeout for a retryable ticket.
 /// Effective timeout = stored_timeout + timeout_windows_left * RETRYABLE_LIFETIME.
-fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_get_timeout(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let ticket_id = B256::from_slice(&data[4..36]);
     let current_timestamp: u64 = input
         .internals()
         .block_timestamp()
@@ -226,9 +189,9 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let timeout = sload_field(input, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
-    // Ticket is missing or already expired.
     if timeout_u64 == 0 || timeout_u64 < current_timestamp {
-        return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
+        let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+        return crate::sol_error_revert(data, gas_limit);
     }
 
     // Read timeout_windows_left for effective timeout calculation.
@@ -277,15 +240,8 @@ fn queue_put(input: &mut PrecompileInput<'_>, value: B256) -> Result<(), Precomp
     Ok(())
 }
 
-/// GetBeneficiary returns the beneficiary address for a retryable ticket.
-fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let ticket_id = B256::from_slice(&data[4..36]);
     let current_timestamp: u64 = input
         .internals()
         .block_timestamp()
@@ -296,7 +252,10 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit),
+        None => {
+            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+            return crate::sol_error_revert(data, gas_limit);
+        }
     };
 
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
@@ -312,14 +271,8 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 /// Redeem validates the retryable, increments numTries, donates remaining gas
 /// to the retry tx, and emits a RedeemScheduled event. The block executor
 /// discovers the event in the execution logs and schedules the retry tx.
-fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let ticket_id = B256::from_slice(&data[4..36]);
     let caller = input.caller;
     let current_timestamp: u64 = input
         .internals()
@@ -372,7 +325,8 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let timeout_val2 = sload_field(input, timeout_slot)?;
     let timeout_u64_2: u64 = timeout_val2.try_into().unwrap_or(0);
     if timeout_u64_2 == 0 || timeout_u64_2 < current_timestamp {
-        return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit);
+        let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+        return crate::sol_error_revert(data, gas_limit);
     }
 
     let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
@@ -509,14 +463,8 @@ fn read_gas_constraints_length(input: &mut PrecompileInput<'_>) -> Result<u64, P
 ///
 /// Opens the retryable, verifies effective timeout isn't too far in the future,
 /// adds a duplicate entry to the timeout queue, and increments timeout_windows_left.
-fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let ticket_id = B256::from_slice(&data[4..36]);
     let current_timestamp: u64 = input
         .internals()
         .block_timestamp()
@@ -527,7 +475,10 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit),
+        None => {
+            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+            return crate::sol_error_revert(data, gas_limit);
+        }
     };
 
     // Read calldata size for updateCost computation (RetryableSizeBytes).
@@ -601,14 +552,8 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 ///
 /// Verifies the caller is the beneficiary, then clears all storage fields.
 /// Balance transfer (escrow → beneficiary) is handled by the executor.
-fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-    let ticket_id = B256::from_slice(&data[4..36]);
     let caller = input.caller;
     let current_timestamp: u64 = input
         .internals()
@@ -620,7 +565,10 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => return crate::sol_error_revert(no_ticket_with_id_selector(), gas_limit),
+        None => {
+            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+            return crate::sol_error_revert(data, gas_limit);
+        }
     };
 
     // Read beneficiary and verify caller is the beneficiary.

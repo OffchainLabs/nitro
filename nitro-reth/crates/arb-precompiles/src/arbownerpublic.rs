@@ -1,12 +1,17 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
+use alloy_sol_types::SolInterface;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
-    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
-    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+use crate::{
+    interfaces::IArbOwnerPublic,
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot,
+        ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE,
+        FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
+        NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
+        ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    },
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -14,26 +19,6 @@ pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x6b,
 ]);
-
-// Function selectors.
-const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x2d, 0x91, 0x25, 0xe9];
-const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0xee, 0x95, 0xa8, 0x24];
-const GET_BROTLI_COMPRESSION_LEVEL: [u8; 4] = [0x22, 0xd4, 0x99, 0xc7];
-const GET_SCHEDULED_UPGRADE: [u8; 4] = [0x81, 0xef, 0x94, 0x4c];
-const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x7f, 0x68];
-const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0x4e, 0x0f];
-const RECTIFY_CHAIN_OWNER: [u8; 4] = [0x6f, 0xe8, 0x63, 0x73];
-const IS_NATIVE_TOKEN_OWNER: [u8; 4] = [0xc6, 0x86, 0xf4, 0xdb];
-const GET_ALL_NATIVE_TOKEN_OWNERS: [u8; 4] = [0x3f, 0x86, 0x01, 0xe4];
-const GET_NATIVE_TOKEN_MANAGEMENT_FROM: [u8; 4] = [0x3f, 0xec, 0xba, 0xb0];
-const GET_TRANSACTION_FILTERING_FROM: [u8; 4] = [0xc1, 0xd3, 0x55, 0xb8]; // getTransactionFilteringFrom()
-const IS_TRANSACTION_FILTERER: [u8; 4] = [0xb3, 0x23, 0x52, 0xc3]; // isTransactionFilterer(address)
-const GET_ALL_TRANSACTION_FILTERERS: [u8; 4] = [0x59, 0x5f, 0xbb, 0x5a]; // getAllTransactionFilterers()
-const GET_FILTERED_FUNDS_RECIPIENT: [u8; 4] = [0x3c, 0xaa, 0x5f, 0x12]; // getFilteredFundsRecipient()
-const IS_CALLDATA_PRICE_INCREASE_ENABLED: [u8; 4] = [0x2a, 0xa9, 0x55, 0x1e];
-const GET_PARENT_GAS_FLOOR_PER_TOKEN: [u8; 4] = [0x49, 0xcc, 0xda, 0xff];
-const GET_MAX_STYLUS_CONTRACT_FRAGMENTS: [u8; 4] = [0xe5, 0xa7, 0xf8, 0x93];
-const GET_COLLECT_TIPS: [u8; 4] = [0x8e, 0x34, 0xa6, 0x4d];
 
 const INITIAL_MAX_FRAGMENT_COUNT: u8 = 2;
 // ArbOS version where MaxFragmentCount was introduced.
@@ -63,65 +48,63 @@ pub fn create_arbownerpublic_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(gas_limit);
-    }
+    crate::init_precompile_gas(input.data.len());
 
-    crate::init_precompile_gas(data.len());
+    let call = match IArbOwnerPublic::ArbOwnerPublicCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
-
-    let result = match selector {
-        GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        // ArbOS < 6 has no separate infra fee account; fall back to network.
-        GET_INFRA_FEE_ACCOUNT => {
+    use IArbOwnerPublic::ArbOwnerPublicCalls as Calls;
+    let result = match call {
+        Calls::getNetworkFeeAccount(_) => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
+        Calls::getInfraFeeAccount(_) => {
             if crate::get_arbos_version() < 6 {
                 read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
             } else {
                 read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
             }
         }
-        GET_BROTLI_COMPRESSION_LEVEL => {
+        Calls::getBrotliCompressionLevel(_) => {
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
-        GET_SCHEDULED_UPGRADE => handle_scheduled_upgrade(&mut input),
-        IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
-        GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
-        RECTIFY_CHAIN_OWNER => handle_rectify_chain_owner(&mut input),
-        // Not version-gated: underlying state returns zero when uninitialized.
-        IS_NATIVE_TOKEN_OWNER => handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE),
-        IS_TRANSACTION_FILTERER => handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE),
-        GET_ALL_NATIVE_TOKEN_OWNERS => {
+        Calls::getScheduledUpgrade(_) => handle_scheduled_upgrade(&mut input),
+        Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, c.addr),
+        Calls::getAllChainOwners(_) => handle_get_all_members(&mut input),
+        Calls::rectifyChainOwner(c) => handle_rectify_chain_owner(&mut input, c.ownerToRectify),
+        Calls::isNativeTokenOwner(c) => {
+            handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE, c.addr)
+        }
+        Calls::isTransactionFilterer(c) => {
+            handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE, c.filterer)
+        }
+        Calls::getAllNativeTokenOwners(_) => {
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
-        GET_ALL_TRANSACTION_FILTERERS => {
+        Calls::getAllTransactionFilterers(_) => {
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
-        GET_NATIVE_TOKEN_MANAGEMENT_FROM => {
+        Calls::getNativeTokenManagementFrom(_) => {
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
-        GET_TRANSACTION_FILTERING_FROM => {
+        Calls::getTransactionFilteringFrom(_) => {
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
-        GET_FILTERED_FUNDS_RECIPIENT => {
+        Calls::getFilteredFundsRecipient(_) => {
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
-        IS_CALLDATA_PRICE_INCREASE_ENABLED => {
-            let gas_limit = input.gas;
+        Calls::isCalldataPriceIncreaseEnabled(_) => {
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
             let features_slot = map_slot(features_key.as_slice(), 0);
             let features = sload_field(&mut input, features_slot)?;
             let enabled = features & U256::from(1);
-            let gas_cost = (2 * SLOAD_GAS + COPY_GAS).min(gas_limit);
             Ok(PrecompileOutput::new(
-                gas_cost,
+                (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
                 enabled.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        GET_PARENT_GAS_FLOOR_PER_TOKEN => {
-            let gas_limit = input.gas;
+        Calls::getParentGasFloorPerToken(_) => {
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
             let value = sload_field(&mut input, field_slot)?;
@@ -130,9 +113,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        GET_MAX_STYLUS_CONTRACT_FRAGMENTS => handle_max_stylus_fragments(&mut input),
-        GET_COLLECT_TIPS => handle_get_collect_tips(&mut input),
-        _ => return crate::burn_all_revert(gas_limit),
+        Calls::getMaxStylusContractFragments(_) => handle_max_stylus_fragments(&mut input),
+        Calls::getCollectTips(_) => handle_get_collect_tips(&mut input),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -198,14 +180,8 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     ))
 }
 
-fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
     let gas_limit = input.gas;
-    let addr = Address::from_slice(&data[16..36]);
     load_arbos(input)?;
 
     let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
@@ -266,14 +242,8 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResu
     ))
 }
 
-fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-
+fn handle_is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
     let gas_limit = input.gas;
-    let addr = Address::from_slice(&data[16..36]);
     load_arbos(input)?;
 
     // Chain owners AddressSet: byAddress sub-storage at key [0].
@@ -328,13 +298,12 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_is_set_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
+fn handle_is_set_member(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
-    let addr = Address::from_slice(&data[16..36]);
     load_arbos(input)?;
 
     let set_key = derive_subspace_key(ROOT_STORAGE_KEY, subspace);
