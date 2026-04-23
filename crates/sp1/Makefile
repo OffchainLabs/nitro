@@ -55,7 +55,7 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 .PHONY: nitro-deps
 nitro-deps: # Build necessary nitro dependencies, including replay.wasm
 nitro-deps: brotli
-	@cd $(TOP) && $(MAKE) build-replay-env test-go-deps
+	@cd $(TOP) && $(MAKE) test-go-deps
 
 .PHONY: record-blocks
 record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
@@ -80,7 +80,7 @@ record-blocks: nitro-deps
 		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
 		echo "Blocks successfully recorded"; \
 	else \
-		echo "FAIL — see $(BLOCK_INPUTS_DIR)/record.log" >&2; exit 1; \
+		echo "FAIL — record.log:" >&2; cat $(BLOCK_INPUTS_DIR)/record.log >&2; exit 1; \
 	fi
 
 .PHONY: build
