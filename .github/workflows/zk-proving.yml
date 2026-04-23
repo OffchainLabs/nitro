@@ -35,9 +35,7 @@ jobs:
           llvm-version: 21
 
       - name: Install SP1 toolchain
-        run: |
-          curl -L https://sp1up.succinct.xyz | bash
-          $HOME/.sp1/bin/sp1up -v v6.0.0-beta.1
+        run: make -C crates/sp1 install-sp1
 
       - name: Print versions
         run: |
