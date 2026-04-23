@@ -4,3 +4,6 @@
 [submodule "crates/arb-precompiles/nitro-precompile-interfaces"]
 	path = crates/arb-precompiles/nitro-precompile-interfaces
 	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git
+[submodule "crates/arb-precompiles/nitro-contracts"]
+	path = crates/arb-precompiles/nitro-contracts
+	url = https://github.com/OffchainLabs/nitro-contracts.git
