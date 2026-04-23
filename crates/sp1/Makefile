@@ -55,7 +55,7 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 .PHONY: nitro-deps
 nitro-deps: # Build necessary nitro dependencies, including replay.wasm
 nitro-deps: brotli
-	@$(MAKE) -C $(TOP) build-replay-env test-go-deps
+	@cd $(TOP) && $(MAKE) build-replay-env test-go-deps
 
 .PHONY: record-blocks
 record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
