@@ -1,7 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, B256, U256};
+use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
+use crate::interfaces::IArbWasm;
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
     PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
@@ -12,29 +14,6 @@ pub const ARBWASM_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x71,
 ]);
-
-// Function selectors (keccak256 of Solidity signatures).
-const STYLUS_VERSION: [u8; 4] = [0xa9, 0x96, 0xe0, 0xc2]; // stylusVersion()
-const INK_PRICE: [u8; 4] = [0xd1, 0xc1, 0x7a, 0xbc]; // inkPrice()
-const MAX_STACK_DEPTH: [u8; 4] = [0x8c, 0xcf, 0xaa, 0x70]; // maxStackDepth()
-const FREE_PAGES: [u8; 4] = [0x44, 0x90, 0xc1, 0x9d]; // freePages()
-const PAGE_GAS: [u8; 4] = [0x7a, 0xf4, 0xba, 0x49]; // pageGas()
-const PAGE_RAMP: [u8; 4] = [0x11, 0xc8, 0x2a, 0xe8]; // pageRamp()
-const PAGE_LIMIT: [u8; 4] = [0x97, 0x86, 0xf9, 0x6e]; // pageLimit()
-const MIN_INIT_GAS: [u8; 4] = [0x99, 0xd0, 0xb3, 0x8d]; // minInitGas()
-const INIT_COST_SCALAR: [u8; 4] = [0x5f, 0xc9, 0x4c, 0x0b]; // initCostScalar()
-const EXPIRY_DAYS: [u8; 4] = [0x30, 0x9f, 0x65, 0x55]; // expiryDays()
-const KEEPALIVE_DAYS: [u8; 4] = [0x0a, 0x93, 0x64, 0x55]; // keepaliveDays()
-const BLOCK_CACHE_SIZE: [u8; 4] = [0x7a, 0xf6, 0xe8, 0x19]; // blockCacheSize()
-const ACTIVATION_GAS: [u8; 4] = [0x22, 0x78, 0xc2, 0x78]; // activationGas()
-const ACTIVATE_PROGRAM: [u8; 4] = [0x58, 0xc7, 0x80, 0xc2]; // activateProgram(address)
-const CODEHASH_KEEPALIVE: [u8; 4] = [0xc6, 0x89, 0xba, 0xd5]; // codehashKeepalive(bytes32)
-const CODEHASH_VERSION: [u8; 4] = [0xd7, 0x0c, 0x0c, 0xa7]; // codehashVersion(bytes32)
-const CODEHASH_ASM_SIZE: [u8; 4] = [0x40, 0x89, 0x26, 0x7f]; // codehashAsmSize(bytes32)
-const PROGRAM_VERSION: [u8; 4] = [0xcc, 0x8f, 0x4e, 0x88]; // programVersion(address)
-const PROGRAM_INIT_GAS: [u8; 4] = [0x62, 0xb6, 0x88, 0xaa]; // programInitGas(address)
-const PROGRAM_MEMORY_FOOTPRINT: [u8; 4] = [0xae, 0xf3, 0x6b, 0xe3]; // programMemoryFootprint(address)
-const PROGRAM_TIME_LEFT: [u8; 4] = [0xc7, 0x75, 0xa6, 0x2a]; // programTimeLeft(address)
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
@@ -48,105 +27,70 @@ const MIN_INIT_GAS_UNITS: u64 = 128;
 const MIN_CACHED_GAS_UNITS: u64 = 32;
 const COST_SCALAR_PERCENT: u64 = 2;
 
-fn selector_for(sig: &[u8]) -> [u8; 4] {
-    let h = alloy_primitives::keccak256(sig);
-    [h[0], h[1], h[2], h[3]]
-}
-
-fn program_not_activated_selector() -> [u8; 4] {
-    selector_for(b"ProgramNotActivated()")
-}
-
-#[allow(dead_code)]
-fn program_up_to_date_selector() -> [u8; 4] {
-    selector_for(b"ProgramUpToDate()")
-}
-
-fn program_needs_upgrade_selector() -> [u8; 4] {
-    selector_for(b"ProgramNeedsUpgrade(uint16,uint16)")
-}
-
-fn program_expired_selector() -> [u8; 4] {
-    selector_for(b"ProgramExpired(uint64)")
-}
-
-#[allow(dead_code)]
-fn program_keepalive_too_soon_selector() -> [u8; 4] {
-    selector_for(b"ProgramKeepaliveTooSoon(uint64)")
-}
-
-#[allow(dead_code)]
-fn program_insufficient_value_selector() -> [u8; 4] {
-    selector_for(b"ProgramInsufficientValue(uint256,uint256)")
-}
-
 pub fn create_arbwasm_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbwasm"), handler)
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
-    // ArbWasm requires ArbOS >= 30 (Stylus).
     if let Some(result) =
         crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
     {
         return result;
     }
 
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(input.gas);
-    }
+    let gas_limit = input.gas;
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    let call = match IArbWasm::ArbWasmCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
 
-    // State-modifying methods handle their own gas.
-    match selector {
-        ACTIVATE_PROGRAM => return handle_activate_program(input),
-        CODEHASH_KEEPALIVE => return handle_codehash_keepalive(input),
+    use IArbWasm::ArbWasmCalls as Calls;
+    // State-modifying methods own their gas accounting.
+    match &call {
+        Calls::activateProgram(c) => return handle_activate_program(input, c.program),
+        Calls::codehashKeepalive(c) => return handle_codehash_keepalive(input, c.codehash),
         _ => {}
     }
 
-    crate::init_precompile_gas(data.len());
+    crate::init_precompile_gas(input.data.len());
 
-    let result = match selector {
-        STYLUS_VERSION => {
+    let result = match call {
+        Calls::stylusVersion(_) => {
             let params = load_params_word(&mut input)?;
             let version = u16::from_be_bytes([params[0], params[1]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(version))
         }
-        INK_PRICE => {
+        Calls::inkPrice(_) => {
             let params = load_params_word(&mut input)?;
             let ink_price = (params[2] as u32) << 16 | (params[3] as u32) << 8 | params[4] as u32;
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(ink_price))
         }
-        MAX_STACK_DEPTH => {
+        Calls::maxStackDepth(_) => {
             let params = load_params_word(&mut input)?;
             let depth = u32::from_be_bytes([params[5], params[6], params[7], params[8]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(depth))
         }
-        FREE_PAGES => {
+        Calls::freePages(_) => {
             let params = load_params_word(&mut input)?;
             let pages = u16::from_be_bytes([params[9], params[10]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(pages))
         }
-        PAGE_GAS => {
+        Calls::pageGas(_) => {
             let params = load_params_word(&mut input)?;
             let gas = u16::from_be_bytes([params[11], params[12]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(gas))
         }
-        PAGE_RAMP => {
-            // Page ramp is a constant, not stored in packed params.
-            // Still load the account for consistency.
+        Calls::pageRamp(_) => {
             load_arbos(&mut input)?;
             ok_u256(COPY_GAS, U256::from(INITIAL_PAGE_RAMP))
         }
-        PAGE_LIMIT => {
+        Calls::pageLimit(_) => {
             let params = load_params_word(&mut input)?;
             let limit = u16::from_be_bytes([params[13], params[14]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(limit))
         }
-        MIN_INIT_GAS => {
-            // Requires ArbOS >= 32 (StylusChargingFixes).
+        Calls::minInitGas(_) => {
             if let Some(result) = crate::check_method_version(
                 input.gas,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES,
@@ -161,7 +105,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let cached = min_cached.saturating_mul(MIN_CACHED_GAS_UNITS);
             ok_two_u256(SLOAD_GAS + COPY_GAS, U256::from(init), U256::from(cached))
         }
-        INIT_COST_SCALAR => {
+        Calls::initCostScalar(_) => {
             let params = load_params_word(&mut input)?;
             let scalar = params[17] as u64;
             ok_u256(
@@ -169,33 +113,30 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 U256::from(scalar.saturating_mul(COST_SCALAR_PERCENT)),
             )
         }
-        EXPIRY_DAYS => {
+        Calls::expiryDays(_) => {
             let params = load_params_word(&mut input)?;
             let days = u16::from_be_bytes([params[19], params[20]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(days))
         }
-        KEEPALIVE_DAYS => {
+        Calls::keepaliveDays(_) => {
             let params = load_params_word(&mut input)?;
             let days = u16::from_be_bytes([params[21], params[22]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(days))
         }
-        BLOCK_CACHE_SIZE => {
+        Calls::blockCacheSize(_) => {
             let params = load_params_word(&mut input)?;
             let size = u16::from_be_bytes([params[23], params[24]]);
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(size))
         }
-        ACTIVATION_GAS => {
-            // Reads from a separate Programs.activationGas slot (not the packed params word).
+        Calls::activationGas(_) => {
             let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
             let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
             let slot = map_slot(activation_key.as_slice(), 0);
             let gas = sload_field(&mut input, slot)?;
             ok_u256(SLOAD_GAS + COPY_GAS, gas)
         }
-        // Program queries by codehash.
-        CODEHASH_VERSION => {
-            let codehash = extract_bytes32(input.data)?;
-            let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
+        Calls::codehashVersion(c) => {
+            let (params_word, program_word) = load_params_and_program(&mut input, c.codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
@@ -206,9 +147,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             ok_u256(2 * SLOAD_GAS + COPY_GAS, U256::from(program.version))
         }
-        CODEHASH_ASM_SIZE => {
-            let codehash = extract_bytes32(input.data)?;
-            let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
+        Calls::codehashAsmSize(c) => {
+            let (params_word, program_word) = load_params_and_program(&mut input, c.codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
             let program = parse_program(&program_word, &params_word);
@@ -223,10 +163,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 U256::from(asm_size),
             )
         }
-        // Program queries by address (need to get codehash from account).
-        PROGRAM_VERSION => {
-            let address = extract_address(input.data)?;
-            let codehash = get_account_codehash(&mut input, address)?;
+        Calls::programVersion(c) => {
+            let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
@@ -238,9 +176,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(program.version))
         }
-        PROGRAM_INIT_GAS => {
-            let address = extract_address(input.data)?;
-            let codehash = get_account_codehash(&mut input, address)?;
+        Calls::programInitGas(c) => {
+            let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
@@ -276,9 +213,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 U256::from(cached_gas),
             )
         }
-        PROGRAM_MEMORY_FOOTPRINT => {
-            let address = extract_address(input.data)?;
-            let codehash = get_account_codehash(&mut input, address)?;
+        Calls::programMemoryFootprint(c) => {
+            let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
@@ -290,9 +226,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(program.footprint))
         }
-        PROGRAM_TIME_LEFT => {
-            let address = extract_address(input.data)?;
-            let codehash = get_account_codehash(&mut input, address)?;
+        Calls::programTimeLeft(c) => {
+            let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
@@ -307,8 +242,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let time_left = expiry_seconds.saturating_sub(program.age_seconds);
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(time_left))
         }
-        ACTIVATE_PROGRAM | CODEHASH_KEEPALIVE => unreachable!(),
-        _ => return crate::burn_all_revert(input.gas),
+        Calls::activateProgram(_) | Calls::codehashKeepalive(_) => unreachable!(),
     };
     crate::gas_check(input.gas, result)
 }
@@ -434,52 +368,26 @@ fn validate_active_program(
     gas_limit: u64,
 ) -> Result<(), PrecompileResult> {
     if program.version == 0 {
-        return Err(crate::sol_error_revert_with_selector(
-            program_not_activated_selector(),
-            gas_limit,
-        ));
+        let data = IArbWasm::ProgramNotActivated {}.abi_encode();
+        return Err(crate::sol_error_revert(data, gas_limit));
     }
     if program.version != params_version {
-        let mut args = Vec::with_capacity(64);
-        args.extend_from_slice(&crate::abi_word_u16(program.version));
-        args.extend_from_slice(&crate::abi_word_u16(params_version));
-        return Err(crate::sol_error_revert_with_args(
-            program_needs_upgrade_selector(),
-            &args,
-            gas_limit,
-        ));
+        let data = IArbWasm::ProgramNeedsUpgrade {
+            version: program.version,
+            stylusVersion: params_version,
+        }
+        .abi_encode();
+        return Err(crate::sol_error_revert(data, gas_limit));
     }
     let expiry_seconds = (expiry_days as u64).saturating_mul(86_400);
     if program.age_seconds > expiry_seconds {
-        let args = crate::abi_word_u64(program.age_seconds);
-        return Err(crate::sol_error_revert_with_args(
-            program_expired_selector(),
-            &args,
-            gas_limit,
-        ));
+        let data = IArbWasm::ProgramExpired {
+            ageInSeconds: program.age_seconds,
+        }
+        .abi_encode();
+        return Err(crate::sol_error_revert(data, gas_limit));
     }
     Ok(())
-}
-
-/// Extract a bytes32 argument from calldata (after 4-byte selector).
-fn extract_bytes32(data: &[u8]) -> Result<B256, PrecompileError> {
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for bytes32 arg"));
-    }
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&data[4..36]);
-    Ok(B256::from(bytes))
-}
-
-/// Extract an address argument from calldata (after 4-byte selector).
-fn extract_address(data: &[u8]) -> Result<Address, PrecompileError> {
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for address arg"));
-    }
-    // Address is right-aligned in 32-byte word.
-    let mut bytes = [0u8; 20];
-    bytes.copy_from_slice(&data[16..36]);
-    Ok(Address::from(bytes))
 }
 
 fn ok_u256(gas_cost: u64, value: U256) -> PrecompileResult {
@@ -517,7 +425,10 @@ fn approx_exp_basis_points(x: u64) -> u64 {
     res
 }
 
-fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handle_activate_program(
+    mut input: PrecompileInput<'_>,
+    program_address: Address,
+) -> PrecompileResult {
     const ACTIVATION_UPFRONT_GAS: u64 = 1_659_168;
 
     crate::reset_precompile_gas();
@@ -525,8 +436,6 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     crate::charge_precompile_gas(args_cost);
     crate::charge_precompile_gas(SLOAD_GAS); // OpenArbosState version read
     crate::charge_precompile_gas(ACTIVATION_UPFRONT_GAS);
-
-    let program_address = extract_address(input.data)?;
 
     let code_hash = {
         let account = input
@@ -712,10 +621,7 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     crate::set_stylus_activation_request(Some(program_address));
     crate::set_stylus_activation_data_fee(data_fee);
 
-    // Emit ProgramActivated(bytes32 codehash, bytes32 moduleHash, address program, uint256 dataFee,
-    // uint16 version)
-    let event_topic =
-        alloy_primitives::keccak256(b"ProgramActivated(bytes32,bytes32,address,uint256,uint16)");
+    let event_topic = IArbWasm::ProgramActivated::SIGNATURE_HASH;
     let mut event_data = Vec::with_capacity(128);
     event_data.extend_from_slice(&info.module_hash.0);
     event_data.extend_from_slice(&[0u8; 12]);
@@ -748,12 +654,13 @@ fn handle_activate_program(mut input: PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(gas_used, return_data.into()))
 }
 
-fn handle_codehash_keepalive(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handle_codehash_keepalive(
+    mut input: PrecompileInput<'_>,
+    codehash: B256,
+) -> PrecompileResult {
     crate::reset_precompile_gas();
     let args_cost = COPY_GAS * (input.data.len() as u64).saturating_sub(4).div_ceil(32);
     crate::charge_precompile_gas(args_cost);
-
-    let codehash = extract_bytes32(input.data)?;
 
     load_arbos(&mut input)?;
     let params_word = load_params_word(&mut input)?;
@@ -852,8 +759,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>) -> PrecompileResult
     crate::set_stylus_keepalive_request(Some(codehash));
     crate::set_stylus_activation_data_fee(data_fee);
 
-    // Emit ProgramLifetimeExtended(bytes32 codehash, uint256 dataFee)
-    let event_topic = alloy_primitives::keccak256(b"ProgramLifetimeExtended(bytes32,uint256)");
+    let event_topic = IArbWasm::ProgramLifetimeExtended::SIGNATURE_HASH;
     let mut event_data = Vec::with_capacity(32);
     event_data.extend_from_slice(&data_fee.to_be_bytes::<32>());
     let event_gas = 375 + 2 * 375 + 8 * event_data.len() as u64;

@@ -447,38 +447,6 @@ pub fn sol_error_revert(payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
     ))
 }
 
-// Legacy selector-based helpers; removed once all precompiles use sol!-derived
-// custom errors directly.
-pub fn sol_error_revert_with_selector(
-    error_selector: [u8; 4],
-    gas_limit: u64,
-) -> PrecompileResult {
-    sol_error_revert(error_selector.to_vec(), gas_limit)
-}
-
-pub fn sol_error_revert_with_args(
-    error_selector: [u8; 4],
-    args: &[u8],
-    gas_limit: u64,
-) -> PrecompileResult {
-    let mut payload = Vec::with_capacity(4 + args.len());
-    payload.extend_from_slice(&error_selector);
-    payload.extend_from_slice(args);
-    sol_error_revert(payload, gas_limit)
-}
-
-pub fn abi_word_u64(v: u64) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out[24..].copy_from_slice(&v.to_be_bytes());
-    out
-}
-
-pub fn abi_word_u16(v: u16) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out[30..].copy_from_slice(&v.to_be_bytes());
-    out
-}
-
 fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
     let accumulated_gas = get_precompile_gas();
     reset_precompile_gas();
@@ -568,31 +536,3 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     }
 }
 
-#[cfg(test)]
-mod selector_audit {
-    #[test]
-    fn verify_selectors() {
-        fn check(sig: &str, expected: &[u8; 4]) {
-            let h = alloy_primitives::keccak256(sig.as_bytes());
-            let actual = [h[0], h[1], h[2], h[3]];
-            assert_eq!(actual, *expected, "selector mismatch for {sig}: expected 0x{:02x}{:02x}{:02x}{:02x} got 0x{:02x}{:02x}{:02x}{:02x}",
-                expected[0], expected[1], expected[2], expected[3], actual[0], actual[1], actual[2], actual[3]);
-        }
-        check("rectifyChainOwner(address)", &[0x6f, 0xe8, 0x63, 0x73]);
-        check("addChainOwner(address)", &[0x48, 0x1f, 0x8d, 0xbf]);
-        check("removeChainOwner(address)", &[0x87, 0x92, 0x70, 0x1a]);
-        check(
-            "releaseL1PricerSurplusFunds(uint256)",
-            &[0x31, 0x4b, 0xcf, 0x05],
-        );
-        check("withdrawEth(address)", &[0x25, 0xe1, 0x60, 0x63]);
-        check("sendTxToL1(address,bytes)", &[0x92, 0x8c, 0x16, 0x9a]);
-        check("arbBlockNumber()", &[0xa3, 0xb1, 0xb3, 0x1d]);
-        check("arbBlockHash(uint256)", &[0x2b, 0x40, 0x7a, 0x82]);
-        check("arbChainID()", &[0xd1, 0x27, 0xf5, 0x4a]);
-        check("isTopLevelCall()", &[0x08, 0xbd, 0x62, 0x4c]);
-        // ArbWasm selectors
-        check("activateProgram(address)", &[0x58, 0xc7, 0x80, 0xc2]);
-        check("codehashKeepalive(bytes32)", &[0xc6, 0x89, 0xba, 0xd5]);
-    }
-}

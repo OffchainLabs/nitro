@@ -8,7 +8,7 @@ use arb_precompiles::{
         root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     },
 };
-use common::{calldata, decode_u256, decode_word, word_u256, PrecompileTest};
+use common::{calldata, calldata_estimate, decode_u256, decode_word, word_u256, PrecompileTest};
 
 const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
 const L1_PRICE_PER_UNIT: u64 = 7;
@@ -73,7 +73,7 @@ fn gas_estimate_components_returns_basefee_and_l1_price() {
         )
         .call(
             &nodeinterface(),
-            &calldata("gasEstimateComponents(address,bool,bytes)", &[]),
+            &calldata_estimate("gasEstimateComponents(address,bool,bytes)"),
         );
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u256(U256::ZERO));
@@ -100,7 +100,7 @@ fn gas_estimate_l1_component_returns_basefee_and_l1_price() {
         )
         .call(
             &nodeinterface(),
-            &calldata("gasEstimateL1Component(address,bool,bytes)", &[]),
+            &calldata_estimate("gasEstimateL1Component(address,bool,bytes)"),
         );
     let out = run.output();
     assert_eq!(decode_word(out, 1), common::word_u256(basefee));

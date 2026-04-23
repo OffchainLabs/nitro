@@ -1,10 +1,12 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
+use alloy_sol_types::SolInterface;
 use revm::{
     context_interface::block::Block,
     precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
 };
 
+use crate::interfaces::IArbGasInfo;
 use crate::storage_slot::{
     derive_subspace_key, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
     multi_gas_constraints_vec_key, subspace_slot, vector_element_field, vector_element_key,
@@ -18,39 +20,6 @@ pub const ARBGASINFO_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x6c,
 ]);
 
-// Function selectors (keccak256 of Solidity signatures, first 4 bytes).
-const GET_L1_BASEFEE_ESTIMATE: [u8; 4] = [0xf5, 0xd6, 0xde, 0xd7]; // getL1BaseFeeEstimate()
-const GET_L1_GAS_PRICE_ESTIMATE: [u8; 4] = [0x05, 0x5f, 0x36, 0x2f]; // getL1GasPriceEstimate()
-const GET_MINIMUM_GAS_PRICE: [u8; 4] = [0xf9, 0x18, 0x37, 0x9a]; // getMinimumGasPrice()
-const GET_PRICES_IN_WEI: [u8; 4] = [0x41, 0xb2, 0x47, 0xa8]; // getPricesInWei()
-const GET_GAS_ACCOUNTING_PARAMS: [u8; 4] = [0x61, 0x2a, 0xf1, 0x78]; // getGasAccountingParams()
-const GET_CURRENT_TX_L1_FEES: [u8; 4] = [0xc6, 0xf7, 0xde, 0x0e]; // getCurrentTxL1GasFees()
-const GET_PRICES_IN_ARBGAS: [u8; 4] = [0x02, 0x19, 0x9f, 0x34]; // getPricesInArbGas()
-const GET_L1_BASEFEE_ESTIMATE_INERTIA: [u8; 4] = [0x29, 0xeb, 0x31, 0xee]; // getL1BaseFeeEstimateInertia()
-const GET_GAS_BACKLOG: [u8; 4] = [0x1d, 0x5b, 0x5c, 0x20]; // getGasBacklog()
-const GET_PRICING_INERTIA: [u8; 4] = [0x3d, 0xfb, 0x45, 0xb9]; // getPricingInertia()
-const GET_GAS_BACKLOG_TOLERANCE: [u8; 4] = [0x25, 0x75, 0x4f, 0x91]; // getGasBacklogTolerance()
-const GET_L1_PRICING_SURPLUS: [u8; 4] = [0x52, 0x0a, 0xcd, 0xd7]; // getL1PricingSurplus()
-const GET_PER_BATCH_GAS_CHARGE: [u8; 4] = [0x6e, 0xcc, 0xa4, 0x5a]; // getPerBatchGasCharge()
-const GET_AMORTIZED_COST_CAP_BIPS: [u8; 4] = [0x7a, 0x7d, 0x6b, 0xeb]; // getAmortizedCostCapBips()
-const GET_L1_FEES_AVAILABLE: [u8; 4] = [0x5b, 0x39, 0xd2, 0x3c]; // getL1FeesAvailable()
-const GET_L1_REWARD_RATE: [u8; 4] = [0x8a, 0x5b, 0x1d, 0x28]; // getL1RewardRate()
-const GET_L1_REWARD_RECIPIENT: [u8; 4] = [0x9e, 0x6d, 0x7e, 0x31]; // getL1RewardRecipient()
-const GET_L1_PRICING_EQUILIBRATION_UNITS: [u8; 4] = [0xad, 0x26, 0xce, 0x90]; // getL1PricingEquilibrationUnits()
-const GET_LAST_L1_PRICING_UPDATE_TIME: [u8; 4] = [0x13, 0x8b, 0x47, 0xb4]; // getLastL1PricingUpdateTime()
-const GET_L1_PRICING_FUNDS_DUE_FOR_REWARDS: [u8; 4] = [0x96, 0x3d, 0x60, 0x02]; // getL1PricingFundsDueForRewards()
-const GET_L1_PRICING_UNITS_SINCE_UPDATE: [u8; 4] = [0xef, 0xf0, 0x13, 0x06]; // getL1PricingUnitsSinceUpdate()
-const GET_LAST_L1_PRICING_SURPLUS: [u8; 4] = [0x29, 0x87, 0xd0, 0x27]; // getLastL1PricingSurplus()
-const GET_MAX_BLOCK_GAS_LIMIT: [u8; 4] = [0x03, 0x71, 0xfd, 0xb4]; // getMaxBlockGasLimit()
-const GET_MAX_TX_GAS_LIMIT: [u8; 4] = [0xaa, 0xe1, 0xcd, 0x4c]; // getMaxTxGasLimit()
-const GET_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0x23, 0x20, 0x27, 0xd1]; // getGasPricingConstraints()
-const GET_MULTI_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0xbb, 0xfc, 0x0a, 0x72]; // getMultiGasPricingConstraints()
-const GET_MULTI_GAS_BASE_FEE: [u8; 4] = [0xc0, 0xe1, 0x0b, 0xbb]; // getMultiGasBaseFee()
-                                                                  // Legacy selectors for WithAggregator variants (aggregator param is ignored post-v4).
-const GET_PRICES_IN_WEI_WITH_AGG: [u8; 4] = [0xba, 0x9c, 0x91, 0x6e]; // getPricesInWeiWithAggregator(address)
-const GET_PRICES_IN_ARBGAS_WITH_AGG: [u8; 4] = [0x7a, 0x1e, 0xa7, 0x32]; // getPricesInArbGasWithAggregator(address)
-
-// Gas costs.
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
 
@@ -99,130 +68,118 @@ pub fn create_arbgasinfo_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(gas_limit);
-    }
+    crate::init_precompile_gas(input.data.len());
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    let call = match IArbGasInfo::ArbGasInfoCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
 
-    crate::init_precompile_gas(data.len());
-
-    let result = match selector {
-        GET_L1_BASEFEE_ESTIMATE | GET_L1_GAS_PRICE_ESTIMATE => {
+    use IArbGasInfo::ArbGasInfoCalls as Calls;
+    let result = match call {
+        Calls::getL1BaseFeeEstimate(_) | Calls::getL1GasPriceEstimate(_) => {
             read_l1_field(&mut input, L1_PRICE_PER_UNIT)
         }
-        GET_MINIMUM_GAS_PRICE => read_l2_field(&mut input, L2_MIN_BASE_FEE),
-        GET_PRICES_IN_WEI | GET_PRICES_IN_WEI_WITH_AGG => handle_prices_in_wei(&mut input),
-        GET_GAS_ACCOUNTING_PARAMS => handle_gas_accounting_params(&mut input),
-        GET_CURRENT_TX_L1_FEES => {
-            let gas_limit = input.gas;
+        Calls::getMinimumGasPrice(_) => read_l2_field(&mut input, L2_MIN_BASE_FEE),
+        Calls::getPricesInWei(_) | Calls::getPricesInWeiWithAggregator(_) => {
+            handle_prices_in_wei(&mut input)
+        }
+        Calls::getGasAccountingParams(_) => handle_gas_accounting_params(&mut input),
+        Calls::getCurrentTxL1GasFees(_) => {
             let fee = U256::from(crate::get_current_tx_poster_fee());
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        GET_PRICES_IN_ARBGAS | GET_PRICES_IN_ARBGAS_WITH_AGG => handle_prices_in_arbgas(&mut input),
-        GET_L1_BASEFEE_ESTIMATE_INERTIA => read_l1_field(&mut input, L1_INERTIA),
-        GET_GAS_BACKLOG => read_l2_field(&mut input, L2_GAS_BACKLOG),
-        GET_PRICING_INERTIA => read_l2_field(&mut input, L2_PRICING_INERTIA),
-        GET_GAS_BACKLOG_TOLERANCE => read_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
-        GET_L1_PRICING_SURPLUS => handle_l1_pricing_surplus(&mut input),
-        GET_PER_BATCH_GAS_CHARGE => read_l1_field(&mut input, L1_PER_BATCH_GAS_COST),
-        GET_AMORTIZED_COST_CAP_BIPS => read_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
-        // GetL1FeesAvailable: ArbOS >= 10
-        GET_L1_FEES_AVAILABLE => {
+        Calls::getPricesInArbGas(_) | Calls::getPricesInArbGasWithAggregator(_) => {
+            handle_prices_in_arbgas(&mut input)
+        }
+        Calls::getL1BaseFeeEstimateInertia(_) => read_l1_field(&mut input, L1_INERTIA),
+        Calls::getGasBacklog(_) => read_l2_field(&mut input, L2_GAS_BACKLOG),
+        Calls::getPricingInertia(_) => read_l2_field(&mut input, L2_PRICING_INERTIA),
+        Calls::getGasBacklogTolerance(_) => read_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
+        Calls::getL1PricingSurplus(_) => handle_l1_pricing_surplus(&mut input),
+        Calls::getPerBatchGasCharge(_) => read_l1_field(&mut input, L1_PER_BATCH_GAS_COST),
+        Calls::getAmortizedCostCapBips(_) => read_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
+        Calls::getL1FeesAvailable(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 10, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_FEES_AVAILABLE)
         }
-        // GetL1RewardRate: ArbOS >= 11
-        GET_L1_REWARD_RATE => {
+        Calls::getL1RewardRate(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_PER_UNIT_REWARD)
         }
-        // GetL1RewardRecipient: ArbOS >= 11
-        GET_L1_REWARD_RECIPIENT => {
+        Calls::getL1RewardRecipient(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_PAY_REWARDS_TO)
         }
-        // GetL1PricingEquilibrationUnits: ArbOS >= 20
-        GET_L1_PRICING_EQUILIBRATION_UNITS => {
+        Calls::getL1PricingEquilibrationUnits(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_EQUILIBRATION_UNITS)
         }
-        // GetLastL1PricingUpdateTime: ArbOS >= 20
-        GET_LAST_L1_PRICING_UPDATE_TIME => {
+        Calls::getLastL1PricingUpdateTime(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_LAST_UPDATE_TIME)
         }
-        // GetL1PricingFundsDueForRewards: ArbOS >= 20
-        GET_L1_PRICING_FUNDS_DUE_FOR_REWARDS => {
+        Calls::getL1PricingFundsDueForRewards(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_FUNDS_DUE_FOR_REWARDS)
         }
-        // GetL1PricingUnitsSinceUpdate: ArbOS >= 20
-        GET_L1_PRICING_UNITS_SINCE_UPDATE => {
+        Calls::getL1PricingUnitsSinceUpdate(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_UNITS_SINCE)
         }
-        // GetLastL1PricingSurplus: ArbOS >= 20
-        GET_LAST_L1_PRICING_SURPLUS => {
+        Calls::getLastL1PricingSurplus(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
                 return r;
             }
             read_l1_field(&mut input, L1_LAST_SURPLUS)
         }
-        // GetMaxBlockGasLimit: ArbOS >= 50
-        GET_MAX_BLOCK_GAS_LIMIT => {
+        Calls::getMaxBlockGasLimit(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             read_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
         }
-        // GetMaxTxGasLimit: ArbOS >= 50
-        GET_MAX_TX_GAS_LIMIT => {
+        Calls::getMaxTxGasLimit(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             read_l2_field(&mut input, L2_PER_TX_GAS_LIMIT)
         }
-        // GetGasPricingConstraints: ArbOS >= 50
-        GET_GAS_PRICING_CONSTRAINTS => {
+        Calls::getGasPricingConstraints(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
                 return r;
             }
             handle_gas_pricing_constraints(&mut input)
         }
-        // GetMultiGasPricingConstraints: ArbOS >= 60
-        GET_MULTI_GAS_PRICING_CONSTRAINTS => {
+        Calls::getMultiGasPricingConstraints(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_multi_gas_pricing_constraints(&mut input)
         }
-        // GetMultiGasBaseFee: ArbOS >= 60
-        GET_MULTI_GAS_BASE_FEE => {
+        Calls::getMultiGasBaseFee(_) => {
             if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
                 return r;
             }
             handle_multi_gas_base_fee(&mut input)
         }
-        _ => return crate::burn_all_revert(gas_limit),
     };
     crate::gas_check(gas_limit, result)
 }
