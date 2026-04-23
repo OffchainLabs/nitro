@@ -77,12 +77,17 @@ func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 			log.Warn("pruner scanning from genesis; set pruning.start-parent-block and pruning.start-delayed-msg-idx to avoid rescan on each restart")
 		}
 		t.CallIteratively(func(ctx context.Context) time.Duration {
+			manager := t.arbFilteredTransactionsManager.Load()
+			if manager == nil {
+				log.Info("pruner: sequencer client not set yet; skipping tick")
+				return t.prune.config.PollInterval
+			}
 			result, err := t.prune.step(ctx)
 			if err != nil {
 				log.Warn("pruner step failed", "err", err)
 				return t.prune.config.PollInterval
 			}
-			t.checkAndUnfilter(ctx, result)
+			t.checkAndUnfilter(ctx, manager, result)
 			return t.prune.config.PollInterval
 		})
 	}
@@ -92,13 +97,8 @@ func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 // checkAndUnfilter checks each candidate hash against the on-chain filter set at the finalized
 // child-chain block and enqueues filtered entries for removal via the shared consumer. Transient
 // network retries are handled by rpcclient.RpcClient.CallContext underneath IsTransactionFiltered.
-func (t *TransactionFiltererAPI) checkAndUnfilter(ctx context.Context, result pruneResult) {
+func (t *TransactionFiltererAPI) checkAndUnfilter(ctx context.Context, manager *precompilesgen.ArbFilteredTransactionsManager, result pruneResult) {
 	if len(result.Hashes) == 0 {
-		return
-	}
-	manager := t.arbFilteredTransactionsManager.Load()
-	if manager == nil {
-		log.Warn("Sequencer client not set yet")
 		return
 	}
 	callOpts := &bind.CallOpts{
@@ -111,10 +111,9 @@ func (t *TransactionFiltererAPI) checkAndUnfilter(ctx context.Context, result pr
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
-			log.Warn("IsTransactionFiltered check failed", "txHash", h.Hex(), "err", err)
-			continue
-		}
-		if !filtered {
+			// Fail-open: check is a gas optimization; DeleteFilteredTransaction is idempotent on-chain.
+			log.Warn("IsTransactionFiltered check failed; enqueueing unfilter optimistically", "txHash", h.Hex(), "err", err)
+		} else if !filtered {
 			continue
 		}
 		select {
