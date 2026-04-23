@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,9 +15,11 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 type FilteringReportConfig struct {
@@ -37,6 +40,9 @@ type FilteringReportConfig struct {
 	WS   genericconf.WSConfig      `koanf:"ws"`
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
+
+	Queue           sqsclient.QueueConfig `koanf:"queue"`
+	ReportForwarder forwarder.Config      `koanf:"report-forwarder"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -63,17 +69,29 @@ var IPCConfigDefault = genericconf.IPCConfig{
 }
 
 var DefaultFilteringReportConfig = FilteringReportConfig{
-	Conf:          genericconf.ConfConfigDefault,
-	LogLevel:      "INFO",
-	LogType:       "plaintext",
-	Metrics:       false,
-	MetricsServer: genericconf.MetricsServerConfigDefault,
-	PProf:         false,
-	PprofCfg:      genericconf.PProfDefault,
-	HTTP:          HTTPConfigDefault,
-	WS:            WSConfigDefault,
-	IPC:           IPCConfigDefault,
-	Auth:          genericconf.AuthRPCConfigDefault,
+	Conf:            genericconf.ConfConfigDefault,
+	LogLevel:        "INFO",
+	LogType:         "plaintext",
+	Metrics:         false,
+	MetricsServer:   genericconf.MetricsServerConfigDefault,
+	PProf:           false,
+	PprofCfg:        genericconf.PProfDefault,
+	HTTP:            HTTPConfigDefault,
+	WS:              WSConfigDefault,
+	IPC:             IPCConfigDefault,
+	Auth:            genericconf.AuthRPCConfigDefault,
+	Queue:           sqsclient.DefaultQueueConfig,
+	ReportForwarder: forwarder.DefaultConfig,
+}
+
+func (c *FilteringReportConfig) Validate() error {
+	if err := c.Queue.Validate(); err != nil {
+		return fmt.Errorf("queue config: %w", err)
+	}
+	if err := c.ReportForwarder.Validate(); err != nil {
+		return fmt.Errorf("report-forwarder config: %w", err)
+	}
+	return nil
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -93,6 +111,9 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
+
+	sqsclient.QueueConfigAddOptions("queue", f)
+	forwarder.ConfigAddOptions("report-forwarder", f)
 }
 
 func parseConfig(args []string) (*FilteringReportConfig, error) {
@@ -110,7 +131,10 @@ func parseConfig(args []string) (*FilteringReportConfig, error) {
 		return nil, err
 	}
 	if config.Conf.Dump {
-		err = confighelpers.DumpConfig(k, map[string]interface{}{})
+		err = confighelpers.DumpConfig(k, map[string]interface{}{
+			"queue.sqs-client.access-key": "",
+			"queue.sqs-client.secret-key": "",
+		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
 		}
@@ -133,6 +157,9 @@ func printSampleUsage(progname string) {
 }
 
 func mainImpl() int {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
 	config, err := parseConfig(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -166,7 +193,24 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, err := api.NewStack(&stackConf)
+	if err := config.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	queueClient, err := sqsclient.NewQueueClient(ctx, &config.Queue)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
+		return 1
+	}
+	fwd, err := forwarder.New(&config.ReportForwarder, queueClient)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating forwarder: %v\n", err)
+		return 1
+	}
+	fwd.Start(ctx)
+	defer fwd.StopAndWait()
+
+	stack, err := api.NewStack(&stackConf, queueClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1
