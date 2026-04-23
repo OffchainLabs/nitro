@@ -3,6 +3,20 @@ RISCV            := $(HOME)/.sp1/riscv
 BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
 BLOCK_INPUTS_DIR := $(TOP)/target/sp1/block-inputs
+OUTPUT_DIR       := $(TOP)/target/sp1
+
+# Bump SP1's maximum heap memory size.
+export SP1_ZKVM_MAX_MEMORY := 1099511627776
+
+# On macOS, point secp256k1-sys (and any other cc-rs crate) at the SP1-provided
+# RISC-V toolchain. Without these, the host ar/ranlib produce an empty
+# libsecp256k1.a (ELF objects can't be indexed by macOS ranlib) and linking
+# the SP1 program fails with undefined rustsecp256k1_v0_10_0_* symbols.
+ifeq ($(shell uname -s),Darwin)
+export RISCV_GNU_TOOLCHAIN               := $(HOME)/.sp1/riscv
+export AR_riscv64im_unknown_none_elf     := $(HOME)/.sp1/riscv/bin/riscv64-unknown-elf-ar
+export RANLIB_riscv64im_unknown_none_elf := $(HOME)/.sp1/riscv/bin/riscv64-unknown-elf-ranlib
+endif
 
 .PHONY: help
 help: # Show help for each of the Makefile recipes.
@@ -33,7 +47,7 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 		&& $(MAKE) -C $(BROTLI_BUILD_DIR) \
 		&& $(MAKE) -C $(BROTLI_BUILD_DIR) install; } \
 		>$(BROTLI_BUILD_DIR)/build.log 2>&1; then \
-		echo "ok  $(BROTLI_LIB_DIR)"; \
+		echo "Brotli successfully built"; \
 	else \
 		echo "FAIL — see $(BROTLI_BUILD_DIR)/build.log" >&2; exit 1; \
 	fi
@@ -64,7 +78,21 @@ record-blocks: nitro-deps
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusHeavy/*.json $(BLOCK_INPUTS_DIR)/stylus_heavy.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockMixed/*.json       $(BLOCK_INPUTS_DIR)/mixed.json; \
 		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
-		echo "ok  $(BLOCK_INPUTS_DIR)"; \
+		echo "Blocks successfully recorded"; \
 	else \
 		echo "FAIL — see $(BLOCK_INPUTS_DIR)/record.log" >&2; exit 1; \
 	fi
+
+.PHONY: build
+build: # Build the SP1 runner; artifacts go to $(OUTPUT_DIR).
+build: nitro-deps
+	@rm -rf $(OUTPUT_DIR)
+	@mkdir -p $(OUTPUT_DIR)
+	# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
+	@cd $(TOP) && GOOS=wasip1 GOARCH=wasm go build -o $(OUTPUT_DIR)/replay.wasm $(TOP)/cmd/replay/...
+	@cargo run --release -p sp1-builder -- \
+		--replay-wasm $(OUTPUT_DIR)/replay.wasm \
+		--output-folder $(OUTPUT_DIR)
+	@cargo build --release -p sp1-runner
+	@cp $(TOP)/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/stylus-compiler-program $(OUTPUT_DIR)
+	@cp $(TOP)/target/release/sp1-runner $(OUTPUT_DIR)
