@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package dbconv
 
 import (
@@ -15,13 +17,13 @@ func TestConversion(t *testing.T) {
 	newDBConfig.Data = t.TempDir()
 
 	func() {
-		oldDb, err := openDB(&oldDBConfig, "", false)
-		defer oldDb.Close()
+		oldDB, err := openDB(&oldDBConfig, "", false)
+		defer oldDB.Close()
 		Require(t, err)
-		err = oldDb.Put([]byte{}, []byte{0xde, 0xed, 0xbe, 0xef})
+		err = oldDB.Put([]byte{}, []byte{0xde, 0xed, 0xbe, 0xef})
 		Require(t, err)
 		for i := 0; i < 20; i++ {
-			err = oldDb.Put([]byte{byte(i)}, []byte{byte(i + 1)})
+			err = oldDB.Put([]byte{byte(i)}, []byte{byte(i + 1)})
 			Require(t, err)
 		}
 	}()
@@ -42,16 +44,16 @@ func TestConversion(t *testing.T) {
 	Require(t, err)
 
 	// check if new database doesn't have any extra keys
-	oldDb, err := openDB(&oldDBConfig, "", true)
+	oldDB, err := openDB(&oldDBConfig, "", true)
 	Require(t, err)
-	defer oldDb.Close()
-	newDb, err := openDB(&newDBConfig, "", true)
+	defer oldDB.Close()
+	newDB, err := openDB(&newDBConfig, "", true)
 	Require(t, err)
-	defer newDb.Close()
-	it := newDb.NewIterator(nil, nil)
+	defer newDB.Close()
+	it := newDB.NewIterator(nil, nil)
 	defer it.Release()
 	for it.Next() {
-		has, err := oldDb.Has(it.Key())
+		has, err := oldDB.Has(it.Key())
 		Require(t, err)
 		if !has {
 			Fail(t, "Unexpected key in the converted db, key:", it.Key())

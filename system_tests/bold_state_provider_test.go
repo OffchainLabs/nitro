@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -24,13 +24,14 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	prefixproofs "github.com/offchainlabs/nitro/bold/state-commitments/prefix-proofs"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -81,34 +82,36 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
+	totalMessageCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
 	log.Info("Status", "totalBatches", totalBatches, "totalMessageCount", totalMessageCount)
 	t.Logf("totalBatches: %v, totalMessageCount: %v\n", totalBatches, totalMessageCount)
 
 	// Wait until the validator has validated the batches.
-	for {
-		time.Sleep(time.Millisecond * 100)
+	pollUntil(t, ctx, 5*time.Minute, 100*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
+		}
+		if lastInfo == nil {
+			return false
 		}
 		if lastInfo.GlobalState.Batch >= totalBatches {
-			break
+			return true
 		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
+		batchMsgCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(lastInfo.GlobalState.Batch)
 		if err != nil {
-			continue
+			t.Logf("GetBatchMessageCount error (will retry): %v", err)
+			return false
 		}
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
-	}
+		return batchMsgCount >= totalMessageCount
+	})
 
-	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
+	historyCommitter := state.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
-		stateManager, []l2stateprovider.Height{
+		stateManager, []state.Height{
 			1 << 5,
 			1 << 5,
 			1 << 5,
@@ -116,22 +119,22 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 		stateManager,
 		nil, // api db
 	)
-	bisectionHeight := l2stateprovider.Height(16)
-	request := &l2stateprovider.HistoryCommitmentRequest{
-		AssertionMetadata: &l2stateprovider.AssociatedAssertionMetadata{
+	bisectionHeight := state.Height(16)
+	request := &state.HistoryCommitmentRequest{
+		AssertionMetadata: &state.AssociatedAssertionMetadata{
 			FromState: protocol.GoGlobalState{
 				Batch: 1,
 			},
 			BatchLimit:     3,
 			WasmModuleRoot: common.Hash{},
 		},
-		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		UpperChallengeOriginHeights: []state.Height{},
 		UpToHeight:                  option.Some(bisectionHeight),
 	}
 	bisectionCommitment, err := historyCommitter.HistoryCommitment(ctx, request)
 	Require(t, err)
 
-	request.UpToHeight = option.None[l2stateprovider.Height]()
+	request.UpToHeight = option.None[state.Height]()
 	packedProof, err := historyCommitter.PrefixProof(ctx, request, bisectionHeight)
 	Require(t, err)
 
@@ -148,7 +151,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 		hashes[i] = hash
 	}
 
-	computed, err := prefixproofs.Root(hashes)
+	computed, err := prefix.Root(hashes)
 	Require(t, err)
 	if computed != bisectionCommitment.Merkle {
 		Fatal(t, "wrong commitment")
@@ -196,24 +199,22 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
+	totalMessageCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
 
 	// Wait until the validator has validated the batches.
-	for {
-		time.Sleep(time.Millisecond * 100)
+	pollUntil(t, ctx, 5*time.Minute, 100*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
 		}
-		if lastInfo.GlobalState.Batch >= totalBatches {
-			break
-		}
-	}
+		return lastInfo != nil && lastInfo.GlobalState.Batch >= totalBatches
+	})
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		toBatch := uint64(3)
-		toHeight := l2stateprovider.Height(10)
+		toHeight := state.Height(10)
 		fromState := protocol.GoGlobalState{
 			Batch: 1,
 		}
@@ -285,7 +286,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
 		}
-		if !errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if !errors.Is(err, state.ErrChainCatchingUp) {
 			Fatal(t, "wrong error")
 		}
 
@@ -294,20 +295,20 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		Require(t, err)
 		_ = result
 
-		state := protocol.GoGlobalState{
+		globalState := protocol.GoGlobalState{
 			BlockHash: result.BlockHash,
 			SendRoot:  result.SendRoot,
 			Batch:     3,
 		}
 		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, first.GlobalState)
 		Require(t, err)
-		if state.Batch != got.GlobalState.Batch {
+		if globalState.Batch != got.GlobalState.Batch {
 			Fatal(t, "wrong batch")
 		}
-		if state.SendRoot != got.GlobalState.SendRoot {
+		if globalState.SendRoot != got.GlobalState.SendRoot {
 			Fatal(t, "wrong send root")
 		}
-		if state.BlockHash != got.GlobalState.BlockHash {
+		if globalState.BlockHash != got.GlobalState.BlockHash {
 			Fatal(t, "wrong batch")
 		}
 
@@ -315,13 +316,13 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		// "ErrChainCatchingUp".
 		_, err = stateManager.ExecutionStateAfterPreviousState(
 			ctx,
-			state.Batch+1,
+			globalState.Batch+1,
 			got.GlobalState,
 		)
 		if err == nil {
 			Fatal(t, "should not agree with execution state")
 		}
-		if !errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if !errors.Is(err, state.ErrChainCatchingUp) {
 			Fatal(t, "wrong error")
 		}
 	})
@@ -362,7 +363,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, _, _, _ := createTestNodeOnL1ForBoldProtocol(
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _, _, _ := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		false,
@@ -371,7 +372,8 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		nil,
 		sconf,
 		l2info,
-		false,
+		false, // useExternalSigner
+		false, // enableCustomDA
 	)
 
 	valnode.TestValidationConfig.UseJit = false
@@ -380,12 +382,13 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcds := l2node.GetParentChainDataSource()
 	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
+		pcds,
+		pcds,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -396,7 +399,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 
 	blockValidator, err := staker.NewBlockValidator(
 		stateless,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -409,19 +412,21 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeHeight),
+		state.Height(blockChallengeHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "",
 			MachineLeavesCachePath: dir,
 			CheckBatchFinality:     false,
 		},
 		dir,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
-		l2node.InboxReader,
+		pcds,
+		nil,
 	)
 	Require(t, err)
 
-	Require(t, l2node.Start(ctx))
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
+	Require(t, err)
 	return l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator
 }

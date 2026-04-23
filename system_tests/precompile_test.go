@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -10,11 +10,13 @@ import (
 	"math/big"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -26,6 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/gethhook"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -892,41 +896,32 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 		t.Error("expected enabling native token management to fail")
 	}
 
-	// About to test some very specific time-sensitive boundaries. Setting
-	// a new value for now.
-	now = time.Now()
-
-	// succeeds to shorten the time to enable the feature to just 5 seconds more
-	// than 7 days from now.
+	// Test the shortening boundary: once the stored value is within the
+	// [now, now+FeatureEnableDelay] window, the new timestamp must be >= stored.
+	//
+	// Set enable-at to blockTime + delay + 2, then sleep 3s so the stored value
+	// falls into the shortening window (stored <= new_blockTime + delay).
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	Require(t, err)
 	// #nosec G115
-	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	barelyOverDelay := hdr.Time + uint64(precompiles.FeatureEnableDelay) + 2
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, barelyOverDelay)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// Sleep for 15 seconds to ensure that that the time the feature is will be
-	// enabled is <= 7 days from now.
-	time.Sleep(15 * time.Second)
-	// Time to Enable ~ 6.23:59:50
-	// Resetting now after the sleep
-	now = time.Now()
+	// Wait for block time to advance past the 2s margin
+	time.Sleep(3 * time.Second)
 
-	// Now is should be okay to set the time to enable the feature to some time
-	// greater than 6 days, 23 hours, 59 minutes and 50 seconds from now, but
-	// less than 7 days from now. ~ 6.23:59:55
-	// #nosec G115
-	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, almostSevenDaysFromNow)
+	// Setting a new value later than stored should succeed
+	shortenedForward := barelyOverDelay + 1
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, shortenedForward)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// It should not, however, be okay to set the time to an even earlier time.
-	// ~ 6.23:59:40
-	// #nosec G115
-	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
-	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	// Going backwards (earlier than stored) should fail
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, barelyOverDelay)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
@@ -1364,4 +1359,86 @@ func TestArbDebugOverwriteContractCode(t *testing.T) {
 	if !bytes.Equal(code, testCodeB) {
 		t.Fatal("expected code B to be", testCodeB, "got", code)
 	}
+}
+
+func TestDisableArbOwnerEthCall(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	builder.execConfig.DisableArbOwnerEthCall = true
+	cleanup := builder.Build(t)
+	// The DisableArbOwnerEthCall flag is set on the global OwnerPrecompile singleton,
+	// so it persists across tests running in the same process. We must:
+	// 1. Not run in parallel (DontParalellise above) to avoid affecting concurrent tests
+	// 2. Reset the flag on cleanup to avoid affecting subsequent tests
+	defer func() {
+		gethhook.GetOwnerPrecompile().SetDisableEthCall(false)
+		cleanup()
+	}()
+
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	calldata, err := arbOwnerABI.Pack("getAllChainOwners")
+	Require(t, err)
+	arbOwnerAddr := types.ArbOwnerAddress
+
+	expectedErrMsg := "ArbOwner precompile is disabled outside on-chain execution"
+
+	// eth_call should fail
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), expectedErrMsg) {
+		Fatal(t, "eth_call to ArbOwner expected error containing", expectedErrMsg, "got", err)
+	}
+
+	// eth_estimateGas should fail
+	_, err = builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	})
+	if err == nil || !strings.Contains(err.Error(), expectedErrMsg) {
+		Fatal(t, "eth_estimateGas to ArbOwner expected error containing", expectedErrMsg, "got", err)
+	}
+
+	// On-chain transaction should still succeed
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	auth.GasLimit = 32_000_000
+	arbOwner, err := precompilesgen.NewArbOwner(arbOwnerAddr, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.AddChainOwner(&auth, common.HexToAddress("0xdeadbeef"))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
+func TestArbOwnerEthCallEnabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	calldata, err := arbOwnerABI.Pack("getAllChainOwners")
+	Require(t, err)
+	arbOwnerAddr := types.ArbOwnerAddress
+
+	// eth_call should succeed when DisableArbOwnerEthCall is false (default)
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	}, nil)
+	Require(t, err)
+
+	// eth_estimateGas should succeed when DisableArbOwnerEthCall is false (default)
+	_, err = builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	})
+	Require(t, err)
 }

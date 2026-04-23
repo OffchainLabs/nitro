@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -41,47 +41,8 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
-	*NodeBuilder,
-	*bridgegen.Inbox,
-	func(*types.Receipt) *types.Transaction,
-	context.Context,
-	func(),
-) {
-	ctx, cancel := context.WithCancel(context.Background())
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	for _, f := range modifyNodeConfig {
-		f(builder)
-	}
-
-	// retryableSetup is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
-	builder.RequireScheme(t, rawdb.HashScheme)
-	builder.nodeConfig.BlockValidator.Enable = false
-	builder.nodeConfig.Staker.Enable = true
-	builder.nodeConfig.BatchPoster.Enable = true
-	builder.nodeConfig.ParentChainReader.Enable = true
-	builder.nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
-
-	valConf := valnode.TestValidationConfig
-	valConf.UseJit = true
-	_, valStack := createTestValidationNode(t, ctx, &valConf)
-	configByValidationNode(builder.nodeConfig, valStack)
-
-	builder.execConfig.Sequencer.MaxRevertGasReject = 0
-
-	builder.Build(t)
-
-	builder.L2Info.GenerateAccount("User2")
-	builder.L2Info.GenerateAccount("Beneficiary")
-	builder.L2Info.GenerateAccount("Burn")
-
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
-	Require(t, err)
-
-	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
+func getLookupL2Tx(t *testing.T, ctx context.Context, delayedBridge *arbnode.DelayedBridge) func(*types.Receipt) *types.Transaction {
+	return func(l1Receipt *types.Receipt) *types.Transaction {
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
@@ -115,7 +76,50 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 		}
 		return submissionTxs[0]
 	}
+}
 
+func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
+	*NodeBuilder,
+	*bridgegen.Inbox,
+	func(*types.Receipt) *types.Transaction,
+	context.Context,
+	func(),
+) {
+	ctx, cancel := context.WithCancel(context.Background())
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	for _, f := range modifyNodeConfig {
+		f(builder)
+	}
+
+	// retryableSetup is being called by tests that validate blocks.
+	// For now validation only works with HashScheme set.
+	builder.RequireScheme(t, rawdb.HashScheme)
+	builder.nodeConfig.MessageExtraction.Enable = false
+	builder.nodeConfig.BlockValidator.Enable = false
+	builder.nodeConfig.Staker.Enable = true
+	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.ParentChainReader.Enable = true
+	builder.nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
+
+	valConf := valnode.TestValidationConfig
+	valConf.UseJit = true
+	_, valStack := createTestValidationNode(t, ctx, &valConf)
+	configByValidationNode(builder.nodeConfig, valStack)
+
+	builder.execConfig.Sequencer.MaxRevertGasReject = 0
+
+	cleanup := builder.Build(t)
+
+	builder.L2Info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("Beneficiary")
+	builder.L2Info.GenerateAccount("Burn")
+
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	Require(t, err)
+
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	builder.L2.TransferBalance(t, "Faucet", "Burn", discard, builder.L2Info)
@@ -135,8 +139,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 		cancel()
 
-		builder.L2.ConsensusNode.StopAndWait()
-		requireClose(t, builder.L1.Stack)
+		cleanup()
 	}
 	return builder, delayedInbox, lookupL2Tx, ctx, teardown
 }
@@ -268,6 +271,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
 		builder.WithArbOSVersion(arbosVersion)
+		builder.WithDatabase(rawdb.DBPebble)
 	})
 	defer teardown()
 
@@ -510,7 +514,9 @@ func insertRetriables(
 }
 
 func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
+		b.WithDatabase(rawdb.DBPebble)
+	})
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 	elevateL2Basefee(t, ctx, builder)
@@ -1131,15 +1137,18 @@ func TestDepositETH(t *testing.T) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	faucetAddr := builder.L1Info.GetAddress("Faucet")
-
-	oldBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
-	}
-
 	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	txOpts.Value = big.NewInt(13)
+
+	testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts)
+	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
+}
+
+func testDepositETH(t *testing.T, ctx context.Context, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, txOpts bind.TransactOpts) *types.Receipt {
+	oldBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if err != nil {
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	}
 
 	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
 	if err != nil {
@@ -1159,14 +1168,14 @@ func TestDepositETH(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded unexpected error: %v", err)
 	}
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
+	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, l2Receipt.BlockNumber)
 	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
 	}
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
 		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
 	}
-	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
+	return l2Receipt
 }
 
 func TestArbitrumContractTx(t *testing.T) {
@@ -1294,7 +1303,9 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
+		b.WithDatabase(rawdb.DBPebble)
+	})
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 

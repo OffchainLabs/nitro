@@ -6,7 +6,7 @@ inputs:
   toolchain:
     required: true
     description: 'Toolchain to install'
-    default: '1.88.0'
+    default: '1.93.0'
   targets:
     required: true
     description: 'Compilation targets to install'

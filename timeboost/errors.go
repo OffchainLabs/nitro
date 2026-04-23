@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package timeboost
 
 import "github.com/pkg/errors"
@@ -16,4 +18,5 @@ var (
 	ErrDuplicateSequenceNumber  = errors.New("SEQUENCE_NUMBER_ALREADY_SEEN")
 	ErrSequenceNumberTooLow     = errors.New("SEQUENCE_NUMBER_TOO_LOW")
 	ErrTooManyBids              = errors.New("PER_ROUND_BID_LIMIT_REACHED")
+	ErrOversizedData            = errors.New("OVERSIZED_DATA")
 )

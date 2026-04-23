@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 // Package pubsub implements publisher/subscriber model (one to many).
 // During normal operation, publisher returns "Promise" when publishing a
 // message, which will return response from consumer when awaited.
@@ -29,8 +31,9 @@ import (
 )
 
 const (
-	messageKey   = "msg"
-	defaultGroup = "default_consumer_group"
+	messageKey          = "msg"
+	defaultGroup        = "default_consumer_group"
+	TimeoutErrorMessage = "request has been waiting for too long"
 )
 
 type Producer[Request any, Response any] struct {
@@ -49,6 +52,7 @@ type Producer[Request any, Response any] struct {
 	once sync.Once
 }
 
+// lint:require-exhaustive-initialization
 type ProducerConfig struct {
 	// Interval duration for checking the result set by consumers.
 	CheckResultInterval time.Duration `koanf:"check-result-interval"`
@@ -168,7 +172,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			} else if cmpMsgId(id, allowedOldestID) == -1 {
 				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
 				// so safe to error and stop tracking this promise
-				promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
+				promise.ProduceError(errors.New("error getting response, " + TimeoutErrorMessage))
 				log.Debug("request timed out waiting for response", "msgId", id, "allowedOldestId", allowedOldestID)
 				errored++
 				delete(p.promises, id)

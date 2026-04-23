@@ -2,7 +2,8 @@ FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
-    git clone https://github.com/emscripten-core/emsdk.git && \
+    git clone --depth 1 --branch 3.1.46 https://github.com/emscripten-core/emsdk.git && \
+    test "$(git -C emsdk rev-parse HEAD)" = "93360d3670018769b424e4e8f1d3d9b26d32c977" && \
     cd emsdk && \
     ./emsdk install 3.1.7 && \
     ./emsdk activate 3.1.7
@@ -49,16 +50,11 @@ FROM wasm-base AS wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
-    # pinned rust 1.88.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+    # pinned rust 1.93.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY Cargo.* ./
+COPY crates/ crates/
 COPY brotli brotli
 COPY scripts/build-brotli.sh scripts/
 COPY scripts/remove_reference_types.sh scripts/
@@ -72,7 +68,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.25.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.25.9.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -83,8 +79,8 @@ COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./daprovider ./daprovider
-COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
-COPY ./daprovider/das/dastree ./daprovider/das/dastree
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
@@ -93,7 +89,6 @@ COPY ./zeroheavy ./zeroheavy
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
 COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
-COPY ./contracts-local/gas-dimensions/ ./contracts-local/gas-dimensions/
 COPY ./contracts-local/lib/ ./contracts-local/lib/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
@@ -108,23 +103,15 @@ COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/pre
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.88.0-slim-bookworm AS prover-header-builder
+FROM rust:1.93.0-slim-bookworm AS prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
-    cargo install --force cbindgen --version 0.24.3
-COPY arbitrator/Cargo.* arbitrator/
+    cargo install --force cbindgen --version 0.29.2
+COPY Cargo.* ./
 COPY ./Makefile ./
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY crates/ crates/
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -134,8 +121,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-# Factored out of prover-builder so the stripped variant doesn't depend on it.
-FROM rust:1.88.0-slim-bookworm AS prover-builder-base
+FROM rust:1.93.0-slim-bookworm AS prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -145,41 +131,13 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover/Cargo.toml arbitrator/prover/
-COPY arbitrator/prover/benches arbitrator/prover/benches
-COPY arbitrator/bench/Cargo.toml arbitrator/bench/
-COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
-COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
-RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
-    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
-    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
-    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    rm arbitrator/prover/benches/merkle_bench.rs && \
-    rm arbitrator/bench/src/lib.rs
+COPY Cargo.* ./
+COPY crates/ crates/
 COPY ./Makefile ./
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN touch -a -m arbitrator/prover/src/lib.rs
-
-FROM prover-builder-base AS prover-builder
+RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
@@ -196,15 +154,14 @@ COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
-COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
-COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
-COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
-COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
-COPY --from=wasm-libs-builder /workspace/arbitrator/brotli arbitrator/brotli
-COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
+COPY --from=wasm-libs-builder /workspace/crates/prover/ crates/prover/
+COPY --from=wasm-libs-builder /workspace/crates/tools/wasmer/ crates/tools/wasmer/
+COPY --from=wasm-libs-builder /workspace/crates/wasm-libraries/ crates/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/crates/arbutil crates/arbutil
+COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
+COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
-COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 COPY ./contracts-legacy ./contracts-legacy
@@ -249,8 +206,11 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v50-rc.5 0xb90895a56a59c0267c2004a0e103ad725bd98d5a05c3262806ab4ccb3f997558
 #RUN ./download-machine.sh consensus-v50-rc.6 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 #RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
+RUN ./download-machine.sh consensus-v60-alpha.1 0xe237db4636ba7878fb1d6998f40fa155260a26484f81db732f9aa7dc1b684bf7
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
+RUN ./download-machine.sh consensus-v60-alpha.2 0x5a79438ff2ab312234ee23839ea03b0c9348e856298b5ab1d2c067bf3c725bd0
+RUN ./download-machine.sh consensus-v60-rc.1 0x4a281197d799ef8e0430f5b94ed79fed72ce327311747819a593539f31938c34
 RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
 # Factored out of node-builder so the stripped variant doesn't depend on it.
@@ -334,6 +294,7 @@ RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/pro
     nitro --version
 USER user
 
+
 FROM offchainlabs/nitro-node:v3.7.6-c0fe95e AS nitro-legacy
 
 # Factored out of nitro-node so the stripped variant can share layers.
@@ -398,7 +359,7 @@ COPY --from=prover-export /bin/jit                                         /usr/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
-COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/machine.v2.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home/user/target/machines/latest/

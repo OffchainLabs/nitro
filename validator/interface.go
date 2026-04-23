@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package validator
 
 import (
@@ -16,7 +18,9 @@ type ValidationSpawner interface {
 	Stop()
 	Name() string
 	StylusArchs() []rawdb.WasmTarget
-	Room() int
+	// This is a static number representing the maximum number of workers, should not change over time.
+	// block_validator uses this to size its worker pool.
+	Capacity() int
 }
 
 type ValidationRun interface {
@@ -30,6 +34,8 @@ type ExecutionSpawner interface {
 }
 
 type BOLDExecutionSpawner interface {
+	Start(context.Context) error
+	Stop()
 	WasmModuleRoots() ([]common.Hash, error)
 	GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error)
 	GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, position uint64) ([]byte, error)

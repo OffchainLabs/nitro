@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package stateprovider
 
@@ -9,14 +8,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 )
 
 // Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *L2StateBackend) CollectMachineHashes(
-	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
+	ctx context.Context, cfg *state.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	// We step through the machine in our desired increments, and gather the
 	// machine hashes along the way for the history commitment.
@@ -42,9 +41,9 @@ func (s *L2StateBackend) CollectMachineHashes(
 // CollectProof Collects osp of at a message number and OpcodeIndex .
 func (s *L2StateBackend) CollectProof(
 	ctx context.Context,
-	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
-	blockChallengeHeight l2stateprovider.Height,
-	machineIndex l2stateprovider.OpcodeIndex,
+	assertionMetadata *state.AssociatedAssertionMetadata,
+	blockChallengeHeight state.Height,
+	machineIndex state.OpcodeIndex,
 ) ([]byte, error) {
 	machine, err := s.machineAtBlock(ctx, uint64(blockChallengeHeight))
 	if err != nil {
@@ -63,15 +62,15 @@ func (s *L2StateBackend) CollectProof(
 func (s *L2StateBackend) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
-	batchLimit l2stateprovider.Batch,
-	toHeight option.Option[l2stateprovider.Height],
+	batchLimit state.Batch,
+	toHeight option.Option[state.Height],
 ) ([]common.Hash, error) {
-	var to l2stateprovider.Height
+	var to state.Height
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
 	} else {
 		blockChallengeLeafHeight := s.challengeLeafHeights[0]
-		to = l2stateprovider.Height(blockChallengeLeafHeight)
+		to = state.Height(blockChallengeLeafHeight)
 	}
 	return s.statesUpTo(uint64(fromState.PosInBatch), uint64(to), uint64(fromState.Batch), uint64(batchLimit))
 }

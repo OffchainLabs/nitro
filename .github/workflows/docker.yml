@@ -43,7 +43,7 @@ jobs:
           driver-opts: network=host
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
@@ -92,12 +92,26 @@ jobs:
       - name: Start background nitro-testnode
         shell: bash
         run: |
+          # Reuse the image we just built instead of rebuilding inside test-node.bash
+          docker pull localhost:5000/nitro-node-dev:latest
+          docker tag localhost:5000/nitro-node-dev:latest nitro-node-dev:latest
+          docker image inspect nitro-node-dev:latest --format '{{.Id}} {{.Architecture}}'
           cd nitro-testnode
-          ./test-node.bash --init --dev &
+          ./test-node.bash --init --dev --no-build-dev-nitro > /tmp/testnode.log 2>&1 &
+          echo "$!" > /tmp/testnode.pid
 
       - name: Wait for rpc to come up
         shell: bash
         run: ${{ github.workspace }}/.github/workflows/waitForNitro.sh
+
+      - name: Dump testnode logs
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/testnode.log ]; then
+            echo "=== Last 200 lines of testnode.log ==="
+            tail -200 /tmp/testnode.log
+          fi
 
       - name: Print WAVM module root
         id: module-root
@@ -110,7 +124,7 @@ jobs:
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
       - name: Upload WAVM machine as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wavm-machine-${{ steps.module-root.outputs.module-root }}
           path: target/machines/latest/*

@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbmath
@@ -10,7 +10,6 @@ import (
 	"unsafe"
 
 	eth_math "github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // NextPowerOf2 the smallest power of two greater than the input
@@ -45,18 +44,8 @@ type Integer interface {
 	Signed | Unsigned
 }
 
-type Float interface {
-	~float32 | ~float64
-}
-
-// Number is anything that implements operators such as `<`, `+` and `/`.
-// Unfortunately, that doesn't include big ints.
-type Number interface {
-	Integer | Float
-}
-
 // MinInt the minimum of two ints
-func MinInt[T Number](value, ceiling T) T {
+func MinInt[T Integer](value, ceiling T) T {
 	if value > ceiling {
 		return ceiling
 	}
@@ -64,7 +53,7 @@ func MinInt[T Number](value, ceiling T) T {
 }
 
 // MaxInt the maximum of one or more ints
-func MaxInt[T Number](values ...T) T {
+func MaxInt[T Integer](values ...T) T {
 	max := values[0]
 	for i := 1; i < len(values); i++ {
 		value := values[i]
@@ -90,21 +79,6 @@ func WithinRange[T Unsigned](value, a, b T) bool {
 // UintToBig casts an int to a huge
 func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
-}
-
-// FloatToBig casts a float to a huge
-// Returns nil when passed NaN or Infinity
-func FloatToBig(value float64) *big.Int {
-	if math.IsNaN(value) {
-		return nil
-	}
-	result, _ := new(big.Float).SetFloat64(value).Int(nil)
-	return result
-}
-
-// UintToBigFloat casts a uint to a big float
-func UintToBigFloat(value uint64) *big.Float {
-	return new(big.Float).SetPrec(53).SetUint64(value)
 }
 
 // BigToUintSaturating casts a huge to a uint, saturating if out of bounds
@@ -139,13 +113,6 @@ func BigToUintOrPanic(value *big.Int) uint64 {
 		panic("big.Int value exceeds the max Uint64")
 	}
 	return value.Uint64()
-}
-
-// UfracToBigFloat casts a rational to a big float
-func UfracToBigFloat(numerator, denominator uint64) *big.Float {
-	float := new(big.Float)
-	float.Quo(UintToBigFloat(numerator), UintToBigFloat(denominator))
-	return float
 }
 
 // BigEquals check huge equality
@@ -255,21 +222,6 @@ func BigDivByUint(dividend *big.Int, divisor uint64) *big.Int {
 // BigDivByInt divide a huge by an integer
 func BigDivByInt(dividend *big.Int, divisor int64) *big.Int {
 	return BigDiv(dividend, big.NewInt(divisor))
-}
-
-// BigAddFloat add two big floats together
-func BigAddFloat(augend, addend *big.Float) *big.Float {
-	return new(big.Float).Add(augend, addend)
-}
-
-// BigMulFloat multiply a big float by another
-func BigMulFloat(multiplicand, multiplier *big.Float) *big.Float {
-	return new(big.Float).Mul(multiplicand, multiplier)
-}
-
-// BigFloatMulByUint multiply a big float by an unsigned integer
-func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
-	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
 func MaxSignedValue[T Signed]() T {
@@ -475,17 +427,6 @@ func ApproxSquareRoot(value uint64) uint64 {
 // SquareUint returns square of uint
 func SquareUint(value uint64) uint64 {
 	return value * value
-}
-
-// SquareFloat returns square of float
-func SquareFloat(value float64) float64 {
-	return value * value
-}
-
-// BalancePerEther returns balance per ether.
-func BalancePerEther(balance *big.Int) float64 {
-	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
-	return balancePerEther
 }
 
 // U256Bytes converts big Int to 256bit EVM number.

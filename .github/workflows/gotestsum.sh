@@ -12,11 +12,16 @@ tags=""
 run=""
 skip=""
 test_state_scheme=""
+test_database_engine=""
 junitfile=""
 log=true
 race=false
 cover=false
+coverprofile=""
+consensus_execution_in_same_process_use_rpc=false
+test_mel=false
 flaky=false
+reduce_parallelism=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -49,12 +54,32 @@ while [[ $# -gt 0 ]]; do
       test_state_scheme=$1
       shift
       ;;
+    --test_database_engine)
+      shift
+      check_missing_value $# "$1" "--test_database_engine"
+      test_database_engine=$1
+      shift
+      ;;
     --race)
       race=true
       shift
       ;;
     --cover)
       cover=true
+      shift
+      ;;
+    --coverprofile)
+      shift
+      check_missing_value $# "$1" "--coverprofile"
+      coverprofile=$1
+      shift
+      ;;
+    --consensus_execution_in_same_process_use_rpc)
+     consensus_execution_in_same_process_use_rpc=true
+      shift
+      ;;
+    --test_mel)
+      test_mel=true
       shift
       ;;
     --nolog)
@@ -69,6 +94,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --flaky)
       flaky=true
+      shift
+      ;;
+    --reduce-parallelism)
+      reduce_parallelism=true
       shift
       ;;
     *)
@@ -121,13 +150,33 @@ if [ "$race" == true ]; then
 fi
 
 if [ "$cover" == true ]; then
-  cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+  if [ "$coverprofile" == "" ]; then
+    coverprofile="coverage.txt"
+  fi
+  printf -v escaped_coverprofile '%q' "$coverprofile"
+  cmd="$cmd -coverprofile=$escaped_coverprofile -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+fi
+
+if [ "$reduce_parallelism" == true ]; then
+  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
 fi
 
 if [ "$test_state_scheme" != "" ]; then
     cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
 else
     cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+fi
+
+if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
+    cmd="$cmd --consensus_execution_in_same_process_use_rpc=true"
+fi
+
+if [ "$test_mel" == true ]; then
+    cmd="$cmd --test_mel=true"
+fi
+
+if [ "$test_database_engine" != "" ]; then
+    cmd="$cmd --test_database_engine=$test_database_engine"
 fi
 
 if [ "$log" == true ]; then

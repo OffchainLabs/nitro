@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package timeboost
 
 import (
@@ -224,7 +226,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 	if bv.producer == nil {
 		log.Crit("Bid validator not yet initialized by calling Initialize(ctx)")
 	}
-	bv.producer.Start(ctx_in)
+	bv.StartAndTrackChild(bv.producer)
 
 	// Thread to set reserve price and clear per-round map of bid count per account.
 	bv.StopWaiter.LaunchThread(func(ctx context.Context) {
@@ -269,6 +271,15 @@ type BidValidatorAPI struct {
 func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	start := time.Now()
 	receivedBidsCounter.Inc(1)
+	if bid == nil {
+		return errors.Wrap(ErrMalformedData, "nil bid")
+	}
+	if bid.ChainId == nil {
+		return errors.Wrap(ErrMalformedData, "nil chain id")
+	}
+	if bid.Amount == nil {
+		return errors.Wrap(ErrMalformedData, "nil amount")
+	}
 	validatedBid, err := bv.validateBid(
 		&Bid{
 			ChainId:                bid.ChainId.ToInt(),

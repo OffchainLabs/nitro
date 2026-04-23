@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package server_api
@@ -10,6 +10,11 @@ import (
 // SupportedHeaderBytesResult is the result struct that data availability providers should use to respond with their supported header bytes
 type SupportedHeaderBytesResult struct {
 	HeaderBytes hexutil.Bytes `json:"headerBytes,omitempty"`
+}
+
+// MaxMessageSizeResult is the result struct for daprovider_getMaxMessageSize
+type MaxMessageSizeResult struct {
+	MaxSize int `json:"maxSize"`
 }
 
 // StoreResult is the result struct that data availability providers should use to respond with a commitment to a Store request for posting batch data to their DA service

@@ -19,8 +19,8 @@ cd ..
 sleep 10
 
 # Run execution spec tests
-git clone https://github.com/OffchainLabs/execution-spec-tests.git
-cd execution-spec-tests
+git clone https://github.com/OffchainLabs/execution-specs.git
+cd execution-specs
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv python install 3.11
 uv python pin 3.11

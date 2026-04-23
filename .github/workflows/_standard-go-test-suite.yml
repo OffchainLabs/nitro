@@ -1,0 +1,23 @@
+---
+name: standard-go-test-suite
+on:
+  workflow_call:
+
+jobs:
+  main:
+    strategy:
+      fail-fast: false
+      matrix:
+        test-mode: [defaults-A, defaults-B, flaky, pathdb-A, pathdb-B, challenge, stylus, l3challenge]
+    uses: ./.github/workflows/_go-tests.yml
+    secrets: inherit
+    with:
+      run-name: ${{ matrix.test-mode }}
+      run-defaults-a: ${{ matrix.test-mode == 'defaults-A' }}
+      run-defaults-b: ${{ matrix.test-mode == 'defaults-B' }}
+      run-flaky: ${{ matrix.test-mode == 'flaky' }}
+      run-pathdb-a: ${{ matrix.test-mode == 'pathdb-A' }}
+      run-pathdb-b: ${{ matrix.test-mode == 'pathdb-B' }}
+      run-challenge: ${{ matrix.test-mode == 'challenge' }}
+      run-stylus: ${{ matrix.test-mode == 'stylus' }}
+      run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}

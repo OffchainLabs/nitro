@@ -17,6 +17,7 @@ solgen/go/
 .make/
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
+**.wat
 target/
 yarn-error.log
 local/
@@ -34,7 +35,6 @@ arbos/testdata/*
 *.out
 # Dependency directories (remove the comment below to include it)
 # vendor/
-.idea
 #other temporaries
 tmp/*
 .env

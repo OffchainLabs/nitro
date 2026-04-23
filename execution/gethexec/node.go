@@ -1,10 +1,11 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package gethexec
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"sort"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -26,16 +28,26 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/rpcserver"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type StylusTargetConfig struct {
@@ -46,6 +58,7 @@ type StylusTargetConfig struct {
 	AllowFallback      bool     `koanf:"allow-fallback"`
 	MaxStylusOpenPages uint16   `koanf:"max-stylus-open-pages"`
 	MaxStylusCallDepth uint16   `koanf:"max-stylus-call-depth"`
+	NativeStackSize    uint64   `koanf:"native-stack-size"`
 
 	wasmTargets []rawdb.WasmTarget
 }
@@ -79,6 +92,12 @@ func (c *StylusTargetConfig) Validate() error {
 			return targets[i] < targets[j]
 		})
 	c.wasmTargets = targets
+	if c.NativeStackSize != 0 {
+		if c.NativeStackSize < programs.MinNativeStackSize || c.NativeStackSize > programs.MaxNativeStackSize {
+			return fmt.Errorf("native-stack-size must be between %d and %d bytes (or 0 for default), got %d",
+				programs.MinNativeStackSize, programs.MaxNativeStackSize, c.NativeStackSize)
+		}
+	}
 	return nil
 }
 
@@ -90,6 +109,7 @@ var DefaultStylusTargetConfig = StylusTargetConfig{
 	AllowFallback:      true,
 	MaxStylusOpenPages: 128, // fits the default stylus pageLimit; 0 disables the limit
 	MaxStylusCallDepth: 0,   // 0 disables the limit
+	NativeStackSize:    0,   // 0 means use the Wasmer default (1 MB)
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -100,6 +120,7 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
 	f.Uint16(prefix+".max-stylus-open-pages", DefaultStylusTargetConfig.MaxStylusOpenPages, "max open WASM pages per tx; exceeding the limit rejects non-on-chain calls and filters sequencer-committed txs (delayed inbox is exempt); 0 disables the limit")
 	f.Uint16(prefix+".max-stylus-call-depth", DefaultStylusTargetConfig.MaxStylusCallDepth, "max number of Stylus frames simultaneously on the call stack (counts only Stylus frames; EVM frames between two Stylus frames do not decrement it); exceeding the limit rejects non-on-chain calls; 0 disables the limit")
+	f.Uint64(prefix+".native-stack-size", DefaultStylusTargetConfig.NativeStackSize, "initial native stack size in bytes for Wasmer coroutines used by Stylus execution (0 = default 1MB)")
 }
 
 type TxIndexerConfig struct {
@@ -123,24 +144,71 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
+type TransactionFilteringConfig struct {
+	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
+	EnableETHCallFilter            bool                          `koanf:"enable-ethcall-filter"`
+	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
+	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
+}
+
+func (c *TransactionFilteringConfig) Validate() error {
+	if err := c.EventFilter.Validate(); err != nil {
+		return fmt.Errorf("invalid event filter config: %w", err)
+	}
+	if err := c.AddressFilter.Validate(); err != nil {
+		return fmt.Errorf("error validating address-filter config: %w", err)
+	}
+	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
+	}
+	if err := c.FilteringReportRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
+	}
+	return nil
+}
+
+var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	DisableDelayedSequencingFilter: false,
+	EnableETHCallFilter:            true,
+	EventFilter:                    eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                  addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
+}
+
+func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
+	f.Bool(prefix+".enable-ethcall-filter", DefaultTransactionFilteringConfig.EnableETHCallFilter, "enable address filtering for eth_estimateGas and eth_call")
+	EventFilterAddOptions(prefix+".event-filter", f)
+	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
+}
+
 type Config struct {
-	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget            string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig       `koanf:"caching"`
-	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
-	ExposeMultiGas              bool                `koanf:"expose-multi-gas"`
+	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig        `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig         `koanf:"tx-pre-checker" reload:"hot"`
+	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
+	Forwarder                   ForwarderConfig            `koanf:"forwarder"`
+	ForwardingTarget            string                     `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                   `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig              `koanf:"caching"`
+	RPC                         arbitrum.Config            `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig            `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                       `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig          `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig         `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                     `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                     `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig          `koanf:"vmtrace"`
+	ExposeMultiGas              bool                       `koanf:"expose-multi-gas"`
+	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
+	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
+	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
 
 	forwardingTarget string
 }
@@ -163,11 +231,17 @@ func (c *Config) Validate() error {
 	if c.forwardingTarget != "" && c.Sequencer.Enable {
 		return errors.New("ForwardingTarget set and sequencer enabled")
 	}
+	if err := c.TransactionFiltering.Validate(); err != nil {
+		return err
+	}
 	if err := c.StylusTarget.Validate(); err != nil {
 		return err
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err
+	}
+	if err := c.ConsensusRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
 	return nil
 }
@@ -182,6 +256,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
+	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
@@ -189,7 +264,10 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
+	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
+	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
+	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 }
 
 type LiveTracingConfig struct {
@@ -216,6 +294,7 @@ var ConfigDefault = Config{
 	ForwardingTarget:          "",
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
+	TransactionFiltering:      DefaultTransactionFilteringConfig,
 	Caching:                   DefaultCachingConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	SyncMonitor:               DefaultSyncMonitorConfig,
@@ -226,6 +305,17 @@ var ConfigDefault = Config{
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
+	DisableArbOwnerEthCall:      false,
+
+	RPCServer: rpcserver.DefaultConfig,
+	ConsensusRPCClient: rpcclient.ClientConfig{
+		URL:                       "",
+		JWTSecret:                 "",
+		Retries:                   3,
+		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+		ArgLogLimit:               2048,
+		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	},
 }
 
 type ConfigFetcher interface {
@@ -233,7 +323,8 @@ type ConfigFetcher interface {
 }
 
 type ExecutionNode struct {
-	ChainDB                  ethdb.Database
+	stopwaiter.StopWaiter
+	ExecutionDB              ethdb.Database
 	Backend                  *arbitrum.Backend
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
@@ -242,37 +333,63 @@ type ExecutionNode struct {
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
-	ExpressLaneService       *expressLaneService
 	configFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
+	ParentChain              *parent.ParentChain
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
+	filteringReportRPCClient *FilteringReportRPCClient
+	AddressFilterService     *addressfilter.FilterService
+	EventFilter              *eventfilter.EventFilter
 }
 
 func CreateExecutionNode(
 	ctx context.Context,
 	stack *node.Node,
-	chainDB ethdb.Database,
+	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
-	parentChainID *big.Int,
 	syncTillBlock uint64,
+	seqParentChain *parent.ParentChain,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+
+	var err error
+
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
+	if err != nil {
+		return nil, err
+	}
+	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create address filter service: %w", err)
+	}
+	var addressChecker state.AddressChecker
+	if addressFilterService != nil {
+		addressChecker = addressFilterService.GetAddressChecker()
+	}
+
+	var filteringReportRPCClient *FilteringReportRPCClient
+	if config.TransactionFiltering.FilteringReportRPCClient.URL != "" {
+		filteringReportConfigFetcher := func() *rpcclient.ClientConfig {
+			return &configFetcher.Get().TransactionFiltering.FilteringReportRPCClient
+		}
+		filteringReportRPCClient = NewFilteringReportRPCClient(filteringReportConfigFetcher)
+	}
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
 	if config.Caching.DisableStylusCacheMetricsCollection {
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
-	if err != nil {
-		return nil, err
-	}
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, chainDB)
+
+	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -289,7 +406,14 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+			filtererConfigFetcher := func() *rpcclient.ClientConfig {
+				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
+			}
+			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		}
+		sequencer, err = NewSequencer(
+			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
 		if err != nil {
 			return nil, err
 		}
@@ -317,37 +441,55 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig, config.Caching.StateScheme)
+	var backendTxFilterer core.TxFilterer
+	if config.TransactionFiltering.EnableETHCallFilter {
+		backendTxFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+	}
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme, backendTxFilterer)
 	if err != nil {
 		return nil, err
 	}
+	txPreChecker.SetAPIBackend(backend.APIBackend())
 
 	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabaseWithOptions("classic-msg", node.DatabaseOptions{
-			MetricsNamespace: "classicmsg/",
-			Cache:            0, // will be sanitized to minimum
-			Handles:          0, // will be sanitized to minimum
-			ReadOnly:         true,
-			NoFreezer:        true,
-		})
-		if dbutil.IsNotExistError(err) {
-			log.Warn("Classic Msg Database not found", "err", err)
-			classicOutbox = nil
-		} else if err != nil {
-			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
-		} else {
-			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
-				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
-			}
-			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+		var err error
+		classicOutbox, err = OpenClassicOutboxFromStack(stack)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
+
+	execNode := &ExecutionNode{
+		ExecutionDB:              executionDB,
+		Backend:                  backend,
+		FilterSystem:             filterSystem,
+		ArbInterface:             arbInterface,
+		ExecEngine:               execEngine,
+		Recorder:                 recorder,
+		Sequencer:                sequencer,
+		TxPreChecker:             txPreChecker,
+		TxPublisher:              txPublisher,
+		configFetcher:            configFetcher,
+		SyncMonitor:              syncMon,
+		ParentChainReader:        parentChainReader,
+		ParentChain:              seqParentChain,
+		ClassicOutbox:            classicOutbox,
+		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		filteringReportRPCClient: filteringReportRPCClient,
+		AddressFilterService:     addressFilterService,
+		EventFilter:              eventFilter,
+	}
+
+	if config.ConsensusRPCClient.URL != "" {
+		consensusConfigFetcher := func() *rpcclient.ClientConfig { return &config.ConsensusRPCClient }
+		execNode.consensusRPCClient = consensusrpcclient.NewConsensusRPCClient(consensusConfigFetcher, stack)
+	}
 
 	apis := []rpc.API{{
 		Namespace: "arb",
@@ -390,28 +532,22 @@ func CreateExecutionNode(
 	})
 	apis = append(apis, rpc.API{
 		Namespace: "debug",
-		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDB)),
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, executionDB)),
 		Public:    false,
 	})
+	if config.RPCServer.Enable {
+		apis = append(apis, rpc.API{
+			Namespace:     execution.RPCNamespace,
+			Version:       "1.0",
+			Service:       executionrpcserver.NewServer(execNode, execNode),
+			Public:        config.RPCServer.Public,
+			Authenticated: config.RPCServer.Authenticated,
+		})
+	}
 
 	stack.RegisterAPIs(apis)
 
-	return &ExecutionNode{
-		ChainDB:                  chainDB,
-		Backend:                  backend,
-		FilterSystem:             filterSystem,
-		ArbInterface:             arbInterface,
-		ExecEngine:               execEngine,
-		Recorder:                 recorder,
-		Sequencer:                sequencer,
-		TxPreChecker:             txPreChecker,
-		TxPublisher:              txPublisher,
-		configFetcher:            configFetcher,
-		SyncMonitor:              syncMon,
-		ParentChainReader:        parentChainReader,
-		ClassicOutbox:            classicOutbox,
-		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-	}, nil
+	return execNode, nil
 
 }
 
@@ -422,6 +558,13 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.Promis
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.configFetcher.Get()
+	if config.DisableArbOwnerEthCall {
+		ownerPC := gethhook.GetOwnerPrecompile()
+		if ownerPC == nil {
+			return fmt.Errorf("cannot enable disable-arbowner-ethcall: ArbOwner precompile not found")
+		}
+		ownerPC.SetDisableEthCall(true)
+	}
 	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
@@ -439,27 +582,56 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
+	if n.AddressFilterService != nil {
+		if err := n.AddressFilterService.Initialize(ctx); err != nil {
+			return fmt.Errorf("error initializing address filter service: %w", err)
+		}
+	}
 
 	return nil
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
+func (n *ExecutionNode) Start(ctxIn context.Context) error {
+	n.StopWaiter.Start(ctxIn, n)
+	ctx, err := n.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
-	// TODO after separation
-	// err := n.Stack.Start()
-	// if err != nil {
-	// 	return fmt.Errorf("error starting geth stack: %w", err)
-	// }
-	n.ExecEngine.Start(ctx)
-	err := n.TxPublisher.Start(ctx)
+	if n.consensusRPCClient != nil {
+		if err := n.consensusRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting consensus rpc client: %w", err)
+		}
+	}
+
+	if n.filteringReportRPCClient != nil {
+		if err := n.filteringReportRPCClient.Start(ctx); err != nil {
+			return fmt.Errorf("error starting filtering report RPC client: %w", err)
+		}
+	}
+
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.Start(ctx)
+	}
+
+	err = n.ExecEngine.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting execution engine: %w", err)
+	}
+
+	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
+	}
+	if n.ParentChain != nil {
+		n.ParentChain.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	return nil
@@ -469,6 +641,10 @@ func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
 		return
 	}
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.StopAndWait()
+	}
+
 	n.bulkBlockMetadataFetcher.StopAndWait()
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
@@ -476,11 +652,20 @@ func (n *ExecutionNode) StopAndWait() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
+	if n.ParentChain != nil && n.ParentChain.Started() {
+		n.ParentChain.StopAndWait()
+	}
 	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
 		n.ParentChainReader.StopAndWait()
 	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
+	}
+	if n.consensusRPCClient != nil {
+		n.consensusRPCClient.StopAndWait()
+	}
+	if n.filteringReportRPCClient != nil {
+		n.filteringReportRPCClient.StopAndWait()
 	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
@@ -490,6 +675,7 @@ func (n *ExecutionNode) StopAndWait() {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
+	n.StopWaiter.StopAndWait()
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
@@ -507,6 +693,9 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
+func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+	return n.ExecEngine.IsTxHashInOnchainFilter(txHash)
+}
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
@@ -515,18 +704,19 @@ func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
-	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
-) (*execution.RecordResult, error) {
-	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+) containers.PromiseInterface[*execution.RecordResult] {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
+		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+	})
 }
-func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
-	n.Recorder.MarkValid(pos, resultHash)
-}
-func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
-	return n.Recorder.PrepareForRecord(ctx, start, end)
+
+func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
+	})
 }
 
 func (n *ExecutionNode) Pause() {
@@ -549,7 +739,10 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 	}
 }
 
-func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
+func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClient) {
+	if n.consensusRPCClient != nil {
+		consensus = n.consensusRPCClient
+	}
 	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
@@ -576,6 +769,9 @@ func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{
 }
 
 func (n *ExecutionNode) Synced(ctx context.Context) bool {
+	if n.Sequencer != nil && !n.Sequencer.FilteringReady() {
+		return false
+	}
 	return n.SyncMonitor.Synced(ctx)
 }
 
@@ -588,8 +784,14 @@ func (n *ExecutionNode) SetFinalityData(
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
-	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
-	return containers.NewReadyPromise(struct{}{}, err)
+	err := n.SyncMonitor.SetFinalityData(n.ExecutionDB, safeFinalityData, finalizedFinalityData, validatedFinalityData)
+	if err != nil {
+		return containers.NewReadyPromise(struct{}{}, err)
+	}
+	if n.Recorder != nil && validatedFinalityData != nil {
+		n.Recorder.MarkValid(validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash)
+	}
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
@@ -602,7 +804,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
-		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+		auctionContract, err := timeboost.NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
 			n.FilterSystem,
 			auctionContractAddr)
@@ -610,20 +812,33 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 		if err != nil {
 			return err
 		}
 
-		expressLaneTracker := NewExpressLaneTracker(
+		var isActiveFunc func() bool
+		if n.Sequencer != nil {
+			isActiveFunc = func() bool {
+				pause, forwarder := n.Sequencer.GetPauseAndForwarder()
+				return pause == nil && forwarder == nil
+			}
+		}
+
+		expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),
 			auctionContract,
 			auctionContractAddr,
 			chainConfig,
+			uint64(execNodeConfig.Sequencer.MaxTxDataSize), // #nosec G115
 			execNodeConfig.Sequencer.Timeboost.EarlySubmissionGrace,
+			isActiveFunc,
 		)
+		if err != nil {
+			return fmt.Errorf("error creating express lane tracker: %w", err)
+		}
 
 		n.TxPreChecker.SetExpressLaneTracker(expressLaneTracker)
 
@@ -638,8 +853,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 			n.Sequencer.StartExpressLaneService(ctx)
 		}
-
-		expressLaneTracker.Start(ctx)
+		n.StartAndTrackChild(expressLaneTracker)
 	}
 
 	return nil

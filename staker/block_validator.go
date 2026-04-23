@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -50,7 +51,40 @@ var (
 	validatorMsgCountRecordSentGauge         = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
 	validatorMsgCountValidatedGauge          = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
+	validatorMemoryLimitExceededGuage        = metrics.NewRegisteredGauge("arb/validator/memory/limit_exceeded", nil)
 )
+
+// WorkerThrottler tracks concurrent validation executions for a spawner
+// Uses simple atomic counter - no retry logic, just increment/decrement
+type WorkerThrottler struct {
+	maxWorkers     int
+	currentRunning atomic.Int64
+}
+
+// HasCapacity checks if there's available capacity
+func (t *WorkerThrottler) HasCapacity() bool {
+	return t.currentRunning.Load() < int64(t.maxWorkers)
+}
+
+func (t *WorkerThrottler) Acquire() {
+	t.currentRunning.Add(1)
+}
+
+func (t *WorkerThrottler) Release() {
+	t.currentRunning.Add(-1)
+}
+
+type ThrottledValidationSpawner struct {
+	Spawner   *retry_wrapper.ValidationSpawnerRetryWrapper
+	Throttler *WorkerThrottler
+}
+
+func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *ThrottledValidationSpawner {
+	return &ThrottledValidationSpawner{
+		Spawner:   retry_wrapper.NewValidationSpawnerRetryWrapper(spawner),
+		Throttler: &WorkerThrottler{maxWorkers: spawner.Capacity()},
+	}
+}
 
 type BlockValidator struct {
 	stopwaiter.StopWaiter
@@ -90,7 +124,7 @@ type BlockValidator struct {
 	sendValidationsChan     chan struct{}
 	progressValidationsChan chan struct{}
 
-	chosenValidator map[common.Hash]validator.ValidationSpawner
+	chosenValidator map[common.Hash]*ThrottledValidationSpawner
 
 	// wasmModuleRoot
 	moduleMutex           sync.Mutex
@@ -107,6 +141,7 @@ type BlockValidator struct {
 	fatalErr chan<- error
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
+	memoryLimitExceeded    atomic.Bool
 }
 
 type BlockValidatorConfig struct {
@@ -127,6 +162,7 @@ type BlockValidatorConfig struct {
 	MemoryFreeLimit                   string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList       string                        `koanf:"validation-server-configs-list"`
 	ValidationSpawningAllowedAttempts uint64                        `koanf:"validation-spawning-allowed-attempts" reload:"hot"`
+	ValidationSpawningAllowedTimeouts uint64                        `koanf:"validation-spawning-allowed-timeouts" reload:"hot"`
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
@@ -168,8 +204,8 @@ func (c *BlockValidatorConfig) Validate() error {
 			if err != nil {
 				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
 			}
-			if u.Scheme != "ws" && u.Scheme != "wss" {
-				return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s", serverUrl)
+			if !slices.Contains([]string{"ws", "wss", "http", "https"}, u.Scheme) {
+				return fmt.Errorf("validation server's url scheme is unsupported, it should be ws, wss, http, or https, url:%s", serverUrl)
 			}
 		}
 	}
@@ -210,6 +246,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultBlockValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
+	f.Uint64(prefix+".validation-spawning-allowed-timeouts", DefaultBlockValidatorConfig.ValidationSpawningAllowedTimeouts, "number of timeout errors allowed per validation attempt before treating it as a fatal error (separate from allowed-attempts)")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -241,6 +278,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RecordingIterLimit:                20,
 	ValidationSentLimit:               1024,
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -261,6 +299,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	BlockInputsFilePath:               "./target/validation_inputs",
 	MemoryFreeLimit:                   "default",
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -295,6 +334,7 @@ type validationStatus struct {
 
 type validationDoneEntry struct {
 	Success         bool
+	Err             error
 	Start           validator.GoGlobalState
 	End             validator.GoGlobalState
 	WasmModuleRoots []common.Hash
@@ -355,42 +395,8 @@ func NewBlockValidator(
 			ret.legacyValidInfo = legacyInfo
 		}
 	}
-	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
-		genesis, err := streamer.ResultAtMessageIndex(0)
-		if err != nil {
-			return nil, err
-		}
-		ret.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
-	if config().Dangerous.Revalidation.StartBlock > 0 {
-		startBlock := config().Dangerous.Revalidation.StartBlock
-		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
-		if err != nil {
-			return nil, err
-		}
-		res := &execution.MessageResult{}
-		if messageCount > 0 {
-			res, err = streamer.ResultAtMessageIndex(messageCount - 1)
-			if err != nil {
-				return nil, err
-			}
-		}
-		_, endPos, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
-		if err != nil {
-			return nil, err
-		}
-		gs := BuildGlobalState(*res, endPos)
-		err = ret.writeLastValidated(gs, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
+	ret.streamer = streamer
+	ret.inboxTracker = inbox
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
 	if config().MemoryFreeLimit != "" {
@@ -748,6 +754,15 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 	if err != nil {
 		log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
 	}
+	if exceeded && !v.memoryLimitExceeded.Load() {
+		// If we just exceeded the limit, update the metric and store the state
+		validatorMemoryLimitExceededGuage.Update(1)
+		v.memoryLimitExceeded.Store(true)
+	} else if !exceeded && v.memoryLimitExceeded.Load() {
+		// If we are no longer exceeding the limit, update the metric and store the state
+		validatorMemoryLimitExceededGuage.Update(0)
+		v.memoryLimitExceeded.Store(false)
+	}
 	return exceeded
 }
 
@@ -775,7 +790,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock
-	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
+	_, err := v.recorder.PrepareForRecord(pos, recordUntil).Await(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -896,14 +911,13 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
-			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
+			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v: %w", pos, validationStatus.DoneEntry.Start, validationStatus.DoneEntry.Err))
 			return &pos, nil // if not fatal - retry
 		}
 		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
 		if err != nil {
 			log.Error("failed writing new validated to database", "pos", pos, "err", err)
 		}
-		go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
 		atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
 		v.validations.Delete(pos)
 		nonBlockingTrigger(v.createNodesChan)
@@ -954,14 +968,14 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			return nil, nil
 		}
 		for _, moduleRoot := range wasmRoots {
-			spawner := v.chosenValidator[moduleRoot]
-			if spawner == nil {
+			throttledSpawner := v.chosenValidator[moduleRoot]
+			if throttledSpawner == nil {
 				notFoundErr := fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot)
 				v.possiblyFatal(notFoundErr)
 				return nil, notFoundErr
 			}
-			if spawner.Room() == 0 {
-				log.Trace("sendValidations: no more room", "moduleRoot", moduleRoot)
+			if !throttledSpawner.Throttler.HasCapacity() {
+				log.Trace("sendValidations: no more capacity", "moduleRoot", moduleRoot, "spawner", throttledSpawner.Spawner.Name())
 				return nil, nil
 			}
 		}
@@ -975,19 +989,27 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		}
 		validatorProfileWaitToLaunchHist.Update(validationStatus.profileStep())
 		validatorPendingValidationsGauge.Inc(1)
-		var runs []validator.ValidationRun
+		// Acquire workers for all module roots
 		for _, moduleRoot := range wasmRoots {
-			spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(v.chosenValidator[moduleRoot])
-			spawner.StopWaiter.Start(ctx, v)
-			input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
+			v.chosenValidator[moduleRoot].Throttler.Acquire()
+		}
+		runs := make([]validator.ValidationRun, 0, len(wasmRoots))
+		for _, moduleRoot := range wasmRoots {
+			throttledSpawner := v.chosenValidator[moduleRoot]
+			input, err := validationStatus.Entry.ToInput(throttledSpawner.Spawner.StylusArchs())
 			if err != nil && ctx.Err() == nil {
 				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+				throttledSpawner.Throttler.Release()
 				continue
 			}
 			if ctx.Err() != nil {
+				// Release all acquired capacity on cancellation
+				for _, moduleRoot := range wasmRoots {
+					v.chosenValidator[moduleRoot].Throttler.Release()
+				}
 				return nil, ctx.Err()
 			}
-			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts)
+			run := throttledSpawner.Spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}
@@ -1004,7 +1026,16 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		v.LaunchUntrackedThread(func() {
 			defer validatorPendingValidationsGauge.Dec(1)
 			defer cancel()
+			// Release capacity when validations complete
+			defer func() {
+				for _, run := range runs {
+					v.chosenValidator[run.WasmModuleRoot()].Throttler.Release()
+				}
+			}()
 			markSuccess := len(runs) > 0
+			if !markSuccess {
+				validationStatus.DoneEntry.Err = errors.New("no validation runs were launched")
+			}
 
 			// validationStatus might be removed from under us
 			// trigger validation progress when done
@@ -1016,6 +1047,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				if err != nil {
 					validatorFailedValidationsCounter.Inc(1)
 					markSuccess = false
+					validationStatus.DoneEntry.Err = err
 					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
 					break
 				}
@@ -1269,13 +1301,50 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
 
+	// genesis block is impossible to validate unless genesis state is empty
+	if v.lastValidGS.Batch == 0 && v.legacyValidInfo == nil {
+		genesis, err := v.streamer.ResultAtMessageIndex(0)
+		if err != nil {
+			return err
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
+	}
+	if config.Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config.Dangerous.Revalidation.StartBlock
+		messageCount, err := v.inboxTracker.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return err
+		}
+		res := &execution.MessageResult{}
+		if messageCount > 0 {
+			res, err = v.streamer.ResultAtMessageIndex(messageCount - 1)
+			if err != nil {
+				return err
+			}
+		}
+		_, endPos, err := v.StatelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		if err != nil {
+			return err
+		}
+		gs := BuildGlobalState(*res, endPos)
+		err = v.writeLastValidated(gs, nil)
+		if err != nil {
+			return err
+		}
+	}
+
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
 		v.currentWasmModuleRoot = v.GetLatestWasmModuleRoot()
 	case "current":
 		if (v.currentWasmModuleRoot == common.Hash{}) {
-			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
+			return errors.New("wasmModuleRoot set to 'current' but not set from chain, enable staker in at least watchtower mode")
 		}
 	default:
 		v.currentWasmModuleRoot = common.HexToHash(currentModuleRoot)
@@ -1300,23 +1369,16 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	if v.pendingWasmModuleRoot != v.currentWasmModuleRoot && v.pendingWasmModuleRoot != (common.Hash{}) {
 		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
 	}
-	// First spawner is always RedisValidationClient if RedisStreams are enabled.
-	if v.redisValidator != nil {
-		err := v.redisValidator.Initialize(ctx, moduleRoots)
-		if err != nil {
-			return err
-		}
-	}
-	v.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
+	v.chosenValidator = make(map[common.Hash]*ThrottledValidationSpawner)
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
-			v.chosenValidator[root] = v.redisValidator
-			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis")
+			v.chosenValidator[root] = NewThrottledValidationSpawner(v.redisValidator)
+			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.Capacity())
 		} else {
 			for _, spawner := range v.execSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
-					v.chosenValidator[root] = spawner
-					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name())
+					v.chosenValidator[root] = NewThrottledValidationSpawner(spawner)
+					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.Capacity())
 					break
 				}
 			}
@@ -1420,10 +1482,15 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 			log.Error("failed reading batch count", "err", err)
 			batchCount = 0
 		}
-		batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
-		if err != nil {
-			log.Error("failed reading batchMsgCount", "err", err)
+		var batchMsgCount arbutil.MessageIndex
+		if batchCount == 0 {
 			batchMsgCount = 0
+		} else {
+			batchMsgCount, err = v.inboxTracker.GetBatchMessageCount(batchCount - 1)
+			if err != nil {
+				log.Error("failed reading batchMsgCount", "err", err)
+				batchMsgCount = 0
+			}
 		}
 		processedMsgCount, err := v.streamer.GetProcessedMessageCount()
 		if err != nil {
@@ -1489,13 +1556,12 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
+	for _, throttled := range v.chosenValidator {
+		v.StartAndTrackChild(throttled.Spawner)
+	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
-}
-
-func (v *BlockValidator) StopAndWait() {
-	v.StopWaiter.StopAndWait()
 }
 
 // WaitForPos can only be used from One thread

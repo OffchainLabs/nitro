@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
@@ -97,13 +97,8 @@ func NewForwarder(targets []string, config *ForwarderConfig) *TxForwarder {
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			// For tcp connections, prefer IPv4 over IPv6
 			if network == "tcp" {
-				conn, err := dialer.DialContext(ctx, "tcp4", addr)
-				if err == nil {
-					return conn, nil
-				}
-				return dialer.DialContext(ctx, "tcp6", addr)
+				return dialer.DialContext(ctx, "tcp4", addr)
 			}
 			return dialer.DialContext(ctx, network, addr)
 		},
@@ -142,7 +137,11 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 			err = arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 		}
 		if err != nil {
-			log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
+			if pos == 0 {
+				log.Warn("error forwarding transaction trying different target", "current target", f.targets[pos], "err", err)
+			} else {
+				log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "pos", pos, "total targets", len(f.rpcClients), "err", err)
+			}
 		}
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err

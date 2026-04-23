@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
@@ -23,12 +23,11 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 )
@@ -43,7 +42,7 @@ const (
 )
 
 type Options struct {
-	dasModeString   string
+	daModeString    string
 	workloadLoops   int
 	workload        workloadType
 	arbitrator      bool
@@ -56,8 +55,10 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
-	defer lifecycleManager.StopAndWaitUntil(time.Second)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, opts.daModeString)
+	if lifecycleManager != nil {
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+	}
 	if opts.workload == upgradeArbOs {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	}
@@ -78,15 +79,34 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		builder.WithArbOSVersion(opts.arbosVersion)
 	}
 	builder.L2Info = nil
+
+	// Configure for referenceda mode - deploy validator contract and create provider server
+	if opts.daModeString == "referenceda" {
+		builder.WithReferenceDA()
+	}
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	// Only authorize AnyTrust keyset if we're using AnyTrust
+	if opts.daModeString != "onchain" && opts.daModeString != "referenceda" && anyTrustSignerKey != nil {
+		authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
+	}
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
-	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-	validatorConfig.DataAvailability.RPCAggregator.Enable = false
+
+	// Configure validator based on DA mode
+	if opts.daModeString == "referenceda" {
+		// For external referenceda, configure the validator to use external provider
+		validatorConfig.DA.ExternalProvider.Enable = true
+		validatorConfig.DA.ExternalProvider.RPC.URL = builder.referenceDAURL
+		validatorConfig.DA.AnyTrust.Enable = false
+	} else {
+		// For AnyTrust, copy DataAvailability configuration
+		validatorConfig.DA.AnyTrust = l1NodeConfigA.DA.AnyTrust
+		validatorConfig.DA.AnyTrust.RPCAggregator.Enable = false
+	}
 	redisURL := ""
 	if opts.useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
@@ -251,10 +271,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	gethExec, ok := testClientB.ConsensusNode.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		t.Fail()
-	}
+	gethExec := testClientB.ExecNode
 	gethExec.Recorder.TrimAllPrepared(t)
 	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
@@ -296,7 +313,7 @@ func TestBlockRecordSimple(t *testing.T) {
 
 func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
 	opts := Options{
-		dasModeString: "onchain",
+		daModeString:  "onchain",
 		workloadLoops: 1,
 		workload:      upgradeArbOs,
 		arbitrator:    true,
@@ -306,7 +323,7 @@ func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
 
 func TestBlockValidatorSimpleOnchain(t *testing.T) {
 	opts := Options{
-		dasModeString: "onchain",
+		daModeString:  "onchain",
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,
@@ -319,7 +336,7 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
 	opts := Options{
-		dasModeString: "onchain",
+		daModeString:  "onchain",
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    false,
@@ -334,7 +351,7 @@ func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
 	opts := Options{
-		dasModeString: "onchain",
+		daModeString:  "onchain",
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,
@@ -346,7 +363,7 @@ func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
 
 func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
 	opts := Options{
-		dasModeString:   "onchain",
+		daModeString:    "onchain",
 		workloadLoops:   1,
 		workload:        ethSend,
 		arbitrator:      true,
@@ -355,9 +372,9 @@ func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
+func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
 	opts := Options{
-		dasModeString: "files",
+		daModeString:  "files",
 		workloadLoops: 1,
 		workload:      ethSend,
 		arbitrator:    true,
@@ -367,9 +384,33 @@ func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
 
 func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 	opts := Options{
-		dasModeString: "files",
+		daModeString:  "files",
 		workloadLoops: 8,
 		workload:      smallContract,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// TestBlockValidatorReferenceDAWithProver tests the block validator with prover
+// with the embedded reference DA
+func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
+	opts := Options{
+		daModeString:  "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+// TestBlockValidatorReferenceDAWithJIT tests the block validator with JIT
+// with the embedded reference DA
+func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
+	opts := Options{
+		daModeString:  "referenceda",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    false,
 	}
 	testBlockValidatorSimple(t, opts)
 }

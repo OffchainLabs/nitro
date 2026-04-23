@@ -32,4 +32,4 @@ jobs:
             ./go-ethereum/**
             ./nitro-testnode/**
             ./brotli/**
-            ./arbitrator/**
+            ./crates/**

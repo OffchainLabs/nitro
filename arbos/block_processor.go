@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
@@ -22,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -39,6 +40,17 @@ var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
+// ErrFilteredCascadingRedeem is returned via TxFailed when a redeem's
+// inner execution touches a filtered address, requiring the entire tx group
+// (originating user tx + all its redeems) to be reverted.
+type ErrFilteredCascadingRedeem struct {
+	OriginatingTxHash common.Hash
+}
+
+func (e *ErrFilteredCascadingRedeem) Error() string {
+	return fmt.Sprintf("cascading redeem filtered (originating tx: %s)", e.OriginatingTxHash.Hex())
+}
+
 // A helper struct that implements String() by marshalling to JSON.
 // This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
 // it doesn't waste compute marshalling the transaction when the result wouldn't be used.
@@ -52,6 +64,87 @@ func (p printTxAsJson) String() string {
 		return fmt.Sprintf("[error marshalling tx: %v]", err)
 	}
 	return string(json)
+}
+
+// blockBuildState holds all mutable state that accumulates during the tx
+// processing loop in ProduceBlockAdvanced. Grouping it here ensures that
+// the group-checkpoint and rollback logic stays in sync with the state it
+// manages. If you add a field, check whether saveGroupCheckpoint and
+// rollbackToGroupCheckpoint need updating.
+//
+// lint:require-exhaustive-initialization
+type blockBuildState struct {
+	statedb              *state.StateDB
+	arbState             *arbosState.ArbosState
+	blockGasLeft         uint64
+	expectedBalanceDelta *big.Int
+	userTxsProcessed     int
+	complete             types.Transactions
+	receipts             types.Receipts
+	redeems              types.Transactions
+	activeGroupCP        *groupCheckpoint
+}
+
+// lint:require-exhaustive-initialization
+type groupCheckpoint struct {
+	backup               *state.StateDB
+	snap                 int
+	headerGasUsed        uint64
+	blockGasLeft         uint64
+	expectedBalanceDelta *big.Int
+	userTxsProcessed     int
+	completeLen          int
+	receiptsLen          int
+	userTxHash           common.Hash
+}
+
+// saveGroupCheckpoint snapshots the loop state so the entire tx group can be
+// rolled back if a descendant redeem is filtered. header is passed separately
+// because only GasUsed is checkpointed; the rest of the header is immutable
+// during the loop.
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
+	if len(s.redeems) != 0 {
+		return errors.New("saveGroupCheckpoint called with pending redeems")
+	}
+	s.activeGroupCP = &groupCheckpoint{
+		backup:               s.statedb.Copy(),
+		snap:                 snap,
+		headerGasUsed:        header.GasUsed,
+		blockGasLeft:         s.blockGasLeft,
+		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
+		userTxsProcessed:     s.userTxsProcessed,
+		completeLen:          len(s.complete),
+		receiptsLen:          len(s.receipts),
+		userTxHash:           userTxHash,
+	}
+	return nil
+}
+
+// rollbackToGroupCheckpoint restores loop state to the saved checkpoint,
+// undoing the user tx and all its redeems. header is needed to restore
+// GasUsed, which lives outside blockBuildState.
+func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
+	cp := s.activeGroupCP
+	cp.backup.RevertToSnapshot(cp.snap)
+	s.statedb = cp.backup
+	header.GasUsed = cp.headerGasUsed
+	s.blockGasLeft = cp.blockGasLeft
+	s.expectedBalanceDelta.Set(cp.expectedBalanceDelta)
+	s.userTxsProcessed = cp.userTxsProcessed
+	s.redeems = s.redeems[:0]
+	s.complete = s.complete[:cp.completeLen]
+	s.receipts = s.receipts[:cp.receiptsLen]
+	var err error
+	s.arbState, err = arbosState.OpenSystemArbosState(s.statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	s.activeGroupCP = nil
+	return nil
+}
+
+func (s *blockBuildState) clearGroupCheckpoint() {
+	s.activeGroupCP = nil
 }
 
 type L1Info struct {
@@ -68,11 +161,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
-	l2Pricing := state.L2PricingState()
-	baseFee, err := l2Pricing.BaseFeeWei()
-	state.Restrict(err)
-
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, chainConfig *params.ChainConfig) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)
@@ -116,12 +205,24 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
 type SequencingHooks interface {
+	// NextTxToSequence returns the next tx to include, or nil when done.
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
-	DiscardInvalidTxsEarly() bool
+	// CanDiscardTx returns whether failed txs can be excluded from the block.
+	// This is a static property of the implementing type (true for sequencer, false for replay).
+	CanDiscardTx() bool
+	// SupportsGroupRollback returns whether the hooks support checkpointing and
+	// rolling back a group of transactions (user tx + its scheduled redeems).
+	SupportsGroupRollback() bool
+	// PreTxFilter rejects a tx before execution.
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	// PostTxFilter rejects a tx after execution.
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	InsertLastTxError(error)
+	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
+	TxSucceeded()
+	// TxFailed records an error for the last user tx from NextTxToSequence.
+	TxFailed(error)
 }
 
 type NoopSequencingHooks struct {
@@ -141,9 +242,7 @@ func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 	return n.txs[n.scheduledTxsCount-1], nil, nil
 }
 
-func (n *NoopSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return false
-}
+func (n *NoopSequencingHooks) CanDiscardTx() bool { return false }
 
 func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
 	return nil
@@ -157,7 +256,11 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 	return nil
 }
 
-func (n *NoopSequencingHooks) InsertLastTxError(err error) {}
+func (n *NoopSequencingHooks) TxSucceeded() {}
+
+func (n *NoopSequencingHooks) TxFailed(error) {}
+
+func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
 
 func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
 	return &NoopSequencingHooks{txs: txes}
@@ -172,7 +275,7 @@ func ProduceBlock(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
-) (*types.Block, types.Receipts, error) {
+) (*types.Block, *state.StateDB, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, lastArbosVersion)
@@ -198,15 +301,15 @@ func ProduceBlockAdvanced(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
-) (*types.Block, types.Receipts, error) {
+) (*types.Block, *state.StateDB, types.Receipts, error) {
 
-	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if statedb.GetUnexpectedBalanceDelta().BitLen() != 0 {
-		return nil, nil, errors.New("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
+		return nil, nil, nil, errors.New("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
 	poster := l1Header.Poster
@@ -219,7 +322,17 @@ func ProduceBlockAdvanced(
 
 	chainConfig := chainContext.Config()
 
-	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
+	l2Pricing := arbState.L2PricingState()
+	err = l2Pricing.CommitMultiGasFees()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	baseFee, err := l2Pricing.BaseFeeWei()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	header := createNewHeader(lastBlockHeader, l1Info, baseFee, chainConfig)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
@@ -228,71 +341,81 @@ func ProduceBlockAdvanced(
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
 	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
 
-	complete := types.Transactions{}
-	receipts := types.Receipts{}
 	basefee := header.BaseFee
 	time := header.Time
-	expectedBalanceDelta := new(big.Int)
-	redeems := types.Transactions{}
-	userTxsProcessed := 0
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
 	firstTx := types.NewTx(startTx)
 
+	buildState := &blockBuildState{
+		statedb:              statedb,
+		arbState:             arbState,
+		blockGasLeft:         blockGasLeft,
+		expectedBalanceDelta: new(big.Int),
+		userTxsProcessed:     0,
+		complete:             nil,
+		receipts:             nil,
+		redeems:              nil,
+		activeGroupCP:        nil,
+	}
+
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		var hooks SequencingHooks
 		isUserTx := false
 		if firstTx != nil {
 			tx = firstTx
 			firstTx = nil
-		} else if len(redeems) > 0 {
-			tx = redeems[0]
-			redeems = redeems[1:]
+		} else if len(buildState.redeems) > 0 {
+			tx = buildState.redeems[0]
+			buildState.redeems = buildState.redeems[1:]
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
-				return nil, nil, errors.New("retryable tx is somehow not a retryable")
+				return nil, nil, nil, errors.New("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := arbState.RetryableState().OpenRetryable(retry.TicketId, time)
+			retryable, _ := buildState.arbState.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
 			}
 		} else {
+			// Previous group (if any) completed successfully
+			if buildState.activeGroupCP != nil {
+				sequencingHooks.TxSucceeded()
+			}
+			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
-				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", userTxsProcessed, err)
+				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", buildState.userTxsProcessed, err)
 			}
 			if tx == nil {
 				break
 			}
 			if tx.Type() != types.ArbitrumInternalTxType {
-				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 				options = conditionalOptions
 			}
 		}
 
-		startRefund := statedb.GetRefund()
+		startRefund := buildState.statedb.GetRefund()
 		if startRefund != 0 {
-			return nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
+			return nil, nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
 		}
 
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
-		arbosVersion := arbState.ArbOSVersion()
+		arbosVersion := buildState.arbState.ArbOSVersion()
 		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbosVersion)
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
-			if blockGasLeft < params.TxGas && isUserTx {
+			if buildState.blockGasLeft < params.TxGas && isUserTx {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
@@ -302,25 +425,25 @@ func ProduceBlockAdvanced(
 			}
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
-			if hooks != nil {
-				if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+			if isUserTx {
+				if err = sequencingHooks.PreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info); err != nil {
 					return nil, nil, err
 				}
 			}
 
 			// Additional pre-transaction validity check
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
-			if err = extraPreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+			if err = extraPreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				brotliCompressionLevel, err := arbState.BrotliCompressionLevel()
+				brotliCompressionLevel, err := buildState.arbState.BrotliCompressionLevel()
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 				}
-				posterCost, _ := arbState.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
+				posterCost, _ := buildState.arbState.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -338,7 +461,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if hooks != nil && hooks.DiscardInvalidTxsEarly() {
+				if isUserTx && sequencingHooks.CanDiscardTx() {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -347,54 +470,65 @@ func ProduceBlockAdvanced(
 
 			// arbos<50: reject tx if they have available computeGas over block-gas-limit
 			// in arbos>=50, per-block-gas is limited to L2PricingState().PerBlockGasLimit() + L2PricingState().PerTxGasLimit()
-			if arbosVersion < params.ArbosVersion_50 && computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
+			if arbosVersion < params.ArbosVersion_50 && computeGas > buildState.blockGasLeft && isUserTx && buildState.userTxsProcessed > 0 {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			snap := statedb.Snapshot()
-			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
+			snap := buildState.statedb.Snapshot()
+			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-			evm := vm.NewEVM(blockContext, statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
+			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
-				statedb,
+				buildState.statedb,
 				header,
 				tx,
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if hooks != nil {
-						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
+					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result); err != nil {
+						return err
+					}
+					// Additional post-transaction validity check
+					if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
+						return err
+					}
+					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
+						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
+							return err
+						}
 					}
 					return nil
 				},
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
-				statedb.RevertToSnapshot(snap)
-				statedb.ClearTxFilter()
-				return nil, nil, err
-			}
-
-			// Additional post-transaction validity check
-			if err = extraPostTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info, result); err != nil {
-				statedb.RevertToSnapshot(snap)
-				statedb.ClearTxFilter()
+				buildState.statedb.RevertToSnapshot(snap)
+				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
 
 			return receipt, result, nil
 		})()
 
-		// append the err, even if it is nil
-		if hooks != nil {
-			hooks.InsertLastTxError(err)
-		}
-
 		if err != nil {
+			// If a redeem was rejected by the address filter and we have an
+			// active group checkpoint, roll back the entire group (user tx + all
+			// redeems) to the pre-group state.
+			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+				userTxHash := buildState.activeGroupCP.userTxHash
+				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
+					return nil, nil, nil, err
+				}
+				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})
+				continue
+			}
+			if isUserTx {
+				sequencingHooks.TxFailed(err)
+			}
 			logLevel := log.Debug
 			if chainConfig.DebugMode() {
 				logLevel = log.Warn
@@ -402,11 +536,11 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(hooks != nil && hooks.DiscardInvalidTxsEarly()) {
+			if !(isUserTx && sequencingHooks.CanDiscardTx()) {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
-				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
+				buildState.blockGasLeft = arbmath.SaturatingUSub(buildState.blockGasLeft, params.TxGas)
 				if isUserTx {
-					userTxsProcessed++
+					buildState.userTxsProcessed++
 				}
 			}
 			continue
@@ -414,22 +548,22 @@ func ProduceBlockAdvanced(
 
 		if tx.Type() == types.ArbitrumInternalTxType {
 			// ArbOS might have upgraded to a new version, so we need to refresh our state
-			arbState, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+			buildState.arbState, err = arbosState.OpenSystemArbosState(buildState.statedb, nil, true)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			// Update the ArbOS version in the header (if it changed)
 			extraInfo := types.DeserializeHeaderExtraInformation(header)
-			extraInfo.ArbOSFormatVersion = arbState.ArbOSVersion()
+			extraInfo.ArbOSFormatVersion = buildState.arbState.ArbOSVersion()
 			extraInfo.UpdateHeaderWithInfo(header)
 		}
 
 		if tx.Type() == types.ArbitrumInternalTxType && result.Err != nil {
-			return nil, nil, fmt.Errorf("failed to apply internal transaction: %w", result.Err)
+			return nil, nil, nil, fmt.Errorf("failed to apply internal transaction: %w", result.Err)
 		}
 
 		if preTxHeaderGasUsed > header.GasUsed {
-			return nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
+			return nil, nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
 		}
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
@@ -450,26 +584,32 @@ func ProduceBlockAdvanced(
 		switch txInner := tx.GetInner().(type) {
 		case *types.ArbitrumDepositTx:
 			// L1->L2 deposits add eth to the system
-			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.Value)
+			buildState.expectedBalanceDelta.Add(buildState.expectedBalanceDelta, txInner.Value)
 		case *types.ArbitrumSubmitRetryableTx:
 			// Retryable submission can include a deposit which adds eth to the system
-			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
+			buildState.expectedBalanceDelta.Add(buildState.expectedBalanceDelta, txInner.DepositValue)
 		}
 
-		computeUsed := txGasUsed - dataGas
-		if txGasUsed < dataGas {
-			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-txGasUsed)
+		// Use the actual poster gas from the receipt (which accounts for tip collection)
+		// rather than the pre-tx estimate which always uses basefee.
+		posterGasUsed := dataGas
+		if arbosVersion >= params.ArbosVersion_60 {
+			posterGasUsed = receipt.GasUsedForL1
+		}
+		computeUsed := txGasUsed - posterGasUsed
+		if txGasUsed < posterGasUsed {
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", posterGasUsed-txGasUsed)
 			computeUsed = params.TxGas
 		} else if computeUsed < params.TxGas {
 			computeUsed = params.TxGas
 		}
 
 		if txGasUsed > tx.Gas() {
-			return nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", txGasUsed-tx.Gas())
+			return nil, nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", txGasUsed-tx.Gas())
 		}
 
 		// append any scheduled redeems
-		redeems = append(redeems, result.ScheduledTxes...)
+		buildState.redeems = append(buildState.redeems, result.ScheduledTxes...)
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress {
@@ -483,69 +623,75 @@ func ProduceBlockAdvanced(
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Transaction log", "err", err)
 					} else {
-						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+						buildState.expectedBalanceDelta.Sub(buildState.expectedBalanceDelta, event.Callvalue)
 					}
 				case L2ToL1TxEventID:
 					event, err := util.ParseL2ToL1TxLog(txLog)
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Tx log", "err", err)
 					} else {
-						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+						buildState.expectedBalanceDelta.Sub(buildState.expectedBalanceDelta, event.Callvalue)
 					}
 				}
 			}
 		}
 
-		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
+		buildState.blockGasLeft = arbmath.SaturatingUSub(buildState.blockGasLeft, computeUsed)
 
-		complete = append(complete, tx)
-		receipts = append(receipts, receipt)
+		buildState.complete = append(buildState.complete, tx)
+		buildState.receipts = append(buildState.receipts, receipt)
 
 		if isUserTx {
-			userTxsProcessed++
+			if buildState.activeGroupCP == nil {
+				sequencingHooks.TxSucceeded()
+			}
+			buildState.userTxsProcessed++
+		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
+			buildState.activeGroupCP = nil
+			sequencingHooks.TxSucceeded()
 		}
 	}
 
-	if statedb.IsTxFiltered() {
-		return nil, nil, state.ErrArbTxFilter
+	if buildState.statedb.IsTxFiltered() {
+		return nil, nil, nil, state.ErrArbTxFilter
 	}
 
-	if err = sequencingHooks.BlockFilter(header, statedb, complete, receipts); err != nil {
-		return nil, nil, err
+	if err = sequencingHooks.BlockFilter(header, buildState.statedb, buildState.complete, buildState.receipts); err != nil {
+		return nil, nil, nil, err
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	FinalizeBlock(header, complete, statedb, chainConfig)
+	FinalizeBlock(header, buildState.complete, buildState.statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
-	tmpBlock := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
+	tmpBlock := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
 
-	for _, receipt := range receipts {
+	for _, receipt := range buildState.receipts {
 		receipt.BlockHash = blockHash
 		for _, txLog := range receipt.Logs {
 			txLog.BlockHash = blockHash
 		}
 	}
 
-	block := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
 
-	if len(block.Transactions()) != len(receipts) {
-		return nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
+	if len(block.Transactions()) != len(buildState.receipts) {
+		return nil, nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(buildState.receipts))
 	}
 
-	balanceDelta := statedb.GetUnexpectedBalanceDelta()
-	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
+	balanceDelta := buildState.statedb.GetUnexpectedBalanceDelta()
+	if !arbmath.BigEquals(balanceDelta, buildState.expectedBalanceDelta) {
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
-		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
+		if balanceDelta.Cmp(buildState.expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
+			return nil, nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, buildState.expectedBalanceDelta)
 		}
 		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
-		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
+		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", buildState.expectedBalanceDelta)
 	}
 
-	return block, receipts, nil
+	return block, buildState.statedb, buildState.receipts, nil
 }
 
 // Also sets header.Root
@@ -559,6 +705,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 		var sendCount uint64
 		var nextL1BlockNumber uint64
 		var arbosVersion uint64
+		collectTips := false
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
@@ -567,6 +714,16 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			if err != nil {
 				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
+			}
+			collectTips, err = state.CollectTips()
+			if err != nil {
+				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
+			// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+			// All transactions in a block share the same Coinbase, so this is a block-level property.
+			if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+				collectTips = false
 			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()
@@ -580,6 +737,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
 			ArbOSFormatVersion: arbosVersion,
+			CollectTips:        collectTips,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)

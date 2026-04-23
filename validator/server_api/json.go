@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package server_api
@@ -50,22 +50,27 @@ func RedisStreamForRoot(prefix string, moduleRoot common.Hash) string {
 	return fmt.Sprintf("%sstream:%s", prefix, moduleRoot.Hex())
 }
 
+func RedisBoldStreamForRoot(prefix string, moduleRoot common.Hash) string {
+	return fmt.Sprintf("%sstream-bold:%s", prefix, moduleRoot.Hex())
+}
+
 type Request struct {
 	Input      *InputJSON
 	ModuleRoot common.Hash
 }
 
 type InputJSON struct {
-	Id              uint64
-	HasDelayedMsg   bool
-	DelayedMsgNr    uint64
-	PreimagesB64    map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo       []BatchInfoJson
-	DelayedMsgB64   string
-	StartState      validator.GoGlobalState
-	UserWasms       map[rawdb.WasmTarget]map[common.Hash]string
-	DebugChain      bool
-	MaxUserWasmSize uint64 `json:"max-user-wasmSize,omitempty"`
+	Id               uint64
+	HasDelayedMsg    bool
+	DelayedMsgNr     uint64
+	PreimagesB64     map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo        []BatchInfoJson
+	DelayedMsgB64    string
+	StartState       validator.GoGlobalState
+	UserWasms        map[rawdb.WasmTarget]map[common.Hash]string
+	DebugChain       bool
+	MaxUserWasmSize  uint64                   `json:"max-user-wasmSize,omitempty"`
+	ExpectedEndState *validator.GoGlobalState `json:",omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.
@@ -171,4 +176,12 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		valInput.UserWasms[target] = archWasms
 	}
 	return valInput, nil
+}
+
+type BoldValidationInput struct {
+	ModuleRoot        common.Hash
+	MachineStartIndex uint64
+	StepSize          uint64
+	NumDesiredLeaves  uint64
+	ValidationInput   *validator.ValidationInput
 }

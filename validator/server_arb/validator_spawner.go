@@ -1,10 +1,11 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_arb
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -23,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
-var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
+var arbitratorValidationSteps = metrics.NewRegisteredHistogram("crates/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
 	Workers                     int                          `koanf:"workers" reload:"hot"`
@@ -67,7 +68,6 @@ type SpawnerOption func(*ArbitratorSpawner)
 
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
-	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
 	// Order of wrappers is important. The first wrapper is the innermost.
@@ -210,15 +210,13 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread(v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *ArbitratorSpawner) Room() int {
+func (v *ArbitratorSpawner) Capacity() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

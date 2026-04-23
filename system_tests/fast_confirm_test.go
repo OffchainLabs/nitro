@@ -1,4 +1,4 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
@@ -175,6 +176,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().WithProdConfirmPeriodBlocks().DontParalellise()
+	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -224,11 +226,11 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2node.ConsensusDB, storage.StakerPrefix),
 		l2node.L1Reader,
 		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2node.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -265,12 +267,13 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcds := l2node.GetParentChainDataSource()
 	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
+		pcds,
+		pcds,
 		l2node.TxStreamer,
 		execNode,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -292,9 +295,9 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		l2node.DeployInfo.ValidatorUtils,
 		l2node.DeployInfo.Rollup,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
-		l2node.InboxReader,
+		pcds,
 		nil,
 	)
 	Require(t, err)
@@ -345,6 +348,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 
 	// Create a node with a large confirm period to ensure that the staker can't confirm without the fast confirmer.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().WithProdConfirmPeriodBlocks()
+	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -418,11 +422,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	dpA, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
 		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeA.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -460,12 +464,13 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcdsA := l2nodeA.GetParentChainDataSource()
 	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
+		pcdsA,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		execNodeA,
-		l2nodeA.ArbDB,
+		l2nodeA.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -487,9 +492,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		l2nodeA.DeployInfo.Rollup,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		nil,
 	)
 	Require(t, err)
@@ -503,11 +508,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
 	dpB, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeB.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -517,12 +522,13 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
 	valConfigB.Strategy = "watchtower"
+	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
+		pcdsB,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		execNodeB,
-		l2nodeB.ArbDB,
+		l2nodeB.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -544,9 +550,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
 		l2nodeB.DeployInfo.Rollup,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
-		l2nodeB.InboxReader,
+		pcdsB,
 		nil,
 	)
 	Require(t, err)

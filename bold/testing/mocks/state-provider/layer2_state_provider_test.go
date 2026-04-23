@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package stateprovider
 
 import (
@@ -17,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing"
 )
 
@@ -91,7 +90,7 @@ func newTestingMachine(
 			return nil, errors.New("state manager created with NewWithAssertionStates() cannot provide machines")
 		},
 		numBigSteps: 1,
-		challengeLeafHeights: []l2stateprovider.Height{
+		challengeLeafHeights: []state.Height{
 			challenge_testing.LevelZeroBlockEdgeHeight,
 			challenge_testing.LevelZeroBigStepEdgeHeight,
 			challenge_testing.LevelZeroSmallStepEdgeHeight,

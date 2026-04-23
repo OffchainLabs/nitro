@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -28,6 +28,7 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.WithPrestateTracerChecks = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -105,6 +106,7 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
 		WithArbOSVersion(initialVersion)
+	builder.WithPrestateTracerChecks = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 	seqTestClient := builder.L2

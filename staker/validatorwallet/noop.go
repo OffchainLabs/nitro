@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
@@ -59,5 +59,7 @@ func (*NoOp) AuthIfEoa() *bind.TransactOpts { return nil }
 func (w *NoOp) Start(ctx context.Context) {}
 
 func (b *NoOp) StopAndWait() {}
+
+func (b *NoOp) StopOnly() {}
 
 func (b *NoOp) DataPoster() *dataposter.DataPoster { return nil }

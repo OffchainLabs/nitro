@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -193,6 +193,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		params.ArbosVersion_41: 10,
 		params.ArbosVersion_50: 9,
 		params.ArbosVersion_59: 2,
+		params.ArbosVersion_60: 22,
 	}
 
 	precompiles := Precompiles()

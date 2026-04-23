@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // these tests seems to consume too much memory with race detection
@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -33,7 +34,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -135,7 +136,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -167,7 +168,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	lastEstimate, err := arbGasInfo.GetL1BaseFeeEstimate(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	lastBatchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+	lastBatchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
 	l1Header, err := builder.L1.Client.HeaderByNumber(ctx, nil)
 	Require(t, err)
@@ -238,10 +239,10 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		}
 
 		if i%16 == 0 {
-			// see that the inbox advances
-
-			for j := 16; j > 0; j-- {
-				newBatchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+			// Wait for the batch poster to post a new batch. Under -race
+			// each poll cycle is significantly slower, so allow more retries.
+			for j := 50; j > 0; j-- {
+				newBatchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 				Require(t, err)
 				if newBatchCount > lastBatchCount {
 					colors.PrintGrey("posted new batch ", newBatchCount)
@@ -249,7 +250,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 					break
 				}
 				if j == 1 {
-					Fatal(t, "batch count didn't update in time")
+					Fatal(t, "batch count didn't update in time; stuck at", lastBatchCount, "after tx", i)
 				}
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -273,7 +274,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	numReimbursed := 0
 	for _, bpAddr := range batchPosterAddresses {
-		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != l1pricing.L1PricerFundsPoolAddress {
+		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != types.L1PricerFundsPoolAddress {
 			numReimbursed++
 			bal, err := builder.L1.Client.BalanceAt(ctx, bpAddr, nil)
 			Require(t, err)

@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -170,7 +172,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = int64(200)
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -335,7 +337,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 
 	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -628,7 +630,9 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 				if it.Next() {
 					key := it.Key()
 					if len(key) != len(prefix)+common.HashLength {
-						Fatal(t, "Wrong key length, have:", len(key), "want:", len(prefix)+common.HashLength)
+						t.Errorf("Wrong key length, have: %d, want: %d", len(key), len(prefix)+common.HashLength)
+						cancel()
+						return
 					}
 					blockHash := common.BytesToHash(key[len(prefix):])
 					start := time.Now()

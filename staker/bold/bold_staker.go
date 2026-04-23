@@ -1,4 +1,4 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package bold
 
@@ -23,20 +23,22 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	"github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/proofenhancement"
 )
 
 var (
@@ -203,11 +205,11 @@ type BOLDStaker struct {
 	stopwaiter.StopWaiter
 	config             *BoldConfig
 	strategy           legacystaker.StakerStrategy
-	chalManager        *challengemanager.Manager
+	chalManager        *challenge.Manager
 	blockValidator     *staker.BlockValidator
 	rollupAddress      common.Address
 	l1Reader           *headerreader.HeaderReader
-	client             *util.BackendWrapper
+	client             protocol.ChainBackend
 	callOpts           bind.CallOpts
 	wallet             legacystaker.ValidatorWalletInterface
 	stakedNotifiers    []legacystaker.LatestStakedNotifier
@@ -235,13 +237,21 @@ func NewBOLDStaker(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
+	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
-	wrappedClient := util.NewBackendWrapper(l1Reader.Client(), rpc.LatestBlockNumber)
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, wrappedClient, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader)
+
+	// Create proof enhancer if registry is available
+	var proofEnhancer proofenhancement.ProofEnhancer
+	if dapRegistry != nil {
+		proofEnhancer = proofenhancement.NewCustomDAProofEnhancer(dapRegistry, inboxTracker, inboxReader)
+	}
+
+	l1reader := l1Reader.Client()
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, l1reader, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader, proofEnhancer)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +262,7 @@ func NewBOLDStaker(
 		blockValidator:     blockValidator,
 		rollupAddress:      rollupAddress,
 		l1Reader:           l1Reader,
-		client:             wrappedClient,
+		client:             l1reader,
 		callOpts:           callOpts,
 		wallet:             wallet,
 		stakedNotifiers:    stakedNotifiers,
@@ -363,7 +373,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.chalManager.Start(ctxIn)
+	b.StartAndTrackChild(b.chalManager)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		err := b.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
@@ -430,7 +440,7 @@ func (b *BOLDStaker) updateStakerBalanceMetric(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error getting balance for %v: %w", txSenderAddress, err)
 		}
-		boldStakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
+		boldStakerBalanceGauge.Update(floatmath.BalancePerEther(balance))
 	} else {
 		boldStakerBalanceGauge.Update(0)
 	}
@@ -482,11 +492,6 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	return count, (*validator.GoGlobalState)(&globalState), nil
 }
 
-func (b *BOLDStaker) StopAndWait() {
-	b.chalManager.StopAndWait()
-	b.StopWaiter.StopAndWait()
-}
-
 func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	if b.blockValidator == nil {
 		return nil
@@ -526,7 +531,8 @@ func newBOLDChallengeManager(
 	inboxTracker staker.InboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
-) (*challengemanager.Manager, error) {
+	proofEnhancer proofenhancement.ProofEnhancer,
+) (*challenge.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)
 	if err != nil {
@@ -540,22 +546,22 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not create challenge manager bindings: %w", err)
 	}
-	assertionChainOpts := []solimpl.Opt{
-		solimpl.WithRpcHeadBlockNumber(config.blockNum),
-		solimpl.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
+	assertionChainOpts := []sol.Opt{
+		sol.WithRpcHeadBlockNumber(config.blockNum),
+		sol.WithParentChainBlockCreationTime(config.ParentChainBlockTime),
 	}
 	if config.DelegatedStaking.Enable && config.DelegatedStaking.CustomWithdrawalAddress != "" {
 		withdrawalAddr := common.HexToAddress(config.DelegatedStaking.CustomWithdrawalAddress)
-		assertionChainOpts = append(assertionChainOpts, solimpl.WithCustomWithdrawalAddress(withdrawalAddr))
+		assertionChainOpts = append(assertionChainOpts, sol.WithCustomWithdrawalAddress(withdrawalAddr))
 	}
 	if !config.AutoDeposit {
-		assertionChainOpts = append(assertionChainOpts, solimpl.WithoutAutoDeposit())
+		assertionChainOpts = append(assertionChainOpts, sol.WithoutAutoDeposit())
 	}
 
 	if config.EnableFastConfirmation {
-		assertionChainOpts = append(assertionChainOpts, solimpl.WithFastConfirmation())
+		assertionChainOpts = append(assertionChainOpts, sol.WithFastConfirmation())
 	}
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := sol.NewAssertionChain(
 		ctx,
 		rollupAddress,
 		chalManager,
@@ -593,9 +599,9 @@ func newBOLDChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("could not get number of big steps: %w", err)
 	}
-	blockChallengeLeafHeight := l2stateprovider.Height(blockChallengeHeightBig.Uint64())
-	bigStepHeight := l2stateprovider.Height(bigStepHeightBig.Uint64())
-	smallStepHeight := l2stateprovider.Height(smallStepHeightBig.Uint64())
+	blockChallengeLeafHeight := state.Height(blockChallengeHeightBig.Uint64())
+	bigStepHeight := state.Height(bigStepHeightBig.Uint64())
+	smallStepHeight := state.Height(smallStepHeightBig.Uint64())
 
 	apiDBPath := config.APIDBPath
 	if apiDBPath != "" {
@@ -619,16 +625,17 @@ func newBOLDChallengeManager(
 		inboxTracker,
 		inboxStreamer,
 		inboxReader,
+		proofEnhancer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create state manager: %w", err)
 	}
-	providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
+	providerHeights := []state.Height{blockChallengeLeafHeight}
 	for i := uint8(0); i < numBigSteps; i++ {
 		providerHeights = append(providerHeights, bigStepHeight)
 	}
 	providerHeights = append(providerHeights, smallStepHeight)
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := state.NewHistoryCommitmentProvider(
 		stateProvider,
 		stateProvider,
 		stateProvider,
@@ -643,36 +650,36 @@ func newBOLDChallengeManager(
 	// The interval at which the manager will attempt to confirm assertions.
 	confirmingInterval := config.AssertionConfirmingInterval
 
-	stackOpts := []challengemanager.StackOpt{
-		challengemanager.StackWithName(config.StateProviderConfig.ValidatorName),
-		challengemanager.StackWithMode(BoldModes[strategy]),
-		challengemanager.StackWithPollingInterval(scanningInterval),
-		challengemanager.StackWithPostingInterval(postingInterval),
-		challengemanager.StackWithConfirmationInterval(confirmingInterval),
-		challengemanager.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
-		challengemanager.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
-		challengemanager.StackWithHeaderProvider(l1Reader),
-		challengemanager.StackWithAverageBlockCreationTime(config.ParentChainBlockTime),
-		challengemanager.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
+	stackOpts := []challenge.StackOpt{
+		challenge.StackWithName(config.StateProviderConfig.ValidatorName),
+		challenge.StackWithMode(BoldModes[strategy]),
+		challenge.StackWithPollingInterval(scanningInterval),
+		challenge.StackWithPostingInterval(postingInterval),
+		challenge.StackWithConfirmationInterval(confirmingInterval),
+		challenge.StackWithMinimumGapToParentAssertion(config.MinimumGapToParentAssertion),
+		challenge.StackWithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
+		challenge.StackWithHeaderProvider(l1Reader),
+		challenge.StackWithAverageBlockCreationTime(config.ParentChainBlockTime),
+		challenge.StackWithSyncMaxGetLogBlocks(config.MaxGetLogBlocks),
 	}
 	if config.API {
 		apiAddr := fmt.Sprintf("%s:%d", config.APIHost, config.APIPort)
-		stackOpts = append(stackOpts, challengemanager.StackWithAPIEnabled(apiAddr, apiDBPath))
+		stackOpts = append(stackOpts, challenge.StackWithAPIEnabled(apiAddr, apiDBPath))
 	}
 	if !config.AutoDeposit {
-		stackOpts = append(stackOpts, challengemanager.StackWithoutAutoDeposit())
+		stackOpts = append(stackOpts, challenge.StackWithoutAutoDeposit())
 	}
 	if !config.AutoIncreaseAllowance {
-		stackOpts = append(stackOpts, challengemanager.StackWithoutAutoAllowanceApproval())
+		stackOpts = append(stackOpts, challenge.StackWithoutAutoAllowanceApproval())
 	}
 	if config.DelegatedStaking.Enable {
-		stackOpts = append(stackOpts, challengemanager.StackWithDelegatedStaking())
+		stackOpts = append(stackOpts, challenge.StackWithDelegatedStaking())
 	}
 	if config.EnableFastConfirmation {
-		stackOpts = append(stackOpts, challengemanager.StackWithFastConfirmationEnabled())
+		stackOpts = append(stackOpts, challenge.StackWithFastConfirmationEnabled())
 	}
 
-	manager, err := challengemanager.NewChallengeStack(
+	manager, err := challenge.NewChallengeStack(
 		assertionChain,
 		provider,
 		stackOpts...,

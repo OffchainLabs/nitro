@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethhook
@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -17,6 +18,14 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
 )
+
+// arbOwnerPrecompile holds the *OwnerPrecompile retrieved from the precompile map during init().
+// ExecutionNode.Initialize() configures it later when the node config is available.
+var arbOwnerPrecompile *precompiles.OwnerPrecompile
+
+func GetOwnerPrecompile() *precompiles.OwnerPrecompile {
+	return arbOwnerPrecompile
+}
 
 type ArbosPrecompileWrapper struct {
 	inner precompiles.ArbosPrecompile
@@ -60,7 +69,13 @@ func init() {
 
 	// process arbos precompiles
 	precompileErrors := make(map[[4]byte]abi.Error)
-	for addr, precompile := range precompiles.Precompiles() {
+	arbosPrecompiles := precompiles.Precompiles()
+	if ownerPC, ok := arbosPrecompiles[types.ArbOwnerAddress].(*precompiles.OwnerPrecompile); ok {
+		arbOwnerPrecompile = ownerPC
+	} else {
+		panic("ArbOwner precompile is not an *OwnerPrecompile, disable-arbowner-ethcall flag will not work")
+	}
+	for addr, precompile := range arbosPrecompiles {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}

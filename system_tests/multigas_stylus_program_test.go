@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -45,11 +45,11 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead))
 	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
-	require.GreaterOrEqual(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(12_000))
+	require.GreaterOrEqual(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(10_000))
 	require.Equal(t, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation), params.TxGas+params.WarmStorageReadCostEIP2929)
 }
 
@@ -114,7 +114,7 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 			}
 
 			require.Equal(t, expectedAccess,
-				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead),
 			)
 			require.Equal(t, expectedCompute,
 				receipt.MultiGasUsed.Get(multigas.ResourceKindComputation),
@@ -330,7 +330,7 @@ func TestMultigasStylus_Calls(t *testing.T) {
 
 			require.Equal(t,
 				expectedStorageAccess,
-				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead),
 			)
 		})
 	}
@@ -360,7 +360,7 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 		expectOK bool
 	}{
 		{"success", 1_000_000_000, true},
-		{"out_of_gas", 1_500_000, false}, // above intrinsic cost, below storage create slot cost
+		{"out_of_gas", 1_498_000, false}, // above intrinsic cost, below storage create slot cost
 	}
 
 	for _, tc := range cases {
@@ -374,7 +374,7 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 
 				// Expected multigas for create slot operation
 				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
-				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead))
 				require.Equal(t, params.SstoreSetGasEIP2200, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth))
 			} else {
 				require.Error(t, err)

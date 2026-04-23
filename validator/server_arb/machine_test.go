@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package server_arb
@@ -36,7 +36,7 @@ func TestEntriesAreDeletedFromPreimageResolversGlobalMap(t *testing.T) {
 	}
 
 	_, filename, _, _ := runtime.Caller(0)
-	wasmDir := path.Join(path.Dir(filename), "../../arbitrator/prover/test-cases/")
+	wasmDir := path.Join(path.Dir(filename), "../../crates/prover/test-cases/")
 	wasmPath := path.Join(wasmDir, "global-state.wasm")
 	modulePaths := []string{path.Join(wasmDir, "global-state-wrapper.wasm")}
 

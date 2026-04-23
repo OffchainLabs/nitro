@@ -6,6 +6,7 @@ package timeboost
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -17,11 +18,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -44,6 +45,9 @@ const (
 
 	// Auctioneer coordination key for failover
 	AUCTIONEER_CHOSEN_KEY = "auctioneer.chosen"
+
+	// Default buffer size for bids receiver channel
+	DefaultBidsReceiverBufferSize = 100_000
 )
 
 var (
@@ -54,9 +58,7 @@ var (
 )
 
 func init() {
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write([]byte("TIMEBOOST_BID"))
-	domainValue = hash.Sum(nil)
+	domainValue = crypto.Keccak256([]byte("TIMEBOOST_BID"))
 }
 
 type AuctioneerServerConfigFetcher func() *AuctioneerServerConfig
@@ -75,6 +77,7 @@ type AuctioneerServerConfig struct {
 	AuctionContractAddress    string                   `koanf:"auction-contract-address"`
 	DbDirectory               string                   `koanf:"db-directory"`
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
+	BidsReceiverBufferSize    uint64                   `koanf:"bids-receiver-buffer-size"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
 	BidFloorAgentAddress      string                   `koanf:"bid-floor-agent-address"`
 }
@@ -101,10 +104,11 @@ func (c *AuctioneerServerConfig) Validate() error {
 }
 
 var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
+	ResponseEntryTimeout: time.Minute * 5,
 	// Messages with no heartbeat for over 1s will be reclaimed by the auctioneer
 	IdletimeToAutoclaim: time.Second,
-
-	ResponseEntryTimeout: time.Minute * 5,
+	Retry:               true,
+	MaxRetryCount:       -1,
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
@@ -113,6 +117,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             10 * time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
+	BidsReceiverBufferSize:    DefaultBidsReceiverBufferSize,
 	S3Storage:                 DefaultS3StorageServiceConfig,
 }
 
@@ -122,6 +127,7 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
+	BidsReceiverBufferSize:    1_000,
 }
 
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -137,6 +143,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
+	f.Uint64(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, fmt.Sprintf("buffer size for the bids receiver channel (0 = use default of %d)", DefaultBidsReceiverBufferSize))
 	f.String(prefix+".bid-floor-agent-address", DefaultAuctioneerServerConfig.BidFloorAgentAddress, "bid floor agent address, on-chain auction resolution is skipped if this address wins")
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
@@ -253,6 +260,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, err
 	}
 
+	bufferSize := cfg.BidsReceiverBufferSize
+	if bufferSize == 0 {
+		bufferSize = DefaultBidsReceiverBufferSize
+	}
+	if bufferSize > uint64(math.MaxInt) {
+		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
+	}
+
 	if cfg.BidFloorAgentAddress != "" {
 		log.Info(
 			"BidFloorAgent configured, on-chain auction resolution will be skipped when this address wins",
@@ -278,7 +293,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContract:                auctionContract,
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
-		bidsReceiver:                   make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidsReceiver:                   make(chan *JsonValidatedBid, int(bufferSize)),
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
@@ -428,9 +443,15 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
-	// Start S3 storage service to persist validated bids to s3
+	// Start S3 storage service to persist validated bids to s3.
+	// ORDERING MATTERS: s3StorageService must be tracked before consumer so that
+	// consumer stops first on shutdown (LIFO). The consumer holds the
+	// AUCTIONEER_CHOSEN_KEY distributed lock; stopping it first releases the lock,
+	// which expires after auctioneerLivenessTimeout. That timeout gives existing
+	// in-flight messages time to become unclaimed via IdleTimeToAutoclaim before
+	// a secondary auctioneer starts consuming them.
 	if a.s3StorageService != nil {
-		a.s3StorageService.Start(ctx_in)
+		a.StartAndTrackChild(a.s3StorageService)
 	}
 
 	// Start coordination to manage primary/secondary status
@@ -438,7 +459,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
-	a.consumer.Start(ctx_in)
+	a.StartAndTrackChild(a.consumer)
 	// Channel for single consumer, once readiness is indicated in this,
 	// consumer will start consuming iteratively.
 	ready := make(chan struct{}, 1)
@@ -773,13 +794,4 @@ func (a *AuctioneerServer) IsPrimary() bool {
 // GetId returns the unique identifier for this auctioneer instance
 func (a *AuctioneerServer) GetId() string {
 	return a.myId
-}
-
-func (a *AuctioneerServer) StopAndWait() {
-	// The AUCTIONEER_CHOSEN_KEY lock will be considered expired by other auctioneers after
-	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
-	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
-	// messages.
-	a.StopWaiter.StopAndWait()
-	a.consumer.StopAndWait()
 }

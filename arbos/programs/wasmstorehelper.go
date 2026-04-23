@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
@@ -51,7 +51,9 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return nil
 	}
 
-	wasm, err := getWasmFromContractCode(code, progParams.MaxWasmSize)
+	// Not an activation path, so fragment read gas shouldn't be charged.
+	// Passing nil avoids charging gas through a storage-backed burner here.
+	wasm, err := getWasmFromContractCode(statedb, code, progParams, nil)
 	if err != nil {
 		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmFromContractCode", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
@@ -65,7 +67,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
 	moduleActivationMandatory := false
 	// recompile only missing targets
-	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, allowFallback.Load())
+	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, GetAllowFallback())
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
@@ -77,6 +79,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	}
 
 	batch := statedb.Database().WasmStore().NewBatch()
+	// WriteActivation handles all targets including cranelift entries
 	rawdb.WriteActivation(batch, moduleHash, asmMap)
 	if err := batch.Write(); err != nil {
 		log.Error("failed writing re-activation to state while rebuilding wasm store", "err", err)

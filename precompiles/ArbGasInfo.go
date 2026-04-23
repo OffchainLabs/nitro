@@ -1,15 +1,16 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -240,7 +241,7 @@ func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.I
 	if err != nil {
 		return nil, err
 	}
-	haveFunds := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	haveFunds := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
 	return arbmath.BigSub(haveFunds.ToBig(), needFunds), nil
 }
@@ -292,14 +293,14 @@ func (con ArbGasInfo) GetMaxBlockGasLimit(c ctx, evm mech) (uint64, error) {
 
 // GetGasPricingConstraints gets the current gas pricing constraints used by the Multi-Constraint Pricer.
 func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, error) {
-	len, err := c.State.L2PricingState().ConstraintsLength()
+	len, err := c.State.L2PricingState().GasConstraintsLength()
 	if err != nil {
 		return nil, err
 	}
 
 	constraints := make([][3]uint64, 0, len)
 	for i := range len {
-		constraint := c.State.L2PricingState().OpenConstraintAt(i)
+		constraint := c.State.L2PricingState().OpenGasConstraintAt(i)
 		gasTargetPerSecond, err := constraint.Target()
 		if err != nil {
 			return nil, err
@@ -320,4 +321,66 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 		})
 	}
 	return constraints, nil
+}
+
+// GetMultiGasPricingConstraints returns the current configuration of multi-gas pricing constraints
+func (con ArbGasInfo) GetMultiGasPricingConstraints(
+	c ctx,
+	evm mech,
+) ([]MultiGasConstraint, error) {
+	length, err := c.State.L2PricingState().MultiGasConstraintsLength()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get multi-gas constraint count: %w", err)
+	}
+
+	result := make([]MultiGasConstraint, 0, length)
+
+	for i := range length {
+		constraint := c.State.L2PricingState().OpenMultiGasConstraintAt(i)
+
+		target, err := constraint.Target()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read target for constraint %d: %w", i, err)
+		}
+		window, err := constraint.AdjustmentWindow()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read adjustment window for constraint %d: %w", i, err)
+		}
+		backlog, err := constraint.Backlog()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read backlog for constraint %d: %w", i, err)
+		}
+
+		weights, err := constraint.GetResourceWeights()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read resource weights for constraint %d: %w", i, err)
+		}
+		var resources []WeightedResource
+		for kind, weight := range weights {
+			if weight != 0 {
+				// #nosec G115 safe: kind < NumResourceKind
+				resources = append(resources, WeightedResource{
+					Resource: uint8(kind),
+					Weight:   weight,
+				})
+			}
+		}
+
+		result = append(result, MultiGasConstraint{
+			Resources:            resources,
+			AdjustmentWindowSecs: window,
+			TargetPerSec:         target,
+			Backlog:              backlog,
+		})
+	}
+
+	return result, nil
+}
+
+// GetMultiGasBaseFee gets the current base fee for each resource type used by the Multi-Constraint Pricer
+func (con ArbGasInfo) GetMultiGasBaseFee(
+	c ctx,
+	evm mech,
+) ([]*big.Int, error) {
+	return c.State.L2PricingState().GetMultiGasBaseFeePerResource()
 }

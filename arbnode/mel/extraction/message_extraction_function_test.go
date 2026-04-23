@@ -1,8 +1,11 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melextraction
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"testing"
@@ -12,10 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
@@ -27,11 +32,11 @@ func TestExtractMessages(t *testing.T) {
 		name                 string
 		melStateParentHash   common.Hash
 		useExtractMessages   bool // If true, use ExtractMessages instead of extractMessagesImpl
-		lookupBatches        func(context.Context, *mel.State, *types.Header, TransactionsFetcher, ReceiptFetcher, eventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error)
-		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, ReceiptFetcher, TransactionsFetcher) ([]*mel.DelayedInboxMessage, error)
-		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, uint, ReceiptFetcher) ([]byte, error)
+		lookupBatches        func(context.Context, *types.Header, TransactionFetcher, LogsFetcher, EventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
+		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, TransactionFetcher, LogsFetcher) ([]*mel.DelayedInboxMessage, error)
+		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error)
 		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
-		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, *daprovider.ReaderRegistry, daprovider.KeysetValidationMode) (*arbstate.SequencerMessage, error)
+		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, arbstate.DapReaderSource, daprovider.KeysetValidationMode, *params.ChainConfig) (*arbstate.SequencerMessage, error)
 		extractBatchMessages func(context.Context, *mel.State, *arbstate.SequencerMessage, DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error)
 		expectedError        string
 		expectedMsgCount     uint64
@@ -60,11 +65,11 @@ func TestExtractMessages(t *testing.T) {
 			expectedError:      "failed to lookup delayed messages",
 		},
 		{
-			name:               "mismatched number of batch posting reports vs batches",
+			name:               "number of batch posting reports higher than batches",
 			melStateParentHash: prevParentBlockHash,
 			lookupBatches:      emptyLookupBatches,          // 0 batches
 			lookupDelayedMsgs:  successfulLookupDelayedMsgs, // 1 batch posting report
-			expectedError:      "batch posting reports 1 do not match the number of batches 0",
+			expectedError:      "number of batch posting reports 1 higher than the number of batches 0",
 		},
 		{
 			name:               "batch serialization fails",
@@ -90,7 +95,7 @@ func TestExtractMessages(t *testing.T) {
 			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
 			serializer:         emptySerializer,  // Returns nil, hash will be different from parseReport
 			parseReport:        emptyParseReport, // Returns empty hash
-			expectedError:      "batch data hash incorrect",
+			expectedError:      "not all batch posting reports processed.",
 		},
 		{
 			name:               "parse sequencer message fails",
@@ -127,40 +132,70 @@ func TestExtractMessages(t *testing.T) {
 			expectedMessages:     2,
 			expectedDelayedMsgs:  1,
 		},
+		{
+			// 3 batches, 1 batch posting report whose hash matches only the 2nd batch.
+			// Exercises the continue path where batch 0's hash doesn't match the report,
+			// batch 1's hash does match, and batch 2 has no report to check.
+			name:               "OK - multiple batches with subset of reports",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      threeBatchLookup,
+			lookupDelayedMsgs:  delayedMsgsWithOneReportForSecondBatch,
+			serializer:         indexedSerializer(),
+			parseReport:        parseReportForSecondBatch,
+			parseSequencerMsg:  successfulParseSequencerMsg,
+			extractBatchMessages: func(ctx context.Context, melState *mel.State, seqMsg *arbstate.SequencerMessage, delayedMsgDB DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error) {
+				return []*arbostypes.MessageWithMetadata{
+					{
+						Message: &arbostypes.L1IncomingMessage{
+							L2msg:  []byte("msg"),
+							Header: &arbostypes.L1IncomingMessageHeader{Kind: arbostypes.L1MessageType_L2Message},
+						},
+					},
+				}, nil
+			},
+			expectedMsgCount:    3, // 1 message per batch * 3 batches
+			expectedDelayedSeen: 1,
+			expectedMessages:    3,
+			expectedDelayedMsgs: 1,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			header := createBlockHeader(prevParentBlockHash)
 			melState := createMelState(tt.melStateParentHash)
-			txsFetcher := &mockTxsFetcher{}
+			blockLogsFetcher := &mockBlockLogsFetcher{}
+			txFetcher := &mockTxFetcher{}
 
 			var postState *mel.State
 			var messages []*arbostypes.MessageWithMetadata
 			var delayedMessages []*mel.DelayedInboxMessage
+			var batchMetas []*mel.BatchMetadata
 			var err error
 
 			if tt.useExtractMessages {
 				// Test the public ExtractMessages function
-				postState, messages, delayedMessages, err = ExtractMessages(
+				postState, messages, delayedMessages, batchMetas, err = ExtractMessages(
 					ctx,
 					melState,
 					header,
 					nil,
 					nil,
-					nil,
-					txsFetcher,
+					txFetcher,
+					blockLogsFetcher,
+					chaininfo.ArbitrumDevTestChainConfig(),
 				)
 			} else {
 				// Test the internal extractMessagesImpl function
-				postState, messages, delayedMessages, err = extractMessagesImpl(
+				postState, messages, delayedMessages, batchMetas, err = extractMessagesImpl(
 					ctx,
 					melState,
 					header,
+					chaininfo.ArbitrumDevTestChainConfig(),
 					nil,
 					nil,
-					txsFetcher,
-					nil,
+					txFetcher,
+					blockLogsFetcher,
 					nil,
 					tt.lookupBatches,
 					tt.lookupDelayedMsgs,
@@ -181,6 +216,7 @@ func TestExtractMessages(t *testing.T) {
 			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagesSeen)
 			require.Len(t, messages, tt.expectedMessages)
 			require.Len(t, delayedMessages, tt.expectedDelayedMsgs)
+			require.Len(t, batchMetas, int(postState.BatchCount-melState.BatchCount)) // #nosec G115
 		})
 	}
 }
@@ -202,46 +238,42 @@ func createBlockHeader(parentHash common.Hash) *types.Header {
 // Mock functions
 func successfulLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
 	batches := []*mel.SequencerInboxBatch{{}}
 	txs := []*types.Transaction{{}}
-	txIndices := []uint{0}
-	return batches, txs, txIndices, nil
+	return batches, txs, nil
 }
 
 func emptyLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	return nil, nil, nil, nil
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	return nil, nil, nil
 }
 
 func failingLookupBatches(
 	ctx context.Context,
-	melState *mel.State,
 	parentChainBlock *types.Header,
-	txsFetcher TransactionsFetcher,
-	receiptFetcher ReceiptFetcher,
-	eventUnpacker eventUnpacker,
-) ([]*mel.SequencerInboxBatch, []*types.Transaction, []uint, error) {
-	return nil, nil, nil, errors.New("failed to lookup batches")
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	return nil, nil, errors.New("failed to lookup batches")
 }
 
 func successfulLookupDelayedMsgs(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainBlock *types.Header,
-	receiptFetcher ReceiptFetcher,
-	txsFetcher TransactionsFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 ) ([]*mel.DelayedInboxMessage, error) {
 	hash := common.MaxHash
 	delayedMsgs := []*mel.DelayedInboxMessage{
@@ -263,8 +295,8 @@ func failingLookupDelayedMsgs(
 	ctx context.Context,
 	melState *mel.State,
 	parentChainBlock *types.Header,
-	receiptFetcher ReceiptFetcher,
-	txsFetcher TransactionsFetcher,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
 ) ([]*mel.DelayedInboxMessage, error) {
 	return nil, errors.New("failed to lookup delayed messages")
 }
@@ -272,8 +304,7 @@ func failingLookupDelayedMsgs(
 func successfulSerializer(ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	return []byte("foobar"), nil
 }
@@ -281,8 +312,7 @@ func successfulSerializer(ctx context.Context,
 func emptySerializer(ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	return nil, nil
 }
@@ -290,8 +320,7 @@ func emptySerializer(ctx context.Context,
 func failingSerializer(ctx context.Context,
 	batch *mel.SequencerInboxBatch,
 	tx *types.Transaction,
-	txIndex uint,
-	receiptFetcher ReceiptFetcher,
+	logsFetcher LogsFetcher,
 ) ([]byte, error) {
 	return nil, errors.New("serialization error")
 }
@@ -319,8 +348,9 @@ func successfulParseSequencerMsg(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	keysetValidationMode daprovider.KeysetValidationMode,
+	chainConfig *params.ChainConfig,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, nil
 }
@@ -330,8 +360,9 @@ func failingParseSequencerMsg(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	data []byte,
-	dapReaders *daprovider.ReaderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	keysetValidationMode daprovider.KeysetValidationMode,
+	chainConfig *params.ChainConfig,
 ) (*arbstate.SequencerMessage, error) {
 	return nil, errors.New("failed to parse sequencer message")
 }
@@ -369,4 +400,61 @@ func failingExtractBatchMessages(
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
 	return nil, errors.New("failed to extract batch messages")
+}
+
+// threeBatchLookup returns 3 batches and 3 transactions.
+func threeBatchLookup(
+	ctx context.Context,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	batches := []*mel.SequencerInboxBatch{{SequenceNumber: 0}, {SequenceNumber: 1}, {SequenceNumber: 2}}
+	txs := []*types.Transaction{{}, {}, {}}
+	return batches, txs, nil
+}
+
+// delayedMsgsWithOneReportForSecondBatch returns 1 delayed message that is a
+// batch posting report whose hash will match the 2nd batch (index 1) produced
+// by indexedSerializer.
+func delayedMsgsWithOneReportForSecondBatch(
+	ctx context.Context,
+	melState *mel.State,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+) ([]*mel.DelayedInboxMessage, error) {
+	hash := common.MaxHash
+	return []*mel.DelayedInboxMessage{
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				L2msg: []byte("report-for-batch1"),
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:      arbostypes.L1MessageType_BatchPostingReport,
+					RequestId: &hash,
+					L1BaseFee: common.Big0,
+				},
+			},
+		},
+	}, nil
+}
+
+// indexedSerializer returns a serializer that produces different bytes for each
+// successive call: "batch0", "batch1", "batch2", …
+func indexedSerializer() func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error) {
+	callIndex := 0
+	return func(ctx context.Context, batch *mel.SequencerInboxBatch, tx *types.Transaction, logsFetcher LogsFetcher) ([]byte, error) {
+		data := []byte(fmt.Sprintf("batch%d", callIndex))
+		callIndex++
+		return data, nil
+	}
+}
+
+// parseReportForSecondBatch returns a hash that matches the serialized bytes
+// of the 2nd batch ("batch1") from indexedSerializer.
+func parseReportForSecondBatch(
+	rd io.Reader,
+) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
+	return nil, common.Address{}, crypto.Keccak256Hash([]byte("batch1")), 0, nil, 0, nil
 }

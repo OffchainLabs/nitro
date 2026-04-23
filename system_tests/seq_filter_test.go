@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -68,7 +70,7 @@ func TestSequencerBlockFilterAccept(t *testing.T) {
 	defer cleanup()
 	_, _, err := hooks.NextTxToSequence() // remove first transaction from hooks
 	Require(t, err)
-	hooks.InsertLastTxError(nil)
+	hooks.TxSucceeded()
 	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 	if block == nil {

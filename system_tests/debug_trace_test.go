@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -107,7 +109,9 @@ func TestDebugTraceCallForRecentBlock(t *testing.T) {
 				if it.Next() {
 					key := it.Key()
 					if len(key) != len(prefix)+common.HashLength {
-						Fatal(t, "Wrong key length, have:", len(key), "want:", len(prefix)+common.HashLength)
+						t.Errorf("Wrong key length, have: %d, want: %d", len(key), len(prefix)+common.HashLength)
+						cancel()
+						return
 					}
 					blockHash := common.BytesToHash(key[len(prefix):])
 					start := time.Now()

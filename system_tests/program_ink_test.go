@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -40,116 +42,120 @@ func TestSimpleInkUsage(t *testing.T) {
 		hostio      string
 		signature   string
 		args        []any
-		expectedInk uint64
+		expectedInk []uint64
 	}{
 		{
 			hostio:      "exit_early",
-			expectedInk: 0,
+			expectedInk: []uint64{0},
 		},
 		{
 			hostio:      "transient_load_bytes32",
 			args:        []any{common.HexToHash("dead")},
-			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
+			expectedInk: []uint64{HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000},
 		},
 		{
 			hostio:      "transient_store_bytes32",
 			args:        []any{common.HexToHash("dead"), common.HexToHash("beef")},
-			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
+			expectedInk: []uint64{HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000},
 		},
 		{
 			hostio:      "return_data_size",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "account_balance",
 			args:        []any{builder.L2Info.GetAddress("Owner")},
-			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
+			expectedInk: []uint64{HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000},
 		},
 		{
 			hostio:      "account_code_size",
 			args:        []any{otherProgram},
-			expectedInk: 33068073,
+			expectedInk: []uint64{33068073},
 		},
 		{
 			hostio:      "account_codehash",
 			args:        []any{otherProgram},
-			expectedInk: 26078153,
+			expectedInk: []uint64{26078153},
 		},
 		{
 			hostio:      "evm_gas_left",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "evm_ink_left",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_basefee",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "chainid",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_coinbase",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "block_gas_limit",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_number",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_timestamp",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "contract_address",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "math_div",
 			args:        []any{big.NewInt(1), big.NewInt(3)},
-			expectedInk: 43520,
+			expectedInk: []uint64{43520},
 		},
 		{
 			hostio:      "math_mod",
 			args:        []any{big.NewInt(1), big.NewInt(3)},
-			expectedInk: 43520,
+			expectedInk: []uint64{43520},
 		},
 		{
 			hostio:      "math_add_mod",
 			args:        []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)},
-			expectedInk: 49560,
+			expectedInk: []uint64{49560},
 		},
 		{
 			hostio:      "math_mul_mod",
 			args:        []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)},
-			expectedInk: 52660,
+			expectedInk: []uint64{52660},
 		},
 		{
 			hostio:      "msg_sender",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
+			// msg_value hostio is called twice: once by the deny_value payability guard
+			// and once by the method body itself.
 			hostio:      "msg_value",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK, HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "tx_gas_price",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
+			// tx_ink_price hostio is called twice: once explicitly and once
+			// inside ink_to_gas which also reads the ink price.
 			hostio:      "tx_ink_price",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK, HOSTIO_INK},
 		},
 		{
 			hostio:      "tx_origin",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 	} {
 		t.Run(tc.hostio, func(t *testing.T) {
@@ -157,7 +163,7 @@ func TestSimpleInkUsage(t *testing.T) {
 				return strings.ToUpper(strings.TrimPrefix(s, "_"))
 			})
 			data := encodeHostioTestCalldata(t, solFunc, tc.args)
-			checkInkUsage(t, builder, stylusProgram, tc.hostio, tc.hostio, data, nil, tc.expectedInk)
+			checkInkUsage(t, builder, stylusProgram, tc.hostio, tc.hostio, data, nil, tc.expectedInk...)
 		})
 	}
 }
@@ -398,7 +404,13 @@ func TestCallInkUsage(t *testing.T) {
 		name = tc.hostio + "/stylusContract"
 		t.Run(name, func(t *testing.T) {
 			data := argsForMulticall(tc.opcode, otherStylusProgram, nil, otherData)
-			expectedInk := uint64(128475955)
+			// Wasmer 7 uses 1 open page for the caller (multicall), whereas the
+			// previous version used 2. Since write_args has footprint=1 and the
+			// free-page allowance is 2, the callee's memory stays within the free
+			// limit under Wasmer 7 (1 open + 1 footprint = 2) so no extra gas is
+			// charged, while previously it exceeded the limit (2 open + 1 = 3)
+			// and incurred a 1,000 gas charge.
+			expectedInk := uint64(118475955)
 			checkInkUsage(t, builder, stylusProgram, tc.hostio, name, data, nil, expectedInk)
 		})
 	}
@@ -546,12 +558,14 @@ func TestPayForMemoryGrowInkUsage(t *testing.T) {
 	testname := "pay_for_memory_grow_100"
 	data := encodeHostioFromSignature(t, signature, []uint64{100})
 	expectedInk := uint64(9320660000)
-	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, expectedInk)
+	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, HOSTIO_INK, expectedInk)
 
 	testname = "pay_for_memory_grow_0"
 	data = encodeHostioFromSignature(t, signature, []uint64{0})
-	expectedInk = HOSTIO_INK
-	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, expectedInk)
+	// On wasmer7, when hostio-test calls payForMemoryGrow(100), there are two pay_for_memory_grow hostio calls traced:
+	// - 8400 (HOSTIO_INK) — an extra call that grows 0 pages (new allocator behavior)
+	// - 9320660000 — the actual call to grow 100 pages
+	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, HOSTIO_INK, HOSTIO_INK)
 }
 
 func checkInkUsage(
@@ -581,7 +595,7 @@ func checkInkUsage(
 	}
 
 	if len(stylusInkUsage[hostio]) != len(expectedInkValues) {
-		Fatal(t, "unexpected number of ink usage", "hostio", hostio, "stylusInkUsage", stylusInkUsage, "testName", testName)
+		Fatal(t, "unexpected number of ink usage", "stylusInkUsage[hostio]", stylusInkUsage[hostio], "stylusInkUsage", stylusInkUsage, "testName", testName, "expectedInkValues", expectedInkValues)
 	}
 
 	for i, expectedInk := range expectedInkValues {

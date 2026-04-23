@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbostypes
@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -34,6 +35,18 @@ const (
 )
 
 const MaxL2MessageSize = 256 * 1024
+
+func ValidateMaxTxDataSize(maxTxDataSize uint64) error {
+	// tighter limit https://github.com/OffchainLabs/nitro/commit/ed015e752d7d24e59ec9e6f894fe1a26ffa19036
+	// The default block gas limit can fit 1523 txs
+	// Each Tx adds an 8-byte of length prefix.
+	// 50K is enough to add 1523 times 8 bytes and still stay in an L2 message
+	const maxConfigurableTxDataSize = MaxL2MessageSize - 50000
+	if maxTxDataSize > maxConfigurableTxDataSize {
+		return fmt.Errorf("max-tx-data-size %d exceeds maximum allowed value of %d", maxTxDataSize, maxConfigurableTxDataSize)
+	}
+	return nil
+}
 
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
@@ -175,11 +188,23 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 	return gas
 }
 
-func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
-	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
-		return nil
+// IsBatchGasFieldsMissing returns true for only L1MessageType_BatchPostingReport when batch gas fields are not filled in
+func (msg *L1IncomingMessage) IsBatchGasFieldsMissing() bool {
+	if msg.Header.Kind != L1MessageType_BatchPostingReport {
+		return false
 	}
 	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
+		return false
+	}
+	return true
+}
+
+func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
+	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
+}
+
+func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
+	if batchFetcher == nil || !msg.IsBatchGasFieldsMissing() {
 		return nil
 	}
 	if msg.BatchDataStats == nil {
@@ -187,16 +212,33 @@ func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFet
 		if err != nil {
 			return fmt.Errorf("failed to parse batch posting report: %w", err)
 		}
-		batchData, err := batchFetcher(batchNum)
+		batchData, err := batchFetcher(batchNum, parentChainBlockNumber)
 		if err != nil {
-			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+			if msg.LegacyBatchGasCost == nil {
+				return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+			}
+			// Pre-arbos50, LegacyBatchGasCost and BatchDataStats are interchangeable.
+			// Post-arbos50, BatchDataStats is required. However, this code doesn't
+			// know which arbos version applies to the current block.
+			//
+			// Since we already have LegacyBatchGasCost, we don't return an error here.
+			// Instead, we assume this is a pre-arbos50 block and proceed without
+			// BatchDataStats. If that assumption is wrong (i.e. this is actually
+			// post-arbos50), createBatchPostingReportTransaction will detect the
+			// missing BatchDataStats and fail there, since it does know the arbos
+			// version. In practice, any node that supports arbos50 populates both
+			// fields together, so this fallback path should not be reached.
+			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty")
+			return nil
+		} else {
+			gotHash := crypto.Keccak256Hash(batchData)
+			if gotHash != batchHash {
+				return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
+			}
+			msg.BatchDataStats = GetDataStats(batchData)
 		}
-		gotHash := crypto.Keccak256Hash(batchData)
-		if gotHash != batchHash {
-			return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
-		}
-		msg.BatchDataStats = GetDataStats(batchData)
 	}
+
 	legacyCost := LegacyCostForStats(msg.BatchDataStats)
 	msg.LegacyBatchGasCost = &legacyCost
 	return nil
@@ -271,7 +313,16 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 	return msg, nil
 }
 
+type FallibleBatchFetcherWithParentBlock func(batchNum uint64, parentChainBlock uint64) ([]byte, error)
+
 type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
+
+// Wraps FallibleBatchFetcher into FallibleBatchFetcherWithParentBlock to ignore parentChainBlock
+func FromFallibleBatchFetcher(f FallibleBatchFetcher) FallibleBatchFetcherWithParentBlock {
+	return func(batchNum uint64, _ uint64) ([]byte, error) {
+		return f(batchNum)
+	}
+}
 
 type ParsedInitMessage struct {
 	ChainId          *big.Int

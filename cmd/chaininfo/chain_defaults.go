@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package chaininfo
@@ -38,6 +38,7 @@ func CopyArbitrumChainParams(arbChainParams params.ArbitrumChainParams) params.A
 		GenesisBlockNum:           arbChainParams.GenesisBlockNum,
 		MaxCodeSize:               arbChainParams.MaxCodeSize,
 		MaxInitCodeSize:           arbChainParams.MaxInitCodeSize,
+		MaxUncompressedBatchSize:  arbChainParams.MaxUncompressedBatchSize,
 	}
 }
 
@@ -148,7 +149,7 @@ func ArbitrumRollupGoerliTestnetParams() params.ArbitrumChainParams {
 func ArbitrumDevTestParams() params.ArbitrumChainParams {
 	return fetchArbitrumChainParams("arb-dev-test")
 }
-func ArbitrumDevTestDASParams() params.ArbitrumChainParams {
+func ArbitrumDevTestAnyTrustParams() params.ArbitrumChainParams {
 	return fetchArbitrumChainParams("anytrust-dev-test")
 }
 
@@ -172,6 +173,6 @@ func ArbitrumRollupGoerliTestnetChainConfig() *params.ChainConfig {
 func ArbitrumDevTestChainConfig() *params.ChainConfig {
 	return fetchChainConfig("arb-dev-test")
 }
-func ArbitrumDevTestDASChainConfig() *params.ChainConfig {
+func ArbitrumDevTestAnyTrustChainConfig() *params.ChainConfig {
 	return fetchChainConfig("anytrust-dev-test")
 }

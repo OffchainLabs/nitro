@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -24,7 +25,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 	builder.takeOwnership = false
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
 	cleanup := builder.Build(t)
@@ -43,7 +44,9 @@ func TestSequencerParallelNonces(t *testing.T) {
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
 				t.Log("Submitting transaction with nonce", tx.Nonce())
 				err := builder.L2.Client.SendTransaction(ctx, tx)
-				Require(t, err)
+				if goroutineErrorf(t, ctx, cancel, err, "SendTransaction failed: %v", err) {
+					return
+				}
 				t.Log("Got response for transaction with nonce", tx.Nonce())
 			}
 		}()
@@ -103,7 +106,9 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 		go func() {
 			err := builder.L2.Client.SendTransaction(ctx, tx)
 			if err == nil {
-				Fatal(t, "No error when nonce was too high")
+				t.Errorf("No error when nonce was too high")
+				cancel()
+				return
 			}
 			completed.Add(1)
 		}()
@@ -127,7 +132,7 @@ func TestSequencerNonceHandling(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.execConfig.Sequencer.MaxBlockSpeed = time.Second
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = 4 * time.Second
 	cleanup := builder.Build(t)

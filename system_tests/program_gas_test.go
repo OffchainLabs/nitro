@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -12,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
@@ -40,6 +43,7 @@ func TestProgramSimpleCost(t *testing.T) {
 		opcode  vm.OpCode
 		params  []any
 		maxDiff float64
+		mode    compareGasMode // defaults to compareGasForEach (zero value)
 	}{
 		{hostio: "exit_early", opcode: vm.STOP},
 		{hostio: "transient_load_bytes32", opcode: vm.TLOAD, params: []any{common.HexToHash("dead")}},
@@ -63,9 +67,9 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "math_add_mod", opcode: vm.ADDMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.7},
 		{hostio: "math_mul_mod", opcode: vm.MULMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.7},
 		{hostio: "msg_sender", opcode: vm.CALLER, maxDiff: 0.5},
-		{hostio: "msg_value", opcode: vm.CALLVALUE, maxDiff: 0.5},
+		{hostio: "msg_value", opcode: vm.CALLVALUE, maxDiff: 0.5, mode: compareGasSum},
 		{hostio: "tx_gas_price", opcode: vm.GASPRICE, maxDiff: 0.5},
-		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.5},
+		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.5, mode: compareGasSum},
 		{hostio: "tx_origin", opcode: vm.ORIGIN, maxDiff: 0.5},
 	} {
 		t.Run(tc.hostio, func(t *testing.T) {
@@ -75,7 +79,7 @@ func TestProgramSimpleCost(t *testing.T) {
 			packer, _ := util.NewCallParser(localgen.HostioTestABI, solFunc)
 			data, err := packer(tc.params...)
 			Require(t, err)
-			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
+			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, tc.mode, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
 		})
 	}
 }
@@ -275,7 +279,7 @@ func TestProgramKeccakCost(t *testing.T) {
 func setupGasCostTest(t *testing.T) *NodeBuilder {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	cleanup := builder.Build(t)
 	t.Cleanup(cleanup)
 	return builder

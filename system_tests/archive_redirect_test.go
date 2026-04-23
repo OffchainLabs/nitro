@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -57,8 +59,10 @@ func TestRequestForwardingToArchiveNodes(t *testing.T) {
 		})
 		listener, srv, err := rpc.StartIPCEndpoint(ipcPath, apis)
 		Require(t, err)
-		defer srv.Stop()
-		defer listener.Close()
+		t.Cleanup(func() {
+			srv.Stop()
+			listener.Close()
+		})
 		archiveConfigs = append(archiveConfigs, arbitrum.BlockRedirectConfig{
 			URL:       ipcPath,
 			Timeout:   time.Second,

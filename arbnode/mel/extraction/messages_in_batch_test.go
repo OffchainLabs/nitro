@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package melextraction
@@ -334,7 +334,6 @@ type mockDelayedMessageDB struct {
 }
 
 func (m *mockDelayedMessageDB) ReadDelayedMessage(
-	_ context.Context,
 	_ *mel.State,
 	delayedMsgsRead uint64,
 ) (*mel.DelayedInboxMessage, error) {

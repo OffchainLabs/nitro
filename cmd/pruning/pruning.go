@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package pruning
 
 import (
@@ -21,41 +23,34 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbutil"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 )
 
 type importantRoots struct {
-	chainDb ethdb.Database
-	roots   []common.Hash
-	heights []uint64
+	executionDB ethdb.Database
+	roots       []common.Hash
+	heights     []uint64
 }
-
-// The minimum block distance between two important roots
-const minRootDistance = 2000
 
 // Marks a header as important, and records its root and height.
 // If overwrite is true, it'll remove any future roots and replace them with this header.
 // If overwrite is false, it'll ignore this header if it has future roots.
-func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
+func (r *importantRoots) addHeader(header *types.Header, overwrite bool, minRootDistance uint64) error {
 	targetBlockNum := header.Number.Uint64()
 	for {
 		if header == nil || header.Root == (common.Hash{}) {
 			log.Error("missing state of pruning target", "blockNum", targetBlockNum)
 			return nil
 		}
-		exists, err := r.chainDb.Has(header.Root.Bytes())
+		exists, err := r.executionDB.Has(header.Root.Bytes())
 		if err != nil {
 			return err
 		}
@@ -67,7 +62,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 			log.Info("looking for old block with state to keep", "current", num, "target", targetBlockNum)
 		}
 		// An underflow is fine here because it'll just return nil due to not found
-		header = rawdb.ReadHeader(r.chainDb, header.ParentHash, num-1)
+		header = rawdb.ReadHeader(r.executionDB, header.ParentHash, num-1)
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
@@ -88,31 +83,21 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
-	chainConfig := gethexec.TryReadStoredChainConfig(chainDb)
+func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initConfig *conf.InitConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool, minRootDistance uint64) ([]common.Hash, error) {
+	chainConfig := gethexec.TryReadStoredChainConfig(executionDB)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	arbDb, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		err := arbDb.Close()
-		if err != nil {
-			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
-		}
-	}()
 	roots := importantRoots{
-		chainDb: chainDb,
+		executionDB: executionDB,
 	}
 	genesisNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
-	genesisHash := rawdb.ReadCanonicalHash(chainDb, genesisNum)
-	genesisHeader := rawdb.ReadHeader(chainDb, genesisHash, genesisNum)
+	genesisHash := rawdb.ReadCanonicalHash(executionDB, genesisNum)
+	genesisHeader := rawdb.ReadHeader(executionDB, genesisHash, genesisNum)
 	if genesisHeader == nil {
 		return nil, errors.New("missing L2 genesis block header")
 	}
-	err = roots.addHeader(genesisHeader, false)
+	err := roots.addHeader(genesisHeader, false, minRootDistance)
 	if err != nil {
 		return nil, err
 	}
@@ -124,13 +109,13 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		if err != nil {
 			return nil, err
 		}
-		confirmedNumber, found := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
+		confirmedNumber, found := rawdb.ReadHeaderNumber(executionDB, confirmedHash)
 		var confirmedHeader *types.Header
 		if found {
-			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, confirmedNumber)
+			confirmedHeader = rawdb.ReadHeader(executionDB, confirmedHash, confirmedNumber)
 		}
 		if confirmedHeader != nil {
-			err = roots.addHeader(confirmedHeader, false)
+			err = roots.addHeader(confirmedHeader, false, minRootDistance)
 			if err != nil {
 				return nil, err
 			}
@@ -138,24 +123,25 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 
-		validatorDb := rawdb.NewTable(arbDb, storage.BlockValidatorPrefix)
-		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
+		data, err := executionDB.Get(gethexec.ValidatedBlockHashKey)
 		if err != nil {
 			return nil, err
 		}
-		if lastValidated != nil {
+		lastValidatedBlockHash := common.BytesToHash(data)
+
+		if lastValidatedBlockHash != (common.Hash{}) {
 			var lastValidatedHeader *types.Header
-			headerNum, found := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
+			headerNum, found := rawdb.ReadHeaderNumber(executionDB, lastValidatedBlockHash)
 			if found {
-				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, headerNum)
+				lastValidatedHeader = rawdb.ReadHeader(executionDB, lastValidatedBlockHash, headerNum)
 			}
 			if lastValidatedHeader != nil {
-				err = roots.addHeader(lastValidatedHeader, false)
+				err = roots.addHeader(lastValidatedHeader, false, minRootDistance)
 				if err != nil {
 					return nil, err
 				}
 			} else {
-				log.Warn("missing latest validated block", "hash", lastValidated.GlobalState.BlockHash)
+				log.Warn("missing latest validated block", "hash", lastValidatedBlockHash)
 			}
 		}
 	} else if initConfig.Prune == "full" || initConfig.Prune == "minimal" {
@@ -177,49 +163,21 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	} else {
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
-	if initConfig.Prune != "minimal" && l1Client != nil {
-		// in pruning modes other then "minimal", find the latest finalized block and add it as a pruning target
-		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get finalized block: %w", err)
+	if initConfig.Prune != "minimal" {
+		// in pruning modes other than "minimal", get the latest finalized block and add it as a pruning target
+		finalizedBlockHash := rawdb.ReadFinalizedBlockHash(executionDB)
+		finalizedBlockNumber, ok := rawdb.ReadHeaderNumber(executionDB, finalizedBlockHash)
+		if !ok {
+			return nil, errors.New("Number of finalized block is missing")
 		}
-		l1BlockNum := l1Block.NumberU64()
-		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil, arbnode.DefaultSnapSyncConfig)
-		if err != nil {
-			return nil, err
-		}
-		batch, err := tracker.GetBatchCount()
-		if err != nil {
-			return nil, err
-		}
-		for {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			if batch == 0 {
-				// No batch has been finalized
-				break
-			}
-			batch -= 1
-			meta, err := tracker.GetBatchMetadata(batch)
+
+		l2Header := rawdb.ReadHeader(executionDB, finalizedBlockHash, finalizedBlockNumber)
+		if l2Header == nil {
+			log.Warn("latest finalized L2 block is unknown", "blockNum", finalizedBlockNumber)
+		} else {
+			err = roots.addHeader(l2Header, false, minRootDistance)
 			if err != nil {
 				return nil, err
-			}
-			if meta.ParentChainBlock <= l1BlockNum {
-				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
-				// #nosec G115
-				blockNum := uint64(signedBlockNum)
-				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-				l2Header := rawdb.ReadHeader(chainDb, l2Hash, blockNum)
-				if l2Header == nil {
-					log.Warn("latest finalized L2 block is unknown", "blockNum", signedBlockNum)
-					break
-				}
-				err = roots.addHeader(l2Header, false)
-				if err != nil {
-					return nil, err
-				}
-				break
 			}
 		}
 	}
@@ -277,21 +235,27 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		return latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash, nil
 	}
 }
+func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
+	// The minimum block distance between two important roots
+	const minRootDistance = 2000
 
-func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
+	return PruneExecutionDBWithDistance(ctx, executionDB, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired, melEnabled, minRootDistance)
+}
+
+func PruneExecutionDBWithDistance(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool, minRootDistance uint64) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}
 
 	if initConfig.Prune == "" {
-		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, initConfig.PruneThreads)
+		return pruner.RecoverPruning(stack.InstanceDir(), executionDB, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired)
+	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired, minRootDistance)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
 
-	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelStorageTraversal: initConfig.PruneParallelStorageTraversal})
+	pruner, err := pruner.NewPruner(executionDB, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads, CleanCacheSize: initConfig.PruneTrieCleanCache, ParallelStorageTraversal: initConfig.PruneParallelStorageTraversal})
 	if err != nil {
 		return err
 	}

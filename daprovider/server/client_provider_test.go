@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package dapserver
@@ -71,7 +71,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	dummyAddress := common.HexToAddress("0x0")
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, nil, dummyAddress)
-	writer := referenceda.NewWriter(dataSigner)
+	writer := referenceda.NewWriter(dataSigner, referenceda.DefaultConfig.MaxBatchSize)
 	validator := referenceda.NewValidator(nil, dummyAddress)
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 

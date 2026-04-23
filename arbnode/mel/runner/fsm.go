@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -45,7 +47,8 @@ type backToStart struct{}
 
 // An action that transitions the FSM to the processing next block state.
 type processNextBlock struct {
-	melState *mel.State
+	melState         *mel.State
+	prevStepWasReorg bool // Helps prevent unnecessary continuous rewinding of MEL validator when we detect L1 reorg
 }
 
 // An action that transitions the FSM to the saving messages state.
@@ -54,10 +57,13 @@ type saveMessages struct {
 	postState        *mel.State
 	messages         []*arbostypes.MessageWithMetadata
 	delayedMessages  []*mel.DelayedInboxMessage
+	batchMetas       []*mel.BatchMetadata
 }
 
 // An action that transitions the FSM to the reorging state.
-type reorgToOldBlock struct{}
+type reorgToOldBlock struct {
+	melState *mel.State
+}
 
 func (backToStart) String() string {
 	return "back_to_start"

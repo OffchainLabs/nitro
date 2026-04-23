@@ -1,6 +1,5 @@
-// Copyright 2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -22,13 +21,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	modes "github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -74,7 +74,9 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false)
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false, false)
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
+	Require(t, err)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
@@ -82,7 +84,7 @@ func TestOverflowAssertions(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
@@ -95,12 +97,13 @@ func TestOverflowAssertions(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
 	Require(t, err)
+	pcds := l2node.GetParentChainDataSource()
 	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
+		pcds,
+		pcds,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -112,7 +115,7 @@ func TestOverflowAssertions(t *testing.T) {
 
 	blockValidator, err := staker.NewBlockValidator(
 		stateless,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -124,16 +127,17 @@ func TestOverflowAssertions(t *testing.T) {
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		state.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          "good",
 			MachineLeavesCachePath: goodDir,
 			CheckBatchFinality:     false,
 		},
 		goodDir,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
-		l2node.InboxReader,
+		pcds,
+		nil,
 	)
 	Require(t, err)
 
@@ -174,9 +178,9 @@ func TestOverflowAssertions(t *testing.T) {
 	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
-	bc, err := l2node.InboxTracker.GetBatchCount()
+	bc, err := l2node.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	msgs, err := l2node.InboxTracker.GetBatchMessageCount(bc - 1)
+	msgs, err := l2node.GetParentChainDataSource().GetBatchMessageCount(bc - 1)
 	Require(t, err)
 
 	t.Logf("Node batch count %d, msgs %d", bc, msgs)
@@ -186,14 +190,10 @@ func TestOverflowAssertions(t *testing.T) {
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}
-	for {
+	pollUntil(t, ctx, 5*time.Minute, 200*time.Millisecond, "node to catch up", func() bool {
 		latest := nodeExec.Backend.APIBackend().CurrentHeader()
-		isCaughtUp := latest.Number.Uint64() == uint64(totalMessagesPosted)
-		if isCaughtUp {
-			break
-		}
-		time.Sleep(time.Millisecond * 200)
-	}
+		return latest.Number.Uint64() == uint64(totalMessagesPosted)
+	})
 
 	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
 	Require(t, err)
@@ -202,41 +202,42 @@ func TestOverflowAssertions(t *testing.T) {
 	totalBatches := totalBatchesBig.Uint64()
 
 	// Wait until the validator has validated the batches.
-	for {
+	pollUntil(t, ctx, 5*time.Minute, 200*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
+		}
+		if lastInfo == nil {
+			return false
 		}
 		t.Log("Batch", lastInfo.GlobalState.Batch, "Total", totalBatches-1)
-		if lastInfo.GlobalState.Batch >= totalBatches-1 {
-			break
-		}
-		time.Sleep(time.Millisecond * 200)
-	}
+		return lastInfo.GlobalState.Batch >= totalBatches-1
+	})
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := state.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]state.Height{
+			state.Height(blockChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
 	)
 
-	stackOpts := []challengemanager.StackOpt{
-		challengemanager.StackWithName("default"),
-		challengemanager.StackWithMode(modes.MakeMode),
-		challengemanager.StackWithPostingInterval(time.Second),
-		challengemanager.StackWithPollingInterval(time.Millisecond * 500),
-		challengemanager.StackWithAverageBlockCreationTime(time.Second),
-		challengemanager.StackWithMinimumGapToParentAssertion(0),
+	stackOpts := []challenge.StackOpt{
+		challenge.StackWithName("default"),
+		challenge.StackWithMode(modes.MakeMode),
+		challenge.StackWithPostingInterval(time.Second),
+		challenge.StackWithPollingInterval(time.Millisecond * 500),
+		challenge.StackWithAverageBlockCreationTime(time.Second),
+		challenge.StackWithMinimumGapToParentAssertion(0),
 	}
 
-	manager, err := challengemanager.NewChallengeStack(
+	manager, err := challenge.NewChallengeStack(
 		assertionChain,
 		provider,
 		stackOpts...,

@@ -1,16 +1,20 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbutil
 
+import "fmt"
+
 // messages are 0-indexed
 type MessageIndex uint64
 
-func BlockNumberToMessageCount(blockNumber uint64, genesisBlockNumber uint64) MessageIndex {
-	return MessageIndex(blockNumber + 1 - genesisBlockNumber)
+func BlockNumberToMessageIndex(blockNum, genesis uint64) (MessageIndex, error) {
+	if blockNum < genesis {
+		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
+	}
+	return MessageIndex(blockNum - genesis), nil
 }
 
-func MessageCountToBlockNumber(messageCount MessageIndex, genesisBlockNumber uint64) int64 {
-	// #nosec G115
-	return int64(uint64(messageCount)+genesisBlockNumber) - 1
+func MessageIndexToBlockNumber(msgIdx MessageIndex, genesis uint64) uint64 {
+	return uint64(msgIdx) + genesis
 }

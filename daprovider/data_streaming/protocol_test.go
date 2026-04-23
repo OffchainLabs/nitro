@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package data_streaming
@@ -27,7 +27,7 @@ import (
 const (
 	maxPendingMessages      = 10
 	messageCollectionExpiry = 1 * time.Second
-	requestValidity         = 1 * time.Second
+	requestValidity         = 10 * time.Second
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
 )

@@ -1,6 +1,5 @@
-// Copyright 2025, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
 
@@ -22,6 +21,7 @@ func TestStorageTrie(t *testing.T) {
 
 	var withL1 = true
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+	builder.nodeConfig.MessageExtraction.Enable = false
 
 	// This test tests validates blocks at the end.
 	// For now, validation only works with HashScheme set.

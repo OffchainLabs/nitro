@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -24,8 +25,9 @@ import (
 
 type MessagePruner struct {
 	stopwaiter.StopWaiter
+	consensusDB                 ethdb.Database
 	transactionStreamer         *TransactionStreamer
-	inboxTracker                *InboxTracker
+	batchMetaFetcher            BatchMetadataFetcher
 	config                      MessagePrunerConfigFetcher
 	pruningLock                 sync.Mutex
 	lastPruneDone               time.Time
@@ -54,10 +56,11 @@ func MessagePrunerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")
 }
 
-func NewMessagePruner(transactionStreamer *TransactionStreamer, inboxTracker *InboxTracker, config MessagePrunerConfigFetcher) *MessagePruner {
+func NewMessagePruner(consensusDB ethdb.Database, transactionStreamer *TransactionStreamer, batchMetaFetcher BatchMetadataFetcher, config MessagePrunerConfigFetcher) *MessagePruner {
 	return &MessagePruner{
+		consensusDB:         consensusDB,
 		transactionStreamer: transactionStreamer,
-		inboxTracker:        inboxTracker,
+		batchMetaFetcher:    batchMetaFetcher,
 		config:              config,
 	}
 }
@@ -92,7 +95,7 @@ func (m *MessagePruner) UpdateLatestConfirmed(count arbutil.MessageIndex, global
 func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
 	trimBatchCount := globalState.Batch
 	minBatchesLeft := m.config().MinBatchesLeft
-	batchCount, err := m.inboxTracker.GetBatchCount()
+	batchCount, err := m.batchMetaFetcher.GetBatchCount()
 	if err != nil {
 		return err
 	}
@@ -105,7 +108,7 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	if trimBatchCount < 1 {
 		return nil
 	}
-	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(trimBatchCount - 1)
+	endBatchMetadata, err := m.batchMetaFetcher.GetBatchMetadata(trimBatchCount - 1)
 	if err != nil {
 		return err
 	}
@@ -121,12 +124,12 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 
 func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
 	if m.cachedPrunedMessages == 0 {
-		m.cachedPrunedMessages = fetchLastPrunedKey(m.transactionStreamer.db, lastPrunedMessageKey)
+		m.cachedPrunedMessages = fetchLastPrunedKey(m.transactionStreamer.db, schema.LastPrunedMessageKey)
 	}
 	if m.cachedPrunedDelayedMessages == 0 {
-		m.cachedPrunedDelayedMessages = fetchLastPrunedKey(m.inboxTracker.db, lastPrunedDelayedMessageKey)
+		m.cachedPrunedDelayedMessages = fetchLastPrunedKey(m.consensusDB, schema.LastPrunedDelayedMessageKey)
 	}
-	prunedKeysRange, _, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messageResultPrefix, m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, _, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, schema.MessageResultPrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting message results: %w", err)
 	}
@@ -134,7 +137,7 @@ func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCoun
 		log.Info("Pruned message results:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, _, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, _, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, schema.BlockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting expected block hashes: %w", err)
 	}
@@ -142,24 +145,24 @@ func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCoun
 		log.Info("Pruned expected block hashes:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
-	prunedKeysRange, lastPrunedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messagePrefix, m.cachedPrunedMessages, uint64(messageCount))
+	prunedKeysRange, lastPrunedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, schema.MessagePrefix, m.cachedPrunedMessages, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting last batch messages: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
 		log.Info("Pruned last batch messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
-	insertLastPrunedKey(m.transactionStreamer.db, lastPrunedMessageKey, lastPrunedMessage)
+	insertLastPrunedKey(m.transactionStreamer.db, schema.LastPrunedMessageKey, lastPrunedMessage)
 	m.cachedPrunedMessages = lastPrunedMessage
 
-	prunedKeysRange, lastPrunedDelayedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.inboxTracker.db, rlpDelayedMessagePrefix, m.cachedPrunedDelayedMessages, delayedMessageCount)
+	prunedKeysRange, lastPrunedDelayedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.consensusDB, schema.RlpDelayedMessagePrefix, m.cachedPrunedDelayedMessages, delayedMessageCount)
 	if err != nil {
 		return fmt.Errorf("error deleting last batch delayed messages: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
 		log.Info("Pruned last batch delayed messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
-	insertLastPrunedKey(m.inboxTracker.db, lastPrunedDelayedMessageKey, lastPrunedDelayedMessage)
+	insertLastPrunedKey(m.consensusDB, schema.LastPrunedDelayedMessageKey, lastPrunedDelayedMessage)
 	m.cachedPrunedDelayedMessages = lastPrunedDelayedMessage
 	return nil
 }

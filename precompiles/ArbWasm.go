@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -43,7 +43,7 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := c.Burn(multigas.ResourceKindComputation, activationGas); err != nil {
+	if err := c.Burn(multigas.ResourceKindSingleDim, activationGas); err != nil {
 		return 0, nil, err
 	}
 

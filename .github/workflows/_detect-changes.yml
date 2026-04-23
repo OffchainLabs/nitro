@@ -4,12 +4,15 @@ name: detect-file-changes
 on:
   workflow_call:
     outputs:
-      arbitrator_changed:
-        description: 'True if Arbitrator or related files changed.'
-        value: ${{ jobs.changes.outputs.arbitrator_changed }}
+      rust_changed:
+        description: 'True if Rust files changed.'
+        value: ${{ jobs.changes.outputs.rust_changed }}
       bold_legacy_changed:
         description: 'True if Bold Legacy or related files changed.'
         value: ${{ jobs.changes.outputs.bold_legacy_changed }}
+      changelog_added:
+        description: 'New changelog fragments.'
+        value: ${{ jobs.changes.outputs.changelog_added }}
 
 permissions:
   contents: read
@@ -19,8 +22,9 @@ jobs:
     name: Detect file changes
     runs-on: ubuntu-4
     outputs:
-      arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
+      rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
+      changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
 
     steps:
       - name: Checkout
@@ -34,16 +38,21 @@ jobs:
         with:
           private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
-      - name: Determine if Arbitrator or Bold Legacy changed
+      - name: Detect changes
         id: changed
-        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c  # v46.0.5
+        uses: tj-actions/changed-files@v47
         with:
           files_yaml: |
-            arbitrator:
-              - 'arbitrator/**'
+            rust:
+              - 'crates/**'
               - 'contracts/**'
               - 'Makefile'
-              - '.github/workflows/_arbitrator.yml'
+              - '**.toml'
+              - '**/Cargo.lock'
+              - '.github/workflows/_rust-tests.yml'
+              - '.github/workflows/_detect-changes.yml'
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
+            changelog:
+              - 'changelog/**.md'

@@ -1,3 +1,5 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //
 // Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
@@ -38,8 +40,12 @@ func GetPendingBlockNumber(ctx context.Context, client *ethclient.Client) (*big.
 	return blockNum.Add(blockNum, common.Big1), nil
 }
 
-// Will wait until txhash is in the blockchain and return its receipt
+// Will wait until txhash is in the blockchain and return its receipt.
+// The caller-supplied timeout is scaled by NITRO_TEST_TIMEOUT_SCALE so loaded
+// CI runners get proportional headroom without every call site needing its
+// own bump.
 func WaitForTx(ctxinput context.Context, client *ethclient.Client, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+	timeout = time.Duration(float64(timeout) * getTestTimeoutScale())
 	ctx, cancel := context.WithTimeout(ctxinput, timeout)
 	defer cancel()
 

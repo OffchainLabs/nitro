@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -189,7 +189,9 @@ func NewSeqCoordinator(
 		config:           config,
 		signer:           signer,
 	}
-	streamer.SetSeqCoordinator(coordinator)
+	if err := streamer.SetSeqCoordinator(coordinator); err != nil {
+		return nil, err
+	}
 	return coordinator, nil
 }
 
@@ -543,13 +545,15 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 	// Was, and still is, the active sequencer
 	if c.config.DeleteFinalizedMsgs {
 		// Before proceeding, first try deleting finalized messages from redis and setting the finalizedMsgCount key
-		finalized, err := c.sync.GetFinalizedMsgCount(ctx)
-		if err != nil {
-			log.Warn("Error getting finalizedMessageCount from syncMonitor", "err", err)
-		} else if finalized == 0 {
-			log.Warn("SyncMonitor returned zero finalizedMessageCount")
-		} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {
-			log.Warn("Coordinator failed to delete finalized messages from redis", "err", err)
+		if c.sync.syncProgressFetcher != nil {
+			finalized, err := c.sync.GetFinalizedMsgCount(ctx)
+			if err != nil {
+				log.Warn("Error getting finalizedMessageCount from syncMonitor", "err", err)
+			} else if finalized == 0 {
+				log.Warn("SyncMonitor returned zero finalizedMessageCount")
+			} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {
+				log.Warn("Coordinator failed to delete finalized messages from redis", "err", err)
+			}
 		}
 	}
 	// We leave a margin of error of either a five times the update interval or a fifth of the lockout duration, whichever is greater.
@@ -618,7 +622,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	}
 	msgToDelete := min(finalized, remoteMsgCount)
 	if prevFinalized < msgToDelete {
-		var keys []string
+		keys := make([]string, 0, (msgToDelete-prevFinalized)*2) // *2 = one message key + one signature key per message
 		for msg := prevFinalized; msg < msgToDelete; msg++ {
 			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
 		}
@@ -701,8 +705,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	if c.prevRedisMessageCount != 0 && localMsgCount >= c.prevRedisMessageCount {
 		log.Info("coordinator caught up to prev redis coordinator", "msgcount", localMsgCount, "prevMsgCount", c.prevRedisMessageCount)
 	}
-	var messages []arbostypes.MessageWithMetadata
-	var blockMetadataArr []common.BlockMetadata
+	expectedMsgCount := arbmath.SaturatingUSub(readUntil, localMsgCount)
+	messages := make([]arbostypes.MessageWithMetadata, 0, expectedMsgCount)
+	blockMetadataArr := make([]common.BlockMetadata, 0, expectedMsgCount)
 	msgToRead := localMsgCount
 	var msgReadErr error
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
@@ -832,7 +837,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			}
 			// This should be redundant now that even non-primary sequencers broadcast over the feed,
 			// but the backlog efficiently deduplicates messages, so better safe than sorry.
-			err = c.streamer.PopulateFeedBacklog()
+			err = c.streamer.PopulateFeedBacklog(ctx)
 			if err != nil {
 				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)
 			}

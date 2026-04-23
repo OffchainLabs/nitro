@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbmath
@@ -6,13 +6,13 @@ package arbmath
 import "fmt"
 
 // A simple moving average of a generic number type.
-type MovingAverage[T Number] struct {
+type MovingAverage[T Integer] struct {
 	buffer         []T
 	bufferPosition int
 	sum            T
 }
 
-func NewMovingAverage[T Number](period int) (*MovingAverage[T], error) {
+func NewMovingAverage[T Integer](period int) (*MovingAverage[T], error) {
 	if period <= 0 {
 		return nil, fmt.Errorf("MovingAverage period specified as %v but it must be positive", period)
 	}

@@ -6,6 +6,7 @@ package daclient
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/pflag"
 
@@ -78,8 +79,9 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".store-rpc-method", DefaultClientConfig.StoreRpcMethod, "name of the store rpc method on the daprovider server (used when data streaming is disabled)")
 }
 
-func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (client *Client, err error) {
+func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_streaming.PayloadSigner) (*Client, error) {
 	rpcClient := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &config.RPC }, nil)
+	var err error
 
 	var dataStreamer *data_streaming.DataStreamer[server_api.StoreResult]
 	if config.UseDataStreaming {
@@ -89,7 +91,11 @@ func NewClient(ctx context.Context, config *ClientConfig, payloadSigner *data_st
 		}
 	}
 
-	client = &Client{rpcClient, dataStreamer, &config.StoreRpcMethod}
+	client := &Client{
+		RpcClient:      rpcClient,
+		DataStreamer:   dataStreamer,
+		storeRpcMethod: &config.StoreRpcMethod,
+	}
 	if err = client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("error starting daprovider client: %w", err)
 	}
@@ -107,6 +113,16 @@ func (c *Client) GetSupportedHeaderBytes() containers.PromiseInterface[Supported
 			return SupportedHeaderBytesResult{}, fmt.Errorf("error returned from daprovider_getSupportedHeaderBytes rpc method: %w", err)
 		}
 		return SupportedHeaderBytesResult{HeaderBytes: result.HeaderBytes}, nil
+	})
+}
+
+func (c *Client) GetMaxMessageSize() containers.PromiseInterface[int] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (int, error) {
+		var result server_api.MaxMessageSizeResult
+		if err := c.CallContext(ctx, &result, "daprovider_getMaxMessageSize"); err != nil {
+			return 0, fmt.Errorf("error returned from daprovider_getMaxMessageSize rpc method: %w", err)
+		}
+		return result.MaxSize, nil
 	})
 }
 
@@ -142,6 +158,22 @@ func (c *Client) CollectPreimages(
 	})
 }
 
+// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+func (c *Client) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		var result daprovider.PayloadAndPreimagesResult
+		err := c.CallContext(ctx, &result, "daprovider_recoverPayloadAndPreimages", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg))
+		if err != nil {
+			err = fmt.Errorf("error returned from daprovider_recoverPayloadAndPreimages rpc method, err: %w", err)
+		}
+		return result, err
+	})
+}
+
 func (c *Client) Store(
 	message []byte,
 	timeout uint64,
@@ -161,6 +193,14 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 	// Single-call store if data streaming is not enabled
 	if c.DataStreamer == nil {
 		if err := c.CallContext(ctx, &storeResult, *c.storeRpcMethod, hexutil.Bytes(message), hexutil.Uint64(timeout)); err != nil {
+			// Restore error identity lost over RPC for external DA providers
+			// by wrapping the original error so we preserve context for debugging
+			if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+				return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
+			}
+			if strings.Contains(err.Error(), daprovider.ErrMessageTooLarge.Error()) {
+				return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrMessageTooLarge, err)
+			}
 			return nil, fmt.Errorf("error returned from daprovider server (single-call store protocol), err: %w", err)
 		}
 		return storeResult, nil
@@ -169,22 +209,28 @@ func (c *Client) store(ctx context.Context, message []byte, timeout uint64) (*se
 	// Otherwise, use the data streaming protocol
 	storeResult, err := c.DataStreamer.StreamData(ctx, message, timeout)
 	if err != nil {
+		// Restore error identity lost over RPC for external DA providers
+		// by wrapping the original error so we preserve context for debugging
+		if strings.Contains(err.Error(), daprovider.ErrFallbackRequested.Error()) {
+			return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrFallbackRequested, err)
+		}
+		if strings.Contains(err.Error(), daprovider.ErrMessageTooLarge.Error()) {
+			return nil, fmt.Errorf("%w (from external DA provider: %w)", daprovider.ErrMessageTooLarge, err)
+		}
 		return nil, fmt.Errorf("error returned from daprovider server (chunked store protocol), err: %w", err)
-	} else {
-		return storeResult, nil
 	}
+	return storeResult, nil
 }
 
 // GenerateReadPreimageProof generates a proof for a specific preimage at a given offset
 // This method calls the external DA provider's RPC endpoint to generate the proof
 func (c *Client) GenerateReadPreimageProof(
-	certHash common.Hash,
 	offset uint64,
 	certificate []byte,
 ) containers.PromiseInterface[daprovider.PreimageProofResult] {
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimageProofResult, error) {
 		var generateProofResult server_api.GenerateReadPreimageProofResult
-		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", certHash, hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
+		if err := c.CallContext(ctx, &generateProofResult, "daprovider_generateReadPreimageProof", hexutil.Uint64(offset), hexutil.Bytes(certificate)); err != nil {
 			return daprovider.PreimageProofResult{}, fmt.Errorf("error returned from daprovider_generateProof rpc method, err: %w", err)
 		}
 		return daprovider.PreimageProofResult{Proof: generateProofResult.Proof}, nil

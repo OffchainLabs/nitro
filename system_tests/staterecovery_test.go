@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -19,7 +22,7 @@ import (
 func TestRecreateMissingStates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
@@ -53,20 +56,25 @@ func TestRecreateMissingStates(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
-		defer chainDb.Close()
+		defer executionDB.Close()
 		cachingConfig := gethexec.DefaultCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
 		cacheConfig := gethexec.DefaultCacheConfigFor(&cachingConfig)
-		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer)
+		bc, err := gethexec.GetBlockChain(executionDB, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer, builder.execConfig.ExposeMultiGas)
 		Require(t, err)
-		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
+		err = staterecovery.RecreateMissingStates(executionDB, bc, cacheConfig, 1)
 		Require(t, err)
 	}()
 
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
+	nodeConfig2 := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2.MessageExtraction.Enable = true
+	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig:  nodeConfig2,
+		stackConfig: builder.l2StackConfig,
+	})
 	defer cleanup()
 
 	currentBlock := uint64(0)

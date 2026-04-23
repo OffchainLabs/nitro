@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package server defines the client-facing API methods for fetching data
 // related to BOLD challenges. It handles HTTP methods with their requests and responses.
@@ -17,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/api/backend"
-	"github.com/offchainlabs/nitro/bold/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var apiVersion = "/api/v1"
@@ -53,15 +52,19 @@ func New(addr string, backend backend.BusinessLogicProvider) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
-	go func() {
-		<-ctx.Done()
-		if err := s.srv.Shutdown(ctx); err != nil {
-			log.Error("Could not shutdown API server", "err", err)
+	s.LaunchThread(func(ctx context.Context) {
+		go func() {
+			<-ctx.Done()
+			if err := s.srv.Shutdown(ctx); err != nil {
+				log.Error("Could not shutdown API server", "err", err)
+			}
+		}()
+		if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("Could not start API server", "address", s.srv.Addr, "err", err)
 		}
-	}()
-	return s.srv.ListenAndServe()
+	})
 }
 
 func (s *Server) Addr() string {
