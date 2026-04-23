@@ -17,7 +17,7 @@ pub const NODE_INTERFACE_DEBUG_ADDRESS: Address = Address::new([
 ]);
 
 // Function selectors.
-const GET_RETRYABLE: [u8; 4] = [0x05, 0xe2, 0xb4, 0x81]; // getRetryable(bytes32)
+const GET_RETRYABLE: [u8; 4] = [0x4d, 0x79, 0x53, 0xad]; // getRetryable(bytes32)
 
 const COPY_GAS: u64 = 3;
 
