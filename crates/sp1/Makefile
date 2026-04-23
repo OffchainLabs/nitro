@@ -2,8 +2,8 @@ TOP              := $(abspath $(CURDIR)/../..)
 RISCV            := $(HOME)/.sp1/riscv
 BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
-BLOCK_INPUTS_DIR := $(TOP)/target/sp1/block-inputs
 OUTPUT_DIR       := $(TOP)/target/sp1
+BLOCK_INPUTS_DIR := $(OUTPUT_DIR)/block-inputs
 
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
@@ -86,9 +86,8 @@ record-blocks: nitro-deps
 .PHONY: build
 build: # Build the SP1 runner; artifacts go to $(OUTPUT_DIR).
 build: nitro-deps
-	@rm -rf $(OUTPUT_DIR)
 	@mkdir -p $(OUTPUT_DIR)
-	# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
+	@# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
 	@cd $(TOP) && GOOS=wasip1 GOARCH=wasm go build -o $(OUTPUT_DIR)/replay.wasm $(TOP)/cmd/replay/...
 	@cargo run --release -p sp1-builder -- \
 		--replay-wasm $(OUTPUT_DIR)/replay.wasm \
@@ -96,3 +95,7 @@ build: nitro-deps
 	@cargo build --release -p sp1-runner
 	@cp $(TOP)/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/stylus-compiler-program $(OUTPUT_DIR)
 	@cp $(TOP)/target/release/sp1-runner $(OUTPUT_DIR)
+
+.PHONY: clean
+clean: # Remove all generated artifacts.
+	@rm -rf $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) $(OUTPUT_DIR)
