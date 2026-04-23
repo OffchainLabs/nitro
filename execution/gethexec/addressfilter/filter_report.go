@@ -4,7 +4,10 @@
 package addressfilter
 
 import (
+	"math/big"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,6 +17,13 @@ import (
 // lint:require-exhaustive-initialization
 type DelayedReportData struct {
 	InboxRequestId common.Hash `json:"delayedInboxRequestId"`
+}
+
+// lint:require-exhaustive-initialization
+type FilterSetIdReport struct {
+	FilterSetId uuid.UUID `json:"filterSetId"`
+	ChainId     *big.Int  `json:"chainId"`
+	ReportedAt  time.Time `json:"reportedAt"`
 }
 
 // lint:require-exhaustive-initialization

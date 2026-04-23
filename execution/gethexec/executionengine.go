@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/pprof"
@@ -280,6 +281,14 @@ func NewExecutionEngine(
 		addressChecker:                 addressChecker,
 		filteringReportRPCClient:       filteringReportRPCClient,
 	}
+}
+
+func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClient {
+	return s.filteringReportRPCClient
+}
+
+func (s *ExecutionEngine) ChainId() *big.Int {
+	return s.bc.Config().ChainID
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {

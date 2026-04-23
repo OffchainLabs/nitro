@@ -5,22 +5,30 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func isFilteredError(err error) bool {
@@ -603,4 +611,124 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	if !execNode.Synced(ctx) {
 		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
 	}
+}
+
+// TestPeriodicFilterSetIdReporting exercises the end-to-end flow:
+// sequencer -> filtering-report RPC -> external HTTP endpoint. It also
+// rotates the hash store mid-run to verify a new filter-set id is picked up.
+func TestPeriodicFilterSetIdReporting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Capture every POST sent to the "external provider".
+	reportCh := make(chan addressfilter.FilterSetIdReport, 16)
+	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			http.Error(w, "read failed", http.StatusInternalServerError)
+			return
+		}
+		var report addressfilter.FilterSetIdReport
+		if err := json.Unmarshal(body, &report); err != nil {
+			t.Errorf("unmarshal body: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		select {
+		case reportCh <- report:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalEndpoint.Close()
+
+	// Stand up the filtering-report service pointing at the external endpoint.
+	stackConfig := filteringreportapi.DefaultStackConfig
+	stackConfig.HTTPHost = "127.0.0.1"
+	stackConfig.HTTPPort = 0
+	stackConfig.WSHost = "127.0.0.1"
+	stackConfig.WSPort = 0
+	filteringReportStack, err := filteringreportapi.NewStack(
+		&stackConfig,
+		&sqsclient.MockQueueClient{},
+		genericconf.HTTPClientConfig{
+			URL:     externalEndpoint.URL,
+			Timeout: 5 * time.Second,
+		},
+	)
+	require.NoError(t, err)
+	require.NoError(t, filteringReportStack.Start())
+	t.Cleanup(func() { filteringReportStack.Close() })
+
+	// Build an active sequencer node wired to the filtering-report service.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	builder.execConfig.Sequencer.FilterSetReportingInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Inject an enabled filter service (without S3) so the sequencer has a
+	// filter-set id to report, and wire it into the sequencer via the
+	// test-only setter. Using a direct hash store Store() lets us control the
+	// id deterministically.
+	filterCfg := &addressfilter.Config{
+		Enable: true,
+		S3: s3syncer.Config{
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
+			ObjectKey: "test-key",
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	require.NoError(t, err)
+	builder.L2.ExecNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err)
+
+	// First id: assert we observe it at the external endpoint.
+	id1 := uuid.New()
+	filterService.GetHashStore().Store(id1, salt, nil, "test-digest-1")
+
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainId()
+	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIdReport {
+		t.Helper()
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case got := <-reportCh:
+				if got.FilterSetId == wantID {
+					return got
+				}
+				// Drop stale reports (e.g. from the previous id during rotation).
+			case <-deadline:
+				t.Fatalf("timed out waiting for report with filter-set id %s", wantID)
+			}
+		}
+	}
+
+	first := waitForReport(id1)
+	require.NotNil(t, first.ChainId, "chain id should be set in report")
+	require.Equal(t, 0, first.ChainId.Cmp(expectedChainID), "chain id mismatch: want %s got %s", expectedChainID, first.ChainId)
+	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
+
+	// Rotate the filter set; the next reporting tick must pick up id2.
+	id2 := uuid.New()
+	filterService.GetHashStore().Store(id2, salt, nil, "test-digest-2")
+
+	second := waitForReport(id2)
+	require.Equal(t, 0, second.ChainId.Cmp(expectedChainID), "chain id mismatch after rotation")
+	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
+		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
 }

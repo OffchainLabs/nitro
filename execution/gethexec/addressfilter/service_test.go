@@ -324,6 +324,21 @@ func TestParseHashListJSON(t *testing.T) {
 	if len(parsedJson.Hashes) != 1 {
 		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
+
+	// Test with malformed id field: must fail loudly so operators catch
+	// provider misconfiguration.
+	badIdPayload := map[string]interface{}{
+		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":   "not-a-uuid",
+		"address_hashes": []map[string]interface{}{
+			{"hash": hex.EncodeToString(hashed_addr1[:])},
+		},
+	}
+	badIdJSON, _ := json.Marshal(badIdPayload)
+	_, err = parseHashListJSON(badIdJSON)
+	if err == nil {
+		t.Error("expected error for malformed id")
+	}
 }
 
 func TestConfig_Validate(t *testing.T) {

@@ -11,21 +11,32 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 type FilteringReportAPI struct {
-	queueClient sqsclient.QueueClient
+	queueClient        sqsclient.QueueClient
+	filterSetReporting genericconf.HTTPClientConfig
+	httpClient         *http.Client
 }
 
-func NewFilteringReportAPI(queueClient sqsclient.QueueClient) (*FilteringReportAPI, error) {
+// NewFilteringReportAPI builds the API handler. When filterSetReporting.URL
+// is empty, ReportCurrentFilterSetId becomes a no-op so the service can run
+// without external forwarding configured.
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting genericconf.HTTPClientConfig) (*FilteringReportAPI, error) {
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
 	}
-	return &FilteringReportAPI{
-		queueClient: queueClient,
-	}, nil
+	api := &FilteringReportAPI{
+		queueClient:        queueClient,
+		filterSetReporting: filterSetReporting,
+	}
+	if filterSetReporting.URL != "" {
+		api.httpClient = &http.Client{Timeout: filterSetReporting.Timeout}
+	}
+	return api, nil
 }
 
 var DefaultStackConfig = node.Config{
@@ -52,13 +63,14 @@ var DefaultStackConfig = node.Config{
 func NewStack(
 	stackConfig *node.Config,
 	queueClient sqsclient.QueueClient,
+	filterSetReporting genericconf.HTTPClientConfig,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	api, err := NewFilteringReportAPI(queueClient)
+	api, err := NewFilteringReportAPI(queueClient, filterSetReporting)
 	if err != nil {
 		return nil, err
 	}

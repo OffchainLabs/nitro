@@ -41,8 +41,9 @@ type FilteringReportConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	Queue           sqsclient.QueueConfig `koanf:"queue"`
-	ReportForwarder forwarder.Config      `koanf:"report-forwarder"`
+	Queue              sqsclient.QueueConfig        `koanf:"queue"`
+	ReportForwarder    forwarder.Config             `koanf:"report-forwarder"`
+	FilterSetReporting genericconf.HTTPClientConfig `koanf:"filter-set-reporting"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -69,19 +70,20 @@ var IPCConfigDefault = genericconf.IPCConfig{
 }
 
 var DefaultFilteringReportConfig = FilteringReportConfig{
-	Conf:            genericconf.ConfConfigDefault,
-	LogLevel:        "INFO",
-	LogType:         "plaintext",
-	Metrics:         false,
-	MetricsServer:   genericconf.MetricsServerConfigDefault,
-	PProf:           false,
-	PprofCfg:        genericconf.PProfDefault,
-	HTTP:            HTTPConfigDefault,
-	WS:              WSConfigDefault,
-	IPC:             IPCConfigDefault,
-	Auth:            genericconf.AuthRPCConfigDefault,
-	Queue:           sqsclient.DefaultQueueConfig,
-	ReportForwarder: forwarder.DefaultConfig,
+	Conf:               genericconf.ConfConfigDefault,
+	LogLevel:           "INFO",
+	LogType:            "plaintext",
+	Metrics:            false,
+	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	PProf:              false,
+	PprofCfg:           genericconf.PProfDefault,
+	HTTP:               HTTPConfigDefault,
+	WS:                 WSConfigDefault,
+	IPC:                IPCConfigDefault,
+	Auth:               genericconf.AuthRPCConfigDefault,
+	Queue:              sqsclient.DefaultQueueConfig,
+	ReportForwarder:    forwarder.DefaultConfig,
+	FilterSetReporting: genericconf.HTTPClientConfigDefault,
 }
 
 func (c *FilteringReportConfig) Validate() error {
@@ -90,6 +92,13 @@ func (c *FilteringReportConfig) Validate() error {
 	}
 	if err := c.ReportForwarder.Validate(); err != nil {
 		return fmt.Errorf("report-forwarder config: %w", err)
+	}
+	// FilterSetReporting is optional; an empty URL disables the feature, so
+	// only validate when the operator configured a URL.
+	if c.FilterSetReporting.URL != "" {
+		if err := c.FilterSetReporting.Validate(); err != nil {
+			return fmt.Errorf("filter-set-reporting config: %w", err)
+		}
 	}
 	return nil
 }
@@ -114,6 +123,7 @@ func addFlags(f *pflag.FlagSet) {
 
 	sqsclient.QueueConfigAddOptions("queue", f)
 	forwarder.ConfigAddOptions("report-forwarder", f)
+	genericconf.HTTPClientConfigAddOptions("filter-set-reporting", f)
 }
 
 func parseConfig(args []string) (*FilteringReportConfig, error) {
@@ -210,7 +220,7 @@ func mainImpl() int {
 	fwd.Start(ctx)
 	defer fwd.StopAndWait()
 
-	stack, err := api.NewStack(&stackConf, queueClient)
+	stack, err := api.NewStack(&stackConf, queueClient, config.FilterSetReporting)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

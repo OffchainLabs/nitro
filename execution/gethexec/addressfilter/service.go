@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -118,6 +120,15 @@ func (s *FilterService) GetHashStore() *HashStore {
 		return nil
 	}
 	return s.hashStore
+}
+
+// CurrentFilterSetId returns the filter-set id of the currently loaded hash
+// list, or uuid.Nil when the service is disabled or no list has been loaded.
+func (s *FilterService) CurrentFilterSetId() uuid.UUID {
+	if !s.config.Enable {
+		return uuid.Nil
+	}
+	return s.hashStore.Id()
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

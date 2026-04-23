@@ -5,22 +5,34 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/node"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func newTestStack(t *testing.T) *node.Node {
+	t.Helper()
+	return newTestStackWithFilterSetReporting(t, genericconf.HTTPClientConfig{})
+}
+
+func newTestStackWithFilterSetReporting(t *testing.T, filterSetReport genericconf.HTTPClientConfig) *node.Node {
 	t.Helper()
 
 	stackConfig := DefaultStackConfig
@@ -28,7 +40,7 @@ func newTestStack(t *testing.T) *node.Node {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, &sqsclient.MockQueueClient{})
+	stack, err := NewStack(&stackConfig, &sqsclient.MockQueueClient{}, filterSetReport)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +121,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, mock)
+	stack, err := NewStack(&stackConfig, mock, genericconf.HTTPClientConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,6 +171,117 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	// All 3 sends should have been attempted (no fail-fast)
 	if mock.sendCount != 3 {
 		t.Fatalf("expected 3 send attempts, got %d", mock.sendCount)
+	}
+}
+
+func TestReportCurrentFilterSetId_NoEndpointIsNoOp(t *testing.T) {
+	stack := newTestStack(t)
+	client := stack.Attach()
+	defer client.Close()
+
+	report := addressfilter.FilterSetIdReport{
+		FilterSetId: uuid.New(),
+		ChainId:     big.NewInt(42161),
+		ReportedAt:  time.Now().UTC(),
+	}
+	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
+		t.Fatalf("expected no-op call to succeed, got %v", err)
+	}
+}
+
+func TestReportCurrentFilterSetId_Posts(t *testing.T) {
+	var received atomic.Value
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected application/json, got %s", ct)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		var parsed addressfilter.FilterSetIdReport
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			t.Errorf("unmarshal body: %v", err)
+		}
+		received.Store(parsed)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	stack := newTestStackWithFilterSetReporting(t, genericconf.HTTPClientConfig{
+		URL:     server.URL,
+		Timeout: 5 * time.Second,
+	})
+	client := stack.Attach()
+	defer client.Close()
+
+	id := uuid.New()
+	chainID := big.NewInt(42161)
+	reportedAt := time.Now().UTC().Truncate(time.Second)
+	report := addressfilter.FilterSetIdReport{
+		FilterSetId: id,
+		ChainId:     chainID,
+		ReportedAt:  reportedAt,
+	}
+	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
+		t.Fatalf("rpc call failed: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 POST, got %d", calls.Load())
+	}
+	got, ok := received.Load().(addressfilter.FilterSetIdReport)
+	if !ok {
+		t.Fatal("server did not record a report")
+	}
+	if got.FilterSetId != id {
+		t.Errorf("filter-set id: want %s, got %s", id, got.FilterSetId)
+	}
+	if got.ChainId == nil || got.ChainId.Cmp(chainID) != 0 {
+		t.Errorf("chain id: want %s, got %v", chainID, got.ChainId)
+	}
+	if !got.ReportedAt.Equal(reportedAt) {
+		t.Errorf("reported-at: want %s, got %s", reportedAt, got.ReportedAt)
+	}
+}
+
+func TestReportCurrentFilterSetId_Non2xxError(t *testing.T) {
+	const errorBody = "upstream is down"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(errorBody))
+	}))
+	defer server.Close()
+
+	stack := newTestStackWithFilterSetReporting(t, genericconf.HTTPClientConfig{
+		URL:     server.URL,
+		Timeout: 5 * time.Second,
+	})
+	client := stack.Attach()
+	defer client.Close()
+
+	report := addressfilter.FilterSetIdReport{
+		FilterSetId: uuid.New(),
+		ChainId:     big.NewInt(1),
+		ReportedAt:  time.Now().UTC(),
+	}
+	err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report)
+	if err == nil {
+		t.Fatal("expected error for non-2xx response")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, server.URL) {
+		t.Errorf("error should contain endpoint URL %q, got: %s", server.URL, msg)
+	}
+	if !strings.Contains(msg, "500") {
+		t.Errorf("error should mention status 500, got: %s", msg)
+	}
+	if !strings.Contains(msg, errorBody) {
+		t.Errorf("error should contain response body snippet %q, got: %s", errorBody, msg)
 	}
 }
 

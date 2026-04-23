@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -97,6 +98,7 @@ type SequencerConfig struct {
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
+	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
@@ -186,6 +188,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 	Timeboost:                    timeboost.DefaultConfig,
 	Dangerous:                    DefaultDangerousConfig,
+	FilterSetReportingInterval:   time.Minute,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
@@ -213,6 +216,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set id to the filtering-report service (0 disables reporting)")
 }
 
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
@@ -1727,7 +1731,59 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		return 0
 	})
 
+	s.startFilterSetReporting()
+
 	return nil
+}
+
+// isActiveSequencer reports whether this node is currently the active
+// sequencer (i.e. not paused and not forwarding to another sequencer).
+func (s *Sequencer) isActiveSequencer() bool {
+	pauseChan, forwarder := s.GetPauseAndForwarder()
+	return pauseChan == nil && forwarder == nil
+}
+
+// reportFilterSetID POSTs the current address-filter set id to the
+// filtering-report service. A nil address-filter service, missing RPC client
+// or uuid.Nil filter-set id are all treated as nothing-to-report.
+func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
+	if s.addressFilterService == nil {
+		return nil
+	}
+	filterSetID := s.addressFilterService.CurrentFilterSetId()
+	if filterSetID == uuid.Nil {
+		// The hash store starts at uuid.Nil until the first S3 fetch lands.
+		// Debug-log so an operator investigating a silent reporting loop
+		// during startup sees why nothing is being sent.
+		log.Debug("skipping filter-set id report: no id loaded yet")
+		return nil
+	}
+	rpcClient := s.execEngine.GetFilteringReportRPCClient()
+	if rpcClient == nil {
+		return nil
+	}
+	_, err := rpcClient.ReportCurrentFilterSetId(addressfilter.FilterSetIdReport{
+		FilterSetId: filterSetID,
+		ChainId:     s.execEngine.ChainId(),
+		ReportedAt:  time.Now().UTC(),
+	}).Await(ctx)
+	return err
+}
+
+func (s *Sequencer) startFilterSetReporting() {
+	interval := s.config().FilterSetReportingInterval
+	if interval <= 0 || s.execEngine.GetFilteringReportRPCClient() == nil {
+		return
+	}
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		if !s.isActiveSequencer() {
+			return interval
+		}
+		if err := s.reportFilterSetID(ctx); err != nil {
+			log.Warn("failed to report current filter-set id", "err", err)
+		}
+		return interval
+	})
 }
 
 type TxSource int

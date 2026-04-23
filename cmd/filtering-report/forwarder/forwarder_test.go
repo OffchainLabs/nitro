@@ -30,7 +30,7 @@ func newTestStack(t *testing.T, queueClient *sqsclient.MockQueueClient) *rpc.Cli
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := api.NewStack(&stackConfig, queueClient)
+	stack, err := api.NewStack(&stackConfig, queueClient, genericconf.HTTPClientConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
