@@ -32,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -101,6 +100,7 @@ var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 // caller checks pendingFilteredTxReports and returns ErrFilteredDelayedMessage if any.
 type DelayedFilteringSequencingHooks struct {
 	arbos.NoopSequencingHooks
+	filteredTxHashes         []common.Hash
 	pendingFilteredTxReports []addressfilter.FilteredTxReport
 	eventFilter              *eventfilter.EventFilter
 	inboxRequestId           common.Hash
@@ -154,25 +154,26 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		if errors.As(result.Err, &filteredErr) {
 			return nil
 		}
+		f.filteredTxHashes = append(f.filteredTxHashes, tx.Hash())
+
 		txRLP, err := tx.MarshalBinary()
 		if err != nil {
 			log.Error("error marshalling filtered delayed tx to RLP", "txHash", tx.Hash(), "err", err)
-			txRLP = nil
+		} else {
+			report := addressfilter.FilteredTxReport{
+				ID:                uuid.Must(uuid.NewV7()).String(),
+				TxHash:            tx.Hash(),
+				TxRLP:             txRLP,
+				FilteredAddresses: filteredAddresses,
+				BlockNumber:       header.Number.Uint64(),
+				ParentBlockHash:   header.ParentHash,
+				PositionInBlock:   uint64(positionInBlock), // #nosec G115
+				FilteredAt:        time.Now().UTC(),
+				IsDelayed:         true,
+				DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
+			}
+			f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
 		}
-		report := addressfilter.FilteredTxReport{
-			ID:                uuid.Must(uuid.NewV7()).String(),
-			TxHash:            tx.Hash(),
-			TxRLP:             txRLP,
-			FilteredAddresses: filteredAddresses,
-			BlockNumber:       header.Number.Uint64(),
-			ParentBlockHash:   header.ParentHash,
-			PositionInBlock:   uint64(positionInBlock), // #nosec G115
-			FilteredAt:        time.Now().UTC(),
-			IsDelayed:         true,
-			DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
-		}
-
-		f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
 
 	}
 	return nil
@@ -189,18 +190,17 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	if !errors.As(err, &cascadingErr) {
 		return
 	}
-	var txRLP hexutil.Bytes
-	if cascadingErr.OriginatingTx != nil {
-		if b, marshalErr := cascadingErr.OriginatingTx.MarshalBinary(); marshalErr != nil {
-			log.Error("error marshalling originating tx RLP", "txHash", cascadingErr.OriginatingTx.Hash(), "err", marshalErr)
-			return
-		} else {
-			txRLP = b
-		}
+	originatingTxHash := cascadingErr.OriginatingTx.Hash()
+	f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
+
+	txRLP, marshalErr := cascadingErr.OriginatingTx.MarshalBinary()
+	if marshalErr != nil {
+		log.Error("error marshalling originating tx RLP", "txHash", originatingTxHash, "err", marshalErr)
+		return
 	}
 	report := addressfilter.FilteredTxReport{
 		ID:                uuid.Must(uuid.NewV7()).String(),
-		TxHash:            cascadingErr.OriginatingTx.Hash(),
+		TxHash:            originatingTxHash,
 		TxRLP:             txRLP,
 		FilteredAddresses: cascadingErr.FilteredAddresses,
 		BlockNumber:       cascadingErr.BlockNumber,
@@ -1000,13 +1000,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			return nil, nil, nil, err
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
-		if len(filteringHooks.pendingFilteredTxReports) > 0 {
-			filteredTxHashes := make([]common.Hash, len(filteringHooks.pendingFilteredTxReports))
-			for i, report := range filteringHooks.pendingFilteredTxReports {
-				filteredTxHashes[i] = report.TxHash
-			}
-
+		if len(filteringHooks.filteredTxHashes) > 0 {
 			if s.transactionFiltererRPCClient != nil {
+				filteredTxHashes := filteringHooks.filteredTxHashes
 				s.LaunchThread(func(ctx context.Context) {
 					for _, filteredTxHash := range filteredTxHashes {
 						_, err := s.transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
@@ -1028,7 +1024,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			}
 
 			return nil, nil, nil, &ErrFilteredDelayedMessage{
-				TxHashes:      filteredTxHashes,
+				TxHashes:      filteringHooks.filteredTxHashes,
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
 		}

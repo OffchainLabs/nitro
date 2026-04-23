@@ -9,12 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	filterTypes "github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
@@ -1654,4 +1660,133 @@ func TestRetryableFilteringFanoutL2ManualRedeemDirtyLast(t *testing.T) {
 
 	// After clearing filter, manual redeem of A succeeds
 	manualRedeemSucceeds(t, ctx, builder, ticketIdA)
+}
+
+// TestRetryableFilteringAutoRedeemFilteredDepth1Report verifies that the
+// TxFailed code path (cascading redeem) produces a correct FilteredTxReport.
+// A retryable's auto-redeem calls a filtered contract, triggering group
+// rollback. The report should contain the originating submission tx hash,
+// the filtered address, and valid block metadata.
+func TestRetryableFilteringAutoRedeemFilteredDepth1Report(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Setup builder with report mock BEFORE Build
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	reportAPI := createFilteringReportService(t, builder)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Create accounts and grant filterer role
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2Info.GenerateAccount("FundsRecipient")
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	fundsRecipientAddr := builder.L2Info.GetAddress("FundsRecipient")
+	tx, err = arbOwner.SetFilteredFundsRecipient(&ownerTxOpts, fundsRecipientAddr)
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy caller and filtered target contracts
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	// Set address filter on filteredTarget
+	addrFilter := newHashedChecker([]common.Address{filteredTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	// Build retryableFilterTestParams for submitRetryableViaL1
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	require.NoError(t, err)
+
+	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, messages)
+		for _, message := range messages {
+			if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
+				continue
+			}
+			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
+			require.NoError(t, err)
+			for _, parsedTx := range txs {
+				if parsedTx.Type() == types.ArbitrumSubmitRetryableTxType {
+					return parsedTx
+				}
+			}
+		}
+		t.Fatal("no retryable submission tx found")
+		return nil
+	}
+
+	p := &retryableFilterTestParams{
+		builder:            builder,
+		ctx:                ctx,
+		delayedInbox:       delayedInbox,
+		lookupL2Tx:         lookupL2Tx,
+		filtererName:       "Filterer",
+		fundsRecipientAddr: fundsRecipientAddr,
+	}
+
+	// Submit retryable A: auto-redeem calls callTarget(filteredTarget)
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("callTarget", filteredTarget)
+	require.NoError(t, err)
+
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryData)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// A's auto-redeem calls callTarget(filteredTarget) → filter → group revert → halt
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	// Verify report from the TxFailed/cascading redeem path
+	require.Eventually(t, func() bool {
+		return len(reportAPI.ReceivedReports()) > 0
+	}, 5*time.Second, 100*time.Millisecond, "filtering-report should receive cascading redeem report")
+
+	reports := reportAPI.ReceivedReports()
+	require.Len(t, reports, 1)
+	report := reports[0]
+
+	// Core identity: should be the originating submission tx, not the redeem
+	require.Equal(t, ticketId, report.TxHash)
+	require.NotEmpty(t, report.ID)
+	require.True(t, report.IsDelayed)
+	require.NotNil(t, report.DelayedReportData, "delayed report data should be set")
+	require.NotEmpty(t, report.TxRLP, "TxRLP should be populated")
+
+	// Block metadata
+	require.NotZero(t, report.BlockNumber, "block number should be set")
+	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1)))
+	require.NoError(t, err)
+	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash,
+		"parent block hash should match hash of block N-1")
+
+	// Filtered addresses: should contain filteredTarget (the contract the redeem called)
+	require.NotEmpty(t, report.FilteredAddresses)
+	foundTarget := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredTarget {
+			require.Equal(t, filterTypes.ReasonContractAddress, addr.Reason,
+				"filtered target should be caught as contract_address")
+			foundTarget = true
+			break
+		}
+	}
+	require.True(t, foundTarget, "report should contain the filtered target address")
 }
