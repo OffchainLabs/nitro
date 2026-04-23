@@ -1,9 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use std::{cell::RefCell, collections::HashMap, sync::Mutex};
 
+use crate::interfaces::IArbSys;
 use crate::storage_slot::{
     derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
     ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE,
@@ -14,20 +16,6 @@ pub const ARBSYS_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x64,
 ]);
-
-// Function selectors (keccak256 of canonical signature, first 4 bytes).
-const WITHDRAW_ETH: [u8; 4] = [0x25, 0xe1, 0x60, 0x63]; // withdrawEth(address)
-const SEND_TX_TO_L1: [u8; 4] = [0x92, 0x8c, 0x16, 0x9a]; // sendTxToL1(address,bytes)
-const ARB_BLOCK_NUMBER: [u8; 4] = [0xa3, 0xb1, 0xb3, 0x1d]; // arbBlockNumber()
-const ARB_BLOCK_HASH: [u8; 4] = [0x2b, 0x40, 0x7a, 0x82]; // arbBlockHash(uint256)
-const ARB_CHAIN_ID: [u8; 4] = [0xd1, 0x27, 0xf5, 0x4a]; // arbChainID()
-const ARB_OS_VERSION: [u8; 4] = [0x05, 0x10, 0x38, 0xf2]; // arbOSVersion()
-const GET_STORAGE_GAS_AVAILABLE: [u8; 4] = [0xa9, 0x45, 0x97, 0xff]; // getStorageGasAvailable()
-const IS_TOP_LEVEL_CALL: [u8; 4] = [0x08, 0xbd, 0x62, 0x4c]; // isTopLevelCall()
-const MAP_L1_SENDER: [u8; 4] = [0x4d, 0xbb, 0xd5, 0x06]; // mapL1SenderContractAddressToL2Alias(address,address)
-const WAS_ALIASED: [u8; 4] = [0x17, 0x5a, 0x26, 0x0b]; // wasMyCallersAddressAliased()
-const CALLER_WITHOUT_ALIAS: [u8; 4] = [0xd7, 0x45, 0x23, 0xb3]; // myCallersAddressWithoutAliasing()
-const SEND_MERKLE_TREE_STATE: [u8; 4] = [0x7a, 0xee, 0xcd, 0x2a]; // sendMerkleTreeState()
 
 // L1 alias offset: 0x1111000000000000000000000000000000001111
 const L1_ALIAS_OFFSET: Address = Address::new([
@@ -65,13 +53,12 @@ fn keccak_gas(byte_count: u64) -> u64 {
     30 + 6 * words_for_bytes(byte_count)
 }
 
-// Event topics.
 pub fn l2_to_l1_tx_topic() -> B256 {
-    keccak256(b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)")
+    IArbSys::L2ToL1Tx::SIGNATURE_HASH
 }
 
 pub fn send_merkle_update_topic() -> B256 {
-    keccak256(b"SendMerkleUpdate(uint256,bytes32,uint256)")
+    IArbSys::SendMerkleUpdate::SIGNATURE_HASH
 }
 
 /// State changes from an ArbSys call for post-execution application.
@@ -150,27 +137,31 @@ pub fn create_arbsys_precompile() -> DynPrecompile {
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(gas_limit);
-    }
-
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
     crate::init_precompile_gas(data.len());
 
-    let result = match selector {
-        ARB_BLOCK_NUMBER => handle_arb_block_number(&mut input),
-        ARB_BLOCK_HASH => handle_arb_block_hash(&mut input),
-        ARB_CHAIN_ID => handle_arb_chain_id(&mut input),
-        ARB_OS_VERSION => handle_arbos_version(&mut input),
-        IS_TOP_LEVEL_CALL => handle_is_top_level_call(&mut input),
-        WAS_ALIASED => handle_was_aliased(&mut input),
-        CALLER_WITHOUT_ALIAS => handle_caller_without_alias(&mut input),
-        MAP_L1_SENDER => handle_map_l1_sender(&mut input),
-        GET_STORAGE_GAS_AVAILABLE => handle_get_storage_gas(&mut input),
-        WITHDRAW_ETH => handle_withdraw_eth(&mut input),
-        SEND_TX_TO_L1 => handle_send_tx_to_l1(&mut input),
-        SEND_MERKLE_TREE_STATE => handle_send_merkle_tree_state(&mut input),
-        _ => return crate::burn_all_revert(gas_limit),
+    let call = match IArbSys::ArbSysCalls::abi_decode(data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
+
+    use IArbSys::ArbSysCalls;
+    let result = match call {
+        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input),
+        ArbSysCalls::arbBlockHash(c) => handle_arb_block_hash(&mut input, c.arbBlockNum),
+        ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input),
+        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input),
+        ArbSysCalls::getStorageGasAvailable(_) => handle_get_storage_gas(&mut input),
+        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input),
+        ArbSysCalls::mapL1SenderContractAddressToL2Alias(c) => {
+            handle_map_l1_sender(&mut input, c.sender)
+        }
+        ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input),
+        ArbSysCalls::myCallersAddressWithoutAliasing(_) => handle_caller_without_alias(&mut input),
+        ArbSysCalls::withdrawEth(c) => handle_withdraw_eth(&mut input, c.destination),
+        ArbSysCalls::sendTxToL1(c) => {
+            handle_send_tx_to_l1(&mut input, c.destination, c.data.as_ref())
+        }
+        ArbSysCalls::sendMerkleTreeState(_) => handle_send_merkle_tree_state(&mut input),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -187,24 +178,21 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     ))
 }
 
-fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 4 + 32 {
-        return crate::burn_all_revert(input.gas);
-    }
-
-    let requested_u256 = U256::from_be_slice(&data[4..36]);
+fn handle_arb_block_hash(
+    input: &mut PrecompileInput<'_>,
+    requested_u256: U256,
+) -> PrecompileResult {
     let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
     let current = get_current_l2_block();
 
-    // Must be strictly less than current and within 256 blocks.
     if requested >= current || requested + 256 < current {
         let arbos_version = crate::get_arbos_version();
         if arbos_version >= 11 {
-            let mut revert_data = Vec::with_capacity(4 + 64);
-            revert_data.extend_from_slice(&[0xd5, 0xdc, 0x64, 0x2d]); // InvalidBlockNumberError
-            revert_data.extend_from_slice(&requested_u256.to_be_bytes::<32>());
-            revert_data.extend_from_slice(&U256::from(current).to_be_bytes::<32>());
+            let revert_data = IArbSys::InvalidBlockNumber {
+                requested: requested_u256,
+                current: U256::from(current),
+            }
+            .abi_encode();
             let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
             let result_cost = COPY_GAS * words_for_bytes(revert_data.len() as u64);
             return Ok(PrecompileOutput::new_reverted(
@@ -215,11 +203,9 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         return Err(PrecompileError::other("invalid block number"));
     }
 
-    // Read from the L2 block hash cache (populated from the header chain).
-    // Do NOT use db.block_hash() which reads from the journal's block_hashes
-    // map — that map is pre-populated with L1 hashes (for the BLOCKHASH opcode)
-    // and would return wrong values for L2 block numbers.
-    let hash = crate::get_l2_block_hash(requested).unwrap_or(alloy_primitives::B256::ZERO);
+    // L2 block hashes come from the header chain cache — the journal's
+    // block_hashes map is pre-populated with L1 hashes for the BLOCKHASH opcode.
+    let hash = crate::get_l2_block_hash(requested).unwrap_or(B256::ZERO);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -334,13 +320,7 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
     ))
 }
 
-fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 4 + 64 {
-        return crate::burn_all_revert(input.gas);
-    }
-    // mapL1SenderContractAddressToL2Alias(address l1_addr, address _unused)
-    let l1_addr = Address::from_slice(&data[16..36]);
+fn handle_map_l1_sender(input: &mut PrecompileInput<'_>, l1_addr: Address) -> PrecompileResult {
     let aliased = apply_l1_alias(l1_addr);
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -364,56 +344,28 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 // ── L2→L1 messaging ─────────────────────────────────────────────────
 
-fn handle_withdraw_eth(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_withdraw_eth(
+    input: &mut PrecompileInput<'_>,
+    destination: Address,
+) -> PrecompileResult {
     if input.is_static {
         return Err(PrecompileError::other(
             "cannot call withdrawEth in static context",
         ));
     }
-
-    let data = input.data;
-    if data.len() < 4 + 32 {
-        return crate::burn_all_revert(input.gas);
-    }
-
-    let destination = Address::from_slice(&data[16..36]);
-    // WithdrawEth calls SendTxToL1 with the destination and empty calldata.
     do_send_tx_to_l1(input, destination, &[])
 }
 
-fn handle_send_tx_to_l1(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_send_tx_to_l1(
+    input: &mut PrecompileInput<'_>,
+    destination: Address,
+    calldata: &[u8],
+) -> PrecompileResult {
     if input.is_static {
         return Err(PrecompileError::other(
             "cannot call sendTxToL1 in static context",
         ));
     }
-
-    let data = input.data;
-    if data.len() < 4 + 64 {
-        return crate::burn_all_revert(input.gas);
-    }
-
-    // sendTxToL1(address destination, bytes calldata)
-    let destination = Address::from_slice(&data[16..36]);
-
-    // Decode the dynamic bytes parameter.
-    let offset = U256::from_be_slice(&data[36..68])
-        .try_into()
-        .unwrap_or(0usize);
-    let abs_offset = 4 + offset;
-    if abs_offset + 32 > data.len() {
-        return Err(PrecompileError::other("calldata offset out of bounds"));
-    }
-    let length: usize = U256::from_be_slice(&data[abs_offset..abs_offset + 32])
-        .try_into()
-        .unwrap_or(0);
-    let calldata_start = abs_offset + 32;
-    let calldata_end = calldata_start + length;
-    if calldata_end > data.len() {
-        return Err(PrecompileError::other("calldata length out of bounds"));
-    }
-    let calldata = &data[calldata_start..calldata_end];
-
     do_send_tx_to_l1(input, destination, calldata)
 }
 

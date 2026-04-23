@@ -4,6 +4,8 @@
 //! on-chain access to ArbOS state, gas pricing, retryable tickets,
 //! Stylus WASM management, and node interface queries.
 
+mod interfaces;
+
 mod arbaddresstable;
 mod arbaggregator;
 mod arbbls;
