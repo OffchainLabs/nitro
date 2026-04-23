@@ -22,6 +22,7 @@ type FilteredTxReport struct {
 	TxHash            common.Hash                    `json:"txHash"`
 	TxRLP             hexutil.Bytes                  `json:"txRLP"`
 	FilteredAddresses []filter.FilteredAddressRecord `json:"filteredAddresses"`
+	ChainID           uint64                         `json:"chainId"`
 	BlockNumber       uint64                         `json:"blockNumber"`
 	ParentBlockHash   common.Hash                    `json:"parentBlockHash"`
 	PositionInBlock   uint64                         `json:"positionInBlock"`
