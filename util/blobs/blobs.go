@@ -128,20 +128,33 @@ func ComputeCommitmentsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []
 	return commitments, versionedHashes, nil
 }
 
-// ComputeProofs computes legacy KZG proofs (version 0) for the given blobs.
-// Returns one proof per blob, version byte 0, and error.
-func ComputeProofs(blobs []kzg4844.Blob, commitments []kzg4844.Commitment) ([]kzg4844.Proof, byte, error) {
+// ComputeProofs computes KZG proofs for the given blobs.
+// When legacyProofs is true, returns one legacy proof per blob (version 0).
+// When legacyProofs is false, returns 128 cell proofs per blob (version 1).
+func ComputeProofs(blobs []kzg4844.Blob, commitments []kzg4844.Commitment, legacyProofs bool) ([]kzg4844.Proof, byte, error) {
 	if len(blobs) != len(commitments) {
 		return nil, 0, fmt.Errorf("ComputeProofs got %v blobs but %v commitments", len(blobs), len(commitments))
 	}
 
-	proofs := make([]kzg4844.Proof, len(blobs))
-	for i := range blobs {
-		proof, err := kzg4844.ComputeBlobProof(&blobs[i], commitments[i])
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to compute KZG proof for blob %d: %w", i, err)
+	if legacyProofs {
+		proofs := make([]kzg4844.Proof, len(blobs))
+		for i := range blobs {
+			proof, err := kzg4844.ComputeBlobProof(&blobs[i], commitments[i])
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to compute KZG proof for blob %d: %w", i, err)
+			}
+			proofs[i] = proof
 		}
-		proofs[i] = proof
+		return proofs, 0, nil
 	}
-	return proofs, 0, nil
+
+	proofs := make([]kzg4844.Proof, 0, len(blobs)*kzg4844.CellProofsPerBlob)
+	for i := range blobs {
+		cellProofs, err := kzg4844.ComputeCellProofs(&blobs[i])
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to compute cell proofs for blob %d: %w", i, err)
+		}
+		proofs = append(proofs, cellProofs...)
+	}
+	return proofs, 1, nil
 }
