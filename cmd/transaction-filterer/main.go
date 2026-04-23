@@ -14,8 +14,10 @@ import (
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
@@ -43,9 +45,25 @@ type TransactionFiltererConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	ChainId   int64                    `koanf:"chain-id"`
-	Wallet    genericconf.WalletConfig `koanf:"wallet"`
-	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
+	ChainId     int64                    `koanf:"chain-id"`
+	Wallet      genericconf.WalletConfig `koanf:"wallet"`
+	Sequencer   rpcclient.ClientConfig   `koanf:"sequencer"`
+	ParentChain ParentChainConfig        `koanf:"parent-chain"`
+	Pruning     api.PruneConfig          `koanf:"pruning"`
+}
+
+type ParentChainConfig struct {
+	Connection rpcclient.ClientConfig `koanf:"connection"`
+	Bridge     string                 `koanf:"bridge"`
+}
+
+var DefaultParentChainConfig = ParentChainConfig{
+	Connection: rpcclient.DefaultClientConfig,
+}
+
+func ParentChainConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	rpcclient.RPCClientAddOptions(prefix+".connection", f, &DefaultParentChainConfig.Connection)
+	f.String(prefix+".bridge", DefaultParentChainConfig.Bridge, "parent chain bridge contract address (hex); required when pruning is enabled")
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -85,6 +103,8 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	Auth:          genericconf.AuthRPCConfigDefault,
 	ChainId:       412346, // nitro-testnode chainid
 	Sequencer:     rpcclient.DefaultClientConfig,
+	ParentChain:   DefaultParentChainConfig,
+	Pruning:       api.DefaultPruneConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -108,6 +128,9 @@ func addFlags(f *pflag.FlagSet) {
 	f.Int64("chain-id", DefaultTransactionFiltererConfig.ChainId, "chain ID of the chain being filtered")
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
+
+	ParentChainConfigAddOptions("parent-chain", f)
+	api.PruneConfigAddOptions("pruning", f)
 }
 
 func parseConfig(args []string) (*TransactionFiltererConfig, error) {
@@ -204,7 +227,43 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient)
+	var pruneOpts *api.PruneOptions
+	if config.Pruning.Enable {
+		if !common.IsHexAddress(config.ParentChain.Bridge) {
+			fmt.Fprintf(os.Stderr, "parent-chain.bridge is required and must be a valid hex address when pruning is enabled; got %q\n", config.ParentChain.Bridge)
+			return 1
+		}
+		bridgeAddr := common.HexToAddress(config.ParentChain.Bridge)
+		if bridgeAddr == (common.Address{}) {
+			fmt.Fprintf(os.Stderr, "parent-chain.bridge must not be the zero address\n")
+			return 1
+		}
+		parentChainRPCConfigFetcher := func() *rpcclient.ClientConfig { return &config.ParentChain.Connection }
+		parentChainRPCClient := rpcclient.NewRpcClient(parentChainRPCConfigFetcher, nil)
+		if err := parentChainRPCClient.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "error starting parent chain rpc client: %v\n", err)
+			return 1
+		}
+		defer parentChainRPCClient.Close()
+		parentChainClient := ethclient.NewClient(parentChainRPCClient)
+		defer parentChainClient.Close()
+
+		delayedBridge, err := arbnode.NewDelayedBridge(parentChainClient, bridgeAddr, 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error creating delayed bridge: %v\n", err)
+			return 1
+		}
+
+		pruneOpts = &api.PruneOptions{
+			Config:            config.Pruning,
+			ChainId:           big.NewInt(config.ChainId),
+			ParentChainClient: parentChainClient,
+			ChildChainClient:  sequencerClient,
+			DelayedBridge:     delayedBridge,
+		}
+	}
+
+	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient, pruneOpts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

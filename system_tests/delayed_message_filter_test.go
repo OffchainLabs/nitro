@@ -137,7 +137,7 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	transactionFiltererStackConf.HTTPPort = 0
 	transactionFiltererStackConf.WSPort = 0
 	transactionFiltererStackConf.AuthPort = 0
-	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil)
+	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil, nil)
 	require.NoError(t, err)
 
 	err = transactionFiltererAPI.Start(ctx)
@@ -2806,4 +2806,103 @@ func TestDelayedMessageFilterAliasedSender(t *testing.T) {
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, recipientAddr, nil)
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, finalBalance, "recipient balance should not change - sender is filtered")
+}
+
+// TestTransactionFiltererPruner verifies that the pruner removes an on-chain filter entry
+// once the corresponding delayed message has been sequenced on the child chain.
+func TestTransactionFiltererPruner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("Recipient")
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// Send a normal delayed tx; it gets sequenced without being filtered.
+	delayedTx := builder.L2Info.PrepareTx("Sender", "Recipient", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	advanceL1ForDelayed(t, ctx, builder)
+	txReceipt, err := WaitForTx(ctx, builder.L2.Client, txHash, 15*time.Second)
+	require.NoError(t, err)
+
+	// Manually add the tx hash to the onchain filter AFTER sequencing so the
+	// in-block auto-cleanup path does not remove it. The pruner must unfilter it.
+	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+
+	arbFilteredTxs, err := precompilesgen.NewArbFilteredTransactionsManager(
+		types.ArbFilteredTransactionsManagerAddress,
+		builder.L2.Client,
+	)
+	require.NoError(t, err)
+	filtered, err := arbFilteredTxs.IsTransactionFiltered(&bind.CallOpts{Context: ctx}, txHash)
+	require.NoError(t, err)
+	require.True(t, filtered, "tx should be filtered after manual add")
+
+	// The test L1 uses a Clique consensus engine; finality is not auto-propagated
+	// to L2 consensus. Manually mark parent chain head and child chain tip as finalized.
+	l1Head, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+	require.NoError(t, err)
+	builder.L1.L1Backend.BlockChain().SetFinalized(l1Head)
+
+	l2TipBlock := builder.L2.ExecNode.Backend.BlockChain().CurrentBlock()
+	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(l2TipBlock)
+	// Make sure the L2 finalized head is past the block that included the delayed tx.
+	require.True(t, l2TipBlock.Number.Uint64() >= txReceipt.BlockNumber.Uint64(), "finalized L2 block must cover delayed tx block")
+
+	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts("Filterer", ctx)
+	bridgeAddr := builder.L1Info.GetAddress("Bridge")
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, bridgeAddr, 0)
+	require.NoError(t, err)
+
+	pruneOpts := &api.PruneOptions{
+		Config: api.PruneConfig{
+			Enable:               true,
+			StartParentBlock:     0,
+			StartDelayedMsgIdx:   0,
+			PollInterval:         200 * time.Millisecond,
+			ParentBlockChunkSize: 10000,
+		},
+		ChainId:           chaininfo.ArbitrumDevTestChainConfig().ChainID,
+		ParentChainClient: builder.L1.Client,
+		ChildChainClient:  builder.L2.Client,
+		DelayedBridge:     delayedBridge,
+	}
+
+	filtererStackConf := api.DefaultStackConfig
+	filtererStackConf.HTTPPort = 0
+	filtererStackConf.WSPort = 0
+	filtererStackConf.AuthPort = 0
+	filtererStack, filtererAPI, err := api.NewStack(&filtererStackConf, &filtererTxOpts, builder.L2.Client, pruneOpts)
+	require.NoError(t, err)
+	require.NoError(t, filtererAPI.Start(ctx))
+	t.Cleanup(filtererAPI.StopAndWait)
+	require.NoError(t, filtererStack.Start())
+	t.Cleanup(func() { filtererStack.Close() })
+
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		stillFiltered, err := arbFilteredTxs.IsTransactionFiltered(&bind.CallOpts{Context: ctx}, txHash)
+		require.NoError(t, err)
+		if !stillFiltered {
+			return
+		}
+		// Keep refreshing L2 finalized head so it covers any new blocks produced by the pruner's own txs.
+		builder.L2.ExecNode.Backend.BlockChain().SetFinalized(builder.L2.ExecNode.Backend.BlockChain().CurrentBlock())
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatal("pruner did not unfilter tx within timeout")
 }
