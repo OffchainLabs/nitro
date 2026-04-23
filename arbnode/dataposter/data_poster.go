@@ -823,7 +823,7 @@ func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
 		}
-		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments)
+		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments, p.config().UseLegacyBlobProofs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
 		}
@@ -1339,7 +1339,8 @@ type DataPosterConfig struct {
 	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
 	// When set, dataposter will not post new batches, but will keep running to
 	// get existing batches confirmed.
-	DisableNewTx bool `koanf:"disable-new-tx" reload:"hot"`
+	DisableNewTx        bool `koanf:"disable-new-tx" reload:"hot"`
+	UseLegacyBlobProofs bool `koanf:"use-legacy-blob-proofs"`
 }
 
 type ExternalSignerCfg struct {
@@ -1530,6 +1531,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
 	DisableNewTx:           false,
+	UseLegacyBlobProofs:    true,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {

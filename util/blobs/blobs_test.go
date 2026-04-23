@@ -66,7 +66,7 @@ func TestComputeProofsVersion0(t *testing.T) {
 		t.Fatalf("failed to compute commitments: %v", err)
 	}
 
-	proofs, version, err := ComputeProofs(blobs, commitments)
+	proofs, version, err := ComputeProofs(blobs, commitments, true)
 	if err != nil {
 		t.Fatalf("failed to compute version 0 proofs: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestComputeProofsMismatchedInputs(t *testing.T) {
 		t.Fatalf("failed to encode blobs: %v", err)
 	}
 
-	_, _, err = ComputeProofs(blobs, []kzg4844.Commitment{})
+	_, _, err = ComputeProofs(blobs, []kzg4844.Commitment{}, true)
 	if err == nil {
 		t.Error("expected error for mismatched blobs and commitments, got nil")
 	}
@@ -120,7 +120,7 @@ func TestComputeProofsMultipleBlobsVersion0(t *testing.T) {
 		t.Fatalf("failed to compute commitments: %v", err)
 	}
 
-	proofs, version, err := ComputeProofs(multiBlobs, multiCommitments)
+	proofs, version, err := ComputeProofs(multiBlobs, multiCommitments, true)
 	if err != nil {
 		t.Fatalf("failed to compute proofs: %v", err)
 	}
