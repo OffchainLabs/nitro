@@ -4,9 +4,12 @@ BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
 BLOCK_INPUTS_DIR := $(TOP)/target/sp1/block-inputs
 
-# Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
+.PHONY: help
+help: # Show help for each of the Makefile recipes.
+	@grep -E '^[a-zA-Z0-9 -]+:.*#'  Makefile | sort | while read -r l; do printf "\033[1;32m$$(echo $$l | cut -f 1 -d':')\033[00m:$$(echo $$l | cut -f 2- -d'#')\n"; done
+
 .PHONY: brotli
-brotli:
+brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 	@cp $(TOP)/crates/sp1/brotli_cmake_patch.txt $(TOP)/brotli/CMakeLists.txt
 	@rm -rf $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR)
 	@mkdir -p $(BROTLI_BUILD_DIR)
@@ -29,9 +32,8 @@ brotli:
 		echo "FAIL — see $(BROTLI_BUILD_DIR)/build.log" >&2; exit 1; \
 	fi
 
-# Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
 .PHONY: record-blocks
-record-blocks:
+record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
 	@rm -rf $(BLOCK_INPUTS_DIR)
 	@mkdir -p $(BLOCK_INPUTS_DIR)
 	@if cd $(TOP) && go test \
