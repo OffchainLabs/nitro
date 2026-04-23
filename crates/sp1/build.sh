@@ -27,14 +27,6 @@ mkdir -p target/sp1
 export OUTPUT_DIR=$TOP/target/sp1
 # Build replay.wasm, but with SP1 optimizations
 GOOS=wasip1 GOARCH=wasm go build -tags sp1 -o "$OUTPUT_DIR"/replay.wasm "$TOP"/cmd/replay/...
-# Build a sample Arbitrum test block
-rm -rf system_tests/test-data
-go test -run TestProgramStorage ./system_tests/ -- \
-    -recordBlockInputs.WithBaseDir="$(pwd)"/system_tests/test-data \
-    -recordBlockInputs.WithTimestampDirEnabled=false \
-    -recordBlockInputs.enable=true
-cp system_tests/test-data/TestProgramStorage/*.json target/sp1/
-
 cd "$SCRIPT_DIR"
 # Bump SP1's maximum heap memory size
 export SP1_ZKVM_MAX_MEMORY=1099511627776
