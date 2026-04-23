@@ -167,7 +167,7 @@ func TestReadiness(t *testing.T) {
 	}
 }
 
-func TestValidatePruneOptions(t *testing.T) {
+func TestNewPrunerValidation(t *testing.T) {
 	validClient := &ethclient.Client{}
 	validBridge := &arbnode.DelayedBridge{}
 	validConfig := PruneConfig{
@@ -206,7 +206,7 @@ func TestValidatePruneOptions(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validatePruneOptions(tc.opts)
+			_, err := newPruner(tc.opts)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("expected no error, got: %v", err)
@@ -222,4 +222,3 @@ func TestValidatePruneOptions(t *testing.T) {
 		})
 	}
 }
-

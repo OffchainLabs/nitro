@@ -193,8 +193,8 @@ func (p *pruner) collectHashes(msgs []*mel.DelayedInboxMessage, cumulativeDelaye
 		// so the max supported version parses every user-facing message kind correctly.
 		txs, err := arbos.ParseL2Transactions(msg.Message, p.chainId, params.MaxDebugArbosVersionSupported)
 		if err != nil {
-			// Still advance the cursor to avoid an infinite loop on the same msg.
-			log.Error("ParseL2Transactions failed; advancing cursor", "idx", idx, "kind", msg.Message.Header.Kind, "err", err)
+			// Same log-and-continue handling as arbos/block_processor.go and execution/gethexec/executionengine.go.
+			log.Warn("error parsing incoming delayed message", "idx", idx, "kind", msg.Message.Header.Kind, "err", err)
 		} else {
 			for _, tx := range txs {
 				hashes = append(hashes, tx.Hash())

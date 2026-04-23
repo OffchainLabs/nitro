@@ -89,11 +89,9 @@ func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 	return nil
 }
 
-// checkAndUnfilter checks each candidate hash against the on-chain filter set at the
-// finalized child-chain block and enqueues those that are filtered for removal via the shared
-// consumer. IsTransactionFiltered is retried on transient RPC errors because the pruner cursor
-// has already advanced past these hashes — a persistent check failure leaves the entry filtered
-// until operator intervention.
+// checkAndUnfilter checks each candidate hash against the on-chain filter set at the finalized
+// child-chain block and enqueues filtered entries for removal via the shared consumer. Transient
+// network retries are handled by rpcclient.RpcClient.CallContext underneath IsTransactionFiltered.
 func (t *TransactionFiltererAPI) checkAndUnfilter(ctx context.Context, result pruneResult) {
 	if len(result.Hashes) == 0 {
 		return
@@ -108,12 +106,12 @@ func (t *TransactionFiltererAPI) checkAndUnfilter(ctx context.Context, result pr
 		BlockNumber: result.FinalizedChildNumber,
 	}
 	for _, h := range result.Hashes {
-		filtered, err := isTransactionFilteredWithRetry(ctx, manager, callOpts, h)
+		filtered, err := manager.IsTransactionFiltered(callOpts, h)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
-			log.Error("IsTransactionFiltered failed after retries; hash stays filtered", "txHash", h.Hex(), "err", err)
+			log.Warn("IsTransactionFiltered check failed", "txHash", h.Hex(), "err", err)
 			continue
 		}
 		if !filtered {
@@ -126,38 +124,6 @@ func (t *TransactionFiltererAPI) checkAndUnfilter(ctx context.Context, result pr
 			return
 		}
 	}
-}
-
-const (
-	isTransactionFilteredRetries    = 3
-	isTransactionFilteredRetryDelay = 100 * time.Millisecond
-)
-
-func isTransactionFilteredWithRetry(
-	ctx context.Context,
-	manager *precompilesgen.ArbFilteredTransactionsManager,
-	callOpts *bind.CallOpts,
-	h common.Hash,
-) (bool, error) {
-	var err error
-	for attempt := range isTransactionFilteredRetries {
-		var filtered bool
-		filtered, err = manager.IsTransactionFiltered(callOpts, h)
-		if err == nil {
-			return filtered, nil
-		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return false, err
-		}
-		backoff := time.Duration(attempt+1) * isTransactionFilteredRetryDelay
-		log.Warn("IsTransactionFiltered attempt failed; will retry", "txHash", h.Hex(), "attempt", attempt+1, "err", err, "backoff", backoff)
-		select {
-		case <-ctx.Done():
-			return false, ctx.Err()
-		case <-time.After(backoff):
-		}
-	}
-	return false, err
 }
 
 // Filter adds the given transaction hash to the filtered transactions set,
