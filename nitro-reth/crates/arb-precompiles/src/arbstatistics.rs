@@ -1,14 +1,15 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
+use alloy_sol_types::SolInterface;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+
+use crate::interfaces::IArbStatistics;
 
 /// ArbStatistics precompile address (0x6f).
 pub const ARBSTATISTICS_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x6f,
 ]);
-
-const GET_STATS: [u8; 4] = [0xc5, 0x9d, 0x48, 0x47]; // getStats()
 
 const COPY_GAS: u64 = 3;
 const SLOAD_GAS: u64 = 800;
@@ -19,36 +20,28 @@ pub fn create_arbstatistics_precompile() -> DynPrecompile {
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(gas_limit);
-    }
+    crate::init_precompile_gas(input.data.len());
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
+    let call = match IArbStatistics::ArbStatisticsCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
 
-    crate::init_precompile_gas(data.len());
-
-    let result = match selector {
-        GET_STATS => handle_get_stats(&input),
-        _ => return crate::burn_all_revert(gas_limit),
+    use IArbStatistics::ArbStatisticsCalls;
+    let result = match call {
+        ArbStatisticsCalls::getStats(_) => handle_get_stats(&input),
     };
     crate::gas_check(gas_limit, result)
 }
 
 fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
-    let gas_limit = input.gas;
-
-    // Returns (blockNumber, 0, 0, 0, 0, 0).
-    // The five Classic-era stats are always zero (never populated post-migration).
-    // Use the L2 block number (block_env.number holds L1 in Arbitrum).
+    // Five Classic-era stats stay zero post-migration; only block number is live.
     let block_number = U256::from(crate::arbsys::get_current_l2_block());
     let mut out = Vec::with_capacity(192);
     out.extend_from_slice(&block_number.to_be_bytes::<32>());
     for _ in 0..5 {
         out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
     }
-
-    // OAS(800) + 0 body + resultCost = 6 words × 3 = 18.
-    let gas_cost = (SLOAD_GAS + 6 * COPY_GAS).min(gas_limit);
+    let gas_cost = (SLOAD_GAS + 6 * COPY_GAS).min(input.gas);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }

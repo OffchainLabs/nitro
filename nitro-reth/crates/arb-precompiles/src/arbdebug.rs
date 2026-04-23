@@ -1,10 +1,12 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_sol_types::{SolEvent, SolInterface};
 use revm::{
     precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
 
+use crate::interfaces::IArbDebug;
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
     ROOT_STORAGE_KEY,
@@ -15,13 +17,6 @@ pub const ARBDEBUG_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0xff,
 ]);
-
-const BECOME_CHAIN_OWNER: [u8; 4] = [0x0e, 0x5b, 0xbc, 0x11];
-const EVENTS: [u8; 4] = [0x7b, 0x99, 0x63, 0xef];
-const EVENTS_VIEW: [u8; 4] = [0x8e, 0x5f, 0x30, 0xab];
-const CUSTOM_REVERT: [u8; 4] = [0x7e, 0xa8, 0x9f, 0x8b];
-const LEGACY_ERROR: [u8; 4] = [0x1e, 0x48, 0xfe, 0x82];
-const PANIC: [u8; 4] = [0x47, 0x00, 0xd3, 0x05];
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
@@ -36,24 +31,27 @@ pub fn create_arbdebug_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
-    let data = input.data;
     if !crate::allow_debug_precompiles() {
         return crate::burn_all_revert(gas_limit);
     }
-    if data.len() < 4 {
-        return crate::burn_all_revert(gas_limit);
-    }
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
-    crate::init_precompile_gas(data.len());
+    crate::init_precompile_gas(input.data.len());
 
-    let result = match selector {
-        BECOME_CHAIN_OWNER => handle_become_chain_owner(&mut input),
-        EVENTS => handle_events(&mut input),
-        EVENTS_VIEW => handle_events_view(&mut input),
-        CUSTOM_REVERT => handle_custom_revert(&input),
-        LEGACY_ERROR => Err(PrecompileError::other("example legacy error")),
-        PANIC => panic!("called ArbDebug's debug-only Panic method"),
-        _ => return crate::burn_all_revert(gas_limit),
+    let call = match IArbDebug::ArbDebugCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
+
+    use IArbDebug::ArbDebugCalls;
+    let result = match call {
+        ArbDebugCalls::becomeChainOwner(_) => handle_become_chain_owner(&mut input),
+        ArbDebugCalls::events(c) => handle_events(&mut input, c.flag, c.value),
+        ArbDebugCalls::eventsView(_) => handle_events_view(&mut input),
+        ArbDebugCalls::customRevert(c) => handle_custom_revert(c.number),
+        ArbDebugCalls::legacyError(_) => Err(PrecompileError::other("example legacy error")),
+        ArbDebugCalls::panic(_) => panic!("called ArbDebug's debug-only Panic method"),
+        ArbDebugCalls::overwriteContractCode(_) => {
+            Err(PrecompileError::other("overwriteContractCode not implemented"))
+        }
     };
 
     crate::gas_check(gas_limit, result)
@@ -95,15 +93,9 @@ fn handle_become_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
     ))
 }
 
-fn handle_events(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 68 {
-        return crate::burn_all_revert(input.gas);
-    }
+fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> PrecompileResult {
     let gas_limit = input.gas;
-
-    let flag = data[35] != 0;
-    let value = B256::from_slice(&data[36..68]);
+    let data_len = input.data.len();
     let caller = input.caller;
     let value_received = input.value;
 
@@ -119,7 +111,7 @@ fn handle_events(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(B256::left_padding_from(caller.as_slice()).as_slice());
     out.extend_from_slice(&value_received.to_be_bytes::<32>());
 
-    let arg_words = (data.len() as u64).saturating_sub(4).div_ceil(32);
+    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let result_words = (out.len() as u64).div_ceil(32);
     let basic_log_gas = LOG_GAS + LOG_TOPIC_GAS * 2 + LOG_DATA_GAS * 32;
     let mixed_log_gas = LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * 64;
@@ -151,12 +143,7 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_custom_revert(input: &PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return crate::burn_all_revert(input.gas);
-    }
-    let number = U256::from_be_slice(&data[4..36]);
+fn handle_custom_revert(number: u64) -> PrecompileResult {
     Err(PrecompileError::other(format!(
         "custom error {number}: This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\"
     )))
@@ -181,7 +168,7 @@ fn sstore(input: &mut PrecompileInput<'_>, slot: U256, value: U256) -> Result<()
 }
 
 fn emit_basic_event(input: &mut PrecompileInput<'_>, flag: bool, value: B256) {
-    let topic0 = keccak256("Basic(bool,bytes32)");
+    let topic0 = IArbDebug::Basic::SIGNATURE_HASH;
     let topic1 = value;
     let mut data = [0u8; 32];
     if flag {
@@ -202,7 +189,7 @@ fn emit_mixed_event(
     addr1: Address,
     addr2: Address,
 ) {
-    let topic0 = keccak256("Mixed(bool,bool,bytes32,address,address)");
+    let topic0 = IArbDebug::Mixed::SIGNATURE_HASH;
     let mut t1 = [0u8; 32];
     if flag1 {
         t1[31] = 1;

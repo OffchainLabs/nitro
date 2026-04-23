@@ -435,23 +435,9 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
     ))
 }
 
-/// SolError revert: accumulated gas + result-cost, with the error selector.
-pub fn sol_error_revert(error_selector: [u8; 4], gas_limit: u64) -> PrecompileResult {
-    sol_error_revert_with_args(error_selector, &[], gas_limit)
-}
-
-/// SolError revert with ABI-encoded arguments. `args` is the already-encoded
-/// argument tail (one 32-byte word per static parameter, head-then-tail layout
-/// for dynamic types).
-pub fn sol_error_revert_with_args(
-    error_selector: [u8; 4],
-    args: &[u8],
-    gas_limit: u64,
-) -> PrecompileResult {
-    let mut payload = Vec::with_capacity(4 + args.len());
-    payload.extend_from_slice(&error_selector);
-    payload.extend_from_slice(args);
-
+/// Emit a pre-encoded Solidity custom-error payload (selector + ABI args)
+/// as a revert. Adds the copy cost for the payload to the accumulated gas.
+pub fn sol_error_revert(payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
     let result_cost = 3u64 * (payload.len() as u64).div_ceil(32); // CopyGas * words
     charge_precompile_gas(result_cost);
     let gas = get_precompile_gas();
@@ -461,14 +447,32 @@ pub fn sol_error_revert_with_args(
     ))
 }
 
-/// ABI-encode a u64 as a 32-byte right-aligned word.
+// Legacy selector-based helpers; removed once all precompiles use sol!-derived
+// custom errors directly.
+pub fn sol_error_revert_with_selector(
+    error_selector: [u8; 4],
+    gas_limit: u64,
+) -> PrecompileResult {
+    sol_error_revert(error_selector.to_vec(), gas_limit)
+}
+
+pub fn sol_error_revert_with_args(
+    error_selector: [u8; 4],
+    args: &[u8],
+    gas_limit: u64,
+) -> PrecompileResult {
+    let mut payload = Vec::with_capacity(4 + args.len());
+    payload.extend_from_slice(&error_selector);
+    payload.extend_from_slice(args);
+    sol_error_revert(payload, gas_limit)
+}
+
 pub fn abi_word_u64(v: u64) -> [u8; 32] {
     let mut out = [0u8; 32];
     out[24..].copy_from_slice(&v.to_be_bytes());
     out
 }
 
-/// ABI-encode a u16 as a 32-byte right-aligned word.
 pub fn abi_word_u16(v: u16) -> [u8; 32] {
     let mut out = [0u8; 32];
     out[30..].copy_from_slice(&v.to_be_bytes());

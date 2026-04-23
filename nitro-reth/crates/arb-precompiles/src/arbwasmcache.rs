@@ -1,17 +1,14 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_primitives::{Address, Log, B256, U256};
+use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
+use crate::interfaces::{IArbWasm, IArbWasmCache};
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CACHE_MANAGERS_KEY,
     CHAIN_OWNER_SUBSPACE, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
     ROOT_STORAGE_KEY,
 };
-
-/// keccak256("UpdateProgramCache(address,bytes32,bool)")
-fn update_program_cache_topic() -> B256 {
-    keccak256("UpdateProgramCache(address,bytes32,bool)")
-}
 
 const ARBITRUM_START_TIME: u64 = 1_421_388_000;
 
@@ -25,14 +22,6 @@ pub const ARBWASMCACHE_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x72,
 ]);
-
-// Function selectors (keccak256 of Solidity signatures).
-const IS_CACHE_MANAGER: [u8; 4] = [0x85, 0xe2, 0xde, 0x85]; // isCacheManager(address)
-const ALL_CACHE_MANAGERS: [u8; 4] = [0x0e, 0xc1, 0xd7, 0x73]; // allCacheManagers()
-const CACHE_CODEHASH: [u8; 4] = [0x4c, 0xea, 0xc8, 0x17]; // cacheCodehash(bytes32)
-const CACHE_PROGRAM: [u8; 4] = [0xe7, 0x3a, 0xc9, 0xf2]; // cacheProgram(address)
-const EVICT_CODEHASH: [u8; 4] = [0xce, 0x97, 0x20, 0x13]; // evictCodehash(bytes32)
-const CODEHASH_IS_CACHED: [u8; 4] = [0xa7, 0x2f, 0x17, 0x9b]; // codehashIsCached(bytes32)
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
@@ -54,32 +43,32 @@ pub fn create_arbwasmcache_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
-    // ArbWasmCache requires ArbOS >= 30 (Stylus).
     if let Some(result) =
         crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
     {
         return result;
     }
 
-    let data = input.data;
-    if data.len() < 4 {
-        return crate::burn_all_revert(input.gas);
-    }
+    let gas_limit = input.gas;
+    crate::init_precompile_gas(input.data.len());
 
-    let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
-
-    crate::init_precompile_gas(data.len());
-
-    let result = match selector {
-        CACHE_CODEHASH => handle_cache_codehash(&mut input),
-        CACHE_PROGRAM => handle_cache_program(&mut input),
-        EVICT_CODEHASH => handle_evict_codehash(&mut input),
-        IS_CACHE_MANAGER => handle_is_cache_manager(&mut input),
-        ALL_CACHE_MANAGERS => handle_all_cache_managers(&mut input),
-        CODEHASH_IS_CACHED => handle_codehash_is_cached(&mut input),
-        _ => return crate::burn_all_revert(input.gas),
+    let call = match IArbWasmCache::ArbWasmCacheCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
     };
-    crate::gas_check(input.gas, result)
+
+    use IArbWasmCache::ArbWasmCacheCalls;
+    let result = match call {
+        ArbWasmCacheCalls::cacheCodehash(c) => handle_cache_codehash(&mut input, c.codehash),
+        ArbWasmCacheCalls::cacheProgram(c) => handle_cache_program(&mut input, c.addr),
+        ArbWasmCacheCalls::evictCodehash(c) => handle_evict_codehash(&mut input, c.codehash),
+        ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager),
+        ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input),
+        ArbWasmCacheCalls::codehashIsCached(c) => {
+            handle_codehash_is_cached(&mut input, c.codehash)
+        }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 fn words_for_bytes(n: u64) -> u64 {
@@ -111,17 +100,8 @@ fn cache_managers_key() -> B256 {
     derive_subspace_key(programs_key.as_slice(), CACHE_MANAGERS_KEY)
 }
 
-/// Check if an address is a cache manager member.
-fn handle_is_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for address arg"));
-    }
-    // Address is right-aligned in 32-byte word.
-    let mut addr_bytes = [0u8; 20];
-    addr_bytes.copy_from_slice(&data[16..36]);
-    let addr = Address::from(addr_bytes);
-
+fn handle_is_cache_manager(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+    let data_len = input.data.len();
     load_arbos(input)?;
 
     let cm_key = cache_managers_key();
@@ -136,8 +116,7 @@ fn handle_is_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     } else {
         U256::ZERO
     };
-    // Gas: OpenArbosState(800) + sload(800) + argsCost(3) + resultCost(3)
-    let args_cost = COPY_GAS * words_for_bytes(data.len().saturating_sub(4) as u64);
+    let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
         SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
@@ -176,16 +155,11 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
     Ok(PrecompileOutput::new(total.min(input.gas), out.into()))
 }
 
-/// Check if a program codehash is cached.
-fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for bytes32 arg"));
-    }
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&data[4..36]);
-    let codehash = B256::from(bytes);
-
+fn handle_codehash_is_cached(
+    input: &mut PrecompileInput<'_>,
+    codehash: B256,
+) -> PrecompileResult {
+    let data_len = input.data.len();
     load_arbos(input)?;
 
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
@@ -202,8 +176,7 @@ fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>) -> PrecompileResul
     } else {
         U256::ZERO
     };
-    // Gas: OpenArbosState(800) + sload(800) + argsCost + resultCost
-    let args_cost = COPY_GAS * words_for_bytes(data.len().saturating_sub(4) as u64);
+    let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
         SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
@@ -312,18 +285,19 @@ fn set_program_cached(
     let after_get_program_gas = boilerplate_gas + access_gas + WARM_SLOAD_GAS + SLOAD_GAS;
 
     if cache && prog_version != params_version {
-        let mut args = Vec::with_capacity(64);
-        args.extend_from_slice(&crate::abi_word_u16(prog_version));
-        args.extend_from_slice(&crate::abi_word_u16(params_version));
-        return crate::sol_error_revert_with_args(
-            program_needs_upgrade_selector(),
-            &args,
-            input.gas,
-        );
+        let data = IArbWasm::ProgramNeedsUpgrade {
+            version: prog_version,
+            stylusVersion: params_version,
+        }
+        .abi_encode();
+        return crate::sol_error_revert(data, input.gas);
     }
     if cache && expired {
-        let args = crate::abi_word_u64(age_seconds);
-        return crate::sol_error_revert_with_args(program_expired_selector(), &args, input.gas);
+        let data = IArbWasm::ProgramExpired {
+            ageInSeconds: age_seconds,
+        }
+        .abi_encode();
+        return crate::sol_error_revert(data, input.gas);
     }
     if already_cached == cache {
         return Ok(PrecompileOutput::new(
@@ -342,11 +316,14 @@ fn set_program_cached(
     };
 
     let topic1 = address_to_b256(caller);
-    let mut event_data = Vec::with_capacity(32);
-    event_data.extend_from_slice(&U256::from(cache as u64).to_be_bytes::<32>());
+    let event_data = U256::from(cache as u64).to_be_bytes::<32>().to_vec();
     input.internals_mut().log(Log::new_unchecked(
         ARBWASMCACHE_ADDRESS,
-        vec![update_program_cache_topic(), topic1, codehash],
+        vec![
+            IArbWasmCache::UpdateProgramCache::SIGNATURE_HASH,
+            topic1,
+            codehash,
+        ],
         event_data.into(),
     ));
 
@@ -361,36 +338,13 @@ fn set_program_cached(
     ))
 }
 
-fn program_needs_upgrade_selector() -> [u8; 4] {
-    let h = keccak256(b"ProgramNeedsUpgrade(uint16,uint16)");
-    [h[0], h[1], h[2], h[3]]
-}
-
-fn program_expired_selector() -> [u8; 4] {
-    let h = keccak256(b"ProgramExpired(uint64)");
-    [h[0], h[1], h[2], h[3]]
-}
-
-/// Deprecated: cacheCodehash(bytes32). Available before CacheProgram replaced it.
-fn handle_cache_codehash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for bytes32 arg"));
-    }
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&data[4..36]);
-    let codehash = B256::from(bytes);
+fn handle_cache_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
     set_program_cached(input, codehash, true, 0)
 }
 
-/// cacheProgram(address) reads the code hash from an account, which costs
-/// ColdAccountAccessCostEIP2929 even when the slot is already warm.
-fn handle_cache_program(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for address arg"));
-    }
-    let addr = Address::from_slice(&data[16..36]);
+/// `cacheProgram` reads the code hash from an account, which costs
+/// `ColdAccountAccessCostEIP2929` even when the slot is already warm.
+fn handle_cache_program(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
     let codehash = {
         let acct = input
             .internals_mut()
@@ -401,14 +355,6 @@ fn handle_cache_program(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     set_program_cached(input, codehash, true, COLD_ACCOUNT_ACCESS_GAS)
 }
 
-/// evictCodehash(bytes32): clears the cached flag.
-fn handle_evict_codehash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let data = input.data;
-    if data.len() < 36 {
-        return Err(PrecompileError::other("calldata too short for bytes32 arg"));
-    }
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&data[4..36]);
-    let codehash = B256::from(bytes);
+fn handle_evict_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
     set_program_cached(input, codehash, false, 0)
 }

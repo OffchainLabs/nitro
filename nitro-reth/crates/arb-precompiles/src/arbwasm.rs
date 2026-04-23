@@ -434,7 +434,7 @@ fn validate_active_program(
     gas_limit: u64,
 ) -> Result<(), PrecompileResult> {
     if program.version == 0 {
-        return Err(crate::sol_error_revert(
+        return Err(crate::sol_error_revert_with_selector(
             program_not_activated_selector(),
             gas_limit,
         ));
