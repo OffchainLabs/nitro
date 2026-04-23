@@ -42,6 +42,7 @@ import (
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -428,7 +429,17 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDB, initDataReader, l2BlockChain, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	chainId := new(big.Int).SetUint64(nodeConfig.Chain.ID)
+	var consensusParsedInitMsg *arbostypes.ParsedInitMessage
+	if nodeConfig.Node.ParentChainReader.Enable {
+		consensusParsedInitMsg, err = nitroinit.GetParsedInitMsgFromParentChain(ctx, chainId, l1Client, &rollupAddrs)
+		if err != nil {
+			log.Error("error getting parsed init message from parent chain", "err", err)
+			return 1
+		}
+	}
+
+	executionDB, initDataReader, l2BlockChain, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, chainId, gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs, consensusParsedInitMsg)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
