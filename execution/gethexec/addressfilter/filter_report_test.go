@@ -30,6 +30,7 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 				},
 			},
 		},
+		ChainID:           42161,
 		BlockNumber:       1042,
 		ParentBlockHash:   common.HexToHash("0x1234"),
 		PositionInBlock:   3,
@@ -51,6 +52,7 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 				"reason": "from"
 			}
 		],
+		"chainId": 42161,
 		"blockNumber": 1042,
 		"parentBlockHash": "0x0000000000000000000000000000000000000000000000000000000000001234",
 		"positionInBlock": 3,
@@ -80,6 +82,7 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 				},
 			},
 		},
+		ChainID:         421614,
 		BlockNumber:     1043,
 		ParentBlockHash: common.HexToHash("0xabcdef"),
 		PositionInBlock: 0,
@@ -103,6 +106,7 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 				"reason": "dealiased_from"
 			}
 		],
+		"chainId": 421614,
 		"blockNumber": 1043,
 		"parentBlockHash": "0x0000000000000000000000000000000000000000000000000000000000abcdef",
 		"positionInBlock": 0,
@@ -144,6 +148,7 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 				},
 			},
 		},
+		ChainID:           42161,
 		BlockNumber:       1044,
 		ParentBlockHash:   common.HexToHash("0x5678"),
 		PositionInBlock:   1,
@@ -176,6 +181,7 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 				}
 			}
 		],
+		"chainId": 42161,
 		"blockNumber": 1044,
 		"parentBlockHash": "0x0000000000000000000000000000000000000000000000000000000000005678",
 		"positionInBlock": 1,
