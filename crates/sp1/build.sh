@@ -18,16 +18,6 @@ if [ "$(uname -s)" = "Darwin" ]; then
     export RANLIB_riscv64im_unknown_none_elf="$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ranlib"
 fi
 
-# Download RISC-V C toolchain if needed
-if [ ! -d "$HOME/.sp1/riscv" ]; then
-    # Force reinstallation of sp1up, so we can pickup latest sp1up updates for rv64im toolchain
-    curl -L https://sp1up.succinct.xyz | bash
-    "$HOME"/.sp1/bin/sp1up -c
-
-    echo "Testing riscv64-unknown-elf-gcc..."
-    "$HOME"/.sp1/riscv/bin/riscv64-unknown-elf-gcc --version
-fi
-
 make -C "$SCRIPT_DIR" brotli
 
 # Build nitro dependencies
