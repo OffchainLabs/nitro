@@ -1,22 +1,23 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{EVM_DATA, GLOBAL_STATE, KEYS};
+use std::{borrow::Cow, fmt::Display};
+
 use arbutil::{
+    Bytes20, Bytes32, Color,
     benchmark::Benchmark,
     evm::{
+        EvmData,
         api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
-        EvmData,
     },
-    Bytes20, Bytes32, Color,
 };
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
-use eyre::{eyre, Result};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
+use eyre::{Result, eyre};
 use prover::programs::memory::MemoryModel;
-use std::borrow::Cow;
-use std::fmt::Display;
 use user_host_trait::UserHost;
+
+use crate::{EVM_DATA, GLOBAL_STATE, KEYS};
 
 /// Signifies an out-of-bounds memory access was requested.
 pub struct MemoryBoundsError;
@@ -39,11 +40,11 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = MockEvmApi;
 
-    fn args(&self) -> Cow<[u8]> {
+    fn args(&self) -> Cow<'_, [u8]> {
         Cow::Owned(GLOBAL_STATE.lock().args.clone())
     }
 
-    fn outs(&self) -> Cow<[u8]> {
+    fn outs(&self) -> Cow<'_, [u8]> {
         Cow::Owned(GLOBAL_STATE.lock().outs.clone())
     }
 

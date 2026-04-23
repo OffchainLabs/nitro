@@ -1,11 +1,12 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use eyre::{eyre, OptionExt, Result};
+use std::{collections::HashMap, str::FromStr};
+
+use eyre::{OptionExt, Result, eyre};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
-use std::{collections::HashMap, str::FromStr};
-use wasmer_types::{CpuFeature, Target, Triple};
+use wasmer::sys::{CpuFeature, Target, Triple};
 
 lazy_static! {
     static ref TARGET_CACHE: RwLock<HashMap<String, Target>> = RwLock::new(HashMap::new());

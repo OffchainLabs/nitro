@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -45,11 +46,13 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -129,7 +132,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	l2StackB, _, l2nodeB, l2execNodeB, _ := create2ndNodeWithConfigForBoldProtocol(
@@ -171,9 +174,10 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	blockValidatorConfig.RedisValidationClientConfig.RedisURL = redisURL
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
+	pcdsA := l2nodeA.GetParentChainDataSource()
 	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
+		pcdsA,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		l2nodeA.ExecutionRecorder,
 		l2nodeA.ConsensusDB,
@@ -189,9 +193,10 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
+	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
+		pcdsB,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		l2nodeB.ExecutionRecorder,
 		l2nodeB.ConsensusDB,
@@ -206,7 +211,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 
 	blockValidatorA, err := staker.NewBlockValidator(
 		statelessA,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -217,7 +222,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 
 	blockValidatorB, err := staker.NewBlockValidator(
 		statelessB,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -236,9 +241,9 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 			CheckBatchFinality:     false,
 		},
 		goodDir,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		nil,
 	)
 	Require(t, err)
@@ -253,9 +258,9 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 			CheckBatchFinality:     false,
 		},
 		evilDir,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
-		l2nodeB.InboxReader,
+		pcdsB,
 		nil,
 	)
 	Require(t, err)
@@ -276,7 +281,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		&evilOpts,
 		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
-		l1ChainId,
+		parent.NewParentChain(ctx, l1ChainId, l2nodeB.L1Reader),
 	)
 	Require(t, err)
 	chainB, err := sol.NewAssertionChain(
@@ -347,13 +352,13 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
-	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
+	bcA, err := l2nodeA.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
+	bcB, err := l2nodeB.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
+	msgA, err := l2nodeA.GetParentChainDataSource().GetBatchMessageCount(bcA - 1)
 	Require(t, err)
-	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
+	msgB, err := l2nodeB.GetParentChainDataSource().GetBatchMessageCount(bcB - 1)
 	Require(t, err)
 
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
@@ -515,32 +520,6 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	}
 }
 
-// Every 3 seconds, send an L1 transaction to keep the chain moving.
-func keepChainMoving(t *gotesting.T, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
-	delay := time.Second * 3
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			time.Sleep(delay)
-			if ctx.Err() != nil {
-				break
-			}
-			to := l1Info.GetAddress("Faucet")
-			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
-			if err := client.SendTransaction(ctx, tx); err != nil {
-				t.Log("Error sending tx:", err)
-				continue
-			}
-			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
-				t.Log("Error ensuring tx succeeded:", err)
-				continue
-			}
-		}
-	}
-}
-
 func create2ndNodeWithConfigForBoldProtocol(
 	t *gotesting.T,
 	ctx context.Context,
@@ -605,11 +584,16 @@ func create2ndNodeWithConfigForBoldProtocol(
 
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
+	Require(t, err)
+	parentChain := parent.NewParentChain(ctx, l1ChainId, l1Reader)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), 0, parentChain)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, nil /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
@@ -628,7 +612,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		&evilOpts,
 		NewCommonConfigFetcher(nodeConfig),
 		l2node.SyncMonitor,
-		l1ChainId,
+		parent.NewParentChain(ctx, l1ChainId, l2node.L1Reader),
 	)
 	Require(t, err)
 	assertionChain, err := sol.NewAssertionChain(
@@ -729,7 +713,7 @@ func syncBatchToNode(
 	Require(t, err)
 
 	// Optional: log batch metadata
-	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
+	batchMetaData, err := l2Node.GetParentChainDataSource().GetBatchMetadata(batches[0].SequenceNumber)
 	log.Info("Batch metadata", "md", batchMetaData)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }

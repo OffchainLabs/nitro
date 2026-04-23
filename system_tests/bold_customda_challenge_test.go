@@ -29,6 +29,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
@@ -168,6 +169,7 @@ func createNodeBWithSharedContracts(
 	stakeTokenAddr common.Address,
 	l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain,
+	parentChain *parent.ParentChain,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
 	fatalErrChan := make(chan error, 10)
 
@@ -212,15 +214,13 @@ func createNodeBWithSharedContracts(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0)
-	Require(t, err)
-	l1ChainId, err := l1client.ChainID(ctx)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), 0, parentChain)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 
 	// Create node using the same addresses as the first node
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, nil /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
@@ -333,12 +333,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	// Configure external DA for node B
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	l2nodeConfig.DA.ExternalProvider.Enable = true
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
+
+	parentChain := parent.NewParentChain(ctx, l1info.Signer.ChainID(), l2nodeA.L1Reader)
 
 	// Create node B using the same contracts as node A
 	l2clientB, l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
@@ -354,6 +356,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		stakeTokenAddr,
 		l1client,
 		assertionChain,
+		parentChain,
 	)
 	defer l2nodeB.StopAndWait()
 	_ = l2clientB // suppress unused variable warning
@@ -395,9 +398,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	err = dapReadersB.SetupDACertificateReader(daClientB, daClientB)
 	Require(t, err)
 
+	pcdsA := l2nodeA.GetParentChainDataSource()
 	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
+		pcdsA,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		l2nodeA.ExecutionRecorder,
 		l2nodeA.ConsensusDB,
@@ -411,9 +415,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
+	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
+		pcdsB,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		l2nodeB.ExecutionRecorder,
 		l2nodeB.ConsensusDB,
@@ -428,7 +433,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	blockValidatorA, err := staker.NewBlockValidator(
 		statelessA,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -439,7 +444,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	blockValidatorB, err := staker.NewBlockValidator(
 		statelessB,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -450,14 +455,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	// Create ProofEnhancers from DA validators
 	proofEnhancerA := proofenhancement.NewProofEnhancementManager()
-	customDAEnhancerA := proofenhancement.NewReadPreimageProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	customDAEnhancerA := proofenhancement.NewReadPreimageProofEnhancer(dapReadersA, pcdsA, pcdsA)
 	proofEnhancerA.RegisterEnhancer(proofenhancement.MarkerCustomDAReadPreimage, customDAEnhancerA)
-	validateCertificateEnhancerA := proofenhancement.NewValidateCertificateProofEnhancer(dapReadersA, l2nodeA.InboxTracker, l2nodeA.InboxReader)
+	validateCertificateEnhancerA := proofenhancement.NewValidateCertificateProofEnhancer(dapReadersA, pcdsA, pcdsA)
 	proofEnhancerA.RegisterEnhancer(proofenhancement.MarkerCustomDAValidateCertificate, validateCertificateEnhancerA)
 
 	proofEnhancerB := proofenhancement.NewProofEnhancementManager()
-	customDAEnhancerB := proofenhancement.NewReadPreimageProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
-	validateCertificateEnhancerB := proofenhancement.NewValidateCertificateProofEnhancer(dapReadersB, l2nodeB.InboxTracker, l2nodeB.InboxReader)
+	customDAEnhancerB := proofenhancement.NewReadPreimageProofEnhancer(dapReadersB, pcdsB, pcdsB)
+	validateCertificateEnhancerB := proofenhancement.NewValidateCertificateProofEnhancer(dapReadersB, pcdsB, pcdsB)
 	proofEnhancerB.RegisterEnhancer(proofenhancement.MarkerCustomDAValidateCertificate, validateCertificateEnhancerB)
 
 	// For EvilDataEvilCert strategy, wrap the enhancer to inject evil certificates
@@ -479,9 +484,9 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			CheckBatchFinality:     false,
 		},
 		goodDir,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		proofEnhancerA,
 	)
 	Require(t, err)
@@ -496,9 +501,9 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 			CheckBatchFinality:     false,
 		},
 		evilDir,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
-		l2nodeB.InboxReader,
+		pcdsB,
 		proofEnhancerB,
 	)
 	Require(t, err)
@@ -519,7 +524,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		&evilOpts,
 		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
-		l1ChainId,
+		parent.NewParentChain(ctx, l1ChainId, l2nodeB.L1Reader),
 	)
 	Require(t, err)
 	chainB, err := sol.NewAssertionChain(
@@ -581,14 +586,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	time.Sleep(100 * time.Millisecond)
 
 	// Get and log batch 0 from both nodes
-	msgA0, _, err := l2nodeA.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	msgA0, _, err := l2nodeA.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 0)
 	if err != nil {
 		t.Logf("Error getting batch 0 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 0", msgA0)
 	}
 
-	msgB0, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	msgB0, _, err := l2nodeB.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 0)
 	if err != nil {
 		t.Logf("Error getting batch 0 from node B: %v", err)
 	}
@@ -675,14 +680,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	time.Sleep(100 * time.Millisecond)
 
 	// Get and log batch 1 from both nodes
-	msgA1, _, err := l2nodeA.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	msgA1, _, err := l2nodeA.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
 	if err != nil {
 		t.Logf("Error getting batch 1 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 1", msgA1)
 	}
 
-	msgB1, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	msgB1, _, err := l2nodeB.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
 	if err != nil {
 		t.Logf("Error getting batch 1 from node B: %v", err)
 	}
@@ -699,7 +704,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	// Log third batch messages (batch 2 - second CustomDA batch with divergence)
 	t.Logf("\n======== BATCH 2 (second CustomDA batch - WITH DIVERGENCE) ========")
 	// Get and log batch 2 from both nodes
-	msgA2, _, err := l2nodeA.InboxReader.GetSequencerMessageBytes(ctx, 2)
+	msgA2, _, err := l2nodeA.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 2)
 	if err != nil {
 		t.Logf("Error getting batch 2 from node A: %v", err)
 	} else {
@@ -711,7 +716,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		}
 	}
 
-	msgB2, _, err := l2nodeB.InboxReader.GetSequencerMessageBytes(ctx, 2)
+	msgB2, _, err := l2nodeB.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 2)
 	if err != nil {
 		t.Logf("Error getting batch 2 from node B: %v", err)
 	} else {
@@ -734,18 +739,18 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		}
 	}
 
-	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
+	bcA, err := l2nodeA.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
+	bcB, err := l2nodeB.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
 
 	if bcA != bcB {
 		t.Fatalf("FATAL: Expected Node A batch count %d to be equal to Node B batch count %d", bcA, bcB)
 	}
 
-	msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
+	msgA, err := l2nodeA.GetParentChainDataSource().GetBatchMessageCount(bcA - 1)
 	Require(t, err)
-	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
+	msgB, err := l2nodeB.GetParentChainDataSource().GetBatchMessageCount(bcB - 1)
 	Require(t, err)
 
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)

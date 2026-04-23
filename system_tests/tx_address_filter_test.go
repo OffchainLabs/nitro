@@ -5,17 +5,22 @@ package arbtest
 
 import (
 	"context"
-	"crypto/sha256"
 	"math/big"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/util/s3client"
+	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
 func isFilteredError(err error) bool {
@@ -29,15 +34,13 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 	const cacheSize = 100
 	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
-		salt := []byte("test-salt")
+		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
+		hashPrefix := addressfilter.GetHashInputPrefix(salt)
 		for i, addr := range addrs {
-			salted := make([]byte, len(salt)+common.AddressLength)
-			copy(salted, salt)
-			copy(salted[len(salt):], addr.Bytes())
-			hashes[i] = sha256.Sum256(salted)
+			hashes[i] = addressfilter.HashWithPrefix(hashPrefix, addr)
 		}
-		store.Store(salt, hashes, "test")
+		store.Store(uuid.New(), salt, hashes, "test")
 	}
 	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -64,7 +67,7 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test 1: Transaction TO a filtered address should fail
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -127,7 +130,7 @@ func TestAddressFilterCall(t *testing.T) {
 
 	// Set up filter to block the target contract
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test: CALL to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -165,7 +168,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 
 	// Set up filter to block the target contract
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test: STATICCALL to filtered address within a transaction should fail
 	// We use staticcallTargetInTx which does a state change + staticcall
@@ -202,7 +205,7 @@ func TestAddressFilterDisabled(t *testing.T) {
 
 	// Set up an empty filter (disabled)
 	filter := newHashedChecker([]common.Address{})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// All transactions should succeed when filter is disabled
 	tx := builder.L2Info.PrepareTx("Owner", "TestUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -237,7 +240,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 
 	// Set up filter to block the computed address
 	filter := newHashedChecker([]common.Address{create2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test: CREATE2 to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -279,7 +282,7 @@ func TestAddressFilterCreate(t *testing.T) {
 
 	// Set up filter to block the computed address
 	filter := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test: CREATE to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -294,7 +297,7 @@ func TestAddressFilterCreate(t *testing.T) {
 	// Test: CREATE to non-filtered address (after nonce incremented) should succeed
 	// Clear the filter to allow the next CREATE
 	emptyChecker := newHashedChecker([]common.Address{})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(emptyChecker)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, emptyChecker)
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := caller.CreateContract(&auth)
@@ -321,7 +324,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 
 	// Set up filter to block the beneficiary
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test: SELFDESTRUCT to filtered beneficiary should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -371,7 +374,7 @@ func TestAddressFilterSelfdestructOnConstruct(t *testing.T) {
 
 	// Set up address filter to block FilteredBeneficiary
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test 1: Deploy contract that selfdestructs to filtered address in constructor should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Deployer", ctx)
@@ -445,7 +448,7 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
 
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Test 1: Transfer to filtered beneficiary should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -517,4 +520,87 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+}
+
+func TestFilteringReadyWithoutAddressFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	if !builder.L2.ExecNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true when no address filter service is configured")
+	}
+}
+
+func TestSyncBlockedUntilFilteringReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
+	builder.execConfig.SyncMonitor.MsgLag = time.Hour
+	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	execNode := builder.L2.ExecNode
+
+	// Small delay to ensure ConsensusExecutionSyncer's initial sync call
+	// (which happens immediately on start) completes before we set our own data.
+	time.Sleep(500 * time.Millisecond)
+
+	// Push sync data to make SyncMonitor.Synced return true
+	execNode.SyncMonitor.SetConsensusSyncData(&execution.ConsensusSyncData{
+		Synced:          true,
+		MaxMessageCount: 1,
+		UpdatedAt:       time.Now(),
+	})
+
+	if !execNode.SyncMonitor.Synced(ctx) {
+		t.Fatal("SyncMonitor.Synced should return true after pushing sync data")
+	}
+
+	// Create a filter service with enabled config but without loaded rules
+	filterCfg := &addressfilter.Config{
+		Enable: true,
+		S3: s3syncer.Config{
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
+			ObjectKey: "test-key",
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	Require(t, err)
+	execNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
+	// Filter service exists but rules haven't been loaded
+	if execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be false before filter rules are loaded")
+	}
+
+	if execNode.Synced(ctx) {
+		t.Fatal("Synced should return false when filtering is not ready")
+	}
+
+	// Store hashes to the hashstore so FilteringReady returns true
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	Require(t, err)
+	filterService.GetHashStore().Store(uuid.New(), salt, nil, "test-digest")
+
+	if !execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true after filter rules are loaded")
+	}
+
+	if !execNode.Synced(ctx) {
+		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
+	}
 }

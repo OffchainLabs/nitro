@@ -19,7 +19,7 @@ import (
 
 type MessageSyncProgressFetcher interface {
 	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
-	GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetMsgCount() (arbutil.MessageIndex, error)
 	GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error)
 	GetL1Reader() *headerreader.HeaderReader
 }
@@ -89,6 +89,10 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 }
 
 func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	if s.syncProgressFetcher == nil {
+		log.Warn("GetFinalizedMsgCount called but syncProgressFetcher is nil")
+		return 0, nil
+	}
 	return s.syncProgressFetcher.GetFinalizedMsgCount(ctx)
 }
 
@@ -108,7 +112,7 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 	}
 
 	if s.syncProgressFetcher != nil {
-		fetched, err := s.syncProgressFetcher.GetMsgCount(s.GetContext())
+		fetched, err := s.syncProgressFetcher.GetMsgCount()
 		if err != nil {
 			return msgCount, err
 		}
@@ -231,7 +235,6 @@ func (s *SyncMonitor) Synced() bool {
 	if syncTarget > msgCount {
 		return false
 	}
-
 	if s.syncProgressFetcher != nil {
 		progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
 		if err != nil {

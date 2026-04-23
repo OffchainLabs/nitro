@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -48,6 +49,132 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
+
+// savedState captures the contract state before a Stylus call so it can be
+// restored if the call hits a native stack overflow and needs to be retried
+// with cranelift (at the original or doubled stack size, depending on whether
+// this is the first overflow).
+type savedState struct {
+	gas          uint64
+	usedMultiGas multigas.MultiGas
+	openPages    uint16
+	everPages    uint16
+	snapshot     int
+}
+
+// saveState captures a checkpoint of the contract gas, multi-gas, Stylus page
+// counters, and a StateDB snapshot. Call restore() to revert to this checkpoint.
+func saveState(scope *vm.ScopeContext, db vm.StateDB) savedState {
+	openPages, everPages := db.GetStylusPages()
+	return savedState{
+		gas:          scope.Contract.Gas,
+		usedMultiGas: scope.Contract.UsedMultiGas,
+		openPages:    openPages,
+		everPages:    everPages,
+		snapshot:     db.Snapshot(),
+	}
+}
+
+// restore reverts the StateDB to the saved snapshot and restores the contract
+// gas, multi-gas, and Stylus page counters. openWasmPages/everWasmPages are
+// not journaled, so RevertToSnapshot alone does not restore them.
+func (s *savedState) restore(scope *vm.ScopeContext, db vm.StateDB) {
+	db.RevertToSnapshot(s.snapshot)
+	scope.Contract.Gas = s.gas
+	scope.Contract.UsedMultiGas = s.usedMultiGas
+	db.SetStylusPages(s.openPages, s.everPages)
+}
+
+// allowFallback controls whether compilation failures fall back to an alternative compiler.
+// Set once at startup via SetAllowFallback; defaults to true (fallback enabled).
+var allowFallback atomic.Bool
+
+func init() {
+	allowFallback.Store(true)
+}
+
+// SetAllowFallback configures whether to fall back to an alternative compiler on failure.
+func SetAllowFallback(enabled bool) {
+	allowFallback.Store(enabled)
+	log.Info("Compiler fallback for Stylus compilation configured", "enabled", enabled)
+}
+
+// GetAllowFallback returns the current compiler fallback setting.
+func GetAllowFallback() bool {
+	return allowFallback.Load()
+}
+
+// nativeStackBaseline stores the stack size set at startup so that
+// doubleNativeStackSize can double from a known baseline. A non-zero value
+// means doubling is available; doubleNativeStackSize atomically CAS's it to 0
+// to claim the one-time doubling. Zero means either not yet initialized or
+// already doubled.
+var nativeStackBaseline atomic.Uint64
+
+// SetInitialNativeStackSize configures the Wasmer coroutine stack size and
+// records it as the baseline for overflow recovery. Call once at node startup.
+// Storing a non-zero baseline re-enables doubleNativeStackSize.
+func SetInitialNativeStackSize(size uint64) {
+	SetNativeStackSize(size)
+	// Always capture the true Wasmer stack size (whether newly set or the
+	// existing default when size == 0) so doubleNativeStackSize can
+	// double from a real baseline.
+	nativeStackBaseline.Store(GetNativeStackSize())
+}
+
+// doubleNativeStackSize doubles the process-wide Wasmer coroutine stack size
+// from the configured baseline, capped at MaxNativeStackSize. The CAS on the
+// baseline is performed after SetNativeStackSize and DrainStackPool, so that
+// concurrent callers cannot observe a half-updated state. Only the goroutine
+// that wins the CAS logs; all others are silent no-ops.
+func doubleNativeStackSize() {
+	baseStackSize := nativeStackBaseline.Load()
+	if baseStackSize == 0 {
+		// Zero means either not yet initialized (SetInitialNativeStackSize
+		// was never called) or already doubled. Both cases correctly mean
+		// "don't double": uninitialized has no baseline to double from,
+		// and already-doubled must not double again.
+		return
+	}
+	newStackSize := baseStackSize * 2
+	if newStackSize > MaxNativeStackSize {
+		newStackSize = MaxNativeStackSize
+	}
+	if newStackSize <= baseStackSize {
+		return
+	}
+	SetNativeStackSize(newStackSize)
+	DrainStackPool()
+	if nativeStackBaseline.CompareAndSwap(baseStackSize, 0) {
+		log.Warn("native stack overflow, doubled stack size",
+			"newSize", newStackSize)
+	}
+}
+
+// SetNativeStackSize configures the Wasmer coroutine stack size for Stylus execution.
+// If size is 0, the existing default (1 MB) is kept.
+// Does NOT update the configured baseline — use SetInitialNativeStackSize at startup.
+func SetNativeStackSize(size uint64) {
+	C.stylus_set_native_stack_size(u64(size))
+}
+
+// GetNativeStackSize returns the current process-wide default Wasmer coroutine stack size in bytes.
+func GetNativeStackSize() uint64 {
+	return uint64(C.stylus_get_native_stack_size())
+}
+
+// DrainStackPool discards all cached Wasmer coroutine stacks so that
+// subsequent allocations use the current process-wide stack size.
+func DrainStackPool() {
+	C.stylus_drain_stack_pool()
+}
+
+// MinNativeStackSize is the floor enforced by Wasmer's set_stack_size (must match wasmer_vm clamping
+// in crates/tools/wasmer/lib/vm/src/trap/traphandlers.rs, set_stack_size()).
+const MinNativeStackSize = 8 * 1024 // 8 KB
+
+// MaxNativeStackSize is the hard cap on Wasmer coroutine stack size (must match wasmer_vm::MAX_STACK_SIZE).
+const MaxNativeStackSize = 100 * 1024 * 1024 // 100 MB
 
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
@@ -77,7 +204,8 @@ func activateProgram(
 	moduleActivationMandatory := true
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory)
+	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above
 		burner.Burn(multigas.ResourceKindComputation, suppliedGas-gasLeft) //nolint:errcheck
@@ -85,7 +213,10 @@ func activateProgram(
 	if err != nil {
 		return nil, err
 	}
-	return info, db.ActivateWasm(info.moduleHash, asmMap)
+	if err := db.ActivateWasm(info.moduleHash, asmMap); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func activateModule(
@@ -180,6 +311,7 @@ func activateProgramInternal(
 	gasLeft *uint64,
 	targets []rawdb.WasmTarget,
 	moduleActivationMandatory bool,
+	useFallback bool,
 ) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
 	var wavmFound bool
 	var nativeTargets []rawdb.WasmTarget
@@ -204,7 +336,7 @@ func activateProgramInternal(
 			var err error
 			var module []byte
 			info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
-			results <- result{rawdb.TargetWavm, module, err}
+			results <- result{target: rawdb.TargetWavm, asm: module, err: err}
 		}()
 	}
 	if moduleActivationMandatory {
@@ -217,19 +349,34 @@ func activateProgramInternal(
 		}
 	}
 	for _, target := range nativeTargets {
-		target := target
 		go func() {
 			if target == rawdb.TargetWasm {
-				results <- result{target, wasm, nil}
+				results <- result{target: target, asm: wasm}
 			} else {
-				cranelift := false
+				cranelift := rawdb.IsCraneliftTarget(target)
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
-					log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
-					asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+					var fallbackTarget rawdb.WasmTarget
+					var fallbackErr error
+					if cranelift {
+						fallbackTarget, fallbackErr = rawdb.BaseTarget(target)
+					} else {
+						fallbackTarget, fallbackErr = rawdb.CraneliftTarget(target)
+					}
+					if useFallback && fallbackErr == nil {
+						log.Warn("stylus compilation failed, falling back to alternative compiler", "address", addressForLogging, "target", target, "fallbackTarget", fallbackTarget, "timeout", timeout, "err", err)
+						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, timeout)
+						results <- result{target: fallbackTarget, asm: asm, err: err}
+						return
+					} else if !useFallback {
+						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
+					} else {
+						log.Error("stylus compilation failed and fallback target lookup also failed",
+							"address", addressForLogging, "target", target, "compileErr", err, "fallbackTargetErr", fallbackErr)
+					}
 				}
-				results <- result{target, asm, err}
+				results <- result{target: target, asm: asm, err: err}
 			}
 		}()
 	}
@@ -254,9 +401,10 @@ func activateProgramInternal(
 			"codehash", codehash,
 			"moduleHash", info.moduleHash,
 			"targets", targets,
+			"useFallback", useFallback,
 			"err", err,
 		)
-		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (useFallback=%v): %v", addressForLogging, useFallback, err))
 	}
 	return info, asmMap, err
 }
@@ -290,7 +438,8 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
 	// compile only missing targets
-	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
+	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -301,14 +450,14 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", addressForLogging, moduleHash)
 	}
 
-	// merge in the newly built asms
+	// merge in the newly built asms (includes both regular and cranelift targets)
 	for target, asm := range newlyBuilt {
 		asmMap[target] = asm
 	}
 	currentHoursSince := hoursSinceArbitrum(time)
 	if currentHoursSince > program.activatedAt {
 		// stylus program is active on-chain, and was activated in the past
-		// so we store it directly to database
+		// so we store it directly to database (including cranelift entries)
 		batch := statedb.Database().WasmStore().NewBatch()
 		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
 		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
@@ -326,18 +475,73 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	return asmMap, nil
 }
 
+// selectLocalAsm returns the best available ASM for the local target from an asmMap.
+// When allowFallback is enabled and cranelift ASM exists, cranelift is preferred.
+// Cranelift ASM may be present from compile-time fallback (singlepass compilation
+// failed, so cranelift was used instead during activation).
+func selectLocalAsm(asmMap map[rawdb.WasmTarget][]byte) ([]byte, bool) {
+	if asmMap == nil {
+		return nil, false
+	}
+	localTarget := rawdb.LocalTarget()
+	craneliftTarget, ctErr := rawdb.CraneliftTarget(localTarget)
+
+	// When fallback is enabled and cranelift ASM exists, prefer it.
+	if GetAllowFallback() && ctErr == nil {
+		if asm, ok := asmMap[craneliftTarget]; ok && len(asm) > 0 {
+			return asm, true
+		}
+	}
+
+	// Default: use singlepass ASM.
+	if asm, ok := asmMap[localTarget]; ok && len(asm) > 0 {
+		return asm, true
+	}
+
+	return nil, false
+}
+
 func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
 	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, params, time, debugMode, program, runCtx)
-	var ok bool
-	var localAsm []byte
-	if asmMap != nil {
-		localAsm, ok = asmMap[rawdb.LocalTarget()]
-	}
+	localAsm, ok := selectLocalAsm(asmMap)
 	if err != nil || !ok {
 		panic(fmt.Sprintf("failed to get compiled program for activated program, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
 	}
 
 	return localAsm
+}
+
+// doStylusCall performs a single CGo call to stylus_call and returns the status and output.
+// Each invocation creates a fresh NativeApi because the Go-side API object is
+// deregistered on drop, so the handler ID cannot be reused across calls.
+func doStylusCall(
+	asm []byte,
+	calldata []byte,
+	stylusParams *ProgParams,
+	evm *vm.EVM,
+	tracingInfo *util.TracingInfo,
+	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
+	evmData *EvmData,
+	debug bool,
+	runCtx *core.MessageRunContext,
+) (userStatus, []byte) {
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
+	defer evmApi.drop()
+
+	output := &rustBytes{}
+	status := userStatus(C.stylus_call(
+		goSlice(asm),
+		goSlice(calldata),
+		stylusParams.encode(),
+		evmApi.cNative,
+		evmData.encode(),
+		cbool(debug),
+		output,
+		(*u64)(&scope.Contract.Gas),
+		u32(runCtx.WasmCacheTag()),
+	))
+	return status, rustBytesIntoBytes(output)
 }
 
 func callProgram(
@@ -352,6 +556,9 @@ func callProgram(
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
+	code []byte,
+	params *StylusParams,
+	program Program,
 ) ([]byte, error) {
 	db := evm.StateDB
 	debug := stylusParams.DebugMode
@@ -370,24 +577,31 @@ func callProgram(
 		}
 	}
 
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
-	defer evmApi.drop()
+	saved := saveState(scope, db)
 
-	output := &rustBytes{}
-	status := userStatus(C.stylus_call(
-		goSlice(localAsm),
-		goSlice(calldata),
-		stylusParams.encode(),
-		evmApi.cNative,
-		evmData.encode(),
-		cbool(debug),
-		output,
-		(*u64)(&scope.Contract.Gas),
-		u32(runCtx.WasmCacheTag()),
-	))
+	// First attempt with the locally-compiled ASM (singlepass or cranelift, depending on activation).
+	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+
+	if status == userNativeStackOverflow {
+		status, output = handleNativeStackOverflow(
+			address, moduleHash,
+			scope, evm, tracingInfo, calldata, evmData, stylusParams,
+			memoryModel, runCtx, &saved, debug, db,
+			code, params, program,
+		)
+	}
 
 	depth := evm.Depth()
-	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
+	// Panic if native stack overflow was not resolved after all recovery
+	// attempts (cranelift retry + stack doubling). An activated program that
+	// cannot execute would cause this node to produce wrong state — diverging
+	// from nodes that CAN run it — which is a consensus failure. This matches
+	// the panics in handleProgramPrepare and cacheProgram for the same reason.
+	if status == userNativeStackOverflow {
+		panic(fmt.Sprintf("native stack overflow not resolved (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v, stackSize=%d)",
+			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain(), GetNativeStackSize()))
+	}
+	data, msg, err := status.toResult(output, debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -395,6 +609,115 @@ func callProgram(
 		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
 	}
 	return data, err
+}
+
+// handleNativeStackOverflow handles a native stack overflow by compiling
+// cranelift ASM and retrying. On the first overflow it also doubles the
+// process-wide Wasmer coroutine stack size (kept permanently); subsequent
+// overflows retry with cranelift at the already-doubled size.
+//
+// Returns userNativeStackOverflow without retrying when fallback is disabled,
+// off-chain, or cranelift ASM is unavailable — the caller panics in that case.
+func handleNativeStackOverflow(
+	address common.Address,
+	moduleHash common.Hash,
+	scope *vm.ScopeContext,
+	evm *vm.EVM,
+	tracingInfo *util.TracingInfo,
+	calldata []byte,
+	evmData *EvmData,
+	stylusParams *ProgParams,
+	memoryModel *MemoryModel,
+	runCtx *core.MessageRunContext,
+	saved *savedState,
+	debug bool,
+	db vm.StateDB,
+	code []byte,
+	params *StylusParams,
+	program Program,
+) (userStatus, []byte) {
+	if !GetAllowFallback() {
+		log.Warn("native stack overflow, fallback disabled",
+			"program", address, "module", moduleHash)
+		return userNativeStackOverflow, nil
+	}
+	if !runCtx.IsExecutedOnChain() {
+		log.Info("native stack overflow, no stack doubling for off-chain execution",
+			"program", address, "module", moduleHash)
+		return userNativeStackOverflow, nil
+	}
+
+	craneliftAsm, err := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
+	if err != nil || len(craneliftAsm) == 0 {
+		log.Error("native stack overflow, cranelift ASM unavailable",
+			"program", address, "module", moduleHash, "err", err)
+		return userNativeStackOverflow, nil
+	}
+
+	// On the first overflow, double the process-wide Wasmer coroutine stack size.
+	// On subsequent overflows doubleNativeStackSize is a no-op (baseline already
+	// consumed via CAS) — we still retry with cranelift at the already-doubled size.
+	doubleNativeStackSize()
+
+	// Revert any partial state changes the previous attempt may have made via
+	// host I/O before the overflow, then retry with cranelift.
+	saved.restore(scope, db)
+
+	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+}
+
+// getCraneliftAsm returns cranelift-compiled ASM for the given module.
+// It first checks the persistent wasm store. If not found, it compiles
+// with cranelift and persists the result to the wasm store.
+func getCraneliftAsm(
+	moduleHash common.Hash,
+	address common.Address,
+	db vm.StateDB,
+	code []byte,
+	params *StylusParams,
+	version uint16,
+	debug bool,
+) ([]byte, error) {
+	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine cranelift target: %w", err)
+	}
+
+	// Check in-memory activatedWasms (same-block activation) then persistent wasm store.
+	if asm := db.ActivatedAsm(craneliftTarget, moduleHash); len(asm) > 0 {
+		return asm, nil
+	}
+
+	// Compile with cranelift from the contract code.
+	if len(code) == 0 || params == nil {
+		return nil, fmt.Errorf("cranelift ASM not cached and contract code/params unavailable for compilation")
+	}
+
+	log.Warn("native stack overflow, compiling with cranelift",
+		"program", address, "module", moduleHash)
+
+	wasm, err := getWasmFromContractCode(db, code, params, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
+	}
+
+	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 15*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
+	}
+
+	// Persist to wasm store.
+	wasmStore := db.Database().WasmStore()
+	if wasmStore != nil {
+		batch := wasmStore.NewBatch()
+		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
+		if err := batch.Write(); err != nil {
+			log.Warn("failed to persist cranelift ASM to wasm store, will recompile on next overflow",
+				"program", address, "err", err)
+		}
+	}
+
+	return asm, nil
 }
 
 //export handleReqImpl
@@ -414,11 +737,7 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 	if runCtx.IsCommitMode() {
 		// address is only used for logging
 		asmMap, err := getCompiledProgram(db, module, addressForLogging, code, codehash, params, time, debug, program, runCtx)
-		var ok bool
-		var localAsm []byte
-		if asmMap != nil {
-			localAsm, ok = asmMap[rawdb.LocalTarget()]
-		}
+		localAsm, ok := selectLocalAsm(asmMap)
 		if err != nil || !ok {
 			panic(fmt.Sprintf("failed to get compiled program for caching, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
 		}

@@ -3,10 +3,15 @@
 
 #![no_main]
 
-use stylus_sdk::{alloy_primitives::{B256, U256}, deploy::RawDeploy, evm, prelude::*};
+use stylus_sdk::{
+    alloy_primitives::{B256, U256},
+    deploy::RawDeploy,
+    host::VM,
+    prelude::*,
+};
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let kind = input[0];
     let mut input = &input[1..];
 
@@ -20,7 +25,11 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     let code = input;
-    let contract = unsafe { RawDeploy::new().salt_option(salt).deploy(code, endowment)? };
-    evm::raw_log(&[contract.into_word()], &[]).unwrap();
+    let contract = unsafe {
+        RawDeploy::new()
+            .salt_option(salt)
+            .deploy(&vm, code, endowment)?
+    };
+    vm.raw_log(&[contract.into_word()], &[]).unwrap();
     Ok(contract.to_vec())
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -218,20 +216,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			Require(t, err)
 			blocksToPad := 65 - (currentHeader.Number.Uint64() - reorgTargetNumber)
 
-			currNonce, err := builder.L1.Client.PendingNonceAt(ctx, builder.L1Info.GetAddress("Faucet"))
-			Require(t, err)
-			builder.L1Info.GetInfoWithPrivKey("Faucet").Nonce.Store(currNonce)
-			for j := uint64(0); j < blocksToPad; j++ {
-				tx := builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
-				err = builder.L1.Client.SendTransaction(ctx, tx)
-				if err != nil {
-					if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), core.ErrNonceTooLow.Error()) {
-						t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
-					}
-				} else {
-					_, _ = builder.L1.EnsureTxSucceeded(tx)
-				}
-			}
+			builder.L1.RecalibrateNonce(t, builder.L1Info)
+			// #nosec G115
+			builder.L1.AdvanceBlocks(t, int(blocksToPad), builder.L1Info)
 			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			// #nosec G115
@@ -252,6 +239,11 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			err = builder.L1.Client.SendTransaction(ctx, tx)
 			Require(t, err)
 			_, _ = WaitForTx(ctx, builder.L1.Client, tx.Hash(), time.Second)
+
+			// Advance L1 to currentHeader+1 block so that MEL can detect reorg
+			builder.L1.RecalibrateNonce(t, builder.L1Info)
+			// #nosec G115
+			builder.L1.AdvanceBlocks(t, int(currentHeader.Number.Uint64()-reorgTargetNumber+1), builder.L1Info)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]*big.Int)
@@ -395,6 +387,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		t.Logf("Iteration %v: state %v block %v", i, len(blockStates)-1, blockStates[len(blockStates)-1].l2BlockNumber)
 
+		// Wait for the on-chain batch count to reflect the batch we just posted.
+		// Under -race the simulated L1 RPC calls become 5-10x slower, and after
+		// reorg iterations (every 10th) the node must reprocess 65+ blocks.
 		for i := 0; ; i++ {
 			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})
 			if err != nil {
@@ -402,10 +397,13 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			}
 			if batchCount.Cmp(big.NewInt(int64(len(blockStates)))) == 0 {
 				break
-			} else if i >= 140 {
+			} else if i >= 500 {
 				Fatal(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
 			}
-			time.Sleep(10 * time.Millisecond)
+			if i > 0 && i%50 == 0 {
+				t.Logf("still waiting for batch count: have %v, want %v (poll %d)", batchCount, len(blockStates), i)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 
 		expectedBlockNumber := blockStates[len(blockStates)-1].l2BlockNumber

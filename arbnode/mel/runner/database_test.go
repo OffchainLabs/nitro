@@ -3,9 +3,9 @@
 package melrunner
 
 import (
-	"context"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,26 +23,24 @@ import (
 func TestMelDatabase(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 
 	headMelState := &mel.State{
 		ParentChainBlockNumber: 2,
 		ParentChainBlockHash:   common.MaxHash,
 		BatchCount:             1,
 	}
-	require.NoError(t, melDB.SaveState(ctx, headMelState))
+	require.NoError(t, melDB.SaveState(headMelState))
 	want := &mel.BatchMetadata{
 		Accumulator:         common.MaxHash,
 		MessageCount:        1,
 		DelayedMessageCount: 10,
 		ParentChainBlock:    2,
 	}
-	require.NoError(t, melDB.SaveBatchMetas(ctx, headMelState, []*mel.BatchMetadata{want}))
+	require.NoError(t, melDB.SaveBatchMetas(headMelState, []*mel.BatchMetadata{want}))
 	have, err := melDB.fetchBatchMetadata(0)
 	require.NoError(t, err)
 	if !reflect.DeepEqual(have, want) {
@@ -60,7 +58,7 @@ func TestMelDatabase(t *testing.T) {
 			t.Fatal("unexpected melState retrieved via GetState using parentChainBlockHash")
 		}
 	}
-	melState, err = melDB.State(ctx, headMelState.ParentChainBlockNumber)
+	melState, err = melDB.State(headMelState.ParentChainBlockNumber)
 	checkMelState()
 }
 
@@ -68,13 +66,11 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 	// Simple test for writing and reading of delayed messages.
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Init
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 
 	delayedRequestId := common.BigToHash(common.Big1)
 	delayedMsg := &mel.DelayedInboxMessage{
@@ -91,12 +87,11 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 		},
 	}
 	state := &mel.State{}
-	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
+	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg))
 	state.DelayedMessagesSeen++
 
-	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, []*mel.DelayedInboxMessage{delayedMsg}))
-	have, err := melDB.ReadDelayedMessage(ctx, state, 0)
+	require.NoError(t, melDB.SaveDelayedMessages(state, []*mel.DelayedInboxMessage{delayedMsg}))
+	have, err := melDB.ReadDelayedMessage(state, 0)
 	require.NoError(t, err)
 
 	if !reflect.DeepEqual(have, delayedMsg) {
@@ -107,19 +102,16 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Create database
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 
 	// Add genesis melState
-	var err error
 	genesis := &mel.State{
 		ParentChainBlockNumber: 1,
 	}
-	require.NoError(t, melDB.SaveState(ctx, genesis))
+	require.NoError(t, melDB.SaveState(genesis))
 
 	numDelayed := 5
 	var delayedMsgs []*mel.DelayedInboxMessage
@@ -141,22 +133,21 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 		})
 	}
 
-	// Initializes delayedMessageBacklog
-	genesis.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	require.NoError(t, err)
-	state := genesis.Clone() // Should clone empty initialized delayedMessageBacklog
+	state := genesis.Clone()
 	state.ParentChainBlockNumber++
 
 	// See 3 delayed messages and accumulate them
-	for i := 0; i < numDelayed; i++ {
+	for i := range numDelayed {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMsgs[i]))
 		state.DelayedMessagesSeen++
 	}
-	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs[:numDelayed]))
+	stateToCheckForCorruption := state.Clone()
+	require.NoError(t, melDB.SaveDelayedMessages(state, delayedMsgs[:numDelayed]))
 	// We can read all of these and prove that they are correct, by checking that ReadDelayedMessage doesnt error
 	// #nosec G115
 	for i := uint64(0); i < uint64(numDelayed); i++ {
-		have, err := melDB.ReadDelayedMessage(ctx, state, i)
+		have, err := melDB.ReadDelayedMessage(state, i)
 		require.NoError(t, err)
 		require.True(t, reflect.DeepEqual(have, delayedMsgs[i]))
 	}
@@ -168,7 +159,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	delayedBytes, err := rlp.EncodeToBytes(*corruptDelayed)
 	require.NoError(t, err)
 	require.NoError(t, consensusDB.Put(key, delayedBytes))
-	// ReadDelayedMessage should fail with not part of accumulator error
-	_, err = melDB.ReadDelayedMessage(ctx, state, corruptIndex)
-	require.True(t, err.Error() == "delayed message message not part of the mel state accumulator")
+	// ReadDelayedMessage should fail with hash mismatch error
+	_, err = melDB.ReadDelayedMessage(stateToCheckForCorruption, corruptIndex)
+	require.True(t, strings.Contains(err.Error(), "delayed message hash mismatch"))
 }

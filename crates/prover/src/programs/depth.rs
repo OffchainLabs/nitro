@@ -1,30 +1,33 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use super::{
-    config::{CompileMemoryParams, SigMap},
-    FuncMiddleware, Middleware, ModuleMod,
-};
-use crate::{host::InternalFunc, value::FunctionType, Machine};
+use std::sync::Arc;
 
 use arbutil::Color;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
 use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
 };
 use wasmparser::{BlockType, Operator, ValType};
 
+use super::{
+    FuncMiddleware, Middleware, ModuleMod,
+    config::{CompileMemoryParams, SigMap},
+};
+#[cfg(feature = "native")]
+use crate::Machine;
+use crate::{internal_func::InternalFunc, value::FunctionType};
+
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
-/// This middleware ensures stack overflows are deterministic across different compilers and targets.
-/// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
-/// the real stack space consumed on any target platform and is formed by inspecting the contents of each
-/// function's frame.
-/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the same,
-/// logical effect rather than actually exhausting the space provided by the OS.
+/// This middleware ensures stack overflows are deterministic across different compilers and
+/// targets. The internal notion of "stack space left" that makes this possible is strictly smaller
+/// than that of the real stack space consumed on any target platform and is formed by inspecting
+/// the contents of each function's frame.
+/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the
+/// same, logical effect rather than actually exhausting the space provided by the OS.
 #[derive(Debug)]
 pub struct DepthChecker {
     /// The amount of stack space left
@@ -235,7 +238,7 @@ impl FuncDepthChecker<'_> {
         let mut stack: u32 = 0;
 
         macro_rules! push {
-            ($count:expr) => {{
+            ($count:expr_2021) => {{
                 stack += $count;
                 worst = worst.max(stack);
             }};
@@ -244,7 +247,7 @@ impl FuncDepthChecker<'_> {
             };
         }
         macro_rules! pop {
-            ($count:expr) => {{
+            ($count:expr_2021) => {{
                 stack = stack.saturating_sub($count);
             }};
             () => {
@@ -252,7 +255,7 @@ impl FuncDepthChecker<'_> {
             };
         }
         macro_rules! ins_and_outs {
-            ($ty:expr) => {{
+            ($ty:expr_2021) => {{
                 let ins = $ty.inputs.len() as u32;
                 let outs = $ty.outputs.len() as u32;
                 push!(outs);
@@ -271,7 +274,7 @@ impl FuncDepthChecker<'_> {
         }
         #[rustfmt::skip]
         macro_rules! block_type {
-            ($ty:expr) => {{
+            ($ty:expr_2021) => {{
                 match $ty {
                     BlockType::Empty => {}
                     BlockType::Type(_) => push!(1),
@@ -501,6 +504,11 @@ impl FuncDepthChecker<'_> {
                         I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
                 ) => bail!("SIMD extension not supported {unsupported:?}"),
+                // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+                // include a wildcard arm even though we handle all known variants.
+                // If a new variant appears that we don't explicitly map yet, bail
+                // so that it is noticed and added with a proper opcode.
+                _ => bail!("extension {op:?} not supported"),
             };
         }
 
@@ -529,6 +537,7 @@ pub trait DepthCheckedMachine {
     fn set_stack(&mut self, size: u32);
 }
 
+#[cfg(feature = "native")]
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> u32 {
         let global = self.get_global(STYLUS_STACK_LEFT).unwrap();

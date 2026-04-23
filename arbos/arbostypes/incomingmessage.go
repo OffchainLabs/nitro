@@ -36,6 +36,18 @@ const (
 
 const MaxL2MessageSize = 256 * 1024
 
+func ValidateMaxTxDataSize(maxTxDataSize uint64) error {
+	// tighter limit https://github.com/OffchainLabs/nitro/commit/ed015e752d7d24e59ec9e6f894fe1a26ffa19036
+	// The default block gas limit can fit 1523 txs
+	// Each Tx adds an 8-byte of length prefix.
+	// 50K is enough to add 1523 times 8 bytes and still stay in an L2 message
+	const maxConfigurableTxDataSize = MaxL2MessageSize - 50000
+	if maxTxDataSize > maxConfigurableTxDataSize {
+		return fmt.Errorf("max-tx-data-size %d exceeds maximum allowed value of %d", maxTxDataSize, maxConfigurableTxDataSize)
+	}
+	return nil
+}
+
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
 	Poster      common.Address `json:"sender"`
@@ -176,15 +188,23 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 	return gas
 }
 
+// IsBatchGasFieldsMissing returns true for only L1MessageType_BatchPostingReport when batch gas fields are not filled in
+func (msg *L1IncomingMessage) IsBatchGasFieldsMissing() bool {
+	if msg.Header.Kind != L1MessageType_BatchPostingReport {
+		return false
+	}
+	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
+		return false
+	}
+	return true
+}
+
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
 	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
-	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
-		return nil
-	}
-	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
+	if batchFetcher == nil || !msg.IsBatchGasFieldsMissing() {
 		return nil
 	}
 	if msg.BatchDataStats == nil {

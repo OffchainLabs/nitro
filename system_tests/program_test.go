@@ -1095,7 +1095,7 @@ func testMemory(t *testing.T, jit bool) {
 	// expand to 128 pages, retract, then expand again to 128.
 	//   - multicall takes 1 page to init, and then 1 more at runtime.
 	//   - grow-and-call takes 1 page, then grows to the first arg by second arg steps.
-	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
+	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{127, 50})
 	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
 
 	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
@@ -1900,7 +1900,7 @@ func assertStorageAt(
 }
 
 func rustFile(name string) string {
-	return fmt.Sprintf("../crates/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
+	return fmt.Sprintf("../crates/stylus/tests/target/wasm32-unknown-unknown/release/%v.wasm", name)
 }
 
 func watFile(name string) string {
@@ -1913,9 +1913,12 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 	Require(t, err)
 	msgCount := msgIndex + 1
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		batchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
-		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
+		if batchCount == 0 {
+			return false
+		}
+		meta, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(batchCount - 1)
 		Require(t, err)
 		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
@@ -2825,11 +2828,15 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	blockNumberFailedTx := receipt.BlockNumber
 
 	wasmModuleRoot := currentRootModule(t)
-	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
-		ctx,
-		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
-		false,
-		wasmModuleRoot,
-	)
-	Require(t, err)
+	// Retry ValidateResult because the batch may not yet be confirmed on L1
+	// ("batch not found on L1 yet").
+	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidateResult", "batch not found on L1", func() error {
+		_, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+			ctx,
+			arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
+			false,
+			wasmModuleRoot,
+		)
+		return err
+	})
 }

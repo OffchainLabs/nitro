@@ -82,29 +82,31 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
+	totalMessageCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
 	log.Info("Status", "totalBatches", totalBatches, "totalMessageCount", totalMessageCount)
 	t.Logf("totalBatches: %v, totalMessageCount: %v\n", totalBatches, totalMessageCount)
 
 	// Wait until the validator has validated the batches.
-	for {
-		time.Sleep(time.Millisecond * 100)
+	pollUntil(t, ctx, 5*time.Minute, 100*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
+		}
+		if lastInfo == nil {
+			return false
 		}
 		if lastInfo.GlobalState.Batch >= totalBatches {
-			break
+			return true
 		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
+		batchMsgCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(lastInfo.GlobalState.Batch)
 		if err != nil {
-			continue
+			t.Logf("GetBatchMessageCount error (will retry): %v", err)
+			return false
 		}
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
-	}
+		return batchMsgCount >= totalMessageCount
+	})
 
 	historyCommitter := state.NewHistoryCommitmentProvider(
 		stateManager,
@@ -197,20 +199,18 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
+	totalMessageCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(totalBatches - 1)
 	Require(t, err)
 
 	// Wait until the validator has validated the batches.
-	for {
-		time.Sleep(time.Millisecond * 100)
+	pollUntil(t, ctx, 5*time.Minute, 100*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
 		}
-		if lastInfo.GlobalState.Batch >= totalBatches {
-			break
-		}
-	}
+		return lastInfo != nil && lastInfo.GlobalState.Batch >= totalBatches
+	})
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		toBatch := uint64(3)
@@ -382,9 +382,10 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcds := l2node.GetParentChainDataSource()
 	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
+		pcds,
+		pcds,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
 		l2node.ConsensusDB,
@@ -398,7 +399,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 
 	blockValidator, err := staker.NewBlockValidator(
 		stateless,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -418,9 +419,9 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 			CheckBatchFinality:     false,
 		},
 		dir,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
-		l2node.InboxReader,
+		pcds,
 		nil,
 	)
 	Require(t, err)

@@ -1,9 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
+use std::{
+    fmt,
+    fmt::{Debug, Display, Formatter},
+    hash::Hash,
+};
+
 use wasmparser::Operator;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -12,6 +15,7 @@ pub struct OperatorCode(usize);
 impl OperatorCode {
     // TODO: use std::mem::variant_count when it's stabilized
     pub const OPERATOR_COUNT: usize = 529;
+    pub const UNKNOWN: Self = Self(usize::MAX);
 }
 
 impl Display for OperatorCode {
@@ -1178,6 +1182,11 @@ impl From<&Operator<'_>> for OperatorCode {
             O::I16x8RelaxedQ15mulrS { .. } => 0xfd111,
             O::I16x8RelaxedDotI8x16I7x16S { .. } => 0xfd112,
             O::I32x4RelaxedDotI8x16I7x16AddS { .. } => 0xfd113,
+            // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+            // include a wildcard arm even though we handle all known variants.
+            // If a new variant appears that we don't explicitly map yet, return
+            // unsupported opcode
+            _ => return Self::UNKNOWN,
         })
     }
 }

@@ -40,6 +40,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -407,7 +408,7 @@ func mainImpl() int {
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
 		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
+			log.Error("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
@@ -416,7 +417,7 @@ func mainImpl() int {
 	if traceConfig.TracerName != "" {
 		tracer, err = tracers.LiveDirectory.New(traceConfig.TracerName, json.RawMessage(traceConfig.JSONConfig))
 		if err != nil {
-			log.Error("custom tracer error:", "name", traceConfig.TracerName, "err", err)
+			log.Error("custom tracer error", "name", traceConfig.TracerName, "err", err)
 			return 1
 		}
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
@@ -452,6 +453,7 @@ func mainImpl() int {
 		deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	}
 	if err != nil {
+		log.Error("error opening consensus database", "err", err)
 		return 1
 	}
 
@@ -505,8 +507,8 @@ func mainImpl() int {
 			fatalErrChan,
 		)
 		if err != nil {
-			valNode = nil
-			log.Warn("couldn't init validation node", "err", err)
+			log.Error("couldn't init validation node", "err", err)
+			return 1
 		}
 	}
 
@@ -514,10 +516,14 @@ func mainImpl() int {
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
 		if err != nil {
-			log.Error("failed to create machine locator: %w", err)
+			log.Error("failed to create machine locator", "err", err)
+			return 1
 		}
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
+
+	parentChainID := new(big.Int).SetUint64(nodeConfig.ParentChain.ID)
+	parentChain := parent.NewParentChain(ctx, parentChainID, l1Reader)
 
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
@@ -529,8 +535,8 @@ func mainImpl() int {
 			l2BlockChain,
 			l1Client,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+			parentChain,
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
@@ -550,9 +556,9 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 		wasmModuleRoot,
+		parentChain,
 	)
 	if err != nil {
 		log.Error("failed to create consensus node", "err", err)
@@ -695,9 +701,10 @@ func mainImpl() int {
 		alerter, err := nitroversionalerter.NewClient(ctx, &nodeConfig.VersionAlerter)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
+		} else if alerter != nil {
+			alerter.Start(ctx)
+			defer alerter.StopAndWait()
 		}
-		alerter.Start(ctx)
-		defer alerter.StopAndWait()
 	}
 
 	sigint := make(chan os.Signal, 1)

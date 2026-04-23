@@ -6,36 +6,40 @@
     clippy::inconsistent_digit_grouping
 )]
 
-use crate::{
-    run::RunProgram,
-    test::{
-        check_instrumentation, random_bytes20, random_bytes32, random_ink, run_machine, run_native,
-        test_compile_config, test_configs, TestInstance,
-    },
-};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
+
 use arbutil::{
-    crypto,
+    Bytes20, Bytes32, Color, crypto,
     evm::{
         api::{EvmApi, Gas, Ink},
         user::{UserOutcome, UserOutcomeKind},
     },
-    format, Bytes20, Bytes32, Color,
+    format,
 };
-use eyre::{bail, ensure, Result};
+use eyre::{Result, bail, ensure};
 use prover::{
-    binary,
+    Machine, binary,
     programs::{
+        MiddlewareWrapper, ModuleMod,
         counter::{Counter, CountingMachine},
         prelude::*,
         start::StartMover,
-        MiddlewareWrapper, ModuleMod,
     },
-    Machine,
 };
-use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
-use wasmer::wasmparser::Operator;
-use wasmer::{CompilerConfig, ExportIndex, Imports, Pages, Store};
+use wasmer::{
+    ExportIndex, Imports, Pages, Store,
+    sys::{CompilerConfig, EngineBuilder},
+    wasmparser::Operator,
+};
 use wasmer_compiler_singlepass::Singlepass;
+
+use crate::{
+    run::RunProgram,
+    test::{
+        TestInstance, check_instrumentation, random_bytes20, random_bytes32, random_ink,
+        run_machine, run_native, test_compile_config, test_configs,
+    },
+};
 
 #[test]
 fn test_ink() -> Result<()> {
@@ -47,7 +51,7 @@ fn test_ink() -> Result<()> {
     let add_one = exports.get_typed_function::<i32, i32>(&native.store, "add_one")?;
 
     macro_rules! exhaust {
-        ($ink:expr) => {
+        ($ink:expr_2021) => {
             native.set_ink(Ink($ink));
             assert_eq!(native.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(add_one.call(&mut native.store, 32).is_err());
@@ -154,8 +158,11 @@ fn test_count() -> Result<()> {
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(starter)));
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
 
+    // Build a Wasmer engine from the singlepass compiler config using the
+    // re-exported `EngineBuilder`, then create a store from that engine.
+    let engine = wasmer::Engine::from(EngineBuilder::new(compiler));
     let mut instance =
-        TestInstance::new_from_store("tests/clz.wat", Store::new(compiler), Imports::new())?;
+        TestInstance::new_from_store("tests/clz.wat", Store::new(engine), Imports::new())?;
 
     let starter = instance.get_start()?;
     starter.call(&mut instance.store)?;
@@ -310,7 +317,7 @@ fn test_rust() -> Result<()> {
     //     the input is the # of hashings followed by a preimage
     //     the output is the iterated hash of the preimage
 
-    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/keccak.wasm";
     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
     let preimage = preimage.as_bytes().to_vec();
     let hash = hex::encode(crypto::keccak(&preimage));
@@ -340,7 +347,7 @@ fn test_fallible() -> Result<()> {
     //     an input starting with 0x00 will execute an unreachable
     //     an empty input induces a panic
 
-    let filename = "tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/fallible.wasm";
     let (compile, config, ink) = test_configs();
 
     let mut native = TestInstance::new_linked(filename, &compile, config)?;
@@ -377,7 +384,7 @@ fn test_storage() -> Result<()> {
     //     an input starting with 0x00 will induce a storage read
     //     all other inputs induce a storage write
 
-    let filename = "tests/storage/target/wasm32-unknown-unknown/release/storage.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/storage.wasm";
     let (compile, config, ink) = test_configs();
 
     let key = crypto::keccak(filename.as_bytes());
@@ -469,7 +476,7 @@ fn test_calls() -> Result<()> {
     let args = tree[53..].to_vec();
     println!("ARGS {}", hex::encode(&args));
 
-    let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/multicall.wasm";
     let (compile, config, ink) = test_configs();
 
     let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;

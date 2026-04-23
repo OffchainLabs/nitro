@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -689,7 +690,7 @@ func (r *InboxReader) GetSequencerMessageBytesForParentBlock(ctx context.Context
 	if err != nil {
 		return nil, common.Hash{}, err
 	}
-	var seenBatches []uint64
+	seenBatches := make([]uint64, 0, len(seqBatches))
 	for _, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
 			data, err := SerializeSequencerInboxBatch(ctx, batch, r.client)
@@ -712,7 +713,7 @@ func (r *InboxReader) GetLastSeenBatchCount() uint64 {
 	return r.lastSeenBatchCount.Load()
 }
 
-func (r *InboxReader) GetMsgCount(_ context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) GetMsgCount() (arbutil.MessageIndex, error) {
 	batchProcessed := r.GetLastReadBatchCount()
 	if batchProcessed == 0 {
 		return 0, nil
@@ -748,4 +749,129 @@ func (r *InboxReader) GetDelayBlocks() uint64 {
 
 func (r *InboxReader) SupportsPushingFinalityData() bool {
 	return true
+}
+
+type ParentChainDataSource interface {
+	BatchDataProvider
+	staker.InboxTrackerInterface
+	staker.InboxReaderInterface
+	GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error)
+	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
+	GetDelayedCount() (uint64, error)
+}
+
+func (r *InboxReader) GetParentChainDataSource() ParentChainDataSource {
+	return &batchDataProviderImpl{r}
+}
+
+type batchDataProviderImpl struct {
+	r *InboxReader
+}
+
+func (b *batchDataProviderImpl) GetBatchCount() (uint64, error) {
+	count, err := b.r.tracker.GetBatchCount()
+	if err != nil {
+		return 0, fmt.Errorf("batchDataProvider.GetBatchCount: %w", err)
+	}
+	return count, nil
+}
+
+func (b *batchDataProviderImpl) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
+	count, err := b.r.tracker.GetBatchMessageCount(seqNum)
+	if err != nil {
+		return 0, fmt.Errorf("batchDataProvider.GetBatchMessageCount(%d): %w", seqNum, err)
+	}
+	return count, nil
+}
+
+func (b *batchDataProviderImpl) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	acc, err := b.r.tracker.GetDelayedAcc(seqNum)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("batchDataProvider.GetDelayedAcc(%d): %w", seqNum, err)
+	}
+	return acc, nil
+}
+
+func (b *batchDataProviderImpl) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
+	data, hash, err := b.r.GetSequencerMessageBytes(ctx, seqNum)
+	if err != nil {
+		return nil, common.Hash{}, fmt.Errorf("batchDataProvider.GetSequencerMessageBytes(%d): %w", seqNum, err)
+	}
+	return data, hash, nil
+}
+
+func (b *batchDataProviderImpl) GetSequencerMessageBytesForParentBlock(ctx context.Context, seqNum uint64, parentChainBlock uint64) ([]byte, common.Hash, error) {
+	data, hash, err := b.r.GetSequencerMessageBytesForParentBlock(ctx, seqNum, parentChainBlock)
+	if err != nil {
+		return nil, common.Hash{}, fmt.Errorf("batchDataProvider.GetSequencerMessageBytesForParentBlock(%d, %d): %w", seqNum, parentChainBlock, err)
+	}
+	return data, hash, nil
+}
+
+func (b *batchDataProviderImpl) FindParentChainBlockContainingDelayed(ctx context.Context, index uint64) (uint64, error) {
+	_, _, localParentChainBlockNumber, err := b.r.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, index)
+	if err != nil {
+		return 0, fmt.Errorf("batchDataProvider.FindParentChainBlockContainingDelayed(%d): %w", index, err)
+	}
+	return localParentChainBlockNumber, nil
+}
+
+func (b *batchDataProviderImpl) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
+	metadata, err := b.r.tracker.GetBatchMetadata(seqNum)
+	if err != nil {
+		return mel.BatchMetadata{}, fmt.Errorf("batchDataProvider.GetBatchMetadata(%d): %w", seqNum, err)
+	}
+	return metadata, nil
+}
+
+func (b *batchDataProviderImpl) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	block, err := b.r.tracker.GetBatchParentChainBlock(seqNum)
+	if err != nil {
+		return 0, fmt.Errorf("batchDataProvider.GetBatchParentChainBlock(%d): %w", seqNum, err)
+	}
+	return block, nil
+}
+
+func (b *batchDataProviderImpl) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
+	batch, found, err := b.r.tracker.FindInboxBatchContainingMessage(pos)
+	if err != nil {
+		return 0, false, fmt.Errorf("batchDataProvider.FindInboxBatchContainingMessage(%d): %w", pos, err)
+	}
+	return batch, found, nil
+}
+
+func (b *batchDataProviderImpl) GetDelayedCount() (uint64, error) {
+	count, err := b.r.tracker.GetDelayedCount()
+	if err != nil {
+		return 0, fmt.Errorf("batchDataProvider.GetDelayedCount: %w", err)
+	}
+	return count, nil
+}
+
+func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) {
+	b.r.tracker.SetBlockValidator(validator)
+}
+
+func (b *batchDataProviderImpl) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+	data, err := b.r.tracker.GetDelayedMessageBytes(ctx, seqNum)
+	if err != nil {
+		return nil, fmt.Errorf("batchDataProvider.GetDelayedMessageBytes(%d): %w", seqNum, err)
+	}
+	return data, nil
+}
+
+func (b *batchDataProviderImpl) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+	acc, err := b.r.tracker.GetBatchAcc(seqNum)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("batchDataProvider.GetBatchAcc(%d): %w", seqNum, err)
+	}
+	return acc, nil
+}
+
+func (b *batchDataProviderImpl) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	count, err := b.r.GetFinalizedMsgCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("batchDataProvider.GetFinalizedMsgCount: %w", err)
+	}
+	return count, nil
 }

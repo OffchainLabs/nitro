@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -372,7 +373,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.chalManager.Start(ctxIn)
+	b.StartAndTrackChild(b.chalManager)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		err := b.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
@@ -439,7 +440,7 @@ func (b *BOLDStaker) updateStakerBalanceMetric(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error getting balance for %v: %w", txSenderAddress, err)
 		}
-		boldStakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
+		boldStakerBalanceGauge.Update(floatmath.BalancePerEther(balance))
 	} else {
 		boldStakerBalanceGauge.Update(0)
 	}
@@ -489,11 +490,6 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	}
 
 	return count, (*validator.GoGlobalState)(&globalState), nil
-}
-
-func (b *BOLDStaker) StopAndWait() {
-	b.chalManager.StopAndWait()
-	b.StopWaiter.StopAndWait()
 }
 
 func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {

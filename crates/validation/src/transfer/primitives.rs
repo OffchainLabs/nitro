@@ -1,8 +1,8 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::transfer::IOResult;
-use arbutil::Bytes32;
 use std::io::{Read, Write};
+
+use crate::transfer::IOResult;
 
 pub fn read_u8(reader: &mut impl Read) -> IOResult<u8> {
     let mut buf = [0; 1];
@@ -32,15 +32,6 @@ pub fn read_u64(reader: &mut impl Read) -> IOResult<u64> {
 pub fn write_u64(writer: &mut impl Write, data: u64) -> IOResult<()> {
     let buf = data.to_be_bytes();
     writer.write_all(&buf)
-}
-
-pub fn read_bytes32(reader: &mut impl Read) -> IOResult<Bytes32> {
-    let mut buf = [0u8; 32];
-    reader.read_exact(&mut buf).map(|_| buf.into())
-}
-
-pub fn write_bytes32(writer: &mut impl Write, data: &Bytes32) -> IOResult<()> {
-    writer.write_all(data.as_slice())
 }
 
 pub fn read_bytes(reader: &mut impl Read) -> IOResult<Vec<u8>> {

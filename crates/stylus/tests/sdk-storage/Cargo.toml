@@ -1,19 +1,17 @@
 [package]
 name = "sdk-storage"
 version = "0.1.0"
-edition = "2021"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
-stylus-sdk.path = "../../../langs/rust/stylus-sdk"
-mini-alloc.path = "../../../langs/rust/mini-alloc"
-hex = "0.4.3"
-wee_alloc = "0.4.5"
+stylus-sdk = { workspace = true }
+hex = { workspace = true }
 
-[profile.release]
-codegen-units = 1
-strip = true
-lto = true
-panic = "abort"
-opt-level = "s"
-
-[workspace]
+[features]
+contract-client-gen = []

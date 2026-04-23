@@ -1,16 +1,17 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::engine::ModuleRoot;
+use std::{
+    collections::HashSet,
+    env, fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
+
 use anyhow::Result;
-use std::collections::HashSet;
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
-use tracing::debug;
-use tracing::info;
-use tracing::warn;
+use tracing::{debug, info, warn};
+
+use crate::engine::ModuleRoot;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ModuleRootMeta {
@@ -53,10 +54,10 @@ impl MachineLocator {
             }
 
             // Check relative to the executable
-            if let Ok(exec_path) = env::current_exe() {
-                if let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent()) {
-                    dirs.push(grandparent_of_exec.join("machines"));
-                }
+            if let Ok(exec_path) = env::current_exe()
+                && let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent())
+            {
+                dirs.push(grandparent_of_exec.join("machines"));
             }
         }
 
@@ -166,20 +167,22 @@ impl MachineLocator {
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::{
-        machine_locator::{MachineLocator, ModuleRootMeta},
-        ModuleRoot,
-    };
-    use anyhow::{anyhow, Result};
-    use arbutil::Bytes32;
-    use rand::RngCore;
     use std::{
         path::{Path, PathBuf},
         str::FromStr,
     };
 
-    fn get_temp_machines_dir() -> Result<PathBuf> {
-        Ok(tempdir::TempDir::new("machines")?.into_path())
+    use anyhow::{Result, anyhow};
+    use arbutil::Bytes32;
+    use rand::Rng;
+
+    use crate::engine::{
+        ModuleRoot,
+        machine_locator::{MachineLocator, ModuleRootMeta},
+    };
+
+    fn get_temp_machines_dir() -> Result<tempfile::TempDir> {
+        Ok(tempfile::tempdir()?)
     }
 
     fn get_real_machines_dir() -> PathBuf {
@@ -218,7 +221,7 @@ mod tests {
 
     fn gen_random_module_root() -> ModuleRoot {
         let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
 
         Bytes32(bytes)
     }
@@ -290,10 +293,12 @@ mod tests {
                 // let root_meta_wrapper = file_manager.root_metas.first().unwrap();
                 let mod_root = root_meta_wrapper.module_root;
                 let module_root = machine_locator.get_machine_path(mod_root).unwrap();
-                assert!(module_root
-                    .to_str()
-                    .unwrap()
-                    .contains(&mod_root.to_string()));
+                assert!(
+                    module_root
+                        .to_str()
+                        .unwrap()
+                        .contains(&mod_root.to_string())
+                );
             });
 
         Ok(())
@@ -301,12 +306,12 @@ mod tests {
 
     #[test]
     fn test_machine_locator_one_machine() -> Result<()> {
-        test_machine_locator(1, &Some(get_temp_machines_dir()?))
+        test_machine_locator(1, &Some(get_temp_machines_dir()?.path().to_path_buf()))
     }
 
     #[test]
     fn test_machine_locator_many_machines() -> Result<()> {
-        test_machine_locator(10, &Some(get_temp_machines_dir()?))
+        test_machine_locator(10, &Some(get_temp_machines_dir()?.path().to_path_buf()))
     }
 
     #[test]

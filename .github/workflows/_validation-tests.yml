@@ -31,87 +31,22 @@ jobs:
 
       - name: Run arbitrator prover on block input json
         run: |
-          target/bin/prover target/machines/latest/machine.wavm.br -b \
-          --json-inputs="${{ env.INPUT_FILE }}"
+          target/bin/prover target/machines/latest/machine.v2.wavm.br -b \
+            --json-inputs="${{ env.INPUT_FILE }}" | tee /tmp/prover_output.txt
+          grep -q "Computed state matches the expected one" /tmp/prover_output.txt
 
       - name: Run jit prover on block input json
         id: jit
         run: |
-          OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
-            json --inputs '${{ env.INPUT_FILE }}')
-          
-          JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K(0x)?[a-f0-9]+')
+          target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
+            json --inputs '${{ env.INPUT_FILE }}' | tee /tmp/jit_output.txt
+
+          grep -q "Computed state matches the expected one" /tmp/jit_output.txt
+          JIT_HASH=$(grep -oP 'hash \K(0x)?[a-f0-9]+' /tmp/jit_output.txt)
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
       - name: Run Rust validation server (Native & Continuous)
         run: |
-          # Capture the expected hash once
-          JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
-
-          validate_mode() {
-            local MODE_NAME=$1
-            local SERVER_ARGS=$2
-
-            echo "::group::Testing Mode: $MODE_NAME"
-            
-            # 1. Start server in background
-            echo "Starting server ($MODE_NAME)..."
-            target/bin/validator $SERVER_ARGS &
-            SERVER_PID=$!
-
-            # 2. Wait for server to respond (up to 5 seconds)
-            echo "Waiting for validator ($MODE_NAME) to start..."
-            if ! timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'; then
-              echo "❌ Server ($MODE_NAME) failed to start within timeout"
-              kill $SERVER_PID
-              exit 1
-            fi
-
-            # 3. Send 2 validation requests
-            RESPONSE1=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-              '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}' | \
-              curl -s -X POST http://localhost:4141/ \
-                -H "Content-Type: application/json" -d @-)
-
-            RESPONSE2=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-              '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0]]}' | \
-              curl -s -X POST http://localhost:4141/ \
-                -H "Content-Type: application/json" -d @-)
-
-            # 4. Stop the server
-            kill $SERVER_PID
-            wait $SERVER_PID 2>/dev/null || true
-
-            # 5. Verify JSON-RPC response IDs match request IDs
-            RESP_ID1=$(echo "$RESPONSE1" | jq -r '.id')
-            RESP_ID2=$(echo "$RESPONSE2" | jq -r '.id')
-
-            if [ "$RESP_ID1" != "1" ] || [ "$RESP_ID2" != "2" ]; then
-              echo "❌ $MODE_NAME JSON-RPC response ID mismatch: expected 1 and 2, got $RESP_ID1 and $RESP_ID2"
-              exit 1
-            fi
-
-            # 6. Compare hashes
-            SERVER_HASH1=$(echo "$RESPONSE1" | jq -r '.result.BlockHash')
-            SERVER_HASH2=$(echo "$RESPONSE2" | jq -r '.result.BlockHash')
-
-            echo "JIT Hash:               $JIT_HASH"
-            echo "Server response 1 Hash: $SERVER_HASH1"
-            echo "Server response 2 Hash: $SERVER_HASH2"
-
-            if [ "$JIT_HASH" == "$SERVER_HASH1" ] && [ "$JIT_HASH" == "$SERVER_HASH2" ]; then
-              echo "✅ $MODE_NAME Validation successful"
-            else
-              echo "❌ $MODE_NAME Validation failed: hashes do not match"
-              exit 1
-            fi
-            echo "::endgroup::"
-          }
-
-          # --- RUN TESTS ---
-          
-          # Run Validator in Native mode
-          validate_mode "Native" ""
-
-          # Run Validator in Continuous mode
-          validate_mode "Continuous" "--mode continuous"
+          .github/workflows/validation.sh \
+            "${{ env.INPUT_FILE }}" \
+            "${{ steps.jit.outputs.jit_hash }}"

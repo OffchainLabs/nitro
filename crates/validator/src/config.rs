@@ -7,17 +7,25 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
-use anyhow::{anyhow, Context, Result};
+use std::{
+    collections::HashMap,
+    env,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
+
+use alloy_rpc_types_engine::JwtSecret;
+use anyhow::{Context as _, Result, anyhow};
 use clap::{Parser, ValueEnum};
-use std::collections::HashMap;
-use std::env;
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::engine::machine::JitProcessManager;
-use crate::engine::machine_locator::MachineLocator;
-use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
+use crate::{
+    engine::{
+        DEFAULT_JIT_CRANELIFT, ModuleRoot, machine::JitProcessManager,
+        machine_locator::MachineLocator, replay_binary,
+    },
+    jwt,
+};
 
 /// Mode-specific execution state, built at startup.
 pub enum ExecutionMode {
@@ -36,11 +44,24 @@ pub struct ServerState {
     pub locator: MachineLocator,
     pub available_workers: usize,
     pub execution: ExecutionMode,
+    /// HS256 secret for JWT authentication; `None` disables auth.
+    pub jwt_secret: Option<JwtSecret>,
 }
 
 impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
         let locator = MachineLocator::new(&config.root_path)?;
+
+        let jwt_secret = config
+            .jwt_secret
+            .as_deref()
+            .map(jwt::load_secret)
+            .transpose()
+            .context("failed to load JWT secret")?;
+
+        if jwt_secret.is_some() {
+            info!("JWT authentication enabled");
+        }
 
         let execution = match config.mode {
             InputMode::Continuous => ExecutionMode::Continuous {
@@ -80,6 +101,7 @@ impl ServerState {
             locator,
             available_workers,
             execution,
+            jwt_secret,
         })
     }
 
@@ -129,6 +151,11 @@ pub struct ServerConfig {
     /// Root path to where 0x1234.../replay.wasm machines are located
     #[clap(long)]
     pub root_path: Option<PathBuf>,
+
+    /// Path to a file containing a 64-char hex JWT secret, or the hex string itself.
+    /// When set, all requests must carry a valid `Authorization: Bearer <HS256-token>` header.
+    #[clap(long)]
+    pub jwt_secret: Option<String>,
 }
 
 impl ServerConfig {
@@ -139,7 +166,9 @@ impl ServerConfig {
             let workers = match std::thread::available_parallelism() {
                 Ok(count) => count.get(),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    warn!(
+                        "Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}."
+                    );
                     DEFAULT_NUM_WORKERS
                 }
                 Err(e) => return Err(e.into()),
@@ -155,7 +184,8 @@ pub fn get_jit_path() -> Result<PathBuf> {
     let is_test_env = current_exe.to_string_lossy().contains("deps");
 
     let candidate = if is_test_env {
-        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the grandparent
+        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the
+        // grandparent
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
             grandparent.join("target").join("bin").join("jit")
@@ -195,7 +225,7 @@ pub fn get_jit_path() -> Result<PathBuf> {
 mod tests {
     use clap::Parser;
 
-    use crate::config::{get_jit_path, ServerConfig};
+    use crate::config::{ServerConfig, get_jit_path};
 
     #[test]
     fn verify_cli() {

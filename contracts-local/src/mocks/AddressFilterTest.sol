@@ -4,6 +4,12 @@
 
 pragma solidity ^0.8.0;
 
+interface IArbRetryableTx {
+    function redeem(
+        bytes32 ticketId
+    ) external returns (bytes32);
+}
+
 /// @notice Test contract for exercising different call opcodes for address filtering tests
 contract AddressFilterTest {
     uint256 public dummy;
@@ -13,7 +19,7 @@ contract AddressFilterTest {
     /// @notice Makes a CALL to the target address
     function callTarget(
         address target
-    ) external returns (bool success) {
+    ) external payable returns (bool success) {
         (success,) = target.call("");
         emit CallResult(success);
     }
@@ -69,6 +75,15 @@ contract AddressFilterTest {
         return address(uint160(uint256(hash)));
     }
 
+    /// @notice Redeems a retryable ticket by calling ArbRetryableTx.redeem()
+    function redeemTicket(
+        bytes32 ticketId
+    ) external {
+        // ArbRetryableTx lives at address 110 (0x6e)
+        (bool success,) = address(110).call(abi.encodeWithSignature("redeem(bytes32)", ticketId));
+        require(success, "redeem failed");
+    }
+
     /// @notice Selfdestructs this contract and sends balance to beneficiary
     function selfDestructTo(
         address payable beneficiary
@@ -99,6 +114,23 @@ contract AddressFilterTest {
 
     /// @notice Control event that should never trigger filtering
     event UnfilteredEvent(address some);
+
+    /// @notice Forwards a call to target with arbitrary calldata
+    function forwardCall(
+        address target,
+        bytes calldata data
+    ) external returns (bool success, bytes memory result) {
+        (success, result) = target.call(data);
+        require(success, "forwardCall failed");
+    }
+
+    /// @notice Increments dummy counter then chains into a redeem
+    function incrementDummyThenRedeem(
+        bytes32 ticketId
+    ) external returns (bytes32) {
+        dummy++;
+        return IArbRetryableTx(address(0x6e)).redeem(ticketId);
+    }
 
     function emitTransfer(address from, address to) external {
         emit Transfer(from, to, 1);

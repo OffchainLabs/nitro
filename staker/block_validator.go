@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -74,13 +75,13 @@ func (t *WorkerThrottler) Release() {
 }
 
 type ThrottledValidationSpawner struct {
-	Spawner   validator.ValidationSpawner
+	Spawner   *retry_wrapper.ValidationSpawnerRetryWrapper
 	Throttler *WorkerThrottler
 }
 
 func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *ThrottledValidationSpawner {
 	return &ThrottledValidationSpawner{
-		Spawner:   spawner,
+		Spawner:   retry_wrapper.NewValidationSpawnerRetryWrapper(spawner),
 		Throttler: &WorkerThrottler{maxWorkers: spawner.Capacity()},
 	}
 }
@@ -203,8 +204,8 @@ func (c *BlockValidatorConfig) Validate() error {
 			if err != nil {
 				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
 			}
-			if u.Scheme != "ws" && u.Scheme != "wss" {
-				return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s", serverUrl)
+			if !slices.Contains([]string{"ws", "wss", "http", "https"}, u.Scheme) {
+				return fmt.Errorf("validation server's url scheme is unsupported, it should be ws, wss, http, or https, url:%s", serverUrl)
 			}
 		}
 	}
@@ -992,12 +993,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		for _, moduleRoot := range wasmRoots {
 			v.chosenValidator[moduleRoot].Throttler.Acquire()
 		}
-		var runs []validator.ValidationRun
+		runs := make([]validator.ValidationRun, 0, len(wasmRoots))
 		for _, moduleRoot := range wasmRoots {
 			throttledSpawner := v.chosenValidator[moduleRoot]
-			spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(throttledSpawner.Spawner)
-			spawner.StopWaiter.Start(ctx, v)
-			input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
+			input, err := validationStatus.Entry.ToInput(throttledSpawner.Spawner.StylusArchs())
 			if err != nil && ctx.Err() == nil {
 				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
 				throttledSpawner.Throttler.Release()
@@ -1010,7 +1009,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 				return nil, ctx.Err()
 			}
-			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
+			run := throttledSpawner.Spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}
@@ -1557,13 +1556,12 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
+	for _, throttled := range v.chosenValidator {
+		v.StartAndTrackChild(throttled.Spawner)
+	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
-}
-
-func (v *BlockValidator) StopAndWait() {
-	v.StopWaiter.StopAndWait()
 }
 
 // WaitForPos can only be used from One thread

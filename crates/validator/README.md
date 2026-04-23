@@ -14,7 +14,7 @@ go test -v -run "TestProgramStorage$" ./system_tests/... -count 1 -- \
   --recordBlockInputs.WithBlockIdInFileNameEnabled=false
 ```
 
-This produces JSON files (e.g. `system_tests/target/TestProgramStorage/block_inputs.json`) containing `ValidationInput` data.
+This produces JSON files (e.g. `system_tests/target/TestProgramStorage/block_inputs.json`) containing `ValidationRequest` data.
 
 ## Validation modes
 
@@ -122,7 +122,7 @@ curl http://localhost:4141/validation_stylusArchs
 
 Performs block validation. Accepts a JSON-RPC 2.0 request where `params` is an array containing:
 
-1. A `ValidationInput` object (required)
+1. A `ValidationRequest` object (required)
 2. A module root hex string (optional)
 
 Without module root (uses `latest`)

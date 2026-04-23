@@ -35,6 +35,7 @@ type Programs struct {
 	moduleHashes   *storage.Storage
 	dataPricer     *DataPricer
 	cacheManagers  *addressSet.AddressSet
+	activationGas  storage.StorageBackedUint64
 }
 
 type Program struct {
@@ -55,8 +56,10 @@ var programDataKey = []byte{1}
 var moduleHashesKey = []byte{2}
 var dataPricerKey = []byte{3}
 var cacheManagersKey = []byte{4}
+var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
+var ErrNativeStackOverflow = errors.New("native stack overflow")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -79,7 +82,21 @@ func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenCachedSubStorage(dataPricerKey)),
 		cacheManagers:  addressSet.OpenAddressSet(sto.OpenCachedSubStorage(cacheManagersKey)),
+		activationGas:  sto.OpenSubStorage(activationGasKey).OpenStorageBackedUint64(0),
 	}
+}
+
+// ActivationGas returns the constant gas charge burned at the start of each Stylus activation.
+func (p Programs) ActivationGas() (uint64, error) {
+	if p.ArbosVersion < gethParams.ArbosVersion_StylusActivationGas {
+		return 0, nil
+	}
+	return p.activationGas.Get()
+}
+
+// SetActivationGas sets the constant gas charge burned at the start of each Stylus activation.
+func (p Programs) SetActivationGas(gas uint64) error {
+	return p.activationGas.Set(gas)
 }
 
 func (p Programs) DataPricer() *DataPricer {
@@ -116,7 +133,11 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, address, params, burner)
+	charger, err := newFragmentReadCharger(burner, evm.ChainConfig().MaxCodeSize())
+	if err != nil {
+		return 0, codeHash, common.Hash{}, nil, false, err
+	}
+	wasm, err := getWasm(statedb, address, params, charger)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -250,7 +271,7 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx, contract.Code, params, program)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -310,14 +331,65 @@ func evmMemoryCost(size uint64) uint64 {
 	return linearCost + squareCost
 }
 
-func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams, burner burn.Burner) ([]byte, error) {
-	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(statedb, prefixedWasm, params, burner)
+type fragmentReadCharger struct {
+	burner      burn.Burner
+	maxCodeSize uint64
 }
 
-// burner is used to charge gas for reading fragments. If it is present activation is assumed, and activation checks are enforced.
-// Only pass a burner if activating the program.
-func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, burner burn.Burner) ([]byte, error) {
+func newFragmentReadCharger(burner burn.Burner, maxCodeSize uint64) (*fragmentReadCharger, error) {
+	if burner == nil {
+		if maxCodeSize != 0 {
+			return nil, errors.New("maxCodeSize requires fragment read burner")
+		}
+		return nil, nil
+	}
+	if maxCodeSize == 0 {
+		return nil, errors.New("fragment read burner requires maxCodeSize")
+	}
+	return &fragmentReadCharger{
+		burner:      burner,
+		maxCodeSize: maxCodeSize,
+	}, nil
+}
+
+func (charger *fragmentReadCharger) canReadNewFragment(statedb vm.StateDB, addr common.Address) error {
+	if charger == nil {
+		return nil
+	}
+	cost, err := fragmentReadGasCost(statedb.AddressInAccessList(addr), charger.maxCodeSize)
+	if err != nil {
+		return err
+	}
+	if charger.burner.GasLeft() < cost.SingleGas() {
+		return charger.burner.BurnOut()
+	}
+	return nil
+}
+
+func (charger *fragmentReadCharger) chargeForReadingFragment(statedb vm.StateDB, addr common.Address, codeSize uint64) error {
+	if charger == nil {
+		return nil
+	}
+	warm := statedb.AddressInAccessList(addr)
+	if !warm {
+		statedb.AddAddressToAccessList(addr)
+	}
+	cost, err := fragmentReadGasCost(warm, codeSize)
+	if err != nil {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "err", err)
+		return err
+	}
+	return charger.burner.BurnMultiGas(cost)
+}
+
+func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams, charger *fragmentReadCharger) ([]byte, error) {
+	prefixedWasm := statedb.GetCode(program)
+	return getWasmFromContractCode(statedb, prefixedWasm, params, charger)
+}
+
+// charger is used to charge gas for reading fragments. If it is present activation is assumed, and activation checks are enforced.
+// Only pass a charger if activating the program.
+func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, charger *fragmentReadCharger) ([]byte, error) {
 	if len(prefixedWasm) == 0 {
 		return nil, ProgramNotWasmError()
 	}
@@ -328,12 +400,14 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 
 	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
 		if state.IsStylusRootProgramPrefix(prefixedWasm) {
-			return getWasmFromRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, burner)
+			return getWasmFromRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, charger)
 		}
 
 		if state.IsStylusFragmentPrefix(prefixedWasm) {
 			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
 		}
+	} else {
+		return nil, errors.New("specified bytecode is not a Stylus program") // Old arbOS behavior - this is not a solidity error (uses less gas)
 	}
 
 	return nil, ProgramNotWasmError()
@@ -353,15 +427,15 @@ func getWasmFromClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
 }
 
-// burner is used to charge gas for reading fragments. If it is present activation is assumed, and activation checks are enforced.
-// Only pass a burner if activating the program.
-func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, burner burn.Burner) ([]byte, error) {
+// charger is used to charge gas for reading fragments. If it is present activation is assumed, and activation checks are enforced.
+// Only pass a charger if activating the program.
+func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, charger *fragmentReadCharger) ([]byte, error) {
 	root, err := state.NewStylusRoot(data)
 	if err != nil {
 		return nil, err
 	}
 
-	if burner != nil {
+	if charger != nil {
 		if root.DecompressedLength > maxSize {
 			return nil, fmt.Errorf("invalid wasm: decompressedLength %d is greater then MaxWasmSize %d", root.DecompressedLength, maxSize)
 		}
@@ -376,11 +450,15 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 
 	var compressedWasm []byte
 	for _, addr := range root.Addresses {
+		// Fail before touching state unless the caller can afford a max-sized fragment
+		// read; once the fragment length is known, charge only the actual read cost.
+		if err := charger.canReadNewFragment(statedb, addr); err != nil {
+			return nil, err
+		}
+
 		fragCode := statedb.GetCode(addr)
-		if burner != nil {
-			if err := chargeFragmentReadGas(burner, statedb, addr, uint64(len(fragCode))); err != nil {
-				return nil, err
-			}
+		if err := charger.chargeForReadingFragment(statedb, addr, uint64(len(fragCode))); err != nil {
+			return nil, err
 		}
 
 		payload, err := state.StripStylusFragmentPrefix(fragCode)
@@ -408,31 +486,24 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 	return wasm, nil
 }
 
-// chargeFragmentReadGas charges EXTCODECOPY-style gas for reading fragment code.
-func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.Address, codeSize uint64) error {
-	// charge access gas
+func fragmentReadGasCost(warm bool, codeSize uint64) (multigas.MultiGas, error) {
 	var cost multigas.MultiGas
-	if statedb.AddressInAccessList(addr) {
+	if warm {
 		cost = multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
 	} else {
-		statedb.AddAddressToAccessList(addr)
-		cost = multigas.StorageAccessGas(gethParams.ColdAccountAccessCostEIP2929)
+		cost = multigas.StorageAccessReadGas(gethParams.ColdAccountAccessCostEIP2929)
 	}
-	// charge copy gas
 	words := ToWordSize(codeSize)
 	copyGas, overflow := gethMath.SafeMul(words, gethParams.CopyGas)
 	if overflow {
-		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "words", words, "copyGas", gethParams.CopyGas)
-		return vm.ErrGasUintOverflow
+		log.Trace("fragment copy gas overflow", "codeSize", codeSize, "words", words, "copyGas", gethParams.CopyGas)
+		return multigas.ZeroGas(), vm.ErrGasUintOverflow
 	}
-	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, copyGas); overflow {
-		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", copyGas)
-		return vm.ErrGasUintOverflow
+	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccessRead, copyGas); overflow {
+		log.Trace("fragment copy gas overflow", "codeSize", codeSize, "copyGas", copyGas)
+		return multigas.ZeroGas(), vm.ErrGasUintOverflow
 	}
-	if err := burner.BurnMultiGas(cost); err != nil {
-		return err
-	}
-	return nil
+	return cost, nil
 }
 
 func getStylusCompressionDict(id byte) (arbcompress.Dictionary, error) {
@@ -569,7 +640,7 @@ func (p Programs) SetProgramCached(
 	}
 
 	// pay to cache the program, or to re-cache in case of upcoming revert
-	if err := p.programs.Burner().Burn(multigas.ResourceKindStorageAccess, uint64(program.initCost)); err != nil {
+	if err := p.programs.Burner().Burn(multigas.ResourceKindStorageAccessRead, uint64(program.initCost)); err != nil {
 		return err
 	}
 	moduleHash, err := p.moduleHashes.Get(codeHash)
@@ -705,6 +776,7 @@ const (
 	userFailure
 	userOutOfInk
 	userOutOfStack
+	userNativeStackOverflow
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
@@ -720,6 +792,11 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
+	case userNativeStackOverflow:
+		// This should never be reached — callProgram panics
+		// before calling toResult when status is userNativeStackOverflow.
+		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
+		return nil, "", ErrNativeStackOverflow
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted

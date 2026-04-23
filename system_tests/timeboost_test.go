@@ -107,7 +107,7 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 	}
 	// Send tx with seq=0 that releases all the buffered txs and wait for the block to be produced
 	Require(t, expressLaneClient.QueueTransactionWithSequence(ctx, txs[0], 0))
-	rec, err := builderSeq.L2.EnsureTxSucceeded(txs[0])
+	rec, err := builderSeq.L2.EnsureTxSucceededWithTimeout(txs[0], 30*time.Second)
 	Require(t, err)
 	firstBlockNum := rec.BlockNumber.Uint64()
 	t.Logf("tx: 0 was sequenced in block: %d", firstBlockNum)
@@ -342,15 +342,18 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 
 	// Wait for chosen sequencer to change on redis
-	for {
+	pollUntil(t, ctx, 30*time.Second, 200*time.Millisecond, "chosen sequencer to change", func() bool {
 		currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
-		Require(t, err)
-		if currentChosen == seqA.Stack.HTTPEndpoint() {
-			break
+		if err != nil {
+			t.Logf("CurrentChosenSequencer error (will retry): %v", err)
+			return false
 		}
-		t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
-		time.Sleep(200 * time.Millisecond)
-	}
+		if currentChosen != seqA.Stack.HTTPEndpoint() {
+			t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
+			return false
+		}
+		return true
+	})
 
 	// Send the tx=1 that should be sequenced by the new active sequencer along with the future seq num txs=2,3 synced from redis
 	err = expressLaneClientA.SendTransactionWithSequence(ctx, txs[1], 2)
@@ -1500,7 +1503,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+	builderSeq.execConfig.Sequencer.Timeboost = timeboost.Config{
 		Enable:                       false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:         time.Second * 5,
 		RedisUrl:                     expressLaneRedisURL,
@@ -1527,7 +1530,7 @@ func setupExpressLaneAuction(
 		extraNodebuilder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 		extraNodebuilder.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 		extraNodebuilder.execConfig.Sequencer.Enable = true
-		extraNodebuilder.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+		extraNodebuilder.execConfig.Sequencer.Timeboost = timeboost.Config{
 			Enable:                       true,
 			ExpressLaneAdvantage:         time.Second * 5,
 			RedisUrl:                     expressLaneRedisURL,
@@ -1702,10 +1705,10 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),

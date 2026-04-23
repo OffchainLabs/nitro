@@ -1,8 +1,9 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use num_traits::{ops::saturating::SaturatingAdd, Zero};
 use std::ops::{BitAnd, Sub};
+
+use num_traits::{Zero, ops::saturating::SaturatingAdd};
 
 /// Checks if a number is a power of 2.
 pub fn is_power_of_2<T>(value: T) -> bool

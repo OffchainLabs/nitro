@@ -385,7 +385,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
-	hooks.InsertLastTxError(nil)
+	hooks.TxSucceeded()
 	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
 	Require(t, err)
 
@@ -440,7 +440,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(rawdb.DBPebble)
 	builder.BuildL1(t)
 
 	userAccount := "User2"
@@ -519,7 +519,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	Require(t, err)
 
 	// sub in correct batch hash
-	batchData, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	batchData, _, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 0)
 	Require(t, err)
 	expectedBatchHash := crypto.Keccak256Hash(batchData)
 	copy(data[52:52+32], expectedBatchHash[:])

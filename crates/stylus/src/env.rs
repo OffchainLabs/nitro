@@ -1,18 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::{
-    benchmark::Benchmark,
-    evm::{
-        api::{DataReader, EvmApi, Ink},
-        EvmData,
-    },
-    pricing,
-};
-use caller_env::GuestPtr;
-use derivative::Derivative;
-use eyre::{eyre, ErrReport};
-use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
     fmt::Debug,
     io,
@@ -21,6 +9,19 @@ use std::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
+
+use arbutil::{
+    benchmark::Benchmark,
+    evm::{
+        EvmData,
+        api::{DataReader, EvmApi, Ink},
+    },
+    pricing,
+};
+use caller_env::GuestPtr;
+use derivative::Derivative;
+use eyre::{ErrReport, eyre};
+use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use thiserror::Error;
 use wasmer::{FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut};
 use wasmer_types::RawValue;

@@ -190,6 +190,10 @@ func (w *Watcher) IsSynced() bool {
 // representations for confirmation purposes.
 func (w *Watcher) Start(ctx context.Context) {
 	w.StopWaiter.Start(ctx, w)
+	w.LaunchThread(w.watchEvents)
+}
+
+func (w *Watcher) watchEvents(ctx context.Context) {
 	scanRange, err := retry.UntilSucceeds(ctx, func() (filterRange, error) {
 		return w.getStartEndBlockNum(ctx)
 	})

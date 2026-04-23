@@ -61,8 +61,7 @@ import (
 var errNotFound = errors.New("file not found")
 
 // taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
-// 8 is a bug (should have been 6) but we're skipping the real version 8 so it does not matter
-const WasmerSerializeVersion = 8
+const WasmerSerializeVersion = 16
 const InitialWasmerSerializeVersion = 8
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
@@ -473,31 +472,36 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 	batch := db.NewBatch()
 	notMatchingLengthKeyLogged := false
 	for _, prefix := range prefixes {
-		it := db.NewIterator(prefix, nil)
-		defer it.Release()
-		for it.Next() {
-			key := it.Key()
-			if checkKeyLength && len(key) != expectedKeyLength {
-				if !notMatchingLengthKeyLogged {
-					log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
-					notMatchingLengthKeyLogged = true
+		if err := func() error {
+			it := db.NewIterator(prefix, nil)
+			defer it.Release()
+			for it.Next() {
+				key := it.Key()
+				if checkKeyLength && len(key) != expectedKeyLength {
+					if !notMatchingLengthKeyLogged {
+						log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
+						notMatchingLengthKeyLogged = true
+					}
+					continue
 				}
-				continue
-			}
-			if err := batch.Delete(key); err != nil {
-				return fmt.Errorf("failed to remove key %v : %w", key, err)
-			}
+				if err := batch.Delete(key); err != nil {
+					return fmt.Errorf("failed to remove key %v : %w", key, err)
+				}
 
-			// Recreate the iterator after every batch commit in order
-			// to allow the underlying compactor to delete the entries.
-			if batch.ValueSize() >= ethdb.IdealBatchSize {
-				if err := batch.Write(); err != nil {
-					return fmt.Errorf("failed to write batch: %w", err)
+				// Recreate the iterator after every batch commit in order
+				// to allow the underlying compactor to delete the entries.
+				if batch.ValueSize() >= ethdb.IdealBatchSize {
+					if err := batch.Write(); err != nil {
+						return fmt.Errorf("failed to write batch: %w", err)
+					}
+					batch.Reset()
+					it.Release()
+					it = db.NewIterator(prefix, key)
 				}
-				batch.Reset()
-				it.Release()
-				it = db.NewIterator(prefix, key)
 			}
+			return nil
+		}(); err != nil {
+			return err
 		}
 	}
 	if batch.ValueSize() > 0 {

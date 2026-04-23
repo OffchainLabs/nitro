@@ -43,6 +43,7 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeBStack.DBEngine = databaseEngine
 	nodeBConfig := builder.nodeConfig
+	nodeBConfig.BlockValidator.Enable = false
 	nodeBConfig.BatchPoster.Enable = false
 	nodeBParams := &SecondNodeParams{
 		stackConfig: nodeBStack,
@@ -65,19 +66,15 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	// Cleanup the 2nd node to release the database lock
 	cleanupB()
 	// New node with revalidation range, and the same database directory as the 2nd node.
+	nodeConfig.BlockValidator.Enable = true
 	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: nodeConfig})
 	defer cleanupC()
 
 	// Wait for the node to start and revalidate the blocks in the specified range
 	// Once the revalidation is done, the validator will stop.
-	startTime := time.Now()
-	for {
-		if nodeC.ConsensusNode.BlockValidator.Stopped() {
-			break
-		} else if time.Since(startTime) > 5*time.Minute {
-			t.Fatalf("Revalidation took too long")
-		}
-	}
+	pollUntil(t, ctx, 5*time.Minute, 100*time.Millisecond, "revalidation to complete", func() bool {
+		return nodeC.ConsensusNode.BlockValidator.Stopped()
+	})
 }
 
 func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config {
@@ -87,24 +84,22 @@ func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config
 	return &nodeConfig
 }
 
-// waitForBlocksToCatchup has a time "limit" factor to limit running this function forever in weird cases such as running with race detection in nightly CI
+// waitForBlocksToCatchup polls until both clients report the same latest block number, or the limit elapses.
 func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(10 * time.Millisecond):
-			headerA, err := clientA.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			headerB, err := clientB.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			if headerA.Number.Cmp(headerB.Number) == 0 {
-				return
-			}
-		case <-time.After(limit):
-			t.Fatal("waitForBlocksToCatchup didnt finish")
+	t.Helper()
+	pollUntil(t, ctx, limit, 10*time.Millisecond, "blocks to catch up between nodes", func() bool {
+		headerA, err := clientA.HeaderByNumber(ctx, nil)
+		if err != nil {
+			t.Logf("HeaderByNumber(A) error (will retry): %v", err)
+			return false
 		}
-	}
+		headerB, err := clientB.HeaderByNumber(ctx, nil)
+		if err != nil {
+			t.Logf("HeaderByNumber(B) error (will retry): %v", err)
+			return false
+		}
+		return headerA.Number.Cmp(headerB.Number) == 0
+	})
 }
 
 func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {
@@ -117,7 +112,7 @@ func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder 
 		Require(t, err)
 		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
-		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		count, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
 		if count > finalCount {
 			return

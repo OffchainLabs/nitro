@@ -1,22 +1,23 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{native, run::RunProgram};
+use std::{collections::HashMap, sync::Arc};
+
 use arbutil::{
+    Bytes20, Bytes32,
     evm::{
+        EvmData,
         api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
-        EvmData,
     },
-    Bytes20, Bytes32,
 };
 use eyre::Result;
 use parking_lot::Mutex;
 use prover::programs::{memory::MemoryModel, prelude::*};
-use std::{collections::HashMap, sync::Arc};
-use wasmer::Target;
+use wasmer::sys::Target;
 
 use super::TestInstance;
+use crate::{native, run::RunProgram};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TestEvmApi {
@@ -52,7 +53,7 @@ impl TestEvmApi {
     }
 
     pub fn deploy(&mut self, address: Bytes20, config: StylusConfig, name: &str) -> Result<()> {
-        let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
+        let file = format!("tests/target/wasm32-unknown-unknown/release/{name}.wasm");
         let wasm = std::fs::read(file)?;
         let module = native::module(&wasm, self.compile.clone(), Target::default(), false)?;
         self.contracts.lock().insert(address, module);

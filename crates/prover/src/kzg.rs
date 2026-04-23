@@ -1,12 +1,13 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{convert::TryFrom, io::Write};
+
 use arbutil::Bytes32;
-use c_kzg::{KzgSettings, BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB};
-use eyre::{ensure, Result, WrapErr};
+use c_kzg::{BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, KzgSettings};
+use eyre::{Result, WrapErr, ensure};
 use num::BigUint;
 use sha2::{Digest, Sha256};
-use std::{convert::TryFrom, io::Write};
 
 lazy_static::lazy_static! {
     pub static ref ETHEREUM_KZG_SETTINGS: KzgSettings = {
@@ -50,7 +51,7 @@ pub fn prove_kzg_preimage(
         expected_hash,
     );
     ensure!(
-        offset % 32 == 0,
+        offset.is_multiple_of(32),
         "Cannot prove blob preimage at unaligned offset {}",
         offset,
     );

@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
 	"sync"
 	"time"
 
@@ -25,8 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -271,63 +268,6 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	}
 }
 
-func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
-	batchCount, err := t.GetBatchCount()
-	if err != nil {
-		return fmt.Errorf("error getting batch count: %w", err)
-	}
-	var startMessage arbutil.MessageIndex
-	if batchCount >= 2 {
-		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
-		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
-		// `batchCount - 2` is the index of the batch before the last batch.
-		batchIndex := batchCount - 2
-		startMessage, err = t.GetBatchMessageCount(batchIndex)
-		if err != nil {
-			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
-		}
-	}
-
-	if t.txStreamer == nil {
-		return errors.New("txStreamer is nil")
-	}
-
-	messageCount, err := t.txStreamer.GetMessageCount()
-	if err != nil {
-		return fmt.Errorf("error getting tx streamer message count: %w", err)
-	}
-	var feedMessages []*message.BroadcastFeedMessage
-	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
-		message, err := t.txStreamer.GetMessage(seqNum)
-		if err != nil {
-			return fmt.Errorf("error getting message %v: %w", seqNum, err)
-		}
-
-		msgResult, err := t.txStreamer.ResultAtMessageIndex(seqNum)
-		var blockHash *common.Hash
-		if err == nil {
-			blockHash = &msgResult.BlockHash
-		}
-
-		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
-		if err != nil {
-			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
-		}
-
-		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: *message,
-			BlockHash:       blockHash,
-			BlockMetadata:   blockMetadata,
-		}
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
-		if err != nil {
-			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
-		}
-		feedMessages = append(feedMessages, feedMessage)
-	}
-	return broadcastServer.PopulateFeedBacklog(feedMessages)
-}
-
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(schema.LegacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
@@ -345,7 +285,7 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 	}
 
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		data, _, err := t.txStreamer.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
 		return data, err
 	})
 
@@ -358,7 +298,7 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx
 		return msg, acc, parentChainBlockNumber, err
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
+		data, _, err := t.txStreamer.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 		return data, err
 	})
 	return msg, acc, parentChainBlockNumber, err
@@ -919,16 +859,16 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 // or the message itself.
 func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
-	finalizedPosition uint64,
+	finalizedBlock uint64,
 	lastDelayedAccumulator common.Hash,
 	requestedPosition uint64,
-) (*arbostypes.L1IncomingMessage, common.Hash, error) {
+) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
 	msg, acc, parentChainBlockNumber, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, 0, err
 	}
-	if parentChainBlockNumber > finalizedPosition {
-		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
+	if parentChainBlockNumber > finalizedBlock {
+		return nil, common.Hash{}, parentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
 	}
 	if lastDelayedAccumulator != (common.Hash{}) {
 		// Ensure that there hasn't been a reorg and this message follows the last
@@ -938,35 +878,17 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 			ParentChainBlockNumber: parentChainBlockNumber,
 		}
 		if fullMsg.AfterInboxAcc() != acc {
-			return nil, common.Hash{}, errors.New("delayed message accumulator mismatch while sequencing")
+			return nil, common.Hash{}, 0, errors.New("delayed message accumulator mismatch while sequencing")
 		}
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(
+		data, _, err := t.txStreamer.batchDataProvider.GetSequencerMessageBytesForParentBlock(
 			ctx, batchNum, parentChainBlockNumber,
 		)
 		return data, err
 	})
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, 0, err
 	}
-	return msg, acc, nil
-}
-
-func (t *InboxTracker) CheckAccumulatorReorg(
-	ctx context.Context,
-	lastDelayedAcc common.Hash,
-	pos uint64,
-	finalizedHash common.Hash,
-	finalized uint64,
-) error {
-	delayedBridgeAcc, err := t.txStreamer.delayedBridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
-	if err != nil {
-		return err
-	}
-	if delayedBridgeAcc != lastDelayedAcc {
-		// Probably a reorg that hasn't been picked up by the inbox reader
-		return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
-	}
-	return nil
+	return msg, acc, parentChainBlockNumber, nil
 }
