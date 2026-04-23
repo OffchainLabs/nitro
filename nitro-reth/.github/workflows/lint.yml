@@ -46,3 +46,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps
+
+  no-hand-written-selectors:
+    name: no hand-written selectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any bare [u8; 4] selector literals are reintroduced
+        run: |
+          set -e
+          matches=$(grep -rnE 'const\s+[A-Z_0-9]+\s*:\s*\[\s*u8\s*;\s*4\s*\]\s*=' \
+            crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Hand-written function-selector constants are not allowed in arb-precompiles/src/."
+            echo "Precompile selectors must come from the sol!-generated SolCall::SELECTOR."
+            echo "$matches"
+            exit 1
+          fi
