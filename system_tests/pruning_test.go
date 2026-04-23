@@ -350,83 +350,70 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 	newLastBlock := waitForChainToCatchUp(t, ctx, testClientL2, lastBlock)
 
-	// Two boundaries define what we can check:
-	// - prunedBelow: blocks below this were pruned from disk (with known exceptions)
-	// - accessibleFrom: blocks at or above this are kept in TriesInMemory
-	// Blocks between them are in a dead zone: pruned from disk but also outside the
-	// in-memory trie window, so we skip them.
+	// Every block falls into one of three deterministic categories:
+	//
+	//   1. "on disk": block ∈ blocksWithState → state preserved by pruner, must be accessible.
+	//   2. "tries in memory": block was re-processed by the 2nd node AND is in the last
+	//      blocksToKeepAfterRestart blocks → geth TriesInMemory guarantees the state is cached.
+	//      Both conditions are required: blocks below the rewind point were never re-processed
+	//      even if they'd fall inside the TriesInMemory window of the current head.
+	//   3. "pruned": block ≤ highestPreservedBlock AND block ∉ blocksWithState → pruner deleted
+	//      the state root AND the 2nd node did not re-process it (rewound to highestPreservedBlock).
+	//
+	// Blocks in (highestPreservedBlock, triesInMemStart) were re-processed but fell out of the
+	// TriesInMemory window. They transiently sit in the trie dirty cache but can be evicted by
+	// geth's GC at any time — a real non-determinism, so we don't assert on them.
 	highestPreservedBlock := int64(0)
 	for block := range blocksWithState {
 		if block > highestPreservedBlock {
 			highestPreservedBlock = block
 		}
 	}
-	prunedBelow := highestPreservedBlock + 1
 	// #nosec G115
-	accessibleFrom := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
+	triesInMemStart := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
+	blockAccessible := func(blockIdx int64) bool {
+		return blocksWithState[blockIdx] || (blockIdx > highestPreservedBlock && blockIdx >= triesInMemStart)
+	}
+	blockPruned := func(blockIdx int64) bool {
+		return blockIdx <= highestPreservedBlock && !blocksWithState[blockIdx]
+	}
 	// #nosec G115
 	for i := int64(1); i < int64(newLastBlock); i++ {
-		if i >= prunedBelow && i < accessibleFrom {
-			// Dead zone: pruned from disk and outside TriesInMemory window
-			continue
-		} else if i < prunedBelow {
-			// Should be pruned — expect "missing trie node" unless explicitly preserved
-			if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx || blocksWithState[i] {
-				continue
-			}
-			// Buffer around the prune boundary
-			if i >= prunedBelow-2 {
-				continue
-			}
-			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
+		switch {
+		case blockAccessible(i):
+			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
+			Require(t, err, "expected state for block", i, "to be accessible")
+		case blockPruned(i):
+			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
 			if err == nil {
 				t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", i)
 			} else if !strings.Contains(err.Error(), "missing trie node") {
 				t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", i, err)
 			}
-		} else {
-			// Should be accessible — in TriesInMemory window
-			// Buffer around the accessible boundary
-			if i <= accessibleFrom+2 {
-				continue
-			}
-			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
-			Require(t, err)
 		}
+		// else: re-processed by 2nd node, dirty cache state is non-deterministic — skip.
 	}
 
-	// Check last validated and last finalized blocks. In validator mode they should have been
-	// added as important roots. In other modes they are pruned, but may still be accessible if
-	// they are in the TriesInMemory window or were explicitly preserved by the pruner.
-	blockAccessible := func(blockIdx arbutil.MessageIndex) bool {
-		// A block is accessible if it's on disk, in the TriesInMemory window, or was
-		// re-processed by the 2nd node (above the rewind point) and may be in the dirty cache.
+	// Last validated and last finalized have the same classification — they're just
+	// specific block indices the test reports on explicitly.
+	checkBlock := func(blockIdx arbutil.MessageIndex) {
 		// #nosec G115
-		return blocksWithState[int64(blockIdx)] || int64(blockIdx) >= accessibleFrom || int64(blockIdx) > highestPreservedBlock
-	}
-	if mode == "validator" || blockAccessible(validatedMsgIdx) {
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
-		Require(t, err)
-	} else {
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
-		if err == nil {
-			t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", validatedMsgIdx)
-		} else if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", validatedMsgIdx, err)
+		idx := int64(blockIdx)
+		switch {
+		case blockAccessible(idx):
+			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(idx))
+			Require(t, err, "expected state for block", blockIdx, "to be accessible")
+		case blockPruned(idx):
+			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(idx))
+			if err == nil {
+				t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", blockIdx)
+			} else if !strings.Contains(err.Error(), "missing trie node") {
+				t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", blockIdx, err)
+			}
 		}
 	}
-
-	if mode == "validator" || mode == "full" || blockAccessible(finalizedMsgIdx) {
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
-		Require(t, err)
-	} else {
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
-		if err == nil {
-			t.Fatalf("Expected balance retrieval to fail for block %d, but it succeeded", finalizedMsgIdx)
-		} else if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected 'missing trie node' error for block %d, got: %v", finalizedMsgIdx, err)
-		}
-	}
+	checkBlock(validatedMsgIdx)
+	checkBlock(finalizedMsgIdx)
 }
 
 func waitForChainToCatchUp(t *testing.T, ctx context.Context, testClient *TestClient, lastBlock uint64) uint64 {
