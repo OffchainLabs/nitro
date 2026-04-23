@@ -16,6 +16,12 @@ record-blocks:
 		-recordBlockInputs.WithBaseDir=$(BLOCK_INPUTS_DIR) \
 		-recordBlockInputs.WithTimestampDirEnabled=false \
 		>$(BLOCK_INPUTS_DIR)/record.log 2>&1; then \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockTransfer/*.json   $(BLOCK_INPUTS_DIR)/transfer.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSolidity/*.json   $(BLOCK_INPUTS_DIR)/solidity.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylus/*.json     $(BLOCK_INPUTS_DIR)/stylus.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusHeavy/*.json $(BLOCK_INPUTS_DIR)/stylus_heavy.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockMixed/*.json      $(BLOCK_INPUTS_DIR)/mixed.json; \
+		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
 		echo "ok  $(BLOCK_INPUTS_DIR)"; \
 	else \
 		echo "FAIL — see $(BLOCK_INPUTS_DIR)/record.log" >&2; exit 1; \
