@@ -136,10 +136,6 @@ func TestRecordBlockMixed(t *testing.T) {
 	storageAddr := deployWasm(t, ctx, *auth, l2client, rustFile("storage"))
 	keccakAddr := deployWasm(t, ctx, *auth, l2client, rustFile("keccak"))
 
-	_, tx, mock, err := localgen.DeployProgramTest(auth, l2client)
-	Require(t, err)
-	ensureTx(t, builder, tx)
-
 	syncOwnerNonce(t, builder)
 	ownerNonce := l2info.GetInfoWithPrivKey("Owner").Nonce.Load()
 
@@ -158,14 +154,11 @@ func TestRecordBlockMixed(t *testing.T) {
 
 	// PrepareTxTo uses l2info's nonce counter; sync it past the NoSend tx above.
 	l2info.GetInfoWithPrivKey("Owner").Nonce.Store(ownerNonce + 4)
-	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
-	txStorage := l2info.PrepareTxTo("Owner", &storageAddr, l2info.TransferGas, nil, argsForStorageWrite(key, value))
+	txStorage := l2info.PrepareTxTo("Owner", &storageAddr, l2info.TransferGas, nil, argsForStorageWrite(testhelpers.RandomHash(), testhelpers.RandomHash()))
 	txs = append(txs, txStorage)
 
-	keccakArgs := append([]byte{0x01}, []byte("mixed test benchmark data")...)
-	txKeccak, err := mock.CallKeccak(noSendOpts(auth, ownerNonce+5), keccakAddr, keccakArgs)
-	Require(t, err)
+	// Keccak Stylus program takes 0x01 || preimage directly — no wrapper needed.
+	txKeccak := l2info.PrepareTxTo("Owner", &keccakAddr, l2info.TransferGas, nil, append([]byte{0x01}, []byte("mixed test benchmark data")...))
 	txs = append(txs, txKeccak)
 
 	blockNum, _ := sequenceInBlock(t, builder, txs)
