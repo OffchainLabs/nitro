@@ -6,15 +6,19 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"net"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -22,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -58,8 +63,10 @@ func waitForForwarderSync(t *testing.T, ctx context.Context, forwarder *TestClie
 }
 
 // buildPrecheckerFilterNodes creates a sequencer node A and a forwarder node B
-// for prechecker filter testing. Node B forwards to A via IPC.
-func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
+// for prechecker filter testing. Node B forwards to A via IPC. If reportURL is
+// non-empty, the forwarder's TxPreChecker is wired to send filtered tx reports
+// to that URL.
+func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, reportURL string, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
 	t.Helper()
 	ipcPath := tmpPath(t, "test.ipc")
 
@@ -91,6 +98,9 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	if len(eventRules) > 0 {
 		execConfigB.TransactionFiltering.EventFilter.Rules = eventRules
 	}
+	if reportURL != "" {
+		execConfigB.TransactionFiltering.FilteringReportRPCClient.URL = reportURL
+	}
 
 	forwarder, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -110,7 +120,7 @@ func TestPrecheckerFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -156,7 +166,7 @@ func TestPrecheckerFilterCleanTxPasses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User1")
@@ -182,7 +192,7 @@ func TestPrecheckerFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User1")
@@ -215,7 +225,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 		},
 	}
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, rules...)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "", rules...)
 	defer cleanup()
 
 	// Deploy contract through sequencer and wait for forwarder to sync
@@ -262,7 +272,7 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Deploy contract through sequencer as retryable destination
@@ -308,7 +318,7 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Contract A: the retryable destination (will be filtered)
@@ -400,7 +410,7 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Deploy wrapper (neutral) and filteredTarget contracts
@@ -484,6 +494,44 @@ func TestPrecheckerFilterCascadingRedeemDepth4(t *testing.T) {
 	testPrecheckerFilterCascadingRedeem(t, 4)
 }
 
+// testReportCollector implements the filteringreport RPC namespace for testing.
+// Reports sent via FilteringReportRPCClient are captured in the Reports channel.
+type testReportCollector struct {
+	Reports chan []addressfilter.FilteredTxReport
+}
+
+func (c *testReportCollector) ReportFilteredTransactions(_ context.Context, reports []addressfilter.FilteredTxReport) error {
+	c.Reports <- reports
+	return nil
+}
+
+// startTestReportServer starts an HTTP-JSON-RPC server that captures
+// filteringreport_reportFilteredTransactions calls. Returns the server URL
+// and the collector. The server shuts down when ctx is cancelled.
+func startTestReportServer(t *testing.T, ctx context.Context) (string, *testReportCollector) {
+	t.Helper()
+	collector := &testReportCollector{
+		Reports: make(chan []addressfilter.FilteredTxReport, 16),
+	}
+	rpcServer := rpc.NewServer()
+	err := rpcServer.RegisterName(gethexec.FilteringReportNamespace, collector)
+	require.NoError(t, err)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	httpServer := &http.Server{Handler: rpcServer, ReadHeaderTimeout: 5 * time.Second}
+	go httpServer.Serve(listener) //nolint:errcheck
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpServer.Shutdown(shutdownCtx) //nolint:errcheck
+	}()
+
+	return "http://" + listener.Addr().String(), collector
+}
+
 // lookupSubmissionTxHash finds the ArbitrumSubmitRetryableTx hash from an L1 receipt
 // by parsing the delayed message.
 func lookupSubmissionTxHash(t *testing.T, ctx context.Context, builder *NodeBuilder, l1Receipt *types.Receipt) common.Hash {
@@ -510,4 +558,89 @@ func lookupSubmissionTxHash(t *testing.T, ctx context.Context, builder *NodeBuil
 	}
 	t.Fatal("no retryable submission tx found in delayed messages")
 	return common.Hash{}
+}
+
+// TestPrecheckerFilterReport verifies that the prechecker sends a
+// FilteredTxReport to the filtering-report service when a tx is filtered.
+func TestPrecheckerFilterReport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	reportURL, collector := startTestReportServer(t, ctx)
+
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, reportURL)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	_, fundReceipt := builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
+	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+
+	// Filtered tx should be rejected and generate a report
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := forwarder.Client.SendTransaction(ctx, tx)
+	require.True(t, isFilteredError(err), "expected filtered error, got: %v", err)
+
+	select {
+	case reports := <-collector.Reports:
+		require.Len(t, reports, 1)
+		report := reports[0]
+		require.Equal(t, tx.Hash(), report.TxHash)
+		require.NotEmpty(t, report.ID)
+		require.NotEmpty(t, report.TxRLP)
+		require.NotZero(t, report.BlockNumber)
+		require.False(t, report.IsDelayed)
+		require.False(t, report.FilteredAt.IsZero())
+
+		var found bool
+		for _, rec := range report.FilteredAddresses {
+			if rec.Address == filteredAddr {
+				found = true
+				require.Equal(t, filter.ReasonTo, rec.Reason)
+				break
+			}
+		}
+		require.True(t, found, "report should contain filtered address %s", filteredAddr.Hex())
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for filtered tx report")
+	}
+}
+
+// TestPrecheckerFilterNoReportWhenClean verifies that no FilteredTxReport is
+// sent to the filtering-report service when a tx is not filtered.
+func TestPrecheckerFilterNoReportWhenClean(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	reportURL, collector := startTestReportServer(t, ctx)
+
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, reportURL)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	builder.L2Info.GenerateAccount("AnotherUser")
+	_, fundReceipt := builder.L2.TransferBalance(t, "Owner", "AnotherUser", big.NewInt(1e18), builder.L2Info)
+	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+
+	// Clean tx between non-filtered addresses should forward and succeed
+	tx := builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := forwarder.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	select {
+	case reports := <-collector.Reports:
+		t.Fatalf("unexpected filtered tx report for clean tx: %+v", reports)
+	case <-time.After(2 * time.Second):
+	}
 }
