@@ -19,19 +19,17 @@ if [ "$(uname -s)" = "Darwin" ]; then
 fi
 
 make -C "$SCRIPT_DIR" brotli
+make -C "$SCRIPT_DIR" nitro-deps
 
-# Build nitro dependencies
-make build-replay-env test-go-deps
 rm -rf target/sp1
 mkdir -p target/sp1
 export OUTPUT_DIR=$TOP/target/sp1
-# Build replay.wasm, but with SP1 optimizations
-GOOS=wasip1 GOARCH=wasm go build -tags sp1 -o "$OUTPUT_DIR"/replay.wasm "$TOP"/cmd/replay/...
+
 cd "$SCRIPT_DIR"
 # Bump SP1's maximum heap memory size
 export SP1_ZKVM_MAX_MEMORY=1099511627776
 # Build SP1 program and run bootloading process
-cargo run --release -p sp1-builder -- --replay-wasm "$OUTPUT_DIR"/replay.wasm --output-folder "$OUTPUT_DIR"
+cargo run --release -p sp1-builder -- --replay-wasm "$TOP/target/machines/latest/replay.wasm" --output-folder "$OUTPUT_DIR"
 # Build the SP1 runner
 cargo build --release -p sp1-runner
 

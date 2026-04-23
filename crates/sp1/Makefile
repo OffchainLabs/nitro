@@ -15,7 +15,7 @@ install-sp1: # Install the SP1 RISC-V toolchain.
 	@$(RISCV)/bin/riscv64-unknown-elf-gcc --version
 
 .PHONY: brotli
-brotli: $(RISCV)/bin/riscv64-unknown-elf-gcc # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
+brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 	@cp $(TOP)/crates/sp1/brotli_cmake_patch.txt $(TOP)/brotli/CMakeLists.txt
 	@rm -rf $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR)
 	@mkdir -p $(BROTLI_BUILD_DIR)
@@ -38,8 +38,14 @@ brotli: $(RISCV)/bin/riscv64-unknown-elf-gcc # Build brotli for RISC-V (SP1); ar
 		echo "FAIL — see $(BROTLI_BUILD_DIR)/build.log" >&2; exit 1; \
 	fi
 
+.PHONY: nitro-deps
+nitro-deps: # Build necessary nitro dependencies, including replay.wasm
+nitro-deps: brotli
+	@$(MAKE) -C $(TOP) build-replay-env test-go-deps
+
 .PHONY: record-blocks
 record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
+record-blocks: nitro-deps
 	@rm -rf $(BLOCK_INPUTS_DIR)
 	@mkdir -p $(BLOCK_INPUTS_DIR)
 	@if cd $(TOP) && go test \
