@@ -13,6 +13,7 @@ pub mod evm;
 pub mod executor;
 pub mod hooks;
 pub mod receipt;
+pub mod state_overlay;
 pub mod transaction;
 
 pub use assembler::ArbBlockAssembler;

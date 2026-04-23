@@ -1510,11 +1510,27 @@ where
         ItemOrResult<&mut Self::Frame, FrameResult>,
         revm::handler::evm::ContextDbError<Self::Context>,
     > {
+        // Track msg.sender per frame for ArbSys precompiles.
+        let pushed_caller = match &frame_input.frame_input {
+            FrameInput::Call(inputs) => {
+                arb_precompiles::push_caller_frame(inputs.caller);
+                true
+            }
+            FrameInput::Create(inputs) => {
+                arb_precompiles::push_caller_frame(inputs.caller());
+                true
+            }
+            _ => false,
+        };
+
         // Intercept Stylus WASM calls before they reach EthFrame/precompiles.
         if let Some(bytecode) = is_stylus_call(&frame_input) {
             if let FrameInput::Call(ref inputs) = frame_input.frame_input {
                 if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
                     let gas = EvmGas::new(inputs.gas_limit);
+                    if pushed_caller {
+                        arb_precompiles::pop_caller_frame();
+                    }
                     return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
                         result: InterpreterResult::new(
                             InstructionResult::CallTooDeep,
@@ -1533,11 +1549,14 @@ where
                     &bytecode,
                     checkpoint,
                 );
+                if pushed_caller {
+                    arb_precompiles::pop_caller_frame();
+                }
                 return Ok(ItemOrResult::Result(result));
             }
         }
 
-        // Non-Stylus: delegate to the inner RevmEvm's EvmTr implementation.
+        // Non-Stylus: delegate. Pop happens in frame_return_result.
         self.inner.frame_init(frame_input)
     }
 
@@ -1556,6 +1575,8 @@ where
         &mut self,
         result: FrameResult,
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
+        // Pop the caller pushed by frame_init for this frame.
+        arb_precompiles::pop_caller_frame();
         self.inner.frame_return_result(result)
     }
 }

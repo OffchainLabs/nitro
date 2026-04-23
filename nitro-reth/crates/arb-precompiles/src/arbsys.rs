@@ -276,7 +276,6 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
 
 fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let tx_origin = input.internals().tx_origin();
-    let caller = input.caller;
 
     // Read ArbOS version for version-gated behavior.
     let internals = input.internals_mut();
@@ -289,14 +288,15 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .data;
     let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
 
-    // topLevel = isTopLevel(depth < 2 || origin == Contracts[depth-2].Caller())
-    // ArbOS < 6: topLevel = depth == 2
-    // aliased = topLevel && DoesTxTypeAlias(TopTxType)
     let depth = crate::get_evm_depth();
     let is_top_level = if arbos_version < 6 {
         depth == 2
+    } else if depth <= 2 {
+        true
     } else {
-        depth <= 2 || tx_origin == caller
+        crate::caller_at_depth(depth - 1)
+            .map(|c| tx_origin == c)
+            .unwrap_or(false)
     };
 
     let aliased = is_top_level && get_tx_is_aliased();
@@ -310,14 +310,15 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Returns Contracts[depth-2].Caller() (potentially unaliased).
-    // At depth 2 (common case): Contracts[0].Caller() == tx_origin.
-    // For deeper calls we'd need the call stack, which isn't available
-    // through PrecompileInput. tx_origin is correct at depth <= 2.
     let tx_origin = input.internals().tx_origin();
-    let address = tx_origin;
+    let depth = crate::get_evm_depth();
+    let address = if depth <= 2 {
+        tx_origin
+    } else {
+        crate::caller_at_depth(depth - 1).unwrap_or(tx_origin)
+    };
 
-    let result_addr = if get_tx_is_aliased() {
+    let result_addr = if get_tx_is_aliased() && address == tx_origin {
         undo_l1_alias(address)
     } else {
         address

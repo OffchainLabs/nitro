@@ -992,6 +992,8 @@ where
         crate::evm::reset_stylus_pages();
         arb_precompiles::set_poster_balance_correction(U256::ZERO);
         arb_precompiles::set_current_tx_sender(Address::ZERO);
+        arb_precompiles::reset_caller_stack();
+        crate::state_overlay::reset_tx();
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
             hooks.tx_proc.poster_gas = 0;
@@ -2517,12 +2519,17 @@ where
             // ensures subsequent accesses see a non-existent account —
             // matching Go's stateObject.deleted=true behaviour in Finalise.
             for addr in &to_remove {
+                crate::state_overlay::record_pre_touch(db, *addr);
                 if let Some(cached) = db.cache.accounts.get_mut(addr) {
                     cached.account = None;
-                    cached.status = revm::database::states::AccountStatus::Destroyed;
                 }
             }
             self.finalise_deleted.extend(to_remove);
+        }
+
+        {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            crate::state_overlay::drain_and_apply(db);
         }
 
         Ok(gas_used)
@@ -2591,15 +2598,12 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
     }
 }
 
-/// Mint balance to an address in the EVM state.
-/// Modifies cache directly; net effect captured by augment_bundle_from_cache.
-/// Zero-amount is a no-op to match geth's AddBalance which skips zero amounts
-/// without creating or touching the account.
+/// Mint balance to an address. Zero-amount is a no-op (matches AddBalance).
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() {
         return;
     }
-    let _ = state.load_cache_account(address);
+    crate::state_overlay::record_pre_touch(state, address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
             acct.info.balance = acct.info.balance.saturating_add(amount);
@@ -2615,14 +2619,12 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
     }
 }
 
-/// Burn balance from an address in the EVM state.
-/// Modifies cache directly; net effect captured by augment_bundle_from_cache.
-/// Zero-amount is a no-op to match geth's SubBalance.
+/// Burn balance from an address. Zero-amount is a no-op (matches SubBalance).
 fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() {
         return;
     }
-    let _ = state.load_cache_account(address);
+    crate::state_overlay::record_pre_touch(state, address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
             acct.info.balance = acct.info.balance.saturating_sub(amount);
@@ -2630,11 +2632,9 @@ fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
     }
 }
 
-/// Increment the nonce of an account in the EVM state.
-///
-/// Directly modifies the cache without creating transitions.
+/// Increment the nonce of an account.
 fn increment_nonce<DB: Database>(state: &mut State<DB>, address: Address) {
-    let _ = state.load_cache_account(address);
+    crate::state_overlay::record_pre_touch(state, address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
             acct.info.nonce += 1;
@@ -2687,7 +2687,7 @@ fn create_zombie_if_deleted<DB: Database>(
     zombie_accounts: &mut std::collections::HashSet<Address>,
     touched_accounts: &mut std::collections::HashSet<Address>,
 ) {
-    let _ = state.load_cache_account(addr);
+    crate::state_overlay::record_pre_touch(state, addr);
     let account_missing = state
         .cache
         .accounts
