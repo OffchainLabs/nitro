@@ -181,7 +181,7 @@ func TestPrecompileBucketMembership(t *testing.T) {
 	//
 	// If a new ArbOS version is introduced, add a new bucket entry below and bump
 	// maxKnownArbosVersion.
-	const maxKnownArbosVersion = params.ArbosVersion_59
+	const maxKnownArbosVersion = params.ArbosVersion_60
 
 	if params.MaxDebugArbosVersionSupported > maxKnownArbosVersion {
 		t.Errorf("MaxDebugArbosVersionSupported (%d) > maxKnownArbosVersion (%d); add a new bucket and bump the constant",

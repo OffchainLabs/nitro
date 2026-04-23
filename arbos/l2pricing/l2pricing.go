@@ -47,7 +47,6 @@ var multiGasConstraintsKey []byte = []byte{1}
 var multiGasBaseFeesKey []byte = []byte{2}
 
 const GethBlockGasLimit = 1 << 50
-const gasConstraintsMaxNum = 20
 
 // Number of single-gas constraints limited because of retryable redeem gas cost calculation.
 // The limit is ignored starting from ArbOS version 60.

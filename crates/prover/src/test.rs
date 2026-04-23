@@ -20,8 +20,8 @@ fn test_multi_value_gate() {
             (func (export "user_entrypoint") (param i32) (result i32) i32.const 0)
         )"#,
     );
-    for (version, allowed) in [(1, true), (2, true), (3, false), (4, false)] {
-        let result = binary::parse_with_stylus_version(&wasm, Path::new("test"), version);
+    for (version, allowed) in [(40, true), (59, true), (60, false), (70, false)] {
+        let result = binary::parse_with_version(&wasm, Path::new("test"), version);
         assert_eq!(result.is_ok(), allowed, "stylus_version={version}");
     }
 }
