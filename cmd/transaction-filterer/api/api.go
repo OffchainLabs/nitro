@@ -36,22 +36,26 @@ type TransactionFiltererAPI struct {
 	arbFilteredTransactionsManager atomic.Pointer[precompilesgen.ArbFilteredTransactionsManager]
 	txOpts                         *bind.TransactOpts
 
-	prune pruner
+	prune *pruner
 }
 
 func NewTransactionFiltererAPI(
 	manager *precompilesgen.ArbFilteredTransactionsManager,
 	txOpts *bind.TransactOpts,
 	pruneOpts *PruneOptions,
-) *TransactionFiltererAPI {
+) (*TransactionFiltererAPI, error) {
+	p, err := newPruner(pruneOpts)
+	if err != nil {
+		return nil, err
+	}
 	api := &TransactionFiltererAPI{
 		filterQueue:   make(chan common.Hash, filterQueueSize),
 		unfilterQueue: make(chan common.Hash, filterQueueSize),
 		txOpts:        txOpts,
+		prune:         p,
 	}
 	api.arbFilteredTransactionsManager.Store(manager)
-	api.prune = newPruner(pruneOpts)
-	return api
+	return api, nil
 }
 
 func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
@@ -69,6 +73,9 @@ func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 		}
 	})
 	if t.prune.config.Enable {
+		if t.prune.config.StartParentBlock == 0 && t.prune.config.StartDelayedMsgIdx == 0 {
+			log.Warn("pruner scanning from genesis; set pruning.start-parent-block and pruning.start-delayed-msg-idx to avoid rescan on each restart")
+		}
 		t.CallIteratively(func(ctx context.Context) time.Duration {
 			result, err := t.prune.step(ctx)
 			if err != nil {
@@ -254,10 +261,6 @@ func NewStack(
 	sequencerClient *ethclient.Client,
 	pruneOpts *PruneOptions,
 ) (*node.Node, *TransactionFiltererAPI, error) {
-	if err := validatePruneOptions(pruneOpts); err != nil {
-		return nil, nil, err
-	}
-
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, nil, err
@@ -274,7 +277,10 @@ func NewStack(
 		}
 	}
 
-	api := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts, pruneOpts)
+	api, err := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts, pruneOpts)
+	if err != nil {
+		return nil, nil, err
+	}
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,
 		Version:   "1.0",

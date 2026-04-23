@@ -103,10 +103,13 @@ type pruner struct {
 	nextDelayedMsgIdx uint64
 }
 
-func newPruner(opts *PruneOptions) pruner {
-	var p pruner
+func newPruner(opts *PruneOptions) (*pruner, error) {
+	if err := validatePruneOptions(opts); err != nil {
+		return nil, err
+	}
+	p := &pruner{}
 	if opts == nil || !opts.Config.Enable {
-		return p
+		return p, nil
 	}
 	p.config = opts.Config
 	p.chainId = opts.ChainId
@@ -115,7 +118,7 @@ func newPruner(opts *PruneOptions) pruner {
 	p.delayedBridge = opts.DelayedBridge
 	p.nextParentBlock = opts.Config.StartParentBlock
 	p.nextDelayedMsgIdx = opts.Config.StartDelayedMsgIdx
-	return p
+	return p, nil
 }
 
 // pruneResult carries the output of a single scan tick.
@@ -190,8 +193,8 @@ func (p *pruner) collectHashes(msgs []*mel.DelayedInboxMessage, cumulativeDelaye
 		// so the max supported version parses every user-facing message kind correctly.
 		txs, err := arbos.ParseL2Transactions(msg.Message, p.chainId, params.MaxDebugArbosVersionSupported)
 		if err != nil {
-			// Some message kinds (e.g. Initialize) legitimately error here; skip and advance.
-			log.Debug("ParseL2Transactions returned error", "idx", idx, "kind", msg.Message.Header.Kind, "err", err)
+			// Still advance the cursor to avoid an infinite loop on the same msg.
+			log.Error("ParseL2Transactions failed; advancing cursor", "idx", idx, "kind", msg.Message.Header.Kind, "err", err)
 		} else {
 			for _, tx := range txs {
 				hashes = append(hashes, tx.Hash())

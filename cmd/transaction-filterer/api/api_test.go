@@ -23,7 +23,10 @@ import (
 
 func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 	t.Helper()
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil)
+	api, err := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	if err := api.Start(ctx); err != nil {
@@ -34,7 +37,10 @@ func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 }
 
 func TestFilterContextCancelledWhenQueueFull(t *testing.T) {
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil)
+	api, err := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for range filterQueueSize {
 		api.filterQueue <- common.Hash{}
@@ -43,14 +49,17 @@ func TestFilterContextCancelledWhenQueueFull(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := api.Filter(ctx, common.Hash{2})
+	err = api.Filter(ctx, common.Hash{2})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
 }
 
 func TestUnfilterContextCancelledWhenQueueFull(t *testing.T) {
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil)
+	api, err := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for range filterQueueSize {
 		api.unfilterQueue <- common.Hash{}
@@ -59,7 +68,7 @@ func TestUnfilterContextCancelledWhenQueueFull(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := api.Unfilter(ctx, common.Hash{2})
+	err = api.Unfilter(ctx, common.Hash{2})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
@@ -213,3 +222,4 @@ func TestValidatePruneOptions(t *testing.T) {
 		})
 	}
 }
+
