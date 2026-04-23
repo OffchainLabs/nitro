@@ -29,7 +29,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockTransfer(t *testing.T) {
-	builder, _, cleanup := recordBlockSetup(t)
+	builder, _, cleanup := setupProgramTest(t, true)
 	l2info := builder.L2Info
 	defer cleanup()
 
@@ -46,11 +46,11 @@ func TestRecordBlockTransfer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockSolidity(t *testing.T) {
-	builder, auth, cleanup := recordBlockSetup(t)
+	builder, auth, cleanup := setupProgramTest(t, true)
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	_, tx, simple, err := localgen.DeploySimple(auth, l2client)
+	_, tx, simple, err := localgen.DeploySimple(&auth, l2client)
 	Require(t, err)
 	ensureTx(t, builder, tx)
 
@@ -59,7 +59,7 @@ func TestRecordBlockSolidity(t *testing.T) {
 	const numIncrements = 20
 	txs := make(types.Transactions, numIncrements)
 	for i := 0; i < numIncrements; i++ {
-		txs[i], err = simple.Increment(noSendOpts(auth, nonce+uint64(i)))
+		txs[i], err = simple.Increment(noSendOpts(&auth, nonce+uint64(i)))
 		Require(t, err)
 	}
 
@@ -72,13 +72,13 @@ func TestRecordBlockSolidity(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockStylus(t *testing.T) {
-	builder, auth, cleanup := recordBlockSetup(t)
+	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	programAddress := deployWasm(t, ctx, *auth, l2client, rustFile("storage"))
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
@@ -94,14 +94,14 @@ func TestRecordBlockStylus(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockStylusHeavy(t *testing.T) {
-	builder, auth, cleanup := recordBlockSetup(t)
+	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	storageAddr := deployWasm(t, ctx, *auth, l2client, rustFile("storage"))
-	multicallAddr := deployWasm(t, ctx, *auth, l2client, rustFile("multicall"))
+	storageAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	multicallAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	args := multicallEmptyArgs()
 	for i := 0; i < 32; i++ {
@@ -123,18 +123,18 @@ func TestRecordBlockStylusHeavy(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockMixed(t *testing.T) {
-	builder, auth, cleanup := recordBlockSetup(t)
+	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	_, tx, simple, err := localgen.DeploySimple(auth, l2client)
+	_, tx, simple, err := localgen.DeploySimple(&auth, l2client)
 	Require(t, err)
 	ensureTx(t, builder, tx)
 
-	storageAddr := deployWasm(t, ctx, *auth, l2client, rustFile("storage"))
-	keccakAddr := deployWasm(t, ctx, *auth, l2client, rustFile("keccak"))
+	storageAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
 	syncOwnerNonce(t, builder)
 	ownerNonce := l2info.GetInfoWithPrivKey("Owner").Nonce.Load()
@@ -148,7 +148,7 @@ func TestRecordBlockMixed(t *testing.T) {
 		txs = append(txs, l2info.PrepareTx("Owner", name, l2info.TransferGas, big.NewInt(1e18), nil))
 	}
 
-	txIncrementEmit, err := simple.IncrementEmit(noSendOpts(auth, ownerNonce+3))
+	txIncrementEmit, err := simple.IncrementEmit(noSendOpts(&auth, ownerNonce+3))
 	Require(t, err)
 	txs = append(txs, txIncrementEmit)
 
@@ -168,13 +168,6 @@ func TestRecordBlockMixed(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// recordBlockSetup spins up a full Stylus-enabled devnet for block recording.
-func recordBlockSetup(t *testing.T) (*NodeBuilder, *bind.TransactOpts, func()) {
-	t.Helper()
-	builder, auth, cleanup := setupProgramTest(t, true)
-	return builder, &auth, cleanup
-}
 
 // ensureTx waits for a transaction to be included and asserts success.
 func ensureTx(t *testing.T, builder *NodeBuilder, tx *types.Transaction) *types.Receipt {
