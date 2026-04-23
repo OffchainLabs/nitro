@@ -74,8 +74,7 @@ fn handle_get_code(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     out.extend_from_slice(&code);
     out.extend(std::iter::repeat_n(0u8, pad));
 
-    // OpenArbosState (800) + argsCost (3) + ColdSloadCostEIP2929 (2100) +
-    // copy * words(code) + copy * words(result).
+    // OpenArbosState(800) + args(3) + ColdSloadCostEIP2929(2100) + code + result copy.
     let code_words = (code.len() as u64).div_ceil(32);
     let result_words = (out.len() as u64).div_ceil(32);
     let gas_cost =

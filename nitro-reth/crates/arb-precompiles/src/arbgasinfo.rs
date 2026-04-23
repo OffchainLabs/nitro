@@ -6,12 +6,14 @@ use revm::{
     precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
 };
 
-use crate::interfaces::IArbGasInfo;
-use crate::storage_slot::{
-    derive_subspace_key, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
-    multi_gas_constraints_vec_key, subspace_slot, vector_element_field, vector_element_key,
-    vector_length_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbGasInfo,
+    storage_slot::{
+        derive_subspace_key, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
+        multi_gas_constraints_vec_key, subspace_slot, vector_element_field, vector_element_key,
+        vector_length_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbGasInfo precompile address (0x6c).

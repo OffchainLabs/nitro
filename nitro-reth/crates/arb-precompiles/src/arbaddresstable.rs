@@ -3,10 +3,12 @@ use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbAddressTable;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ARBOS_STATE_ADDRESS,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbAddressTable,
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ARBOS_STATE_ADDRESS,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbAddressTable precompile address (0x66).

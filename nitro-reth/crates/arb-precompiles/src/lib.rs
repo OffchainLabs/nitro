@@ -535,4 +535,3 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
         }
     }
 }
-

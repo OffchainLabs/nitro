@@ -1,9 +1,5 @@
-//! Compile-time ABI for Arbitrum precompiles.
-//!
-//! Solidity source is read from two pinned submodules under
-//! `crates/arb-precompiles/`:
-//! - `nitro-precompile-interfaces` — ArbOS precompile interfaces.
-//! - `nitro-contracts`             — node-interface (RPC-only) virtual contracts.
+//! Compile-time ABI for the Arbitrum precompiles, generated from the pinned
+//! `nitro-precompile-interfaces` and `nitro-contracts` submodules via `sol!`.
 
 macro_rules! sol_module {
     ($mod:ident, $path:literal) => {
@@ -14,30 +10,27 @@ macro_rules! sol_module {
     };
 }
 
-sol_module!(arbsys, "nitro-precompile-interfaces/ArbSys.sol");
-sol_module!(arbinfo, "nitro-precompile-interfaces/ArbInfo.sol");
-sol_module!(arbstatistics, "nitro-precompile-interfaces/ArbStatistics.sol");
-sol_module!(arbostest, "nitro-precompile-interfaces/ArbosTest.sol");
-sol_module!(arbfunctiontable, "nitro-precompile-interfaces/ArbFunctionTable.sol");
+sol_module!(arbsys, ".gen/ArbSys.sol");
+sol_module!(arbinfo, ".gen/ArbInfo.sol");
+sol_module!(arbstatistics, ".gen/ArbStatistics.sol");
+sol_module!(arbostest, ".gen/ArbosTest.sol");
+sol_module!(arbfunctiontable, ".gen/ArbFunctionTable.sol");
 sol_module!(
     arbfilteredtxmanager,
-    "nitro-precompile-interfaces/ArbFilteredTransactionsManager.sol"
+    ".gen/ArbFilteredTransactionsManager.sol"
 );
-sol_module!(
-    arbnativetokenmanager,
-    "nitro-precompile-interfaces/ArbNativeTokenManager.sol"
-);
-sol_module!(arbwasmcache, "nitro-precompile-interfaces/ArbWasmCache.sol");
-sol_module!(arbdebug, "nitro-precompile-interfaces/ArbDebug.sol");
-sol_module!(arbaddresstable, "nitro-precompile-interfaces/ArbAddressTable.sol");
-sol_module!(arbaggregator, "nitro-precompile-interfaces/ArbAggregator.sol");
-sol_module!(arbretryabletx, "nitro-precompile-interfaces/ArbRetryableTx.sol");
-sol_module!(arbwasm, "nitro-precompile-interfaces/ArbWasm.sol");
-sol_module!(arbownerpublic, "nitro-precompile-interfaces/ArbOwnerPublic.sol");
+sol_module!(arbnativetokenmanager, ".gen/ArbNativeTokenManager.sol");
+sol_module!(arbwasmcache, ".gen/ArbWasmCache.sol");
+sol_module!(arbdebug, ".gen/ArbDebug.sol");
+sol_module!(arbaddresstable, ".gen/ArbAddressTable.sol");
+sol_module!(arbaggregator, ".gen/ArbAggregator.sol");
+sol_module!(arbretryabletx, ".gen/ArbRetryableTx.sol");
+sol_module!(arbwasm, ".gen/ArbWasm.sol");
+sol_module!(arbownerpublic, ".gen/ArbOwnerPublic.sol");
 sol_module!(arbgasinfo, ".gen/ArbGasInfo.sol");
 sol_module!(arbowner, ".gen/ArbOwner.sol");
-sol_module!(nodeinterface, "nitro-contracts/src/node-interface/NodeInterface.sol");
-sol_module!(nodeinterfacedebug, "nitro-contracts/src/node-interface/NodeInterfaceDebug.sol");
+sol_module!(nodeinterface, ".gen/NodeInterface.sol");
+sol_module!(nodeinterfacedebug, ".gen/NodeInterfaceDebug.sol");
 
 pub use arbaddresstable::ArbAddressTable as IArbAddressTable;
 pub use arbaggregator::ArbAggregator as IArbAggregator;

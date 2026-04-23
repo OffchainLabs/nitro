@@ -3,10 +3,12 @@ use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbWasm;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
-    PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbWasm,
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
+        PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbWasm precompile address (0x71).
@@ -654,10 +656,7 @@ fn handle_activate_program(
     Ok(PrecompileOutput::new(gas_used, return_data.into()))
 }
 
-fn handle_codehash_keepalive(
-    mut input: PrecompileInput<'_>,
-    codehash: B256,
-) -> PrecompileResult {
+fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
     crate::reset_precompile_gas();
     let args_cost = COPY_GAS * (input.data.len() as u64).saturating_sub(4).div_ceil(32);
     crate::charge_precompile_gas(args_cost);

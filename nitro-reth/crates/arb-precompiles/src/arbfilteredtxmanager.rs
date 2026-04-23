@@ -3,10 +3,12 @@ use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbFilteredTxManager;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
-    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
+use crate::{
+    interfaces::IArbFilteredTxManager,
+    storage_slot::{
+        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+        ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
+    },
 };
 
 /// ArbFilteredTransactionsManager precompile address (0x74).
@@ -36,12 +38,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     crate::init_precompile_gas(input.data.len());
 
-    let call = match IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls::abi_decode(
-        input.data,
-    ) {
-        Ok(c) => c,
-        Err(_) => return crate::burn_all_revert(gas_limit),
-    };
+    let call =
+        match IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls::abi_decode(input.data) {
+            Ok(c) => c,
+            Err(_) => return crate::burn_all_revert(gas_limit),
+        };
 
     use IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls as Calls;
     let result = match call {

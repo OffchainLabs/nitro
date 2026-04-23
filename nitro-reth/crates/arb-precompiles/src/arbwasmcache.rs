@@ -3,11 +3,13 @@ use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::{IArbWasm, IArbWasmCache};
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CACHE_MANAGERS_KEY,
-    CHAIN_OWNER_SUBSPACE, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::{IArbWasm, IArbWasmCache},
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CACHE_MANAGERS_KEY,
+        CHAIN_OWNER_SUBSPACE, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 const ARBITRUM_START_TIME: u64 = 1_421_388_000;
@@ -64,9 +66,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         ArbWasmCacheCalls::evictCodehash(c) => handle_evict_codehash(&mut input, c.codehash),
         ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager),
         ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input),
-        ArbWasmCacheCalls::codehashIsCached(c) => {
-            handle_codehash_is_cached(&mut input, c.codehash)
-        }
+        ArbWasmCacheCalls::codehashIsCached(c) => handle_codehash_is_cached(&mut input, c.codehash),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -155,10 +155,7 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
     Ok(PrecompileOutput::new(total.min(input.gas), out.into()))
 }
 
-fn handle_codehash_is_cached(
-    input: &mut PrecompileInput<'_>,
-    codehash: B256,
-) -> PrecompileResult {
+fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
     let data_len = input.data.len();
     load_arbos(input)?;
 

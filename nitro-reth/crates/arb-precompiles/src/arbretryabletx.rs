@@ -3,11 +3,13 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbRetryableTx;
-use crate::storage_slot::{
-    current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
-    vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbRetryableTx,
+    storage_slot::{
+        current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
+        vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbRetryableTx precompile address (0x6e).

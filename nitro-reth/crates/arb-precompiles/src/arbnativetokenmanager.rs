@@ -3,10 +3,12 @@ use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbNativeTokenManager;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbNativeTokenManager,
+    storage_slot::{
+        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbNativeTokenManager precompile address (0x73).
@@ -102,7 +104,10 @@ fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     let event_data = amount.to_be_bytes::<32>().to_vec();
     input.internals_mut().log(Log::new_unchecked(
         ARBNATIVETOKENMANAGER_ADDRESS,
-        vec![IArbNativeTokenManager::NativeTokenMinted::SIGNATURE_HASH, topic1],
+        vec![
+            IArbNativeTokenManager::NativeTokenMinted::SIGNATURE_HASH,
+            topic1,
+        ],
         event_data.into(),
     ));
 
@@ -139,7 +144,10 @@ fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     let event_data = amount.to_be_bytes::<32>().to_vec();
     input.internals_mut().log(Log::new_unchecked(
         ARBNATIVETOKENMANAGER_ADDRESS,
-        vec![IArbNativeTokenManager::NativeTokenBurned::SIGNATURE_HASH, topic1],
+        vec![
+            IArbNativeTokenManager::NativeTokenBurned::SIGNATURE_HASH,
+            topic1,
+        ],
         event_data.into(),
     ));
 

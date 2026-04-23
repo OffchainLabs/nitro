@@ -1,6 +1,3 @@
-//! NodeInterfaceDebug (0xc9) virtual contract — debug-only accessors exposed
-//! via `eth_call`.
-
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
@@ -36,12 +33,9 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     crate::gas_check(gas_limit, result)
 }
 
-/// Returns a well-formed empty `RetryableInfo` so bridge tooling gets a valid
+/// Returns a well-formed empty `RetryableInfo` — bridge tooling gets a valid
 /// ABI response; populating it requires RPC-layer state access.
 fn handle_get_retryable(input: &PrecompileInput<'_>) -> PrecompileResult {
-    // Head: timeout(32) + from(32) + to(32) + value(32) + beneficiary(32)
-    //       + tries(32) + dataOffset(32)
-    // Tail: dataLen(32) = 0
     let mut out = vec![0u8; 7 * 32 + 32];
     U256::from(7u64 * 32)
         .to_be_bytes::<32>()

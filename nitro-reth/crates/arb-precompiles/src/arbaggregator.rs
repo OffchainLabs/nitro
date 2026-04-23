@@ -3,10 +3,12 @@ use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::SolInterface;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbAggregator;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-    L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbAggregator,
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
+        L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbAggregator precompile address (0x6d).
@@ -53,7 +55,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
             out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
-            Ok(PrecompileOutput::new((SLOAD_GAS + 6).min(gas_limit), out.into()))
+            Ok(PrecompileOutput::new(
+                (SLOAD_GAS + 6).min(gas_limit),
+                out.into(),
+            ))
         }
         Calls::getDefaultAggregator(_) => {
             let mut out = [0u8; 32];
@@ -142,10 +147,7 @@ fn is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> Result<bool
     Ok(val != U256::ZERO)
 }
 
-fn handle_get_fee_collector(
-    input: &mut PrecompileInput<'_>,
-    poster: Address,
-) -> PrecompileResult {
+fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 

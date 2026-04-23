@@ -3,12 +3,15 @@ use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbOwnerPublic;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
-    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
-    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+use crate::{
+    interfaces::IArbOwnerPublic,
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot,
+        ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE,
+        FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
+        NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
+        ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    },
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -177,10 +180,7 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     ))
 }
 
-fn handle_rectify_chain_owner(
-    input: &mut PrecompileInput<'_>,
-    addr: Address,
-) -> PrecompileResult {
+fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 

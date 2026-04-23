@@ -6,10 +6,12 @@ use revm::{
     primitives::Log,
 };
 
-use crate::interfaces::IArbDebug;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use crate::{
+    interfaces::IArbDebug,
+    storage_slot::{
+        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
+        ROOT_STORAGE_KEY,
+    },
 };
 
 /// ArbDebug precompile address (0xff).
@@ -49,9 +51,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         ArbDebugCalls::customRevert(c) => handle_custom_revert(c.number),
         ArbDebugCalls::legacyError(_) => Err(PrecompileError::other("example legacy error")),
         ArbDebugCalls::panic(_) => panic!("called ArbDebug's debug-only Panic method"),
-        ArbDebugCalls::overwriteContractCode(_) => {
-            Err(PrecompileError::other("overwriteContractCode not implemented"))
-        }
+        ArbDebugCalls::overwriteContractCode(_) => Err(PrecompileError::other(
+            "overwriteContractCode not implemented",
+        )),
     };
 
     crate::gas_check(gas_limit, result)

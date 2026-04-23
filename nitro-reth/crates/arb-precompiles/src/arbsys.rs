@@ -5,10 +5,12 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use std::{cell::RefCell, collections::HashMap, sync::Mutex};
 
-use crate::interfaces::IArbSys;
-use crate::storage_slot::{
-    derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
-    ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE,
+use crate::{
+    interfaces::IArbSys,
+    storage_slot::{
+        derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
+        ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE,
+    },
 };
 
 /// ArbSys precompile address (0x64).
@@ -344,10 +346,7 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 // ── L2→L1 messaging ─────────────────────────────────────────────────
 
-fn handle_withdraw_eth(
-    input: &mut PrecompileInput<'_>,
-    destination: Address,
-) -> PrecompileResult {
+fn handle_withdraw_eth(input: &mut PrecompileInput<'_>, destination: Address) -> PrecompileResult {
     if input.is_static {
         return Err(PrecompileError::other(
             "cannot call withdrawEth in static context",
