@@ -16,7 +16,7 @@ use {
     super::value,
     std::marker::PhantomData,
     wasmer::sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
-    wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability},
+    wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability, Pages},
 };
 
 use crate::{
@@ -52,6 +52,7 @@ pub trait ModuleMod {
     /// Drops debug-only info like export names.
     fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>);
     fn memory_info(&self) -> Result<MemoryType>;
+    fn set_memory_max(&mut self, max: Pages) -> Result<()>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -260,6 +261,16 @@ impl ModuleMod for ModuleInfo {
         }
         Ok(self.memories.last().unwrap().into())
     }
+
+    fn set_memory_max(&mut self, max: Pages) -> Result<()> {
+        let idx = MemoryIndex::from_u32(0);
+        let mem = self.memories.get_mut(idx).ok_or_else(|| eyre!("missing memory"))?;
+        mem.maximum = Some(match mem.maximum {
+            Some(existing) => existing.min(max),
+            None => max,
+        });
+        Ok(())
+    }
 }
 
 impl ModuleMod for WasmBinary<'_> {
@@ -378,6 +389,16 @@ impl ModuleMod for WasmBinary<'_> {
             bail!("missing memory with export name {}", "memory".red());
         }
         self.memories.last().unwrap().try_into()
+    }
+
+    fn set_memory_max(&mut self, max: Pages) -> Result<()> {
+        let max = max.0 as u64;
+        let mem = self.memories.first_mut().ok_or_else(|| eyre!("missing memory"))?;
+        mem.maximum = Some(match mem.maximum {
+            Some(existing) => existing.min(max),
+            None => max,
+        });
+        Ok(())
     }
 }
 
