@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-func checkReportBlockNumberAndParentBlockHash(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport) {
+func CheckReportBlockNumberAndParentBlockHash(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport) {
 	require.NotZero(t, report.BlockNumber, "block number shouldn't be genesis")
 	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
 	require.NoError(t, err)
