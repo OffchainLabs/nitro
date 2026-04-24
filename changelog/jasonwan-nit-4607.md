@@ -3,10 +3,10 @@
   - `databaseVersion: <nil>` now displays as `not set (new or uninitialized database)`
   - `no --init.* mode supplied` error now lists available init modes with docs link
   - `recreate-missing-state-from` error explains archive-only requirement and suggests alternatives
-  - Added pruning startup banner with mode info and snapshot alternative tip
+  - Added pruning startup banner with mode info; snapshot alternative tip shown only for `full`/`minimal` modes (not for `validator` or custom hash list)
   - Updated pruning duration comment from "2 hours" to "several days for large databases"
   - Added explicit `log.Error` before fatal feed connection shutdown
   - Compression not negotiated warning now notes it is non-critical
-  - "Unindexing transactions" log now clarifies it is normal maintenance on first occurrence
+  - "Unindexing transactions" first log clarifies it is normal maintenance; subsequent periodic logs downgraded to DEBUG to avoid log spam
   - Added startup info log when no memory free limit is configured
   - Clarified `--conf.s3.*` flag descriptions to indicate they configure S3-based node configuration file loading
