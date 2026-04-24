@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{in_process::InProcessRunner, RunnerConfig, Workload};
+use super::{BenchRunner, RunnerConfig, Workload};
 use crate::{
     metrics::{BlockMetric, RunResult},
     report::compare::{bootstrap_paired_delta, BootstrapDelta, MetricKey, Verdict},
@@ -50,7 +50,8 @@ pub struct AbbaResult {
     pub verdict: Verdict,
 }
 
-/// Run an A-B-B-A interleaved comparison. Each factory is called `2 * iterations` times.
+/// Each factory is called `2 * iterations` times and returns a fresh workload + runner.
+/// Workloads should be identical between sides; the runner is where the two sides differ.
 pub fn run_abba<FB, FF>(
     config: &AbbaConfig,
     manifest_name: &str,
@@ -58,8 +59,8 @@ pub fn run_abba<FB, FF>(
     mut build_feature: FF,
 ) -> eyre::Result<AbbaResult>
 where
-    FB: FnMut() -> eyre::Result<Workload>,
-    FF: FnMut() -> eyre::Result<Workload>,
+    FB: FnMut() -> eyre::Result<(Workload, Box<dyn BenchRunner>)>,
+    FF: FnMut() -> eyre::Result<(Workload, Box<dyn BenchRunner>)>,
 {
     let mut samples = Vec::with_capacity(config.iterations);
     for i in 0..config.iterations {
@@ -71,12 +72,11 @@ where
 
         let mut runs: [Option<RunResult>; 4] = Default::default();
         for (slot, side) in order.iter().enumerate() {
-            let workload = match side {
+            let (workload, mut runner) = match side {
                 Side::Baseline => build_baseline()?,
                 Side::Feature => build_feature()?,
             };
-            let mut runner = InProcessRunner::new(config.runner.clone());
-            runs[slot] = Some(runner.run(workload)?);
+            runs[slot] = Some(runner.execute(workload)?);
         }
 
         let mut baseline_runs = Vec::new();
@@ -256,29 +256,19 @@ mod tests {
                 abort_on_block_error: false,
             },
         };
-        let result = run_abba(
-            &cfg,
-            "test/abba",
-            || {
-                generate(
-                    "test/abba",
-                    421614,
-                    30,
-                    "transfer_train",
-                    &serde_json::json!({ "block_count": 2, "txs_per_block": 2 }),
-                )
-            },
-            || {
-                generate(
-                    "test/abba",
-                    421614,
-                    30,
-                    "transfer_train",
-                    &serde_json::json!({ "block_count": 2, "txs_per_block": 2 }),
-                )
-            },
-        )
-        .unwrap();
+        let build = || {
+            let w = generate(
+                "test/abba",
+                421614,
+                30,
+                "transfer_train",
+                &serde_json::json!({ "block_count": 2, "txs_per_block": 2 }),
+            )?;
+            let r: Box<dyn BenchRunner> =
+                Box::new(crate::runner::in_process::InProcessRunner::new(cfg.runner.clone()));
+            Ok::<_, eyre::Report>((w, r))
+        };
+        let result = run_abba(&cfg, "test/abba", build, build).unwrap();
         assert_eq!(result.iterations, 1);
         assert!(!result.deltas.is_empty());
         // Verdict for identical workloads under wide tolerance is neutral or improvement;

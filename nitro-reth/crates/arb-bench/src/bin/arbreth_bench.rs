@@ -15,7 +15,7 @@ use arb_bench::{
         abba::{run_abba, AbbaConfig, AbbaResult},
         in_process::InProcessRunner,
         subprocess::{SubprocessConfig, SubprocessRunner},
-        RunnerConfig, Workload,
+        BenchRunner, RunnerConfig, Workload,
     },
 };
 use clap::{Parser, Subcommand, ValueEnum};
@@ -106,6 +106,15 @@ struct AbbaCommand {
     /// Exit non-zero if any manifest verdict is `Regression`.
     #[arg(long, default_value_t = true)]
     fail_on_regression: bool,
+    /// Baseline `arb-reth` binary. Requires `--feature-bin`.
+    #[arg(long)]
+    baseline_bin: Option<PathBuf>,
+    /// Feature `arb-reth` binary. Requires `--baseline-bin`.
+    #[arg(long)]
+    feature_bin: Option<PathBuf>,
+    /// Genesis JSON used by both subprocess runners.
+    #[arg(long, default_value = "genesis/arbitrum-sepolia.json")]
+    genesis: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -243,6 +252,10 @@ fn abba_cmd(cmd: AbbaCommand) -> eyre::Result<()> {
     if manifests_paths.is_empty() {
         eyre::bail!("supply --manifests or --preset");
     }
+    if cmd.baseline_bin.is_some() != cmd.feature_bin.is_some() {
+        eyre::bail!("--baseline-bin and --feature-bin must be supplied together");
+    }
+    let subprocess_mode = cmd.baseline_bin.is_some();
     let manifests = expand_manifests(&manifests_paths)?;
     std::fs::create_dir_all(&cmd.out)?;
     let mut full_md = String::new();
@@ -259,14 +272,11 @@ fn abba_cmd(cmd: AbbaCommand) -> eyre::Result<()> {
                 abort_on_block_error: false,
             },
         };
-        let manifest_clone = manifest.clone();
-        let manifest_clone_2 = manifest.clone();
-        let result: AbbaResult = run_abba(
-            &cfg,
-            &manifest.name,
-            move || build_workload(&manifest_clone),
-            move || build_workload(&manifest_clone_2),
-        )?;
+        let result: AbbaResult = if subprocess_mode {
+            run_abba_subprocess(&cfg, manifest, &cmd)?
+        } else {
+            run_abba_in_process(&cfg, manifest)?
+        };
         let safe_name = manifest.name.replace('/', "__");
         let json_out = cmd.out.join(format!("{safe_name}-abba.json"));
         let csv_out = cmd.out.join(format!("{safe_name}-abba.csv"));
@@ -290,6 +300,82 @@ fn abba_cmd(cmd: AbbaCommand) -> eyre::Result<()> {
         eyre::bail!("at least one manifest regressed beyond tolerance");
     }
     Ok(())
+}
+
+fn run_abba_in_process(
+    cfg: &AbbaConfig,
+    manifest: &Manifest,
+) -> eyre::Result<AbbaResult> {
+    let runner_cfg_b = cfg.runner.clone();
+    let runner_cfg_f = cfg.runner.clone();
+    let m_b = manifest.clone();
+    let m_f = manifest.clone();
+    run_abba(
+        cfg,
+        &manifest.name,
+        move || {
+            let w = build_workload(&m_b)?;
+            let r: Box<dyn BenchRunner> =
+                Box::new(InProcessRunner::new(runner_cfg_b.clone()));
+            Ok((w, r))
+        },
+        move || {
+            let w = build_workload(&m_f)?;
+            let r: Box<dyn BenchRunner> =
+                Box::new(InProcessRunner::new(runner_cfg_f.clone()));
+            Ok((w, r))
+        },
+    )
+}
+
+fn run_abba_subprocess(
+    cfg: &AbbaConfig,
+    manifest: &Manifest,
+    cmd: &AbbaCommand,
+) -> eyre::Result<AbbaResult> {
+    let bench_dir = std::env::temp_dir().join("arbreth-bench-abba");
+    std::fs::create_dir_all(&bench_dir)?;
+    let baseline_bin = cmd.baseline_bin.clone().expect("checked by caller");
+    let feature_bin = cmd.feature_bin.clone().expect("checked by caller");
+    let genesis = cmd.genesis.clone();
+    let runner_cfg_b = cfg.runner.clone();
+    let runner_cfg_f = cfg.runner.clone();
+    let bench_dir_b = bench_dir.clone();
+    let bench_dir_f = bench_dir;
+    let genesis_b = genesis.clone();
+    let genesis_f = genesis;
+    let m_b = manifest.clone();
+    let m_f = manifest.clone();
+    let mut baseline_id: u64 = 0;
+    let mut feature_id: u64 = 0;
+    run_abba(
+        cfg,
+        &manifest.name,
+        move || {
+            baseline_id += 1;
+            let w = build_workload(&m_b)?;
+            let data_dir = bench_dir_b.join(format!("baseline-{baseline_id}"));
+            let mut sub =
+                SubprocessConfig::new(baseline_bin.clone(), genesis_b.clone(), data_dir);
+            sub.http_port = 38545;
+            sub.authrpc_port = 38551;
+            let r: Box<dyn BenchRunner> =
+                Box::new(SubprocessRunner::new(runner_cfg_b.clone(), sub));
+            Ok((w, r))
+        },
+        move || {
+            feature_id += 1;
+            let w = build_workload(&m_f)?;
+            let data_dir = bench_dir_f.join(format!("feature-{feature_id}"));
+            let mut sub =
+                SubprocessConfig::new(feature_bin.clone(), genesis_f.clone(), data_dir);
+            sub.http_port = 38645;
+            sub.authrpc_port = 38651;
+            let r: Box<dyn BenchRunner> =
+                Box::new(SubprocessRunner::new(runner_cfg_f.clone(), sub));
+            Ok((w, r))
+        },
+    )
 }
 
 fn compare_cmd(cmd: CompareCommand) -> eyre::Result<()> {

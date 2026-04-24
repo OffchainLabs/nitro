@@ -6,6 +6,24 @@ use alloy_primitives::{Address, U256};
 use arb_primitives::ArbTransactionSigned;
 use serde::{Deserialize, Serialize};
 
+use crate::metrics::RunResult;
+
+pub trait BenchRunner {
+    fn execute(&mut self, workload: Workload) -> eyre::Result<RunResult>;
+}
+
+impl BenchRunner for in_process::InProcessRunner {
+    fn execute(&mut self, workload: Workload) -> eyre::Result<RunResult> {
+        self.run(workload)
+    }
+}
+
+impl BenchRunner for subprocess::SubprocessRunner {
+    fn execute(&mut self, workload: Workload) -> eyre::Result<RunResult> {
+        self.run(workload)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BlockInput {
     pub block_number: u64,

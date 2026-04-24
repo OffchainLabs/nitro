@@ -7,7 +7,7 @@ use arb_bench::{
     runner::{
         abba::{run_abba, AbbaConfig},
         in_process::InProcessRunner,
-        RunnerConfig,
+        BenchRunner, RunnerConfig,
     },
 };
 
@@ -71,29 +71,19 @@ fn abba_full_round_trip() {
             abort_on_block_error: false,
         },
     };
-    let result = run_abba(
-        &cfg,
-        "test/abba_full",
-        || {
-            generate(
-                "test/abba_full",
-                421614,
-                30,
-                "transfer_train",
-                &serde_json::json!({ "block_count": 3, "txs_per_block": 4 }),
-            )
-        },
-        || {
-            generate(
-                "test/abba_full",
-                421614,
-                30,
-                "transfer_train",
-                &serde_json::json!({ "block_count": 3, "txs_per_block": 4 }),
-            )
-        },
-    )
-    .unwrap();
+    let build_side = || {
+        let w = generate(
+            "test/abba_full",
+            421614,
+            30,
+            "transfer_train",
+            &serde_json::json!({ "block_count": 3, "txs_per_block": 4 }),
+        )?;
+        let runner: Box<dyn BenchRunner> =
+            Box::new(InProcessRunner::new(cfg.runner.clone()));
+        Ok::<_, eyre::Error>((w, runner))
+    };
+    let result = run_abba(&cfg, "test/abba_full", build_side, build_side).unwrap();
 
     assert_eq!(result.iterations, 1);
     assert!(!result.deltas.is_empty());
