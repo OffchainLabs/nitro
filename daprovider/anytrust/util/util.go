@@ -201,18 +201,18 @@ func recoverPayloadFromBatchInternal(
 	}
 	if len(sequencerMsg) < 40 {
 		log.Error("AnyTrust sequencer message too short: expected at least 40 bytes", "length", len(sequencerMsg))
-		return nil, nil, nil
+		return nil, preimages, nil
 	}
 	cert, err := DeserializeCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
 		log.Error("Failed to deserialize AnyTrust message", "err", err)
-		return nil, nil, nil
+		return nil, preimages, nil
 	}
 	version := cert.Version
 
 	if version >= 2 {
 		log.Error("Your node software is probably out of date", "certificateVersion", version)
-		return nil, nil, nil
+		return nil, preimages, nil
 	}
 
 	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
@@ -259,13 +259,13 @@ func recoverPayloadFromBatchInternal(
 	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
 	if err != nil {
 		log.Error("Bad signature on AnyTrust batch", "err", err)
-		return nil, nil, nil
+		return nil, preimages, nil
 	}
 
 	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
 	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
 		log.Error("Data availability cert expires too soon", "err", "")
-		return nil, nil, nil
+		return nil, preimages, nil
 	}
 
 	dataHash := cert.DataHash
