@@ -125,10 +125,6 @@ func (c *InitConfig) Validate() error {
 	if c.Latest != "" && !slices.Contains(acceptedSnapshotKinds, c.Latest) {
 		return fmt.Errorf("invalid value for latest option: \"%s\" %s", c.Latest, acceptedSnapshotKindsStr)
 	}
-	if c.Latest != "" && c.Prune != "" {
-		return fmt.Errorf("--init.latest and --init.prune cannot be used together. " +
-			"Use --init.latest pruned to download a fresh pruned snapshot, or --init.prune full to prune an existing database")
-	}
 	if c.Prune != "" && c.PruneThreads <= 0 {
 		return fmt.Errorf("invalid number of pruning threads: %d, has to be greater then 0", c.PruneThreads)
 	}

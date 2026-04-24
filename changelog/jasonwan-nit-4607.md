@@ -3,7 +3,6 @@
   - `databaseVersion: <nil>` now displays as `not set (new or uninitialized database)`
   - `no --init.* mode supplied` error now lists available init modes with docs link
   - `recreate-missing-state-from` error explains archive-only requirement and suggests alternatives
-  - Added mutual exclusion validation for `--init.latest` and `--init.prune`
   - Added pruning startup banner with mode info and snapshot alternative tip
   - Updated pruning duration comment from "2 hours" to "several days for large databases"
   - Added explicit `log.Error` before fatal feed connection shutdown
