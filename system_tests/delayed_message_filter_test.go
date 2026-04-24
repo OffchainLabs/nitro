@@ -29,11 +29,11 @@ import (
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
-	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func CheckReportBlockNumberAndParentBlockHash(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport) {
