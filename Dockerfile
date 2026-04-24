@@ -437,12 +437,14 @@ COPY --from=node-builder-stripped  /workspace/target/bin/seq-coordinator-manager
 COPY --from=node-builder-stripped  /workspace/target/bin/prover                   /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/dbconv                   /usr/local/bin/
 COPY --from=prover-export-stripped /bin/jit                                       /usr/local/bin/
-COPY --from=node-builder-stripped  /workspace/target/bin/daserver                 /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/anytrustserver           /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/anytrusttool             /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/daprovider               /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/autonomous-auctioneer    /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/bidder-client            /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/blobtool                 /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/el-proxy                 /usr/local/bin/
-COPY --from=node-builder-stripped  /workspace/target/bin/datool                   /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/filtering-report         /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/genesis-generator        /usr/local/bin/
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
