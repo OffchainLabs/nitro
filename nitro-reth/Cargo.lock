@@ -1186,6 +1186,7 @@ dependencies = [
  "futures",
  "futures-util",
  "parking_lot",
+ "rayon",
  "reth-chain-state",
  "reth-chainspec",
  "reth-cli",

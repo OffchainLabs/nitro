@@ -72,6 +72,7 @@ clap = { workspace = true }
 futures = { workspace = true }
 futures-util = "0.3"
 parking_lot = { workspace = true }
+rayon = { workspace = true }
 rustc-hash = { workspace = true }
 revm = { workspace = true }
 revm-database = { workspace = true }

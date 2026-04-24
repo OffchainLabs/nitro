@@ -432,8 +432,25 @@ where
         execute_and_commit_tx(&mut executor, &start_block_tx, "StartBlock")?;
         all_txs.push(start_block_tx);
 
+        // Warm sender caches in parallel; kinds with an embedded `from` are skipped.
+        let pre_recovered: Vec<Option<ArbTransactionSigned>> = {
+            use rayon::prelude::*;
+            parsed_txs
+                .par_iter()
+                .map(|parsed| match parsed {
+                    ParsedTransaction::InternalStartBlock { .. }
+                    | ParsedTransaction::BatchPostingReport { .. } => None,
+                    other => {
+                        let signed = parsed_tx_to_signed(other, chain_id)?;
+                        let _ = signed.recover_signer();
+                        Some(signed)
+                    }
+                })
+                .collect()
+        };
+
         // 2. Execute parsed user transactions.
-        for parsed in &parsed_txs {
+        for (idx, parsed) in parsed_txs.iter().enumerate() {
             match parsed {
                 ParsedTransaction::InternalStartBlock { .. } => {
                     // StartBlock is handled above, skip.
@@ -482,7 +499,7 @@ where
                 _ => {}
             }
 
-            let signed_tx = match parsed_tx_to_signed(parsed, chain_id) {
+            let signed_tx = match pre_recovered.get(idx).and_then(|s| s.clone()) {
                 Some(tx) => tx,
                 None => {
                     debug!(target: "block_producer", ?parsed, "Skipping unparseable transaction");
