@@ -313,10 +313,11 @@ fn test_heap() -> Result<()> {
 
 #[test]
 fn test_heap_allocate_max_pages() -> Result<()> {
-    // memory3.wat tries memory.grow(1<<16) and returns 0 iff the grow returned -1.
-    // With heap_bound < 1<<16, the grow must fail in both the JIT and prover.
-    // In stylus v<3, pay_for_memory_grow(1<<16) truncates to u16=0 and succeeds cheaply,
-    // so the actual memory.grow is what must enforce the bound.
+    // Simulates the stylus v<3 scenario where pay_for_memory_grow(1<<16) truncates its
+    // argument to u16=0 and charges nothing, so the actual memory.grow is the only thing
+    // that can prevent the grow. Verifies it returns -1 in both the JIT and prover.
+    // (In v3+, pay_for_memory_grow itself fails before memory.grow is reached, so
+    // no divergence is possible there.)
     let (mut compile, config, ink) = test_configs();
     compile.bounds.heap_bound = Pages(128);
     compile.pricing.costs = |_, _| 0;
