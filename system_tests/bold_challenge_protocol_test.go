@@ -174,9 +174,10 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	blockValidatorConfig.RedisValidationClientConfig.RedisURL = redisURL
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
+	pcdsA := l2nodeA.GetParentChainDataSource()
 	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
+		pcdsA,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		l2nodeA.ExecutionRecorder,
 		l2nodeA.ConsensusDB,
@@ -192,9 +193,10 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
+	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
+		pcdsB,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		l2nodeB.ExecutionRecorder,
 		l2nodeB.ConsensusDB,
@@ -209,7 +211,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 
 	blockValidatorA, err := staker.NewBlockValidator(
 		statelessA,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -220,7 +222,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 
 	blockValidatorB, err := staker.NewBlockValidator(
 		statelessB,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
@@ -239,9 +241,9 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 			CheckBatchFinality:     false,
 		},
 		goodDir,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		nil,
 	)
 	Require(t, err)
@@ -256,9 +258,9 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 			CheckBatchFinality:     false,
 		},
 		evilDir,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
-		l2nodeB.InboxReader,
+		pcdsB,
 		nil,
 	)
 	Require(t, err)
@@ -350,13 +352,13 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
-	bcA, err := l2nodeA.InboxTracker.GetBatchCount()
+	bcA, err := l2nodeA.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	bcB, err := l2nodeB.InboxTracker.GetBatchCount()
+	bcB, err := l2nodeB.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
-	msgA, err := l2nodeA.InboxTracker.GetBatchMessageCount(bcA - 1)
+	msgA, err := l2nodeA.GetParentChainDataSource().GetBatchMessageCount(bcA - 1)
 	Require(t, err)
-	msgB, err := l2nodeB.InboxTracker.GetBatchMessageCount(bcB - 1)
+	msgB, err := l2nodeB.GetParentChainDataSource().GetBatchMessageCount(bcB - 1)
 	Require(t, err)
 
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
@@ -711,7 +713,7 @@ func syncBatchToNode(
 	Require(t, err)
 
 	// Optional: log batch metadata
-	batchMetaData, err := l2Node.InboxTracker.GetBatchMetadata(batches[0].SequenceNumber)
+	batchMetaData, err := l2Node.GetParentChainDataSource().GetBatchMetadata(batches[0].SequenceNumber)
 	log.Info("Batch metadata", "md", batchMetaData)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }

@@ -9,7 +9,6 @@ use num_bigint::BigUint;
 use crate::test::{TestInstance, random_bytes20, random_bytes32, run_native, test_configs};
 
 #[test]
-#[ignore = "needs to update erc20 to use new SDK"]
 fn test_sdk_routes() -> Result<()> {
     let filename = "tests/target/wasm32-unknown-unknown/release/erc20.wasm";
 

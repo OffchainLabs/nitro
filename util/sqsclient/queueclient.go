@@ -43,6 +43,9 @@ type queueClient struct {
 }
 
 func NewQueueClient(ctx context.Context, config *QueueConfig) (QueueClient, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	sqsClient, err := NewSQSClient(ctx, &config.SQSClient)
 	if err != nil {
 		return nil, err

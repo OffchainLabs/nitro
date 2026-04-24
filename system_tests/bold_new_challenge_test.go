@@ -293,9 +293,9 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
-		node.ConsensusNode.InboxTracker,
+		node.ConsensusNode.GetParentChainDataSource(),
 		node.ConsensusNode.TxStreamer,
-		node.ConsensusNode.InboxReader,
+		node.ConsensusNode.GetParentChainDataSource(),
 		nil,
 	)
 	Require(t, err)

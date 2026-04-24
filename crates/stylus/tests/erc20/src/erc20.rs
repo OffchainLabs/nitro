@@ -7,9 +7,8 @@ use alloc::{string::String, vec, vec::Vec};
 use core::marker::PhantomData;
 use stylus_sdk::{
     alloy_primitives::{Address, U256},
-    alloy_sol_types::{sol, SolError},
+    alloy_sol_types::sol,
     prelude::*,
-    stylus_core::calls::errors::MethodError,
 };
 
 pub trait Erc20Params {
@@ -19,7 +18,7 @@ pub trait Erc20Params {
 }
 
 sol_storage! {
-    /// Erc20 implements all ERC-20 methods.
+    /// Erc20 provides ERC-20 storage layout and internal helpers.
     pub struct Erc20<T> {
         /// Maps users to balances
         mapping(address => uint256) balances;
@@ -41,25 +40,91 @@ sol! {
     error InsufficientAllowance(address owner, address spender, uint256 have, uint256 want);
 }
 
+#[derive(SolidityError)]
 pub enum Erc20Error {
     InsufficientBalance(InsufficientBalance),
     InsufficientAllowance(InsufficientAllowance),
 }
 
-// We will soon provide a #[derive(SolidityError)] to clean this up
-impl From<Erc20Error> for Vec<u8> {
-    fn from(err: Erc20Error) -> Vec<u8> {
-        match err {
-            Erc20Error::InsufficientBalance(e) => e.encode(),
-            Erc20Error::InsufficientAllowance(e) => e.encode(),
-        }
-    }
+/// Trait defining the public ERC-20 interface.
+#[public]
+pub trait IErc20 {
+    fn name(&self) -> String;
+    fn symbol(&self) -> String;
+    fn decimals(&self) -> u8;
+    fn balance_of(&self, address: Address) -> U256;
+    fn transfer(&mut self, to: Address, value: U256) -> Result<bool, Erc20Error>;
+    fn approve(&mut self, spender: Address, value: U256) -> bool;
+    fn transfer_from(
+        &mut self,
+        from: Address,
+        to: Address,
+        value: U256,
+    ) -> Result<bool, Erc20Error>;
+    fn allowance(&self, owner: Address, spender: Address) -> U256;
 }
 
-// These methods aren't exposed to other contracts
-// Note: modifying storage will become much prettier soon
 impl<T: Erc20Params> Erc20<T> {
-    pub fn transfer_impl(
+    pub fn name() -> String {
+        T::NAME.into()
+    }
+
+    pub fn symbol() -> String {
+        T::SYMBOL.into()
+    }
+
+    pub fn decimals() -> u8 {
+        T::DECIMALS
+    }
+
+    pub fn balance_of(&self, owner: Address) -> U256 {
+        self.balances.get(owner)
+    }
+
+    pub fn transfer(&mut self, to: Address, value: U256) -> Result<bool, Erc20Error> {
+        self.transfer_impl(self.vm().msg_sender(), to, value)?;
+        Ok(true)
+    }
+
+    pub fn approve(&mut self, spender: Address, value: U256) -> bool {
+        let msg_sender = self.vm().msg_sender();
+        self.allowances.setter(msg_sender).insert(spender, value);
+        self.vm().log(Approval {
+            owner: msg_sender,
+            spender,
+            value,
+        });
+        true
+    }
+
+    pub fn transfer_from(
+        &mut self,
+        from: Address,
+        to: Address,
+        value: U256,
+    ) -> Result<bool, Erc20Error> {
+        let msg_sender = self.vm().msg_sender();
+        let mut sender_allowances = self.allowances.setter(from);
+        let mut allowance = sender_allowances.setter(msg_sender);
+        let old_allowance = allowance.get();
+        if old_allowance < value {
+            return Err(Erc20Error::InsufficientAllowance(InsufficientAllowance {
+                owner: from,
+                spender: msg_sender,
+                have: old_allowance,
+                want: value,
+            }));
+        }
+        allowance.set(old_allowance - value);
+        self.transfer_impl(from, to, value)?;
+        Ok(true)
+    }
+
+    pub fn allowance(&self, owner: Address, spender: Address) -> U256 {
+        self.allowances.getter(owner).get(spender)
+    }
+
+    fn transfer_impl(
         &mut self,
         from: Address,
         to: Address,
@@ -112,70 +177,5 @@ impl<T: Erc20Params> Erc20<T> {
             value,
         });
         Ok(())
-    }
-}
-
-// These methods are external to other contracts
-// Note: modifying storage will become much prettier soon
-#[public]
-impl<T: Erc20Params> Erc20<T> {
-    pub fn name() -> Result<String, Erc20Error> {
-        Ok(T::NAME.into())
-    }
-
-    pub fn symbol() -> Result<String, Erc20Error> {
-        Ok(T::SYMBOL.into())
-    }
-
-    pub fn decimals() -> Result<u8, Erc20Error> {
-        Ok(T::DECIMALS)
-    }
-
-    pub fn balance_of(&self, address: Address) -> Result<U256, Erc20Error> {
-        Ok(self.balances.get(address))
-    }
-
-    pub fn transfer(&mut self, to: Address, value: U256) -> Result<bool, Erc20Error> {
-        self.transfer_impl(self.vm().msg_sender(), to, value)?;
-        Ok(true)
-    }
-
-    pub fn approve(&mut self, spender: Address, value: U256) -> Result<bool, Erc20Error> {
-        self.allowances
-            .setter(self.vm().msg_sender())
-            .insert(spender, value);
-        self.vm().log(Approval {
-            owner: self.vm().msg_sender(),
-            spender,
-            value,
-        });
-        Ok(true)
-    }
-
-    pub fn transfer_from(
-        &mut self,
-        from: Address,
-        to: Address,
-        value: U256,
-    ) -> Result<bool, Erc20Error> {
-        let sender = self.vm().msg_sender();
-        let mut sender_allowances = self.allowances.setter(from);
-        let mut allowance = sender_allowances.setter(sender);
-        let old_allowance = allowance.get();
-        if old_allowance < value {
-            return Err(Erc20Error::InsufficientAllowance(InsufficientAllowance {
-                owner: from,
-                spender: sender,
-                have: old_allowance,
-                want: value,
-            }));
-        }
-        allowance.set(old_allowance - value);
-        self.transfer_impl(from, to, value)?;
-        Ok(true)
-    }
-
-    pub fn allowance(&self, owner: Address, spender: Address) -> Result<U256, Erc20Error> {
-        Ok(self.allowances.getter(owner).get(spender))
     }
 }

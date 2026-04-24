@@ -145,12 +145,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-	var batchMetaFetcher arbnode.BatchMetadataFetcher
-	if builder.L2.ConsensusNode.InboxTracker != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
-	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
-	}
+	batchMetaFetcher := builder.L2.ConsensusNode.GetParentChainDataSource()
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -172,7 +167,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		)
 		Require(t, err)
 		batchPoster.Start(ctx)
-		defer batchPoster.StopAndWait()
+		t.Cleanup(batchPoster.StopAndWait)
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
@@ -291,12 +286,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-	var batchMetaFetcher arbnode.BatchMetadataFetcher
-	if builder.L2.ConsensusNode.InboxTracker != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
-	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
-	}
+	batchMetaFetcher := builder.L2.ConsensusNode.GetParentChainDataSource()
 	newBatchPoster := func() *arbnode.BatchPoster {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -444,9 +434,12 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	start := time.Now()
 	for {
 		time.Sleep(time.Second)
-		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
-		postedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
+		if batches == 0 {
+			continue
+		}
+		postedMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
 		Require(t, err)
 		haveMessages, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
@@ -761,9 +754,9 @@ drain:
 	for _, bptx := range batchPosterTxs {
 		err := builder.L1.Client.SendTransaction(ctx, bptx)
 		if err != nil {
-			if strings.Contains(err.Error(), "nonce too low") {
+			if strings.Contains(err.Error(), "nonce too low") || strings.Contains(err.Error(), "already known") {
 				skipped++
-				t.Logf("Skipping batch poster tx with stale nonce: %v", err)
+				t.Logf("Skipping batch poster tx: %v", err)
 				continue
 			}
 			Require(t, err)
@@ -832,30 +825,35 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, receipt.BlockHash)
 	Require(t, err)
 
-	// wait for this tx to be posted in a batch, and check which batch
-	var batchNum uint64
-	for {
-		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		if err == nil && found {
-			break
-		}
-		t.Logf("waiting for tx to be posted in a batch")
-		<-time.After(time.Millisecond * 10)
-	}
+	// Wait for this tx to be posted in a batch, and record which batch.
+	batchNum := waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()), 30*time.Second, 10*time.Millisecond)
 
 	// find the transaction that posted this batch to parent chain
 	seqInboxContract, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
 	var batchTxHash common.Hash
-	for {
-		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
-		if err == nil && it.Next() {
-			batchTxHash = it.Event.Raw.TxHash
-			break
+	var lastFilterErr error
+	{
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
+			if err != nil {
+				lastFilterErr = err
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if it.Next() {
+				batchTxHash = it.Event.Raw.TxHash
+			}
+			it.Close()
+			if batchTxHash != (common.Hash{}) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		t.Logf("waiting to find sequencer batch message")
-		<-time.After(time.Millisecond * 10)
+		if batchTxHash == (common.Hash{}) {
+			t.Fatalf("sequencer batch delivery event not found for batch %d (last filter error: %v)", batchNum, lastFilterErr)
+		}
 	}
 
 	// get receipt of batch tx to know gas used
@@ -946,11 +944,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	var melBatchCount uint64
 	for range 10 {
-		if builder.L2.ConsensusNode.MessageExtractor != nil {
-			melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
-		} else {
-			melBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-		}
+		melBatchCount, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
 		if melBatchCount == batchCount {
 			break
@@ -967,11 +961,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		var sequencerMessageBytes []byte
 		retryUntilFound(t, ctx, 30, 100*time.Millisecond, fmt.Sprintf("GetSequencerMessageBytes(seq %d)", sequenceNum), "not found in L1 block", func() error {
 			var getErr error
-			if builder.L2.ConsensusNode.MessageExtractor != nil {
-				sequencerMessageBytes, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
-			} else {
-				sequencerMessageBytes, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
-			}
+			sequencerMessageBytes, _, getErr = builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, sequenceNum)
 			return getErr
 		})
 

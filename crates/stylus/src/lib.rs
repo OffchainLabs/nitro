@@ -237,7 +237,28 @@ pub unsafe extern "C" fn stylus_target_set(
     }
 }
 
+/// Sets the process-wide default native stack size for Wasmer coroutines.
+/// If `size` is 0, the existing default (1MB) is kept. Typically called at
+/// startup, but safe to call at any time — changes take effect on the next
+/// coroutine allocation.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_set_native_stack_size(size: u64) {
+    if size > 0 {
+        wasmer_vm::set_stack_size(size as usize);
+    }
+}
+
+/// Returns the current process-wide default native stack size in bytes.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_get_native_stack_size() -> u64 {
+    wasmer_vm::get_stack_size() as u64
+}
+
 /// Calls an activated user program.
+///
+/// Returns `UserOutcomeKind::NativeStackOverflow` if the Wasmer coroutine
+/// stack overflows. The Go caller is responsible for retry logic (cranelift
+/// recompilation, stack doubling, etc.).
 ///
 /// # Safety
 ///
@@ -277,17 +298,29 @@ pub unsafe extern "C" fn stylus_call(
             Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
         };
 
-        let status = match instance.run_main(&calldata, config, ink) {
+        let outcome = instance.run_main(&calldata, config, ink);
+
+        let status = match outcome {
+            Ok(UserOutcome::NativeStackOverflow) => {
+                write_outcome(output, UserOutcome::NativeStackOverflow)
+            }
             Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
             Ok(outcome) => write_outcome(output, outcome),
         };
         let ink_left = match status {
-            UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
+            UserOutcomeKind::OutOfStack | UserOutcomeKind::NativeStackOverflow => Ink(0),
             _ => instance.ink_left().into(),
         };
         *gas = pricing.ink_to_gas(ink_left).0;
         status
     }
+}
+
+/// Drains the Wasmer coroutine stack pool so that subsequent allocations
+/// use the current process-wide stack size.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_drain_stack_pool() {
+    wasmer_vm::drain_stack_pool();
 }
 
 /// set lru cache capacity

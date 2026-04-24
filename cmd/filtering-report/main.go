@@ -202,7 +202,11 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
 		return 1
 	}
-	fwd := forwarder.New(&config.ReportForwarder, queueClient)
+	fwd, err := forwarder.New(&config.ReportForwarder, queueClient)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating forwarder: %v\n", err)
+		return 1
+	}
 	fwd.Start(ctx)
 	defer fwd.StopAndWait()
 
