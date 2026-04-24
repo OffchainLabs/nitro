@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -31,26 +32,26 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 		{
 			ID:                "",
 			TxHash:            common.HexToHash("0x01"),
-			TxRLP:             nil,
+			TxRLP:             hexutil.Bytes{},
 			FilteredAddresses: nil,
 			ChainID:           0,
 			BlockNumber:       0,
 			ParentBlockHash:   common.Hash{},
 			PositionInBlock:   0,
-			FilteredAt:        time.Time{},
+			FilteredAt:        time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC),
 			IsDelayed:         false,
 			DelayedReportData: nil,
 		},
 		{
 			ID:                "",
 			TxHash:            common.HexToHash("0x02"),
-			TxRLP:             nil,
+			TxRLP:             hexutil.Bytes{},
 			FilteredAddresses: nil,
 			ChainID:           0,
 			BlockNumber:       0,
 			ParentBlockHash:   common.Hash{},
 			PositionInBlock:   0,
-			FilteredAt:        time.Time{},
+			FilteredAt:        time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC),
 			IsDelayed:         false,
 			DelayedReportData: nil,
 		},
