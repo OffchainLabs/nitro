@@ -1,4 +1,4 @@
-;; Copyright 2025, Offchain Labs, Inc.
+;; Copyright 2026, Offchain Labs, Inc.
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 ;; Tests that memory.grow(1<<16) fails when the heap bound is below 1<<16.
