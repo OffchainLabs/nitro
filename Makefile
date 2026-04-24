@@ -417,7 +417,7 @@ crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_P
 		crates/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
 		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
 		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
-	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
+	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && $(MAKE)
 
 crates/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings32.c
 	clang crates/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
