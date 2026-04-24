@@ -79,8 +79,7 @@ fn abba_full_round_trip() {
             "transfer_train",
             &serde_json::json!({ "block_count": 3, "txs_per_block": 4 }),
         )?;
-        let runner: Box<dyn BenchRunner> =
-            Box::new(InProcessRunner::new(cfg.runner.clone()));
+        let runner: Box<dyn BenchRunner> = Box::new(InProcessRunner::new(cfg.runner.clone()));
         Ok::<_, eyre::Error>((w, runner))
     };
     let result = run_abba(&cfg, "test/abba_full", build_side, build_side).unwrap();

@@ -264,8 +264,9 @@ mod tests {
                 "transfer_train",
                 &serde_json::json!({ "block_count": 2, "txs_per_block": 2 }),
             )?;
-            let r: Box<dyn BenchRunner> =
-                Box::new(crate::runner::in_process::InProcessRunner::new(cfg.runner.clone()));
+            let r: Box<dyn BenchRunner> = Box::new(
+                crate::runner::in_process::InProcessRunner::new(cfg.runner.clone()),
+            );
             Ok::<_, eyre::Report>((w, r))
         };
         let result = run_abba(&cfg, "test/abba", build, build).unwrap();

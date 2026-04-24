@@ -302,10 +302,7 @@ fn abba_cmd(cmd: AbbaCommand) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_abba_in_process(
-    cfg: &AbbaConfig,
-    manifest: &Manifest,
-) -> eyre::Result<AbbaResult> {
+fn run_abba_in_process(cfg: &AbbaConfig, manifest: &Manifest) -> eyre::Result<AbbaResult> {
     let runner_cfg_b = cfg.runner.clone();
     let runner_cfg_f = cfg.runner.clone();
     let m_b = manifest.clone();
@@ -315,14 +312,12 @@ fn run_abba_in_process(
         &manifest.name,
         move || {
             let w = build_workload(&m_b)?;
-            let r: Box<dyn BenchRunner> =
-                Box::new(InProcessRunner::new(runner_cfg_b.clone()));
+            let r: Box<dyn BenchRunner> = Box::new(InProcessRunner::new(runner_cfg_b.clone()));
             Ok((w, r))
         },
         move || {
             let w = build_workload(&m_f)?;
-            let r: Box<dyn BenchRunner> =
-                Box::new(InProcessRunner::new(runner_cfg_f.clone()));
+            let r: Box<dyn BenchRunner> = Box::new(InProcessRunner::new(runner_cfg_f.clone()));
             Ok((w, r))
         },
     )
@@ -355,8 +350,7 @@ fn run_abba_subprocess(
             baseline_id += 1;
             let w = build_workload(&m_b)?;
             let data_dir = bench_dir_b.join(format!("baseline-{baseline_id}"));
-            let mut sub =
-                SubprocessConfig::new(baseline_bin.clone(), genesis_b.clone(), data_dir);
+            let mut sub = SubprocessConfig::new(baseline_bin.clone(), genesis_b.clone(), data_dir);
             sub.http_port = 38545;
             sub.authrpc_port = 38551;
             let r: Box<dyn BenchRunner> =
@@ -367,8 +361,7 @@ fn run_abba_subprocess(
             feature_id += 1;
             let w = build_workload(&m_f)?;
             let data_dir = bench_dir_f.join(format!("feature-{feature_id}"));
-            let mut sub =
-                SubprocessConfig::new(feature_bin.clone(), genesis_f.clone(), data_dir);
+            let mut sub = SubprocessConfig::new(feature_bin.clone(), genesis_f.clone(), data_dir);
             sub.http_port = 38645;
             sub.authrpc_port = 38651;
             let r: Box<dyn BenchRunner> =
