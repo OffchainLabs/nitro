@@ -15,6 +15,7 @@ type MockQueueClient struct {
 	mu                    sync.Mutex
 	queue                 []sqstypes.Message
 	msgCounter            int
+	receiveCalls          int
 	deletedReceiptHandles []string
 	ReceiveErr            error
 	DeleteErr             error
@@ -37,6 +38,7 @@ func (m *MockQueueClient) Send(_ context.Context, body string) error {
 func (m *MockQueueClient) Receive(_ context.Context, _ int32, maxMessages int32) ([]sqstypes.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.receiveCalls++
 	if m.ReceiveErr != nil {
 		return nil, m.ReceiveErr
 	}
@@ -70,4 +72,10 @@ func (m *MockQueueClient) DeletedReceiptHandles() []string {
 	result := make([]string, len(m.deletedReceiptHandles))
 	copy(result, m.deletedReceiptHandles)
 	return result
+}
+
+func (m *MockQueueClient) ReceiveCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.receiveCalls
 }

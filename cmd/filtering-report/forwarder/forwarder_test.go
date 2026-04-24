@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,6 +54,7 @@ func newTestForwarder(t *testing.T, queueClient *sqsclient.MockQueueClient, endp
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
+		CircuitBreaker: CircuitBreakerConfig{Enabled: false},
 	}
 	fwd, err := New(config, queueClient)
 	if err != nil {
@@ -266,4 +268,169 @@ func TestForwarder_DeleteError(t *testing.T) {
 	if interval != 0 {
 		t.Fatalf("expected immediate re-poll (0) on delete error, got %v", interval)
 	}
+}
+
+func testBreakerConfig() CircuitBreakerConfig {
+	return CircuitBreakerConfig{
+		Enabled:         true,
+		WindowDuration:  time.Minute,
+		MinSamples:      2,
+		OpenThreshold:   0.5,
+		OpenCooldown:    time.Hour,
+		HalfOpenTimeout: time.Hour,
+	}
+}
+
+func newBreakerForwarder(t *testing.T, queueClient *sqsclient.MockQueueClient, endpointURL string, cb CircuitBreakerConfig) *Forwarder {
+	t.Helper()
+	config := &Config{
+		Workers:            1,
+		PollInterval:       time.Second,
+		SQSWaitTimeSeconds: DefaultConfig.SQSWaitTimeSeconds,
+		ExternalEndpoint: genericconf.HTTPClientConfig{
+			URL:     endpointURL,
+			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
+		},
+		CircuitBreaker: cb,
+	}
+	fwd, err := New(config, queueClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fwd
+}
+
+func sendReports(t *testing.T, client *rpc.Client, n int) {
+	t.Helper()
+	reports := make([]addressfilter.FilteredTxReport, n)
+	for i := range reports {
+		reports[i] = addressfilter.FilteredTxReport{TxHash: common.BigToHash(common.Big1)}
+	}
+	if err := client.Call(nil, "filteringreport_reportFilteredTransactions", reports); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestForwarder_5xxTripsBreakerAndStopsReceives(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	queueClient := &sqsclient.MockQueueClient{}
+	rpcClient := newTestStack(t, queueClient)
+	sendReports(t, rpcClient, 3)
+
+	cb := testBreakerConfig()
+	fwd := newBreakerForwarder(t, queueClient, srv.URL, cb)
+
+	// First two polls: each hits the 500 endpoint, breaker records failures.
+	fwd.pollAndForward(t.Context())
+	fwd.pollAndForward(t.Context())
+
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("expected 2 endpoint hits before breaker trips, got %d", got)
+	}
+	receivesAfterTrip := queueClient.ReceiveCalls()
+
+	// Third poll: breaker is Open (>=2 failures, rate 1.0 >= 0.5). No Receive,
+	// no HTTP call.
+	interval := fwd.pollAndForward(t.Context())
+	if interval != fwd.config.PollInterval {
+		t.Fatalf("expected PollInterval while Open, got %v", interval)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("expected no more endpoint hits after trip, got %d", got)
+	}
+	if queueClient.ReceiveCalls() != receivesAfterTrip {
+		t.Fatalf("expected no Receive calls while Open, got %d extra", queueClient.ReceiveCalls()-receivesAfterTrip)
+	}
+	if deleted := queueClient.DeletedReceiptHandles(); len(deleted) != 0 {
+		t.Fatalf("expected 0 deletes while Open, got %d", len(deleted))
+	}
+}
+
+func TestForwarder_429TripsBreaker(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	queueClient := &sqsclient.MockQueueClient{}
+	rpcClient := newTestStack(t, queueClient)
+	sendReports(t, rpcClient, 3)
+
+	fwd := newBreakerForwarder(t, queueClient, srv.URL, testBreakerConfig())
+	fwd.pollAndForward(t.Context())
+	fwd.pollAndForward(t.Context())
+	interval := fwd.pollAndForward(t.Context())
+
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("expected 2 hits before 429 trips breaker, got %d", got)
+	}
+	if interval != fwd.config.PollInterval {
+		t.Fatalf("expected PollInterval while Open, got %v", interval)
+	}
+}
+
+func TestForwarder_4xxDoesNotTripBreaker(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	queueClient := &sqsclient.MockQueueClient{}
+	rpcClient := newTestStack(t, queueClient)
+	sendReports(t, rpcClient, 4)
+
+	fwd := newBreakerForwarder(t, queueClient, srv.URL, testBreakerConfig())
+	for i := 0; i < 4; i++ {
+		fwd.pollAndForward(t.Context())
+	}
+
+	if got := hits.Load(); got != 4 {
+		t.Fatalf("expected all 4 messages to hit endpoint (400 doesn't trip breaker), got %d", got)
+	}
+}
+
+func TestConfig_Validate_CircuitBreaker(t *testing.T) {
+	base := DefaultConfig
+	base.ExternalEndpoint = genericconf.HTTPClientConfig{URL: "http://example.com", Timeout: time.Second}
+
+	t.Run("default is valid", func(t *testing.T) {
+		cfg := base
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected default to validate, got %v", err)
+		}
+	})
+
+	t.Run("disabled skips breaker checks", func(t *testing.T) {
+		cfg := base
+		cfg.CircuitBreaker = CircuitBreakerConfig{Enabled: false}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("disabled breaker should skip its own validation, got %v", err)
+		}
+	})
+
+	t.Run("out-of-range open threshold rejected", func(t *testing.T) {
+		cfg := base
+		cfg.CircuitBreaker.OpenThreshold = 1.5
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("expected error for out-of-range OpenThreshold")
+		}
+	})
+
+	t.Run("zero window rejected", func(t *testing.T) {
+		cfg := base
+		cfg.CircuitBreaker.WindowDuration = 0
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("expected error for zero WindowDuration")
+		}
+	})
 }

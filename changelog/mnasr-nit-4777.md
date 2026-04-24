@@ -1,2 +1,2 @@
 ### Added
-- Add exponential backoff retries when forwarding filtered-transaction reports to the external endpoint
+- Per-process circuit breaker around the external-endpoint call in the filtered-tx report forwarder
