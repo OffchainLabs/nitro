@@ -1158,7 +1158,7 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
 fn delete_empty_accounts(
     bundle: &mut BundleState,
-    zombie_accounts: &std::collections::HashSet<Address>,
+    zombie_accounts: &rustc_hash::FxHashSet<Address>,
     state_provider: &dyn StateProvider,
 ) {
     let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));

@@ -142,9 +142,9 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
-            zombie_accounts: std::collections::HashSet::new(),
-            finalise_deleted: std::collections::HashSet::new(),
-            touched_accounts: std::collections::HashSet::new(),
+            zombie_accounts: rustc_hash::FxHashSet::default(),
+            finalise_deleted: rustc_hash::FxHashSet::default(),
+            touched_accounts: rustc_hash::FxHashSet::default(),
         }
     }
 }
@@ -199,9 +199,9 @@ where
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
-            zombie_accounts: std::collections::HashSet::new(),
-            finalise_deleted: std::collections::HashSet::new(),
-            touched_accounts: std::collections::HashSet::new(),
+            zombie_accounts: rustc_hash::FxHashSet::default(),
+            finalise_deleted: rustc_hash::FxHashSet::default(),
+            touched_accounts: rustc_hash::FxHashSet::default(),
         }
     }
 }
@@ -277,13 +277,13 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     expected_balance_delta: i128,
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
-    zombie_accounts: std::collections::HashSet<Address>,
+    zombie_accounts: rustc_hash::FxHashSet<Address>,
     /// Accounts removed by per-tx Finalise (EIP-161). Tracked so the producer
     /// can mark them for trie deletion if they existed pre-block.
-    finalise_deleted: std::collections::HashSet<Address>,
+    finalise_deleted: rustc_hash::FxHashSet<Address>,
     /// Accounts modified in the current tx (bypass ops + EVM state).
     /// Per-tx Finalise only processes these, matching Go's journal.dirties.
-    touched_accounts: std::collections::HashSet<Address>,
+    touched_accounts: rustc_hash::FxHashSet<Address>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -304,13 +304,13 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     /// Zombie accounts are empty accounts that should be preserved in the
     /// state trie (not deleted by EIP-161) because they were re-created by
     /// a zero-value transfer on pre-Stylus ArbOS.
-    pub fn zombie_accounts(&self) -> std::collections::HashSet<Address> {
+    pub fn zombie_accounts(&self) -> rustc_hash::FxHashSet<Address> {
         self.zombie_accounts.clone()
     }
 
     /// Returns accounts deleted by per-tx Finalise (EIP-161).
     /// These may need trie deletion if they existed pre-block.
-    pub fn finalise_deleted(&self) -> &std::collections::HashSet<Address> {
+    pub fn finalise_deleted(&self) -> &rustc_hash::FxHashSet<Address> {
         &self.finalise_deleted
     }
 
@@ -1084,11 +1084,11 @@ where
                     }
 
                     let touched_ptr =
-                        &mut self.touched_accounts as *mut std::collections::HashSet<Address>;
+                        &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
                     let zombie_ptr =
-                        &mut self.zombie_accounts as *mut std::collections::HashSet<Address>;
+                        &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
                     let finalise_ptr =
-                        &self.finalise_deleted as *const std::collections::HashSet<Address>;
+                        &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                     let arbos_ver = self.arb_ctx.arbos_version;
                     let mut do_transfer = |from: Address, to: Address, amount: U256| {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
@@ -2165,11 +2165,11 @@ where
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
                 let touched_ptr =
-                    &mut self.touched_accounts as *mut std::collections::HashSet<Address>;
+                    &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
                 let zombie_ptr =
-                    &mut self.zombie_accounts as *mut std::collections::HashSet<Address>;
+                    &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
                 let finalise_ptr =
-                    &self.finalise_deleted as *const std::collections::HashSet<Address>;
+                    &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                 let arbos_ver = self.arb_ctx.arbos_version;
 
                 // Compute multi-dimensional cost for refund (ArbOS v60+).
@@ -2691,9 +2691,9 @@ fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Addr
 fn create_zombie_if_deleted<DB: Database>(
     state: &mut State<DB>,
     addr: Address,
-    finalise_deleted: &std::collections::HashSet<Address>,
-    zombie_accounts: &mut std::collections::HashSet<Address>,
-    touched_accounts: &mut std::collections::HashSet<Address>,
+    finalise_deleted: &rustc_hash::FxHashSet<Address>,
+    zombie_accounts: &mut rustc_hash::FxHashSet<Address>,
+    touched_accounts: &mut rustc_hash::FxHashSet<Address>,
 ) {
     crate::state_overlay::record_pre_touch(state, addr);
     let account_missing = state

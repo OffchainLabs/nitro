@@ -1152,6 +1152,7 @@ dependencies = [
  "revm-database",
  "revm-primitives",
  "revm-state",
+ "rustc-hash",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -1227,6 +1228,7 @@ dependencies = [
  "reth-trie-parallel",
  "revm",
  "revm-database",
+ "rustc-hash",
  "serde_json",
  "tokio",
  "tokio-stream",
