@@ -4,6 +4,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/node"
@@ -11,9 +12,21 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-type FilteringReportAPI struct{}
+type FilteringReportAPI struct {
+	queueClient sqsclient.QueueClient
+}
+
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient) (*FilteringReportAPI, error) {
+	if queueClient == nil {
+		return nil, errors.New("queueClient must not be nil")
+	}
+	return &FilteringReportAPI{
+		queueClient: queueClient,
+	}, nil
+}
 
 var DefaultStackConfig = node.Config{
 	DataDir:             "", // ephemeral
@@ -36,11 +49,27 @@ var DefaultStackConfig = node.Config{
 	},
 }
 
-func NewStack(stackConfig *node.Config) (*node.Node, error) {
+func NewStack(
+	stackConfig *node.Config,
+	queueClient sqsclient.QueueClient,
+) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, err
 	}
+
+	api, err := NewFilteringReportAPI(queueClient)
+	if err != nil {
+		return nil, err
+	}
+
+	apis := []rpc.API{{
+		Namespace: gethexec.FilteringReportNamespace,
+		Version:   "1.0",
+		Service:   api,
+		Public:    true,
+	}}
+	stack.RegisterAPIs(apis)
 
 	stack.RegisterHandler("liveness", "/liveness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
