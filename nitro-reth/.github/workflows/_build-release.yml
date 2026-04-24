@@ -4,9 +4,13 @@ on:
   workflow_call:
     inputs:
       workspace:
-        description: "If true, build the whole workspace instead of just arb-reth + arbreth-bench"
+        description: "If true, build the whole workspace instead of using `targets`"
         type: boolean
         default: false
+      targets:
+        description: "cargo build selectors (ignored when `workspace: true`)"
+        type: string
+        default: "-p arb-reth --bin arb-reth -p arb-bench --bin arbreth-bench"
       artifact-name:
         description: "Name for the uploaded release-binaries artifact"
         type: string
@@ -38,9 +42,7 @@ jobs:
           if [[ "${{ inputs.workspace }}" == "true" ]]; then
             cargo build --release --workspace
           else
-            cargo build --release \
-              -p arb-reth --bin arb-reth \
-              -p arb-bench --bin arbreth-bench
+            cargo build --release ${{ inputs.targets }}
           fi
       - name: Upload release binaries
         uses: actions/upload-artifact@v4
@@ -49,5 +51,5 @@ jobs:
           path: |
             target/release/arb-reth
             target/release/arbreth-bench
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7

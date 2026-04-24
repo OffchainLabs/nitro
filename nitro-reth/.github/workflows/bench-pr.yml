@@ -26,6 +26,7 @@ jobs:
     with:
       artifact-name: bench-pr-baseline-binaries
       ref: ${{ github.base_ref }}
+      targets: "-p arb-reth --bin arb-reth"
 
   abba:
     name: abba pr-gate
