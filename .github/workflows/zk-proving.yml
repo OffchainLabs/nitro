@@ -64,10 +64,7 @@ jobs:
           
           echo "--- Running SP1 Validation ---"
           # Extracting only the hex string using grep -o
-          SP1_HASH=$(./target/sp1/sp1-runner \
-            --program target/sp1/dumped_replay_wasm.elf \
-            --stylus-compiler-program target/sp1/stylus-compiler-program \
-            --block-file target/sp1/block-inputs/stylus.json 2>&1 \
+          SP1_HASH=$(make -C crates/sp1 run BLOCK=stylus 2>&1 \
             | grep "Validation succeeds with hash" \
             | awk '{print $NF}')
           
