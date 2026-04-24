@@ -446,7 +446,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToVersion(2))
-			ensure(params.Save())
+			ensure(params.Save(true))
 
 		case params.ArbosVersion_32:
 			// no change state needed
@@ -463,7 +463,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(params.Save())
+			ensure(params.Save(true))
 
 		case params.ArbosVersion_41:
 			// no change state needed
@@ -475,21 +475,27 @@ func (state *ArbosState) UpgradeArbosVersion(
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(p.Save())
+			ensure(p.Save(true))
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 
 		case params.ArbosVersion_51:
 			// nothing
 
-		case 52, 53, 54, 55, 56, 57, 58, 59:
+		case 52, 53, 54, 55, 56, 57, 58:
 			// these versions are left to Orbit chains for custom upgrades.
+
+		case params.ArbosVersion_59:
+			p, err := state.Programs().Params()
+			ensure(err)
+			ensure(p.UpgradeToVersion(3))
+			ensure(p.Save(true))
 
 		case params.ArbosVersion_60:
 			// Changes for ArbosVersion_StylusContractLimit
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(p.Save())
+			ensure(p.Save(true))
 			// Changes for ArbosVersion_TransactionFiltering
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
 			// filteredFundsRecipient defaults to zero address (falls back to networkFeeAccount).

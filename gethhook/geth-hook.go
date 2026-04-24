@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
@@ -79,10 +80,16 @@ func init() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
 
-		// Arbos is a special case, Arbos handles versioning of precompiles internally, versioning of Ethereum/non-Arbos precompiles must be handled externally
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
-		vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_30 {
+			vm.PrecompiledContractsBeforeArbOS30[addr] = wrapped
+		}
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_41 {
+			vm.PrecompiledContractsStartingFromArbOS30[addr] = wrapped
+		}
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_50 {
+			vm.PrecompiledContractsStartingFromArbOS41[addr] = wrapped
+		}
 		vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
 	}
 
@@ -90,11 +97,14 @@ func init() {
 	addPrecompiles(vm.PrecompiledContractsBeforeArbOS30, vm.PrecompiledContractsBerlin)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsCancun)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS30, vm.PrecompiledContractsP256Verify)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS41, vm.PrecompiledContractsCancun)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS41, vm.PrecompiledContractsP256Verify)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
 
 	// process addresses for respective arbos version precompile maps
 	addAddresses(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30)
+	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS41, vm.PrecompiledContractsStartingFromArbOS41)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50)
 
 	core.RenderRPCError = func(data []byte) error {

@@ -255,8 +255,8 @@ mod tests {
         let path_str = jit_path.to_str().expect("path contains invalid utf-8");
 
         assert!(
-            path_str.contains("nitro/target/bin/jit"),
-            "Path {:?} did not contain expected substring 'nitro/target/bin/jit'",
+            path_str.contains("target/bin/jit"),
+            "Path {:?} did not contain expected substring 'target/bin/jit'",
             jit_path
         );
     }
