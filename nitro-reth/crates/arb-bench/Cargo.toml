@@ -65,7 +65,7 @@ url = "2"
 tokio = { workspace = true }
 
 # Subprocess runner
-base64 = "0.22"
+base64 = { workspace = true }
 
 # Stylus WASM assembly at generate-time
 wat = "1.0"

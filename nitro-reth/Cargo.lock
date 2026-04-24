@@ -1333,6 +1333,7 @@ dependencies = [
  "arb-stylus",
  "arbos",
  "async-trait",
+ "base64 0.22.1",
  "eyre",
  "jsonrpsee",
  "jsonrpsee-http-client",
