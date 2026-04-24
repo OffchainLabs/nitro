@@ -328,7 +328,13 @@ fn run_abba_subprocess(
     manifest: &Manifest,
     cmd: &AbbaCommand,
 ) -> eyre::Result<AbbaResult> {
-    let bench_dir = std::env::temp_dir().join("arbreth-bench-abba");
+    let manifest_slug = manifest.name.replace('/', "_");
+    let bench_dir = std::env::temp_dir()
+        .join("arbreth-bench-abba")
+        .join(&manifest_slug);
+    if bench_dir.exists() {
+        std::fs::remove_dir_all(&bench_dir)?;
+    }
     std::fs::create_dir_all(&bench_dir)?;
     let baseline_bin = cmd.baseline_bin.clone().expect("checked by caller");
     let feature_bin = cmd.feature_bin.clone().expect("checked by caller");
