@@ -9,7 +9,7 @@ use super::test_configs;
 use crate::{
     env::{Escape, MaybeEscape},
     native::NativeInstance,
-    test::{check_instrumentation, new_test_machine},
+    test::{check_instrumentation, new_test_machine, run_machine_read_memory},
 };
 
 #[test]
@@ -43,6 +43,72 @@ fn test_bulk_memory() -> Result<()> {
     assert_eq!(expected, hex::encode(data));
 
     check_instrumentation(native, machine)
+}
+
+#[test]
+fn test_memory_fill_value_overflow() -> Result<()> {
+    // Verifies the version gate for the memory.fill fix (version >= 3).
+    // value=0x100: low 8 bits = 0x00, so correct output is all zeros.
+    let filename = "../prover/test-cases/memory-fill-overflow.wat";
+    let (_, _, ink) = test_configs();
+
+    // V2 is the last buggy version: upper bits of value leak into the fill pattern.
+    // value=0x100 produces a fill pattern of 0x0101_0101_0101_0100 (little-endian i64.store),
+    // so the first 3 bytes written are 0x00 and the remaining 7 are 0x01.
+    let compile_v2 = CompileConfig::version(2, true);
+    let machine_v2_data = run_machine_read_memory(filename, &compile_v2, "run", ink, 0xaaa, 10)?;
+    assert_eq!(
+        machine_v2_data,
+        [0x0, 0x0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1]
+    );
+
+    // V3 is the first fixed version: value correctly masked to 8 bits
+    let compile_v3 = CompileConfig::version(3, true);
+    let machine_v3_data = run_machine_read_memory(filename, &compile_v3, "run", ink, 0xaaa, 10)?;
+    assert_eq!(machine_v3_data, vec![0u8; 10]);
+
+    Ok(())
+}
+
+#[test]
+fn test_memory_fill_value_overflow_nonzero() -> Result<()> {
+    // Verifies that V3 preserves non-zero low bits, not just zero-fills everything.
+    // Uses value 0x1ab (low 8 bits = 0xab); all filled bytes must be 0xab.
+    let filename = "../prover/test-cases/memory-fill-overflow.wat";
+    let (_, _, ink) = test_configs();
+    let compile_v3 = CompileConfig::version(3, true);
+
+    let machine_data =
+        run_machine_read_memory(filename, &compile_v3, "run_nonzero", ink, 0xbbb, 10)?;
+    assert_eq!(machine_data, vec![0xab_u8; 10]);
+
+    Ok(())
+}
+
+#[test]
+fn test_memory_fill_overflow_native_trap() -> Result<()> {
+    let filename = "tests/memory-fill-overflow.wat";
+
+    // Version 0 (< 3): should trap on val > 0xFF
+    let (compile_v0, _, ink) = test_configs(); // version 0
+    let mut native_v0 = NativeInstance::new_test(filename, compile_v0)?;
+    let exports = &native_v0.instance.exports;
+    let fill = exports.get_typed_function::<(), ()>(&native_v0.store, "fill_overflow")?;
+    let err = format!("{}", native_v0.call_func(fill, ink).unwrap_err());
+    assert!(
+        err.contains("memory.fill value exceeds 8 bits"),
+        "expected overflow error for v0, got: {}",
+        err,
+    );
+
+    // Version 3 (>= 3): should succeed, silently truncating val to u8
+    let compile_v3 = CompileConfig::version(3, true);
+    let mut native_v3 = NativeInstance::new_test(filename, compile_v3)?;
+    let exports = &native_v3.instance.exports;
+    let fill = exports.get_typed_function::<(), ()>(&native_v3.store, "fill_overflow")?;
+    native_v3.call_func(fill, ink)?;
+
+    Ok(())
 }
 
 #[test]
