@@ -5,8 +5,7 @@ use alloy_primitives::{address, Address, B256, U256};
 use arb_precompiles::{
     create_arbretryabletx_precompile,
     storage_slot::{
-        current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
-        ARBOS_STATE_ADDRESS, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, ARBOS_STATE_ADDRESS, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
     },
 };
 use common::{calldata, decode_address, decode_u256, PrecompileTest};
@@ -59,15 +58,12 @@ fn get_current_redeemer_returns_zero_outside_retry() {
 #[test]
 fn get_current_redeemer_returns_value_set_by_executor() {
     let refund_to: Address = address!("00000000000000000000000000000000000000ee");
+    arb_precompiles::set_current_redeemer(refund_to);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .storage(
-            ARBOS_STATE_ADDRESS,
-            current_redeemer_slot(),
-            U256::from_be_slice(refund_to.as_slice()),
-        )
         .call(&arbretryabletx(), &calldata("getCurrentRedeemer()", &[]));
+    arb_precompiles::clear_tx_scratch();
     assert_eq!(decode_address(run.output()), refund_to);
 }
 
@@ -230,18 +226,15 @@ fn cancel_rejects_non_beneficiary_caller() {
 #[test]
 fn redeem_self_modifying_guard_rejects_current_retryable() {
     let ticket_id = B256::from([0x33; 32]);
+    arb_precompiles::set_current_retryable_id(ticket_id);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .storage(
-            ARBOS_STATE_ADDRESS,
-            current_retryable_slot(),
-            U256::from_be_bytes(ticket_id.0),
-        )
         .call(
             &arbretryabletx(),
             &calldata("redeem(bytes32)", &[ticket_id]),
         );
+    arb_precompiles::clear_tx_scratch();
     assert!(run.assert_ok().reverted);
 }
 

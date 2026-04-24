@@ -1729,10 +1729,7 @@ where
         // observe it during this tx.
         arb_precompiles::set_tx_is_aliased(arbos::util::does_tx_type_alias(tx_type_raw));
 
-        // Publish the poster fee via a scratch storage slot and thread-local
-        // so ArbGasInfo.getCurrentTxL1GasFees can return it without a storage read.
         {
-            use arb_precompiles::storage_slot::current_tx_poster_fee_slot;
             let poster_fee_val = self
                 .arb_hooks
                 .as_ref()
@@ -1741,51 +1738,22 @@ where
             arb_precompiles::set_current_tx_poster_fee(
                 poster_fee_val.try_into().unwrap_or(u128::MAX),
             );
-            arb_storage::write_arbos_storage(
-                self.inner.evm_mut().db_mut(),
-                current_tx_poster_fee_slot(),
-                poster_fee_val,
-            );
-        }
-
-        // Write the current retryable ticket ID to a scratch slot so the
-        // Redeem precompile can reject self-modification during retry execution.
-        {
-            use arb_precompiles::storage_slot::{current_redeemer_slot, current_retryable_slot};
             let retryable_id = retry_context
                 .as_ref()
-                .map(|ctx| U256::from_be_bytes(ctx.ticket_id.0))
-                .unwrap_or(U256::ZERO);
-            arb_storage::write_arbos_storage(
-                self.inner.evm_mut().db_mut(),
-                current_retryable_slot(),
-                retryable_id,
-            );
-            // Write the current redeemer (refund_to) so GetCurrentRedeemer can read it.
+                .map(|ctx| ctx.ticket_id)
+                .unwrap_or(B256::ZERO);
+            arb_precompiles::set_current_retryable_id(retryable_id);
             let redeemer = retry_context
                 .as_ref()
-                .map(|ctx| U256::from_be_bytes(B256::left_padding_from(ctx.refund_to.as_slice()).0))
-                .unwrap_or(U256::ZERO);
-            arb_storage::write_arbos_storage(
-                self.inner.evm_mut().db_mut(),
-                current_redeemer_slot(),
-                redeemer,
-            );
+                .map(|ctx| ctx.refund_to)
+                .unwrap_or(Address::ZERO);
+            arb_precompiles::set_current_redeemer(redeemer);
         }
 
-        // Helper: roll back pre-execution state writes when a tx is rejected.
-        // Clears scratch slots, undoes calldata units addition, and for retry
-        // txs undoes the prepaid gas mint + escrow callvalue transfer that
-        // happened during the retry pre-exec block.
         let retry_undo = retry_pre_exec_undo;
         let rollback_pre_exec_state = |this: &mut Self, units: u64| {
-            use arb_precompiles::storage_slot::{
-                current_redeemer_slot, current_retryable_slot, current_tx_poster_fee_slot,
-            };
+            arb_precompiles::clear_tx_scratch();
             let db: &mut State<DB> = this.inner.evm_mut().db_mut();
-            arb_storage::write_arbos_storage(db, current_tx_poster_fee_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_retryable_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
             if units > 0 {
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
                 if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
@@ -2318,7 +2286,6 @@ where
                                 result.compute_gas_for_backlog,
                                 pending.charged_multi_gas,
                             );
-                            // Update thread-local so Redeem precompile sees current backlog.
                             if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
                                 arb_precompiles::set_current_gas_backlog(b);
                             }
@@ -2408,7 +2375,6 @@ where
                             let _ = arb_state
                                 .l2_pricing_state
                                 .grow_backlog(dist.compute_gas_for_backlog, used_multi_gas);
-                            // Update thread-local so Redeem precompile sees current backlog.
                             if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
                                 arb_precompiles::set_current_gas_backlog(b);
                             }
@@ -2473,19 +2439,7 @@ where
             let _ = is_retry; // suppress unused warning
         }
 
-        // Clear per-tx scratch slots so they don't affect the state root.
-        // Canonically these are in-memory fields on TxProcessor, not in storage.
-        // We write them to storage so precompiles can read them via sload, but
-        // must clear them after each tx to avoid polluting the state trie.
-        {
-            use arb_precompiles::storage_slot::{
-                current_redeemer_slot, current_retryable_slot, current_tx_poster_fee_slot,
-            };
-            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            arb_storage::write_arbos_storage(db, current_tx_poster_fee_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_retryable_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
-        }
+        arb_precompiles::clear_tx_scratch();
 
         // Per-tx Finalise: delete empty accounts from cache.
         // Only iterates touched accounts (matching Go's journal.dirties).
