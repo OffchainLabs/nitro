@@ -178,7 +178,7 @@ pub fn write_storage_at<D: Database>(
     };
 
     if account == ARBOS_STATE_ADDRESS {
-        tracing::debug!(
+        tracing::trace!(
             target: "arb::storage",
             ?slot,
             ?value,
