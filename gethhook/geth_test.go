@@ -220,6 +220,13 @@ func TestPrecompileBucketMembership(t *testing.T) {
 			name:       "StartingFromArbOS50",
 			contracts:  vm.PrecompiledContractsStartingFromArbOS50,
 			addrs:      vm.PrecompiledAddressesStartingFromArbOS50,
+			upperBound: params.ArbosVersion_60,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsOsaka},
+		},
+		{
+			name:       "StartingFromArbOS60",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS60,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS60,
 			upperBound: maxKnownArbosVersion + 1,
 			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsOsaka},
 		},

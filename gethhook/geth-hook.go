@@ -90,7 +90,10 @@ func init() {
 		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_50 {
 			vm.PrecompiledContractsStartingFromArbOS41[addr] = wrapped
 		}
-		vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_60 {
+			vm.PrecompiledContractsStartingFromArbOS50[addr] = wrapped
+		}
+		vm.PrecompiledContractsStartingFromArbOS60[addr] = wrapped
 	}
 
 	// process Ethereum precompiles for respective arbos versions
@@ -100,12 +103,14 @@ func init() {
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS41, vm.PrecompiledContractsCancun)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS41, vm.PrecompiledContractsP256Verify)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS60, vm.PrecompiledContractsOsaka)
 
 	// process addresses for respective arbos version precompile maps
 	addAddresses(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS30, vm.PrecompiledContractsStartingFromArbOS30)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS41, vm.PrecompiledContractsStartingFromArbOS41)
 	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS50, vm.PrecompiledContractsStartingFromArbOS50)
+	addAddresses(&vm.PrecompiledAddressesStartingFromArbOS60, vm.PrecompiledContractsStartingFromArbOS60)
 
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
