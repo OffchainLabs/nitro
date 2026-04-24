@@ -1,2 +1,2 @@
 ### Internal
-- Export filtering-report test helpers for cross-package use in system tests
+- Export filtering-report test helpers (`NewTestStack`, `NewTestForwarder`, `MockExternalEndpoint`) for cross-package use in system tests
