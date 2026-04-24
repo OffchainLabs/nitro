@@ -1,0 +1,46 @@
+name: bench-release-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or branch to evaluate"
+        required: true
+        default: "master"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-gate:
+    name: full matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 1440
+    strategy:
+      fail-fast: false
+      matrix:
+        arbos: [30, 40, 50, 60]
+        config: [default, aggressive-flush, with-pruner, large-cache]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
+      - name: Build arbreth-bench
+        run: cargo build --release -p arb-bench --bin arbreth-bench
+      - name: Run full corpus
+        run: |
+          target/release/arbreth-bench run \
+            bench/corpus/synthetic \
+            bench/corpus/sepolia \
+            --out target/bench/release-gate/arbos-${{ matrix.arbos }}-${{ matrix.config }}
+        env:
+          RUST_LOG: arb_bench=info
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-arbos-${{ matrix.arbos }}-${{ matrix.config }}
+          path: target/bench/release-gate
+          retention-days: 365

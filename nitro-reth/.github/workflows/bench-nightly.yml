@@ -1,0 +1,68 @@
+name: bench-nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  nightly:
+    name: nightly synthetic + curated short/medium
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        arbos: [30, 50, 60]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
+      - name: Build arbreth-bench
+        run: cargo build --release -p arb-bench --bin arbreth-bench
+      - name: Run synthetic short workloads
+        run: |
+          target/release/arbreth-bench run \
+            bench/corpus/synthetic \
+            --out target/bench/nightly/arbos-${{ matrix.arbos }}
+        env:
+          RUST_LOG: arb_bench=info
+      - name: Upload nightly results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-arbos-${{ matrix.arbos }}
+          path: target/bench/nightly
+          retention-days: 90
+
+  publish-baseline:
+    name: commit baseline to bench/baselines/master
+    needs: nightly
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: target/bench/nightly
+      - name: Stamp baseline JSON into the repo
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%d)
+          SHA=$(git rev-parse --short=12 HEAD)
+          DEST="bench/baselines/master/${DATE}-${SHA}"
+          mkdir -p "${DEST}"
+          find target/bench/nightly -name '*.json' -exec cp {} "${DEST}/" \;
+      - name: Commit baseline
+        run: |
+          git config user.email "ci@arbreth.local"
+          git config user.name "arb-bench-ci"
+          if [[ -n "$(git status --porcelain bench/baselines)" ]]; then
+            git add bench/baselines
+            git commit -m "bench: nightly baseline $(date -u +%Y-%m-%d)"
+            git push
+          fi
