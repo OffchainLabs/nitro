@@ -1469,18 +1469,26 @@ where
 
         let mut poster_gas = 0u64;
         let mut compute_hold_gas = 0u64;
-        let calldata_units = if has_poster_costs {
-            let tx_bytes = recovered.tx().encoded_2718();
-            let (_poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
-                &tx_bytes,
-                self.arb_ctx.coinbase,
-                self.arb_ctx.l1_price_per_unit,
-                self.arb_ctx.brotli_compression_level,
-            );
+        let calldata_units: u64 = if has_poster_costs {
+            let level = self.arb_ctx.brotli_compression_level;
+            let coinbase = self.arb_ctx.coinbase;
+            let tx_ref = recovered.tx();
+            let units = if coinbase == l1_pricing::BATCH_POSTER_ADDRESS {
+                let tx_bytes_ref = tx_ref;
+                tx_ref.poster_units_for(level, &mut || {
+                    l1_pricing::poster_units_from_bytes(&tx_bytes_ref.encoded_2718(), level)
+                })
+            } else {
+                0
+            };
+            let poster_cost = self
+                .arb_ctx
+                .l1_price_per_unit
+                .saturating_mul(U256::from(units));
 
             if let Some(hooks) = self.arb_hooks.as_mut() {
                 hooks.tx_proc.poster_gas = compute_poster_gas(
-                    _poster_cost,
+                    poster_cost,
                     actual_gas_price,
                     false,
                     self.arb_ctx.min_base_fee,
