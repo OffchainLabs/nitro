@@ -12,8 +12,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  build:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: bench-release-gate-binaries
+      ref: ${{ inputs.ref }}
+
   release-gate:
     name: full matrix
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 1440
     strategy:
@@ -26,10 +33,12 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
-      - uses: dtolnay/rust-toolchain@1.93
-      - uses: Swatinem/rust-cache@v2
-      - name: Build arbreth-bench
-        run: cargo build --release -p arb-bench --bin arbreth-bench
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-release-gate-binaries
+          path: target/release
+      - name: Make binaries executable
+        run: chmod +x target/release/arbreth-bench target/release/arb-reth
       - name: Run full corpus
         run: |
           target/release/arbreth-bench run \

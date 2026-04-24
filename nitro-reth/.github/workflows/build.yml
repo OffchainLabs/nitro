@@ -5,17 +5,9 @@ on:
     branches: [master]
   pull_request:
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   build:
-    name: release build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@1.93
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --workspace
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      workspace: true
+      artifact-name: workspace-release-binaries

@@ -9,18 +9,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  build:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: bench-soak-binaries
+
   soak:
     name: weekly endurance soak
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 480
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-      - uses: dtolnay/rust-toolchain@1.93
-      - uses: Swatinem/rust-cache@v2
-      - name: Build arbreth-bench + arb-reth (required for subprocess mode)
-        run: cargo build --release -p arb-bench --bin arbreth-bench -p arb-reth --bin arb-reth
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-soak-binaries
+          path: target/release
+      - name: Make binaries executable
+        run: chmod +x target/release/arbreth-bench target/release/arb-reth
       - name: Run soak in subprocess mode (real MDBX, real flush, real pruner)
         run: |
           target/release/arbreth-bench run \

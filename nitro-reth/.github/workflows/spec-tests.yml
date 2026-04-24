@@ -9,8 +9,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  build:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: spec-tests-binaries
+
   spec:
     name: arb-spec-tests
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,10 +27,12 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      # Execution fixtures need a release binary spawned per-fixture.
-      # Without ARB_SPEC_BINARY the runner silently skips them.
-      - name: Build arb-reth (release)
-        run: cargo build --release -p arb-reth
+      - uses: actions/download-artifact@v4
+        with:
+          name: spec-tests-binaries
+          path: target/release
+      - name: Make arb-reth executable
+        run: chmod +x target/release/arb-reth
       - name: Run spec tests
         env:
           ARB_SPEC_BINARY: ${{ github.workspace }}/target/release/arb-reth
