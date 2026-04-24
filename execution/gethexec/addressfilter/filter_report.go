@@ -4,7 +4,6 @@
 package addressfilter
 
 import (
-	"math/big"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,9 +20,9 @@ type DelayedReportData struct {
 
 // lint:require-exhaustive-initialization
 type FilterSetIdReport struct {
-	FilterSetId uuid.UUID `json:"filterSetId"`
-	ChainId     *big.Int  `json:"chainId"`
-	ReportedAt  time.Time `json:"reportedAt"`
+	FilterSetId uuid.UUID    `json:"filterSetId"`
+	ChainId     *hexutil.Big `json:"chainId"`
+	ReportedAt  time.Time    `json:"reportedAt"`
 }
 
 // lint:require-exhaustive-initialization

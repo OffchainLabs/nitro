@@ -20,6 +20,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -181,7 +182,7 @@ func TestReportCurrentFilterSetId_NoEndpointIsNoOp(t *testing.T) {
 
 	report := addressfilter.FilterSetIdReport{
 		FilterSetId: uuid.New(),
-		ChainId:     big.NewInt(42161),
+		ChainId:     (*hexutil.Big)(big.NewInt(42161)),
 		ReportedAt:  time.Now().UTC(),
 	}
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
@@ -225,7 +226,7 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	reportedAt := time.Now().UTC().Truncate(time.Second)
 	report := addressfilter.FilterSetIdReport{
 		FilterSetId: id,
-		ChainId:     chainID,
+		ChainId:     (*hexutil.Big)(chainID),
 		ReportedAt:  reportedAt,
 	}
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
@@ -241,7 +242,7 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	if got.FilterSetId != id {
 		t.Errorf("filter-set id: want %s, got %s", id, got.FilterSetId)
 	}
-	if got.ChainId == nil || got.ChainId.Cmp(chainID) != 0 {
+	if got.ChainId == nil || got.ChainId.ToInt().Cmp(chainID) != 0 {
 		t.Errorf("chain id: want %s, got %v", chainID, got.ChainId)
 	}
 	if !got.ReportedAt.Equal(reportedAt) {
@@ -266,7 +267,7 @@ func TestReportCurrentFilterSetId_Non2xxError(t *testing.T) {
 
 	report := addressfilter.FilterSetIdReport{
 		FilterSetId: uuid.New(),
-		ChainId:     big.NewInt(1),
+		ChainId:     (*hexutil.Big)(big.NewInt(1)),
 		ReportedAt:  time.Now().UTC(),
 	}
 	err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report)

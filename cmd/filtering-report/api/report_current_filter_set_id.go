@@ -52,7 +52,7 @@ func (a *FilteringReportAPI) ReportCurrentFilterSetId(ctx context.Context, repor
 		if readErr != nil {
 			return fmt.Errorf("post to %s returned status %d (body read error: %w)", endpoint, resp.StatusCode, readErr)
 		}
-		return fmt.Errorf("post to %s returned status %d: %s", endpoint, resp.StatusCode, string(respBody))
+		return fmt.Errorf("post to %s returned status %d: %q", endpoint, resp.StatusCode, respBody)
 	}
 	return nil
 }

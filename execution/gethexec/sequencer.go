@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -1743,11 +1744,18 @@ func (s *Sequencer) isActiveSequencer() bool {
 	return pauseChan == nil && forwarder == nil
 }
 
+// filterSetReportingDisabledRetry is the sleep used when reporting is
+// runtime-disabled (FilterSetReportingInterval <= 0). Keeping it short lets a
+// hot-reload to a positive interval be picked up within a minute, without
+// letting a misconfigured node spin on a zero-length wait.
+const filterSetReportingDisabledRetry = time.Minute
+
 // reportFilterSetID POSTs the current address-filter set id to the
 // filtering-report service. A nil address-filter service, missing RPC client
 // or uuid.Nil filter-set id are all treated as nothing-to-report.
 func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if s.addressFilterService == nil {
+		log.Debug("skipping filter-set id report: address-filter service not configured")
 		return nil
 	}
 	filterSetID := s.addressFilterService.CurrentFilterSetId()
@@ -1764,18 +1772,27 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	}
 	_, err := rpcClient.ReportCurrentFilterSetId(addressfilter.FilterSetIdReport{
 		FilterSetId: filterSetID,
-		ChainId:     s.execEngine.ChainId(),
+		ChainId:     (*hexutil.Big)(s.execEngine.ChainId()),
 		ReportedAt:  time.Now().UTC(),
 	}).Await(ctx)
 	return err
 }
 
+// startFilterSetReporting schedules the periodic reporting loop whenever the
+// filtering-report RPC client is wired (its presence is immutable after node
+// construction). FilterSetReportingInterval carries reload:"hot", so it is
+// re-read on every tick; when the operator hot-reloads it to <=0 the loop
+// parks at filterSetReportingDisabledRetry instead of exiting, so a later
+// re-enable is picked up without restarting the node.
 func (s *Sequencer) startFilterSetReporting() {
-	interval := s.config().FilterSetReportingInterval
-	if interval <= 0 || s.execEngine.GetFilteringReportRPCClient() == nil {
+	if s.execEngine.GetFilteringReportRPCClient() == nil {
 		return
 	}
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		interval := s.config().FilterSetReportingInterval
+		if interval <= 0 {
+			return filterSetReportingDisabledRetry
+		}
 		if !s.isActiveSequencer() {
 			return interval
 		}

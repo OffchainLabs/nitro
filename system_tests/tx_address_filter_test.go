@@ -640,10 +640,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 			http.Error(w, "bad json", http.StatusBadRequest)
 			return
 		}
-		select {
-		case reportCh <- report:
-		default:
-		}
+		reportCh <- report
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer externalEndpoint.Close()
@@ -720,7 +717,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 
 	first := waitForReport(id1)
 	require.NotNil(t, first.ChainId, "chain id should be set in report")
-	require.Equal(t, 0, first.ChainId.Cmp(expectedChainID), "chain id mismatch: want %s got %s", expectedChainID, first.ChainId)
+	require.Equal(t, 0, first.ChainId.ToInt().Cmp(expectedChainID), "chain id mismatch: want %s got %s", expectedChainID, first.ChainId.ToInt())
 	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
 
 	// Rotate the filter set; the next reporting tick must pick up id2.
@@ -728,7 +725,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	filterService.GetHashStore().Store(id2, salt, nil, "test-digest-2")
 
 	second := waitForReport(id2)
-	require.Equal(t, 0, second.ChainId.Cmp(expectedChainID), "chain id mismatch after rotation")
+	require.Equal(t, 0, second.ChainId.ToInt().Cmp(expectedChainID), "chain id mismatch after rotation")
 	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
 		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
 }
