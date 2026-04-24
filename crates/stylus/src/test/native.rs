@@ -312,6 +312,27 @@ fn test_heap() -> Result<()> {
 }
 
 #[test]
+fn test_heap_allocate_max_pages() -> Result<()> {
+    // memory3.wat tries memory.grow(1<<16) and returns 0 iff the grow returned -1.
+    // With heap_bound < 1<<16, the grow must fail in both the JIT and prover.
+    // In stylus v<3, pay_for_memory_grow(1<<16) truncates to u16=0 and succeeds cheaply,
+    // so the actual memory.grow is what must enforce the bound.
+    let (mut compile, config, ink) = test_configs();
+    compile.bounds.heap_bound = Pages(128);
+    compile.pricing.costs = |_, _| 0;
+
+    let (mut native, _) = TestInstance::new_with_evm("tests/memory3.wat", &compile, config)?;
+    let outcome = native.run_main(&[], config, ink)?;
+    assert_eq!(outcome.kind(), UserOutcomeKind::Success);
+
+    let mut machine = Machine::from_user_path(Path::new("tests/memory3.wat"), &compile)?;
+    let outcome = machine.run_main(&[], config, ink)?;
+    assert_eq!(outcome.kind(), UserOutcomeKind::Success);
+
+    Ok(())
+}
+
+#[test]
 fn test_rust() -> Result<()> {
     // in keccak.rs
     //     the input is the # of hashings followed by a preimage

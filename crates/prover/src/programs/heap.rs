@@ -55,7 +55,11 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
             if max == min {
                 return Ok(());
             } else if max < min {
-                bail!("max memory size {} is less than min {}", max.0.red(), min.0.red());
+                bail!(
+                    "max memory size {} is less than min {}",
+                    max.0.red(),
+                    min.0.red()
+                );
             }
         }
 
