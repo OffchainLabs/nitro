@@ -486,7 +486,7 @@ impl Module {
         if let Some(limits) = bin.memories.first() {
             let page_size = Memory::PAGE_SIZE;
             let initial = limits.initial; // validate() checks this is less than max::u32
-            let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1; // we require the size remain *below* 2^32
+            let allowed = Memory::MAX_WASM_PAGES;
 
             let max_size = match limits.maximum {
                 Some(pages) => u64::min(allowed, pages),

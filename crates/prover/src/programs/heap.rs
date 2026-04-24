@@ -10,7 +10,10 @@ use wasmparser::Operator;
 use super::{
     FuncMiddleware, Middleware, ModuleMod, config::CompileMemoryParams, dynamic::SCRATCH_GLOBAL,
 };
-use crate::value::{ArbValueType, FunctionType};
+use crate::{
+    memory::Memory,
+    value::{ArbValueType, FunctionType},
+};
 
 #[derive(Debug)]
 pub struct HeapBound {
@@ -41,15 +44,19 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
         let scratch = module.get_global(SCRATCH_GLOBAL)?;
         *self.scratch.write() = Some(scratch);
 
-        let lim = self.limit;
-        module.set_memory_max(lim)?;
+        module.set_memory_max(Pages(Memory::MAX_WASM_PAGES as u32))?;
 
         let memory = module.memory_info()?;
         let min = memory.min;
         let max = memory.max;
+        let limit = self.limit;
 
-        if min > lim {
-            bail!("memory size {} exceeds bound {}", min.0.red(), lim.0.red());
+        if min > limit {
+            bail!(
+                "memory size {} exceeds bound {}",
+                min.0.red(),
+                limit.0.red()
+            );
         }
         if let Some(max) = max {
             if max == min {
