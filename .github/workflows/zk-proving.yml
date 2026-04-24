@@ -35,17 +35,18 @@ jobs:
           llvm-version: 21
 
       - name: Install SP1 toolchain
-        run: |
-          curl -L https://sp1up.succinct.xyz | bash
-          $HOME/.sp1/bin/sp1up -v v6.0.0-beta.1
+        run: make -C crates/sp1 install-sp1
 
       - name: Print versions
         run: |
           rustc +succinct --version
           rustc +succinct --print target-list | grep succinct
 
-      - name: Build binaries and record block
-        run: ./crates/sp1/build.sh
+      - name: Build binaries
+        run: make -C crates/sp1 build
+
+      - name: Record block inputs
+        run: make -C crates/sp1 record-blocks
 
       # Clippy runs after build because sp1-builder uses include_elf!(),
       # which requires the SP1 ELF to exist at compile time.
@@ -66,7 +67,7 @@ jobs:
           SP1_HASH=$(./target/sp1/sp1-runner \
             --program target/sp1/dumped_replay_wasm.elf \
             --stylus-compiler-program target/sp1/stylus-compiler-program \
-            --block-file target/sp1/block_inputs_7.json 2>&1 \
+            --block-file target/sp1/block-inputs/stylus.json 2>&1 \
             | grep "Validation succeeds with hash" \
             | awk '{print $NF}')
           
@@ -79,7 +80,7 @@ jobs:
           JIT_HASH=$(./target/bin/jit \
             --debug --cranelift \
             --binary target/machines/latest/replay.wasm \
-            json --inputs=target/sp1/block_inputs_7.json 2>&1 \
+            json --inputs=target/sp1/block-inputs/stylus.json 2>&1 \
             | grep "Completed in .* with hash" \
             | awk '{print $NF}' \
             | sed 's/\.$//')

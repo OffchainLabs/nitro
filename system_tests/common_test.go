@@ -2358,7 +2358,7 @@ func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbu
 				t.Fatalf("GetBatchMessageCount(%d): %v", batches-1, err)
 			}
 			lastMsgCount = haveMessages
-			if haveMessages >= msgPos {
+			if haveMessages > msgPos {
 				return
 			}
 		}
