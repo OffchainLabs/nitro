@@ -388,7 +388,23 @@ FROM nitro-node AS nitro-node-default
 #   Rust: [profile.stripped] in arbitrator/Cargo.toml (strip = symbols)
 # ---------------------------------------------------------------------------
 
-FROM node-builder-base AS prover-builder-stripped
+FROM rust:1.93.0-slim-bookworm AS prover-builder-stripped
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev
+COPY --from=brotli-library-export / target/
+COPY Cargo.* ./
+COPY crates/ crates/
+COPY ./Makefile ./
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-jit

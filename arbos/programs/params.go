@@ -169,7 +169,7 @@ func (p *StylusParams) Save(persistToStorage bool) error {
 				return err
 			}
 		} else {
-			if err := p.backingStorage.Burner().Burn(multigas.ResourceKindStorageAccessRead, storage.WriteCost(word)); err != nil {
+			if err := p.backingStorage.Burner().Burn(multigas.ResourceKindStorageAccessWrite, storage.WriteCost(word)); err != nil {
 				return err
 			}
 			if info := p.backingStorage.Burner().TracingInfo(); info != nil {

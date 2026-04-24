@@ -673,7 +673,7 @@ func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments 
 		return err
 	}
 	params.MaxFragmentCount = maxFragments
-	return params.Save(true)
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the constant gas charge applied before each stylus contract activation.
