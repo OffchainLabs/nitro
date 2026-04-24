@@ -86,6 +86,8 @@ type MessageSyncProgress struct {
 }
 
 type MELConfig struct {
-	Inbox          common.Address
-	SequencerInbox common.Address
+	MelVersion      uint16
+	Inbox           common.Address
+	SequencerInbox  common.Address
+	ActivationBlock uint64
 }

@@ -802,9 +802,11 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 
 	// Pack the setMELConfig calldata using the generated rollup ABI.
 	// PR 427 signature: setMELConfig(uint16 _melVersion, address _inbox, address _sequencerInbox)
+	// Use a non-trivial version (42) to explicitly check that MEL reads
+	// the version from the event rather than, say, incrementing from 0.
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err)
-	melVersion := uint16(1)
+	melVersion := uint16(42)
 	calldata, err := rollupABI.Pack("setMELConfig", melVersion, newInbox, newSequencerInbox)
 	Require(t, err)
 
@@ -841,8 +843,8 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	// Verify the config was applied immediately
 	postConfigState, err := msgExtractor.GetHeadState()
 	Require(t, err)
-	if postConfigState.Version != 1 {
-		t.Fatalf("Expected version 1 after config event, got %d", postConfigState.Version)
+	if postConfigState.Version != melVersion {
+		t.Fatalf("Expected version %d after config event, got %d", melVersion, postConfigState.Version)
 	}
 	if postConfigState.BatchPostingTargetAddress != newSequencerInbox {
 		t.Fatalf("Expected BatchPostingTargetAddress %s, got %s", newSequencerInbox.Hex(), postConfigState.BatchPostingTargetAddress.Hex())

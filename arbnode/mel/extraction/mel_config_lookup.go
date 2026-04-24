@@ -34,8 +34,10 @@ func ParseMELConfigFromBlock(
 			return nil, err
 		}
 		return &mel.MELConfig{
-			Inbox:          event.Inbox,
-			SequencerInbox: event.SequencerInbox,
+			MelVersion:      event.MelVersion,
+			Inbox:           event.Inbox,
+			SequencerInbox:  event.SequencerInbox,
+			ActivationBlock: event.ActivationBlock,
 		}, nil
 	}
 	return nil, nil
