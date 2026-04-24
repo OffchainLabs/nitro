@@ -41,16 +41,22 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
         let scratch = module.get_global(SCRATCH_GLOBAL)?;
         *self.scratch.write() = Some(scratch);
 
+        let lim = self.limit;
+        module.set_memory_max(lim)?;
+
         let memory = module.memory_info()?;
         let min = memory.min;
         let max = memory.max;
-        let lim = self.limit;
 
         if min > lim {
             bail!("memory size {} exceeds bound {}", min.0.red(), lim.0.red());
         }
-        if max == Some(min) {
-            return Ok(());
+        if let Some(max) = max {
+            if max == min {
+                return Ok(());
+            } else if max < min {
+                bail!("max memory size {} is less than min {}", max.0.red(), min.0.red());
+            }
         }
 
         let ImportIndex::Function(import) = module.get_import("vm_hooks", Self::PAY_FUNC)? else {
