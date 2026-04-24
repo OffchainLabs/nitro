@@ -161,6 +161,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
 
     fn from_module(module: Module, mut store: Store, env: WasmEnv<D, E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
+        store.set_stylus_version(env.compile.version);
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
             ($func:expr_2021) => {

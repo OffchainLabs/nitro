@@ -40,6 +40,7 @@ type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
         let mut store = compile.store(Target::default(), false);
+        store.set_stylus_version(compile.version);
         let imports = imports! {
             "test" => {
                 "noop" => Function::new_typed(&mut store, || {}),
