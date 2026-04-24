@@ -50,6 +50,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -94,19 +95,22 @@ func (e *ErrFilteredDelayedMessage) Error() string {
 var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 
 // DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
-// for delayed message processing. Collects all tx hashes that touch filtered addresses
-// and are not in the onchain filter. After block production, the caller checks if any
-// hashes were collected and returns ErrFilteredDelayedMessage if so.
+// for delayed message processing. Builds FilteredTxReport entries for txs that touch
+// filtered addresses and are not in the onchain filter. After block production, the
+// caller checks pendingFilteredTxReports and returns ErrFilteredDelayedMessage if any.
 type DelayedFilteringSequencingHooks struct {
 	arbos.NoopSequencingHooks
-	FilteredTxHashes []common.Hash
-	eventFilter      *eventfilter.EventFilter
+	filteredTxHashes         []common.Hash
+	pendingFilteredTxReports []addressfilter.FilteredTxReport
+	eventFilter              *eventfilter.EventFilter
+	inboxRequestId           common.Hash
 }
 
-func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter) *DelayedFilteringSequencingHooks {
+func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter, inboxRequestId common.Hash) *DelayedFilteringSequencingHooks {
 	return &DelayedFilteringSequencingHooks{
 		NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes),
 		eventFilter:         ef,
+		inboxRequestId:      inboxRequestId,
 	}
 }
 
@@ -127,18 +131,20 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
-// For redeems, returns ErrArbTxFilter to trigger group rollback.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+// Builds a FilteredTxReport and returns ErrArbTxFilter for filtered txs.
+// For redeems, returns ErrArbTxFilter without a report (originating tx is
+// collected in TxFailed after group rollback).
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if tx.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
 	touchAddresses(db, tx, sender)
 	applyEventFilter(f.eventFilter, db)
 
-	if filtered, _ := db.IsAddressFiltered(); filtered {
+	if filtered, filteredAddresses := db.IsAddressFiltered(); filtered {
 		// For redeems, return the filter error so the block processor can
-		// trigger a group rollback.
+		// trigger a group rollback. The block processor captures all report
+		// data before rollback and passes it through ErrFilteredCascadingRedeem.
 		if tx.Type() == types.ArbitrumRetryTxType {
 			return state.ErrArbTxFilter
 		}
@@ -148,24 +154,63 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		if errors.As(result.Err, &filteredErr) {
 			return nil
 		}
-		// Otherwise, this tx touched a filtered address but wasn't in the
-		// onchain filter - collect it so the caller can halt.
-		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
+		f.filteredTxHashes = append(f.filteredTxHashes, tx.Hash())
+
+		txRLP, err := tx.MarshalBinary()
+		if err != nil {
+			log.Error("error marshalling filtered delayed tx to RLP", "txHash", tx.Hash(), "err", err)
+		} else {
+			report := addressfilter.FilteredTxReport{
+				ID:                uuid.Must(uuid.NewV7()).String(),
+				TxHash:            tx.Hash(),
+				TxRLP:             txRLP,
+				FilteredAddresses: filteredAddresses,
+				BlockNumber:       header.Number.Uint64(),
+				ParentBlockHash:   header.ParentHash,
+				PositionInBlock:   uint64(positionInBlock), // #nosec G115
+				FilteredAt:        time.Now().UTC(),
+				IsDelayed:         true,
+				DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
+			}
+			f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
+		}
+
 	}
 	return nil
 }
 
 func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
 
-// TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
-// and appends it to FilteredTxHashes. After ProduceBlockAdvanced returns, the
-// existing check fires ErrFilteredDelayedMessage, causing the delayed sequencer
-// to halt and the transaction-filterer to add the hash to the onchain filter.
+// TxFailed builds a fully populated FilteredTxReport from
+// ErrFilteredCascadingRedeem. The block processor captures all needed data
+// (originating tx, filtered addresses, block metadata, user tx position)
+// before the group rollback and passes it through the error.
 func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	var cascadingErr *arbos.ErrFilteredCascadingRedeem
-	if errors.As(err, &cascadingErr) {
-		f.FilteredTxHashes = append(f.FilteredTxHashes, cascadingErr.OriginatingTxHash)
+	if !errors.As(err, &cascadingErr) {
+		return
 	}
+	originatingTxHash := cascadingErr.OriginatingTx.Hash()
+	f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
+
+	txRLP, marshalErr := cascadingErr.OriginatingTx.MarshalBinary()
+	if marshalErr != nil {
+		log.Error("error marshalling originating tx RLP", "txHash", originatingTxHash, "err", marshalErr)
+		return
+	}
+	report := addressfilter.FilteredTxReport{
+		ID:                uuid.Must(uuid.NewV7()).String(),
+		TxHash:            originatingTxHash,
+		TxRLP:             txRLP,
+		FilteredAddresses: cascadingErr.FilteredAddresses,
+		BlockNumber:       cascadingErr.BlockNumber,
+		ParentBlockHash:   cascadingErr.ParentBlockHash,
+		PositionInBlock:   uint64(cascadingErr.PositionInBlock), // #nosec G115
+		FilteredAt:        time.Now().UTC(),
+		IsDelayed:         true,
+		DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
+	}
+	f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -934,7 +979,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			log.Warn("error parsing incoming message for filtering", "err", err)
 			txes = types.Transactions{}
 		}
-		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
+		var inboxRequestId common.Hash
+		if msg.Message.Header.RequestId != nil {
+			inboxRequestId = *msg.Message.Header.RequestId
+		}
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter, inboxRequestId)
 
 		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
@@ -951,10 +1000,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			return nil, nil, nil, err
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
-		if len(filteringHooks.FilteredTxHashes) > 0 {
+		if len(filteringHooks.filteredTxHashes) > 0 {
 			if s.transactionFiltererRPCClient != nil {
+				filteredTxHashes := filteringHooks.filteredTxHashes
 				s.LaunchThread(func(ctx context.Context) {
-					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
+					for _, filteredTxHash := range filteredTxHashes {
 						_, err := s.transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
 						if err != nil {
 							log.Error("error reporting filtered tx to transaction-filterer", "filteredTxHash", filteredTxHash, "err", err)
@@ -963,8 +1013,18 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 				})
 			}
 
+			// Report structured reports to filtering-report service (non-blocking)
+			if s.filteringReportRPCClient != nil && len(filteringHooks.pendingFilteredTxReports) > 0 {
+				reports := filteringHooks.pendingFilteredTxReports
+				s.LaunchThread(func(ctx context.Context) {
+					if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+						log.Error("error reporting filtered delayed txs to filtering-report", "count", len(reports), "err", err)
+					}
+				})
+			}
+
 			return nil, nil, nil, &ErrFilteredDelayedMessage{
-				TxHashes:      filteringHooks.FilteredTxHashes,
+				TxHashes:      filteringHooks.filteredTxHashes,
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
 		}
