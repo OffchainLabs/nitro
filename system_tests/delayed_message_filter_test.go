@@ -24,9 +24,12 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -160,6 +163,22 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
 
 	return transactionFiltererAPI
+}
+
+func SetupFilteringReport(t *testing.T, builder *NodeBuilder) *forwarder.MockExternalEndpoint {
+	t.Helper()
+
+	queueClient := &sqsclient.MockQueueClient{}
+	endpoint := forwarder.NewMockExternalEndpoint(t)
+
+	stack := filteringreportapi.NewTestStack(t, queueClient)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = stack.HTTPEndpoint()
+
+	fwd := forwarder.NewTestForwarder(t, queueClient, endpoint.URL())
+	fwd.Start(t.Context())
+	t.Cleanup(func() { fwd.StopAndWait() })
+
+	return endpoint
 }
 
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
