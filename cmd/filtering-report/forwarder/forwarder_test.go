@@ -15,51 +15,11 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
-
-func newTestStack(t *testing.T, queueClient *sqsclient.MockQueueClient) *rpc.Client {
-	t.Helper()
-	stackConfig := api.DefaultStackConfig
-	stackConfig.HTTPHost = "127.0.0.1"
-	stackConfig.HTTPPort = 0
-	stackConfig.WSHost = "127.0.0.1"
-	stackConfig.WSPort = 0
-	stack, err := api.NewStack(&stackConfig, queueClient)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stack.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { stack.Close() })
-	client := stack.Attach()
-	t.Cleanup(func() { client.Close() })
-	return client
-}
-
-func newTestForwarder(t *testing.T, queueClient *sqsclient.MockQueueClient, endpointURL string) *Forwarder {
-	t.Helper()
-	config := &Config{
-		Workers:            1,
-		PollInterval:       time.Second,
-		SQSWaitTimeSeconds: DefaultConfig.SQSWaitTimeSeconds,
-		ExternalEndpoint: genericconf.HTTPClientConfig{
-			URL:     endpointURL,
-			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
-		},
-	}
-	fwd, err := New(config, queueClient)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fwd
-}
 
 func TestForwarder_ForwardsMessages(t *testing.T) {
 	var mu sync.Mutex
@@ -79,7 +39,9 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	filteringReportClient := newTestStack(t, queueClient)
+	stack := api.NewTestStack(t, queueClient)
+	filteringReportClient := stack.Attach()
+	t.Cleanup(func() { filteringReportClient.Close() })
 
 	reports := []addressfilter.FilteredTxReport{
 		{
@@ -114,7 +76,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	forwarder := NewTestForwarder(t, queueClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(ctx)
 	forwarder.pollAndForward(ctx)
 
@@ -153,7 +115,9 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	filteringReportClient := newTestStack(t, queueClient)
+	stack := api.NewTestStack(t, queueClient)
+	filteringReportClient := stack.Attach()
+	t.Cleanup(func() { filteringReportClient.Close() })
 
 	reports := []addressfilter.FilteredTxReport{
 		{
@@ -175,7 +139,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	forwarder := NewTestForwarder(t, queueClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(ctx)
 
 	deleted := queueClient.DeletedReceiptHandles()
@@ -194,7 +158,7 @@ func TestForwarder_EmptyQueue(t *testing.T) {
 
 	queueClient := &sqsclient.MockQueueClient{}
 
-	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	forwarder := NewTestForwarder(t, queueClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(t.Context())
 
 	if externalEndpointServerCalled {
@@ -219,7 +183,7 @@ func TestForwarder_ReceiveError(t *testing.T) {
 		ReceiveErr: fmt.Errorf("simulated SQS error"),
 	}
 
-	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	forwarder := NewTestForwarder(t, queueClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(t.Context())
 
 	if interval != forwarder.config.PollInterval {
@@ -238,7 +202,9 @@ func TestForwarder_DeleteError(t *testing.T) {
 	queueClient := &sqsclient.MockQueueClient{
 		DeleteErr: fmt.Errorf("simulated SQS delete error"),
 	}
-	rpcClient := newTestStack(t, queueClient)
+	stack := api.NewTestStack(t, queueClient)
+	rpcClient := stack.Attach()
+	t.Cleanup(func() { rpcClient.Close() })
 
 	reports := []addressfilter.FilteredTxReport{{
 		ID:                "",
@@ -257,7 +223,7 @@ func TestForwarder_DeleteError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := newTestForwarder(t, queueClient, externalEndpointServer.URL)
+	forwarder := NewTestForwarder(t, queueClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(t.Context())
 
 	if !endpointCalled {
