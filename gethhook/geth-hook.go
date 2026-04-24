@@ -103,6 +103,7 @@ func init() {
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS41, vm.PrecompiledContractsCancun)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS41, vm.PrecompiledContractsP256Verify)
 	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS50, vm.PrecompiledContractsOsaka)
+	addPrecompiles(vm.PrecompiledContractsStartingFromArbOS60, vm.PrecompiledContractsOsaka)
 
 	// process addresses for respective arbos version precompile maps
 	addAddresses(&vm.PrecompiledAddressesBeforeArbOS30, vm.PrecompiledContractsBeforeArbOS30)
