@@ -640,11 +640,29 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	+make -C contracts-local build
 	@touch $@
 
+# In CI, npm ci / --frozen-lockfile ensure exactly the committed lockfile
+# dependencies (no silent upgrades). Locally, plain install is used to
+# avoid penalizing iterative development.
+ifdef CI
+  NPM_INSTALL = npm --prefix safe-smart-account ci
+  YARN_FLAGS = --frozen-lockfile
+  # Retry wrapper for transient registry errors (ETIMEDOUT, 503, etc.).
+  # Optional $(2): workspace directory whose node_modules to wipe before
+  # retrying (yarn installs incrementally, so partial failures can leave
+  # node_modules in an inconsistent state).
+  # Preserves the failing command's exit code on final failure.
+  RETRY = for attempt in 1 2 3; do if $(1); then if [ $$attempt -gt 1 ]; then echo "INFO: '$(1)' succeeded on attempt $$attempt/3"; fi; break; else rc=$$?; if [ $$attempt -eq 3 ]; then echo "ERROR: '$(1)' failed after 3 attempts (exit code $$rc)"; exit $$rc; fi; echo "::warning::Attempt $$attempt/3 of '$(1)' failed (exit code $$rc) -- retrying in 5s..."; $(if $(2),rm -rf "$(2)/node_modules";) sleep 5; fi; done
+else
+  NPM_INSTALL = npm --prefix safe-smart-account install
+  YARN_FLAGS =
+  RETRY = $(1)
+endif
+
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
-	npm --prefix safe-smart-account install
-	yarn --cwd contracts install
-	yarn --cwd contracts-legacy install
-	+make -C contracts-local install
+	$(call RETRY,$(NPM_INSTALL))
+	$(call RETRY,yarn --cwd contracts install $(YARN_FLAGS),contracts)
+	$(call RETRY,yarn --cwd contracts-legacy install $(YARN_FLAGS),contracts-legacy)
+	+$(call RETRY,make -C contracts-local install)  # forge install --no-git (idempotent, no cleanup needed)
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
