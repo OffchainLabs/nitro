@@ -388,7 +388,7 @@ FROM nitro-node AS nitro-node-default
 #   Rust: [profile.stripped] in arbitrator/Cargo.toml (strip = symbols)
 # ---------------------------------------------------------------------------
 
-FROM prover-builder-base AS prover-builder-stripped
+FROM node-builder-base AS prover-builder-stripped
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-jit

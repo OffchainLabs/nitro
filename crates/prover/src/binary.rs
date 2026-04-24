@@ -1,14 +1,6 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    programs::{
-        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
-        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover,
-    },
-    value::{ArbValueType, FunctionType, IntegerValType, Value},
-};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 
 use arbutil::{
@@ -29,6 +21,15 @@ use wasmer_types::{ExportIndex, FunctionIndex, LocalFunctionIndex, entity::Entit
 use wasmparser::{
     BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
     Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+};
+
+use crate::{
+    programs::{
+        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
+        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover,
+    },
+    value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

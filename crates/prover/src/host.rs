@@ -394,7 +394,8 @@ pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
 /// `version` is the Stylus version of the program being compiled; it selects version-specific
-/// implementations (e.g. the fixed `memory.fill` is used for version >= [`FIXED_MEMORY_FILL_VERSION`]).
+/// implementations (e.g. the fixed `memory.fill` is used for version >=
+/// [`FIXED_MEMORY_FILL_VERSION`]).
 pub fn new_internal_funcs(stylus_data: Option<StylusData>, version: u16) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
