@@ -800,10 +800,12 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	newInbox := common.HexToAddress("0x0000000000000000000000000000000000001111")
 	newSequencerInbox := common.HexToAddress("0x0000000000000000000000000000000000002222")
 
-	// Pack the setMELConfig calldata using the generated rollup ABI
+	// Pack the setMELConfig calldata using the generated rollup ABI.
+	// PR 427 signature: setMELConfig(uint16 _melVersion, address _inbox, address _sequencerInbox)
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err)
-	calldata, err := rollupABI.Pack("setMELConfig", newInbox, newSequencerInbox)
+	melVersion := uint16(1)
+	calldata, err := rollupABI.Pack("setMELConfig", melVersion, newInbox, newSequencerInbox)
 	Require(t, err)
 
 	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)

@@ -29,8 +29,8 @@ func ParseMELConfigFromBlock(
 		if log == nil || len(log.Topics) == 0 || log.Topics[0] != MELConfigEventID {
 			continue
 		}
-		event := new(rollupgen.RollupAdminLogicMELConfigEvent)
-		if err := eventUnpacker.UnpackLogTo(event, RollupAdminABI, "MELConfigEvent", *log); err != nil {
+		event := new(rollupgen.RollupAdminLogicMELConfigSet)
+		if err := eventUnpacker.UnpackLogTo(event, RollupAdminABI, "MELConfigSet", *log); err != nil {
 			return nil, err
 		}
 		return &mel.MELConfig{
