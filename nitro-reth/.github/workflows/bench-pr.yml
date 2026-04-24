@@ -20,13 +20,13 @@ jobs:
     uses: ./.github/workflows/_build-release.yml
     with:
       artifact-name: bench-pr-feature-binaries
+      include-bench-driver: true
 
   build-baseline:
     uses: ./.github/workflows/_build-release.yml
     with:
       artifact-name: bench-pr-baseline-binaries
       ref: ${{ github.base_ref }}
-      targets: "-p arb-reth --bin arb-reth"
 
   abba:
     name: abba pr-gate

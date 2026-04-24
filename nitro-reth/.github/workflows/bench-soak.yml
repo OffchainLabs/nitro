@@ -13,6 +13,7 @@ jobs:
     uses: ./.github/workflows/_build-release.yml
     with:
       artifact-name: bench-soak-binaries
+      include-bench-driver: true
 
   soak:
     name: weekly endurance soak

@@ -17,6 +17,7 @@ jobs:
     with:
       artifact-name: bench-release-gate-binaries
       ref: ${{ inputs.ref }}
+      include-bench-driver: true
 
   release-gate:
     name: full matrix

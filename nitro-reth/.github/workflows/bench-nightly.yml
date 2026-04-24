@@ -13,6 +13,7 @@ jobs:
     uses: ./.github/workflows/_build-release.yml
     with:
       artifact-name: bench-nightly-binaries
+      include-bench-driver: true
 
   nightly:
     name: nightly synthetic + curated short/medium
