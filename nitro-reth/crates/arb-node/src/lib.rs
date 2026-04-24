@@ -6,6 +6,7 @@
 pub mod addons;
 pub mod args;
 pub mod chainspec;
+pub mod coalesced_state;
 pub mod consensus;
 pub mod engine;
 pub mod genesis;

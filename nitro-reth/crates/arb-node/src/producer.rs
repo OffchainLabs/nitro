@@ -27,7 +27,7 @@ use reth_evm::ConfigureEvm;
 use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
-use reth_storage_api::StateProvider;
+use reth_storage_api::{StateProvider, StateProviderBox};
 use reth_trie_common::{HashedPostState, TrieInput};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
@@ -221,10 +221,23 @@ where
         let provisional_mix_hash = compute_mix_hash(send_count, l1_block_number, arbos_version);
 
         // Open state at parent block via block hash.
-        let state_provider = self
+        let raw_state_provider = self
             .provider
             .state_by_block_hash(parent_header.hash())
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
+
+        let state_provider: StateProviderBox =
+            if let Some(head_state) = self.in_memory_state.state_by_hash(parent_header.hash()) {
+                let overlay = crate::coalesced_state::CoalescedOverlay::from_chain(&head_state);
+                if overlay.is_empty() {
+                    raw_state_provider
+                } else {
+                    crate::coalesced_state::CoalescedStateProvider::new(raw_state_provider, overlay)
+                        .boxed()
+                }
+            } else {
+                raw_state_provider
+            };
 
         // Read the L2 baseFee from the parent's committed state.
         let l2_base_fee = {
