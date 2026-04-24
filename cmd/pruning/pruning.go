@@ -256,9 +256,13 @@ func PruneExecutionDBWithDistance(ctx context.Context, executionDB ethdb.Databas
 		"threads", initConfig.PruneThreads,
 		"bloomSizeMB", initConfig.PruneBloomSize,
 	)
-	log.Info("Pruning may take several days for large databases. Progress will be logged periodically. " +
-		"Tip: if this is taking too long, downloading a fresh pruned snapshot with --init.latest pruned may be faster. " +
-		"See https://docs.arbitrum.io/run-arbitrum-node/nitro/nitro-database-snapshots")
+	if initConfig.Prune == "full" || initConfig.Prune == "minimal" {
+		log.Info("Pruning may take several days for large databases. Progress will be logged periodically. " +
+			"Tip: if this is taking too long, downloading a fresh pruned snapshot with --init.latest pruned may be faster. " +
+			"See https://docs.arbitrum.io/run-arbitrum-node/nitro/nitro-database-snapshots")
+	} else {
+		log.Info("Pruning may take several days for large databases. Progress will be logged periodically.")
+	}
 
 	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired, minRootDistance)
 	if err != nil {
