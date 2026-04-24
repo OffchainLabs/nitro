@@ -14,7 +14,11 @@ use alloy_evm::{
 };
 use alloy_primitives::{keccak256, Address, Log, TxKind, B256, U256};
 use arb_chainspec;
-use arb_primitives::{multigas::MultiGas, signed_tx::ArbTransactionExt, tx_types::ArbTxType};
+use arb_primitives::{
+    multigas::{MultiGas, NUM_RESOURCE_KIND},
+    signed_tx::ArbTransactionExt,
+    tx_types::ArbTxType,
+};
 use arbos::{
     arbos_state::ArbosState,
     burn::SystemBurner,
@@ -145,6 +149,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             zombie_accounts: rustc_hash::FxHashSet::default(),
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
+            multi_gas_current_fees: std::sync::OnceLock::new(),
         }
     }
 }
@@ -202,6 +207,7 @@ where
             zombie_accounts: rustc_hash::FxHashSet::default(),
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
+            multi_gas_current_fees: std::sync::OnceLock::new(),
         }
     }
 }
@@ -284,6 +290,13 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Accounts modified in the current tx (bypass ops + EVM state).
     /// Per-tx Finalise only processes these, matching Go's journal.dirties.
     touched_accounts: rustc_hash::FxHashSet<Address>,
+    /// Cached per-resource current-block fees, populated lazily on first read
+    /// within a block. SingleDim slot is left zero; callers substitute the
+    /// live base_fee_wei for that slot and for any cached slot that is zero.
+    /// Safe to cache because current-block fees are only written by
+    /// `commit_next_to_current` during `apply_pre_execution_changes` — no user
+    /// tx or precompile path mutates them mid-block.
+    multi_gas_current_fees: std::sync::OnceLock<[U256; NUM_RESOURCE_KIND]>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -1557,7 +1570,9 @@ where
                             .l1_pricing_state
                             .add_to_units_since_update(calldata_units);
                     }
-                    arb_state.filtered_transactions.is_filtered_free(tx_hash_for_filter)
+                    arb_state
+                        .filtered_transactions
+                        .is_filtered_free(tx_hash_for_filter)
                 }
                 Err(_) => false,
             }
@@ -2129,23 +2144,29 @@ where
 
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                let touched_ptr =
-                    &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
-                let zombie_ptr =
-                    &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
-                let finalise_ptr =
-                    &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
+                let touched_ptr = &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
+                let zombie_ptr = &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
+                let finalise_ptr = &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                 let arbos_ver = self.arb_ctx.arbos_version;
 
-                let arb_state_retry = ArbosState::open(state_ptr, SystemBurner::new(None, false)).ok();
+                let arb_state_retry =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false)).ok();
 
                 // Compute multi-dimensional cost for refund (ArbOS v60+).
                 let multi_dimensional_cost = if self.arb_ctx.arbos_version
                     >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
                 {
                     arb_state_retry.as_ref().and_then(|s| {
+                        let cached = self.multi_gas_current_fees.get_or_init(|| {
+                            s.l2_pricing_state
+                                .get_current_multi_gas_fees()
+                                .unwrap_or([U256::ZERO; NUM_RESOURCE_KIND])
+                        });
                         s.l2_pricing_state
-                            .multi_dimensional_price_for_refund(pending.charged_multi_gas)
+                            .multi_dimensional_price_for_refund_with_fees(
+                                pending.charged_multi_gas,
+                                cached,
+                            )
                             .ok()
                     })
                 } else {
@@ -2330,9 +2351,18 @@ where
                                 .arb_ctx
                                 .basefee
                                 .saturating_mul(U256::from(gas_used_total));
+                            let cached = self.multi_gas_current_fees.get_or_init(|| {
+                                arb_state
+                                    .l2_pricing_state
+                                    .get_current_multi_gas_fees()
+                                    .unwrap_or([U256::ZERO; NUM_RESOURCE_KIND])
+                            });
                             if let Ok(multi_cost) = arb_state
                                 .l2_pricing_state
-                                .multi_dimensional_price_for_refund(pending.charged_multi_gas)
+                                .multi_dimensional_price_for_refund_with_fees(
+                                    pending.charged_multi_gas,
+                                    cached,
+                                )
                             {
                                 if total_cost > multi_cost {
                                     let refund_amount = total_cost.saturating_sub(multi_cost);

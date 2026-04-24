@@ -321,6 +321,23 @@ impl<D: Database> L2PricingState<D> {
         Ok(fees)
     }
 
+    /// Reads the 8 current-block multi-gas fees (non-SingleDim). Intended for
+    /// block-level caching by the executor: these values are only written by
+    /// `commit_next_to_current`, which runs before any tx in the block.
+    /// Zero is kept (not substituted to base_fee_wei) so the caller can do the
+    /// substitution with a fresh base_fee read on every use.
+    pub fn get_current_multi_gas_fees(&self) -> Result<[U256; NUM_RESOURCE_KIND], ()> {
+        let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
+        let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
+        for kind in ResourceKind::ALL {
+            if kind == ResourceKind::SingleDim {
+                continue;
+            }
+            fees[kind as usize] = mgf.get_current_block_fee(kind)?;
+        }
+        Ok(fees)
+    }
+
     /// Rotate next-block multi-gas fees into current-block fees.
     ///
     /// Called at block start before executing transactions.
@@ -429,6 +446,38 @@ impl<D: Database> L2PricingState<D> {
                 continue;
             }
             total = total.saturating_add(U256::from(amount).saturating_mul(fees[kind as usize]));
+        }
+        Ok(total)
+    }
+
+    /// Variant of `multi_dimensional_price_for_refund` that uses precomputed
+    /// current-block multi-gas fees (as returned by `get_current_multi_gas_fees`).
+    /// `base_fee_wei` is still read from state to handle rare mid-block
+    /// `setL2BaseFee` owner writes. Zero cached values are substituted with the
+    /// live base_fee, matching `get_multi_gas_base_fee_per_resource` exactly.
+    pub fn multi_dimensional_price_for_refund_with_fees(
+        &self,
+        gas_used: MultiGas,
+        cached_fees: &[U256; NUM_RESOURCE_KIND],
+    ) -> Result<U256, ()> {
+        let base_fee = self.base_fee_wei()?;
+        let mut total = U256::ZERO;
+        for kind in ResourceKind::ALL {
+            let amount = gas_used.get(kind);
+            if amount == 0 {
+                continue;
+            }
+            let fee = if kind == ResourceKind::SingleDim {
+                base_fee
+            } else {
+                let cached = cached_fees[kind as usize];
+                if cached.is_zero() {
+                    base_fee
+                } else {
+                    cached
+                }
+            };
+            total = total.saturating_add(U256::from(amount).saturating_mul(fee));
         }
         Ok(total)
     }
