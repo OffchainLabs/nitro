@@ -25,12 +25,21 @@ import (
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+func checkReportBlockNumberAndParentBlockHash(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport) {
+	require.NotZero(t, report.BlockNumber, "block number shouldn't be genesis")
+	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
+	require.NoError(t, err)
+	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash,
+		"parent block hash should match hash of block N-1")
+}
 
 // sendDelayedTx sends a transaction via L1 delayed inbox.
 // Returns the L2 tx hash that will be used when sequenced.
