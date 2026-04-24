@@ -11,8 +11,6 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-// NewTestStack creates a filtering-report API stack bound to localhost on
-// ephemeral ports. Exported for use in tests across packages.
 func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient) *node.Node {
 	t.Helper()
 	stackConfig := DefaultStackConfig

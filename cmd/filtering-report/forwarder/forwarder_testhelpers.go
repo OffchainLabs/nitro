@@ -11,9 +11,6 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-// NewTestForwarder creates a Forwarder with sensible test defaults:
-// 1 worker, 1s poll interval, and the given endpoint URL.
-// Exported for use in tests across packages.
 func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointURL string) *Forwarder {
 	t.Helper()
 	config := &Config{
