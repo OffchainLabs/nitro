@@ -2,6 +2,8 @@
 //! into a single hashmap keyed by `(address, slot)`, so each SLOAD is one
 //! lookup instead of a linear walk over every unflushed in-memory block.
 
+use std::sync::Arc;
+
 use alloy_primitives::{Address, BlockNumber, Bytes, StorageKey, StorageValue, B256, U256};
 use reth_chain_state::BlockState;
 use reth_primitives_traits::{Account, Bytecode, NodePrimitives};
@@ -24,6 +26,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 /// "storage known" semantics (newly created or destroyed, matching
 /// `BundleAccount::storage_slot`) are tracked separately so slot reads
 /// that miss the explicit map still return `Some(U256::ZERO)` for them.
+#[derive(Default, Clone)]
 pub struct CoalescedOverlay {
     /// Explicit `(address, slot) -> value` from the newest block that
     /// touched each pair, after wipes have been applied.
@@ -39,30 +42,30 @@ impl CoalescedOverlay {
     /// drops all older explicit entries for that address; later explicit
     /// writes reinstate specific slots.
     pub fn from_chain<N: NodePrimitives>(head: &BlockState<N>) -> Self {
-        let mut slots: FxHashMap<(Address, B256), U256> = FxHashMap::default();
-        let mut wiped: FxHashSet<Address> = FxHashSet::default();
-
-        // `BlockState::chain` yields newest-first. Reverse to apply writes
-        // in chronological order so newer values overwrite older ones.
-        // A wipe is sticky once set: only an explicit newer write for a
-        // specific `(addr, slot)` reinstates that slot; a non-wipe touch
-        // on the same account does not "unwipe" the other slots.
+        let mut overlay = Self::default();
+        // `BlockState::chain` yields newest-first; apply oldest-first so
+        // newer writes overwrite older ones.
         let blocks: Vec<&BlockState<N>> = head.chain().collect();
         for block_state in blocks.into_iter().rev() {
-            let bundle = &block_state.block_ref().execution_output.state;
-            for (addr, account) in bundle.state.iter() {
-                if account.status.is_storage_known() {
-                    wiped.insert(*addr);
-                    slots.retain(|(a, _), _| a != addr);
-                }
-                for (slot_u256, slot_entry) in account.storage.iter() {
-                    let key = B256::from(*slot_u256);
-                    slots.insert((*addr, key), slot_entry.present_value);
-                }
+            overlay.extend_with_block(&block_state.block_ref().execution_output.state);
+        }
+        overlay
+    }
+
+    /// Folds one block's bundle into the overlay using the same
+    /// wipe-then-write semantics as `from_chain`. A wipe is sticky for
+    /// the account: a later non-wipe touch does not "unwipe" other slots.
+    pub fn extend_with_block(&mut self, bundle: &BundleState) {
+        for (addr, account) in bundle.state.iter() {
+            if account.status.is_storage_known() {
+                self.wiped.insert(*addr);
+                self.slots.retain(|(a, _), _| a != addr);
+            }
+            for (slot_u256, slot_entry) in account.storage.iter() {
+                let key = B256::from(*slot_u256);
+                self.slots.insert((*addr, key), slot_entry.present_value);
             }
         }
-
-        Self { slots, wiped }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -85,11 +88,11 @@ impl CoalescedOverlay {
 /// cost a single hashmap probe instead of scanning every in-memory block.
 pub struct CoalescedStateProvider {
     inner: StateProviderBox,
-    overlay: CoalescedOverlay,
+    overlay: Arc<CoalescedOverlay>,
 }
 
 impl CoalescedStateProvider {
-    pub fn new(inner: StateProviderBox, overlay: CoalescedOverlay) -> Self {
+    pub fn new(inner: StateProviderBox, overlay: Arc<CoalescedOverlay>) -> Self {
         Self { inner, overlay }
     }
 

@@ -91,6 +91,10 @@ pub struct ArbBlockProducer<Provider> {
     /// the `arb_getValidatedBlock` RPC handler can read it without
     /// holding a strong reference to the producer.
     validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<alloy_primitives::B256>>>>,
+    /// Cached coalesced storage overlay for the current in-memory chain.
+    /// Extended in place after each block produced; invalidated on flush
+    /// or rollback so a stale chain view never feeds an SLOAD.
+    cached_overlay: Mutex<Option<CachedOverlay>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -98,6 +102,11 @@ struct FinalityMarkers {
     safe: Option<alloy_primitives::B256>,
     finalized: Option<alloy_primitives::B256>,
     validated: Option<alloy_primitives::B256>,
+}
+
+struct CachedOverlay {
+    parent_hash: B256,
+    overlay: Arc<crate::coalesced_state::CoalescedOverlay>,
 }
 
 impl<Provider> ArbBlockProducer<Provider>
@@ -127,7 +136,49 @@ where
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
+            cached_overlay: Mutex::new(None),
         }
+    }
+
+    fn get_or_build_overlay(
+        &self,
+        parent_hash: B256,
+        head_state: &reth_chain_state::BlockState<ArbPrimitives>,
+    ) -> Arc<crate::coalesced_state::CoalescedOverlay> {
+        let mut cache = self.cached_overlay.lock();
+        if let Some(c) = cache.as_ref() {
+            if c.parent_hash == parent_hash {
+                return c.overlay.clone();
+            }
+        }
+        let overlay = Arc::new(crate::coalesced_state::CoalescedOverlay::from_chain(
+            head_state,
+        ));
+        *cache = Some(CachedOverlay {
+            parent_hash,
+            overlay: overlay.clone(),
+        });
+        overlay
+    }
+
+    fn extend_cached_overlay(&self, new_block_hash: B256, bundle: &BundleState) {
+        let mut cache = self.cached_overlay.lock();
+        let mut overlay = match cache.take() {
+            Some(c) => match Arc::try_unwrap(c.overlay) {
+                Ok(o) => o,
+                Err(arc) => (*arc).clone(),
+            },
+            None => crate::coalesced_state::CoalescedOverlay::default(),
+        };
+        overlay.extend_with_block(bundle);
+        *cache = Some(CachedOverlay {
+            parent_hash: new_block_hash,
+            overlay: Arc::new(overlay),
+        });
+    }
+
+    fn invalidate_cached_overlay(&self) {
+        *self.cached_overlay.lock() = None;
     }
 
     /// Currently-tracked finality markers (for RPC / debugging use).
@@ -188,6 +239,7 @@ where
                     .remove_persisted_blocks(result.last_num_hash);
                 *self.flushing_trie_input.lock() = None;
                 self.pending_flush.store(false, Ordering::SeqCst);
+                self.invalidate_cached_overlay();
                 info!(
                     target: "block_producer",
                     flushed = result.count,
@@ -228,7 +280,7 @@ where
 
         let state_provider: StateProviderBox =
             if let Some(head_state) = self.in_memory_state.state_by_hash(parent_header.hash()) {
-                let overlay = crate::coalesced_state::CoalescedOverlay::from_chain(&head_state);
+                let overlay = self.get_or_build_overlay(parent_header.hash(), &head_state);
                 if overlay.is_empty() {
                     raw_state_provider
                 } else {
@@ -816,6 +868,8 @@ where
         let sealed = reth_primitives_traits::SealedBlock::seal_slow(block);
         let block_hash = sealed.hash();
 
+        self.extend_cached_overlay(block_hash, &bundle);
+
         // Buffer block in memory for batched persistence.
         {
             use alloy_evm::block::BlockExecutionResult;
@@ -1048,6 +1102,8 @@ where
                     old: old_blocks,
                 });
         }
+
+        self.invalidate_cached_overlay();
 
         // Anchor the canonical head at the rolled-back block so RPC
         // queries like eth_blockNumber return the correct value.
