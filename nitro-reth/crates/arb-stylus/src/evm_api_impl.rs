@@ -269,6 +269,8 @@ pub struct StylusEvmApi {
     /// MemoryModel params for add_pages gas computation.
     free_pages: u16,
     page_gas: u16,
+    /// ArbOS version — flush semantics are version-gated at v50.
+    arbos_version: u64,
     /// Type-erased context pointer and callbacks for sub-calls.
     ctx_ptr: *mut (),
     do_call: Option<DoCallFn>,
@@ -294,6 +296,7 @@ impl StylusEvmApi {
         read_only: bool,
         free_pages: u16,
         page_gas: u16,
+        arbos_version: u64,
         ctx_ptr: *mut (),
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
@@ -320,6 +323,7 @@ impl StylusEvmApi {
             read_only,
             free_pages,
             page_gas,
+            arbos_version,
             ctx_ptr,
             do_call,
             do_create,
@@ -424,6 +428,7 @@ impl EvmApi for StylusEvmApi {
 
         let mut total_gas = 0u64;
         let mut remaining = gas_left.0;
+        let mut is_out_of_gas = false;
 
         for (key, value) in &dirty {
             let storage_key = U256::from_be_bytes(key.0);
@@ -434,16 +439,25 @@ impl EvmApi for StylusEvmApi {
 
             let sstore_cost = sstore_gas_cost(&info);
             if sstore_cost > remaining {
-                return Ok((Gas(total_gas), UserOutcomeKind::OutOfInk));
+                is_out_of_gas = true;
+                total_gas = gas_left.0;
+                break;
             }
             remaining -= sstore_cost;
             total_gas += sstore_cost;
-
-            // Track SSTORE refunds (EIP-3529). Important: these refunds must
-            // also be propagated up through SubCallResult.refund in any
-            // nested Stylus sub-call, otherwise clearing refunds generated
-            // inside an inner Stylus program are silently lost.
             self.sstore_refund += sstore_refund(&info);
+        }
+
+        // A budget that was exhausted — by partial OOG or by hitting exactly
+        // zero — must surface as a non-Success outcome so the caller traps.
+        if is_out_of_gas || remaining == 0 {
+            const ARBOS_VERSION_DIA: u64 = 50;
+            let outcome = if self.arbos_version < ARBOS_VERSION_DIA {
+                UserOutcomeKind::Failure
+            } else {
+                UserOutcomeKind::OutOfInk
+            };
+            return Ok((Gas(total_gas), outcome));
         }
 
         Ok((Gas(total_gas), UserOutcomeKind::Success))

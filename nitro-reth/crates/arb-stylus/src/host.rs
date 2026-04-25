@@ -182,16 +182,26 @@ pub fn storage_flush_cache<E: EvmApi>(
         .evm_api
         .flush_storage_cache(clear != 0, Gas(gas_left.0 + 1))
         .map_err(|e| Escape::Internal(e.to_string()))?;
-    // Only buy gas on success: a partial flush's gas is reverted with the
-    // call. Charging it here would burn ink that should be returned to the
-    // caller as part of the revert refund.
-    if status != UserOutcomeKind::Success {
-        return Escape::logical("storage flush failed");
+
+    // Failure must skip buy_gas so WASM ink — and the EVM caller's gas-used —
+    // reflect exactly what was spent before the failed flush. Other
+    // non-Success outcomes charge first (typically underflowing into
+    // OutOfInk, which consumes the full forwarded gas at the EVM level).
+    match status {
+        UserOutcomeKind::Success => {
+            if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+                info.buy_gas(gas_cost.0)?;
+            }
+            Ok(())
+        }
+        UserOutcomeKind::Failure => Escape::logical("storage flush failed"),
+        _ => {
+            if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+                info.buy_gas(gas_cost.0)?;
+            }
+            Escape::logical("storage flush failed")
+        }
     }
-    if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
-        info.buy_gas(gas_cost.0)?;
-    }
-    Ok(())
 }
 
 /// Load a transient storage value.
