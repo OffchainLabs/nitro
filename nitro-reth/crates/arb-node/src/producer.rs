@@ -95,6 +95,7 @@ pub struct ArbBlockProducer<Provider> {
     /// Extended in place after each block produced; invalidated on flush
     /// or rollback so a stale chain view never feeds an SLOAD.
     cached_overlay: Mutex<Option<CachedOverlay>>,
+    cached_prestate: Mutex<Option<CachedPrestate>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -107,6 +108,11 @@ struct FinalityMarkers {
 struct CachedOverlay {
     parent_hash: B256,
     overlay: Arc<crate::coalesced_state::CoalescedOverlay>,
+}
+
+struct CachedPrestate {
+    parent_hash: B256,
+    contracts: Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>>,
 }
 
 impl<Provider> ArbBlockProducer<Provider>
@@ -137,6 +143,7 @@ where
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
             cached_overlay: Mutex::new(None),
+            cached_prestate: Mutex::new(None),
         }
     }
 
@@ -179,6 +186,57 @@ where
 
     fn invalidate_cached_overlay(&self) {
         *self.cached_overlay.lock() = None;
+    }
+
+    fn get_or_build_prestate(
+        &self,
+        parent_hash: B256,
+        head_state: Option<&reth_chain_state::BlockState<ArbPrimitives>>,
+    ) -> Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>> {
+        let mut cache = self.cached_prestate.lock();
+        if let Some(c) = cache.as_ref() {
+            if c.parent_hash == parent_hash {
+                return c.contracts.clone();
+            }
+        }
+        let mut contracts: alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode> =
+            Default::default();
+        if let Some(head_state) = head_state {
+            for block_state in head_state.chain() {
+                let exec_output = &block_state.block().execution_output;
+                for (hash, code) in &exec_output.state.contracts {
+                    contracts.entry(*hash).or_insert_with(|| code.clone());
+                }
+            }
+        }
+        let arc = Arc::new(contracts);
+        *cache = Some(CachedPrestate {
+            parent_hash,
+            contracts: arc.clone(),
+        });
+        arc
+    }
+
+    fn extend_cached_prestate(&self, new_block_hash: B256, bundle: &BundleState) {
+        let mut cache = self.cached_prestate.lock();
+        let mut contracts = match cache.take() {
+            Some(c) => match Arc::try_unwrap(c.contracts) {
+                Ok(map) => map,
+                Err(arc) => (*arc).clone(),
+            },
+            None => Default::default(),
+        };
+        for (hash, code) in &bundle.contracts {
+            contracts.entry(*hash).or_insert_with(|| code.clone());
+        }
+        *cache = Some(CachedPrestate {
+            parent_hash: new_block_hash,
+            contracts: Arc::new(contracts),
+        });
+    }
+
+    fn invalidate_cached_prestate(&self) {
+        *self.cached_prestate.lock() = None;
     }
 
     /// Currently-tracked finality markers (for RPC / debugging use).
@@ -240,6 +298,7 @@ where
                 *self.flushing_trie_input.lock() = None;
                 self.pending_flush.store(false, Ordering::SeqCst);
                 self.invalidate_cached_overlay();
+                self.invalidate_cached_prestate();
                 info!(
                     target: "block_producer",
                     flushed = result.count,
@@ -336,16 +395,13 @@ where
         // bundle_state.contracts before falling back to the DB, ensuring all
         // bytecodes from recent blocks are available during execution.
         let prestate = {
-            let mut bundle = BundleState::default();
-            if let Some(head_state) = self.in_memory_state.head_state() {
-                for block_state in head_state.chain() {
-                    let exec_output = &block_state.block().execution_output;
-                    for (hash, code) in &exec_output.state.contracts {
-                        bundle.contracts.entry(*hash).or_insert(code.clone());
-                    }
-                }
+            let head_state_opt = self.in_memory_state.state_by_hash(parent_header.hash());
+            let contracts =
+                self.get_or_build_prestate(parent_header.hash(), head_state_opt.as_deref());
+            BundleState {
+                contracts: (*contracts).clone(),
+                ..Default::default()
             }
-            bundle
         };
 
         let mut db = StateBuilder::new()
@@ -869,6 +925,7 @@ where
         let block_hash = sealed.hash();
 
         self.extend_cached_overlay(block_hash, &bundle);
+        self.extend_cached_prestate(block_hash, &bundle);
 
         // Buffer block in memory for batched persistence.
         {
@@ -1104,6 +1161,7 @@ where
         }
 
         self.invalidate_cached_overlay();
+        self.invalidate_cached_prestate();
 
         // Anchor the canonical head at the rolled-back block so RPC
         // queries like eth_blockNumber return the correct value.
