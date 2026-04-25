@@ -1543,17 +1543,25 @@ where
             }
         }
 
-        // Add calldata units to L1 pricing state BEFORE EVM execution
-        // (before EVM execution, during gas charging).
-        if calldata_units > 0 {
+        // Add calldata units to L1 pricing state before EVM execution, and
+        // read the filtered-tx status for the reverted_tx_hook via the same
+        // ArbosState handle.
+        let tx_hash_for_filter = recovered.tx().trie_hash();
+        let is_filtered = {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let state_ptr: *mut State<DB> = db as *mut State<DB>;
-            if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
-                let _ = arb_state
-                    .l1_pricing_state
-                    .add_to_units_since_update(calldata_units);
+            match ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                Ok(arb_state) => {
+                    if calldata_units > 0 {
+                        let _ = arb_state
+                            .l1_pricing_state
+                            .add_to_units_since_update(calldata_units);
+                    }
+                    arb_state.filtered_transactions.is_filtered_free(tx_hash_for_filter)
+                }
+                Err(_) => false,
             }
-        }
+        };
 
         // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
         // poster_gas is subtracted here so that BuyGas charges
@@ -1586,18 +1594,7 @@ where
         {
             use arbos::tx_processor::RevertedTxAction;
 
-            // Get tx hash for filtered check.
-            let tx_hash = recovered.tx().trie_hash();
-
-            // Check if tx is in the filtered transactions list.
-            let is_filtered = {
-                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                    .ok()
-                    .map(|s| s.filtered_transactions.is_filtered_free(tx_hash))
-                    .unwrap_or(false)
-            };
+            let tx_hash = tx_hash_for_filter;
 
             if let Some(hooks) = self.arb_hooks.as_ref() {
                 let action = hooks.tx_proc.reverted_tx_hook(
@@ -2140,17 +2137,17 @@ where
                     &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                 let arbos_ver = self.arb_ctx.arbos_version;
 
+                let arb_state_retry = ArbosState::open(state_ptr, SystemBurner::new(None, false)).ok();
+
                 // Compute multi-dimensional cost for refund (ArbOS v60+).
                 let multi_dimensional_cost = if self.arb_ctx.arbos_version
                     >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
                 {
-                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        .ok()
-                        .and_then(|s| {
-                            s.l2_pricing_state
-                                .multi_dimensional_price_for_refund(pending.charged_multi_gas)
-                                .ok()
-                        })
+                    arb_state_retry.as_ref().and_then(|s| {
+                        s.l2_pricing_state
+                            .multi_dimensional_price_for_refund(pending.charged_multi_gas)
+                            .ok()
+                    })
                 } else {
                     None
                 };
@@ -2211,10 +2208,7 @@ where
 
                 if let Some(ref result) = result {
                     if result.should_delete_retryable {
-                        // SAFETY: state_ptr is valid for the lifetime of this block.
-                        if let Ok(arb_state) =
-                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        {
+                        if let Some(arb_state) = arb_state_retry.as_ref() {
                             let _ = arb_state.retryable_state.delete_retryable(
                                 retry_ctx.ticket_id,
                                 |from, to, amount| {
@@ -2277,18 +2271,13 @@ where
 
                     // Grow gas backlog unconditionally for retryable txs.
                     // Unlike normal txs, backlog growth is unconditional here.
-                    {
-                        // SAFETY: state_ptr is valid for the lifetime of this block.
-                        if let Ok(arb_state) =
-                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        {
-                            let _ = arb_state.l2_pricing_state.grow_backlog(
-                                result.compute_gas_for_backlog,
-                                pending.charged_multi_gas,
-                            );
-                            if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
-                                arb_precompiles::set_current_gas_backlog(b);
-                            }
+                    if let Some(arb_state) = arb_state_retry.as_ref() {
+                        let _ = arb_state.l2_pricing_state.grow_backlog(
+                            result.compute_gas_for_backlog,
+                            pending.charged_multi_gas,
+                        );
+                        if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                            arb_precompiles::set_current_gas_backlog(b);
                         }
                     }
                 }
@@ -2327,19 +2316,20 @@ where
                     self.touched_accounts.insert(dist.infra_fee_account);
                     self.touched_accounts.insert(dist.poster_fee_destination);
 
+                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                    let arb_state_post =
+                        ArbosState::open(state_ptr, SystemBurner::new(None, false)).ok();
+
                     // Multi-dimensional gas refund: if the multi-gas cost is less
                     // than the single-gas cost, refund the difference to the sender.
                     if self.arb_ctx.arbos_version
                         >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
                     {
-                        let total_cost = self
-                            .arb_ctx
-                            .basefee
-                            .saturating_mul(U256::from(gas_used_total));
-                        let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                        if let Ok(arb_state) =
-                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        {
+                        if let Some(arb_state) = arb_state_post.as_ref() {
+                            let total_cost = self
+                                .arb_ctx
+                                .basefee
+                                .saturating_mul(U256::from(gas_used_total));
                             if let Ok(multi_cost) = arb_state
                                 .l2_pricing_state
                                 .multi_dimensional_price_for_refund(pending.charged_multi_gas)
@@ -2366,10 +2356,7 @@ where
                         .charged_multi_gas
                         .saturating_sub(MultiGas::single_dim_gas(pending.poster_gas));
 
-                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                    if let Ok(arb_state) =
-                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                    {
+                    if let Some(arb_state) = arb_state_post.as_ref() {
                         // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
                             let _ = arb_state
