@@ -133,7 +133,7 @@ revm = { version = "34.0", features = [
 revm-database = { version = "10.0" }
 revm-database-interface = { version = "9.0" }
 revm-state = { version = "9.0" }
-revm-primitives = { version = "22.1" }
+revm-primitives = { version = "23.0" }
 revm-interpreter = { version = "32.0" }
 revm-context = { version = "12.0" }
 revm-bytecode = { version = "8.0" }
