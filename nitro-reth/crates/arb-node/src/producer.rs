@@ -28,7 +28,7 @@ use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::{StateProvider, StateProviderBox};
-use reth_trie_common::{HashedPostState, TrieInput};
+use reth_trie_common::{HashedPostState, TrieInputSorted};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
@@ -80,8 +80,8 @@ pub struct ArbBlockProducer<Provider> {
     head_block_num: AtomicU64,
     blocks_since_flush: AtomicU64,
     flush_interval: u64,
-    accumulated_trie_input: Mutex<TrieInput>,
-    flushing_trie_input: Mutex<Option<TrieInput>>,
+    accumulated_trie_input: Mutex<Arc<TrieInputSorted>>,
+    flushing_trie_input: Mutex<Option<Arc<TrieInputSorted>>>,
     pending_flush: AtomicBool,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
@@ -135,7 +135,7 @@ where
             head_block_num: AtomicU64::new(head),
             blocks_since_flush: AtomicU64::new(0),
             flush_interval,
-            accumulated_trie_input: Mutex::new(TrieInput::default()),
+            accumulated_trie_input: Mutex::new(Arc::new(TrieInputSorted::default())),
             flushing_trie_input: Mutex::new(None),
             pending_flush: AtomicBool::new(false),
             produce_lock: Mutex::new(()),
@@ -819,27 +819,44 @@ where
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
 
         let (state_root, trie_updates) = {
-            let mut acc = self.accumulated_trie_input.lock();
-            let flushing = self.flushing_trie_input.lock();
+            let acc_arc = self.accumulated_trie_input.lock().clone();
+            let flushing_arc = self.flushing_trie_input.lock().clone();
 
-            // Merge flushing overlay (if flush in progress) + accumulated + this block.
-            let mut input = if let Some(ref flushing) = *flushing {
-                let mut base = flushing.clone();
-                base.nodes.extend(acc.nodes.clone());
-                base.state.extend(acc.state.clone());
-                base.prefix_sets.extend(acc.prefix_sets.clone());
-                base
+            let block_state_sorted = hashed_state.clone().into_sorted();
+            let prefix_sets = block_state_sorted.construct_prefix_sets().freeze();
+
+            let mut new_acc_state = (*acc_arc.state).clone();
+            new_acc_state.extend_ref_and_sort(&block_state_sorted);
+            let new_acc_state_arc = Arc::new(new_acc_state);
+
+            let (overlay_state_arc, overlay_nodes_arc) = if let Some(f) = &flushing_arc {
+                let mut s = (*f.state).clone();
+                s.extend_ref_and_sort(&new_acc_state_arc);
+                let mut n = (*f.nodes).clone();
+                n.extend_ref_and_sort(&acc_arc.nodes);
+                (Arc::new(s), Arc::new(n))
             } else {
-                acc.clone()
+                (Arc::clone(&new_acc_state_arc), Arc::clone(&acc_arc.nodes))
             };
-            drop(flushing);
 
-            input.append(hashed_state.clone());
+            let overlay = Arc::new(TrieInputSorted::new(
+                overlay_nodes_arc,
+                overlay_state_arc,
+                Default::default(),
+            ));
 
-            let (root, updates) = crate::launcher::compute_parallel_state_root(input)
-                .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+            let (root, updates) =
+                crate::launcher::compute_parallel_state_root(overlay, prefix_sets)
+                    .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
 
-            acc.append_cached(updates.clone(), hashed_state.clone());
+            let mut new_acc_nodes = (*acc_arc.nodes).clone();
+            new_acc_nodes.extend_ref_and_sort(&updates.clone_into_sorted());
+            *self.accumulated_trie_input.lock() = Arc::new(TrieInputSorted::new(
+                Arc::new(new_acc_nodes),
+                new_acc_state_arc,
+                Default::default(),
+            ));
+
             (root, updates)
         };
 
@@ -1191,7 +1208,7 @@ where
         }
 
         // Invalidate any trie-input carrying the now-removed blocks.
-        *self.accumulated_trie_input.lock() = Default::default();
+        *self.accumulated_trie_input.lock() = Arc::new(TrieInputSorted::default());
 
         info!(
             target: "block_producer",

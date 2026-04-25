@@ -93,7 +93,8 @@ struct FlushHandle {
 /// Type-erased parallel state root function.
 type ParallelStateRootFn = Box<
     dyn Fn(
-            reth_trie_common::TrieInput,
+            Arc<reth_trie_common::TrieInputSorted>,
+            reth_trie_common::prefix_set::TriePrefixSets,
         ) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), String>
         + Send
         + Sync,
@@ -140,14 +141,14 @@ pub fn try_flush_result() -> Option<FlushResult> {
         .and_then(|handle| handle.result_rx.try_recv().ok())
 }
 
-/// Compute state root with parallel storage roots and cached trie node overlay.
 pub fn compute_parallel_state_root(
-    input: reth_trie_common::TrieInput,
+    overlay: Arc<reth_trie_common::TrieInputSorted>,
+    prefix_sets: reth_trie_common::prefix_set::TriePrefixSets,
 ) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), String> {
     let f = PARALLEL_STATE_ROOT_FN
         .get()
         .ok_or_else(|| "parallel_state_root not initialized".to_string())?;
-    f(input)
+    f(overlay, prefix_sets)
 }
 
 /// Arbitrum engine node launcher.
@@ -434,191 +435,35 @@ impl ArbEngineLauncher {
             });
         }
 
-        // Create the parallel state root closure.
-        // Accepts a TrieInput with cached trie nodes + accumulated state.
-        // Computes storage roots in parallel (each with its own DB tx + shared overlay),
-        // then walks the account trie serially with the overlay.
         {
-            use alloy_primitives::B256;
-            use alloy_rlp::{BufMut, Encodable};
-            use reth_provider::{DatabaseProviderFactory, StorageSettingsCache};
-            use reth_storage_api::DBProvider;
-            use reth_trie::{
-                hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
-                node_iter::{TrieElement, TrieNodeIter},
-                trie_cursor::{InMemoryTrieCursorFactory, TrieCursorFactory},
-                updates::TrieUpdates,
-                walker::TrieWalker,
-                HashBuilder, Nibbles, StorageRoot, TRIE_ACCOUNT_RLP_MAX_SIZE,
+            use reth_chain_state::{
+                AnchoredTrieInput, ComputedTrieData, DeferredTrieData, LazyOverlay,
             };
-            use reth_trie_common::TrieInputSorted;
-            use reth_trie_db::{
-                DatabaseHashedCursorFactory, DatabaseTrieCursorFactory, LegacyKeyAdapter,
-                PackedKeyAdapter,
-            };
-            use reth_trie_parallel::StorageRootTargets;
+            use reth_provider::providers::OverlayStateProviderFactory;
+            use reth_trie_parallel::root::ParallelStateRoot;
 
             let pf = ctx.provider_factory().clone();
-            let is_v2 = pf.cached_storage_settings().is_v2();
+            let runtime = ctx.task_executor().clone();
+            let changeset_cache_for_root = changeset_cache.clone();
 
-            // Helper: compute parallel state root with a specific TrieKeyAdapter.
-            fn parallel_root<PF, A>(
-                pf: &PF,
-                sorted: TrieInputSorted,
-            ) -> Result<(B256, TrieUpdates), String>
-            where
-                PF: DatabaseProviderFactory + Clone + Send + Sync + 'static,
-                PF::Provider: reth_storage_api::DBProvider,
-                A: reth_trie_db::TrieTableAdapter + Send + Sync + 'static,
-            {
-                let nodes = sorted.nodes.clone();
-                let state = sorted.state.clone();
-                let prefix_sets_frozen = sorted.prefix_sets.freeze();
+            let state_root_fn: ParallelStateRootFn = Box::new(move |overlay, prefix_sets| {
+                let anchor_hash = alloy_primitives::B256::ZERO;
+                let computed = ComputedTrieData {
+                    hashed_state: Arc::clone(&overlay.state),
+                    trie_updates: Arc::clone(&overlay.nodes),
+                    anchored_trie_input: Some(AnchoredTrieInput {
+                        anchor_hash,
+                        trie_input: overlay,
+                    }),
+                };
+                let lazy = LazyOverlay::new(anchor_hash, vec![DeferredTrieData::ready(computed)]);
+                let factory =
+                    OverlayStateProviderFactory::new(pf.clone(), changeset_cache_for_root.clone())
+                        .with_lazy_overlay(Some(lazy));
 
-                let storage_root_targets = StorageRootTargets::new(
-                    prefix_sets_frozen
-                        .account_prefix_set
-                        .iter()
-                        .map(|nibbles| B256::from_slice(&nibbles.pack())),
-                    prefix_sets_frozen.storage_prefix_sets.clone(),
-                );
-
-                let mut storage_roots =
-                    std::collections::HashMap::with_capacity(storage_root_targets.len());
-                let mut targets_vec: Vec<_> = storage_root_targets.into_iter().collect();
-                targets_vec.sort_unstable_by_key(|(addr, _)| *addr);
-                for (hashed_address, prefix_set) in targets_vec {
-                    let pf2 = pf.clone();
-                    let nodes2 = nodes.clone();
-                    let state2 = state.clone();
-
-                    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-                    std::thread::spawn(move || {
-                        let result = (|| -> Result<_, String> {
-                            let provider_ro = pf2
-                                .database_provider_ro()
-                                .map_err(|e| format!("db_provider_ro: {e}"))?;
-                            let db_tx = provider_ro.tx_ref();
-                            let trie_cursor = InMemoryTrieCursorFactory::new(
-                                DatabaseTrieCursorFactory::<_, A>::new(db_tx),
-                                nodes2.as_ref(),
-                            );
-                            let hashed_cursor = HashedPostStateCursorFactory::new(
-                                DatabaseHashedCursorFactory::new(db_tx),
-                                state2.as_ref(),
-                            );
-                            StorageRoot::new_hashed(
-                                trie_cursor,
-                                hashed_cursor,
-                                hashed_address,
-                                prefix_set,
-                                Default::default(),
-                            )
-                            .calculate(true)
-                            .map_err(|e| format!("storage root: {e}"))
-                        })();
-                        let _ = tx.send(result);
-                    });
-                    storage_roots.insert(hashed_address, rx);
-                }
-
-                let provider_ro = pf
-                    .database_provider_ro()
-                    .map_err(|e| format!("db_provider_ro: {e}"))?;
-                let db_tx = provider_ro.tx_ref();
-                let trie_cursor = InMemoryTrieCursorFactory::new(
-                    DatabaseTrieCursorFactory::<_, A>::new(db_tx),
-                    nodes.as_ref(),
-                );
-                let hashed_cursor = HashedPostStateCursorFactory::new(
-                    DatabaseHashedCursorFactory::new(db_tx),
-                    state.as_ref(),
-                );
-
-                let walker = TrieWalker::<_>::state_trie(
-                    trie_cursor
-                        .account_trie_cursor()
-                        .map_err(|e| format!("trie cursor: {e}"))?,
-                    prefix_sets_frozen.account_prefix_set,
-                )
-                .with_deletions_retained(true);
-                let mut account_node_iter = TrieNodeIter::state_trie(
-                    walker,
-                    hashed_cursor
-                        .hashed_account_cursor()
-                        .map_err(|e| format!("hashed cursor: {e}"))?,
-                );
-
-                let mut hash_builder = HashBuilder::default().with_updates(true);
-                let mut trie_updates = TrieUpdates::default();
-                let mut account_rlp = Vec::with_capacity(TRIE_ACCOUNT_RLP_MAX_SIZE);
-
-                while let Some(node) = account_node_iter
-                    .try_next()
-                    .map_err(|e| format!("node iter: {e}"))?
-                {
-                    match node {
-                        TrieElement::Branch(node) => {
-                            hash_builder.add_branch(
-                                node.key,
-                                node.value,
-                                node.children_are_in_trie,
-                            );
-                        }
-                        TrieElement::Leaf(hashed_address, account) => {
-                            let storage_root_result = match storage_roots.remove(&hashed_address) {
-                                Some(rx) => rx.recv().map_err(|_| {
-                                    format!("channel closed for {hashed_address}")
-                                })??,
-                                None => StorageRoot::new_hashed(
-                                    trie_cursor.clone(),
-                                    hashed_cursor.clone(),
-                                    hashed_address,
-                                    Default::default(),
-                                    Default::default(),
-                                )
-                                .calculate(true)
-                                .map_err(|e| format!("storage root: {e}"))?,
-                            };
-
-                            let (storage_root, _, updates) = match storage_root_result {
-                                reth_trie::StorageRootProgress::Complete(root, _, updates) => {
-                                    (root, (), updates)
-                                }
-                                reth_trie::StorageRootProgress::Progress(..) => {
-                                    return Err("StorageRoot returned Progress".to_string())
-                                }
-                            };
-
-                            trie_updates.insert_storage_updates(hashed_address, updates);
-
-                            account_rlp.clear();
-                            let account: reth_primitives_traits::Account = account;
-                            let trie_account = account.into_trie_account(storage_root);
-                            trie_account.encode(&mut account_rlp as &mut dyn BufMut);
-                            hash_builder.add_leaf(Nibbles::unpack(hashed_address), &account_rlp);
-                        }
-                    }
-                }
-
-                let root = hash_builder.root();
-                let removed_keys = account_node_iter.walker.take_removed_keys();
-                trie_updates.finalize(
-                    hash_builder,
-                    removed_keys,
-                    prefix_sets_frozen.destroyed_accounts,
-                );
-
-                Ok((root, trie_updates))
-            }
-
-            let state_root_fn: ParallelStateRootFn = Box::new(move |input| {
-                let sorted = TrieInputSorted::from_unsorted(input);
-                if is_v2 {
-                    parallel_root::<_, PackedKeyAdapter>(&pf, sorted)
-                } else {
-                    parallel_root::<_, LegacyKeyAdapter>(&pf, sorted)
-                }
+                ParallelStateRoot::new(factory, prefix_sets, runtime.clone())
+                    .incremental_root_with_updates()
+                    .map_err(|e| format!("parallel state root: {e}"))
             });
             let _ = PARALLEL_STATE_ROOT_FN.set(state_root_fn);
         }
