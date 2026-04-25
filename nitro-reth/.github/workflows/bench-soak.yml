@@ -1,0 +1,59 @@
+name: bench-soak
+
+on:
+  schedule:
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: bench-soak-binaries
+      include-bench-driver: true
+
+  soak:
+    name: weekly endurance soak
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-soak-binaries
+          path: target/release
+      - name: Make binaries executable
+        run: chmod +x target/release/arbreth-bench target/release/arb-reth
+      - name: Run soak in subprocess mode (real MDBX, real flush, real pruner)
+        run: |
+          target/release/arbreth-bench run \
+            bench/corpus/sepolia/mixed-realistic/endurance.json \
+            --mode subprocess \
+            --out target/bench/soak
+        env:
+          RUST_LOG: arb_bench=info
+      - name: Upload soak artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-results
+          path: target/bench/soak
+          retention-days: 365
+      - name: Detect monotonic slowdown
+        run: |
+          set -euo pipefail
+          for f in target/bench/soak/*.json; do
+            if jq -e '.summary.monotonic_slowdown_detected == true' "$f" >/dev/null; then
+              echo "::error file=$f::monotonic slowdown detected"
+              exit 1
+            fi
+            growth=$(jq '.summary.rss_growth_per_10k_blocks_bytes' "$f")
+            if [ "$growth" -gt 52428800 ]; then
+              echo "::warning file=$f::RSS growth $growth bytes / 10k blocks exceeds 50 MiB threshold"
+            fi
+          done

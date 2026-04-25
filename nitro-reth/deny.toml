@@ -98,6 +98,10 @@ crate = "arb-reth"
 allow = ["BUSL-1.1"]
 crate = "gen-genesis"
 
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-bench"
+
 [[licenses.clarify]]
 crate = "arbutil"
 expression = "BUSL-1.1"

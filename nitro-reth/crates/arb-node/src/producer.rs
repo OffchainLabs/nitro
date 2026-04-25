@@ -300,8 +300,13 @@ where
         //     no way to know the real value.
         if let Some(init_msg) = self.cached_init.lock().take() {
             if !genesis::is_arbos_initialized(&mut db) {
+                let initial_version = std::env::var("ARB_INITIAL_ARBOS_VERSION")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(genesis::INITIAL_ARBOS_VERSION);
                 info!(
                     target: "block_producer",
+                    initial_version,
                     "Applying cached ArbOS Init during block {} execution",
                     l2_block_number
                 );
@@ -309,7 +314,7 @@ where
                     &mut db,
                     &init_msg,
                     chain_id,
-                    genesis::INITIAL_ARBOS_VERSION,
+                    initial_version,
                     genesis::DEFAULT_CHAIN_OWNER,
                     genesis::ArbOSInit::default(),
                 )
@@ -322,10 +327,34 @@ where
                     "ArbOS already initialized; overriding L1 price_per_unit from Init message"
                 );
                 let state_ptr = &mut db as *mut _;
-                if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                if let Ok(mut arb_state) =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                {
                     let _ = arb_state
                         .l1_pricing_state
                         .set_price_per_unit(init_msg.initial_l1_base_fee);
+                    // Optional ArbOS upgrade hook for benchmarking: lets the
+                    // bench's subprocess boot at any target ArbOS version
+                    // without needing to schedule an on-chain upgrade.
+                    if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION") {
+                        if let Ok(target_version) = target.parse::<u64>() {
+                            let current = arb_state.arbos_version();
+                            if target_version > current {
+                                if let Err(e) =
+                                    arb_state.upgrade_arbos_version(target_version, true)
+                                {
+                                    info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
+                                } else {
+                                    info!(
+                                        target: "block_producer",
+                                        from = current,
+                                        to = target_version,
+                                        "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

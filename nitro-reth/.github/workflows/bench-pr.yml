@@ -1,0 +1,95 @@
+name: bench-pr
+
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "bin/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "bench/corpus/**"
+      - "genesis/**"
+      - ".github/workflows/bench-pr.yml"
+      - ".github/workflows/_build-release.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-feature:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: bench-pr-feature-binaries
+      include-bench-driver: true
+
+  build-baseline:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: bench-pr-baseline-binaries
+      ref: ${{ github.base_ref }}
+
+  abba:
+    name: abba pr-gate
+    needs: [build-feature, build-baseline]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-pr-feature-binaries
+          path: target/release-feature
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-pr-baseline-binaries
+          path: target/release-baseline
+      - name: Make binaries executable
+        run: |
+          chmod +x target/release-feature/arbreth-bench \
+                   target/release-feature/arb-reth \
+                   target/release-baseline/arb-reth
+      - name: Run ABBA (baseline=${{ github.base_ref }}, feature=PR)
+        run: |
+          target/release-feature/arbreth-bench abba \
+            --preset pr-gate \
+            --iterations 3 \
+            --tolerance-pct 5.0 \
+            --bootstrap-iters 10000 \
+            --baseline-bin "$PWD/target/release-baseline/arb-reth" \
+            --feature-bin "$PWD/target/release-feature/arb-reth" \
+            --genesis "$PWD/genesis/arbitrum-sepolia.json" \
+            --out target/bench/abba \
+            --markdown-out target/bench/abba/summary.md
+      - name: Upload ABBA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: abba-results
+          path: target/bench/abba
+          retention-days: 30
+      - name: Comment ABBA summary on PR
+        if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'target/bench/abba/summary.md';
+            if (!fs.existsSync(path)) {
+              core.warning('no abba summary file');
+              return;
+            }
+            const body = fs.readFileSync(path, 'utf8');
+            const issue_number = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: `### arb-bench (PR-gate ABBA: \`${context.payload.pull_request.base.ref}\` vs PR)\n\n${body}`,
+            });

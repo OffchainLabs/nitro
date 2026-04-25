@@ -1,0 +1,78 @@
+name: bench-nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: bench-nightly-binaries
+      include-bench-driver: true
+
+  nightly:
+    name: nightly synthetic + curated short/medium
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        arbos: [30, 50, 60]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-nightly-binaries
+          path: target/release
+      - name: Make binaries executable
+        run: chmod +x target/release/arbreth-bench target/release/arb-reth
+      - name: Run synthetic short workloads
+        run: |
+          target/release/arbreth-bench run \
+            bench/corpus/synthetic \
+            --out target/bench/nightly/arbos-${{ matrix.arbos }}
+        env:
+          RUST_LOG: arb_bench=info
+      - name: Upload nightly results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-arbos-${{ matrix.arbos }}
+          path: target/bench/nightly
+          retention-days: 90
+
+  publish-baseline:
+    name: commit baseline to bench/baselines/master
+    needs: nightly
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-arbos-*
+          path: target/bench/nightly
+      - name: Stamp baseline JSON into the repo
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%d)
+          SHA=$(git rev-parse --short=12 HEAD)
+          DEST="bench/baselines/master/${DATE}-${SHA}"
+          mkdir -p "${DEST}"
+          find target/bench/nightly -name '*.json' -exec cp {} "${DEST}/" \;
+      - name: Commit baseline
+        run: |
+          git config user.email "ci@arbreth.local"
+          git config user.name "arb-bench-ci"
+          if [[ -n "$(git status --porcelain bench/baselines)" ]]; then
+            git add bench/baselines
+            git commit -m "bench: nightly baseline $(date -u +%Y-%m-%d)"
+            git push
+          fi

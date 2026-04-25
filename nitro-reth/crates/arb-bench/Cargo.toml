@@ -1,0 +1,108 @@
+[package]
+name = "arb-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Performance benchmarking framework and corpus runner for arbreth"
+
+[[bin]]
+name = "arbreth-bench"
+path = "src/bin/arbreth_bench.rs"
+
+[dependencies]
+arb-chainspec = { workspace = true }
+arb-evm = { workspace = true }
+arb-precompiles = { workspace = true }
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arb-stylus = { workspace = true }
+arb-test-utils = { workspace = true }
+arbos = { workspace = true }
+arb-e2e-tests = { path = "../arb-e2e-tests" }
+
+alloy-consensus = { workspace = true, features = ["k256"] }
+alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "k256", "serde"] }
+alloy-rlp = { workspace = true }
+
+reth-chainspec = { workspace = true }
+reth-evm = { workspace = true }
+revm = { workspace = true }
+
+clap = { workspace = true }
+eyre = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Bootstrap CI + synthetic generators + prewarm alloc
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+rand_chacha = "0.3"
+
+# Process info for RSS
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+
+# CPU time syscalls
+libc = "0.2"
+
+# Reporting
+csv = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+# Frozen-corpus fetcher
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "stream"] }
+tar = "0.4"
+zstd = "0.13"
+url = "2"
+
+# RPC capture
+tokio = { workspace = true }
+
+# Subprocess runner
+base64 = "0.22"
+
+# Stylus WASM assembly at generate-time
+wat = "1.0"
+brotli = { version = "7", default-features = false, features = ["std"] }
+tiny-keccak = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3"
+
+[[bench]]
+name = "block_executor"
+harness = false
+
+[[bench]]
+name = "tx_decode"
+harness = false
+
+[[bench]]
+name = "precompile_dispatch"
+harness = false
+
+[[bench]]
+name = "state_root"
+harness = false
+
+[[bench]]
+name = "stylus_dispatch"
+harness = false
+
+[[bench]]
+name = "stylus_ink_metering"
+harness = false
+
+[[bench]]
+name = "retryable_sweep"
+harness = false
+
+[lints]
+workspace = true
