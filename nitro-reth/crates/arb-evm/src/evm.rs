@@ -1098,6 +1098,7 @@ where
             is_static,
             params.free_pages,
             params.page_gas,
+            arbos_version,
             ctx_ptr,
             Some(stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
             Some(stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
