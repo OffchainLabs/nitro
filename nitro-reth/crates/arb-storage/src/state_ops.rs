@@ -151,32 +151,32 @@ pub fn write_storage_at<D: Database>(
         return;
     }
 
-    // Modify cache entry
-    let (previous_info, previous_status, current_info, current_status) = {
+    // Storage-only write: AccountInfo is unchanged, so one clone suffices.
+    let (info, previous_info, previous_status, current_status) = {
         let cached_acc = match state.cache.accounts.get_mut(&account) {
             Some(acc) => acc,
             None => return,
         };
 
         let previous_status = cached_acc.status;
-        let previous_info = cached_acc.account.as_ref().map(|a| a.info.clone());
+        let (info, previous_info, had_no_nonce_and_code) = match cached_acc.account.as_ref() {
+            Some(a) => {
+                let info = a.info.clone();
+                let had_no_nonce_and_code = info.has_no_code_and_nonce();
+                (Some(info.clone()), Some(info), had_no_nonce_and_code)
+            }
+            None => (None, None, false),
+        };
 
         if let Some(ref mut account) = cached_acc.account {
             account.storage.insert(slot, value);
         }
 
-        let had_no_nonce_and_code = previous_info
-            .as_ref()
-            .map(|info| info.has_no_code_and_nonce())
-            .unwrap_or_default();
         cached_acc.status = cached_acc.status.on_changed(had_no_nonce_and_code);
-
-        let current_info = cached_acc.account.as_ref().map(|a| a.info.clone());
         let current_status = cached_acc.status;
-        (previous_info, previous_status, current_info, current_status)
+        (info, previous_info, previous_status, current_status)
     };
 
-    // Create and apply transition
     if account == ARBOS_STATE_ADDRESS {
         tracing::debug!(
             target: "arb::storage",
@@ -191,7 +191,7 @@ pub fn write_storage_at<D: Database>(
     storage_changes.insert(slot, StorageSlot::new_changed(original_value, value));
 
     let transition = revm::database::TransitionAccount {
-        info: current_info,
+        info,
         status: current_status,
         previous_info,
         previous_status,
@@ -199,7 +199,7 @@ pub fn write_storage_at<D: Database>(
         storage_was_destroyed: false,
     };
 
-    state.apply_transition(vec![(account, transition)]);
+    state.apply_transition([(account, transition)]);
 }
 
 /// Reads the balance of an account from the state.
