@@ -6,9 +6,8 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 use crate::{
     interfaces::IArbRetryableTx,
     storage_slot::{
-        current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
-        vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
-        ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, vector_length_slot, ARBOS_STATE_ADDRESS,
+        L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
     },
 };
 
@@ -90,14 +89,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         Calls::getCurrentRedeemer(_) => {
-            let internals = input.internals_mut();
-            internals
-                .load_account(ARBOS_STATE_ADDRESS)
-                .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
-            let redeemer = internals
-                .sload(ARBOS_STATE_ADDRESS, current_redeemer_slot())
-                .map_err(|_| PrecompileError::other("sload failed"))?
-                .data;
+            let redeemer = crate::get_current_redeemer();
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 redeemer.to_be_bytes::<32>().to_vec().into(),
@@ -282,14 +274,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
     // Guard: cannot redeem itself during its own retry execution.
     {
-        let internals = input.internals_mut();
-        internals
-            .load_account(ARBOS_STATE_ADDRESS)
-            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
-        let current_retryable = internals
-            .sload(ARBOS_STATE_ADDRESS, current_retryable_slot())
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
+        let current_retryable = crate::get_current_retryable_id();
         if !current_retryable.is_zero()
             && B256::from(current_retryable.to_be_bytes::<32>()) == ticket_id
         {

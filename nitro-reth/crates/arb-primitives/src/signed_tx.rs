@@ -118,6 +118,11 @@ pub struct ArbTransactionSigned {
     signature: Signature,
     transaction: ArbTypedTransaction,
     input_cache: reth_primitives_traits::sync::OnceLock<Bytes>,
+    sender_cache: reth_primitives_traits::sync::OnceLock<Address>,
+    /// Cached poster calldata units, packed as `(level as u64) << 56 | (units &
+    /// 0x00FF_FFFF_FFFF_FFFF)`. Brotli compression level is stable across a block, so this
+    /// cache avoids repeated brotli compression of the same tx bytes within that block.
+    poster_units_cache: reth_primitives_traits::sync::OnceLock<u64>,
 }
 
 impl Deref for ArbTransactionSigned {
@@ -134,6 +139,8 @@ impl ArbTransactionSigned {
             signature,
             transaction,
             input_cache: Default::default(),
+            sender_cache: Default::default(),
+            poster_units_cache: Default::default(),
         }
     }
 
@@ -143,6 +150,8 @@ impl ArbTransactionSigned {
             signature,
             transaction,
             input_cache: Default::default(),
+            sender_cache: Default::default(),
+            poster_units_cache: Default::default(),
         }
     }
 
@@ -213,6 +222,35 @@ impl ArbTransactionSigned {
     fn zero_sig() -> Signature {
         Signature::new(U256::ZERO, U256::ZERO, false)
     }
+
+    /// Returns the cached poster calldata units for the given brotli compression level,
+    /// computing them via `compute` on first call. The cache is valid for a single level
+    /// — if called with a different level, returns the freshly computed value without
+    /// updating the cache (callers should avoid mixing levels per-tx).
+    pub fn poster_units_cached<F: FnOnce() -> u64>(&self, level: u64, compute: F) -> u64 {
+        if let Some(&entry) = self.poster_units_cache.get() {
+            let (cached_level, cached_units) = unpack_poster_units(entry);
+            if cached_level == level {
+                return cached_units;
+            }
+            return compute();
+        }
+        let units = compute();
+        let _ = self.poster_units_cache.set(pack_poster_units(level, units));
+        units
+    }
+}
+
+#[inline]
+fn pack_poster_units(level: u64, units: u64) -> u64 {
+    ((level & 0xFF) << 56) | (units & 0x00FF_FFFF_FFFF_FFFF)
+}
+
+#[inline]
+fn unpack_poster_units(packed: u64) -> (u64, u64) {
+    let level = (packed >> 56) & 0xFF;
+    let units = packed & 0x00FF_FFFF_FFFF_FFFF;
+    (level, units)
 }
 
 // ---------------------------------------------------------------------------
@@ -261,83 +299,88 @@ impl SignedTransaction for ArbTransactionSigned {
 // SignerRecoverable
 // ---------------------------------------------------------------------------
 
-impl alloy_consensus::transaction::SignerRecoverable for ArbTransactionSigned {
-    fn recover_signer(
+impl ArbTransactionSigned {
+    fn recover_signer_inner(
         &self,
+        strict: bool,
     ) -> Result<Address, reth_primitives_traits::transaction::signed::RecoveryError> {
         match &self.transaction {
-            // System tx types use the `from` field directly.
             ArbTypedTransaction::Deposit(tx) => Ok(tx.from),
             ArbTypedTransaction::Unsigned(tx) => Ok(tx.from),
             ArbTypedTransaction::Contract(tx) => Ok(tx.from),
             ArbTypedTransaction::Retry(tx) => Ok(tx.from),
             ArbTypedTransaction::SubmitRetryable(tx) => Ok(tx.from),
             ArbTypedTransaction::Internal(_) => Ok(ARBOS_ADDRESS),
-            // Standard tx types use ECDSA recovery.
             ArbTypedTransaction::Legacy(tx) => {
                 let mut buf = Vec::new();
                 tx.encode_for_signing(&mut buf);
-                recover_signer(&self.signature, keccak256(&buf))
+                if strict {
+                    recover_signer(&self.signature, keccak256(&buf))
+                } else {
+                    recover_signer_unchecked(&self.signature, keccak256(&buf))
+                }
             }
             ArbTypedTransaction::Eip2930(tx) => {
                 let mut buf = Vec::new();
                 tx.encode_for_signing(&mut buf);
-                recover_signer(&self.signature, keccak256(&buf))
+                if strict {
+                    recover_signer(&self.signature, keccak256(&buf))
+                } else {
+                    recover_signer_unchecked(&self.signature, keccak256(&buf))
+                }
             }
             ArbTypedTransaction::Eip1559(tx) => {
                 let mut buf = Vec::new();
                 tx.encode_for_signing(&mut buf);
-                recover_signer(&self.signature, keccak256(&buf))
+                if strict {
+                    recover_signer(&self.signature, keccak256(&buf))
+                } else {
+                    recover_signer_unchecked(&self.signature, keccak256(&buf))
+                }
             }
             ArbTypedTransaction::Eip4844(tx) => {
                 let mut buf = Vec::new();
                 tx.encode_for_signing(&mut buf);
-                recover_signer(&self.signature, keccak256(&buf))
+                if strict {
+                    recover_signer(&self.signature, keccak256(&buf))
+                } else {
+                    recover_signer_unchecked(&self.signature, keccak256(&buf))
+                }
             }
             ArbTypedTransaction::Eip7702(tx) => {
                 let mut buf = Vec::new();
                 tx.encode_for_signing(&mut buf);
-                recover_signer(&self.signature, keccak256(&buf))
+                if strict {
+                    recover_signer(&self.signature, keccak256(&buf))
+                } else {
+                    recover_signer_unchecked(&self.signature, keccak256(&buf))
+                }
             }
         }
+    }
+}
+
+impl alloy_consensus::transaction::SignerRecoverable for ArbTransactionSigned {
+    fn recover_signer(
+        &self,
+    ) -> Result<Address, reth_primitives_traits::transaction::signed::RecoveryError> {
+        if let Some(addr) = self.sender_cache.get() {
+            return Ok(*addr);
+        }
+        let addr = self.recover_signer_inner(true)?;
+        let _ = self.sender_cache.set(addr);
+        Ok(addr)
     }
 
     fn recover_signer_unchecked(
         &self,
     ) -> Result<Address, reth_primitives_traits::transaction::signed::RecoveryError> {
-        match &self.transaction {
-            ArbTypedTransaction::Deposit(tx) => Ok(tx.from),
-            ArbTypedTransaction::Unsigned(tx) => Ok(tx.from),
-            ArbTypedTransaction::Contract(tx) => Ok(tx.from),
-            ArbTypedTransaction::Retry(tx) => Ok(tx.from),
-            ArbTypedTransaction::SubmitRetryable(tx) => Ok(tx.from),
-            ArbTypedTransaction::Internal(_) => Ok(ARBOS_ADDRESS),
-            ArbTypedTransaction::Legacy(tx) => {
-                let mut buf = Vec::new();
-                tx.encode_for_signing(&mut buf);
-                recover_signer_unchecked(&self.signature, keccak256(&buf))
-            }
-            ArbTypedTransaction::Eip2930(tx) => {
-                let mut buf = Vec::new();
-                tx.encode_for_signing(&mut buf);
-                recover_signer_unchecked(&self.signature, keccak256(&buf))
-            }
-            ArbTypedTransaction::Eip1559(tx) => {
-                let mut buf = Vec::new();
-                tx.encode_for_signing(&mut buf);
-                recover_signer_unchecked(&self.signature, keccak256(&buf))
-            }
-            ArbTypedTransaction::Eip4844(tx) => {
-                let mut buf = Vec::new();
-                tx.encode_for_signing(&mut buf);
-                recover_signer_unchecked(&self.signature, keccak256(&buf))
-            }
-            ArbTypedTransaction::Eip7702(tx) => {
-                let mut buf = Vec::new();
-                tx.encode_for_signing(&mut buf);
-                recover_signer_unchecked(&self.signature, keccak256(&buf))
-            }
+        if let Some(addr) = self.sender_cache.get() {
+            return Ok(*addr);
         }
+        let addr = self.recover_signer_inner(false)?;
+        let _ = self.sender_cache.set(addr);
+        Ok(addr)
     }
 }
 
@@ -935,9 +978,27 @@ pub trait ArbTransactionExt {
     fn retry_tx_info(&self) -> Option<RetryTxInfo> {
         None
     }
+    /// Compute or return cached poster calldata units for the given brotli level.
+    /// Default impl calls `compute` every time; `ArbTransactionSigned` caches the result.
+    fn poster_units_for(&self, _level: u64, compute: &mut dyn FnMut() -> u64) -> u64 {
+        compute()
+    }
 }
 
 impl ArbTransactionExt for ArbTransactionSigned {
+    fn poster_units_for(&self, level: u64, compute: &mut dyn FnMut() -> u64) -> u64 {
+        if let Some(&entry) = self.poster_units_cache.get() {
+            let (cached_level, cached_units) = unpack_poster_units(entry);
+            if cached_level == level {
+                return cached_units;
+            }
+            return compute();
+        }
+        let units = compute();
+        let _ = self.poster_units_cache.set(pack_poster_units(level, units));
+        units
+    }
+
     fn submit_retryable_info(&self) -> Option<SubmitRetryableInfo> {
         match &self.transaction {
             ArbTypedTransaction::SubmitRetryable(tx) => Some(SubmitRetryableInfo {

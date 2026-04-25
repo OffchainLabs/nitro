@@ -3,11 +3,16 @@
 //! Receives messages from the Nitro consensus layer, produces blocks,
 //! and maintains the mapping between message indices and block numbers.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use alloy_consensus::BlockHeader;
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::BlockNumberOrTag;
+use base64::{
+    alphabet,
+    engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
+    Engine as _,
+};
 use jsonrpsee::core::RpcResult;
 use parking_lot::RwLock;
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
@@ -114,31 +119,37 @@ fn decode_l2_msg(l2_msg: &Option<String>) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Simple base64 decoder (standard alphabet with padding).
+const STANDARD_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_engine() -> &'static GeneralPurpose {
+    static ENGINE: OnceLock<GeneralPurpose> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let cfg = GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+            .with_decode_allow_trailing_bits(true);
+        GeneralPurpose::new(&alphabet::STANDARD, cfg)
+    })
+}
+
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    let input = input.trim_end_matches('=');
-    let mut result = Vec::with_capacity(input.len() * 3 / 4);
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-
-    for &byte in input.as_bytes() {
-        let val = ALPHABET
-            .iter()
-            .position(|&c| c == byte)
-            .ok_or_else(|| format!("invalid base64 character: {}", byte as char))?
-            as u32;
-        buf = (buf << 6) | val;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            result.push((buf >> bits) as u8);
-            buf &= (1 << bits) - 1;
+    let stripped = input.trim_end_matches('=');
+    // A length-1 mod 4 tail carries no meaningful bits; the orphan symbol
+    // is still alphabet-validated, then discarded.
+    let body_len = stripped.len() & !3;
+    let tail = &stripped.as_bytes()[body_len..];
+    let body = if tail.len() == 1 {
+        let b = tail[0];
+        if !STANDARD_ALPHABET.contains(&b) {
+            return Err(format!("invalid base64 character: {}", b as char));
         }
-    }
-
-    Ok(result)
+        &stripped[..body_len]
+    } else {
+        stripped
+    };
+    base64_engine()
+        .decode(body)
+        .map_err(|e| format!("invalid base64: {e}"))
 }
 
 #[async_trait::async_trait]
@@ -369,5 +380,79 @@ where
         let arbos_version = u64::from_be_bytes(mix.0[16..24].try_into().unwrap_or_default());
 
         Ok(arbos_version)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::engine::general_purpose::STANDARD as B64;
+
+    #[test]
+    fn decode_empty_option_is_ok() {
+        assert_eq!(decode_l2_msg(&None).unwrap(), Vec::<u8>::new());
+        assert_eq!(
+            decode_l2_msg(&Some(String::new())).unwrap(),
+            Vec::<u8>::new()
+        );
+    }
+
+    #[test]
+    fn decode_standard_padded() {
+        let encoded = B64.encode(b"Hello, world!");
+        let out = base64_decode(&encoded).unwrap();
+        assert_eq!(out, b"Hello, world!");
+    }
+
+    #[test]
+    fn decode_accepts_unpadded() {
+        let encoded = B64.encode(b"Hello");
+        let stripped = encoded.trim_end_matches('=').to_string();
+        assert_eq!(base64_decode(&stripped).unwrap(), b"Hello");
+    }
+
+    #[test]
+    fn decode_accepts_extra_padding() {
+        assert_eq!(base64_decode("SGVsbG8==").unwrap(), b"Hello");
+        assert_eq!(base64_decode("SGVsbG8====").unwrap(), b"Hello");
+    }
+
+    #[test]
+    fn decode_rejects_invalid_character() {
+        assert!(base64_decode("SG!X").is_err());
+        assert!(base64_decode("a b").is_err());
+        assert!(base64_decode("hello world").is_err());
+    }
+
+    #[test]
+    fn decode_rejects_padding_in_body() {
+        assert!(base64_decode("=SGVs").is_err());
+        assert!(base64_decode("SGVs=bG8").is_err());
+    }
+
+    #[test]
+    fn decode_large_payload_matches_roundtrip() {
+        let bytes: Vec<u8> = (0..32 * 1024).map(|i| (i * 7 + 3) as u8).collect();
+        let encoded = B64.encode(&bytes);
+        assert_eq!(base64_decode(&encoded).unwrap(), bytes);
+    }
+
+    #[test]
+    fn decode_preserves_lenient_padding_tail() {
+        assert_eq!(base64_decode("S").unwrap(), Vec::<u8>::new());
+        assert_eq!(base64_decode("SG").unwrap(), vec![b'H']);
+        assert_eq!(base64_decode("SGV").unwrap(), vec![b'H', b'e']);
+    }
+
+    #[test]
+    fn decode_length_one_tail_validates_alphabet() {
+        assert!(base64_decode("ABCD!").is_err());
+    }
+
+    #[test]
+    fn decode_all_alphabet_characters() {
+        let out = base64_decode("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+            .unwrap();
+        assert_eq!(out.len(), 48);
     }
 }

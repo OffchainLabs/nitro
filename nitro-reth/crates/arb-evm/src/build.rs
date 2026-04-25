@@ -14,7 +14,11 @@ use alloy_evm::{
 };
 use alloy_primitives::{keccak256, Address, Log, TxKind, B256, U256};
 use arb_chainspec;
-use arb_primitives::{multigas::MultiGas, signed_tx::ArbTransactionExt, tx_types::ArbTxType};
+use arb_primitives::{
+    multigas::{MultiGas, NUM_RESOURCE_KIND},
+    signed_tx::ArbTransactionExt,
+    tx_types::ArbTxType,
+};
 use arbos::{
     arbos_state::ArbosState,
     burn::SystemBurner,
@@ -142,9 +146,10 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
-            zombie_accounts: std::collections::HashSet::new(),
-            finalise_deleted: std::collections::HashSet::new(),
-            touched_accounts: std::collections::HashSet::new(),
+            zombie_accounts: rustc_hash::FxHashSet::default(),
+            finalise_deleted: rustc_hash::FxHashSet::default(),
+            touched_accounts: rustc_hash::FxHashSet::default(),
+            multi_gas_current_fees: std::sync::OnceLock::new(),
         }
     }
 }
@@ -199,9 +204,10 @@ where
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
-            zombie_accounts: std::collections::HashSet::new(),
-            finalise_deleted: std::collections::HashSet::new(),
-            touched_accounts: std::collections::HashSet::new(),
+            zombie_accounts: rustc_hash::FxHashSet::default(),
+            finalise_deleted: rustc_hash::FxHashSet::default(),
+            touched_accounts: rustc_hash::FxHashSet::default(),
+            multi_gas_current_fees: std::sync::OnceLock::new(),
         }
     }
 }
@@ -277,13 +283,20 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     expected_balance_delta: i128,
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
-    zombie_accounts: std::collections::HashSet<Address>,
+    zombie_accounts: rustc_hash::FxHashSet<Address>,
     /// Accounts removed by per-tx Finalise (EIP-161). Tracked so the producer
     /// can mark them for trie deletion if they existed pre-block.
-    finalise_deleted: std::collections::HashSet<Address>,
+    finalise_deleted: rustc_hash::FxHashSet<Address>,
     /// Accounts modified in the current tx (bypass ops + EVM state).
     /// Per-tx Finalise only processes these, matching Go's journal.dirties.
-    touched_accounts: std::collections::HashSet<Address>,
+    touched_accounts: rustc_hash::FxHashSet<Address>,
+    /// Cached per-resource current-block fees, populated lazily on first read
+    /// within a block. SingleDim slot is left zero; callers substitute the
+    /// live base_fee_wei for that slot and for any cached slot that is zero.
+    /// Safe to cache because current-block fees are only written by
+    /// `commit_next_to_current` during `apply_pre_execution_changes` — no user
+    /// tx or precompile path mutates them mid-block.
+    multi_gas_current_fees: std::sync::OnceLock<[U256; NUM_RESOURCE_KIND]>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -304,13 +317,13 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     /// Zombie accounts are empty accounts that should be preserved in the
     /// state trie (not deleted by EIP-161) because they were re-created by
     /// a zero-value transfer on pre-Stylus ArbOS.
-    pub fn zombie_accounts(&self) -> std::collections::HashSet<Address> {
+    pub fn zombie_accounts(&self) -> rustc_hash::FxHashSet<Address> {
         self.zombie_accounts.clone()
     }
 
     /// Returns accounts deleted by per-tx Finalise (EIP-161).
     /// These may need trie deletion if they existed pre-block.
-    pub fn finalise_deleted(&self) -> &std::collections::HashSet<Address> {
+    pub fn finalise_deleted(&self) -> &rustc_hash::FxHashSet<Address> {
         &self.finalise_deleted
     }
 
@@ -1084,11 +1097,11 @@ where
                     }
 
                     let touched_ptr =
-                        &mut self.touched_accounts as *mut std::collections::HashSet<Address>;
+                        &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
                     let zombie_ptr =
-                        &mut self.zombie_accounts as *mut std::collections::HashSet<Address>;
+                        &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
                     let finalise_ptr =
-                        &self.finalise_deleted as *const std::collections::HashSet<Address>;
+                        &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                     let arbos_ver = self.arb_ctx.arbos_version;
                     let mut do_transfer = |from: Address, to: Address, amount: U256| {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
@@ -1469,18 +1482,26 @@ where
 
         let mut poster_gas = 0u64;
         let mut compute_hold_gas = 0u64;
-        let calldata_units = if has_poster_costs {
-            let tx_bytes = recovered.tx().encoded_2718();
-            let (_poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
-                &tx_bytes,
-                self.arb_ctx.coinbase,
-                self.arb_ctx.l1_price_per_unit,
-                self.arb_ctx.brotli_compression_level,
-            );
+        let calldata_units: u64 = if has_poster_costs {
+            let level = self.arb_ctx.brotli_compression_level;
+            let coinbase = self.arb_ctx.coinbase;
+            let tx_ref = recovered.tx();
+            let units = if coinbase == l1_pricing::BATCH_POSTER_ADDRESS {
+                let tx_bytes_ref = tx_ref;
+                tx_ref.poster_units_for(level, &mut || {
+                    l1_pricing::poster_units_from_bytes(&tx_bytes_ref.encoded_2718(), level)
+                })
+            } else {
+                0
+            };
+            let poster_cost = self
+                .arb_ctx
+                .l1_price_per_unit
+                .saturating_mul(U256::from(units));
 
             if let Some(hooks) = self.arb_hooks.as_mut() {
                 hooks.tx_proc.poster_gas = compute_poster_gas(
-                    _poster_cost,
+                    poster_cost,
                     actual_gas_price,
                     false,
                     self.arb_ctx.min_base_fee,
@@ -1535,17 +1556,27 @@ where
             }
         }
 
-        // Add calldata units to L1 pricing state BEFORE EVM execution
-        // (before EVM execution, during gas charging).
-        if calldata_units > 0 {
+        // Add calldata units to L1 pricing state before EVM execution, and
+        // read the filtered-tx status for the reverted_tx_hook via the same
+        // ArbosState handle.
+        let tx_hash_for_filter = recovered.tx().trie_hash();
+        let is_filtered = {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let state_ptr: *mut State<DB> = db as *mut State<DB>;
-            if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
-                let _ = arb_state
-                    .l1_pricing_state
-                    .add_to_units_since_update(calldata_units);
+            match ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                Ok(arb_state) => {
+                    if calldata_units > 0 {
+                        let _ = arb_state
+                            .l1_pricing_state
+                            .add_to_units_since_update(calldata_units);
+                    }
+                    arb_state
+                        .filtered_transactions
+                        .is_filtered_free(tx_hash_for_filter)
+                }
+                Err(_) => false,
             }
-        }
+        };
 
         // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
         // poster_gas is subtracted here so that BuyGas charges
@@ -1578,18 +1609,7 @@ where
         {
             use arbos::tx_processor::RevertedTxAction;
 
-            // Get tx hash for filtered check.
-            let tx_hash = recovered.tx().trie_hash();
-
-            // Check if tx is in the filtered transactions list.
-            let is_filtered = {
-                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                    .ok()
-                    .map(|s| s.filtered_transactions.is_filtered_free(tx_hash))
-                    .unwrap_or(false)
-            };
+            let tx_hash = tx_hash_for_filter;
 
             if let Some(hooks) = self.arb_hooks.as_ref() {
                 let action = hooks.tx_proc.reverted_tx_hook(
@@ -1721,10 +1741,7 @@ where
         // observe it during this tx.
         arb_precompiles::set_tx_is_aliased(arbos::util::does_tx_type_alias(tx_type_raw));
 
-        // Publish the poster fee via a scratch storage slot and thread-local
-        // so ArbGasInfo.getCurrentTxL1GasFees can return it without a storage read.
         {
-            use arb_precompiles::storage_slot::current_tx_poster_fee_slot;
             let poster_fee_val = self
                 .arb_hooks
                 .as_ref()
@@ -1733,51 +1750,22 @@ where
             arb_precompiles::set_current_tx_poster_fee(
                 poster_fee_val.try_into().unwrap_or(u128::MAX),
             );
-            arb_storage::write_arbos_storage(
-                self.inner.evm_mut().db_mut(),
-                current_tx_poster_fee_slot(),
-                poster_fee_val,
-            );
-        }
-
-        // Write the current retryable ticket ID to a scratch slot so the
-        // Redeem precompile can reject self-modification during retry execution.
-        {
-            use arb_precompiles::storage_slot::{current_redeemer_slot, current_retryable_slot};
             let retryable_id = retry_context
                 .as_ref()
-                .map(|ctx| U256::from_be_bytes(ctx.ticket_id.0))
-                .unwrap_or(U256::ZERO);
-            arb_storage::write_arbos_storage(
-                self.inner.evm_mut().db_mut(),
-                current_retryable_slot(),
-                retryable_id,
-            );
-            // Write the current redeemer (refund_to) so GetCurrentRedeemer can read it.
+                .map(|ctx| ctx.ticket_id)
+                .unwrap_or(B256::ZERO);
+            arb_precompiles::set_current_retryable_id(retryable_id);
             let redeemer = retry_context
                 .as_ref()
-                .map(|ctx| U256::from_be_bytes(B256::left_padding_from(ctx.refund_to.as_slice()).0))
-                .unwrap_or(U256::ZERO);
-            arb_storage::write_arbos_storage(
-                self.inner.evm_mut().db_mut(),
-                current_redeemer_slot(),
-                redeemer,
-            );
+                .map(|ctx| ctx.refund_to)
+                .unwrap_or(Address::ZERO);
+            arb_precompiles::set_current_redeemer(redeemer);
         }
 
-        // Helper: roll back pre-execution state writes when a tx is rejected.
-        // Clears scratch slots, undoes calldata units addition, and for retry
-        // txs undoes the prepaid gas mint + escrow callvalue transfer that
-        // happened during the retry pre-exec block.
         let retry_undo = retry_pre_exec_undo;
         let rollback_pre_exec_state = |this: &mut Self, units: u64| {
-            use arb_precompiles::storage_slot::{
-                current_redeemer_slot, current_retryable_slot, current_tx_poster_fee_slot,
-            };
+            arb_precompiles::clear_tx_scratch();
             let db: &mut State<DB> = this.inner.evm_mut().db_mut();
-            arb_storage::write_arbos_storage(db, current_tx_poster_fee_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_retryable_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
             if units > 0 {
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
                 if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
@@ -2156,25 +2144,31 @@ where
 
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                let touched_ptr =
-                    &mut self.touched_accounts as *mut std::collections::HashSet<Address>;
-                let zombie_ptr =
-                    &mut self.zombie_accounts as *mut std::collections::HashSet<Address>;
-                let finalise_ptr =
-                    &self.finalise_deleted as *const std::collections::HashSet<Address>;
+                let touched_ptr = &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
+                let zombie_ptr = &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
+                let finalise_ptr = &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                 let arbos_ver = self.arb_ctx.arbos_version;
+
+                let arb_state_retry =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false)).ok();
 
                 // Compute multi-dimensional cost for refund (ArbOS v60+).
                 let multi_dimensional_cost = if self.arb_ctx.arbos_version
                     >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
                 {
-                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        .ok()
-                        .and_then(|s| {
+                    arb_state_retry.as_ref().and_then(|s| {
+                        let cached = self.multi_gas_current_fees.get_or_init(|| {
                             s.l2_pricing_state
-                                .multi_dimensional_price_for_refund(pending.charged_multi_gas)
-                                .ok()
-                        })
+                                .get_current_multi_gas_fees()
+                                .unwrap_or([U256::ZERO; NUM_RESOURCE_KIND])
+                        });
+                        s.l2_pricing_state
+                            .multi_dimensional_price_for_refund_with_fees(
+                                pending.charged_multi_gas,
+                                cached,
+                            )
+                            .ok()
+                    })
                 } else {
                     None
                 };
@@ -2235,10 +2229,7 @@ where
 
                 if let Some(ref result) = result {
                     if result.should_delete_retryable {
-                        // SAFETY: state_ptr is valid for the lifetime of this block.
-                        if let Ok(arb_state) =
-                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        {
+                        if let Some(arb_state) = arb_state_retry.as_ref() {
                             let _ = arb_state.retryable_state.delete_retryable(
                                 retry_ctx.ticket_id,
                                 |from, to, amount| {
@@ -2301,19 +2292,13 @@ where
 
                     // Grow gas backlog unconditionally for retryable txs.
                     // Unlike normal txs, backlog growth is unconditional here.
-                    {
-                        // SAFETY: state_ptr is valid for the lifetime of this block.
-                        if let Ok(arb_state) =
-                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        {
-                            let _ = arb_state.l2_pricing_state.grow_backlog(
-                                result.compute_gas_for_backlog,
-                                pending.charged_multi_gas,
-                            );
-                            // Update thread-local so Redeem precompile sees current backlog.
-                            if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
-                                arb_precompiles::set_current_gas_backlog(b);
-                            }
+                    if let Some(arb_state) = arb_state_retry.as_ref() {
+                        let _ = arb_state.l2_pricing_state.grow_backlog(
+                            result.compute_gas_for_backlog,
+                            pending.charged_multi_gas,
+                        );
+                        if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                            arb_precompiles::set_current_gas_backlog(b);
                         }
                     }
                 }
@@ -2352,22 +2337,32 @@ where
                     self.touched_accounts.insert(dist.infra_fee_account);
                     self.touched_accounts.insert(dist.poster_fee_destination);
 
+                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                    let arb_state_post =
+                        ArbosState::open(state_ptr, SystemBurner::new(None, false)).ok();
+
                     // Multi-dimensional gas refund: if the multi-gas cost is less
                     // than the single-gas cost, refund the difference to the sender.
                     if self.arb_ctx.arbos_version
                         >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
                     {
-                        let total_cost = self
-                            .arb_ctx
-                            .basefee
-                            .saturating_mul(U256::from(gas_used_total));
-                        let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                        if let Ok(arb_state) =
-                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                        {
+                        if let Some(arb_state) = arb_state_post.as_ref() {
+                            let total_cost = self
+                                .arb_ctx
+                                .basefee
+                                .saturating_mul(U256::from(gas_used_total));
+                            let cached = self.multi_gas_current_fees.get_or_init(|| {
+                                arb_state
+                                    .l2_pricing_state
+                                    .get_current_multi_gas_fees()
+                                    .unwrap_or([U256::ZERO; NUM_RESOURCE_KIND])
+                            });
                             if let Ok(multi_cost) = arb_state
                                 .l2_pricing_state
-                                .multi_dimensional_price_for_refund(pending.charged_multi_gas)
+                                .multi_dimensional_price_for_refund_with_fees(
+                                    pending.charged_multi_gas,
+                                    cached,
+                                )
                             {
                                 if total_cost > multi_cost {
                                     let refund_amount = total_cost.saturating_sub(multi_cost);
@@ -2391,16 +2386,12 @@ where
                         .charged_multi_gas
                         .saturating_sub(MultiGas::single_dim_gas(pending.poster_gas));
 
-                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                    if let Ok(arb_state) =
-                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                    {
+                    if let Some(arb_state) = arb_state_post.as_ref() {
                         // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
                             let _ = arb_state
                                 .l2_pricing_state
                                 .grow_backlog(dist.compute_gas_for_backlog, used_multi_gas);
-                            // Update thread-local so Redeem precompile sees current backlog.
                             if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
                                 arb_precompiles::set_current_gas_backlog(b);
                             }
@@ -2465,19 +2456,7 @@ where
             let _ = is_retry; // suppress unused warning
         }
 
-        // Clear per-tx scratch slots so they don't affect the state root.
-        // Canonically these are in-memory fields on TxProcessor, not in storage.
-        // We write them to storage so precompiles can read them via sload, but
-        // must clear them after each tx to avoid polluting the state trie.
-        {
-            use arb_precompiles::storage_slot::{
-                current_redeemer_slot, current_retryable_slot, current_tx_poster_fee_slot,
-            };
-            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            arb_storage::write_arbos_storage(db, current_tx_poster_fee_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_retryable_slot(), U256::ZERO);
-            arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
-        }
+        arb_precompiles::clear_tx_scratch();
 
         // Per-tx Finalise: delete empty accounts from cache.
         // Only iterates touched accounts (matching Go's journal.dirties).
@@ -2683,9 +2662,9 @@ fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Addr
 fn create_zombie_if_deleted<DB: Database>(
     state: &mut State<DB>,
     addr: Address,
-    finalise_deleted: &std::collections::HashSet<Address>,
-    zombie_accounts: &mut std::collections::HashSet<Address>,
-    touched_accounts: &mut std::collections::HashSet<Address>,
+    finalise_deleted: &rustc_hash::FxHashSet<Address>,
+    zombie_accounts: &mut rustc_hash::FxHashSet<Address>,
+    touched_accounts: &mut rustc_hash::FxHashSet<Address>,
 ) {
     crate::state_overlay::record_pre_touch(state, addr);
     let account_missing = state

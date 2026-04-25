@@ -1,7 +1,8 @@
 pub mod initialize;
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use revm::Database;
+use std::sync::OnceLock;
 
 use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
@@ -40,18 +41,44 @@ const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
 const COLLECT_TIPS_OFFSET: u64 = 11;
 
 // Subspace IDs for partitioned storage.
-const L1_PRICING_SUBSPACE: &[u8] = &[0];
-const L2_PRICING_SUBSPACE: &[u8] = &[1];
-const RETRYABLES_SUBSPACE: &[u8] = &[2];
+pub(crate) const L1_PRICING_SUBSPACE: &[u8] = &[0];
+pub(crate) const L2_PRICING_SUBSPACE: &[u8] = &[1];
+pub(crate) const RETRYABLES_SUBSPACE: &[u8] = &[2];
 const ADDRESS_TABLE_SUBSPACE: &[u8] = &[3];
 const CHAIN_OWNER_SUBSPACE: &[u8] = &[4];
 const SEND_MERKLE_SUBSPACE: &[u8] = &[5];
 const BLOCKHASHES_SUBSPACE: &[u8] = &[6];
 const CHAIN_CONFIG_SUBSPACE: &[u8] = &[7];
-const PROGRAMS_SUBSPACE: &[u8] = &[8];
+pub(crate) const PROGRAMS_SUBSPACE: &[u8] = &[8];
 const FEATURES_SUBSPACE: &[u8] = &[9];
 const NATIVE_TOKEN_OWNER_SUBSPACE: &[u8] = &[10];
 const TRANSACTION_FILTERING_SUBSPACE: &[u8] = &[11];
+
+/// Cached root→subspace derivations: `keccak256(sub_key)` for each static child.
+macro_rules! cached_root_key {
+    ($name:ident, $sub:expr) => {
+        fn $name() -> B256 {
+            static KEY: OnceLock<B256> = OnceLock::new();
+            *KEY.get_or_init(|| keccak256($sub))
+        }
+    };
+}
+
+cached_root_key!(l1_pricing_root_key, L1_PRICING_SUBSPACE);
+cached_root_key!(l2_pricing_root_key, L2_PRICING_SUBSPACE);
+cached_root_key!(retryables_root_key, RETRYABLES_SUBSPACE);
+cached_root_key!(address_table_root_key, ADDRESS_TABLE_SUBSPACE);
+cached_root_key!(chain_owner_root_key, CHAIN_OWNER_SUBSPACE);
+cached_root_key!(send_merkle_root_key, SEND_MERKLE_SUBSPACE);
+cached_root_key!(blockhashes_root_key, BLOCKHASHES_SUBSPACE);
+cached_root_key!(chain_config_root_key, CHAIN_CONFIG_SUBSPACE);
+cached_root_key!(programs_root_key, PROGRAMS_SUBSPACE);
+cached_root_key!(features_root_key, FEATURES_SUBSPACE);
+cached_root_key!(native_token_owner_root_key, NATIVE_TOKEN_OWNER_SUBSPACE);
+cached_root_key!(
+    transaction_filtering_root_key,
+    TRANSACTION_FILTERING_SUBSPACE
+);
 
 /// The maximum ArbOS version supported by this node.
 pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 60;
@@ -98,8 +125,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             return Err(());
         }
 
-        let chain_config_sto = backing_storage.open_sub_storage(CHAIN_CONFIG_SUBSPACE);
-        let features_sto = backing_storage.open_sub_storage(FEATURES_SUBSPACE);
+        let chain_config_sto = backing_storage.open_sub_storage_with_key(chain_config_root_key());
+        let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
 
         Ok(Self {
             arbos_version,
@@ -116,31 +143,31 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 NETWORK_FEE_ACCOUNT_OFFSET,
             ),
             l1_pricing_state: L1PricingState::open(
-                backing_storage.open_sub_storage(L1_PRICING_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
                 arbos_version,
             ),
             l2_pricing_state: L2PricingState::open(
-                backing_storage.open_sub_storage(L2_PRICING_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(l2_pricing_root_key()),
                 arbos_version,
             ),
             retryable_state: RetryableState::open(
-                backing_storage.open_sub_storage(RETRYABLES_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(retryables_root_key()),
             ),
             address_table: address_table::open_address_table(
-                backing_storage.open_sub_storage(ADDRESS_TABLE_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(address_table_root_key()),
             ),
             chain_owners: address_set::open_address_set(
-                backing_storage.open_sub_storage(CHAIN_OWNER_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(chain_owner_root_key()),
             ),
             send_merkle_accumulator: merkle_accumulator::open_merkle_accumulator(
-                backing_storage.open_sub_storage(SEND_MERKLE_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(send_merkle_root_key()),
             ),
             programs: Programs::open(
                 arbos_version,
-                backing_storage.open_sub_storage(PROGRAMS_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(programs_root_key()),
             ),
             blockhashes: blockhash::open_blockhashes(
-                backing_storage.open_sub_storage(BLOCKHASHES_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
             ),
             chain_id: StorageBackedBigUint::new(state, B256::ZERO, CHAIN_ID_OFFSET),
             chain_config: StorageBackedBytes::new(chain_config_sto),
@@ -165,7 +192,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
             ),
             native_token_owners: address_set::open_address_set(
-                backing_storage.open_sub_storage(NATIVE_TOKEN_OWNER_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
             ),
             transaction_filtering_enabled_from_time: StorageBackedUint64::new(
                 state,
@@ -173,7 +200,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
             ),
             transaction_filterers: address_set::open_address_set(
-                backing_storage.open_sub_storage(TRANSACTION_FILTERING_SUBSPACE),
+                backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
             ),
             features: features::open_features(state, features_sto.base_key(), 0),
             filtered_funds_recipient: StorageBackedAddress::new(

@@ -1,8 +1,8 @@
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256};
 use revm::Database;
 
 use crate::{
-    slot::{storage_key_map, storage_key_map_b256},
+    slot::{derive_sub_key, storage_key_map, storage_key_map_b256},
     state_ops::{read_storage_at, write_storage_at, ARBOS_STATE_ADDRESS},
 };
 
@@ -41,16 +41,13 @@ impl<D: Database> Storage<D> {
 
     /// Opens a child subspace by hashing the parent key with the child ID.
     pub fn open_sub_storage(&self, sub_key: &[u8]) -> Storage<D> {
-        let base_slice: &[u8] = if self.base_key == B256::ZERO {
-            &[]
-        } else {
-            self.base_key.as_slice()
-        };
-        let mut combined = Vec::with_capacity(base_slice.len() + sub_key.len());
-        combined.extend_from_slice(base_slice);
-        combined.extend_from_slice(sub_key);
-        let new_key = keccak256(&combined);
+        let new_key = derive_sub_key(self.base_key, sub_key);
         Storage::new_with_account(self.state, new_key, self.account)
+    }
+
+    /// Opens a child subspace using a pre-derived key, avoiding a keccak hash.
+    pub fn open_sub_storage_with_key(&self, key: B256) -> Storage<D> {
+        Storage::new_with_account(self.state, key, self.account)
     }
 
     /// Reads a 32-byte value by uint64 offset.

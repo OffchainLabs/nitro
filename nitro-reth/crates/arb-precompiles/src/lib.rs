@@ -132,6 +132,10 @@ thread_local! {
     /// Current tx poster fee (wei), set by executor before each tx.
     /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
     static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
+    /// Currently-executing retryable ticket ID (zero when not inside a retry tx).
+    static CURRENT_RETRYABLE_ID: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
+    /// Currently-executing redeemer (refund_to) address, left-padded into 32 bytes.
+    static CURRENT_REDEEMER: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
     /// Poster fee balance correction for BALANCE opcode.
     /// The canonical implementation charges gas_limit * baseFee, but our reduced
     /// gas_limit charges less by posterGas * baseFee. The BALANCE opcode handler
@@ -289,6 +293,29 @@ pub fn set_current_tx_poster_fee(fee_wei: u128) {
 /// Get the current tx poster fee.
 pub fn get_current_tx_poster_fee() -> u128 {
     CURRENT_TX_POSTER_FEE.with(|v| v.get())
+}
+
+pub fn set_current_retryable_id(id: alloy_primitives::B256) {
+    CURRENT_RETRYABLE_ID.with(|v| v.set(id.0));
+}
+
+pub fn get_current_retryable_id() -> alloy_primitives::U256 {
+    alloy_primitives::U256::from_be_bytes(CURRENT_RETRYABLE_ID.with(|v| v.get()))
+}
+
+pub fn set_current_redeemer(addr: alloy_primitives::Address) {
+    let padded = alloy_primitives::B256::left_padding_from(addr.as_slice());
+    CURRENT_REDEEMER.with(|v| v.set(padded.0));
+}
+
+pub fn get_current_redeemer() -> alloy_primitives::U256 {
+    alloy_primitives::U256::from_be_bytes(CURRENT_REDEEMER.with(|v| v.get()))
+}
+
+pub fn clear_tx_scratch() {
+    CURRENT_TX_POSTER_FEE.with(|v| v.set(0));
+    CURRENT_RETRYABLE_ID.with(|v| v.set([0u8; 32]));
+    CURRENT_REDEEMER.with(|v| v.set([0u8; 32]));
 }
 
 /// Set the poster balance correction for BALANCE opcode adjustment.

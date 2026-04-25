@@ -58,10 +58,11 @@ pub fn map_slot(storage_key: &[u8], offset: u64) -> U256 {
     let mut key_bytes = [0u8; 32];
     key_bytes[24..32].copy_from_slice(&offset.to_be_bytes());
 
-    let mut data = Vec::with_capacity(storage_key.len() + BOUNDARY);
-    data.extend_from_slice(storage_key);
-    data.extend_from_slice(&key_bytes[..BOUNDARY]);
-    let h = keccak256(&data);
+    let mut buf = [0u8; 64];
+    let sk_len = storage_key.len();
+    buf[..sk_len].copy_from_slice(storage_key);
+    buf[sk_len..sk_len + BOUNDARY].copy_from_slice(&key_bytes[..BOUNDARY]);
+    let h = keccak256(&buf[..sk_len + BOUNDARY]);
 
     let mut mapped = [0u8; 32];
     mapped[..BOUNDARY].copy_from_slice(&h.0[..BOUNDARY]);
@@ -73,10 +74,11 @@ pub fn map_slot(storage_key: &[u8], offset: u64) -> U256 {
 pub fn map_slot_b256(storage_key: &[u8], key: &B256) -> U256 {
     const BOUNDARY: usize = 31;
 
-    let mut data = Vec::with_capacity(storage_key.len() + BOUNDARY);
-    data.extend_from_slice(storage_key);
-    data.extend_from_slice(&key.0[..BOUNDARY]);
-    let h = keccak256(&data);
+    let mut buf = [0u8; 64];
+    let sk_len = storage_key.len();
+    buf[..sk_len].copy_from_slice(storage_key);
+    buf[sk_len..sk_len + BOUNDARY].copy_from_slice(&key.0[..BOUNDARY]);
+    let h = keccak256(&buf[..sk_len + BOUNDARY]);
 
     let mut mapped = [0u8; 32];
     mapped[..BOUNDARY].copy_from_slice(&h.0[..BOUNDARY]);
@@ -88,10 +90,19 @@ pub fn map_slot_b256(storage_key: &[u8], key: &B256) -> U256 {
 ///
 /// Computes `keccak256(parent_key || sub_key)`.
 pub fn derive_subspace_key(parent_key: &[u8], sub_key: &[u8]) -> B256 {
-    let mut combined = Vec::with_capacity(parent_key.len() + sub_key.len());
-    combined.extend_from_slice(parent_key);
-    combined.extend_from_slice(sub_key);
-    keccak256(&combined)
+    let p_len = parent_key.len();
+    let s_len = sub_key.len();
+    if p_len + s_len <= 64 {
+        let mut buf = [0u8; 64];
+        buf[..p_len].copy_from_slice(parent_key);
+        buf[p_len..p_len + s_len].copy_from_slice(sub_key);
+        keccak256(&buf[..p_len + s_len])
+    } else {
+        let mut v = Vec::with_capacity(p_len + s_len);
+        v.extend_from_slice(parent_key);
+        v.extend_from_slice(sub_key);
+        keccak256(&v)
+    }
 }
 
 /// The root storage key for ArbOS state (empty, since base_key is B256::ZERO).
