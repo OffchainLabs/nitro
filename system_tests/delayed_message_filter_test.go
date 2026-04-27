@@ -37,6 +37,7 @@ import (
 )
 
 func CheckReportBlockNumberAndParentBlockHash(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport) {
+	t.Helper()
 	require.NotZero(t, report.BlockNumber, "block number shouldn't be genesis")
 	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
 	require.NoError(t, err)
