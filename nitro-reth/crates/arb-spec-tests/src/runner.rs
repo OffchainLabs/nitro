@@ -30,7 +30,9 @@ pub fn run_execution_fixture(path: &Path, rpc_url: Option<&str>) -> Result<(), S
     let label = path.display().to_string();
     let mode = FixtureMode::from_env();
 
-    let result = if fixture.genesis.is_some() {
+    let result = if matches!(mode, FixtureMode::Record) {
+        fixture.record_against_nitro()
+    } else if fixture.genesis.is_some() {
         let binary = std::env::var(BINARY_ENV).map_err(|_| {
             SpecError::Action(format!(
                 "{label}: fixture has inline genesis but {BINARY_ENV} is unset"
@@ -46,6 +48,13 @@ pub fn run_execution_fixture(path: &Path, rpc_url: Option<&str>) -> Result<(), S
         })?;
         fixture.run_with_mode(mode, url)
     };
+
+    if matches!(mode, FixtureMode::Record) && result.is_ok() {
+        let body = serde_json::to_vec_pretty(&fixture)
+            .map_err(|e| SpecError::Action(format!("{label}: encode: {e}")))?;
+        std::fs::write(path, body)
+            .map_err(|e| SpecError::Action(format!("{label}: write: {e}")))?;
+    }
 
     result.map_err(|e| match e {
         SpecError::Assertion(msg) => SpecError::Assertion(format!("{label}: {msg}")),
