@@ -28,7 +28,7 @@ use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::{StateProvider, StateProviderBox};
-use reth_trie_common::{HashedPostState, TrieInput};
+use reth_trie_common::{HashedPostState, TrieInputSorted};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
@@ -80,8 +80,8 @@ pub struct ArbBlockProducer<Provider> {
     head_block_num: AtomicU64,
     blocks_since_flush: AtomicU64,
     flush_interval: u64,
-    accumulated_trie_input: Mutex<TrieInput>,
-    flushing_trie_input: Mutex<Option<TrieInput>>,
+    accumulated_trie_input: Mutex<Arc<TrieInputSorted>>,
+    flushing_trie_input: Mutex<Option<Arc<TrieInputSorted>>>,
     pending_flush: AtomicBool,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
@@ -95,6 +95,7 @@ pub struct ArbBlockProducer<Provider> {
     /// Extended in place after each block produced; invalidated on flush
     /// or rollback so a stale chain view never feeds an SLOAD.
     cached_overlay: Mutex<Option<CachedOverlay>>,
+    cached_prestate: Mutex<Option<CachedPrestate>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -107,6 +108,11 @@ struct FinalityMarkers {
 struct CachedOverlay {
     parent_hash: B256,
     overlay: Arc<crate::coalesced_state::CoalescedOverlay>,
+}
+
+struct CachedPrestate {
+    parent_hash: B256,
+    contracts: Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>>,
 }
 
 impl<Provider> ArbBlockProducer<Provider>
@@ -129,7 +135,7 @@ where
             head_block_num: AtomicU64::new(head),
             blocks_since_flush: AtomicU64::new(0),
             flush_interval,
-            accumulated_trie_input: Mutex::new(TrieInput::default()),
+            accumulated_trie_input: Mutex::new(Arc::new(TrieInputSorted::default())),
             flushing_trie_input: Mutex::new(None),
             pending_flush: AtomicBool::new(false),
             produce_lock: Mutex::new(()),
@@ -137,6 +143,7 @@ where
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
             cached_overlay: Mutex::new(None),
+            cached_prestate: Mutex::new(None),
         }
     }
 
@@ -179,6 +186,57 @@ where
 
     fn invalidate_cached_overlay(&self) {
         *self.cached_overlay.lock() = None;
+    }
+
+    fn get_or_build_prestate(
+        &self,
+        parent_hash: B256,
+        head_state: Option<&reth_chain_state::BlockState<ArbPrimitives>>,
+    ) -> Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>> {
+        let mut cache = self.cached_prestate.lock();
+        if let Some(c) = cache.as_ref() {
+            if c.parent_hash == parent_hash {
+                return c.contracts.clone();
+            }
+        }
+        let mut contracts: alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode> =
+            Default::default();
+        if let Some(head_state) = head_state {
+            for block_state in head_state.chain() {
+                let exec_output = &block_state.block().execution_output;
+                for (hash, code) in &exec_output.state.contracts {
+                    contracts.entry(*hash).or_insert_with(|| code.clone());
+                }
+            }
+        }
+        let arc = Arc::new(contracts);
+        *cache = Some(CachedPrestate {
+            parent_hash,
+            contracts: arc.clone(),
+        });
+        arc
+    }
+
+    fn extend_cached_prestate(&self, new_block_hash: B256, bundle: &BundleState) {
+        let mut cache = self.cached_prestate.lock();
+        let mut contracts = match cache.take() {
+            Some(c) => match Arc::try_unwrap(c.contracts) {
+                Ok(map) => map,
+                Err(arc) => (*arc).clone(),
+            },
+            None => Default::default(),
+        };
+        for (hash, code) in &bundle.contracts {
+            contracts.entry(*hash).or_insert_with(|| code.clone());
+        }
+        *cache = Some(CachedPrestate {
+            parent_hash: new_block_hash,
+            contracts: Arc::new(contracts),
+        });
+    }
+
+    fn invalidate_cached_prestate(&self) {
+        *self.cached_prestate.lock() = None;
     }
 
     /// Currently-tracked finality markers (for RPC / debugging use).
@@ -240,6 +298,7 @@ where
                 *self.flushing_trie_input.lock() = None;
                 self.pending_flush.store(false, Ordering::SeqCst);
                 self.invalidate_cached_overlay();
+                self.invalidate_cached_prestate();
                 info!(
                     target: "block_producer",
                     flushed = result.count,
@@ -336,16 +395,13 @@ where
         // bundle_state.contracts before falling back to the DB, ensuring all
         // bytecodes from recent blocks are available during execution.
         let prestate = {
-            let mut bundle = BundleState::default();
-            if let Some(head_state) = self.in_memory_state.head_state() {
-                for block_state in head_state.chain() {
-                    let exec_output = &block_state.block().execution_output;
-                    for (hash, code) in &exec_output.state.contracts {
-                        bundle.contracts.entry(*hash).or_insert(code.clone());
-                    }
-                }
+            let head_state_opt = self.in_memory_state.state_by_hash(parent_header.hash());
+            let contracts =
+                self.get_or_build_prestate(parent_header.hash(), head_state_opt.as_deref());
+            BundleState {
+                contracts: (*contracts).clone(),
+                ..Default::default()
             }
-            bundle
         };
 
         let mut db = StateBuilder::new()
@@ -763,27 +819,44 @@ where
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
 
         let (state_root, trie_updates) = {
-            let mut acc = self.accumulated_trie_input.lock();
-            let flushing = self.flushing_trie_input.lock();
+            let acc_arc = self.accumulated_trie_input.lock().clone();
+            let flushing_arc = self.flushing_trie_input.lock().clone();
 
-            // Merge flushing overlay (if flush in progress) + accumulated + this block.
-            let mut input = if let Some(ref flushing) = *flushing {
-                let mut base = flushing.clone();
-                base.nodes.extend(acc.nodes.clone());
-                base.state.extend(acc.state.clone());
-                base.prefix_sets.extend(acc.prefix_sets.clone());
-                base
+            let block_state_sorted = hashed_state.clone().into_sorted();
+            let prefix_sets = block_state_sorted.construct_prefix_sets().freeze();
+
+            let mut new_acc_state = (*acc_arc.state).clone();
+            new_acc_state.extend_ref_and_sort(&block_state_sorted);
+            let new_acc_state_arc = Arc::new(new_acc_state);
+
+            let (overlay_state_arc, overlay_nodes_arc) = if let Some(f) = &flushing_arc {
+                let mut s = (*f.state).clone();
+                s.extend_ref_and_sort(&new_acc_state_arc);
+                let mut n = (*f.nodes).clone();
+                n.extend_ref_and_sort(&acc_arc.nodes);
+                (Arc::new(s), Arc::new(n))
             } else {
-                acc.clone()
+                (Arc::clone(&new_acc_state_arc), Arc::clone(&acc_arc.nodes))
             };
-            drop(flushing);
 
-            input.append(hashed_state.clone());
+            let overlay = Arc::new(TrieInputSorted::new(
+                overlay_nodes_arc,
+                overlay_state_arc,
+                Default::default(),
+            ));
 
-            let (root, updates) = crate::launcher::compute_parallel_state_root(input)
-                .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+            let (root, updates) =
+                crate::launcher::compute_parallel_state_root(overlay, prefix_sets)
+                    .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
 
-            acc.append_cached(updates.clone(), hashed_state.clone());
+            let mut new_acc_nodes = (*acc_arc.nodes).clone();
+            new_acc_nodes.extend_ref_and_sort(&updates.clone_into_sorted());
+            *self.accumulated_trie_input.lock() = Arc::new(TrieInputSorted::new(
+                Arc::new(new_acc_nodes),
+                new_acc_state_arc,
+                Default::default(),
+            ));
+
             (root, updates)
         };
 
@@ -869,6 +942,7 @@ where
         let block_hash = sealed.hash();
 
         self.extend_cached_overlay(block_hash, &bundle);
+        self.extend_cached_prestate(block_hash, &bundle);
 
         // Buffer block in memory for batched persistence.
         {
@@ -1104,6 +1178,7 @@ where
         }
 
         self.invalidate_cached_overlay();
+        self.invalidate_cached_prestate();
 
         // Anchor the canonical head at the rolled-back block so RPC
         // queries like eth_blockNumber return the correct value.
@@ -1133,7 +1208,7 @@ where
         }
 
         // Invalidate any trie-input carrying the now-removed blocks.
-        *self.accumulated_trie_input.lock() = Default::default();
+        *self.accumulated_trie_input.lock() = Arc::new(TrieInputSorted::default());
 
         info!(
             target: "block_producer",
