@@ -14,9 +14,23 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 arbos = { workspace = true }
 arb-primitives = { workspace = true }
+arb-test-harness = { workspace = true }
 arb-alloy-consensus = "0.1.2"
-alloy-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["arbitrary"] }
 alloy-eips = "1.7"
+
+arbitrary = { version = "1", features = ["derive"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
+wasm-smith = "0.227"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+
+[lib]
+name = "arb_fuzz"
+path = "src/lib.rs"
 
 [[bin]]
 name = "parse_l2_transactions"
@@ -42,6 +56,34 @@ bench = false
 [[bin]]
 name = "decode_internal_tx"
 path = "fuzz_targets/decode_internal_tx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_precompile"
+path = "fuzz_targets/diff_precompile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_tx"
+path = "fuzz_targets/diff_tx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_stylus_wasm"
+path = "fuzz_targets/diff_stylus_wasm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "property_invariants"
+path = "fuzz_targets/property_invariants.rs"
 test = false
 doc = false
 bench = false
