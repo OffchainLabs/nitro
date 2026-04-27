@@ -6,10 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::{messaging::L1Message, Result};
 
 pub mod arbreth;
+pub mod nitro_docker;
 pub mod nitro_local;
 pub mod remote;
-#[cfg(feature = "docker")]
-pub mod nitro_docker;
 
 pub(crate) mod common;
 

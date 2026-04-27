@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use arb_test_harness::{
     capture::capture_from_node,
     dual_exec::DualExec,
-    node::remote::RemoteNode,
+    mock_l1::MockL1,
+    node::{nitro_docker::NitroDocker, remote::RemoteNode, NodeStartCtx},
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
 
@@ -245,28 +246,46 @@ impl ExecutionFixture {
         &mut self,
         mode: FixtureMode,
         rpc_url: &str,
-        nitro_rpc_url: Option<&str>,
     ) -> Result<(), SpecError> {
         match mode {
             FixtureMode::Verify => self.run(rpc_url),
-            FixtureMode::Record => self.record_against_nitro(nitro_rpc_url),
-            FixtureMode::Compare => self.compare(rpc_url, nitro_rpc_url),
+            FixtureMode::Record => self.record_against_nitro(),
+            FixtureMode::Compare => self.compare(rpc_url),
         }
     }
 
-    pub fn record_against_nitro(
-        &mut self,
-        nitro_rpc_url: Option<&str>,
-    ) -> Result<(), SpecError> {
-        let url = nitro_rpc_url.ok_or_else(|| {
-            SpecError::Action(
-                "record mode requires ARB_SPEC_NITRO_RPC_URL or explicit nitro_rpc_url".into(),
-            )
-        })?;
+    fn nitro_node_ctx(&self) -> Result<(MockL1, NodeStartCtx), SpecError> {
+        let l1_chain_id: u64 = 11_155_111;
+        let mock = MockL1::start(l1_chain_id)
+            .map_err(|e| SpecError::Action(format!("mock-l1 start: {e}")))?;
+        let l2_chain_id = self
+            .genesis
+            .as_ref()
+            .and_then(|g| g.get("config"))
+            .and_then(|c| c.get("chainId"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(421_614);
+        let mock_l1_rpc = mock.rpc_url();
+        let ctx = NodeStartCtx {
+            binary: None,
+            l2_chain_id,
+            l1_chain_id,
+            mock_l1_rpc,
+            genesis: self.genesis.clone().unwrap_or_default(),
+            jwt_hex: String::new(),
+            workdir: std::path::PathBuf::new(),
+            http_port: 0,
+            authrpc_port: 0,
+        };
+        Ok((mock, ctx))
+    }
 
-        let mut node = RemoteNode::nitro(url);
+    pub fn record_against_nitro(&mut self) -> Result<(), SpecError> {
+        let (_mock, ctx) = self.nitro_node_ctx()?;
+        let mut nitro = NitroDocker::start(&ctx)
+            .map_err(|e| SpecError::Action(format!("nitro start: {e}")))?;
         let scenario = self.to_scenario()?;
-        let captured = capture_from_node(&mut node, &scenario)
+        let captured = capture_from_node(&mut nitro, &scenario)
             .map_err(|e| SpecError::Action(format!("capture: {e}")))?;
 
         let parsed: ExecutionExpectations = serde_json::from_value(captured.expected_json.clone())
@@ -282,18 +301,10 @@ impl ExecutionFixture {
         Ok(())
     }
 
-    pub fn compare(
-        &mut self,
-        rpc_url: &str,
-        nitro_rpc_url: Option<&str>,
-    ) -> Result<(), SpecError> {
-        let nitro_url = nitro_rpc_url.ok_or_else(|| {
-            SpecError::Action(
-                "compare mode requires ARB_SPEC_NITRO_RPC_URL or explicit nitro_rpc_url".into(),
-            )
-        })?;
-
-        let left = RemoteNode::nitro(nitro_url);
+    pub fn compare(&mut self, rpc_url: &str) -> Result<(), SpecError> {
+        let (_mock, ctx) = self.nitro_node_ctx()?;
+        let left = NitroDocker::start(&ctx)
+            .map_err(|e| SpecError::Action(format!("nitro start: {e}")))?;
         let right = RemoteNode::arbreth(rpc_url);
         let mut dual = DualExec::new(left, right);
         let scenario = self.to_scenario()?;

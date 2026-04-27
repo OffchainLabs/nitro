@@ -1,15 +1,241 @@
-#![cfg(feature = "docker")]
+use std::{
+    collections::BTreeMap,
+    process::{Command, Stdio},
+    sync::atomic::AtomicU16,
+    time::{Duration, Instant},
+};
 
-use crate::{error::HarnessError, node::NodeStartCtx, Result};
+use alloy_primitives::{Address, Bytes, B256, U256};
+use serde_json::{json, Value};
 
-pub struct DockerNitro {
-    _container_id: String,
+use crate::{
+    error::HarnessError,
+    messaging::L1Message,
+    node::{
+        common::{
+            arb_receipt_fields, block_from_json, free_tcp_port, receipt_from_json, tail,
+            tx_request_to_json,
+        },
+        ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
+        TxRequest,
+    },
+    rpc::JsonRpcClient,
+    Result,
+};
+
+const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.2-746bda2";
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+
+static NEXT_PORT: AtomicU16 = AtomicU16::new(28547);
+
+pub struct NitroDocker {
+    rpc_url: String,
+    rpc: JsonRpcClient,
+    container_id: String,
 }
 
-impl DockerNitro {
-    pub fn start(_ctx: &NodeStartCtx) -> Result<Self> {
-        Err(HarnessError::NotImplemented {
-            what: "DockerNitro::start",
+impl NitroDocker {
+    pub fn start(ctx: &NodeStartCtx) -> Result<Self> {
+        let image =
+            std::env::var("NITRO_REF_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
+        let host_port = free_tcp_port(&NEXT_PORT)?;
+        let name = format!("arb-harness-nitro-{}-{}", std::process::id(), host_port);
+
+        let _ = Command::new("docker")
+            .args(["rm", "-f", &name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        let parent_chain_url = ctx.mock_l1_rpc.replace("127.0.0.1", "host.docker.internal");
+
+        let mut cmd = Command::new("docker");
+        cmd.args([
+            "run",
+            "-d",
+            "--name",
+            &name,
+            "-p",
+            &format!("{host_port}:8547"),
+            "--user",
+            "root",
+            "--entrypoint",
+            "/usr/local/bin/nitro",
+            &image,
+            "--init.empty=true",
+            "--init.validate-genesis-assertion=false",
+            "--persistent.global-config=/tmp/nitro-data",
+            "--node.parent-chain-reader.enable=false",
+            "--node.dangerous.no-l1-listener=true",
+            "--node.dangerous.disable-blob-reader=true",
+            "--node.staker.enable=false",
+            "--execution.forwarding-target=null",
+            "--node.sequencer=false",
+            "--node.batch-poster.enable=false",
+            "--node.feed.input.url=",
+            "--http.addr=0.0.0.0",
+            "--http.port=8547",
+            "--http.api=net,web3,eth,arb,debug,nitroexecution",
+            "--http.vhosts=*",
+            "--execution.rpc-server.enable=true",
+            "--execution.rpc-server.public=true",
+            "--execution.rpc-server.authenticated=false",
+            "--log-level=WARN",
+        ]);
+        cmd.arg(format!("--chain.id={}", ctx.l2_chain_id));
+        cmd.arg(format!("--parent-chain.connection.url={parent_chain_url}"));
+        cmd.arg(format!(
+            "--parent-chain.blob-client.beacon-url={parent_chain_url}"
+        ));
+
+        let output = cmd.output().map_err(|e| {
+            HarnessError::Rpc(format!("docker run nitro: {e}"))
+        })?;
+        if !output.status.success() {
+            return Err(HarnessError::Rpc(format!(
+                "docker run nitro failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        let rpc_url = format!("http://127.0.0.1:{host_port}");
+        let rpc = JsonRpcClient::new(rpc_url.clone()).with_timeout(Duration::from_secs(60));
+
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
+        if let Err(e) = rpc.call_with_retry("eth_chainId", json!([]), deadline) {
+            let logs = Command::new("docker")
+                .args(["logs", "--tail=80", &name])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
+                .unwrap_or_default();
+            let _ = Command::new("docker").args(["rm", "-f", &name]).status();
+            return Err(HarnessError::Rpc(format!(
+                "nitro docker {rpc_url} did not respond within {:?}: {e}; logs:\n{}",
+                STARTUP_TIMEOUT,
+                tail(&logs, 4096)
+            )));
+        }
+
+        Ok(Self {
+            rpc_url,
+            rpc,
+            container_id,
         })
+    }
+
+    fn stop(&self) {
+        let _ = Command::new("docker")
+            .args(["rm", "-f", &self.container_id])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+impl Drop for NitroDocker {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+impl ExecutionNode for NitroDocker {
+    fn kind(&self) -> NodeKind {
+        NodeKind::NitroDocker
+    }
+
+    fn rpc_url(&self) -> &str {
+        &self.rpc_url
+    }
+
+    fn submit_message(
+        &mut self,
+        idx: u64,
+        msg: &L1Message,
+        delayed_messages_read: u64,
+    ) -> Result<()> {
+        let params = json!([
+            idx,
+            {
+                "message": { "header": &msg.header, "l2Msg": &msg.l2_msg },
+                "delayedMessagesRead": delayed_messages_read,
+            },
+            Value::Null,
+        ]);
+        self.rpc.call("nitroexecution_digestMessage", params)?;
+        Ok(())
+    }
+
+    fn block(&self, id: BlockId) -> Result<Block> {
+        let v = self
+            .rpc
+            .call("eth_getBlockByNumber", json!([id.to_rpc(), false]))?;
+        block_from_json(&v)
+    }
+
+    fn receipt(&self, tx: B256) -> Result<TxReceipt> {
+        let v = self
+            .rpc
+            .call("eth_getTransactionReceipt", json!([format!("{tx:#x}")]))?;
+        receipt_from_json(&v)
+    }
+
+    fn arb_receipt(&self, tx: B256) -> Result<ArbReceiptFields> {
+        let v = self
+            .rpc
+            .call("eth_getTransactionReceipt", json!([format!("{tx:#x}")]))?;
+        Ok(arb_receipt_fields(&v))
+    }
+
+    fn storage(&self, addr: Address, slot: B256, at: BlockId) -> Result<B256> {
+        let v = self.rpc.call(
+            "eth_getStorageAt",
+            json!([format!("{addr:#x}"), format!("{slot:#x}"), at.to_rpc()]),
+        )?;
+        crate::node::common::json_to_b256(&v)
+    }
+
+    fn balance(&self, addr: Address, at: BlockId) -> Result<U256> {
+        let v = self
+            .rpc
+            .call("eth_getBalance", json!([format!("{addr:#x}"), at.to_rpc()]))?;
+        crate::node::common::json_to_u256(&v)
+    }
+
+    fn nonce(&self, addr: Address, at: BlockId) -> Result<u64> {
+        let v = self.rpc.call(
+            "eth_getTransactionCount",
+            json!([format!("{addr:#x}"), at.to_rpc()]),
+        )?;
+        crate::node::common::json_to_u64(&v)
+    }
+
+    fn code(&self, addr: Address, at: BlockId) -> Result<Bytes> {
+        let v = self
+            .rpc
+            .call("eth_getCode", json!([format!("{addr:#x}"), at.to_rpc()]))?;
+        crate::node::common::json_to_bytes(&v)
+    }
+
+    fn eth_call(&self, tx: TxRequest, at: BlockId) -> Result<Bytes> {
+        let v = self
+            .rpc
+            .call("eth_call", json!([tx_request_to_json(&tx), at.to_rpc()]))?;
+        crate::node::common::json_to_bytes(&v)
+    }
+
+    fn debug_storage_range(
+        &self,
+        _addr: Address,
+        _at: BlockId,
+    ) -> Result<BTreeMap<B256, B256>> {
+        Err(HarnessError::NotImplemented {
+            what: "NitroDocker::debug_storage_range",
+        })
+    }
+
+    fn shutdown(self: Box<Self>) -> Result<()> {
+        self.stop();
+        Ok(())
     }
 }

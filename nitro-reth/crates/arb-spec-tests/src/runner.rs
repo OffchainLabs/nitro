@@ -16,7 +16,6 @@ use crate::{
 
 pub const RPC_URL_ENV: &str = "ARB_SPEC_RPC_URL";
 pub const BINARY_ENV: &str = "ARB_SPEC_BINARY";
-pub const NITRO_RPC_URL_ENV: &str = "ARB_SPEC_NITRO_RPC_URL";
 
 pub fn run_fixture(path: &Path) -> Result<(), SpecError> {
     let case = SpecCase::load(path)?;
@@ -30,7 +29,6 @@ pub fn run_execution_fixture(path: &Path, rpc_url: Option<&str>) -> Result<(), S
     let mut fixture = ExecutionFixture::load(path)?;
     let label = path.display().to_string();
     let mode = FixtureMode::from_env();
-    let nitro_rpc_url = std::env::var(NITRO_RPC_URL_ENV).ok();
 
     let result = if fixture.genesis.is_some() {
         let binary = std::env::var(BINARY_ENV).map_err(|_| {
@@ -39,14 +37,14 @@ pub fn run_execution_fixture(path: &Path, rpc_url: Option<&str>) -> Result<(), S
             ))
         })?;
         let node = SpawnedNode::start(&fixture, Path::new(&binary))?;
-        fixture.run_with_mode(mode, &node.rpc_url, nitro_rpc_url.as_deref())
+        fixture.run_with_mode(mode, &node.rpc_url)
     } else {
         let url = rpc_url.ok_or_else(|| {
             SpecError::Action(format!(
                 "{label}: fixture has no inline genesis and {RPC_URL_ENV} is unset"
             ))
         })?;
-        fixture.run_with_mode(mode, url, nitro_rpc_url.as_deref())
+        fixture.run_with_mode(mode, url)
     };
 
     result.map_err(|e| match e {
