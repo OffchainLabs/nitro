@@ -23,8 +23,8 @@ use crate::{
     error::HarnessError,
     messaging::L1Message,
     node::{
-        ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
-        TxRequest,
+        ArbReceiptFields, Block, BlockId, EvmLog, ExecutionNode, NodeKind, NodeStartCtx,
+        TxReceipt, TxRequest,
     },
     rpc::JsonRpcClient,
     Result,
@@ -429,7 +429,28 @@ fn block_from_json(v: &Value) -> Result<Block> {
             .map(json_to_u64)
             .transpose()?
             .unwrap_or(0),
+        tx_hashes: extract_tx_hashes(v),
     })
+}
+
+fn extract_tx_hashes(v: &Value) -> Vec<B256> {
+    let Some(arr) = v.get("transactions").and_then(|t| t.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for entry in arr {
+        let hash_str = match entry {
+            Value::String(s) => Some(s.as_str()),
+            Value::Object(map) => map.get("hash").and_then(|h| h.as_str()),
+            _ => None,
+        };
+        if let Some(s) = hash_str {
+            if let Ok(h) = s.parse::<B256>() {
+                out.push(h);
+            }
+        }
+    }
+    out
 }
 
 fn receipt_from_json(v: &Value) -> Result<TxReceipt> {
@@ -480,8 +501,62 @@ fn receipt_from_json(v: &Value) -> Result<TxReceipt> {
             .get("contractAddress")
             .and_then(|x| x.as_str())
             .and_then(|s| s.parse::<Address>().ok()),
-        logs: Vec::new(),
+        logs: extract_logs(v),
     })
+}
+
+fn extract_logs(v: &Value) -> Vec<EvmLog> {
+    let Some(arr) = v.get("logs").and_then(|l| l.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for entry in arr {
+        let address = entry
+            .get("address")
+            .and_then(|x| x.as_str())
+            .and_then(|s| s.parse::<Address>().ok())
+            .unwrap_or_default();
+        let topics = entry
+            .get("topics")
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().and_then(|s| s.parse::<B256>().ok()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let data = entry
+            .get("data")
+            .and_then(|x| x.as_str())
+            .and_then(|s| {
+                hex::decode(s.trim_start_matches("0x")).ok().map(Bytes::from)
+            })
+            .unwrap_or_default();
+        let log_index = entry
+            .get("logIndex")
+            .and_then(|x| x.as_str())
+            .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+            .unwrap_or(0);
+        let block_number = entry
+            .get("blockNumber")
+            .and_then(|x| x.as_str())
+            .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+            .unwrap_or(0);
+        let tx_hash = entry
+            .get("transactionHash")
+            .and_then(|x| x.as_str())
+            .and_then(|s| s.parse::<B256>().ok())
+            .unwrap_or_default();
+        out.push(EvmLog {
+            address,
+            topics,
+            data,
+            log_index,
+            block_number,
+            tx_hash,
+        });
+    }
+    out
 }
 
 fn arb_receipt_fields(v: &Value) -> ArbReceiptFields {

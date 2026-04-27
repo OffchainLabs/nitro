@@ -1390,6 +1390,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "arb-storage",
+ "arb-test-harness",
  "arb-test-utils",
  "arbos",
  "hex",

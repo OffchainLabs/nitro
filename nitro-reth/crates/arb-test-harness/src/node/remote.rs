@@ -1,18 +1,4 @@
-//! arbreth subprocess backend.
-//!
-//! Spawns the binary at `ARB_SPEC_BINARY` (or [`NodeStartCtx::binary`])
-//! against a freshly-written genesis JSON, then talks to it via standard
-//! JSON-RPC. Mirrors the spawn pattern used by `arb-spec-tests`'s
-//! `runner::SpawnedNode`.
-
-use std::{
-    collections::BTreeMap,
-    io::Write,
-    path::PathBuf,
-    process::{Child, Command, Stdio},
-    sync::atomic::{AtomicU16, Ordering},
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use alloy_primitives::{Address, Bytes, B256, U256};
 use serde_json::{json, Value};
@@ -21,130 +7,42 @@ use crate::{
     error::HarnessError,
     messaging::L1Message,
     node::{
-        ArbReceiptFields, Block, BlockId, EvmLog, ExecutionNode, NodeKind, NodeStartCtx,
-        TxReceipt, TxRequest,
+        ArbReceiptFields, Block, BlockId, EvmLog, ExecutionNode, NodeKind, TxReceipt, TxRequest,
     },
     rpc::JsonRpcClient,
     Result,
 };
 
-const ARB_BINARY_ENV: &str = "ARB_SPEC_BINARY";
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
-
-static NEXT_PORT: AtomicU16 = AtomicU16::new(38545);
-
-/// Running arbreth subprocess.
-pub struct ArbrethProcess {
+#[derive(Debug, Clone)]
+pub struct RemoteNode {
     rpc_url: String,
     rpc: JsonRpcClient,
-    workdir: PathBuf,
-    child: Option<Child>,
+    kind: NodeKind,
 }
 
-impl ArbrethProcess {
-    /// Spawn arbreth against an inline genesis and wait for `eth_chainId`.
-    pub fn start(ctx: &NodeStartCtx) -> Result<Self> {
-        let binary = match &ctx.binary {
-            Some(b) => b.clone(),
-            None => std::env::var(ARB_BINARY_ENV).map_err(|_| HarnessError::MissingEnv {
-                name: ARB_BINARY_ENV,
-            })?,
-        };
-
-        let workdir = if ctx.workdir.as_os_str().is_empty() {
-            std::env::temp_dir().join(format!(
-                "arb-harness-arbreth-{}-{}",
-                std::process::id(),
-                NEXT_PORT.fetch_add(0, Ordering::SeqCst)
-            ))
-        } else {
-            ctx.workdir.clone()
-        };
-        if workdir.exists() {
-            let _ = std::fs::remove_dir_all(&workdir);
-        }
-        std::fs::create_dir_all(&workdir).map_err(HarnessError::Io)?;
-
-        let chain_path = workdir.join("chain.json");
-        let chain_bytes = serde_json::to_vec_pretty(&ctx.genesis)?;
-        std::fs::File::create(&chain_path)
-            .and_then(|mut f| f.write_all(&chain_bytes))
-            .map_err(HarnessError::Io)?;
-
-        let jwt_path = workdir.join("jwt.hex");
-        let jwt_hex = if ctx.jwt_hex.is_empty() {
-            hex::encode([0u8; 32])
-        } else {
-            ctx.jwt_hex.clone()
-        };
-        std::fs::write(&jwt_path, &jwt_hex).map_err(HarnessError::Io)?;
-
-        let http_port = if ctx.http_port == 0 {
-            free_tcp_port(&NEXT_PORT)?
-        } else {
-            ctx.http_port
-        };
-        let auth_port = if ctx.authrpc_port == 0 {
-            free_tcp_port(&NEXT_PORT)?
-        } else {
-            ctx.authrpc_port
-        };
-
-        let stdout_path = workdir.join("stdout.log");
-        let stderr_path = workdir.join("stderr.log");
-        let stdout_file = std::fs::File::create(&stdout_path).map_err(HarnessError::Io)?;
-        let stderr_file = std::fs::File::create(&stderr_path).map_err(HarnessError::Io)?;
-
-        let datadir = workdir.join("db");
-
-        let child = Command::new(&binary)
-            .env(
-                "RUST_LOG",
-                std::env::var("ARB_HARNESS_RUST_LOG")
-                    .unwrap_or_else(|_| "info,block_producer=warn".to_string()),
-            )
-            .arg("node")
-            .arg(format!("--chain={}", chain_path.display()))
-            .arg(format!("--datadir={}", datadir.display()))
-            .arg("--http")
-            .arg("--http.addr=127.0.0.1")
-            .arg(format!("--http.port={http_port}"))
-            .arg("--http.api=eth,web3,net,debug,arb,nitroexecution")
-            .arg("--authrpc.addr=127.0.0.1")
-            .arg(format!("--authrpc.port={auth_port}"))
-            .arg(format!("--authrpc.jwtsecret={}", jwt_path.display()))
-            .arg("--disable-discovery")
-            .arg("--db.exclusive=true")
-            .stdout(Stdio::from(stdout_file))
-            .stderr(Stdio::from(stderr_file))
-            .spawn()
-            .map_err(|e| HarnessError::Rpc(format!("spawn arbreth at {binary}: {e}")))?;
-
-        let rpc_url = format!("http://127.0.0.1:{http_port}");
-        let rpc = JsonRpcClient::new(rpc_url.clone()).with_timeout(Duration::from_secs(60));
-
-        let deadline = Instant::now() + STARTUP_TIMEOUT;
-        if let Err(e) = rpc.call_with_retry("eth_chainId", json!([]), deadline) {
-            let stderr_tail = std::fs::read_to_string(&stderr_path).unwrap_or_default();
-            return Err(HarnessError::Rpc(format!(
-                "arbreth at {rpc_url} did not respond within {:?}: {e}; stderr_tail:\n{}",
-                STARTUP_TIMEOUT,
-                tail(&stderr_tail, 4096)
-            )));
-        }
-
-        Ok(Self {
-            rpc_url,
+impl RemoteNode {
+    pub fn connect(rpc_url: impl Into<String>, kind: NodeKind) -> Self {
+        let url = rpc_url.into();
+        let rpc = JsonRpcClient::new(url.clone()).with_timeout(Duration::from_secs(60));
+        Self {
+            rpc_url: url,
             rpc,
-            workdir,
-            child: Some(child),
-        })
+            kind,
+        }
+    }
+
+    pub fn arbreth(rpc_url: impl Into<String>) -> Self {
+        Self::connect(rpc_url, NodeKind::Arbreth)
+    }
+
+    pub fn nitro(rpc_url: impl Into<String>) -> Self {
+        Self::connect(rpc_url, NodeKind::NitroLocal)
     }
 }
 
-impl ExecutionNode for ArbrethProcess {
+impl ExecutionNode for RemoteNode {
     fn kind(&self) -> NodeKind {
-        NodeKind::Arbreth
+        self.kind
     }
 
     fn rpc_url(&self) -> &str {
@@ -265,20 +163,7 @@ impl ExecutionNode for ArbrethProcess {
     }
 
     fn shutdown(self: Box<Self>) -> Result<()> {
-        let _ = self;
         Ok(())
-    }
-}
-
-impl Drop for ArbrethProcess {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        if std::env::var("ARB_HARNESS_KEEP_WORKDIR").is_err() {
-            let _ = std::fs::remove_dir_all(&self.workdir);
-        }
     }
 }
 
@@ -499,24 +384,6 @@ fn arb_receipt_fields(v: &Value) -> ArbReceiptFields {
 fn parse_b256(s: &str) -> Result<B256> {
     s.parse::<B256>()
         .map_err(|e| HarnessError::Rpc(format!("invalid B256 {s}: {e}")))
-}
-
-fn tail(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        s
-    } else {
-        &s[s.len() - max..]
-    }
-}
-
-fn free_tcp_port(_counter: &AtomicU16) -> Result<u16> {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(HarnessError::Io)?;
-    let port = listener
-        .local_addr()
-        .map_err(HarnessError::Io)?
-        .port();
-    drop(listener);
-    Ok(port)
 }
 
 fn json_to_u64(v: &Value) -> Result<u64> {

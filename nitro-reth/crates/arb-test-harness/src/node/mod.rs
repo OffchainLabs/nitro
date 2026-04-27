@@ -14,6 +14,7 @@ use crate::{messaging::L1Message, Result};
 
 pub mod arbreth;
 pub mod nitro_local;
+pub mod remote;
 #[cfg(feature = "docker")]
 pub mod nitro_docker;
 
@@ -108,6 +109,12 @@ pub struct Block {
     pub gas_used: u64,
     pub gas_limit: u64,
     pub timestamp: u64,
+    /// Hashes of transactions included in this block, in canonical
+    /// order. Populated when the block is fetched with the `false`
+    /// `eth_getBlockByNumber` flag (hash-only) — every standard JSON-RPC
+    /// response includes this list.
+    #[serde(default)]
+    pub tx_hashes: Vec<B256>,
 }
 
 /// Subset of standard tx receipt fields exposed via the trait. Logs

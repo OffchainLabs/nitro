@@ -1,28 +1,12 @@
-//! Integration tests for the orchestration layer.
-//!
-//! Tests are gated behind `#[ignore]` plus an env-var presence check
-//! because they require external binaries:
-//!
-//! - `nitro_chain_id_round_trip` needs `NITRO_REF_BINARY` set to a
-//!   Nitro node binary.
-//! - `arbreth_chain_id_round_trip` needs `ARB_SPEC_BINARY` set to an
-//!   `arb-reth` binary.
-//! - `mock_l1_serves_chain_id` runs unconditionally and exercises the
-//!   axum mock L1 server.
-//!
-//! Run with:
-//!
-//! ```bash
-//! cargo test -p arb-test-harness --test integration -- --ignored
-//! ```
-
 use std::time::Duration;
 
 use arb_test_harness::{
+    dual_exec::DualExec,
     genesis::GenesisBuilder,
     mock_l1::MockL1,
     node::{arbreth::ArbrethProcess, nitro_local::NitroProcess, BlockId, NodeStartCtx},
     rpc::JsonRpcClient,
+    scenario::{Scenario, ScenarioSetup},
     ExecutionNode,
 };
 
@@ -205,5 +189,54 @@ fn dual_node_chain_ids_match() {
 
     Box::new(nitro).shutdown().expect("shutdown nitro");
     Box::new(arb).shutdown().expect("shutdown arb");
+    mock.shutdown().expect("shutdown mock");
+}
+
+#[test]
+#[ignore]
+fn dual_exec_runs_empty_scenario() {
+    if std::env::var("NITRO_REF_BINARY").is_err() || std::env::var("ARB_SPEC_BINARY").is_err() {
+        eprintln!("skip: NITRO_REF_BINARY and/or ARB_SPEC_BINARY unset");
+        return;
+    }
+    let mock = MockL1::start(TEST_L1_CHAIN_ID).expect("start mock L1");
+    let genesis = GenesisBuilder::new(TEST_L2_CHAIN_ID, 10)
+        .build()
+        .expect("build genesis");
+    let make_ctx = || NodeStartCtx {
+        binary: None,
+        l2_chain_id: TEST_L2_CHAIN_ID,
+        l1_chain_id: TEST_L1_CHAIN_ID,
+        mock_l1_rpc: mock.rpc_url(),
+        genesis: genesis.clone(),
+        jwt_hex: String::new(),
+        workdir: std::path::PathBuf::new(),
+        http_port: 0,
+        authrpc_port: 0,
+    };
+
+    let nitro = NitroProcess::start(&make_ctx()).expect("nitro startup");
+    let arb = ArbrethProcess::start(&make_ctx()).expect("arbreth startup");
+
+    let scenario = Scenario {
+        name: "empty".into(),
+        description: "no messages, both nodes should agree on the empty chain".into(),
+        setup: ScenarioSetup {
+            l2_chain_id: TEST_L2_CHAIN_ID,
+            arbos_version: 10,
+            genesis: None,
+        },
+        steps: Vec::new(),
+    };
+
+    let mut dual = DualExec::new(nitro, arb);
+    let report = dual.run(&scenario).expect("dual_exec run");
+    assert!(
+        report.is_clean(),
+        "dual_exec produced unexpected diffs: {report:?}",
+    );
+
+    Box::new(dual.left).shutdown().expect("shutdown nitro");
+    Box::new(dual.right).shutdown().expect("shutdown arb");
     mock.shutdown().expect("shutdown mock");
 }
