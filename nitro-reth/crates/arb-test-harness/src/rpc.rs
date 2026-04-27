@@ -1,19 +1,24 @@
-//! Thin synchronous JSON-RPC client used by the subprocess backends.
+use std::time::{Duration, Instant};
 
 use crate::{error::HarnessError, Result};
 
 #[derive(Debug, Clone)]
 pub struct JsonRpcClient {
     pub url: String,
-    pub timeout: std::time::Duration,
+    pub timeout: Duration,
 }
 
 impl JsonRpcClient {
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
-            timeout: std::time::Duration::from_secs(30),
+            timeout: Duration::from_secs(30),
         }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     pub fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
@@ -39,5 +44,29 @@ impl JsonRpcClient {
             .get("result")
             .cloned()
             .unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Retries on transport errors only; JSON-RPC errors propagate immediately.
+    pub fn call_with_retry(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        deadline: Instant,
+    ) -> Result<serde_json::Value> {
+        loop {
+            match self.call(method, params.clone()) {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    let is_transport = matches!(&e, HarnessError::Rpc(m) if m.contains("transport"));
+                    if !is_transport {
+                        return Err(e);
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(e);
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
     }
 }
