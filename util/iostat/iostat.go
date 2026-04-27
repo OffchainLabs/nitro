@@ -84,6 +84,11 @@ func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 		stat := DeviceStats{}
 		var err error
 		for i, field := range fields {
+			if i >= len(data) {
+				// Some iostat builds emit a header with more columns than a data row
+				// (e.g. trailing header tokens without values). Skip the rest of the header.
+				break
+			}
 			switch field {
 			case "Device", "Device:":
 				stat.DeviceName = data[i]
