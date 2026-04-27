@@ -346,7 +346,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
 
-    let actual_backlog_cost = compute_actual_backlog_cost(input)?;
+    let actual_backlog_cost = compute_actual_backlog_cost(input, gas_to_donate)?;
 
     let max_refund = U256::MAX;
     let submission_fee_refund = U256::ZERO;
@@ -385,7 +385,10 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     ))
 }
 
-fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+fn compute_actual_backlog_cost(
+    input: &mut PrecompileInput<'_>,
+    gas_to_donate: u64,
+) -> Result<u64, PrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
     let arbos_version = crate::get_arbos_version();
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
@@ -397,7 +400,19 @@ fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, P
             return Ok(2 * SLOAD_GAS + len.saturating_mul(SLOAD_GAS + SSTORE_RESET_GAS));
         }
     }
-    Ok(SLOAD_GAS + SSTORE_GAS)
+    Ok(legacy_actual_backlog_cost(
+        crate::get_current_gas_backlog(),
+        gas_to_donate,
+    ))
+}
+
+/// Per-EIP-2200 write_cost for the ShrinkBacklog SSTORE in the legacy
+/// (v10..v50) Redeem path.
+fn legacy_actual_backlog_cost(_current_backlog: u64, _gas_to_donate: u64) -> u64 {
+    // BUG: ignores the new value. EIP-2200 says SSTORE that writes zero costs
+    // SSTORE_RESET (5_000), not SSTORE_SET (20_000). The dynamic check is
+    // restored in the next commit.
+    SLOAD_GAS + SSTORE_GAS
 }
 
 fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
@@ -618,4 +633,70 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
         gas_used.min(gas_limit),
         Vec::new().into(),
     ))
+}
+
+#[cfg(test)]
+mod redeem_gas_tests {
+    //! Regression tests pinning the EIP-2200 ShrinkBacklog write_cost in the
+    //! legacy v10..v50 Redeem path.
+    //!
+    //! The bug was observed at Sepolia block 100,435,687 (ArbOS v32):
+    //! tx 0x494fdb2934fef986ab7629c7722d5844c3c529eae0bbc2736a0865feeceb9440
+    //! had canonical gasUsed = 130,227 while a buggy build reported 145,227.
+    //! The +15,000 gap is exactly SSTORE_SET (20,000) − SSTORE_RESET (5,000):
+    //! the redeem drained the gas backlog to zero, so the SSTORE writes zero
+    //! and must be charged SSTORE_RESET, not SSTORE_SET.
+
+    use super::*;
+
+    #[test]
+    fn drains_backlog_to_zero_uses_sstore_reset() {
+        // gas_to_donate >= current_backlog → new_backlog = 0
+        assert_eq!(
+            legacy_actual_backlog_cost(100_000, 100_000),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+        assert_eq!(legacy_actual_backlog_cost(100_000, 100_000), 5_800);
+    }
+
+    #[test]
+    fn drains_backlog_partially_uses_sstore_set() {
+        // gas_to_donate < current_backlog → new_backlog > 0
+        assert_eq!(
+            legacy_actual_backlog_cost(100_000, 99_000),
+            SLOAD_GAS + SSTORE_GAS,
+        );
+        assert_eq!(legacy_actual_backlog_cost(100_000, 99_000), 20_800);
+    }
+
+    #[test]
+    fn donate_exceeds_backlog_saturates_to_zero() {
+        // gas_to_donate > current_backlog → saturating_sub clamps to zero
+        assert_eq!(
+            legacy_actual_backlog_cost(50_000, 200_000),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+    }
+
+    #[test]
+    fn empty_backlog_zero_donate_still_writes_zero() {
+        // Edge: backlog already zero, donate zero → writes zero
+        assert_eq!(
+            legacy_actual_backlog_cost(0, 0),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+    }
+
+    #[test]
+    fn sepolia_block_100_435_687_diverges_by_15000_with_buggy_static_cost() {
+        // The exact gap observed at Sepolia block 100,435,687 (ArbOS v32):
+        // canonical gasUsed = 130,227, buggy gasUsed = 145,227 → +15,000.
+        let buggy_static_cost = SLOAD_GAS + SSTORE_GAS;
+        let fixed_drain_cost = legacy_actual_backlog_cost(100_000, 100_000);
+        assert_eq!(
+            buggy_static_cost - fixed_drain_cost,
+            15_000,
+            "buggy redeem overcharges by 15_000 gas when backlog drains to zero",
+        );
+    }
 }
