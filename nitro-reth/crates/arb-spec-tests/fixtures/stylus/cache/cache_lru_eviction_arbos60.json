@@ -70,13 +70,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426702,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001000",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_arbowner_set_max_stylus_fragments_to_capacity_2"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8f4acAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC"
       },
       "delayedMessagesRead": 1
     },
@@ -84,13 +84,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426703,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001001",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_program_a"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQD1YA5gADlhAPVgAPPv8AAAYXNtAQAAAAEVBGADf39/AGABfwBgAn9/AGABfwF/AkoDCHZtX2hvb2tzEG5hdGl2ZV9rZWNjYWsyNTYAAAh2bV9ob29rcwlyZWFkX2FyZ3MAAQh2bV9ob29rcwx3cml0ZV9yZXN1bHQAAgMCAQMFAwEAAQccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQAAwoaARgAQQAQAUEAIABBgAIQAEGAAkEgEAJBAAsLCAEAQYAECwFhADgEbmFtZQEiAwAGa2VjY2FrAQlyZWFkX2FyZ3MCDHdyaXRlX3Jlc3VsdAINAQMBAAhhcmdzX2xlbg=="
       },
       "delayedMessagesRead": 1
     },
@@ -98,13 +98,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426704,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001002",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_program_b"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQD1YA5gADlhAPVgAPPv8AAAYXNtAQAAAAEVBGADf39/AGABfwBgAn9/AGABfwF/AkoDCHZtX2hvb2tzEG5hdGl2ZV9rZWNjYWsyNTYAAAh2bV9ob29rcwlyZWFkX2FyZ3MAAQh2bV9ob29rcwx3cml0ZV9yZXN1bHQAAgMCAQMFAwEAAQccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQAAwoaARgAQQAQAUEAIABBgAIQAEGAAkEgEAJBAAsLCAEAQYAECwFhADgEbmFtZQEiAwAGa2VjY2FrAQlyZWFkX2FyZ3MCDHdyaXRlX3Jlc3VsdAINAQMBAAhhcmdzX2xlbg=="
       },
       "delayedMessagesRead": 1
     },
@@ -112,13 +112,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426705,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001003",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_program_c"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQD1YA5gADlhAPVgAPPv8AAAYXNtAQAAAAEVBGADf39/AGABfwBgAn9/AGABfwF/AkoDCHZtX2hvb2tzEG5hdGl2ZV9rZWNjYWsyNTYAAAh2bV9ob29rcwlyZWFkX2FyZ3MAAQh2bV9ob29rcwx3cml0ZV9yZXN1bHQAAgMCAQMFAwEAAQccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQAAwoaARgAQQAQAUEAIABBgAIQAEGAAkEgEAJBAAsLCAEAQYAECwFhADgEbmFtZQEiAwAGa2VjY2FrAQlyZWFkX2FyZ3MCDHdyaXRlX3Jlc3VsdAINAQMBAAhhcmdzX2xlbg=="
       },
       "delayedMessagesRead": 1
     },
@@ -126,13 +126,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426706,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001004",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_program_a"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAACmEmA6hM4RtoqwF2fD7mqZiWsn+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAq6urq6urq6s="
       },
       "delayedMessagesRead": 1
     },
@@ -140,13 +140,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426707,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001005",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_program_b"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAC64dMIIlszTl314ADch0AzCXgdJQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAq6urq6urq6s="
       },
       "delayedMessagesRead": 1
     },
@@ -154,13 +154,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426708,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001006",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_program_c"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAA6E8NnAggkxWB5GC9WW9Vx0H5fYwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAq6urq6urq6s="
       },
       "delayedMessagesRead": 1
     },
@@ -168,13 +168,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426709,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001007",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_program_a_after_eviction"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAACmEmA6hM4RtoqwF2fD7mqZiWsn+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAq6urq6urq6s="
       },
       "delayedMessagesRead": 1
     }

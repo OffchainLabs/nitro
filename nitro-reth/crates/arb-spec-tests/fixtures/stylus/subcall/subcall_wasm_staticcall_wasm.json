@@ -70,13 +70,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426702,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001000",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_multicall"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQH8YA5gADlhAfxgAPPv8AAAYXNtAQAAAAE3CGABfwBgAn9/AGAAAX9gBn9/f39+fwF/YAV/f39+fwF/YAV/f39/fwBgBn9/f39/fwBgAX8BfwLeAQkIdm1faG9va3MJcmVhZF9hcmdzAAAIdm1faG9va3MMd3JpdGVfcmVzdWx0AAEIdm1faG9va3MKbXNnX3NlbmRlcgAACHZtX2hvb2tzDW1zZ19yZWVudHJhbnQAAgh2bV9ob29rcw1jYWxsX2NvbnRyYWN0AAMIdm1faG9va3MWZGVsZWdhdGVfY2FsbF9jb250cmFjdAAECHZtX2hvb2tzFHN0YXRpY19jYWxsX2NvbnRyYWN0AAQIdm1faG9va3MHY3JlYXRlMQAFCHZtX2hvb2tzB2NyZWF0ZTIABgMCAQcFAwEAAgccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQACQoQAQ4AQQAQAEEAQQEQAUEACwCbAQRuYW1lAYQBCQAJcmVhZF9hcmdzAQx3cml0ZV9yZXN1bHQCCm1zZ19zZW5kZXIDDW1zZ19yZWVudHJhbnQEDWNhbGxfY29udHJhY3QFFmRlbGVnYXRlX2NhbGxfY29udHJhY3QGFHN0YXRpY19jYWxsX2NvbnRyYWN0BwdjcmVhdGUxCAdjcmVhdGUyAg0BCQEACGFyZ3NfbGVu"
       },
       "delayedMessagesRead": 1
     },
@@ -84,13 +84,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426703,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001001",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_storage_target"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQEtYA5gADlhAS1gAPPv8AAAYXNtAQAAAAEPA2ACf38AYAF/AGABfwF/Am4ECHZtX2hvb2tzFXN0b3JhZ2VfY2FjaGVfYnl0ZXMzMgAACHZtX2hvb2tzE3N0b3JhZ2VfZmx1c2hfY2FjaGUAAQh2bV9ob29rcwlyZWFkX2FyZ3MAAQh2bV9ob29rcwx3cml0ZV9yZXN1bHQAAAMCAQIFAwEAAQccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQABAoaARgAQQAQAkEAQSAQAEEAEAFBAEEAEANBAAsAXARuYW1lAUYEABVzdG9yYWdlX2NhY2hlX2J5dGVzMzIBE3N0b3JhZ2VfZmx1c2hfY2FjaGUCCXJlYWRfYXJncwMMd3JpdGVfcmVzdWx0Ag0BBAEACGFyZ3NfbGVu"
       },
       "delayedMessagesRead": 1
     },
@@ -98,13 +98,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426704,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001002",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_activate_multicall"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABWMeAwgAAAAAAAAAAAAAAAKuvolB5FLDlj1poT55MxIDg7uWg"
       },
       "delayedMessagesRead": 1
     },
@@ -112,13 +112,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426705,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001003",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_activate_storage_target"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABWMeAwgAAAAAAAAAAAAAAAKYSYDqEzhG2irAXZ8PuapmJayf4"
       },
       "delayedMessagesRead": 1
     },
@@ -126,13 +126,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426706,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001004",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_multicall_staticcall_then_sstore_revert"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAACrr6JQeRSw5Y9aaE+eTMSA4O7loAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAACqAAAAAAAAAAA="
       },
       "delayedMessagesRead": 1
     }

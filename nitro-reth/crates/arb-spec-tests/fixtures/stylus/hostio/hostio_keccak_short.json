@@ -56,13 +56,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426701,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001000",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_hostio_keccak"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQDrYA5gADlhAOtgAPPv8AAAYXNtAQAAAAEVBGADf39/AGABfwBgAn9/AGABfwF/AkoDCHZtX2hvb2tzEG5hdGl2ZV9rZWNjYWsyNTYAAAh2bV9ob29rcwlyZWFkX2FyZ3MAAQh2bV9ob29rcwx3cml0ZV9yZXN1bHQAAgMCAQMFAwEAAQccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQAAwoaARgAQQAQAUEAIABBgAIQAEGAAkEgEAJBAAsAOARuYW1lASIDAAZrZWNjYWsBCXJlYWRfYXJncwIMd3JpdGVfcmVzdWx0Ag0BAwEACGFyZ3NfbGVu"
       },
       "delayedMessagesRead": 1
     },
@@ -70,13 +70,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426702,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001001",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_activate_program"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABWMeAwgAAAAAAAAAAAAAAAKuvolB5FLDlj1poT55MxIDg7uWg"
       },
       "delayedMessagesRead": 1
     },
@@ -84,13 +84,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426703,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001002",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_invoke_keccak_7_bytes"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAACrr6JQeRSw5Y9aaE+eTMSA4O7loAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVVVVVVVVVQ=="
       },
       "delayedMessagesRead": 1
     }

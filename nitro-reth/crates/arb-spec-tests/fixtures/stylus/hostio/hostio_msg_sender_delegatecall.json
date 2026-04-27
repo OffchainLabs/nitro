@@ -56,13 +56,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426701,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001000",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_deploy_hostio_msg_sender"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQDdYA5gADlhAN1gAPPv8AAAYXNtAQAAAAEPA2ABfwBgAn9/AGABfwF/AkQDCHZtX2hvb2tzCm1zZ19zZW5kZXIAAAh2bV9ob29rcwlyZWFkX2FyZ3MAAAh2bV9ob29rcwx3cml0ZV9yZXN1bHQAAQMCAQIFAwEAAQccAgZtZW1vcnkCAA91c2VyX2VudHJ5cG9pbnQAAwoUARIAQQAQAUEAEABBAEEUEAJBAAsAPARuYW1lASYDAAptc2dfc2VuZGVyAQlyZWFkX2FyZ3MCDHdyaXRlX3Jlc3VsdAINAQMBAAhhcmdzX2xlbg=="
       },
       "delayedMessagesRead": 1
     },
@@ -70,13 +70,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426702,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001001",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_compile_wasm_activate_program"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABWMeAwgAAAAAAAAAAAAAAAKuvolB5FLDlj1poT55MxIDg7uWg"
       },
       "delayedMessagesRead": 1
     },
@@ -84,13 +84,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426703,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001002",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_deploy_evm_proxy_delegatecall_into_wasm"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+vCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYQARYA5gADlhABFgAPNgAGAAYABgADBa9FBgAGAA8w=="
       },
       "delayedMessagesRead": 1
     },
@@ -98,13 +98,13 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0xa4b000000000000000000073657175656e636572",
+          "sender": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c",
           "blockNumber": 0,
           "timestamp": 1727426704,
-          "requestId": null,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000001003",
           "baseFeeL1": 0
         },
-        "l2Msg": "_TODO_signed_invoke_proxy_delegatecall_into_msg_sender_program"
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABycOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAC64dMIIlszTl314ADch0AzCXgdJQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
       },
       "delayedMessagesRead": 1
     }
