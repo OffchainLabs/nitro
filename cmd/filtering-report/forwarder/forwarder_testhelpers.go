@@ -63,7 +63,7 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointU
 	t.Helper()
 	config := &Config{
 		Workers:            1,
-		PollInterval:       time.Second,
+		PollInterval:       10 * time.Millisecond,
 		SQSWaitTimeSeconds: DefaultConfig.SQSWaitTimeSeconds,
 		ExternalEndpoint: genericconf.HTTPClientConfig{
 			URL:     endpointURL,
