@@ -16,8 +16,8 @@
     "blocks": [
       {
         "number": 0,
-        "block_hash": "0xc20531fcf1b45b670edbb7980f15f50e6e2bd12a784d878f5574d21a50384246",
-        "state_root": "0xeef50120fe07dd8077675d1984a3fb61ecff79a000cb024db7edcbbbd6685ddf",
+        "block_hash": "0x08cad158d0956351511d1e67cc48bc1ef089ec37c087d4e227b45a6fb71bac3e",
+        "state_root": "0x7df9d696ad8176680f675557ef0a0e9276d9510c040dc1a24a9296b4a9d8d694",
         "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
         "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
         "gas_used": 0
