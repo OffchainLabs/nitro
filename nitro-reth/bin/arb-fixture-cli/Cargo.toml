@@ -1,0 +1,22 @@
+[package]
+name = "arb-fixture-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Operator CLI for arbreth execution fixtures: record, verify, compare, promote, triage."
+
+[[bin]]
+name = "arb-fixture-cli"
+path = "src/main.rs"
+
+[dependencies]
+arb-test-harness = { workspace = true }
+arb-spec-tests = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = "1"
+
+[lints]
+workspace = true

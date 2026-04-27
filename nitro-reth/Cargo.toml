@@ -19,6 +19,8 @@ members = [
     "crates/arbos",
     "bin/arb-reth",
     "bin/gen-genesis",
+    "bin/arb-fixture-cli",
+    "xtask",
 ]
 exclude = ["brotli"]
 resolver = "2"
@@ -163,6 +165,7 @@ rayon = "1.11"
 clap = { version = "4", features = ["derive"] }
 async-trait = "0.1.68"
 eyre = "0.6"
+anyhow = "1"
 derive_more = { version = "2", features = ["full"] }
 auto_impl = "1"
 bytes = "1"

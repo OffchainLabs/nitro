@@ -1160,6 +1160,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-fixture-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arb-spec-tests",
+ "arb-test-harness",
+ "clap 4.5.60",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "arb-fuzz"
 version = "0.1.0"
 dependencies = [
@@ -13929,6 +13941,15 @@ name = "xsum"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0637d3a5566a82fa5214bae89087bc8c9fb94cd8e8a3c07feb691bb8d9c632db"
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.60",
+ "walkdir",
+]
 
 [[package]]
 name = "yansi"
