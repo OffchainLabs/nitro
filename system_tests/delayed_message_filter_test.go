@@ -170,16 +170,16 @@ func SetupFilteringReport(t *testing.T, builder *NodeBuilder) *forwarder.MockExt
 	t.Helper()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	endpoint := forwarder.NewMockExternalEndpoint(t)
+	externalEndpoint := forwarder.NewMockExternalEndpoint(t)
 
 	stack := filteringreportapi.NewTestStack(t, queueClient)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = stack.HTTPEndpoint()
 
-	fwd := forwarder.NewTestForwarder(t, queueClient, endpoint.URL())
+	fwd := forwarder.NewTestForwarder(t, queueClient, externalEndpoint.URL())
 	fwd.Start(t.Context())
 	t.Cleanup(func() { fwd.StopAndWait() })
 
-	return endpoint
+	return externalEndpoint
 }
 
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
