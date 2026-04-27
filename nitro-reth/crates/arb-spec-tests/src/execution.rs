@@ -326,22 +326,23 @@ impl ExecutionFixture {
     }
 
     fn to_scenario(&self) -> Result<Scenario, SpecError> {
+        const KIND_INITIALIZE: u8 = 11;
         let mut steps: Vec<ScenarioStep> = Vec::with_capacity(self.messages.len());
         let mut next_idx = 1u64;
         for (i, msg) in self.messages.iter().enumerate() {
-            let idx = msg.msg_idx.unwrap_or(next_idx);
             let parsed: arb_test_harness::L1Message =
                 serde_json::from_value(msg.message.clone()).map_err(|e| {
-                    SpecError::Action(format!(
-                        "message {i} (idx {idx}): decode L1Message: {e}"
-                    ))
+                    SpecError::Action(format!("message {i}: decode L1Message: {e}"))
                 })?;
+            if parsed.header.kind == KIND_INITIALIZE {
+                continue;
+            }
             steps.push(ScenarioStep::Message {
-                idx,
+                idx: next_idx,
                 message: parsed,
                 delayed_messages_read: msg.delayed_messages_read,
             });
-            next_idx = idx + 1;
+            next_idx += 1;
         }
         Ok(Scenario {
             name: self.name.clone(),
