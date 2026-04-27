@@ -5,6 +5,9 @@ BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
 OUTPUT_DIR       := $(TOP)/target/sp1
 BLOCK_INPUTS_DIR := $(OUTPUT_DIR)/block-inputs
 
+# Name of the block input (without .json) for the `run` target; override with BLOCK=<name>.
+BLOCK ?= stylus
+
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
 
@@ -30,10 +33,13 @@ install-sp1: # Install the SP1 RISC-V toolchain.
 
 .PHONY: brotli
 brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
-	@cp $(TOP)/crates/sp1/brotli_cmake_patch.txt $(TOP)/brotli/CMakeLists.txt
+	@echo "Building brotli for RISC-V (SP1)..."
 	@rm -rf $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR)
 	@mkdir -p $(BROTLI_BUILD_DIR)
-	@if { cmake -S $(TOP)/brotli -B $(BROTLI_BUILD_DIR) \
+	@cp $(TOP)/brotli/CMakeLists.txt $(TOP)/brotli/CMakeLists.txt.bak; \
+	trap 'mv $(TOP)/brotli/CMakeLists.txt.bak $(TOP)/brotli/CMakeLists.txt' EXIT INT TERM; \
+	cp $(TOP)/crates/sp1/brotli_cmake_patch.txt $(TOP)/brotli/CMakeLists.txt; \
+	if { cmake -S $(TOP)/brotli -B $(BROTLI_BUILD_DIR) \
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
 		-DCMAKE_SYSTEM_NAME=Generic \
@@ -95,6 +101,13 @@ build: nitro-deps
 	@cargo build --release -p sp1-runner
 	@cp $(TOP)/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/stylus-compiler-program $(OUTPUT_DIR)
 	@cp $(TOP)/target/release/sp1-runner $(OUTPUT_DIR)
+
+.PHONY: run
+run: # Run sp1-runner on $(BLOCK_INPUTS_DIR)/$(BLOCK).json (override with BLOCK=<name>).
+	$(OUTPUT_DIR)/sp1-runner \
+		--program $(OUTPUT_DIR)/dumped_replay_wasm.elf \
+		--stylus-compiler-program $(OUTPUT_DIR)/stylus-compiler-program \
+		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json
 
 .PHONY: clean
 clean: # Remove all generated artifacts.
