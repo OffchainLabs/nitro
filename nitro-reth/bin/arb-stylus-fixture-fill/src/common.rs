@@ -15,6 +15,15 @@ pub fn dev_address() -> Address {
     l2_signing_key_to_address(dev_signing_key())
 }
 
+/// L1 → L2 aliased address of the canonical Inbox bridge — the sender
+/// Nitro records on every kind=12 ETH deposit.
+pub fn bridge_aliased_sender() -> Address {
+    Address::new([
+        0xde, 0x70, 0xe7, 0x82, 0x0f, 0x6d, 0x69, 0xad, 0x4f, 0xde, 0x67, 0xde, 0x05, 0xb4, 0x79,
+        0x1a, 0xfd, 0x1b, 0xe3, 0x8d,
+    ])
+}
+
 fn parse_address(s: &str) -> Option<Address> {
     let raw = s.trim_start_matches("0x");
     if raw.len() != 40 {

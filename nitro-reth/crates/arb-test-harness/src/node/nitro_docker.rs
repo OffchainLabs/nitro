@@ -169,11 +169,56 @@ fn resolve_published_port(container_name: &str) -> Result<u16> {
 }
 
 fn render_chain_info_json(ctx: &NodeStartCtx) -> String {
-    let chain_config = ctx
+    let mut chain_config = ctx
         .genesis
         .get("config")
         .cloned()
-        .unwrap_or_else(|| serde_json::json!({"chainId": ctx.l2_chain_id}));
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(map) = chain_config.as_object_mut() {
+        let defaults = [
+            ("chainId", serde_json::json!(ctx.l2_chain_id)),
+            ("homesteadBlock", serde_json::json!(0)),
+            ("daoForkSupport", serde_json::json!(true)),
+            ("eip150Block", serde_json::json!(0)),
+            ("eip155Block", serde_json::json!(0)),
+            ("eip158Block", serde_json::json!(0)),
+            ("byzantiumBlock", serde_json::json!(0)),
+            ("constantinopleBlock", serde_json::json!(0)),
+            ("petersburgBlock", serde_json::json!(0)),
+            ("istanbulBlock", serde_json::json!(0)),
+            ("muirGlacierBlock", serde_json::json!(0)),
+            ("berlinBlock", serde_json::json!(0)),
+            ("londonBlock", serde_json::json!(0)),
+            (
+                "depositContractAddress",
+                serde_json::json!("0x0000000000000000000000000000000000000000"),
+            ),
+            ("clique", serde_json::json!({"period": 0, "epoch": 0})),
+        ];
+        for (key, value) in defaults {
+            map.entry(key.to_string()).or_insert(value);
+        }
+        if let Some(arb) = map
+            .entry("arbitrum".to_string())
+            .or_insert(serde_json::json!({}))
+            .as_object_mut()
+        {
+            let arb_defaults = [
+                ("EnableArbOS", serde_json::json!(true)),
+                ("AllowDebugPrecompiles", serde_json::json!(true)),
+                ("DataAvailabilityCommittee", serde_json::json!(false)),
+                ("InitialArbOSVersion", serde_json::json!(10u64)),
+                (
+                    "InitialChainOwner",
+                    serde_json::json!("0x0000000000000000000000000000000000000000"),
+                ),
+                ("GenesisBlockNum", serde_json::json!(0u64)),
+            ];
+            for (key, value) in arb_defaults {
+                arb.entry(key.to_string()).or_insert(value);
+            }
+        }
+    }
     let entry = serde_json::json!([{
         "chain-name": format!("arbreth-test-{}", ctx.l2_chain_id),
         "parent-chain-id": ctx.l1_chain_id,

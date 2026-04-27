@@ -21,7 +21,7 @@ use arb_test_harness::messaging::{
 };
 use walkdir::WalkDir;
 
-use common::{dev_address, dev_signing_key};
+use common::{bridge_aliased_sender, dev_address, dev_signing_key};
 
 const ARB_OWNER_ADDR: Address = address!("0000000000000000000000000000000000000070");
 const ARB_RETRYABLE_ADDR: Address = address!("000000000000000000000000000000000000006e");
@@ -267,7 +267,7 @@ fn build_messages(
     let mut out: Vec<serde_json::Value> = Vec::new();
 
     let deposit = DepositBuilder {
-        from: dev,
+        from: bridge_aliased_sender(),
         to: dev,
         amount: U256::from(DEFAULT_DEPOSIT_AMOUNT),
         l1_block_number: orig_block,
@@ -289,7 +289,7 @@ fn build_messages(
         FixturePlan::DepositOnly => {}
         FixturePlan::TwoDeposits => {
             let dep2 = DepositBuilder {
-                from: dev,
+                from: bridge_aliased_sender(),
                 to: dev,
                 amount: U256::from(1u64),
                 l1_block_number: block,

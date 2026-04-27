@@ -17,6 +17,18 @@ pub fn dev_address() -> Address {
     l2_signing_key_to_address(dev_signing_key())
 }
 
+/// L1 → L2 aliased address of the canonical Inbox bridge contract used by
+/// every kind=12 ETH deposit message. Matches the sender Nitro records on
+/// real Sepolia / Arbitrum One deposit events
+/// (raw L1 bridge 0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c +
+/// L1_TO_L2_ALIAS_OFFSET 0x1111…1111 mod 2^160).
+pub fn bridge_aliased_sender() -> Address {
+    Address::new([
+        0xde, 0x70, 0xe7, 0x82, 0x0f, 0x6d, 0x69, 0xad, 0x4f, 0xde, 0x67, 0xde, 0x05, 0xb4, 0x79,
+        0x1a, 0xfd, 0x1b, 0xe3, 0x8d,
+    ])
+}
+
 fn parse_address(s: &str) -> Option<Address> {
     let raw = s.trim_start_matches("0x");
     if raw.len() != 40 {

@@ -23,7 +23,7 @@ use arb_test_harness::messaging::{
 use std::collections::BTreeMap;
 use walkdir::WalkDir;
 
-use common::{dev_address, dev_signing_key};
+use common::{bridge_aliased_sender, dev_address, dev_signing_key};
 use scenarios::{Operation, Scenario};
 
 const ARB_WASM_ADDR: Address = address!("0000000000000000000000000000000000000071");
@@ -200,7 +200,7 @@ fn build_messages(
     // First message: deposit funding the dev address.
     let request_seq = state.next_request_seq();
     let deposit = DepositBuilder {
-        from: dev,
+        from: bridge_aliased_sender(),
         to: dev,
         amount: U256::from(DEFAULT_DEPOSIT_AMOUNT),
         l1_block_number: state.block,
