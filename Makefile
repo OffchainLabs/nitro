@@ -322,11 +322,29 @@ clean:
 	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 
+define resolve_gh_token_and_secret
+TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}"; \
+if [ -z "$$TOKEN" ] && git config --get remote.origin.url 2>/dev/null | grep -q nitro-private; then \
+	echo "ERROR: in nitro-private without GitHub token; run 'gh auth login' or set GITHUB_TOKEN" >&2; exit 1; \
+fi; \
+SECRET=""; if [ -n "$$TOKEN" ]; then SECRET="--secret id=gh_token,env=GITHUB_TOKEN"; export GITHUB_TOKEN="$$TOKEN"; fi
+endef
+
 .PHONY: docker
 docker:
-	docker build -t nitro-node-slim --target nitro-node-slim .
-	docker build -t nitro-node --target nitro-node .
-	docker build -t nitro-node-dev --target nitro-node-dev .
+	@$(resolve_gh_token_and_secret); \
+	for t in nitro-node-slim nitro-node nitro-node-dev; do \
+		echo "+ docker build $$SECRET -t $$t --target $$t ."; \
+		docker build $$SECRET -t "$$t" --target "$$t" . || exit 1; \
+	done
+
+.PHONY: docker-machine-versions
+docker-machine-versions:
+	@$(resolve_gh_token_and_secret); \
+	for t in machine-versions; do \
+		echo "+ docker build $$SECRET -t nitro-$$t --target $$t ."; \
+		docker build $$SECRET -t "nitro-$$t" --target "$$t" . || exit 1; \
+	done
 
 .PHONY: check-license-headers
 check-license-headers:
