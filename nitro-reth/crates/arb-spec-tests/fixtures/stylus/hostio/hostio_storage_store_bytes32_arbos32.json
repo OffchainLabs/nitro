@@ -1,0 +1,118 @@
+{
+  "name": "hostio_storage_store_bytes32_arbos32",
+  "description": "Mirrors program_test.go::TestProgramStorage write+read path (storage_cache_bytes32 + storage_flush_cache) at ArbOS v32. Deploy fixtures/_wat/hostio_storage_store_bytes32.wat, invoke once with [slot_key || value] to write, then a second time with the same key (loading via the load fixture variant on top of the persisted slot would assert read-after-write). The two-call pattern catches divergences in pre-flush sentry charging vs post-flush SSTORE pricing. Variants in sibling fixtures cover ArbOS v60 (multi-gas) and zero->non-zero vs non-zero->zero transitions. Placeholder l2Msg strings need WAT->WASM compile + signed deploy + signed invoke.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 32,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1727426700,
+          "requestId": "0x000000000000000000000000000000000000000000000000000000000000a000",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "zV/ngg9taa1P3mfeBbR5Gv0b0nwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN7TgfhQAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426701,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_deploy_hostio_storage_store_bytes32"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426702,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_activate_program"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426703,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_invoke_store_zero_to_one"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426704,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_invoke_store_one_to_two"
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "name": "contract_limit_v60_increased",
+  "description": "Mirrors stylus_contract_limit_increase_test.go::TestExecuteWasmWithDecreasedMaxWasmSizeRecoverWasm but on the size-up direction. Boots ArbOS v60 where MaxStylusFragmentCount / max-wasm-size is raised. Same oversized payload as the v59 sibling now deploys successfully and the deployed program executes. Asserts deploy receipt status=1 and a follow-up invocation succeeds. Placeholder l2Msg string needs the same oversized WASM payload as the v59 fixture + signed deploy + signed invoke.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 60,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1727426700,
+          "requestId": "0x000000000000000000000000000000000000000000000000000000000000a000",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "zV/ngg9taa1P3mfeBbR5Gv0b0nwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN7TgfhQAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1727426701,
+          "requestId": "0x000000000000000000000000000000000000000000000000000000000000a001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "zV/ngg9taa1P3mfeBbR5Gv0b0nwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN7TgfhQAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426702,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_deploy_oversized_program_24576_plus_bytes_succeeds_v60"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426703,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_signed_invoke_arbwasm_activate_oversized_program_v60"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426704,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_signed_invoke_oversized_program_returns_zero"
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

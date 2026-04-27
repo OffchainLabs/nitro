@@ -1,0 +1,104 @@
+{
+  "name": "subcall_wasm_call_evm",
+  "description": "Mirrors program_test.go::TestProgramCalls 'Calling the ArbosTest precompile (Rust => precompile)' branch. Outer Stylus program performs CALL into a non-WASM EVM target (a precompile or vanilla Solidity contract). Tests the WASM->EVM context swap: gas budget propagation through 63/64ths, return data plumbing back into evm_return_data_len, msg.sender at the EVM frame equals the WASM caller's address. Placeholder l2Msg strings need WASM multicall + EVM target bytecode plus signed deploys + signed invoke.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 32,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1727426700,
+          "requestId": "0x000000000000000000000000000000000000000000000000000000000000a000",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "zV/ngg9taa1P3mfeBbR5Gv0b0nwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN7TgfhQAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426701,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_deploy_multicall"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426702,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_compile_wasm_activate_multicall"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1727426703,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_signed_invoke_multicall_call_into_arbos_test_precompile"
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}
