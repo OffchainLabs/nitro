@@ -13,12 +13,14 @@ members = [
     "crates/arb-spec-tests",
     "crates/arb-stylus",
     "crates/arb-test-utils",
+    "crates/arb-test-harness",
+    "crates/arb-fuzz",
     "crates/arb-bench",
     "crates/arbos",
     "bin/arb-reth",
     "bin/gen-genesis",
 ]
-exclude = ["brotli", "fuzz"]
+exclude = ["brotli"]
 resolver = "2"
 
 [workspace.package]
@@ -41,6 +43,9 @@ arb-txpool = { path = "crates/arb-txpool" }
 
 arb-stylus = { path = "crates/arb-stylus" }
 arb-test-utils = { path = "crates/arb-test-utils" }
+arb-test-harness = { path = "crates/arb-test-harness" }
+arb-fuzz = { path = "crates/arb-fuzz" }
+arb-spec-tests = { path = "crates/arb-spec-tests" }
 arb-bench = { path = "crates/arb-bench" }
 arbos = { path = "crates/arbos" }
 
