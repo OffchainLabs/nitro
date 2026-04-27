@@ -99,6 +99,10 @@ func (h *HashStore) Digest() string {
 	return h.data.Load().digest
 }
 
+func (h *HashStore) Id() uuid.UUID {
+	return h.data.Load().id
+}
+
 func (h *HashStore) Size() int {
 	return len(h.data.Load().hashes)
 }

@@ -1,2 +1,2 @@
 ### Added
-- Added support for id-set-filter for address filter reporting
+- Added support for a filter-set ID in the address-filter hash list payload
