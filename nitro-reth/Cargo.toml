@@ -22,6 +22,7 @@ members = [
     "bin/arb-fixture-cli",
     "bin/arb-stylus-fixture-fill",
     "bin/arb-arbos-fixture-fill",
+    "bin/arb-retryables-fixture-fill",
     "xtask",
 ]
 exclude = ["brotli"]

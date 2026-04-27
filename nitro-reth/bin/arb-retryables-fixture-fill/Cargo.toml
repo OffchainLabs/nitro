@@ -1,0 +1,27 @@
+[package]
+name = "arb-retryables-fixture-fill"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Fill _TODO_ placeholders in retryable spec fixture l2Msg fields with real signed envelopes."
+
+[[bin]]
+name = "arb-retryables-fixture-fill"
+path = "src/main.rs"
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["std"] }
+arbos = { workspace = true }
+arb-spec-tests = { workspace = true }
+arb-test-harness = { workspace = true }
+
+anyhow = { workspace = true }
+base64 = "0.22"
+hex = { workspace = true }
+serde_json = { workspace = true }
+walkdir = "2"
+
+[lints]
+workspace = true

@@ -1365,6 +1365,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-retryables-fixture-fill"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "arb-spec-tests",
+ "arb-test-harness",
+ "arbos",
+ "base64 0.22.1",
+ "hex",
+ "serde_json",
+ "walkdir",
+]
+
+[[package]]
 name = "arb-rpc"
 version = "0.1.0"
 dependencies = [
