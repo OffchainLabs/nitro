@@ -48,6 +48,124 @@ pub struct ExecutionExpectations {
     pub storage: Vec<ExpectedStorage>,
     #[serde(default)]
     pub balances: Vec<ExpectedBalance>,
+    /// Per-transaction receipt assertions. Empty by default; legacy
+    /// fixtures continue to verify only block-level fields.
+    #[serde(default, rename = "txReceipts", skip_serializing_if = "Vec::is_empty")]
+    pub tx_receipts: Vec<ExpectedTxReceipt>,
+    /// Per-account state diff assertions (balance, nonce, code hash,
+    /// specific storage slots). Captured at `at_block`.
+    #[serde(default, rename = "stateDiffs", skip_serializing_if = "Vec::is_empty")]
+    pub state_diffs: Vec<ExpectedStateDiff>,
+    /// Top-level log assertions, used when a fixture wants to pin
+    /// emitted events without enumerating receipts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logs: Vec<ExpectedLog>,
+    /// Diff classes the author has marked as accepted (e.g. genesis
+    /// state root divergence between Nitro's geth fork and reth).
+    /// Only populated when running in `compare` mode.
+    #[serde(default, rename = "acceptedDiffs", skip_serializing_if = "Vec::is_empty")]
+    pub accepted_diffs: Vec<AcceptedDiff>,
+}
+
+/// Per-tx receipt assertion. Every field is optional so a fixture can
+/// pin only what it cares about (e.g. just `gas_used` for the redeem
+/// regression).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedTxReceipt {
+    #[serde(rename = "txHash")]
+    pub tx_hash: B256,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "blockNumber")]
+    pub block_number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "gasUsed")]
+    pub gas_used: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "cumulativeGasUsed"
+    )]
+    pub cumulative_gas_used: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "effectiveGasPrice"
+    )]
+    pub effective_gas_price: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "gasUsedForL1")]
+    pub gas_used_for_l1: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "l1BlockNumber")]
+    pub l1_block_number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "contractAddress")]
+    pub contract_address: Option<Address>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Address>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Address>,
+    /// Multi-gas dimensions (ArbOS v60+). Optional; only checked when
+    /// present.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "multiGas")]
+    pub multi_gas: Option<MultiGasDims>,
+    /// Logs emitted by this tx. When `Some`, asserts exact set in
+    /// order; topics + data must match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logs: Option<Vec<ExpectedLog>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiGasDims {
+    pub computation: u64,
+    pub history: u64,
+    pub storage: u64,
+    #[serde(rename = "stateGrowth")]
+    pub state_growth: u64,
+}
+
+/// Per-account state-diff assertion. All optional fields default to
+/// "don't check".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedStateDiff {
+    pub address: Address,
+    #[serde(default = "default_block_tag", rename = "atBlock")]
+    pub at_block: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance: Option<U256>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "codeHash")]
+    pub code_hash: Option<B256>,
+    /// Slots to read and pin. Each `(slot, expected_value)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub storage: Vec<StorageSlotExpectation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageSlotExpectation {
+    pub slot: B256,
+    pub value: U256,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedLog {
+    pub address: Address,
+    pub topics: Vec<B256>,
+    pub data: Bytes,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "blockNumber")]
+    pub block_number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "txHash")]
+    pub tx_hash: Option<B256>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "logIndex")]
+    pub log_index: Option<u64>,
+}
+
+/// An author-acknowledged divergence between Nitro reference and
+/// arbreth that should not fail `compare` mode. Used sparingly — the
+/// canonical example is the genesis state-root mismatch between
+/// Nitro's geth fork and standard reth.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptedDiff {
+    pub category: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
