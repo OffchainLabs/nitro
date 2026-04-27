@@ -44,9 +44,114 @@
     }
   ],
   "expected": {
-    "blocks": [],
-    "txReceipts": [],
-    "stateDiffs": [],
-    "logs": []
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0x9ee516c7ce682c35d761f75ad2e20df635d8d5b4baf0344817825c9d7b0b0f30",
+        "state_root": "0x6aed53c106d2dda254fa7394a4dc0be787fb39446a3bf1fb80a79f659c923bc1",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0x1a8fbd4ec94e3116edd6ecb02ba77a044c919cc7065f8f7ff24169a79bf6a497",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0x82fd24f2ca16bece3482a94835942dbe138baa3d94d498ca1c639bed12b9ddfb",
+        "state_root": "0xae9a6633a8a34b822834f555cc17ab96a6ca3b465ace9ce6ccf4cf000c380293",
+        "receipts_root": "0x31bb95000e40e9378196cc837ab5802552ed44ff122dfb0e587f1859508ae236",
+        "transactions_root": "0x3d618259676aa635c3c83f2e95438a57f0cad4d6961f19bf68b3e4609b701eec",
+        "gas_used": 3021064
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
+    "txReceipts": [
+      {
+        "txHash": "0xfd8eaa5109af61f71c0dfcc202bfc56e87e12455a2fbf85a41ac0b6e45d53615",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x5ae47a8fabab7bb3540d0683e65097b5c70dd2c99248324d0dfebba5af253831",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x000000000000000000000000000000000000a4b1",
+        "to": "0x10a1511590b33fbcede3bf0606140f7dfae9f016"
+      },
+      {
+        "txHash": "0xed86a4705f894ce31bec86b77464db8d900fb16439f9c5e3ccb940035f10d87f",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x6bd4e8a68d2906e1c728d60552ab602af268f7e4b9356e56e80512d5fcdab5e3",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 3000000,
+        "cumulativeGasUsed": 3000000,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x000000000000000000000000000000000000aaaa",
+        "to": "0x000000000000000000000000000000000000006e",
+        "logs": [
+          {
+            "address": "0x000000000000000000000000000000000000006e",
+            "topics": [
+              "0x7c793cced5743dc5f531bbe2bfb5a9fa3f40adef29231e6ab165c08a29e3dd89",
+              "0x6bd4e8a68d2906e1c728d60552ab602af268f7e4b9356e56e80512d5fcdab5e3"
+            ],
+            "data": "0x",
+            "blockNumber": 2,
+            "txHash": "0x6bd4e8a68d2906e1c728d60552ab602af268f7e4b9356e56e80512d5fcdab5e3",
+            "logIndex": 0
+          },
+          {
+            "address": "0x000000000000000000000000000000000000006e",
+            "topics": [
+              "0x5ccd009502509cf28762c67858994d85b163bb6e451f5e9df7c5e18c9c2e123e",
+              "0x6bd4e8a68d2906e1c728d60552ab602af268f7e4b9356e56e80512d5fcdab5e3",
+              "0xa342f86c994d6df64f876c0160d57dd91a16c192435288c3c3415ce1fdfc8c75",
+              "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ],
+            "data": "0x00000000000000000000000000000000000000000000000000000000002dc6c000000000000000000000000010a1511590b33fbcede3bf0606140f7dfae9f01600000000000000000000000000000000000000000000000000a47d2662c738000000000000000000000000000000000000000000000000000000000000000000",
+            "blockNumber": 2,
+            "txHash": "0x6bd4e8a68d2906e1c728d60552ab602af268f7e4b9356e56e80512d5fcdab5e3",
+            "logIndex": 1
+          }
+        ]
+      },
+      {
+        "txHash": "0xa342f86c994d6df64f876c0160d57dd91a16c192435288c3c3415ce1fdfc8c75",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 21064,
+        "cumulativeGasUsed": 3021064,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x000000000000000000000000000000000000aaaa",
+        "to": "0x000000000000000000000000000000000000dead"
+      }
+    ]
   }
 }
