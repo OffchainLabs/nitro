@@ -25,6 +25,10 @@ func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient) *node.Node {
 	if err := stack.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { stack.Close() })
+	t.Cleanup(func() {
+		if err := stack.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return stack
 }
