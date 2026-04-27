@@ -12,7 +12,14 @@ use std::{
 use alloy_primitives::{Address, Bytes, B256, U256};
 use serde::{Deserialize, Serialize};
 
-use crate::case::SpecError;
+use arb_test_harness::{
+    capture::capture_from_node,
+    dual_exec::DualExec,
+    node::remote::RemoteNode,
+    scenario::{Scenario, ScenarioSetup, ScenarioStep},
+};
+
+use crate::{case::SpecError, mode::FixtureMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionFixture {
@@ -48,28 +55,16 @@ pub struct ExecutionExpectations {
     pub storage: Vec<ExpectedStorage>,
     #[serde(default)]
     pub balances: Vec<ExpectedBalance>,
-    /// Per-transaction receipt assertions. Empty by default; legacy
-    /// fixtures continue to verify only block-level fields.
     #[serde(default, rename = "txReceipts", skip_serializing_if = "Vec::is_empty")]
     pub tx_receipts: Vec<ExpectedTxReceipt>,
-    /// Per-account state diff assertions (balance, nonce, code hash,
-    /// specific storage slots). Captured at `at_block`.
     #[serde(default, rename = "stateDiffs", skip_serializing_if = "Vec::is_empty")]
     pub state_diffs: Vec<ExpectedStateDiff>,
-    /// Top-level log assertions, used when a fixture wants to pin
-    /// emitted events without enumerating receipts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logs: Vec<ExpectedLog>,
-    /// Diff classes the author has marked as accepted (e.g. genesis
-    /// state root divergence between Nitro's geth fork and reth).
-    /// Only populated when running in `compare` mode.
     #[serde(default, rename = "acceptedDiffs", skip_serializing_if = "Vec::is_empty")]
     pub accepted_diffs: Vec<AcceptedDiff>,
 }
 
-/// Per-tx receipt assertion. Every field is optional so a fixture can
-/// pin only what it cares about (e.g. just `gas_used` for the redeem
-/// regression).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedTxReceipt {
     #[serde(rename = "txHash")]
@@ -102,12 +97,8 @@ pub struct ExpectedTxReceipt {
     pub from: Option<Address>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<Address>,
-    /// Multi-gas dimensions (ArbOS v60+). Optional; only checked when
-    /// present.
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "multiGas")]
     pub multi_gas: Option<MultiGasDims>,
-    /// Logs emitted by this tx. When `Some`, asserts exact set in
-    /// order; topics + data must match.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logs: Option<Vec<ExpectedLog>>,
 }
@@ -121,8 +112,6 @@ pub struct MultiGasDims {
     pub state_growth: u64,
 }
 
-/// Per-account state-diff assertion. All optional fields default to
-/// "don't check".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedStateDiff {
     pub address: Address,
@@ -134,7 +123,6 @@ pub struct ExpectedStateDiff {
     pub nonce: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "codeHash")]
     pub code_hash: Option<B256>,
-    /// Slots to read and pin. Each `(slot, expected_value)`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub storage: Vec<StorageSlotExpectation>,
 }
@@ -158,10 +146,6 @@ pub struct ExpectedLog {
     pub log_index: Option<u64>,
 }
 
-/// An author-acknowledged divergence between Nitro reference and
-/// arbreth that should not fail `compare` mode. Used sparingly — the
-/// canonical example is the genesis state-root mismatch between
-/// Nitro's geth fork and standard reth.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcceptedDiff {
     pub category: String,
@@ -255,6 +239,134 @@ impl ExecutionFixture {
             verify_balance(&client, exp)?;
         }
         Ok(())
+    }
+
+    pub fn run_with_mode(
+        &mut self,
+        mode: FixtureMode,
+        rpc_url: &str,
+        nitro_rpc_url: Option<&str>,
+    ) -> Result<(), SpecError> {
+        match mode {
+            FixtureMode::Verify => self.run(rpc_url),
+            FixtureMode::Record => self.record_against_nitro(nitro_rpc_url),
+            FixtureMode::Compare => self.compare(rpc_url, nitro_rpc_url),
+        }
+    }
+
+    pub fn record_against_nitro(
+        &mut self,
+        nitro_rpc_url: Option<&str>,
+    ) -> Result<(), SpecError> {
+        let url = nitro_rpc_url.ok_or_else(|| {
+            SpecError::Action(
+                "record mode requires ARB_SPEC_NITRO_RPC_URL or explicit nitro_rpc_url".into(),
+            )
+        })?;
+
+        let mut node = RemoteNode::nitro(url);
+        let scenario = self.to_scenario()?;
+        let captured = capture_from_node(&mut node, &scenario)
+            .map_err(|e| SpecError::Action(format!("capture: {e}")))?;
+
+        let parsed: ExecutionExpectations = serde_json::from_value(captured.expected_json.clone())
+            .map_err(|e| SpecError::Action(format!("decode captured expectations: {e}")))?;
+        self.expected = parsed;
+
+        if let Ok(out_path) = std::env::var("ARB_SPEC_RECORD_OUT") {
+            let body = serde_json::to_vec_pretty(self)
+                .map_err(|e| SpecError::Action(format!("encode fixture: {e}")))?;
+            std::fs::write(&out_path, body)
+                .map_err(|e| SpecError::Action(format!("write {out_path}: {e}")))?;
+        }
+        Ok(())
+    }
+
+    pub fn compare(
+        &mut self,
+        rpc_url: &str,
+        nitro_rpc_url: Option<&str>,
+    ) -> Result<(), SpecError> {
+        let nitro_url = nitro_rpc_url.ok_or_else(|| {
+            SpecError::Action(
+                "compare mode requires ARB_SPEC_NITRO_RPC_URL or explicit nitro_rpc_url".into(),
+            )
+        })?;
+
+        let left = RemoteNode::nitro(nitro_url);
+        let right = RemoteNode::arbreth(rpc_url);
+        let mut dual = DualExec::new(left, right);
+        let scenario = self.to_scenario()?;
+        let report = dual
+            .run(&scenario)
+            .map_err(|e| SpecError::Action(format!("dual_exec: {e}")))?;
+
+        let filtered = filter_accepted(&report, &self.expected.accepted_diffs);
+        if !filtered.is_clean() {
+            return Err(SpecError::Assertion(format!(
+                "compare mode: diffs after filtering accepted: {} block, {} tx, {} state, {} log",
+                filtered.block_diffs.len(),
+                filtered.tx_diffs.len(),
+                filtered.state_diffs.len(),
+                filtered.log_diffs.len(),
+            )));
+        }
+        Ok(())
+    }
+
+    fn to_scenario(&self) -> Result<Scenario, SpecError> {
+        let mut steps: Vec<ScenarioStep> = Vec::with_capacity(self.messages.len());
+        let mut next_idx = 1u64;
+        for (i, msg) in self.messages.iter().enumerate() {
+            let idx = msg.msg_idx.unwrap_or(next_idx);
+            let parsed: arb_test_harness::L1Message =
+                serde_json::from_value(msg.message.clone()).map_err(|e| {
+                    SpecError::Action(format!(
+                        "message {i} (idx {idx}): decode L1Message: {e}"
+                    ))
+                })?;
+            steps.push(ScenarioStep::Message {
+                idx,
+                message: parsed,
+                delayed_messages_read: msg.delayed_messages_read,
+            });
+            next_idx = idx + 1;
+        }
+        Ok(Scenario {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            setup: ScenarioSetup::default(),
+            steps,
+        })
+    }
+}
+
+fn filter_accepted(
+    report: &arb_test_harness::DiffReport,
+    accepted: &[AcceptedDiff],
+) -> arb_test_harness::DiffReport {
+    let cats: std::collections::HashSet<&str> =
+        accepted.iter().map(|a| a.category.as_str()).collect();
+    arb_test_harness::DiffReport {
+        block_diffs: report
+            .block_diffs
+            .iter()
+            .filter(|d| !cats.contains(d.field.as_str()))
+            .cloned()
+            .collect(),
+        tx_diffs: report
+            .tx_diffs
+            .iter()
+            .filter(|d| !cats.contains(d.field.as_str()))
+            .cloned()
+            .collect(),
+        state_diffs: report.state_diffs.clone(),
+        log_diffs: report
+            .log_diffs
+            .iter()
+            .filter(|d| !cats.contains(d.field.as_str()))
+            .cloned()
+            .collect(),
     }
 }
 
