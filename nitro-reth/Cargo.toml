@@ -21,6 +21,7 @@ members = [
     "bin/gen-genesis",
     "bin/arb-fixture-cli",
     "bin/arb-stylus-fixture-fill",
+    "bin/arb-arbos-fixture-fill",
     "xtask",
 ]
 exclude = ["brotli"]
@@ -181,6 +182,7 @@ jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"
 jsonrpsee-http-client = "0.26.0"
 dyn-clone = "1"
+brotli = { version = "8", default-features = false, features = ["std"] }
 wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "6b15433d83f951555c24f0c56dc05e4751b0cc76", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
 

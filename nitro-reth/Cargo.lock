@@ -1030,6 +1030,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-arbos-fixture-fill"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "arb-spec-tests",
+ "arb-test-harness",
+ "arbos",
+ "base64 0.22.1",
+ "brotli 8.0.2",
+ "hex",
+ "serde_json",
+ "walkdir",
+]
+
+[[package]]
 name = "arb-bench"
 version = "0.1.0"
 dependencies = [
@@ -1460,13 +1476,19 @@ dependencies = [
 name = "arb-stylus-fixture-fill"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-sol-types",
  "anyhow",
  "arb-spec-tests",
  "arb-test-harness",
  "arbos",
  "base64 0.22.1",
+ "brotli 8.0.2",
+ "hex",
+ "k256",
  "serde_json",
  "walkdir",
  "wat",
@@ -1486,6 +1508,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "hex",
+ "k256",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

@@ -1,14 +1,9 @@
-//! Inline WAT sources for fixture programs that don't have a dedicated file
-//! under `_wat/`.
+//! Inline WAT sources and helper EVM bytecode used by stylus scenarios.
 
 /// A small Stylus program that exposes a `multicall` style entrypoint:
 /// the calldata's first byte selects the operation (0 = call, 1 = delegate,
 /// 2 = static, 3 = create1, 4 = create2). The remainder is forwarded as the
-/// call payload. The contract returns 4 status bytes (op + 3 zero pad).
-///
-/// Body intentionally minimal — fixture-runner asserts gas + side effects,
-/// not return-data shape. This program is what backs every
-/// `multicall` / `reentrant_multicall` deploy in the subcall fixtures.
+/// call payload.
 pub fn multicall_wat() -> &'static str {
     r#"(module
     (import "vm_hooks" "read_args"     (func $read_args     (param i32)))
@@ -37,8 +32,7 @@ pub fn multicall_wat() -> &'static str {
 }
 
 /// A factory program that takes calldata = `[op:u8, salt(0x20)?, value(0x20),
-/// init_code(rest)]` and dispatches into create1 / create2. Returns 20 bytes
-/// of the deployed address.
+/// init_code(rest)]` and dispatches into create1 / create2.
 pub fn create_factory_wat() -> &'static str {
     r#"(module
     (import "vm_hooks" "read_args"    (func $read_args    (param i32)))
@@ -88,9 +82,42 @@ pub fn distinct_keccak_program(suffix: &str) -> String {
 }
 
 /// Build a `(data ...)` segment whose payload is `target_size` bytes of fill.
-/// We attach this to a base WAT to make the compiled WASM exceed a threshold
-/// without disturbing the program logic.
 pub fn oversize_data_segment(target_size: usize) -> String {
     let payload: String = "\\01".repeat(target_size);
     format!("\n  (data (i32.const 0x4000) \"{payload}\")\n")
+}
+
+/// Minimal EVM runtime bytecode that performs CALL into the address stored in
+/// the first 32 bytes of its calldata, forwarding the rest.
+pub fn evm_proxy_call_runtime() -> Vec<u8> {
+    vec![
+        0x60, 0x00, // PUSH1 0   (ret_size)
+        0x60, 0x00, // PUSH1 0   (ret_offset)
+        0x60, 0x00, // PUSH1 0   (arg_size)
+        0x60, 0x00, // PUSH1 0   (arg_offset)
+        0x60, 0x00, // PUSH1 0   (value)
+        0x30, // ADDRESS
+        0x5A, // GAS
+        0xF1, // CALL
+        0x50, // POP
+        0x60, 0x00, // PUSH1 0
+        0x60, 0x00, // PUSH1 0
+        0xF3, // RETURN
+    ]
+}
+
+pub fn evm_proxy_delegatecall_runtime() -> Vec<u8> {
+    vec![
+        0x60, 0x00, // PUSH1 0
+        0x60, 0x00, // PUSH1 0
+        0x60, 0x00, // PUSH1 0
+        0x60, 0x00, // PUSH1 0
+        0x30, // ADDRESS
+        0x5A, // GAS
+        0xF4, // DELEGATECALL
+        0x50, // POP
+        0x60, 0x00, // PUSH1 0
+        0x60, 0x00, // PUSH1 0
+        0xF3, // RETURN
+    ]
 }
