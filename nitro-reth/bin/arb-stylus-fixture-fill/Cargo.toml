@@ -1,0 +1,27 @@
+[package]
+name = "arb-stylus-fixture-fill"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Replace _TODO_ placeholders in stylus fixture JSON files with real signed L2 messages."
+
+[[bin]]
+name = "arb-stylus-fixture-fill"
+path = "src/main.rs"
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-sol-types = { workspace = true }
+arbos = { workspace = true }
+arb-spec-tests = { workspace = true }
+arb-test-harness = { workspace = true }
+
+base64 = "0.22"
+serde_json = { workspace = true }
+walkdir = "2"
+wat = "1"
+anyhow = "1"
+
+[lints]
+workspace = true

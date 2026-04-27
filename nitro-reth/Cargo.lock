@@ -1457,6 +1457,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-stylus-fixture-fill"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
+ "anyhow",
+ "arb-spec-tests",
+ "arb-test-harness",
+ "arbos",
+ "base64 0.22.1",
+ "serde_json",
+ "walkdir",
+ "wat",
+]
+
+[[package]]
 name = "arb-test-harness"
 version = "0.1.0"
 dependencies = [
