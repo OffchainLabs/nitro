@@ -1,10 +1,3 @@
-//! Abstraction over an Arbitrum execution node (arbreth or Nitro reference).
-//!
-//! Every implementation exposes the same RPC surface used by the spec-test
-//! runner, the differential fuzzer, and the operator CLI. State-altering
-//! interactions go through [`ExecutionNode::submit_message`]; everything
-//! else is a read.
-
 use std::collections::BTreeMap;
 
 use alloy_primitives::{Address, Bytes, B256, U256};
@@ -18,8 +11,8 @@ pub mod remote;
 #[cfg(feature = "docker")]
 pub mod nitro_docker;
 
-/// Block identifier used in RPC reads. Matches Ethereum's block-tag set
-/// plus a numeric form. Always serialized as a string.
+pub(crate) mod common;
+
 #[derive(Debug, Clone)]
 pub enum BlockId {
     Number(u64),
@@ -43,9 +36,6 @@ impl BlockId {
     }
 }
 
-/// Which implementation we're talking to. Used for diagnostics and for
-/// behavior that's deliberately permitted to differ (e.g. genesis
-/// state-root divergence is expected between Nitro's geth fork and reth).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
     Arbreth,
@@ -53,32 +43,19 @@ pub enum NodeKind {
     NitroDocker,
 }
 
-/// Inputs needed to start a node. Implementations decide what to do
-/// with them (subprocess flags, container env, etc.).
 #[derive(Debug, Clone)]
 pub struct NodeStartCtx {
-    /// Path to the binary. Only used for subprocess backends.
     pub binary: Option<String>,
-    /// L2 chain id (must agree on both sides of a dual-exec).
     pub l2_chain_id: u64,
-    /// L1 chain id served by [`crate::mock_l1::MockL1`].
     pub l1_chain_id: u64,
-    /// Mock L1 RPC URL.
     pub mock_l1_rpc: String,
-    /// Genesis chain spec JSON (already produced by
-    /// [`crate::genesis::GenesisBuilder`]).
     pub genesis: serde_json::Value,
-    /// JWT secret for authenticated RPC.
     pub jwt_hex: String,
-    /// Working directory for the node (datadir, ipc, logs).
     pub workdir: std::path::PathBuf,
-    /// Bind addresses; impls assign free ports if zero.
     pub http_port: u16,
     pub authrpc_port: u16,
 }
 
-/// Per-tx Arbitrum-specific receipt fields not present on
-/// [`alloy_primitives`]'s standard receipt.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ArbReceiptFields {
     #[serde(default)]
@@ -97,7 +74,6 @@ pub struct MultiGasDims {
     pub state_growth: u64,
 }
 
-/// Generic block view used by readers. Concrete impls populate from RPC.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Block {
     pub number: u64,
@@ -109,16 +85,10 @@ pub struct Block {
     pub gas_used: u64,
     pub gas_limit: u64,
     pub timestamp: u64,
-    /// Hashes of transactions included in this block, in canonical
-    /// order. Populated when the block is fetched with the `false`
-    /// `eth_getBlockByNumber` flag (hash-only) — every standard JSON-RPC
-    /// response includes this list.
     #[serde(default)]
     pub tx_hashes: Vec<B256>,
 }
 
-/// Subset of standard tx receipt fields exposed via the trait. Logs
-/// captured separately because they are commonly diffed independently.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TxReceipt {
     pub tx_hash: B256,
@@ -143,7 +113,6 @@ pub struct EvmLog {
     pub tx_hash: B256,
 }
 
-/// Minimal eth_call request shape.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TxRequest {
     pub to: Option<Address>,
@@ -153,15 +122,11 @@ pub struct TxRequest {
     pub gas: Option<u64>,
 }
 
-/// Common interface implemented by every node backend. All methods are
-/// blocking (sync). Backends own their RPC client, process handle, and
-/// any spawned threads.
 pub trait ExecutionNode: Send {
     fn kind(&self) -> NodeKind;
 
     fn rpc_url(&self) -> &str;
 
-    /// Submit an L1 message via `nitroexecution_digestMessage`.
     fn submit_message(
         &mut self,
         idx: u64,
@@ -191,8 +156,5 @@ pub trait ExecutionNode: Send {
         at: BlockId,
     ) -> Result<BTreeMap<B256, B256>>;
 
-    /// Graceful shutdown. Implementations are also expected to clean up
-    /// in `Drop`, but explicit shutdown gives the test driver a chance
-    /// to surface errors.
     fn shutdown(self: Box<Self>) -> Result<()>;
 }
