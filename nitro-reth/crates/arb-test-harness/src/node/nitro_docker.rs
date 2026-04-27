@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     process::{Command, Stdio},
-    sync::atomic::AtomicU16,
     time::{Duration, Instant},
 };
 
@@ -13,8 +12,7 @@ use crate::{
     messaging::L1Message,
     node::{
         common::{
-            arb_receipt_fields, block_from_json, free_tcp_port, receipt_from_json, tail,
-            tx_request_to_json,
+            arb_receipt_fields, block_from_json, receipt_from_json, tail, tx_request_to_json,
         },
         ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
         TxRequest,
@@ -26,8 +24,6 @@ use crate::{
 const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.2-746bda2";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
-static NEXT_PORT: AtomicU16 = AtomicU16::new(28547);
-
 pub struct NitroDocker {
     rpc_url: String,
     rpc: JsonRpcClient,
@@ -38,8 +34,11 @@ impl NitroDocker {
     pub fn start(ctx: &NodeStartCtx) -> Result<Self> {
         let image =
             std::env::var("NITRO_REF_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
-        let host_port = free_tcp_port(&NEXT_PORT)?;
-        let name = format!("arb-harness-nitro-{}-{}", std::process::id(), host_port);
+        let name = format!(
+            "arb-harness-nitro-{}-{}",
+            std::process::id(),
+            CONTAINER_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        );
 
         let _ = Command::new("docker")
             .args(["rm", "-f", &name])
@@ -49,6 +48,8 @@ impl NitroDocker {
 
         let parent_chain_url = ctx.mock_l1_rpc.replace("127.0.0.1", "host.docker.internal");
 
+        let chain_info_json = render_chain_info_json(ctx);
+
         let mut cmd = Command::new("docker");
         cmd.args([
             "run",
@@ -56,7 +57,7 @@ impl NitroDocker {
             "--name",
             &name,
             "-p",
-            &format!("{host_port}:8547"),
+            "127.0.0.1::8547",
             "--user",
             "root",
             "--entrypoint",
@@ -83,6 +84,7 @@ impl NitroDocker {
             "--log-level=WARN",
         ]);
         cmd.arg(format!("--chain.id={}", ctx.l2_chain_id));
+        cmd.arg(format!("--chain.info-json={chain_info_json}"));
         cmd.arg(format!("--parent-chain.connection.url={parent_chain_url}"));
         cmd.arg(format!(
             "--parent-chain.blob-client.beacon-url={parent_chain_url}"
@@ -99,6 +101,7 @@ impl NitroDocker {
         }
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
+        let host_port = resolve_published_port(&name)?;
         let rpc_url = format!("http://127.0.0.1:{host_port}");
         let rpc = JsonRpcClient::new(rpc_url.clone()).with_timeout(Duration::from_secs(60));
 
@@ -137,6 +140,57 @@ impl Drop for NitroDocker {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+static CONTAINER_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn resolve_published_port(container_name: &str) -> Result<u16> {
+    let out = Command::new("docker")
+        .args(["port", container_name, "8547"])
+        .output()
+        .map_err(|e| HarnessError::Rpc(format!("docker port: {e}")))?;
+    if !out.status.success() {
+        return Err(HarnessError::Rpc(format!(
+            "docker port {container_name} 8547 failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        )));
+    }
+    let mapping = String::from_utf8_lossy(&out.stdout);
+    for line in mapping.lines() {
+        if let Some((_, port)) = line.rsplit_once(':') {
+            if let Ok(p) = port.trim().parse::<u16>() {
+                return Ok(p);
+            }
+        }
+    }
+    Err(HarnessError::Rpc(format!(
+        "could not resolve published port from: {mapping}"
+    )))
+}
+
+fn render_chain_info_json(ctx: &NodeStartCtx) -> String {
+    let chain_config = ctx
+        .genesis
+        .get("config")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"chainId": ctx.l2_chain_id}));
+    let entry = serde_json::json!([{
+        "chain-name": format!("arbreth-test-{}", ctx.l2_chain_id),
+        "parent-chain-id": ctx.l1_chain_id,
+        "parent-chain-is-arbitrum": false,
+        "has-genesis-state": false,
+        "chain-config": chain_config,
+        "rollup": {
+            "bridge": "0x0000000000000000000000000000000000000000",
+            "inbox": "0x0000000000000000000000000000000000000000",
+            "rollup": "0x0000000000000000000000000000000000000000",
+            "sequencer-inbox": "0x0000000000000000000000000000000000000000",
+            "validator-utils": "0x0000000000000000000000000000000000000000",
+            "validator-wallet-creator": "0x0000000000000000000000000000000000000000",
+            "deployed-at": 0,
+        },
+    }]);
+    serde_json::to_string(&entry).unwrap_or_default()
 }
 
 impl ExecutionNode for NitroDocker {
