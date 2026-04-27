@@ -197,7 +197,10 @@ func TestForwarder_DeleteError(t *testing.T) {
 	forwarder := NewTestForwarder(t, queueClient, endpoint.URL())
 	interval := forwarder.pollAndForward(t.Context())
 
-	endpoint.NextReport(t)
+	received := endpoint.NextReport(t)
+	if received.TxHash != reports[0].TxHash {
+		t.Fatalf("expected tx hash %v, got %v", reports[0].TxHash, received.TxHash)
+	}
 	deleted := queueClient.DeletedReceiptHandles()
 	if len(deleted) != 0 {
 		t.Fatalf("expected 0 deletes on delete error, got %d", len(deleted))
