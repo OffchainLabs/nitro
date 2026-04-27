@@ -40,3 +40,7 @@ stylus-wat = ["dep:wat"]
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+alloy-consensus = { workspace = true, features = ["std"] }
+alloy-eips = { workspace = true, features = ["std"] }
