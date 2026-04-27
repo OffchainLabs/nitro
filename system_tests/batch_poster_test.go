@@ -754,9 +754,9 @@ drain:
 	for _, bptx := range batchPosterTxs {
 		err := builder.L1.Client.SendTransaction(ctx, bptx)
 		if err != nil {
-			if strings.Contains(err.Error(), "nonce too low") {
+			if strings.Contains(err.Error(), "nonce too low") || strings.Contains(err.Error(), "already known") {
 				skipped++
-				t.Logf("Skipping batch poster tx with stale nonce: %v", err)
+				t.Logf("Skipping batch poster tx: %v", err)
 				continue
 			}
 			Require(t, err)
