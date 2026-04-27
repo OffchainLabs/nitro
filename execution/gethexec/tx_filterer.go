@@ -28,7 +28,7 @@ func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transactio
 	touchAddresses(statedb, tx, sender)
 }
 
-func (f *txFilterer) CheckFiltered(statedb *state.StateDB) error {
+func (f *txFilterer) ApplyEventsAndCheckFiltered(statedb *state.StateDB) error {
 	applyEventFilter(f.eventFilter, statedb)
 	if filtered, _ := statedb.IsAddressFiltered(); filtered {
 		return state.ErrArbTxFilter
