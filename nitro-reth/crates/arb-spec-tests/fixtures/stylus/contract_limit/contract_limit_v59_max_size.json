@@ -39,6 +39,7 @@
   },
   "messages": [
     {
+      "msgIdx": null,
       "message": {
         "header": {
           "kind": 12,
@@ -53,6 +54,7 @@
       "delayedMessagesRead": 1
     },
     {
+      "msgIdx": null,
       "message": {
         "header": {
           "kind": 12,
@@ -67,6 +69,7 @@
       "delayedMessagesRead": 1
     },
     {
+      "msgIdx": null,
       "message": {
         "header": {
           "kind": 3,
@@ -82,9 +85,96 @@
     }
   ],
   "expected": {
-    "blocks": [],
-    "txReceipts": [],
-    "stateDiffs": [],
-    "logs": []
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0xd757bbdd9a122ca49868f43fe7c3e7b3394cda1d6c2166271522ba7f7b797434",
+        "state_root": "0x44bf6038ded3192e92503dba622cff2036169527d2826a1919b2f64042437fcc",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0x2e65db18c7847ffe3d5262b6d7e04baf7467d56e21b22e151e6cfb60ef1a95f8",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0xc1138483a4bafb1e44b0562525755bae8ff1c20dcbacab71a2d4dd7c7ad89ca6",
+        "state_root": "0xa0fce20a38d6277110f9d5f14bd0a2e69de0fa9381d5845feca716f7728c7afb",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0x65456d59b5e56428e513e2bd93545ef39d73458250d7c3ec765dade3744976f3",
+        "gas_used": 0
+      },
+      {
+        "number": 3,
+        "block_hash": "0x4539df3237395276cc51a7a353596d7b9e2fb6877a8deb01045f717ddbb1994a",
+        "state_root": "0x406675beb49d7738e9066227b4cf7b4501cafd2b738ef021bea0a6abbe3c590c",
+        "receipts_root": "0x98a7630c1f81c0fb18242e7a1b0d4996641373f64141c70e2ff8fb4dc8b260df",
+        "transactions_root": "0x4784e9288cc01fc8e3170c68e08b84be7b76884964ec801700da75629b345f18",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
+    "txReceipts": [
+      {
+        "txHash": "0xdaa6ab079c285eeb92efd724961ca2f5007fca5785a9616dfa32f6ac9a50944c",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x4e3759d8f431ea93d461a52094b0893965ce64abdb8c3c83faabdfb643526f46",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+        "to": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c"
+      },
+      {
+        "txHash": "0x8284a6f4a5baf3d2fb56a150202e8878dcaab3aec0bedafbb23ef3e35002a763",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0xf8f5669f483656c2ae5ba61b61c26335240ace2465fbb3fbe809d47a06a18fb0",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+        "to": "0xcd5fe7820f6d69ad4fde67de05b4791afd1bd27c"
+      },
+      {
+        "txHash": "0xdb59f3fb97e07c6f9499c475def87b26e20bb65c962a9a36505324d2108f19ba",
+        "blockNumber": 3,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      }
+    ]
   }
 }

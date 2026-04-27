@@ -13,6 +13,7 @@
   },
   "messages": [
     {
+      "msgIdx": null,
       "message": {
         "header": {
           "kind": 12,
@@ -28,9 +29,18 @@
     }
   ],
   "expected": {
-    "blocks": [],
-    "txReceipts": [],
-    "stateDiffs": [],
-    "logs": []
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0xb7ebcc790bc2fea74a9d574ef3e1b5ccd9662c285a5cba7dd912d89c741af244",
+        "state_root": "0x86fe13ba35951c6a4ba5aa2b382748b2745b9edb695891de836273c906b4206c",
+        "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": []
   }
 }

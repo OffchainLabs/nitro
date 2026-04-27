@@ -14,6 +14,7 @@
   },
   "messages": [
     {
+      "msgIdx": null,
       "message": {
         "header": {
           "kind": 12,
@@ -28,6 +29,7 @@
       "delayedMessagesRead": 1
     },
     {
+      "msgIdx": null,
       "message": {
         "header": {
           "kind": 3,
@@ -43,9 +45,26 @@
     }
   ],
   "expected": {
-    "blocks": [],
-    "txReceipts": [],
-    "stateDiffs": [],
-    "logs": []
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0x080f75743529ae90f7a870ef330e4f45f2c0ef0970b5f29b3d81fe11abb487dc",
+        "state_root": "0xf0014c4a7ab2d11066a66c3cf6d911eef45a10d52b5051811c0106f7a0ec0373",
+        "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0xd09527f453328070087eb974488fb0dd92d4961a894efc893f6b5e63eb99a5c9",
+        "state_root": "0xf0014c4a7ab2d11066a66c3cf6d911eef45a10d52b5051811c0106f7a0ec0373",
+        "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": []
   }
 }

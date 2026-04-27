@@ -21,3 +21,16 @@ spec_dir!(version_transitions, "version_transitions");
 fn execution() {
     run_execution_dir(&fixtures_root().join("execution"));
 }
+
+#[test]
+fn arbos_gates() {
+    run_execution_dir(&fixtures_root().join("arbos"));
+}
+
+#[test]
+fn stylus() {
+    let stylus_root = fixtures_root().join("stylus");
+    for sub in ["hostio", "subcall", "cache", "contract_limit"] {
+        run_execution_dir(&stylus_root.join(sub));
+    }
+}

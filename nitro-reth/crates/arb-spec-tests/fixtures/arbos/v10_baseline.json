@@ -13,9 +13,18 @@
   },
   "messages": [],
   "expected": {
-    "blocks": [],
-    "txReceipts": [],
-    "stateDiffs": [],
-    "logs": []
+    "blocks": [
+      {
+        "number": 0,
+        "block_hash": "0xe2c15656c5f837b67b9f53f86ff8841f78727eb0c38013c961af2d13c16ef259",
+        "state_root": "0x3608a6250aec02cf5b1118a150b089e98bf4c9317b0abd65f67c8038a7e21a4a",
+        "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "transactions_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": []
   }
 }
