@@ -93,7 +93,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		networkFeeAccount:               backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
 		l1PricingState:                  l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace), arbosVersion),
 		l2PricingState:                  l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace), arbosVersion),
-		retryableState:                  retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
+		retryableState:                  retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB, arbosVersion),
 		addressTable:                    addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		chainOwners:                     addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		nativeTokenOwners:               addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
@@ -520,6 +520,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		state.programs.ArbosVersion = nextArbosVersion
 		state.l1PricingState.ArbosVersion = nextArbosVersion
 		state.l2PricingState.ArbosVersion = nextArbosVersion
+		state.retryableState.ArbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= params.ArbosVersion_6 {

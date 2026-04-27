@@ -1587,7 +1587,11 @@ func TestProgramNestedStylusCumulativeFootprintNodeLevelNative(t *testing.T) {
 // the sequencer rejects it with ErrArbTxFilter before inclusion.
 func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool) {
 	const pageLimit uint16 = 128
+	// The consensus cumulative-pages cap (ArbOS >= 59) would
+	// OOG at CallProgram entry WITHOUT calling FilterTx and pre-empt the
+	// node-level MaxOpenPages path this test is designed to exercise.
 	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_51)
 		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
 	})
 	ctx := builder.ctx
@@ -3257,7 +3261,12 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 }
 
 func TestProgramMemoryFillOverflow(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	// Pre-Stylus-v3 (ArbOS < 59) emits the buggy memory.fill that traps on
+	// values exceeding 8 bits; that trap is what invokes FilterTx. Stylus v3+
+	// masks the value and never traps, so this test must run at ArbOS 51.
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.WithArbOSVersion(params.ArbosVersion_51)
+	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client

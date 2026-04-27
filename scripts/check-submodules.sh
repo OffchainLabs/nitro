@@ -60,11 +60,6 @@ if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
   echo "ERROR: git config read failed (rc=$rc) while scanning insteadOf rules" >&2
   exit 1
 fi
-if ! printf '%s\n' "$rewrites" | awk '$2 ~ /^https?:\/\/github\.com\/?$/' | grep -q .; then
-  echo "WARNING: no https://github.com/ -> SSH rewrite found in git config." >&2
-  echo "WARNING: submodule fetches may prompt for HTTPS credentials. Consider:" >&2
-  echo "  git config --global url.git@github.com:.insteadOf https://github.com/" >&2
-fi
 
 is_private_fork=0
 # rc=2 is "no such remote" (expected on fresh clones). Anything else is a
@@ -91,6 +86,17 @@ fi
 # explicit default matches the lib's own initial assignment.
 prefers_ssh=0
 detect_prefers_ssh
+
+# Gated on prefers_ssh=0: an origin-SSH clone or a PREFER_SSH=1 override
+# is a legitimate signal on its own, so nagging about a missing global
+# HTTPS→SSH insteadOf rule there would be actively misleading.
+if [ "$prefers_ssh" = "0" ] \
+  && ! printf '%s\n' "$rewrites" | awk '$2 ~ /^https?:\/\/github\.com\/?$/' | grep -q .; then
+  echo "WARNING: no https://github.com/ -> SSH rewrite found in git config." >&2
+  echo "WARNING: submodule fetches may prompt for HTTPS credentials. Consider:" >&2
+  echo "  git config --global url.git@github.com:.insteadOf https://github.com/" >&2
+  echo "  (or re-clone with SSH / set PREFER_SSH=1)" >&2
+fi
 
 # has_value <values-string-with-newlines> <expected>
 # Returns 0 if any line of <values-string> equals <expected>. Used by the

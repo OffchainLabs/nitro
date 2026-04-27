@@ -24,7 +24,7 @@ const InitialPageGas = 1000           // linear cost per allocation.
 const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term.
 const initialPageLimit = 128          // reject wasms with memories larger than 8MB.
 const initialInkPrice = 10000         // 1 evm gas buys 10k ink.
-const initialMaxFragmentCount = 2
+const initialMaxFragmentCount = 4
 const initialMinInitGas = 72       // charge 72 * 128 = 9216 gas.
 const initialMinCachedGas = 11     // charge 11 *  32 = 352 gas.
 const initialInitCostScalar = 50   // scale costs 1:1 (100%)
@@ -39,7 +39,8 @@ const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
 const CostScalarPercent = 2  // 2% for each unit
 
-const arbOS50MaxWasmSize = 22000 // Default wasmer stack depth for ArbOS 50
+const arbOS50MaxStackDepth = 22000    // Default wasmer stack depth for ArbOS 50
+const arbOS60MaxWasmSize = 256 * 1024 // 256 KB max decompressed wasm size for ArbOS 60
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -208,8 +209,8 @@ func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
 
 	switch newArbosVersion {
 	case params.ArbosVersion_50:
-		if p.MaxStackDepth > arbOS50MaxWasmSize {
-			p.MaxStackDepth = arbOS50MaxWasmSize
+		if p.MaxStackDepth > arbOS50MaxStackDepth {
+			p.MaxStackDepth = arbOS50MaxStackDepth
 		}
 	case params.ArbosVersion_40:
 		if p.Version != 2 {
@@ -217,6 +218,7 @@ func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
 		}
 		p.MaxWasmSize = initialMaxWasmSize
 	case params.ArbosVersion_StylusContractLimit:
+		p.MaxWasmSize = arbOS60MaxWasmSize
 		p.MaxFragmentCount = initialMaxFragmentCount
 	}
 
@@ -243,7 +245,9 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 		KeepaliveDays:    initialKeepaliveDays,
 		BlockCacheSize:   initialRecentCacheSize,
 	}
-	if arbosVersion >= params.ArbosVersion_40 {
+	if arbosVersion >= params.ArbosVersion_60 {
+		stylusParams.MaxWasmSize = arbOS60MaxWasmSize
+	} else if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
 	if arbosVersion >= params.ArbosVersion_StylusContractLimit {
