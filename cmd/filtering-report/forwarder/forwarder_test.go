@@ -65,9 +65,9 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	forwarder.pollAndForward(ctx)
 	forwarder.pollAndForward(ctx)
 
-	received := endpoint.Reports()
-	if len(received) != 2 {
-		t.Fatalf("expected 2 forwarded messages, got %d", len(received))
+	received := []addressfilter.FilteredTxReport{
+		*endpoint.NextReport(t),
+		*endpoint.NextReport(t),
 	}
 
 	sort.Slice(reports, func(i, j int) bool { return reports[i].TxHash.Cmp(reports[j].TxHash) < 0 })
@@ -197,9 +197,7 @@ func TestForwarder_DeleteError(t *testing.T) {
 	forwarder := NewTestForwarder(t, queueClient, endpoint.URL())
 	interval := forwarder.pollAndForward(t.Context())
 
-	if len(endpoint.Reports()) != 1 {
-		t.Fatal("expected forward to succeed before delete failure")
-	}
+	endpoint.NextReport(t)
 	deleted := queueClient.DeletedReceiptHandles()
 	if len(deleted) != 0 {
 		t.Fatalf("expected 0 deletes on delete error, got %d", len(deleted))

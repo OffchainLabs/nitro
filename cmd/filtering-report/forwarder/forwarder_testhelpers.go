@@ -8,8 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,39 +18,41 @@ import (
 
 type MockExternalEndpoint struct {
 	server  *httptest.Server
-	mu      sync.Mutex
-	reports []addressfilter.FilteredTxReport
+	reports chan *addressfilter.FilteredTxReport
 }
 
 func NewMockExternalEndpoint(t *testing.T) *MockExternalEndpoint {
 	t.Helper()
-	m := &MockExternalEndpoint{}
+	m := &MockExternalEndpoint{
+		reports: make(chan *addressfilter.FilteredTxReport, 100),
+	}
 	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Errorf("failed to read request body: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		var report addressfilter.FilteredTxReport
 		if err := json.Unmarshal(body, &report); err != nil {
-			t.Errorf("failed to unmarshal report: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		m.mu.Lock()
-		m.reports = append(m.reports, report)
-		m.mu.Unlock()
+		m.reports <- &report
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(func() { m.server.Close() })
 	return m
 }
 
-func (m *MockExternalEndpoint) Reports() []addressfilter.FilteredTxReport {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return slices.Clone(m.reports)
+func (m *MockExternalEndpoint) NextReport(t *testing.T) *addressfilter.FilteredTxReport {
+	t.Helper()
+	select {
+	case r := <-m.reports:
+		return r
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for report")
+		return nil
+	}
 }
 
 func (m *MockExternalEndpoint) URL() string {
