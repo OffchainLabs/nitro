@@ -1,0 +1,21 @@
+{
+  "name": "arbos_v32_baseline",
+  "description": "Baseline: ArbOS v32 genesis (Stylus charging fixes). Covers standard tx kinds including Stylus contract deployment and calls. Run in record mode to populate expected.",
+  "genesis": {
+    "config": {
+      "chainId": 412346,
+      "arbitrum": {
+        "InitialArbOSVersion": 32,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}
