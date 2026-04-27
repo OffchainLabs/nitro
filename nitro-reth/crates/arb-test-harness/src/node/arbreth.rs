@@ -104,7 +104,7 @@ impl ArbrethProcess {
             .arg("--http")
             .arg("--http.addr=127.0.0.1")
             .arg(format!("--http.port={http_port}"))
-            .arg("--http.api=eth,web3,net,debug,arb,nitroexecution")
+            .arg("--http.api=eth,web3,net,debug")
             .arg("--authrpc.addr=127.0.0.1")
             .arg(format!("--authrpc.port={auth_port}"))
             .arg(format!("--authrpc.jwtsecret={}", jwt_path.display()))
