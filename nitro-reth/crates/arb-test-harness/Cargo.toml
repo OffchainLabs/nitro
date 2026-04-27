@@ -11,8 +11,12 @@ arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
 arbos = { workspace = true }
 
-alloy-primitives = { workspace = true, features = ["std", "serde"] }
+alloy-primitives = { workspace = true, features = ["std", "serde", "k256"] }
+alloy-consensus = { workspace = true, features = ["std", "k256"] }
+alloy-eips = { workspace = true, features = ["std"] }
 alloy-rlp = { workspace = true }
+
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -36,7 +40,3 @@ stylus-wat = ["dep:wat"]
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-alloy-consensus = { workspace = true, features = ["std"] }
-alloy-eips = { workspace = true, features = ["std"] }

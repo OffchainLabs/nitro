@@ -15,8 +15,8 @@ pub use delayed::DelayedTxBuilder;
 pub use deposit::DepositBuilder;
 pub use heartbeat::{HeartbeatBody, HeartbeatBuilder};
 pub use internal::{InternalTxBuilder, InternalTxKind};
-pub use retryable::RetryableBuilder;
-pub use signed_tx::SignedTxBuilder;
+pub use retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder, L1_TO_L2_ALIAS_OFFSET};
+pub use signed_tx::{derive_address as l2_signing_key_to_address, L2TxKind, SignedL2TxBuilder};
 pub use unsigned::UnsignedUserTxBuilder;
 
 use alloy_primitives::Bytes;
