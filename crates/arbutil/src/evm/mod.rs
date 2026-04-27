@@ -78,7 +78,6 @@ pub const ORIGIN_GAS: Gas = GAS_QUICK_STEP;
 
 pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = 32;
 pub const ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX: u64 = 40;
-pub const ARBOS_VERSION_STYLUS_NO_MULTI_VALUE: u64 = 60;
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
