@@ -34,3 +34,27 @@ fn stylus() {
         run_execution_dir(&stylus_root.join(sub));
     }
 }
+
+#[test]
+fn retryables_exec() {
+    let retry_root = fixtures_root().join("retryables");
+    if !retry_root.exists() {
+        return;
+    }
+    let mut had_exec = false;
+    for entry in std::fs::read_dir(&retry_root).expect("read retryables dir") {
+        let path = entry.expect("entry").path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let body = std::fs::read_to_string(&path).expect("read fixture");
+        if !body.contains("\"messages\"") {
+            continue;
+        }
+        had_exec = true;
+        if let Err(e) = arb_spec_tests::runner::run_execution_fixture(&path, None) {
+            panic!("{}: {e}", path.display());
+        }
+    }
+    assert!(had_exec, "no execution-shaped fixtures found in {}", retry_root.display());
+}
