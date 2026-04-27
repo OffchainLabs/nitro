@@ -52,3 +52,12 @@ docs/node_modules/
 .env.alchemy
 target-install/
 crates/arb-precompiles/.gen/
+
+# Plan / scratch
+.plan/
+
+# Generated test artifacts
+crates/arb-spec-tests/fixtures/_captured/
+crates/arb-fuzz/corpus/
+crates/arb-fuzz/artifacts/
+target/spec-test-tmp/
