@@ -1,0 +1,67 @@
+{
+  "name": "redeem_drains_backlog_to_zero_v32",
+  "description": "Synthetic repro of Sepolia block 100,435,687: a retryable submit grows the L2 gas backlog to a non-zero value, then a redeem with gas_to_donate matching the backlog drains it to zero (new_backlog == 0), exercising the EIP-2200 SSTORE_RESET write-cost branch in legacy_actual_backlog_cost. At ArbOS v32 this is the bug fixed by commit 7884d44 — pre-fix arbreth charged SSTORE_GAS (20000) for the write instead of SSTORE_RESET_GAS (5000), overcharging redeem by 15000 gas. The submit message must produce a backlog growth such that the subsequent redeem's gas_to_donate is exactly equal to the resulting backlog. See arb-precompiles/src/arbretryabletx.rs::legacy_actual_backlog_cost.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 32,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_deposit_to_dev"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 9,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_retryable_submit_with_backlog_growth_3M_gas"
+      },
+      "delayedMessagesRead": 2
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1700000020,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_signed_redeem_ticket0_gas3M_drains_backlog"
+      },
+      "delayedMessagesRead": 2
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

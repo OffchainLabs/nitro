@@ -17,13 +17,13 @@
       "message": {
         "header": {
           "kind": 12,
-          "sender": "0x000000000000000000000000000000000000a4b1",
+          "sender": "0x10a1511590b33fbcede3bf0606140f7dfae9f016",
           "blockNumber": 0,
           "timestamp": 1700000000,
           "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
           "baseFeeL1": 0
         },
-        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+        "l2Msg": "EKFRFZCzP7zt478GBhQPffrp8BYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
       },
       "delayedMessagesRead": 1
     },
@@ -32,13 +32,12 @@
       "message": {
         "header": {
           "kind": 3,
-          "sender": "0x000000000000000000000000000000000000aaaa",
-          "blockNumber": 0,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 1,
           "timestamp": 1700000010,
-          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
           "baseFeeL1": 0
         },
-        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADDUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKOxsx0="
+        "l2Msg": "BAL4aYMGbu6AgIQ7msoAglIIlAAAAAAAAAAAAAAAAAAAAAAAAAC7AYDAAaDidVFHFNfojvFNOuoLIo0yS+ltJbFupUFP9+kwpDQrdKB1C9KCExjNc2wY0pq2IDwz+bTgrHi1bdvGxpyqTz+ksg=="
       },
       "delayedMessagesRead": 1
     }

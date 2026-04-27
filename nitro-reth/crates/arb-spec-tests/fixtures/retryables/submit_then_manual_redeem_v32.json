@@ -1,0 +1,67 @@
+{
+  "name": "submit_then_manual_redeem_v32",
+  "description": "Retryable submitted with insufficient gas auto-fails; ticket persists; subsequent signed redeem(bytes32) succeeds. ArbOS v32 path uses single-gas backlog accounting. Mirrors Nitro system_tests/retryable_test.go::TestSubmitRetryableFailThenRetry.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 32,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_deposit_to_dev"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 9,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_retryable_submit_low_gas_no_auto_redeem"
+      },
+      "delayedMessagesRead": 2
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1700000020,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_signed_redeem_ticket0_gas3M"
+      },
+      "delayedMessagesRead": 2
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

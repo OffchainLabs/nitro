@@ -1,0 +1,52 @@
+{
+  "name": "submit_basic_immediate_redeem",
+  "description": "Retryable submit with sufficient deposit and gas auto-redeems in the same block. Mirrors Nitro system_tests/retryable_test.go::TestSubmitRetryableImmediateSuccess. Exercises the auto-redeem code path: kind=9 carrying maxFeePerGas + gasLimit large enough that submission immediately schedules and runs the inner call.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 32,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_deposit_to_dev"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 9,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "_TODO_retryable_submit_basic_auto_redeem"
+      },
+      "delayedMessagesRead": 2
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}
