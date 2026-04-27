@@ -1,0 +1,36 @@
+{
+  "name": "gate_host_100_stylus_charging_fixes",
+  "description": "Stylus storage_load_bytes32 evm_api_gas formula switch at v32 (host.rs:100). Below v32 uses Gas(EVM_API_INK.0); v32+ uses ink_to_gas. Genesis at v31 selects the legacy (broken) path. Full coverage needs a Stylus program.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 31,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

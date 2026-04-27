@@ -1,0 +1,51 @@
+{
+  "name": "gate_arbowner_28_60",
+  "description": "ArbOwner.setCollectTips(bool) at ArbOS v60 (arbowner.rs:28). Calls the method that uses the local ARBOS_VERSION_60 constant for its method-version gate. Sender is the InitialChainOwner.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 60,
+        "InitialChainOwner": "0x000000000000000000000000000000000000aaaa",
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADDUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI40pk0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

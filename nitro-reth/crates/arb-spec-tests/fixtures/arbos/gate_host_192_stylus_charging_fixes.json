@@ -1,0 +1,36 @@
+{
+  "name": "gate_host_192_stylus_charging_fixes",
+  "description": "Stylus storage_flush_cache buy_gas at v32+ (host.rs:192). Below v32 the buy_gas is skipped. Genesis at v32 selects the corrected charging path. Full coverage requires Stylus exec.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 32,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

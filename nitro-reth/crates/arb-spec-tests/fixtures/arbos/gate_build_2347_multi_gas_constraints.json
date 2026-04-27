@@ -1,0 +1,50 @@
+{
+  "name": "gate_build_2347_multi_gas_constraints",
+  "description": "Multi-dimensional gas refund post-execution at ArbOS v60 (build.rs:2347). After tx execution at v60 the executor compares single-dim and multi-dim costs to compute a refund. Deposit + contract tx at v60 exercises the post-execution refund branch.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 60,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADDUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEGyR6g="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

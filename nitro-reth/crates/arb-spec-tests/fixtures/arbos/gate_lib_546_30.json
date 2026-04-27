@@ -1,0 +1,50 @@
+{
+  "name": "gate_lib_546_30",
+  "description": "P256VERIFY precompile gating at v30 (precompiles/lib.rs:546). At ArbOS v30+ P256VERIFY is registered with custom 3450-gas cost. Calls 0x100 with bogus data at v30 to exercise the registered precompile path.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 30,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADDUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADuaygAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN6tvu8="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}

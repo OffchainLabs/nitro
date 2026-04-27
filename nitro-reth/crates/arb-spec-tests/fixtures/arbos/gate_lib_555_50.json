@@ -1,0 +1,36 @@
+{
+  "name": "gate_lib_555_50",
+  "description": "MODEXP Osaka schedule + BLS12-381 gating at v50 (precompiles/lib.rs:555). At ArbOS v50+ MODEXP is registered with EIP-7823+7883 gas, and BLS12-381 precompiles become available. Below v50 BLS precompiles are removed. This fixture targets v50 with a simple block-producing deposit; the gate fires at precompile-table construction.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 50,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAqqoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [],
+    "txReceipts": [],
+    "stateDiffs": [],
+    "logs": []
+  }
+}
