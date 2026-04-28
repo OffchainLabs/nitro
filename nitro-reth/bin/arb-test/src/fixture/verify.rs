@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use arb_spec_tests::ExecutionFixture;
 
-use crate::cli::VerifyArgs;
+use super::VerifyArgs;
 
 pub fn run(args: VerifyArgs) -> Result<()> {
     let fixture = ExecutionFixture::load(&args.fixture)

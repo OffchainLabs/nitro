@@ -248,7 +248,7 @@ impl Drop for SpawnedNode {
 
 /// Ensure a `(chainId, arbosVersion)`-keyed genesis file exists under
 /// `fixtures/_genesis_cache/` and return its path. On miss, run
-/// `arb-genesis-capture` to produce it.
+/// `arb-test genesis-capture` to produce it.
 fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecError> {
     let chain_id = genesis
         .pointer("/config/chainId")
@@ -269,7 +269,7 @@ fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecErro
             SpecError::Action(format!("mkdir {}: {e}", cache_dir.display()))
         })?;
         eprintln!(
-            "[arb-spec] genesis cache miss for chain={chain_id} arbos=v{arbos_version}, capturing from Nitro..."
+            "[arb-spec] genesis cache miss for chain={chain_id} arbos=v{arbos_version}, capturing from reference node..."
         );
         let cache_str = cache_path
             .to_str()
@@ -280,8 +280,9 @@ fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecErro
                 "--release",
                 "-q",
                 "-p",
-                "arb-genesis-capture",
+                "arb-test",
                 "--",
+                "genesis-capture",
                 "--chain-id",
                 &chain_id.to_string(),
                 "--arbos-version",
@@ -290,15 +291,15 @@ fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecErro
                 cache_str,
             ])
             .status()
-            .map_err(|e| SpecError::Action(format!("invoke arb-genesis-capture: {e}")))?;
+            .map_err(|e| SpecError::Action(format!("invoke arb-test genesis-capture: {e}")))?;
         if !status.success() {
             return Err(SpecError::Action(format!(
-                "arb-genesis-capture failed for chain={chain_id} arbos=v{arbos_version}"
+                "arb-test genesis-capture failed for chain={chain_id} arbos=v{arbos_version}"
             )));
         }
         if !cache_path.exists() {
             return Err(SpecError::Action(format!(
-                "arb-genesis-capture exited 0 but did not produce {}",
+                "arb-test genesis-capture exited 0 but did not produce {}",
                 cache_path.display()
             )));
         }
@@ -307,35 +308,66 @@ fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecErro
     Ok(cache_path)
 }
 
-/// If the fixture's `genesis.alloc` is non-empty, layer those entries on
-/// top of the shared cache JSON (fixture wins per address) and write the
-/// merged document to a per-fixture file under `workdir`. Otherwise just
-/// return the cache path unchanged. The cache file itself is never
-/// mutated.
+/// Layer fixture-specific overrides onto the shared cache JSON: per-address
+/// alloc entries plus any `config.arbitrum.*` fields the fixture sets
+/// (notably `InitialChainOwner`, which determines the chain owner stored
+/// at block 0). When neither is present the cache path is returned
+/// unchanged. The cache file itself is never mutated.
 fn layer_fixture_alloc(
     cache_path: &Path,
     fixture_genesis: &serde_json::Value,
     workdir: &Path,
 ) -> Result<PathBuf, SpecError> {
-    let fixture_alloc = match fixture_genesis.get("alloc").and_then(|v| v.as_object()) {
-        Some(m) if !m.is_empty() => m,
-        _ => return Ok(cache_path.to_path_buf()),
-    };
+    let fixture_alloc = fixture_genesis
+        .get("alloc")
+        .and_then(|v| v.as_object())
+        .filter(|m| !m.is_empty());
+    let fixture_arbitrum = fixture_genesis
+        .pointer("/config/arbitrum")
+        .and_then(|v| v.as_object())
+        .filter(|m| !m.is_empty());
+    if fixture_alloc.is_none() && fixture_arbitrum.is_none() {
+        return Ok(cache_path.to_path_buf());
+    }
     let cache_bytes = std::fs::read(cache_path)
         .map_err(|e| SpecError::Action(format!("read cache {}: {e}", cache_path.display())))?;
     let mut cached: serde_json::Value = serde_json::from_slice(&cache_bytes)
         .map_err(|e| SpecError::Action(format!("parse cache {}: {e}", cache_path.display())))?;
-    let merged_alloc = merge_alloc(&cached, fixture_alloc);
-    cached
+    let cached_obj = cached
         .as_object_mut()
-        .ok_or_else(|| SpecError::Action(format!("cache {} not a JSON object", cache_path.display())))?
-        .insert("alloc".to_string(), serde_json::Value::Object(merged_alloc));
+        .ok_or_else(|| SpecError::Action(format!("cache {} not a JSON object", cache_path.display())))?;
+    if let Some(alloc) = fixture_alloc {
+        let merged_alloc = merge_alloc(cached_obj.get("alloc").unwrap_or(&serde_json::Value::Null), alloc);
+        cached_obj.insert("alloc".to_string(), serde_json::Value::Object(merged_alloc));
+    }
+    if let Some(arbitrum) = fixture_arbitrum {
+        merge_arbitrum_config(cached_obj, arbitrum);
+    }
     let out_path = workdir.join("chain.json");
-    let merged_bytes = serde_json::to_vec_pretty(&cached)
+    let merged_bytes = serde_json::to_vec_pretty(cached_obj)
         .map_err(|e| SpecError::Action(format!("encode merged genesis: {e}")))?;
     std::fs::write(&out_path, merged_bytes)
         .map_err(|e| SpecError::Action(format!("write {}: {e}", out_path.display())))?;
     Ok(out_path)
+}
+
+/// Overlay fixture-supplied `config.arbitrum.*` keys onto the cache's
+/// existing arbitrum block. Fixture values win on collision.
+fn merge_arbitrum_config(
+    cache_obj: &mut serde_json::Map<String, serde_json::Value>,
+    fixture_arbitrum: &serde_json::Map<String, serde_json::Value>,
+) {
+    let config = cache_obj
+        .entry("config")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(config_obj) = config.as_object_mut() else { return };
+    let arbitrum = config_obj
+        .entry("arbitrum")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let Some(arbitrum_obj) = arbitrum.as_object_mut() else { return };
+    for (k, v) in fixture_arbitrum {
+        arbitrum_obj.insert(k.clone(), v.clone());
+    }
 }
 
 /// Replace cache entries with fixture entries on a per-address basis.

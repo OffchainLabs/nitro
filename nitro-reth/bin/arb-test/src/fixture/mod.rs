@@ -1,23 +1,16 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 
-/// Operator CLI for arbreth execution fixtures.
-#[derive(Debug, Parser)]
-#[command(
-    name = "arb-fixture-cli",
-    version,
-    about = "Record, verify, compare, promote, and triage arbreth fixtures.",
-    long_about = None,
-)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Command,
-}
+mod compare;
+mod promote;
+mod record;
+mod triage;
+mod verify;
 
 #[derive(Debug, Subcommand)]
-pub enum Command {
-    /// Capture truth from Nitro into the fixture's `expected` block.
+pub enum FixtureCommand {
+    /// Capture truth from a reference node into the fixture's `expected` block.
     Record(RecordArgs),
     /// Run the fixture against arbreth and assert against `expected`.
     Verify(VerifyArgs),
@@ -33,7 +26,7 @@ pub enum Command {
 pub struct RecordArgs {
     /// Path to the fixture JSON to record into.
     pub fixture: PathBuf,
-    /// Nitro reference RPC URL.
+    /// Reference node RPC URL.
     #[arg(long = "nitro-rpc", value_name = "URL")]
     pub nitro_rpc: String,
     /// Optional output path. When unset the fixture is rewritten in-place.
@@ -54,7 +47,7 @@ pub struct VerifyArgs {
 pub struct CompareArgs {
     /// Path to the fixture JSON to compare.
     pub fixture: PathBuf,
-    /// Nitro reference RPC URL.
+    /// Reference node RPC URL.
     #[arg(long = "nitro-rpc", value_name = "URL")]
     pub nitro_rpc: String,
     /// arbreth RPC URL.
@@ -78,10 +71,20 @@ pub struct TriageArgs {
     /// Directory to walk for `*.json` fixtures.
     #[arg(long = "fixtures-dir", value_name = "DIR")]
     pub fixtures_dir: PathBuf,
-    /// Nitro reference RPC URL.
+    /// Reference node RPC URL.
     #[arg(long = "nitro-rpc", value_name = "URL")]
     pub nitro_rpc: String,
     /// arbreth RPC URL.
     #[arg(long = "arbreth-rpc", value_name = "URL")]
     pub arbreth_rpc: String,
+}
+
+pub fn run(cmd: FixtureCommand) -> anyhow::Result<()> {
+    match cmd {
+        FixtureCommand::Record(a) => record::run(a),
+        FixtureCommand::Verify(a) => verify::run(a),
+        FixtureCommand::Compare(a) => compare::run(a),
+        FixtureCommand::Promote(a) => promote::run(a),
+        FixtureCommand::Triage(a) => triage::run(a),
+    }
 }

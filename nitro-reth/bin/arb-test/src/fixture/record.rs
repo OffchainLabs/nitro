@@ -1,24 +1,30 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 
-use arb_spec_tests::ExecutionFixture;
-use arb_test_harness::{node::remote::RemoteNode, DualExec};
+use arb_spec_tests::{ExecutionExpectations, ExecutionFixture};
+use arb_test_harness::{capture::capture_from_node, node::remote::RemoteNode};
 
-use crate::cli::CompareArgs;
+use super::RecordArgs;
 
-pub fn run(args: CompareArgs) -> Result<()> {
-    let fixture = ExecutionFixture::load(&args.fixture)
+pub fn run(args: RecordArgs) -> Result<()> {
+    let mut fixture = ExecutionFixture::load(&args.fixture)
         .with_context(|| format!("load fixture {}", args.fixture.display()))?;
 
     let scenario = scenario_for(&fixture)?;
-    let left = RemoteNode::nitro(args.nitro_rpc.as_str());
-    let right = RemoteNode::arbreth(args.arbreth_rpc.as_str());
-    let mut dual = DualExec::new(left, right);
-    let report = dual
-        .run(&scenario)
-        .map_err(|e| anyhow::anyhow!("dual_exec: {e}"))?;
+    let mut node = RemoteNode::nitro(args.nitro_rpc.as_str());
+    let captured = capture_from_node(&mut node, &scenario)
+        .with_context(|| format!("capture from {}", args.nitro_rpc))?;
 
-    let json = serde_json::to_string_pretty(&report).context("encode diff report")?;
-    println!("{json}");
+    let parsed: ExecutionExpectations =
+        serde_json::from_value(captured.expected_json).context("decode captured expectations")?;
+    fixture.expected = parsed;
+
+    let target: &Path = args.out.as_deref().unwrap_or(&args.fixture);
+    let body = serde_json::to_vec_pretty(&fixture).context("serialize fixture")?;
+    std::fs::write(target, body).with_context(|| format!("write {}", target.display()))?;
+
+    println!("recorded {} -> {}", args.fixture.display(), target.display());
     Ok(())
 }
 

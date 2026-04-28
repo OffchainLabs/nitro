@@ -180,8 +180,8 @@ fn parser_injects_sentinels_without_skip_flag() {
 #[test]
 fn parser_with_skip_genesis_injection_still_injects_arbos_state() {
     // SkipGenesisInjection used to disable the alloc-injection step entirely,
-    // but the cache files produced by `arb-genesis-capture` set the flag and
-    // are missing both `FilteredTransactionsState` and the storage trie of
+    // but the cache files produced by `arb-test genesis-capture` set the flag
+    // and are missing both `FilteredTransactionsState` and the storage trie of
     // the ArbOS state account, so honoring the flag verbatim breaks the
     // genesis state root. The parser now always merges the injection table:
     // user-supplied accounts/fields/slots win on conflict, anything missing

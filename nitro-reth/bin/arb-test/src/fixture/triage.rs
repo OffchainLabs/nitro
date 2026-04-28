@@ -7,7 +7,7 @@ use serde_json::Value;
 use arb_spec_tests::ExecutionFixture;
 use arb_test_harness::{node::remote::RemoteNode, DiffReport, DualExec};
 
-use crate::cli::TriageArgs;
+use super::TriageArgs;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TriageEntry {

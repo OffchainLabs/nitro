@@ -1,57 +1,31 @@
-//! Refresh per-contract storage in a Stylus regression fixture by pulling
-//! live state from an Arbitrum Sepolia archive RPC.
-//!
-//! Reads an existing ExecutionFixture, walks the call tree of the original
-//! transaction, computes the storage context for every frame
-//! (DELEGATECALL/CALLCODE keep the caller's context, others switch), then
-//! re-fetches each candidate slot's live value at the parent block. Slots
-//! that read as zero are dropped; non-zero slots are written into the
-//! corresponding `alloc[addr].storage` entry. Slots are pulled from the
-//! union of (existing fixture entries) and (the prestate trace's
-//! EOA-misattributed read set).
-//!
-//! Usage:
-//!   arb-sepolia-import refresh-storage \
-//!       --fixture crates/arb-spec-tests/fixtures/stylus/regression/sepolia_block_101_809_176.json \
-//!       --tx 0x6cbe9345... \
-//!       --rpc $ARB_SEPOLIA_RPC
-
 use std::{collections::BTreeMap, path::PathBuf};
 
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 use serde_json::{json, Map, Value};
 
-#[derive(Parser)]
-#[command(name = "arb-sepolia-import")]
-struct Cli {
-    #[command(subcommand)]
-    cmd: Cmd,
-}
-
-#[derive(Subcommand)]
-enum Cmd {
+#[derive(Debug, Subcommand)]
+pub enum SepoliaImportCommand {
     /// Refresh `alloc[*].storage` in an existing fixture against live RPC.
     RefreshStorage(RefreshArgs),
 }
 
-#[derive(Parser)]
-struct RefreshArgs {
+#[derive(Debug, clap::Args)]
+pub struct RefreshArgs {
     /// Path to the fixture JSON to update in place.
     #[arg(long)]
-    fixture: PathBuf,
+    pub fixture: PathBuf,
     /// Transaction hash whose state we are reproducing.
     #[arg(long)]
-    tx: String,
+    pub tx: String,
     /// Archive RPC URL.
     #[arg(long, env = "ARB_SEPOLIA_RPC")]
-    rpc: String,
+    pub rpc: String,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-    match cli.cmd {
-        Cmd::RefreshStorage(args) => refresh_storage(args),
+pub fn run(cmd: SepoliaImportCommand) -> Result<()> {
+    match cmd {
+        SepoliaImportCommand::RefreshStorage(args) => refresh_storage(args),
     }
 }
 
@@ -76,7 +50,6 @@ fn refresh_storage(args: RefreshArgs) -> Result<()> {
         args.tx, block_hex, block_num, parent_hex
     );
 
-    // Call-tree walk to determine each frame's storage context.
     let call_tree = rpc.call(
         "debug_traceTransaction",
         json!([args.tx, {"tracer": "callTracer", "tracerConfig": {"onlyTopCall": false}}]),
@@ -91,9 +64,6 @@ fn refresh_storage(args: RefreshArgs) -> Result<()> {
         storage_addrs.join("\n  ")
     );
 
-    // Prestate trace gives a candidate slot set (typically misattributed to
-    // the EOA frame for Stylus reads). Union it with whatever the fixture
-    // already names so we re-fetch every slot the tx might have touched.
     let prestate = rpc.call(
         "debug_traceTransaction",
         json!([args.tx, {"tracer": "prestateTracer", "tracerConfig": {"diffMode": false}}]),
@@ -205,18 +175,11 @@ fn collect_storage_addrs(node: &Value, current_storage: &str, out: &mut Vec<Stri
     }
 }
 
-/// Slot keys to try for `addr`: prestateTracer's per-address storage map
-/// plus the misattributed EOA frame (Geth attaches Stylus host reads to
-/// the top-level sender, so the same slots may need to be probed against
-/// each storage context).
 fn candidates_for(addr: &str, prestate: &Value) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     if let Some(map) = prestate.as_object() {
         for (key, val) in map {
             if !addr_eq(key, addr) {
-                // Only EOA / non-contract frames misattribute Stylus reads.
-                // Pulling slots from those into every storage context is
-                // safe — non-applicable ones read as zero and get filtered.
                 if let Some(code) = val.get("code").and_then(Value::as_str) {
                     if code != "0x" {
                         continue;

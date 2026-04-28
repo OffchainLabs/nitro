@@ -18,9 +18,7 @@ members = [
     "crates/arb-bench",
     "crates/arbos",
     "bin/arb-reth",
-    "bin/arb-fixture-cli",
-    "bin/arb-genesis-capture",
-    "bin/arb-sepolia-import",
+    "bin/arb-test",
 ]
 exclude = ["brotli"]
 resolver = "2"

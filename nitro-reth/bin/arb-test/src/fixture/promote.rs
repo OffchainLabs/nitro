@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use arb_spec_tests::ExecutionFixture;
 
-use crate::cli::PromoteArgs;
+use super::PromoteArgs;
 
 pub fn run(args: PromoteArgs) -> Result<()> {
     let _parsed: ExecutionFixture = ExecutionFixture::load(&args.captured)

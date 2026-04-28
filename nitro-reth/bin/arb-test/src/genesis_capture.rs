@@ -7,7 +7,6 @@ use std::{
 
 use alloy_primitives::{Address, B256, U256};
 use anyhow::{anyhow, bail, Context, Result};
-use clap::Parser;
 use serde_json::{json, Map, Value};
 
 use arb_test_harness::rpc::JsonRpcClient;
@@ -16,44 +15,41 @@ const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.2-746bda2";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const RPC_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Empty trie root (`keccak256(rlp(""))`). An account whose `storageHash`
-/// equals this has no storage entries.
+/// Empty trie root (`keccak256(rlp(""))`).
 const EMPTY_STORAGE_HASH: B256 = B256::new([
     0x56, 0xe8, 0x1f, 0x17, 0x1b, 0xcc, 0x55, 0xa6, 0xff, 0x83, 0x45, 0xe6, 0x92, 0xc0, 0xf8, 0x6e,
     0x5b, 0x48, 0xe0, 0x1b, 0x99, 0x6c, 0xad, 0xc0, 0x01, 0x62, 0x2f, 0xb5, 0xe3, 0x63, 0xb4, 0x21,
 ]);
 
-/// Capture Nitro's full block-0 state and emit a geth-format genesis JSON.
-#[derive(Debug, Parser)]
-#[command(name = "arb-genesis-capture")]
-struct Cli {
+/// Capture a reference node's full block-0 state and emit a geth-format genesis JSON.
+#[derive(Debug, clap::Args)]
+pub struct GenesisCaptureArgs {
     /// L2 chain id to bake into the chain config.
     #[arg(long)]
-    chain_id: u64,
+    pub chain_id: u64,
 
     /// ArbOS version to initialize (e.g. 10, 32, 50, 60).
     #[arg(long)]
-    arbos_version: u64,
+    pub arbos_version: u64,
 
     /// Output path for the generated genesis JSON.
     #[arg(long)]
-    out: std::path::PathBuf,
+    pub out: std::path::PathBuf,
 
     /// Optional: address that owns the chain post-init (defaults to zero).
     #[arg(long, default_value = "0x0000000000000000000000000000000000000000")]
-    initial_chain_owner: String,
+    pub initial_chain_owner: String,
 
     /// Whether `AllowDebugPrecompiles` should be set in the chain config.
     #[arg(long, default_value_t = true)]
-    allow_debug_precompiles: bool,
+    pub allow_debug_precompiles: bool,
 
-    /// Override the docker image. Defaults to a pinned Nitro release.
+    /// Override the docker image. Defaults to a pinned reference release.
     #[arg(long)]
-    nitro_image: Option<String>,
+    pub nitro_image: Option<String>,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+pub fn run(cli: GenesisCaptureArgs) -> Result<()> {
     let chain_owner = Address::from_str(cli.initial_chain_owner.trim_start_matches("0x"))
         .context("invalid --initial-chain-owner")?;
     let image = cli
@@ -300,10 +296,6 @@ fn render_chain_info_json(
     serde_json::to_string(&entry).unwrap_or_default()
 }
 
-/// Capture all non-empty accounts at block 0. Tries `debug_dumpBlock` first
-/// (geth-style full state dump). If that returns no usable accounts, falls
-/// back to enumerating well-known addresses + walking each non-empty storage
-/// trie via `debug_storageRangeAt`.
 fn capture_alloc(
     rpc: &JsonRpcClient,
     chain_owner: Address,
@@ -343,7 +335,7 @@ fn try_debug_dump_block(rpc: &JsonRpcClient) -> Result<Option<BTreeMap<String, V
     for (addr_key, raw) in accounts {
         let addr = match parse_dump_address(addr_key) {
             Ok(a) => a,
-            Err(_) => continue, // skip secure-trie hash keys (no preimage)
+            Err(_) => continue,
         };
         let entry = parse_dump_account(raw)
             .with_context(|| format!("parse dump account for {addr_key}"))?;
@@ -432,11 +424,6 @@ fn parse_decimal_or_hex_u256(s: &str) -> Result<U256> {
     U256::from_str_radix(s, 10).map_err(|e| anyhow!("decimal u256: {e}"))
 }
 
-/// Manual enumeration: probe well-known addresses, query their balance/nonce/
-/// code via standard JSON-RPC, and walk each non-empty storage trie via
-/// `debug_storageRangeAt`. Used when `debug_dumpBlock` is unavailable or
-/// returns an empty alloc (the Nitro geth fork can't enumerate genesis state
-/// because preimages aren't recorded for the initial trie).
 fn enumerate_alloc(
     rpc: &JsonRpcClient,
     chain_owner: Address,
@@ -444,14 +431,10 @@ fn enumerate_alloc(
     let block_zero_hash = block_zero_hash(rpc)?;
 
     let mut targets: Vec<Address> = Vec::new();
-    // Precompile sentinels: 0x64..=0x74 + 0xff. Some addresses in this range
-    // may not be present at every ArbOS version; capture_account skips empty
-    // accounts, so over-enumerating is safe.
     for byte in 0x64u8..=0x74u8 {
         targets.push(precompile_address(byte));
     }
     targets.push(precompile_address(0xff));
-    // ArbOS system address (3-byte sentinel form) and L1 pricer funds pool.
     targets.push(parse_addr_unchecked("0x00000000000000000000000000000000000a4b05"));
     targets.push(parse_addr_unchecked("0xa4b05fffffffffffffffffffffffffffffffffff"));
     if !chain_owner.is_zero() {
@@ -551,9 +534,6 @@ fn enumerate_storage(
     addr: Address,
     block_hash: &str,
 ) -> Result<BTreeMap<B256, B256>> {
-    // Page-walk the trie. Some Nitro builds crash on this method for the
-    // genesis state account; in that case we surface no storage but still
-    // emit balance/nonce/code from the manual probe above.
     let mut out = BTreeMap::new();
     let mut start = B256::ZERO;
     loop {
@@ -623,8 +603,6 @@ fn parse_addr_unchecked(s: &str) -> Address {
     Address::from_str(s.trim_start_matches("0x")).expect("static address literal valid")
 }
 
-/// Build the geth-format genesis JSON. mixHash encodes the ArbOS version per
-/// Nitro: byte 23 = arbos_version (0-indexed from MSB in 32-byte field).
 fn build_genesis_json(
     chain_id: u64,
     arbos_version: u64,
@@ -673,9 +651,6 @@ fn build_genesis_json(
     })
 }
 
-/// Encode the ArbOS version as a 32-byte mix hash. Byte 23 (index 23 from MSB
-/// in a 32-byte big-endian field) carries the version, matching the layout
-/// Nitro emits in block-0 headers.
 fn arbos_mix_hash(arbos_version: u64) -> String {
     let mut bytes = [0u8; 32];
     bytes[23] = arbos_version as u8;
