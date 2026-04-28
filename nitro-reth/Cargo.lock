@@ -1409,6 +1409,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-sepolia-import"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "clap 4.5.60",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "arb-spec-tests"
 version = "0.1.0"
 dependencies = [
@@ -12349,9 +12361,12 @@ dependencies = [
  "base64 0.22.1",
  "log",
  "once_cell",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "url",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]

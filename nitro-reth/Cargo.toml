@@ -20,6 +20,7 @@ members = [
     "bin/arb-reth",
     "bin/arb-fixture-cli",
     "bin/arb-genesis-capture",
+    "bin/arb-sepolia-import",
 ]
 exclude = ["brotli"]
 resolver = "2"
