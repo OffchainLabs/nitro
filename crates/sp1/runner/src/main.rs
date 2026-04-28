@@ -73,11 +73,11 @@ async fn main() {
                 std::process::exit(2);
             }
             let b = SystemTime::now();
+            tracing::info!("Exit code: {}", executor.exit_code());
             tracing::info!(
-                "Exit code: {}, cycles: {}, execution time: {:?}",
-                executor.exit_code(),
+                "[PROFILE] reexecution: cycles={}, time_secs={:.3}",
                 executor.global_clk(),
-                b.duration_since(a).unwrap(),
+                b.duration_since(a).unwrap().as_secs_f64(),
             );
 
             executor.exit_code() as i32
@@ -177,9 +177,10 @@ fn run_in_sp1(cli: &Cli, wasm: &[u8]) -> Vec<u8> {
         std::process::exit(executor.exit_code() as i32);
     }
     tracing::info!(
-        "Completed stylus compilation in SP1, cycles: {}, execution time: {:?}",
+        "[PROFILE] stylus_compilation: wasm_size={}, cycles={}, time_secs={:.3}",
+        wasm.len(),
         executor.global_clk(),
-        b.duration_since(a).unwrap(),
+        b.duration_since(a).unwrap().as_secs_f64(),
     );
 
     let public_value_stream = executor.into_public_values_stream();
