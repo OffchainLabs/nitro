@@ -70,12 +70,9 @@ func testValidationPostMEL(t *testing.T, useJit bool) {
 	}
 }
 
-func TestValidationPostMELReorgHandleInJitMode(t *testing.T) {
-	testValidationPostMELReorgHandle(t, true)
-}
-
-func TestValidationPostMELReorgHandleInArbitratorMode(t *testing.T) {
-	testValidationPostMELReorgHandle(t, false)
+func TestValidationPostMELReorgHandle(t *testing.T) {
+	t.Run("TestValidationPostMELReorgHandle-in-jit-mode", func(t *testing.T) { testValidationPostMELReorgHandle(t, true) })
+	t.Run("TestValidationPostMELReorgHandle-in-arbitrator-mode", func(t *testing.T) { testValidationPostMELReorgHandle(t, false) })
 }
 
 func testValidationPostMELReorgHandle(t *testing.T, useJit bool) {
@@ -84,7 +81,7 @@ func testValidationPostMELReorgHandle(t *testing.T, useJit bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.useJit = useJit
 	builder.nodeConfig.MessageExtraction.Enable = true
 	builder.nodeConfig.MessageExtraction.RetryInterval = 100 * time.Millisecond
