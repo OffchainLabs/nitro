@@ -772,6 +772,7 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 			cfg := &AuctioneerServerConfig{
 				AuctionContractAddress:   tt.auctionContractAddress,
 				ReserveOriginatorAddress: tt.reserveOriginatorAddress,
+				StreamTimeout:            time.Minute,
 				S3Storage:                tt.s3Storage,
 			}
 			err := cfg.Validate()
@@ -780,6 +781,21 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
+		})
+	}
+}
+
+func TestAuctioneerServerConfig_Validate_StreamTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{"zero rejected", 0},
+		{"negative rejected", -1 * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &AuctioneerServerConfig{StreamTimeout: tt.timeout}
+			require.ErrorContains(t, cfg.Validate(), "stream-timeout must be positive")
 		})
 	}
 }
