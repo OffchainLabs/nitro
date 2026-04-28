@@ -1,5 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
-
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time::SystemTime};
 use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, include_elf};
@@ -117,7 +116,9 @@ fn main() {
         // The executor will fail after bootloading completes because
         // the empty input buffer cannot be parsed as an Arbitrum block.
         // This is expected — we only need the bootloading side-effect (ELF dump).
+        let t0 = SystemTime::now();
         let _ = executor.execute_chunk();
+        let time_secs = t0.elapsed().unwrap().as_secs_f64();
 
         if let Ok(true) = std::fs::exists(&output) {
             println!("SP1 bootloading process completed successfully.");
@@ -128,6 +129,12 @@ fn main() {
                 output
             );
         }
+
+        tracing::info!(
+            "[PROFILE] bootloading: cycles={}, time_secs={:.3}",
+            executor.global_clk(),
+            time_secs,
+        );
 
         println!("Bootloaded program is written to {}", output);
     }
