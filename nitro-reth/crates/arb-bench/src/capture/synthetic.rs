@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::{Address, Bytes, TxKind, U256};
-use arb_e2e_tests::helpers::{derive_address, sign_1559, sign_legacy, ONE_ETH, ONE_GWEI};
+use arb_executor_tests::helpers::{derive_address, sign_1559, sign_legacy, ONE_ETH, ONE_GWEI};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::Deserialize;

@@ -490,7 +490,7 @@ impl Drop for NodeProcess {
 mod tests {
     use super::*;
     use alloy_primitives::{Bytes, TxKind, U256};
-    use arb_e2e_tests::helpers::{alice_key, sign_legacy, ONE_GWEI};
+    use arb_executor_tests::helpers::{alice_key, sign_legacy, ONE_GWEI};
 
     #[test]
     fn encode_batch_single_tx_roundtrips_to_kind_batch() {

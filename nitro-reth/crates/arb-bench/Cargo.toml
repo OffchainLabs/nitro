@@ -19,7 +19,7 @@ arb-storage = { workspace = true }
 arb-stylus = { workspace = true }
 arb-test-utils = { workspace = true }
 arbos = { workspace = true }
-arb-e2e-tests = { path = "../arb-e2e-tests" }
+arb-executor-tests = { path = "../arb-executor-tests" }
 
 alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-eips = { workspace = true }

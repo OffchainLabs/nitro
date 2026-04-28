@@ -412,3 +412,30 @@ fn fresh_boot_v10_state_root_matches_nitro() {
     assert!(acc.code.is_none() || acc.code.as_ref().unwrap().is_empty());
     assert!(acc.storage.is_none() || acc.storage.as_ref().unwrap().is_empty());
 }
+
+/// The curated `genesis/arbitrum-sepolia.json` is the production-Sepolia
+/// boot file. Its config block has no `arbitrum.InitialArbOSVersion`, so
+/// the parser's inject + override paths must stay disabled. The genesis
+/// hash must equal what production Sepolia returns at block 0.
+#[test]
+fn production_sepolia_hash_unchanged() {
+    let path = format!(
+        "{}/../../genesis/arbitrum-sepolia.json",
+        env!("CARGO_MANIFEST_DIR"),
+    );
+    let spec = ArbChainSpecParser::parse(&path).expect("parse production sepolia");
+    let expected_hash: B256 =
+        hex!("77194da4010e549a7028a9c3c51c3e277823be6ac7d138d0bb8a70197b5c004c").into();
+    let expected_state_root: B256 =
+        hex!("8647a2ae10b316ca12fbd76327fe4d64d12cb0ec664a128b0d59df15d05391be").into();
+    assert_eq!(
+        spec.genesis_header().state_root,
+        expected_state_root,
+        "production Sepolia state root must not regress"
+    );
+    assert_eq!(
+        spec.genesis_hash(),
+        expected_hash,
+        "production Sepolia block hash must not regress"
+    );
+}

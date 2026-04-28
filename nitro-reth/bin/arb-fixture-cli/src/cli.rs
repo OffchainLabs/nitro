@@ -27,8 +27,6 @@ pub enum Command {
     Promote(PromoteArgs),
     /// Re-run every fixture in compare mode and classify the result.
     Triage(TriageArgs),
-    /// Print the gate inventory from `.plan/gate-inventory.md`.
-    ListGates(ListGatesArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -86,11 +84,4 @@ pub struct TriageArgs {
     /// arbreth RPC URL.
     #[arg(long = "arbreth-rpc", value_name = "URL")]
     pub arbreth_rpc: String,
-}
-
-#[derive(Debug, clap::Args)]
-pub struct ListGatesArgs {
-    /// Override the default `.plan/gate-inventory.md` path.
-    #[arg(long = "inventory", value_name = "PATH")]
-    pub inventory: Option<PathBuf>,
 }

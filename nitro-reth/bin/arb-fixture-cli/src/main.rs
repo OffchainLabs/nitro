@@ -13,6 +13,5 @@ fn main() -> anyhow::Result<()> {
         Command::Compare(a) => commands::compare::run(a),
         Command::Promote(a) => commands::promote::run(a),
         Command::Triage(a) => commands::triage::run(a),
-        Command::ListGates(a) => commands::list_gates::run(a),
     }
 }

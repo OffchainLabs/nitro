@@ -1030,22 +1030,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-arbos-fixture-fill"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "arb-spec-tests",
- "arb-test-harness",
- "arbos",
- "base64 0.22.1",
- "brotli 8.0.2",
- "hex",
- "serde_json",
- "walkdir",
-]
-
-[[package]]
 name = "arb-bench"
 version = "0.1.0"
 dependencies = [
@@ -1055,8 +1039,8 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "arb-chainspec",
- "arb-e2e-tests",
  "arb-evm",
+ "arb-executor-tests",
  "arb-precompiles",
  "arb-primitives",
  "arb-storage",
@@ -1110,34 +1094,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-e2e-tests"
-version = "0.1.0"
-dependencies = [
- "alloy-consensus",
- "alloy-eips",
- "alloy-evm",
- "alloy-primitives",
- "alloy-rlp",
- "arb-alloy-consensus",
- "arb-chainspec",
- "arb-evm",
- "arb-node",
- "arb-precompiles",
- "arb-primitives",
- "arb-storage",
- "arb-stylus",
- "arb-test-utils",
- "arbos",
- "k256",
- "reth-chainspec",
- "reth-evm",
- "reth-primitives-traits",
- "reth-revm",
- "reth-storage-api",
- "revm",
-]
-
-[[package]]
 name = "arb-evm"
 version = "0.1.0"
 dependencies = [
@@ -1173,6 +1129,34 @@ dependencies = [
  "rustc-hash",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "arb-executor-tests"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-evm",
+ "alloy-primitives",
+ "alloy-rlp",
+ "arb-alloy-consensus",
+ "arb-chainspec",
+ "arb-evm",
+ "arb-node",
+ "arb-precompiles",
+ "arb-primitives",
+ "arb-storage",
+ "arb-stylus",
+ "arb-test-utils",
+ "arbos",
+ "k256",
+ "reth-chainspec",
+ "reth-evm",
+ "reth-primitives-traits",
+ "reth-revm",
+ "reth-storage-api",
+ "revm",
 ]
 
 [[package]]
@@ -1377,21 +1361,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-retryables-fixture-fill"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "arb-spec-tests",
- "arb-test-harness",
- "arbos",
- "base64 0.22.1",
- "hex",
- "serde_json",
- "walkdir",
-]
-
-[[package]]
 name = "arb-rpc"
 version = "0.1.0"
 dependencies = [
@@ -1500,28 +1469,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-stylus-fixture-fill"
-version = "0.1.0"
-dependencies = [
- "alloy-consensus",
- "alloy-eips",
- "alloy-primitives",
- "alloy-rlp",
- "alloy-sol-types",
- "anyhow",
- "arb-spec-tests",
- "arb-test-harness",
- "arbos",
- "base64 0.22.1",
- "brotli 8.0.2",
- "hex",
- "k256",
- "serde_json",
- "walkdir",
- "wat",
-]
-
-[[package]]
 name = "arb-test-harness"
 version = "0.1.0"
 dependencies = [
@@ -1545,7 +1492,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "ureq",
- "wat",
 ]
 
 [[package]]
@@ -4492,20 +4438,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
-]
-
-[[package]]
-name = "gen-genesis"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "arb-node",
- "arb-storage",
- "arbos",
- "revm",
- "revm-database",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -13778,15 +13710,6 @@ name = "xsum"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0637d3a5566a82fa5214bae89087bc8c9fb94cd8e8a3c07feb691bb8d9c632db"
-
-[[package]]
-name = "xtask"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.60",
- "walkdir",
-]
 
 [[package]]
 name = "yansi"

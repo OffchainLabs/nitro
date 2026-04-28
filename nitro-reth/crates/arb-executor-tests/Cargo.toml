@@ -1,0 +1,36 @@
+[package]
+name = "arb-executor-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Internal-API tests for the Arbitrum block executor and supporting components."
+
+[dependencies]
+arb-test-utils = { workspace = true }
+arbos = { workspace = true }
+arb-storage = { workspace = true }
+arb-primitives = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-alloy-consensus = { workspace = true }
+arb-evm = { workspace = true }
+arb-precompiles = { workspace = true }
+arb-stylus = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "k256"] }
+alloy-consensus = { workspace = true, features = ["k256"] }
+alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
+alloy-rlp = { workspace = true }
+reth-evm = { workspace = true }
+reth-chainspec = { workspace = true }
+revm = { workspace = true }
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+
+[dev-dependencies]
+arb-node = { workspace = true }
+reth-revm = { workspace = true }
+reth-storage-api = { workspace = true }
+reth-primitives-traits = { workspace = true }
+
+[lints]
+workspace = true

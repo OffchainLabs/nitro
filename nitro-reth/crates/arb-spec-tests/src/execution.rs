@@ -239,6 +239,9 @@ impl ExecutionFixture {
         for exp in &self.expected.balances {
             verify_balance(&client, exp)?;
         }
+        for exp in &self.expected.tx_receipts {
+            verify_tx_receipt(&client, exp)?;
+        }
         Ok(())
     }
 
@@ -544,6 +547,86 @@ fn verify_storage(client: &RpcClient, exp: &ExpectedStorage) -> Result<(), SpecE
         return Err(SpecError::Assertion(format!(
             "storage {}[{}] at {} — got {}, want {}",
             exp.address, exp.slot, exp.at_block, got, want,
+        )));
+    }
+    Ok(())
+}
+
+fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), SpecError> {
+    // Only enforce log content when the fixture pinned logs explicitly.
+    // Other receipt fields (gas_used, status, etc.) are advisory-only here
+    // because they were recorded against a captured Nitro and may drift.
+    let Some(want_logs) = exp.logs.as_ref() else {
+        return Ok(());
+    };
+    let receipt: serde_json::Value = client
+        .call("eth_getTransactionReceipt", serde_json::json!([exp.tx_hash]))
+        .map_err(|e| SpecError::Assertion(format!("receipt {}: {e}", exp.tx_hash)))?;
+    if receipt.is_null() {
+        return Err(SpecError::Assertion(format!(
+            "receipt for {} not found",
+            exp.tx_hash
+        )));
+    }
+    let got_logs = receipt
+        .get("logs")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| SpecError::Assertion(format!("receipt {} missing logs array", exp.tx_hash)))?;
+    if got_logs.len() != want_logs.len() {
+        return Err(SpecError::Assertion(format!(
+            "receipt {} log count: got {}, want {}",
+            exp.tx_hash,
+            got_logs.len(),
+            want_logs.len()
+        )));
+    }
+    for (i, (want, got)) in want_logs.iter().zip(got_logs.iter()).enumerate() {
+        verify_log(&exp.tx_hash, i, want, got)?;
+    }
+    Ok(())
+}
+
+fn verify_log(
+    tx: &B256,
+    index: usize,
+    want: &ExpectedLog,
+    got: &serde_json::Value,
+) -> Result<(), SpecError> {
+    let got_addr = got
+        .get("address")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    let want_addr = format!("{:#x}", want.address).to_lowercase();
+    if got_addr != want_addr {
+        return Err(SpecError::Assertion(format!(
+            "tx {tx} log[{index}] address: got {got_addr}, want {want_addr}"
+        )));
+    }
+    let got_topics: Vec<String> = got
+        .get("topics")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| t.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let want_topics: Vec<String> = want.topics.iter().map(|t| format!("{t:#x}").to_lowercase()).collect();
+    if got_topics != want_topics {
+        return Err(SpecError::Assertion(format!(
+            "tx {tx} log[{index}] topics: got {got_topics:?}, want {want_topics:?}"
+        )));
+    }
+    let got_data = got
+        .get("data")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    let want_data = format!("{want_data}", want_data = want.data).to_lowercase();
+    if got_data != want_data {
+        return Err(SpecError::Assertion(format!(
+            "tx {tx} log[{index}] data mismatch:\n  got  {got_data}\n  want {want_data}"
         )));
     }
     Ok(())

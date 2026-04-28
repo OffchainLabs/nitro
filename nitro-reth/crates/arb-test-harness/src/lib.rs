@@ -7,8 +7,6 @@ pub mod mock_l1;
 pub mod node;
 pub mod rpc;
 pub mod scenario;
-#[cfg(feature = "stylus-wat")]
-pub mod stylus;
 
 pub use error::{HarnessError, Result};
 

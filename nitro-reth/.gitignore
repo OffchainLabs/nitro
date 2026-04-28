@@ -62,6 +62,14 @@ crates/arb-fuzz/corpus/
 crates/arb-fuzz/artifacts/
 target/spec-test-tmp/
 
+# Fixture-recording binaries are local-only: their output is the recorded
+# fixtures, so checking them in is redundant.
+bin/arb-arbos-fixture-fill/
+bin/arb-retryables-fixture-fill/
+bin/arb-stylus-fixture-fill/
+bin/gen-genesis/
+xtask/
+
 # Genesis cache (Nitro-captured per-(chainId, arbosVersion) golden files) — committed.
 !crates/arb-spec-tests/fixtures/_genesis_cache/
 !crates/arb-spec-tests/fixtures/_genesis_cache/**

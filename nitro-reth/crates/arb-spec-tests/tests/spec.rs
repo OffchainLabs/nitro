@@ -30,7 +30,7 @@ fn arbos_gates() {
 #[test]
 fn stylus() {
     let stylus_root = fixtures_root().join("stylus");
-    let subs = ["hostio", "subcall", "cache", "contract_limit"];
+    let subs = ["hostio", "subcall", "cache", "contract_limit", "regression"];
     let mut panics: Vec<String> = Vec::new();
     for sub in subs {
         let dir = stylus_root.join(sub);
