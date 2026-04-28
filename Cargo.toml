@@ -131,7 +131,7 @@ wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
 # sp1
 sp1-build = { version = "6.0.0", features = ["may_dump_elf"] }
 sp1-core-executor = { version = "6.0.0" }
-sp1-sdk = { version = "6.0.0", features = ["profiling"] }
+sp1-sdk = { version = "6.0.0" }
 sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"] }
 
 

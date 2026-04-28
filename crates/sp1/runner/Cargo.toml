@@ -16,3 +16,6 @@ serde_json = { workspace = true }
 stylus-compiler-program = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+
+[features]
+profiling = ["sp1-sdk/profiling"]
