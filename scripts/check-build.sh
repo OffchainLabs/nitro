@@ -11,6 +11,7 @@ NC='\033[0m' # No Color
 node_version_needed="v24"
 rust_version_needed="1.93.0"
 golangci_lint_version_needed="2.5.0"
+forge_max_version="1.0.0"
 
 if [[ -f go.mod ]]; then
     go_version_needed=$(grep "^go " go.mod | awk '{print $2}')
@@ -192,6 +193,22 @@ if command_exists foundryup; then
     echo -e "${GREEN}Foundry is installed.${NC}"
 else
     echo -e "${RED}Foundry is not installed.${NC}"
+    EXIT_CODE=1
+fi
+
+# Check forge installation and version compatibility
+# Newer forge versions (> 1.0.0) use solar instead of solc for Yul compilation,
+# which causes `make build` to fail.
+if command_exists forge; then
+    FORGE_INSTALLED_VERSION=$(forge --version | head -n 1 | awk '{print $2}')
+    if compare_versions "$forge_max_version" "$FORGE_INSTALLED_VERSION" "exact"; then
+        echo -e "${GREEN}forge version $FORGE_INSTALLED_VERSION is installed (compatible).${NC}"
+    else
+        echo -e "${RED}forge version $FORGE_INSTALLED_VERSION is not compatible. Version $forge_max_version is required (newer versions use solar instead of solc for Yul compilation). Run: foundryup --version $forge_max_version${NC}"
+        EXIT_CODE=1
+    fi
+else
+    echo -e "${RED}forge is not installed. Install Foundry and run: foundryup --version $forge_max_version${NC}"
     EXIT_CODE=1
 fi
 
