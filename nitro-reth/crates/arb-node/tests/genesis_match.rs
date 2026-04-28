@@ -275,3 +275,67 @@ fn parser_skips_override_when_no_arbos_version() {
     assert_eq!(header.nonce, B64::from(1u64.to_be_bytes()));
     assert_eq!(header.gas_limit, 1u64 << 50);
 }
+
+#[test]
+fn fresh_boot_v10_state_root_matches_nitro() {
+    // Reproduces the Nitro Docker `--init.empty=true` boot for chain 421614
+    // at ArbOS v10. The harness sends Nitro the chain-config JSON below, then
+    // Nitro re-marshals it during init and writes it to the chain_config
+    // subspace. This test checks the resulting state root and block hash
+    // match what Nitro produces from that same input, including the
+    // pre-fix FilteredTransactionsState account that older Nitro builds
+    // unconditionally bump nonce on.
+    let cfg = serde_json::json!({
+        "config": {
+            "chainId": 421614,
+            "homesteadBlock": 0,
+            "daoForkSupport": true,
+            "eip150Block": 0,
+            "eip155Block": 0,
+            "eip158Block": 0,
+            "byzantiumBlock": 0,
+            "constantinopleBlock": 0,
+            "petersburgBlock": 0,
+            "istanbulBlock": 0,
+            "muirGlacierBlock": 0,
+            "berlinBlock": 0,
+            "londonBlock": 0,
+            "depositContractAddress": "0x0000000000000000000000000000000000000000",
+            "clique": {"period": 0, "epoch": 0},
+            "arbitrum": {
+                "EnableArbOS": true,
+                "AllowDebugPrecompiles": false,
+                "DataAvailabilityCommittee": false,
+                "InitialArbOSVersion": 10,
+                "InitialChainOwner": "0x71B61c2E250AFa05dFc36304D6c91501bE0965D8",
+                "GenesisBlockNum": 0u64,
+            }
+        },
+        "alloc": {}
+    });
+    let spec = ArbChainSpecParser::parse(&cfg.to_string()).expect("parse");
+    let header = spec.genesis_header();
+    let hash = spec.genesis_hash();
+
+    let expected_state_root: B256 =
+        hex!("ab6821d87dca1473891fee8b08d1582b61362bac1ce5bd7a6513afe6c86b1327").into();
+    let expected_hash: B256 =
+        hex!("c84425bb7ca6315b83ebcc96ca814b7b7fc7eab6a734c47b48c94195500414fa").into();
+    assert_eq!(header.state_root, expected_state_root, "state root must match Nitro Docker fresh boot");
+    assert_eq!(hash, expected_hash, "block hash must match Nitro Docker fresh boot");
+
+    // Sanity: 16 accounts (13 v0 precompile sentinels + ArbosActs + ArbosState
+    // + FilteredTransactionsState).
+    assert_eq!(spec.genesis().alloc.len(), 16);
+
+    let filtered_tx_state: Address = address!("a4b0500000000000000000000000000000000001");
+    let acc = spec
+        .genesis()
+        .alloc
+        .get(&filtered_tx_state)
+        .expect("filtered tx state account must be present");
+    assert_eq!(acc.nonce, Some(1));
+    assert_eq!(acc.balance, U256::ZERO);
+    assert!(acc.code.is_none() || acc.code.as_ref().unwrap().is_empty());
+    assert!(acc.storage.is_none() || acc.storage.as_ref().unwrap().is_empty());
+}

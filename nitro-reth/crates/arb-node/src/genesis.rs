@@ -10,7 +10,7 @@ use tracing::info;
 
 use arb_storage::{
     set_account_code, set_account_nonce, Storage, StorageBackedBigUint, StorageBackedBytes,
-    ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 use arbos::{
     arbos_state::ArbosState, arbos_types::ParsedInitMessage, burn::SystemBurner, l1_pricing,
@@ -88,6 +88,14 @@ pub fn initialize_arbos_state<D: Database>(
 
     // 0. Set ArbOS state account nonce to 1.
     set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
+
+    // Mirror the side-effect of Nitro's `KVStorage(...)` for the filtered-tx
+    // state account: it bumps `nonce` to 1 the first time the storage is
+    // opened so the account survives geth's empty-account pruning.
+    // Pre-v60 Nitro builds open the storage unconditionally during
+    // `OpenArbosState`, so the account appears in the v10 genesis trie even
+    // though the feature is gated to v60+. Match that behaviour here.
+    set_account_nonce(state, FILTERED_TX_STATE_ADDRESS, 1);
 
     // 1. Set version to 1 (base version before upgrades).
     backing
