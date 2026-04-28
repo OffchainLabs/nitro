@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -417,6 +418,19 @@ func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
 
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
 	return mv.messageExtractor.GetState(mv.latestValidatedParentChainBlock.Load())
+}
+
+// GetValidatedMELStateAtBlock returns the MEL state at a specific parent chain
+// block number, but only if MEL validation has reached that block.
+func (mv *MELValidator) GetValidatedMELStateAtBlock(_ context.Context, blockNum uint64) (*mel.State, error) {
+	latestValidated := mv.latestValidatedParentChainBlock.Load()
+	if blockNum > latestValidated {
+		return nil, fmt.Errorf(
+			"%w: MEL validated up to block %d, requested block %d",
+			state.ErrChainCatchingUp, blockNum, latestValidated,
+		)
+	}
+	return mv.messageExtractor.GetState(blockNum)
 }
 
 func (mv *MELValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {

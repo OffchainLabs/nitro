@@ -38,6 +38,7 @@ type stackParams struct {
 	delegatedStaking                    bool
 	autoDeposit                         bool
 	autoAllowanceApproval               bool
+	melLookup                           state.ValidatedMELStateLookup
 }
 
 var defaultStackParams = stackParams{
@@ -191,6 +192,14 @@ func OverrideAssertionManager(asm *assertions.Manager) StackOpt {
 	}
 }
 
+// StackWithMELStateLookup enables MEL-based assertion determinism for both the
+// assertion manager and challenge manager in the stack.
+func StackWithMELStateLookup(lookup state.ValidatedMELStateLookup) StackOpt {
+	return func(p *stackParams) {
+		p.melLookup = lookup
+	}
+}
+
 // NewChallengeStack creates a new ChallengeManager and all of the dependencies
 // wiring them together.
 func NewChallengeStack(
@@ -270,6 +279,9 @@ func NewChallengeStack(
 		if !params.autoAllowanceApproval {
 			amOpts = append(amOpts, assertions.WithoutAutoAllowanceApproval())
 		}
+		if params.melLookup != nil {
+			amOpts = append(amOpts, assertions.WithMELStateLookup(params.melLookup))
+		}
 		asm, err = assertions.NewManager(
 			parent,
 			provider,
@@ -291,6 +303,9 @@ func NewChallengeStack(
 	}
 	if params.headerProvider != nil {
 		cmOpts = append(cmOpts, WithHeaderProvider(params.headerProvider))
+	}
+	if params.melLookup != nil {
+		cmOpts = append(cmOpts, WithMELStateLookup(params.melLookup))
 	}
 	if params.apiAddr != "" {
 		cmOpts = append(cmOpts, WithAPIServer(api))

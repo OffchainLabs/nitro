@@ -60,6 +60,7 @@ type Manager struct {
 	assertionManager             AssertionManager
 	watcher                      *chain.Watcher
 	stateManager                 state.Provider
+	melLookup                    state.ValidatedMELStateLookup // nil when MEL is not active
 	name                         string
 	headerProvider               HeaderProvider
 	timeRef                      clock.Reference
@@ -109,6 +110,14 @@ func WithHeaderProvider(provider HeaderProvider) Opt {
 		val.headerProvider = provider
 	}
 }
+
+// WithMELStateLookup enables MEL-based determinism for challenge metadata.
+func WithMELStateLookup(lookup state.ValidatedMELStateLookup) Opt {
+	return func(val *Manager) {
+		val.melLookup = lookup
+	}
+}
+
 
 // New sets up a challenge manager instance provided a protocol, state manager,
 // chain watcher, assertion manager, and additional options.

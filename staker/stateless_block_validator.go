@@ -75,6 +75,10 @@ type TransactionStreamerInterface interface {
 type MELValidatorInterface interface {
 	UpdateValidationTarget(pos arbutil.MessageIndex)
 	LatestValidatedMELState(context.Context) (*mel.State, error)
+	// GetValidatedMELStateAtBlock returns the MEL state at a given parent chain
+	// block number, but only if validation has reached that block. Returns an
+	// error wrapping state.ErrChainCatchingUp if validation hasn't caught up.
+	GetValidatedMELStateAtBlock(ctx context.Context, blockNum uint64) (*mel.State, error)
 	FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error)
 	FetchMessageOriginMELStateHash(pos arbutil.MessageIndex) (common.Hash, error)
 	ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex)

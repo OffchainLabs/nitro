@@ -73,6 +73,7 @@ type Manager struct {
 	chain                       protocol.AssertionChain
 	backend                     protocol.ChainBackend
 	execProvider                state.ExecutionProvider
+	melLookup                   state.ValidatedMELStateLookup // nil when MEL is not active
 	times                       timings
 	rollupAddr                  common.Address
 	validatorName               string
@@ -110,6 +111,15 @@ func WithPostingDisabled() Opt {
 		m.disablePosting = true
 	}
 }
+
+// WithMELStateLookup enables MEL-based assertion determinism. When set,
+// assertions use NextParentChainBlockHash instead of InboxMaxCount.
+func WithMELStateLookup(lookup state.ValidatedMELStateLookup) Opt {
+	return func(m *Manager) {
+		m.melLookup = lookup
+	}
+}
+
 
 func WithFastConfirmation() Opt {
 	return func(m *Manager) {
@@ -383,7 +393,28 @@ func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 
 func (m *Manager) ExecutionStateAfterParent(ctx context.Context, parentInfo *protocol.AssertionCreatedInfo) (*protocol.ExecutionState, error) {
 	goGlobalState := protocol.GoGlobalStateFromSolidity(parentInfo.AfterState.GlobalState)
-	return m.execProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), goGlobalState)
+	batchCount, err := m.batchCountFromAssertion(ctx, parentInfo)
+	if err != nil {
+		return nil, err
+	}
+	return m.execProvider.ExecutionStateAfterPreviousState(ctx, batchCount, goGlobalState)
+}
+
+// batchCountFromAssertion determines the batch count for the next assertion.
+// Post-MEL (melLookup != nil): derives it from NextParentChainBlockHash via validated MEL state.
+// Pre-MEL: uses InboxMaxCount directly.
+func (m *Manager) batchCountFromAssertion(ctx context.Context, info *protocol.AssertionCreatedInfo) (uint64, error) {
+	if m.melLookup != nil {
+		melInfo, err := m.melLookup.GetValidatedMELStateByBlockHash(ctx, info.NextParentChainBlockHash)
+		if err != nil {
+			return 0, err
+		}
+		return melInfo.BatchCount, nil
+	}
+	if !info.InboxMaxCount.IsUint64() {
+		return 0, errors.New("inbox max count not a uint64")
+	}
+	return info.InboxMaxCount.Uint64(), nil
 }
 
 func (m *Manager) ForksDetected() uint64 {

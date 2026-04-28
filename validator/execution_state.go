@@ -52,8 +52,21 @@ func u64ToBe(x uint64) []byte {
 
 func (s GoGlobalState) Hash() common.Hash {
 	data := []byte("Global state:")
-	data = append(data, s.BlockHash.Bytes()...)
-	data = append(data, s.SendRoot.Bytes()...)
+	// Include bytes32 values up to the last non-zero index, with a minimum of
+	// index 1 (BlockHash + SendRoot always included). This matches the Rust
+	// prover's bytes32_last_non_zero_index() for backwards compatibility:
+	// pre-MEL states (MEL fields zero) produce the same hash as before.
+	bytes32Vals := [4]common.Hash{s.BlockHash, s.SendRoot, s.MELStateHash, s.MELMsgHash}
+	endIdx := 1 // always include at least BlockHash and SendRoot
+	for i := len(bytes32Vals) - 1; i > 1; i-- {
+		if bytes32Vals[i] != (common.Hash{}) {
+			endIdx = i
+			break
+		}
+	}
+	for i := 0; i <= endIdx; i++ {
+		data = append(data, bytes32Vals[i].Bytes()...)
+	}
 	data = append(data, u64ToBe(s.Batch)...)
 	data = append(data, u64ToBe(s.PosInBatch)...)
 	return crypto.Keccak256Hash(data)

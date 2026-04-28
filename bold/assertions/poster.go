@@ -186,33 +186,43 @@ func (m *Manager) PostAssertionBasedOnParent(
 	) (protocol.Assertion, error),
 ) (option.Option[protocol.Assertion], error) {
 	none := option.None[protocol.Assertion]()
-	if !parentCreationInfo.InboxMaxCount.IsUint64() {
-		return none, errors.New("inbox max count not a uint64")
-	}
-	// The parent assertion tells us what the next posted assertion's batch should be.
-	// We read this value and use it to compute the required execution state we must post.
-	batchCount := parentCreationInfo.InboxMaxCount.Uint64()
-	parentBlockHash := protocol.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
-	newState, err := m.ExecutionStateAfterParent(ctx, parentCreationInfo)
+	// Derive the batch count from the parent assertion. Post-MEL this uses
+	// NextParentChainBlockHash via validated MEL state; pre-MEL it uses InboxMaxCount.
+	batchCount, err := m.batchCountFromAssertion(ctx, parentCreationInfo)
 	if err != nil {
 		if errors.Is(err, state.ErrChainCatchingUp) {
 			chainCatchingUpCounter.Inc(1)
+			parentBlockHash := protocol.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
 			log.Info(
 				"Waiting for more batches to post next assertion",
 				"latestStakedAssertionBatchCount", batchCount,
 				"latestStakedAssertionBlockHash", containers.Trunc(parentBlockHash[:]),
 			)
-			// If the chain is catching up, we wait for a bit and try again.
 			time.Sleep(m.times.avgBlockTime / 10)
 			return none, nil
 		}
-		return none, errors.Wrapf(err, "could not get execution state at batch count %d with parent block hash %v", batchCount, parentBlockHash)
+		return none, errors.Wrapf(err, "could not derive batch count from parent assertion")
+	}
+	newState, err := m.ExecutionStateAfterParent(ctx, parentCreationInfo)
+	if err != nil {
+		if errors.Is(err, state.ErrChainCatchingUp) {
+			chainCatchingUpCounter.Inc(1)
+			log.Info(
+				"Waiting for execution state to catch up",
+				"batchCount", batchCount,
+			)
+			time.Sleep(m.times.avgBlockTime / 10)
+			return none, nil
+		}
+		return none, errors.Wrapf(err, "could not get execution state at batch count %d", batchCount)
 	}
 
 	// If the assertion is not an overflow assertion i.e !(newState.GlobalState.Batch < batchCount) derived from
 	// contracts check for overflow assertion => assertion.afterState.globalState.u64Vals[0] < assertion.beforeStateData.configData.nextInboxPosition)
 	// then should check if we need to wait for the minimum number of blocks between assertions and a minimum time since parent assertion creation.
 	// Overflow ones are not subject to this check onchain.
+	// Note: post-MEL, overflow assertions are removed from the contracts, but we keep this check
+	// for backwards compatibility with pre-MEL chains.
 	isOverflowAssertion := newState.MachineStatus != protocol.MachineStatusErrored && newState.GlobalState.Batch < batchCount
 	if !isOverflowAssertion {
 		if err = m.waitToPostIfNeeded(ctx, parentCreationInfo); err != nil {
@@ -221,8 +231,8 @@ func (m *Manager) PostAssertionBasedOnParent(
 	}
 
 	log.Info(
-		"Posting assertion for batch we agree with",
-		"requiredInboxMaxCount", batchCount,
+		"Posting assertion",
+		"batchCount", batchCount,
 		"validatorName", m.validatorName,
 	)
 	assertion, err := submitFn(
@@ -241,7 +251,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	assertionPostedCounter.Inc(1)
 	log.Info("Successfully submitted assertion",
 		"validatorName", m.validatorName,
-		"requiredInboxMaxCount", batchCount,
+		"batchCount", batchCount,
 		"postedExecutionState", fmt.Sprintf("%+v", newState),
 		"assertionHash", assertion.Id(),
 	)

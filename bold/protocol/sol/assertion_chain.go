@@ -555,12 +555,11 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		assertionInputs rollupgen.AssertionInputs,
 		expectedAssertionHash [32]byte,
 	) (*types.Transaction, error) {
-		return a.userLogic.NewStakeOnNewAssertion611c3d80(
+		return a.userLogic.NewStakeOnNewAssertion7f62c2af(
 			opts,
 			tokenAmount,
 			assertionInputs,
 			expectedAssertionHash,
-			a.withdrawalAddress,
 		)
 	}
 	return a.createAndStakeOnAssertion(
@@ -1073,21 +1072,20 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	}
 	creationL1Block := res.CreatedAtBlock
 	return &protocol.AssertionCreatedInfo{
-		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
-		RequiredStake:       parsedLog.RequiredStake,
-		ParentAssertionHash: protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
-		BeforeState:         parsedLog.Assertion.BeforeState,
-		AfterState:          afterState,
-		// PR 427: InboxMaxCount / AfterInboxBatchAcc dropped from AssertionCreated event.
-		// Left zero pending follow-up PR that rewires against NextParentChainBlockHash.
-		InboxMaxCount:       big.NewInt(0),
-		AfterInboxBatchAcc:  common.Hash{},
-		AssertionHash:       protocol.AssertionHash{Hash: parsedLog.AssertionHash},
-		WasmModuleRoot:      parsedLog.WasmModuleRoot,
-		ChallengeManager:    parsedLog.ChallengeManager,
-		TransactionHash:     ethLog.TxHash,
-		CreationParentBlock: ethLog.BlockNumber,
-		CreationL1Block:     creationL1Block,
+		ConfirmPeriodBlocks:      parsedLog.ConfirmPeriodBlocks,
+		RequiredStake:            parsedLog.RequiredStake,
+		ParentAssertionHash:      protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
+		BeforeState:              parsedLog.Assertion.BeforeState,
+		AfterState:               afterState,
+		InboxMaxCount:            big.NewInt(0),
+		AfterInboxBatchAcc:       common.Hash{},
+		NextParentChainBlockHash: parsedLog.NextParentChainBlockHash,
+		AssertionHash:            protocol.AssertionHash{Hash: parsedLog.AssertionHash},
+		WasmModuleRoot:           parsedLog.WasmModuleRoot,
+		ChallengeManager:         parsedLog.ChallengeManager,
+		TransactionHash:          ethLog.TxHash,
+		CreationParentBlock:      ethLog.BlockNumber,
+		CreationL1Block:          creationL1Block,
 	}, nil
 }
 

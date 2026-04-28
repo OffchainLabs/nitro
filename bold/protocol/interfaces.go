@@ -118,14 +118,17 @@ type AssertionCreatedInfo struct {
 	ParentAssertionHash AssertionHash
 	BeforeState         rollupgen.AssertionState
 	AfterState          rollupgen.AssertionState
-	InboxMaxCount       *big.Int
-	AfterInboxBatchAcc  common.Hash
-	AssertionHash       AssertionHash
-	WasmModuleRoot      common.Hash
-	ChallengeManager    common.Address
-	TransactionHash     common.Hash
-	CreationParentBlock uint64
-	CreationL1Block     uint64
+	// Pre-MEL: InboxMaxCount is the batch count the next assertion must consume.
+	// Post-MEL: InboxMaxCount is unused (zero); NextParentChainBlockHash is used instead.
+	InboxMaxCount            *big.Int
+	AfterInboxBatchAcc       common.Hash
+	NextParentChainBlockHash common.Hash
+	AssertionHash            AssertionHash
+	WasmModuleRoot           common.Hash
+	ChallengeManager         common.Address
+	TransactionHash          common.Hash
+	CreationParentBlock      uint64
+	CreationL1Block          uint64
 }
 
 func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
