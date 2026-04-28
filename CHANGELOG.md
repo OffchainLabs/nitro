@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.10.0-rc.8](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.7...v3.10.0-rc.8) - 2026-04-27
+
+### Added
+
+- Add ReportFilteredTransactions RPC endpoint to cmd/filtering-report with shared FilteredTxReport types and client method.
+- Add SQS integration and report forwarder for filtered transactions.
+- Add chainId field to FilteredTxReport so consumers can distinguish mainnet vs testnet events.
+- Added precompile gating for ArbOS >= 60.
+
+### Changed
+
+- Pin the Dockerfile `emsdk` clone to the `3.1.46` commit while continuing to install and activate `3.1.7`.
+- ArbOS 60: Increase the default Stylus `MaxWasmSize` to 256 KB and default `MaxFragmentCount` to 4.
+- Make multivalue allowance dependent on Stylus version, instead of on ArbOS version.
+
+### Fixed
+
+- BoLD autodeposit no longer attempts to wrap ETH via WETH deposit on non-WETH staking tokens with insufficient balance.
+- Fix bug in L2 message extraction from batch segments and enable previously skipped system_tests.
+- Fixed assertion posting heuristics to make meaningful advancements to the assertion chain.
+- Fix extraPostTxFilter hook call to work with statedb rollback.
+- Shard pathdb and pathdb-MEL CI jobs into A/B halves and run them with `--reduce-parallelism` to eliminate timeout-driven flakes under runner contention.
+- propagate Stylus ArbNodeConfig into ephemeral state databases used by `debug_trace*` RPCs so `MaxStylusOpenPages` is enforced on traced calls.
+- ArbOS 60: retryables extended via `Keepalive` past their original 7-day timeout are now reachable throughout their extended lifetime.
+- Wasmer now enforces the Stylus heap bound as a hard memory maximum, preventing `memory.grow(1<<16)` from succeeding in the JIT when it would fail in the prover.
+- Make make init-submodules work zero-config on SSH-agent-forwarded dev boxes.
+- Fix ArbitrumUnsignedTx marshaling and unmarshaling with maxFeePerGas.
+
+### Internal
+
+- Enable transitioning of node to using MEL when previously ran with Inbox Reader-Tracker.
+- Update TouchAddress to accept FilteredAddressRecord with filtering reason instead of just an address, and update IsFiltered to return filtered address records for use in transaction filtering reports.
+
 ## [v3.10.0-rc.7](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.6...v3.10.0-rc.7) - 2026-04-10
 
 ### Configuration
