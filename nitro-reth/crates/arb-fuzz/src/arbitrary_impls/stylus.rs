@@ -31,21 +31,23 @@ pub fn smith_wasm(seed: u64) -> Result<Vec<u8>, SmithError> {
     }
     let mut u = Unstructured::new(&buf);
 
-    let mut cfg = Config::default();
-    cfg.max_funcs = 4;
-    cfg.max_globals = 2;
-    cfg.max_memories = 1;
-    cfg.max_memory32_bytes = 64 * 1024;
-    cfg.max_imports = 0;
-    cfg.max_exports = 4;
-    cfg.max_instructions = 256;
-    cfg.bulk_memory_enabled = false;
-    cfg.reference_types_enabled = false;
-    cfg.simd_enabled = false;
-    cfg.threads_enabled = false;
-    cfg.exceptions_enabled = false;
-    cfg.gc_enabled = false;
-    cfg.allow_start_export = false;
+    let cfg = Config {
+        max_funcs: 4,
+        max_globals: 2,
+        max_memories: 1,
+        max_memory32_bytes: 64 * 1024,
+        max_imports: 0,
+        max_exports: 4,
+        max_instructions: 256,
+        bulk_memory_enabled: false,
+        reference_types_enabled: false,
+        simd_enabled: false,
+        threads_enabled: false,
+        exceptions_enabled: false,
+        gc_enabled: false,
+        allow_start_export: false,
+        ..Default::default()
+    };
 
     let module = Module::new(cfg, &mut u).map_err(SmithError::Smith)?;
     Ok(module.to_bytes())

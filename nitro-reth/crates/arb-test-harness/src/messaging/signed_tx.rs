@@ -400,9 +400,9 @@ mod tests {
 
         // Re-decode the inner envelope using alloy and check chain id and shape.
         let inner = &fixture_bytes[1..];
-        let env =
-            EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut inner.as_ref())
-                .expect("alloy decodes fixture inner envelope");
+        let mut inner = inner;
+        let env = EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut inner)
+            .expect("alloy decodes fixture inner envelope");
         match env {
             EthereumTxEnvelope::Eip1559(signed) => {
                 assert_eq!(signed.tx().chain_id, 412_346);

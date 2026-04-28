@@ -96,11 +96,35 @@ crate = "arb-reth"
 
 [[licenses.exceptions]]
 allow = ["BUSL-1.1"]
-crate = "gen-genesis"
+crate = "arb-bench"
 
 [[licenses.exceptions]]
 allow = ["BUSL-1.1"]
-crate = "arb-bench"
+crate = "arb-test"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test-harness"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test-utils"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-spec-tests"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-executor-tests"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-fuzz"
+
+[[licenses.exceptions]]
+allow = ["NCSA"]
+crate = "libfuzzer-sys"
 
 [[licenses.clarify]]
 crate = "arbutil"

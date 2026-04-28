@@ -1,17 +1,4 @@
-//! Verifies that arbreth's genesis block matches the header that
-//! Nitro's `MakeGenesisBlock` would produce for the same chain config.
-//!
-//! Nitro hardcodes the genesis header in `arbosState.MakeGenesisBlock`:
-//! - `nonce = 1`
-//! - `extraData = SendRoot[:]` (32 zero bytes at genesis)
-//! - `mixHash` = `[SendCount(8) | L1BlockNumber(8) | ArbOSFormatVersion(8) | flags(8)]` BE
-//! - `gasLimit = 1 << 50`
-//! - `baseFee = 100_000_000` (0.1 gwei)
-//! - `difficulty = 1`
-//! - `coinbase = 0x0`
-//! Nitro IGNORES the corresponding fields from the genesis JSON and overwrites
-//! them with these constants, so arbreth must produce identical fields to
-//! match Nitro's block 0 hash.
+//! Pins the canonical genesis header constants the parser must produce.
 
 use alloy_primitives::{address, hex, Address, Bytes, B256, B64, U256};
 use arb_node::chainspec::ArbChainSpecParser;
