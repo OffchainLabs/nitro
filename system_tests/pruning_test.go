@@ -144,7 +144,7 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 	currentBlock := waitForChainToCatchUp(t, ctx, testClient, lastBlock)
 
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
-	triedb := bc.StateCache().TrieDB()
+	triedb := bc.TrieDB()
 	var start uint64
 	if currentBlock+1 >= builder.execConfig.Caching.BlockCount {
 		start = currentBlock + 1 - builder.execConfig.Caching.BlockCount
@@ -259,7 +259,7 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	// deletes such blocks specified with the exception of last validate and finalized
 	// blocks (if in "validator" mode)
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
-	triedb := bc.StateCache().TrieDB()
+	triedb := bc.TrieDB()
 
 	for i := 1; i < numOfBlocksToGenerate; i++ {
 		// #nosec G115

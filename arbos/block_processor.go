@@ -90,6 +90,7 @@ type groupCheckpoint struct {
 	backup               *state.StateDB
 	snap                 int
 	headerGasUsed        uint64
+	gasPool              *core.GasPool
 	blockGasLeft         uint64
 	expectedBalanceDelta *big.Int
 	userTxsProcessed     int
@@ -101,8 +102,11 @@ type groupCheckpoint struct {
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
-// during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
+// during the loop. preTxGasPool must be a snapshot of the shared gas pool
+// taken BEFORE the user tx ran, so that a rollback can restore the gas
+// pool's cumulativeUsed and prevent the rolled-back tx's gas from being
+// attributed to subsequent receipts via DeriveFields.
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, preTxGasPool *core.GasPool, snap int, userTxHash common.Hash) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
@@ -110,6 +114,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 		backup:               s.statedb.Copy(),
 		snap:                 snap,
 		headerGasUsed:        header.GasUsed,
+		gasPool:              preTxGasPool,
 		blockGasLeft:         s.blockGasLeft,
 		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
 		userTxsProcessed:     s.userTxsProcessed,
@@ -121,13 +126,16 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 }
 
 // rollbackToGroupCheckpoint restores loop state to the saved checkpoint,
-// undoing the user tx and all its redeems. header is needed to restore
-// GasUsed, which lives outside blockBuildState.
-func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
+// undoing the user tx and all its redeems. header and gasPool are needed
+// because they live outside blockBuildState; restoring gasPool's
+// cumulativeUsed prevents a rolled-back tx's gas from being attributed
+// to subsequent receipts via DeriveFields.
+func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header, gasPool *core.GasPool) error {
 	cp := s.activeGroupCP
 	cp.backup.RevertToSnapshot(cp.snap)
 	s.statedb = cp.backup
 	header.GasUsed = cp.headerGasUsed
+	gasPool.Set(cp.gasPool)
 	s.blockGasLeft = cp.blockGasLeft
 	s.expectedBalanceDelta.Set(cp.expectedBalanceDelta)
 	s.userTxsProcessed = cp.userTxsProcessed
@@ -345,7 +353,7 @@ func ProduceBlockAdvanced(
 	time := header.Time
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
-	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
+	gethGas := core.NewGasPool(l2pricing.GethBlockGasLimit)
 
 	firstTx := types.NewTx(startTx)
 
@@ -478,15 +486,18 @@ func ProduceBlockAdvanced(
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+			// Snapshot gasPool BEFORE running the tx so a later group rollback
+			// can restore the gas pool's cumulativeUsed (otherwise the rolled-back
+			// tx's gas leaks into subsequent receipts via DeriveFields).
+			preTxGasPool := gasPool.Snapshot()
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
-				&gasPool,
+				gasPool,
 				buildState.statedb,
 				header,
 				tx,
-				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
 					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result); err != nil {
@@ -497,7 +508,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, preTxGasPool, snap, tx.Hash()); err != nil {
 							return err
 						}
 					}
@@ -505,11 +516,24 @@ func ProduceBlockAdvanced(
 				},
 			)
 			if err != nil {
-				// Ignore this transaction if it's invalid under the state transition function
+				// Ignore this transaction if it's invalid under the state transition function.
+				// Restore gas pool: state_transition's normal path already ran SubGas/ReturnGas
+				// before resultFilter (which is what reported the error here), so gp's
+				// cumulativeUsed and remaining were charged for this discarded tx.
+				// Leaving them as-is would inflate subsequent receipts' CumulativeGasUsed
+				// and break receipt.GasUsed (computed via DeriveFields as a cumulative diff).
 				buildState.statedb.RevertToSnapshot(snap)
 				buildState.statedb.ClearTxFilter()
+				gasPool.Set(preTxGasPool)
 				return nil, nil, err
 			}
+
+			// Upstream geth's ApplyTransaction no longer takes a *usedGas pointer;
+			// callers must update header.GasUsed themselves. We use result.UsedGas
+			// rather than gasPool.Used() because Arbitrum's endTxNow paths
+			// (deposits, retryable submissions, internal txs) report gas via
+			// result.UsedGas without decreasing the gas pool's remaining.
+			header.GasUsed += result.UsedGas
 
 			return receipt, result, nil
 		})()
@@ -520,7 +544,7 @@ func ProduceBlockAdvanced(
 			// redeems) to the pre-group state.
 			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
 				userTxHash := buildState.activeGroupCP.userTxHash
-				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
+				if err := buildState.rollbackToGroupCheckpoint(header, gethGas); err != nil {
 					return nil, nil, nil, err
 				}
 				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})

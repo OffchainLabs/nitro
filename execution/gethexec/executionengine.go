@@ -694,17 +694,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("Sequencer", witness, witnessStats)
+	statedb.StartPrefetcher("Sequencer", witness)
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
@@ -900,17 +896,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
+	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
