@@ -170,7 +170,8 @@ impl SpawnedNode {
             .genesis
             .as_ref()
             .ok_or_else(|| SpecError::Action("internal: spawn called without genesis".into()))?;
-        let chain_path = ensure_genesis_cache(genesis)?;
+        let cache_path = ensure_genesis_cache(genesis)?;
+        let chain_path = layer_fixture_alloc(&cache_path, genesis, &workdir)?;
 
         let jwt_path = workdir.join("jwt.hex");
         std::fs::write(&jwt_path, hex::encode([0u8; 32]))
@@ -304,4 +305,148 @@ fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecErro
     }
 
     Ok(cache_path)
+}
+
+/// If the fixture's `genesis.alloc` is non-empty, layer those entries on
+/// top of the shared cache JSON (fixture wins per address) and write the
+/// merged document to a per-fixture file under `workdir`. Otherwise just
+/// return the cache path unchanged. The cache file itself is never
+/// mutated.
+fn layer_fixture_alloc(
+    cache_path: &Path,
+    fixture_genesis: &serde_json::Value,
+    workdir: &Path,
+) -> Result<PathBuf, SpecError> {
+    let fixture_alloc = match fixture_genesis.get("alloc").and_then(|v| v.as_object()) {
+        Some(m) if !m.is_empty() => m,
+        _ => return Ok(cache_path.to_path_buf()),
+    };
+    let cache_bytes = std::fs::read(cache_path)
+        .map_err(|e| SpecError::Action(format!("read cache {}: {e}", cache_path.display())))?;
+    let mut cached: serde_json::Value = serde_json::from_slice(&cache_bytes)
+        .map_err(|e| SpecError::Action(format!("parse cache {}: {e}", cache_path.display())))?;
+    let merged_alloc = merge_alloc(&cached, fixture_alloc);
+    cached
+        .as_object_mut()
+        .ok_or_else(|| SpecError::Action(format!("cache {} not a JSON object", cache_path.display())))?
+        .insert("alloc".to_string(), serde_json::Value::Object(merged_alloc));
+    let out_path = workdir.join("chain.json");
+    let merged_bytes = serde_json::to_vec_pretty(&cached)
+        .map_err(|e| SpecError::Action(format!("encode merged genesis: {e}")))?;
+    std::fs::write(&out_path, merged_bytes)
+        .map_err(|e| SpecError::Action(format!("write {}: {e}", out_path.display())))?;
+    Ok(out_path)
+}
+
+/// Replace cache entries with fixture entries on a per-address basis.
+/// Match keys case-insensitively (chainspec addresses are
+/// canonicalized lowercase by the cache producer) so a differently-cased
+/// fixture spelling can't sneak in as a separate entry.
+fn merge_alloc(
+    cached: &serde_json::Value,
+    fixture_alloc: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut out = serde_json::Map::new();
+    let mut canonical_for: std::collections::HashMap<String, String> = Default::default();
+    if let Some(existing) = cached.get("alloc").and_then(|v| v.as_object()) {
+        for (k, v) in existing {
+            canonical_for.insert(k.to_lowercase(), k.clone());
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    for (k, v) in fixture_alloc {
+        let lk = k.to_lowercase();
+        if let Some(existing) = canonical_for.get(&lk) {
+            out.insert(existing.clone(), v.clone());
+        } else {
+            out.insert(k.clone(), v.clone());
+            canonical_for.insert(lk, k.clone());
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn merge_keeps_system_addresses_and_adds_fixture_entry() {
+        let cache = json!({
+            "config": { "chainId": 412346 },
+            "alloc": {
+                "0xa4b05fffffffffffffffffffffffffffffffffff": { "balance": "1", "code": "0x" },
+                "0x0000000000000000000000000000000000000064": { "balance": "0", "code": "0x60" }
+            }
+        });
+        let fixture = json!({
+            "config": { "chainId": 412346 },
+            "alloc": {
+                "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": { "balance": "999" }
+            }
+        });
+        let fixture_alloc = fixture
+            .get("alloc")
+            .and_then(|v| v.as_object())
+            .expect("alloc object");
+        let merged = merge_alloc(&cache, fixture_alloc);
+
+        let arbos_addr = merged
+            .get("0xa4b05fffffffffffffffffffffffffffffffffff")
+            .expect("arbos system address present");
+        assert_eq!(arbos_addr.get("balance").and_then(|v| v.as_str()), Some("1"));
+
+        let user = merged
+            .get("0x26E554a8acF9003b83495c7f45F06edCB803d4e3")
+            .expect("fixture alloc entry present");
+        assert_eq!(user.get("balance").and_then(|v| v.as_str()), Some("999"));
+
+        let precompile = merged
+            .get("0x0000000000000000000000000000000000000064")
+            .expect("precompile slot retained");
+        assert_eq!(precompile.get("code").and_then(|v| v.as_str()), Some("0x60"));
+    }
+
+    #[test]
+    fn merge_overwrites_when_fixture_targets_existing_address() {
+        let cache = json!({
+            "alloc": {
+                "0xa4b05fffffffffffffffffffffffffffffffffff": { "balance": "1" }
+            }
+        });
+        let fixture = json!({
+            "alloc": {
+                "0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF": { "balance": "42" }
+            }
+        });
+        let fixture_alloc = fixture
+            .get("alloc")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let merged = merge_alloc(&cache, fixture_alloc);
+        // We expect a single canonical entry under the cache's spelling.
+        assert_eq!(merged.len(), 1);
+        let entry = merged
+            .get("0xa4b05fffffffffffffffffffffffffffffffffff")
+            .expect("canonical lower entry");
+        assert_eq!(entry.get("balance").and_then(|v| v.as_str()), Some("42"));
+    }
+
+    #[test]
+    fn layer_skips_when_fixture_alloc_empty() {
+        let tmp = std::env::temp_dir().join(format!(
+            "arb-spec-merge-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let cache_path = tmp.join("cache.json");
+        std::fs::write(&cache_path, r#"{"alloc":{"0xaa":{"balance":"1"}}}"#).unwrap();
+        let workdir = tmp.join("work");
+        std::fs::create_dir_all(&workdir).unwrap();
+        let no_alloc = serde_json::json!({ "alloc": {} });
+        let returned = layer_fixture_alloc(&cache_path, &no_alloc, &workdir).unwrap();
+        assert_eq!(returned, cache_path);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
