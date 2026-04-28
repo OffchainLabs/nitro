@@ -17,7 +17,7 @@ path = "src/bin.rs"
 clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 gperftools = { workspace = true, optional = true }
-prover = { workspace = true }
+prover = { workspace = true, features = ["native"] }
 
 [features]
 counters = []
