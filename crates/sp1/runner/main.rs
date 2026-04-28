@@ -91,8 +91,9 @@ async fn main() {
 
             tracing::info!("Exit code: {}", report.exit_code);
             tracing::info!(
-                "[PROFILE] reexecution: cycles={}, time_secs={:.3}",
+                "[PROFILE] reexecution: cycles={}, gas={}, time_secs={:.3}",
                 report.total_instruction_count(),
+                report.gas().unwrap_or(0),
                 b.duration_since(a).unwrap().as_secs_f64(),
             );
 

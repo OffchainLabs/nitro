@@ -22,4 +22,4 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 
 [features]
-profiling = ["sp1-sdk/profiling"]
+profiling = ["sp1-sdk/profiling", "sp1-core-executor/profiling"]
