@@ -21,6 +21,10 @@ import sys
 
 BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed"]
 
+# Sample 1 in every N cycles for the SP1 trace file.
+# Lower = more detail, larger file; higher = coarser, smaller file.
+TRACE_SAMPLE_RATE = 300
+
 # ---------------------------------------------------------------------------
 # Log parsing
 # ---------------------------------------------------------------------------
@@ -47,12 +51,14 @@ def parse_profile_lines(text: str) -> list[dict]:
 # Running subprocesses
 # ---------------------------------------------------------------------------
 
-def run(label: str, cmd: list[str]) -> str:
+def run(label: str, cmd: list[str], extra_env: dict[str, str] | None = None) -> str:
     """Run cmd, print a progress label, return combined stderr+stdout."""
     print(f"  {label}...", flush=True)
     env = os.environ.copy()
     # Ensure INFO-level tracing is visible so [PROFILE] lines are emitted.
     env.setdefault("RUST_LOG", "info")
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     combined = result.stderr + result.stdout
     if result.returncode not in (0, 1):
@@ -177,6 +183,7 @@ def main() -> None:
     print(f"\n[2] Running sp1-runner on {len(BLOCKS)} block types:")
     for i, block in enumerate(BLOCKS, 1):
         block_file = f"{args.block_inputs_dir}/{block}.json"
+        trace_file = f"{out}/trace_{block}.json"
         run_log = run(
             f"sp1-runner [{block}]",
             [
@@ -185,7 +192,12 @@ def main() -> None:
                 "--stylus-compiler-program", f"{out}/stylus-compiler-program",
                 "--block-file", block_file,
             ],
+            extra_env={
+                "TRACE_FILE": trace_file,
+                "TRACE_SAMPLE_RATE": str(TRACE_SAMPLE_RATE),
+            },
         )
+        print(f"    trace -> {trace_file}")
 
         table.append({"section": block})
         stylus_count = 0
