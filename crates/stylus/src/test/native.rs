@@ -28,7 +28,7 @@ use prover::{
 };
 use wasmer::{
     ExportIndex, Imports, Pages, Store,
-    sys::{CompilerConfig, EngineBuilder},
+    sys::{CompilerConfig, EngineBuilder, Target},
     wasmparser::Operator,
 };
 use wasmer_compiler_singlepass::Singlepass;
@@ -36,8 +36,8 @@ use wasmer_compiler_singlepass::Singlepass;
 use crate::{
     run::RunProgram,
     test::{
-        TestInstance, check_instrumentation, random_bytes20, random_bytes32, random_ink,
-        run_machine, run_native, test_compile_config, test_configs,
+        TestInstance, api::TestEvmApi, check_instrumentation, random_bytes20, random_bytes32,
+        random_ink, run_machine, run_native, test_compile_config, test_configs,
     },
 };
 
@@ -312,12 +312,111 @@ fn test_heap() -> Result<()> {
 }
 
 #[test]
+fn test_heap_allocate_max_pages() -> Result<()> {
+    // Simulates the stylus v<3 scenario where pay_for_memory_grow(1<<16) truncates its
+    // argument to u16=0 and charges nothing, so the actual memory.grow is the only thing
+    // that can prevent the grow. Verifies it returns -1 in both the JIT and prover.
+    // (In v3+, pay_for_memory_grow itself fails before memory.grow is reached, so
+    // no divergence is possible there.)
+    let (mut compile, config, ink) = test_configs();
+    compile.bounds.heap_bound = Pages(128);
+    compile.pricing.costs = |_, _| 0;
+
+    let (mut native, _) = TestInstance::new_with_evm("tests/memory3.wat", &compile, config)?;
+    let outcome = native.run_main(&[], config, ink)?;
+    assert_eq!(outcome.kind(), UserOutcomeKind::Success);
+
+    let mut machine = Machine::from_user_path(Path::new("tests/memory3.wat"), &compile)?;
+    let outcome = machine.run_main(&[], config, ink)?;
+    assert_eq!(outcome.kind(), UserOutcomeKind::Success);
+
+    Ok(())
+}
+
+#[test]
+fn test_memory_grow_overflow_compatibility() -> Result<()> {
+    let (mut compile, config, _) = test_configs();
+    compile.bounds.heap_bound = Pages(128);
+    compile.pricing.costs = |_, _| 0;
+
+    let make_runner = |arbos_version: u64| -> Result<(TestInstance, TestEvmApi, u16)> {
+        let (evm, mut evm_data) = TestEvmApi::new(compile.clone());
+        evm_data.arbos_version = arbos_version;
+        let native = TestInstance::from_path(
+            "tests/pay-for-memory-grow.wat",
+            evm.clone(),
+            evm_data,
+            &compile,
+            config,
+            Target::default(),
+        )?;
+        let footprint = native.memory().ty(&native.store).minimum.0 as u16;
+        Ok((native, evm, footprint))
+    };
+    let run_pay_for_memory_grow = |native: &mut TestInstance,
+                                   evm: &mut TestEvmApi,
+                                   footprint: u16,
+                                   pages: u32|
+     -> Result<UserOutcomeKind> {
+        evm.set_pages(footprint);
+        let outcome = native.run_main(
+            &pages.to_le_bytes(),
+            config,
+            config.pricing.gas_to_ink(Gas(u32::MAX.into())),
+        )?;
+        Ok(outcome.kind())
+    };
+
+    for pages in 0..=((1 << 16) + 1) {
+        let (mut arbos51_native, mut arbos51_evm, arbos51_footprint) = make_runner(51)?;
+        let want = if pages <= 127 || pages == (1 << 16) || pages == (1 << 16) + 1 {
+            UserOutcomeKind::Success
+        } else {
+            UserOutcomeKind::OutOfInk
+        };
+        assert_eq!(
+            run_pay_for_memory_grow(
+                &mut arbos51_native,
+                &mut arbos51_evm,
+                arbos51_footprint,
+                pages
+            )?,
+            want,
+            "arbos 51 pages={pages}"
+        );
+    }
+
+    let (mut arbos59_native, mut arbos59_evm, arbos59_footprint) = make_runner(59)?;
+    assert_eq!(
+        run_pay_for_memory_grow(
+            &mut arbos59_native,
+            &mut arbos59_evm,
+            arbos59_footprint,
+            1 << 16
+        )?,
+        UserOutcomeKind::OutOfInk
+    );
+    let (mut arbos59_native, mut arbos59_evm, arbos59_footprint) = make_runner(59)?;
+    assert_eq!(
+        run_pay_for_memory_grow(
+            &mut arbos59_native,
+            &mut arbos59_evm,
+            arbos59_footprint,
+            (1 << 16) + 1,
+        )?,
+        UserOutcomeKind::OutOfInk
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_rust() -> Result<()> {
     // in keccak.rs
     //     the input is the # of hashings followed by a preimage
     //     the output is the iterated hash of the preimage
 
-    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/keccak.wasm";
     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
     let preimage = preimage.as_bytes().to_vec();
     let hash = hex::encode(crypto::keccak(&preimage));
@@ -347,7 +446,7 @@ fn test_fallible() -> Result<()> {
     //     an input starting with 0x00 will execute an unreachable
     //     an empty input induces a panic
 
-    let filename = "tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/fallible.wasm";
     let (compile, config, ink) = test_configs();
 
     let mut native = TestInstance::new_linked(filename, &compile, config)?;
@@ -384,7 +483,7 @@ fn test_storage() -> Result<()> {
     //     an input starting with 0x00 will induce a storage read
     //     all other inputs induce a storage write
 
-    let filename = "tests/storage/target/wasm32-unknown-unknown/release/storage.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/storage.wasm";
     let (compile, config, ink) = test_configs();
 
     let key = crypto::keccak(filename.as_bytes());
@@ -476,7 +575,7 @@ fn test_calls() -> Result<()> {
     let args = tree[53..].to_vec();
     println!("ARGS {}", hex::encode(&args));
 
-    let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";
+    let filename = "tests/target/wasm32-unknown-unknown/release/multicall.wasm";
     let (compile, config, ink) = test_configs();
 
     let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;

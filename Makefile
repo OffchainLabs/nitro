@@ -27,8 +27,20 @@ ifneq ($(origin NITRO_MODIFIED),undefined)
  GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
 endif
 
+# Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go
+# build, and switches cargo to the stripped profile (strip = symbols).
+# Used by the nitro-node-*-stripped Docker targets.
+CARGO_PROFILE = release
+ifeq ($(STRIP),1)
+ GOLANG_LDFLAGS += -s -w
+ CARGO_PROFILE = stripped
+endif
+
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
  GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
+endif
+ifeq ($(STRIP),1)
+ GOLANG_PARAMS += -trimpath
 endif
 
 UNAME_S := $(shell uname -s)
@@ -124,7 +136,7 @@ stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
 stylus_lang_bf   = $(wildcard crates/langs/bf/src/*.* crates/langs/bf/src/*.toml)
 
-get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
+get_stylus_test_wasm = $(stylus_test_dir)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
 stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
@@ -149,8 +161,8 @@ stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
 stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
 stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
-#stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
-#stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
+stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
+stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
 stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
@@ -163,6 +175,16 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
+.PHONY: init-submodules
+init-submodules:
+	scripts/configure-private-submodules.sh
+	scripts/submodule-update-private.sh
+	scripts/configure-private-submodules.sh
+
+.PHONY: check-submodules
+check-submodules:
+	@scripts/check-submodules.sh
+
 .PHONY: push
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -173,7 +195,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -293,18 +315,36 @@ clean:
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f crates/wasm-libraries/forward/*.wat
-	rm -rf crates/stylus/tests/*/target/ crates/stylus/tests/*/*.wasm
+	rm -rf crates/stylus/tests/target/ crates/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache
 	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 
+define resolve_gh_token_and_secret
+TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}"; \
+if [ -z "$$TOKEN" ] && git config --get remote.origin.url 2>/dev/null | grep -q nitro-private; then \
+	echo "ERROR: in nitro-private without GitHub token; run 'gh auth login' or set GITHUB_TOKEN" >&2; exit 1; \
+fi; \
+SECRET=""; if [ -n "$$TOKEN" ]; then SECRET="--secret id=gh_token,env=GITHUB_TOKEN"; export GITHUB_TOKEN="$$TOKEN"; fi
+endef
+
 .PHONY: docker
 docker:
-	docker build -t nitro-node-slim --target nitro-node-slim .
-	docker build -t nitro-node --target nitro-node .
-	docker build -t nitro-node-dev --target nitro-node-dev .
+	@$(resolve_gh_token_and_secret); \
+	for t in nitro-node-slim nitro-node nitro-node-dev; do \
+		echo "+ docker build $$SECRET -t $$t --target $$t ."; \
+		docker build $$SECRET -t "$$t" --target "$$t" . || exit 1; \
+	done
+
+.PHONY: docker-machine-versions
+docker-machine-versions:
+	@$(resolve_gh_token_and_secret); \
+	for t in machine-versions; do \
+		echo "+ docker build $$SECRET -t nitro-$$t --target $$t ."; \
+		docker build $$SECRET -t "nitro-$$t" --target "$$t" . || exit 1; \
+	done
 
 .PHONY: check-license-headers
 check-license-headers:
@@ -363,6 +403,9 @@ $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
 
+$(output_root)/bin/filtering-report: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/filtering-report"
+
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
@@ -371,23 +414,23 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
-	cargo build --release --bin prover ${CARGOFLAGS}
-	install target/release/prover $@
+	cargo build --profile $(CARGO_PROFILE) --bin prover ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/prover $@
 
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
-	cargo build --release --lib -p stylus ${CARGOFLAGS}
-	install target/release/libstylus.a $@
+	cargo build --profile $(CARGO_PROFILE) --lib -p stylus ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --release -p jit ${CARGOFLAGS}
-	install target/release/jit $@
+	cargo build --profile $(CARGO_PROFILE) -p jit ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/jit $@
 
 $(validation_server): $(DEP_PREDICATE) $(validator_files)
 	mkdir -p `dirname $(validation_server)`
-	cargo build --release -p validator ${CARGOFLAGS}
-	install target/release/validator $@
+	cargo build --profile $(CARGO_PROFILE) -p validator ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/validator $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)

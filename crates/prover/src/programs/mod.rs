@@ -7,8 +7,8 @@ use arbutil::{Bytes32, Color, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::Sa
 use eyre::{Report, Result, WrapErr, bail, eyre};
 use fnv::FnvHashMap as HashMap;
 use wasmer_types::{
-    FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex, SignatureIndex, Type,
-    entity::EntityRef,
+    FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex, Pages, SignatureIndex,
+    Type, entity::EntityRef,
 };
 use wasmparser::{Operator, ValType};
 #[cfg(feature = "native")]
@@ -38,6 +38,7 @@ pub mod prelude;
 pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
+pub const STYLUS_VERSION_DISABLE_MULTIVALUE: u16 = 3;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
@@ -52,6 +53,7 @@ pub trait ModuleMod {
     /// Drops debug-only info like export names.
     fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>);
     fn memory_info(&self) -> Result<MemoryType>;
+    fn set_memory_max(&mut self, max: Pages) -> Result<()>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -260,6 +262,19 @@ impl ModuleMod for ModuleInfo {
         }
         Ok(self.memories.last().unwrap().into())
     }
+
+    fn set_memory_max(&mut self, max: Pages) -> Result<()> {
+        let idx = MemoryIndex::from_u32(0);
+        let mem = self
+            .memories
+            .get_mut(idx)
+            .ok_or_else(|| eyre!("missing memory"))?;
+        mem.maximum = Some(match mem.maximum {
+            Some(existing) => existing.min(max),
+            None => max,
+        });
+        Ok(())
+    }
 }
 
 impl ModuleMod for WasmBinary<'_> {
@@ -379,6 +394,19 @@ impl ModuleMod for WasmBinary<'_> {
         }
         self.memories.last().unwrap().try_into()
     }
+
+    fn set_memory_max(&mut self, max: Pages) -> Result<()> {
+        let max = max.0 as u64;
+        let mem = self
+            .memories
+            .first_mut()
+            .ok_or_else(|| eyre!("missing memory"))?;
+        mem.maximum = Some(match mem.maximum {
+            Some(existing) => existing.min(max),
+            None => max,
+        });
+        Ok(())
+    }
 }
 
 /// Information about an activated program.
@@ -430,6 +458,7 @@ impl Module {
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(
             wasm,
+            stylus_version,
             arbos_version_for_activation,
             page_limit,
             &compile,
@@ -485,8 +514,13 @@ impl Module {
             pay!(code.saturating_mul(535) / 1_000);
         }
 
-        let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
-            .wrap_err("failed to build user module")?;
+        let module = Self::from_user_binary(
+            &bin,
+            compile.debug.debug_funcs,
+            Some(stylus_data),
+            compile.version,
+        )
+        .wrap_err("failed to build user module")?;
 
         Ok((module, stylus_data))
     }
@@ -496,15 +530,17 @@ impl Module {
 mod test {
     use std::path::Path;
 
-    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
-
     use super::*;
     use crate::binary;
 
     // Parse at the threshold version so multi-value is rejected by the validator.
     fn parse_at_threshold(wat: &str) -> Result<WasmBinary<'static>> {
         let wasm: &'static [u8] = Box::leak(wat::parse_str(wat).unwrap().into_boxed_slice());
-        binary::parse_with_version(wasm, Path::new("test"), ARBOS_VERSION_STYLUS_NO_MULTI_VALUE)
+        binary::parse_with_stylus_version(
+            wasm,
+            Path::new("test"),
+            STYLUS_VERSION_DISABLE_MULTIVALUE,
+        )
     }
 
     #[test]
@@ -593,55 +629,23 @@ mod test {
         );
     }
 
-    // A minimal valid Stylus wasm that contains a multi-value function type.
-    // Fixed-size memory (1 1) avoids the pay_for_memory_grow import requirement,
-    // so activation can succeed at versions below the multi-value threshold.
-    fn multi_value_stylus_wasm() -> Vec<u8> {
-        wat::parse_str(
+    #[test]
+    fn test_multi_value_gate() {
+        // Multi-value wasm is allowed for Stylus V1/V2 and rejected from V3 onward.
+        // During recompilation Go passes the stored per-contract version, so a V2 contract
+        // recompiled after the V3 upgrade still arrives here as stylus_version=2.
+        let wasm = wasmer::wat2wasm(
             r#"(module
-                (memory (export "memory") 1 1)
-                (func (result i32 i32)
-                    i32.const 1
-                    i32.const 2
-                )
-                (func (export "user_entrypoint") (param i32) (result i32)
-                    i32.const 0
-                )
-            )"#,
+            (memory (export "memory") 1 1)
+            (func (result i32 i32) i32.const 1 i32.const 2)
+            (func (export "user_entrypoint") (param i32) (result i32) i32.const 0)
+        )"#
+            .as_bytes(),
         )
-        .unwrap()
-    }
-
-    fn activate_with_version(arbos_version: u64) -> Result<(Module, StylusData)> {
-        let wasm = multi_value_stylus_wasm();
-        let mut gas = u64::MAX;
-        Module::activate(
-            &wasm[..],
-            &Bytes32([0u8; 32]),
-            1,
-            arbos_version,
-            128,
-            false,
-            &mut gas,
-        )
-    }
-
-    #[test]
-    fn test_activate_rejects_multi_value_at_threshold() {
-        // At the threshold version the validator rejects multi-value wasm.
-        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE).is_err());
-    }
-
-    #[test]
-    fn test_activate_allows_multi_value_below_threshold() {
-        // One version below the threshold: gate must not fire, activation succeeds.
-        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1).is_ok());
-    }
-
-    #[test]
-    fn test_activate_allows_multi_value_at_zero() {
-        // Version 0 is the recompilation path for already-active contracts.
-        // Multi-value must be accepted and activation must succeed.
-        assert!(activate_with_version(0).is_ok());
+        .unwrap();
+        for (version, allowed) in [(1, true), (2, true), (3, false), (4, false)] {
+            let result = binary::parse_with_stylus_version(&wasm, Path::new("test"), version);
+            assert_eq!(result.is_ok(), allowed, "stylus_version={version}");
+        }
     }
 }

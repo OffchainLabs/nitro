@@ -10,6 +10,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -42,6 +44,8 @@ type TxProcessor struct {
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Contracts        []*vm.Contract
 	Programs         map[common.Address]uint // # of distinct context spans for each program
+	stylusCallDepth  uint16                  // # of Stylus frames currently on the call stack
+	arbNodeConfig    *programs.ArbNodeConfig // resolved once at construction; nil if unset
 	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
@@ -64,6 +68,7 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
 		Contracts:           []*vm.Contract{},
 		Programs:            make(map[common.Address]uint),
+		arbNodeConfig:       programs.GetArbNodeConfig(evm.StateDB),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -81,8 +86,14 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	}
 
 	// Record touched addresses for tx filtering
-	p.evm.StateDB.TouchAddress(contract.Address())
-	p.evm.StateDB.TouchAddress(contract.Caller())
+	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
+		Address:      contract.Address(),
+		FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil},
+	})
+	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
+		Address:      contract.Caller(),
+		FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil},
+	})
 }
 
 func (p *TxProcessor) PopContract() {
@@ -113,6 +124,21 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.EVM) ([]byte, error) {
 	contract := scope.Contract
 	acting := contract.Address()
+
+	// Node-level Stylus call-depth cap (ArbNodeConfig.MaxStylusCallDepth).
+	// Only the REJECT is off-chain-gated (IsExecutedOnChain → exempt).
+	// Config is resolved once per tx in NewTxProcessor to keep this path
+	// off the statedb interface.
+	if cfg := p.arbNodeConfig; cfg != nil && cfg.MaxStylusCallDepth > 0 {
+		if runCtx := p.RunContext(); runCtx != nil && !runCtx.IsExecutedOnChain() &&
+			p.stylusCallDepth >= cfg.MaxStylusCallDepth {
+			log.Info("stylus call depth limit exceeded",
+				"depth", p.stylusCallDepth, "limit", cfg.MaxStylusCallDepth, "contract", acting)
+			return nil, programs.ErrStylusCallDepthExceeded
+		}
+	}
+	p.stylusCallDepth++
+	defer func() { p.stylusCallDepth-- }()
 
 	var tracingInfo *util.TracingInfo
 	if evm.Config.Tracer != nil {

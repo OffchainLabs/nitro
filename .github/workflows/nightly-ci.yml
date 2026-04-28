@@ -8,6 +8,9 @@ on:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   # Only run on schedule
   tests-scheduled:
@@ -26,16 +29,22 @@ jobs:
       run-pebble-a: ${{ matrix.test-mode == 'pebble-a' }}
       run-pebble-b: ${{ matrix.test-mode == 'pebble-b' }}
 
+  # MEL test modes are gated out of default CI; run them nightly so master
+  # coverage is preserved without blocking every PR.
+  mel-tests-scheduled:
+    uses: ./.github/workflows/_mel-go-test-suite.yml
+    secrets: inherit
+
   notify-on-failure:
     name: Notify Slack on failure
-    needs: [tests-scheduled]
+    needs: [tests-scheduled, mel-tests-scheduled]
     runs-on: ubuntu-4
     if: ${{ failure() }}
     env:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a  # v2.1.1
         with:
           errors: true
           method: chat.postMessage

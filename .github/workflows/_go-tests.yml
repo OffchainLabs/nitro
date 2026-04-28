@@ -16,7 +16,10 @@ on:
       run-flaky:
         required: false
         type: boolean
-      run-pathdb:
+      run-pathdb-a:
+        required: false
+        type: boolean
+      run-pathdb-b:
         required: false
         type: boolean
       run-stylus:
@@ -46,11 +49,32 @@ on:
       run-pebble-b:
         required: false
         type: boolean
+      run-defaults-a-mel:
+        required: false
+        type: boolean
+      run-defaults-b-mel:
+        required: false
+        type: boolean
+      run-pathdb-a-mel:
+        required: false
+        type: boolean
+      run-pathdb-b-mel:
+        required: false
+        type: boolean
+      run-flaky-mel:
+        required: false
+        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
   go-tests:
     name: Go tests
     runs-on: arbitrator-ci
+    # Per-job hard cap so a hung test terminates with a Go stack trace rather
+    # than GitHub killing the runner (which yields no useful diagnostics).
+    timeout-minutes: 150
     services:
       redis:
         image: redis
@@ -61,7 +85,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -73,6 +101,9 @@ jobs:
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
+          # Scale pollUntil / retryUntilFound timeouts for loaded shared CI runners.
+          # Consumed by system_tests helpers (see getTestTimeoutScale in common_test.go).
+          echo "NITRO_TEST_TIMEOUT_SCALE=2.0" >> "$GITHUB_ENV"
 
       - name: Build
         run: make -j8 build test-go-deps
@@ -82,12 +113,19 @@ jobs:
 
       # --------------------- PATHDB MODE ---------------------
 
-      - name: run tests without race detection and path state scheme
-        if: inputs.run-pathdb
+      - name: run tests without race detection and path state scheme (A-batch)
+        if: inputs.run-pathdb-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml
+          --junitfile test-results/junit-pathdb-a.xml --run '^Test[A-L]' --reduce-parallelism
+
+      - name: run tests without race detection and path state scheme (B-batch)
+        if: inputs.run-pathdb-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-b.xml --skip '^Test[A-L]' --reduce-parallelism
 
       # --------------------- DEFAULTS MODE ---------------------
 
@@ -95,16 +133,44 @@ jobs:
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --coverprofile coverage-a.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
-
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash
+          --tags cionly --timeout 60m --cover --coverprofile coverage-b.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
-      
+      # --------------------- PATHDB MEL MODE ---------------------
+
+      - name: run tests without race detection and path state scheme (A-batch, MEL)
+        if: inputs.run-pathdb-a-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-a-mel.xml --run '^Test[A-L]' --reduce-parallelism --test_mel
+
+      - name: run tests without race detection and path state scheme (B-batch, MEL)
+        if: inputs.run-pathdb-b-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb-b-mel.xml --skip '^Test[A-L]' --reduce-parallelism --test_mel
+
+      # --------------------- DEFAULTS MEL MODE ---------------------
+
+      - name: run tests without race detection and hash state scheme (A-batch, MEL)
+        if: inputs.run-defaults-a-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-defaults-a-mel.xml --run '^Test[A-L]' --test_mel
+      - name: run tests without race detection and hash state scheme (B-batch, MEL)
+        if: inputs.run-defaults-b-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash
+          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
@@ -113,13 +179,35 @@ jobs:
 
       # --------------------- FLAKY MODE --------------------------
 
-      - name: run flaky tests
+      # Flaky tests retry once (via gotestsum.sh) and block on failure: if a test
+      # fails even after a retry, it's not just flaky — it's broken.
+      - name: run flaky tests (hash state scheme)
         if: inputs.run-flaky
-        continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --flaky
-          --junitfile test-results/junit-flaky.xml
+          --junitfile test-results/junit-flaky-hash.xml
+
+      - name: run flaky tests (path state scheme)
+        if: inputs.run-flaky
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme path --flaky
+          --junitfile test-results/junit-flaky-path.xml
+
+      - name: run flaky tests (hash state scheme, MEL)
+        if: inputs.run-flaky-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --flaky --test_mel
+          --junitfile test-results/junit-flaky-mel-hash.xml
+
+      - name: run flaky tests (path state scheme, MEL)
+        if: inputs.run-flaky-mel
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme path --flaky --test_mel
+          --junitfile test-results/junit-flaky-mel-path.xml
 
       # --------------------- CHALLENGE MODES ---------------------
 
@@ -182,15 +270,13 @@ jobs:
       - name: run pebble tests (A-batch)
         if: inputs.run-pebble-a
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
           --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism
-
       - name: run pebble tests (B-batch)
         if: inputs.run-pebble-b
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
           --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
-
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
       - name: Process JUnit XML logs
@@ -208,7 +294,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
+          files: ./coverage.txt,./coverage-a.txt,./coverage-b.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 

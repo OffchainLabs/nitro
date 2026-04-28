@@ -40,6 +40,7 @@ type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
         let mut store = compile.store(Target::default(), false);
+        store.set_stylus_version(compile.version);
         let imports = imports! {
             "test" => {
                 "noop" => Function::new_typed(&mut store, || {}),
@@ -117,18 +118,18 @@ fn expensive_add(op: &Operator, _tys: &SigMap) -> u64 {
 }
 
 pub fn random_ink(min: u64) -> Ink {
-    Ink(rand::thread_rng().gen_range(min..=u64::MAX))
+    Ink(rand::rng().random_range(min..=u64::MAX))
 }
 
 pub fn random_bytes20() -> Bytes20 {
     let mut data = [0; 20];
-    rand::thread_rng().fill_bytes(&mut data);
+    rand::rng().fill_bytes(&mut data);
     data.into()
 }
 
 fn random_bytes32() -> Bytes32 {
     let mut data = [0; 32];
-    rand::thread_rng().fill_bytes(&mut data);
+    rand::rng().fill_bytes(&mut data);
     data.into()
 }
 
@@ -173,10 +174,25 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         HashMap::default(),
         Arc::new(|_, _, _| panic!("tried to read preimage")),
         Some(stylus_data),
+        compile.version,
     )?;
     mach.set_ink(Ink(u64::MAX));
     mach.set_stack(u32::MAX);
     Ok(mach)
+}
+
+fn run_machine_read_memory(
+    path: &str,
+    compile: &CompileConfig,
+    func: &str,
+    ink: Ink,
+    addr: u32,
+    len: u32,
+) -> Result<Vec<u8>> {
+    let mut machine = new_test_machine(path, compile)?;
+    let module = machine.find_module("user")?;
+    machine.call_user_func(func, vec![], ink)?;
+    machine.read_memory(module, addr, len).map(|s| s.to_vec())
 }
 
 fn run_native(native: &mut TestInstance, args: &[u8], ink: Ink) -> Result<Vec<u8>> {
