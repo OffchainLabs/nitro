@@ -16,7 +16,8 @@ pub fn send_validation_input(writer: &mut impl Write, input: &ValidationInput) -
     send_inbox(writer, &input.delayed_messages)?;
     send_preimages(writer, &input.preimages)?;
     send_module_asms(writer, &input.module_asms)?;
-    finish_sending(writer)
+    finish_sending(writer)?;
+    writer.write_all(&input.end_parent_chain_block_hash)
 }
 
 pub fn send_successful_response(
@@ -28,7 +29,12 @@ pub fn send_successful_response(
     send_globals(
         writer,
         &[new_state.batch, new_state.pos_in_batch],
-        &[new_state.block_hash.0, new_state.send_root.0],
+        &[
+            new_state.block_hash.0,
+            new_state.send_root.0,
+            new_state.mel_state_hash.0,
+            new_state.mel_msg_hash.0,
+        ],
     )?;
     write_u64(writer, memory_used)
 }
@@ -41,12 +47,14 @@ pub fn send_failure_response(writer: &mut impl Write, error_message: &str) -> IO
 fn send_globals(
     writer: &mut impl Write,
     small_globals: &[u64; 2],
-    large_globals: &[[u8; 32]; 2],
+    large_globals: &[[u8; 32]; 4],
 ) -> IOResult<()> {
     write_u64(writer, small_globals[0])?;
     write_u64(writer, small_globals[1])?;
     writer.write_all(&large_globals[0])?;
-    writer.write_all(&large_globals[1])
+    writer.write_all(&large_globals[1])?;
+    writer.write_all(&large_globals[2])?;
+    writer.write_all(&large_globals[3])
 }
 
 fn send_inbox(writer: &mut impl Write, inbox: &Inbox) -> IOResult<()> {

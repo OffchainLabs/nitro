@@ -24,11 +24,12 @@ pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
 )]
 pub struct ValidationInput {
     pub small_globals: [u64; 2],
-    pub large_globals: [[u8; 32]; 2],
+    pub large_globals: [[u8; 32]; 4],
     pub preimages: Preimages,
     pub sequencer_messages: Inbox,
     pub delayed_messages: Inbox,
     pub module_asms: BTreeMap<[u8; 32], Vec<u8>>,
+    pub end_parent_chain_block_hash: [u8; 32],
 }
 
 impl ValidationInput {
@@ -70,11 +71,17 @@ impl ValidationInput {
 
         Ok(Self {
             small_globals: [req.start_state.batch, req.start_state.pos_in_batch],
-            large_globals: [req.start_state.block_hash.0, req.start_state.send_root.0],
+            large_globals: [
+                req.start_state.block_hash.0,
+                req.start_state.send_root.0,
+                req.start_state.mel_state_hash.0,
+                req.start_state.mel_msg_hash.0,
+            ],
             preimages,
             sequencer_messages,
             delayed_messages,
             module_asms,
+            end_parent_chain_block_hash: req.end_parent_chain_block_hash.0,
         })
     }
 
@@ -114,6 +121,14 @@ pub struct GoGlobalState {
     pub block_hash: Bytes32,
     #[serde(with = "As::<DisplayFromStr>")]
     pub send_root: Bytes32,
+    #[serde(default)]
+    #[serde(with = "As::<DisplayFromStr>")]
+    #[serde(rename = "MELStateHash")]
+    pub mel_state_hash: Bytes32,
+    #[serde(default)]
+    #[serde(with = "As::<DisplayFromStr>")]
+    #[serde(rename = "MELMsgHash")]
+    pub mel_msg_hash: Bytes32,
     pub batch: u64,
     pub pos_in_batch: u64,
 }
@@ -175,6 +190,8 @@ pub struct ValidationRequest {
     #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>>")]
     pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
     pub debug_chain: bool,
+    #[serde(with = "As::<DisplayFromStr>")]
+    pub end_parent_chain_block_hash: Bytes32,
     #[serde(rename = "max-user-wasmSize", default)]
     pub max_user_wasm_size: u64,
 }
@@ -230,11 +247,14 @@ mod tests {
             start_state: GoGlobalState {
                 block_hash,
                 send_root,
+                mel_state_hash: Bytes32::default(),
+                mel_msg_hash: Bytes32::default(),
                 batch: 100,
                 pos_in_batch: 200,
             },
             user_wasms,
             debug_chain: false,
+            end_parent_chain_block_hash: Bytes32::default(),
             max_user_wasm_size: 0,
         }
     }

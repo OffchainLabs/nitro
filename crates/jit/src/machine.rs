@@ -145,6 +145,7 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             },
             "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
             "validateCertificate" => func!(wavmio::validate_certificate),
+            "getEndParentChainBlockHash" => func!(wavmio::get_end_parent_chain_block_hash),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
@@ -289,6 +290,8 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
         large_globals: [
             input.old_state.last_block_hash.0,
             input.old_state.last_send_root.0,
+            [0u8; 32],
+            [0u8; 32],
         ],
         ..Default::default()
     };

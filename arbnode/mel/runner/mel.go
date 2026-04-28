@@ -22,13 +22,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -120,8 +119,6 @@ type MessageExtractor struct {
 	reorgEventsNotifier      chan uint64
 	seqBatchCounter          SequencerBatchCountFetcher
 	l1Reader                 *headerreader.HeaderReader
-
-	blockValidator *staker.BlockValidator // TODO: remove post MEL block validation
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -258,13 +255,6 @@ func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum r
 	return state, nil
 }
 
-func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) {
-	if m.Started() {
-		panic("cannot set block validator after start")
-	}
-	m.blockValidator = blockValidator
-}
-
 func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	state, err := m.getStateByRPCBlockNum(ctx, rpc.SafeBlockNumber)
 	if err != nil {
@@ -375,6 +365,9 @@ func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 	return delayedMsg.AfterInboxAcc(), nil
 }
 
+// GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not m.GetContext())
+// because it is called from FinalizedDelayedMessageAtPosition, which receives its
+// context from the DelayedSequencer — a running component that supplies a valid context.
 func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
 	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
@@ -511,6 +504,20 @@ func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageI
 func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
 	return metadata.ParentChainBlock, err
+}
+
+func (m *MessageExtractor) FindMessageOriginMELState(pos arbutil.MessageIndex) (*mel.State, error) {
+	seqNum, found, err := m.FindInboxBatchContainingMessage(pos)
+	if err != nil {
+		return nil, err
+	} else if !found {
+		return nil, errors.New("batch containing message not found")
+	}
+	metadata, err := m.GetBatchMetadata(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	return m.melDB.State(metadata.ParentChainBlock)
 }
 
 // err will return unexpected/internal errors

@@ -5625,7 +5625,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "bindgen",
  "bytes",
@@ -5657,7 +5657,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "backtrace",
  "bytes",
@@ -5691,7 +5691,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-cranelift"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -5711,12 +5711,11 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-llvm"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "byteorder",
  "cc",
  "crossbeam-channel",
- "enum-iterator",
  "enumset",
  "inkwell",
  "itertools 0.14.0",
@@ -5737,7 +5736,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-singlepass"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "byteorder",
  "dynasm",
@@ -5756,7 +5755,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-derive"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -5766,7 +5765,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-types"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "bytecheck",
  "enum-iterator",
@@ -5783,7 +5782,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-vm"
-version = "7.1.0"
+version = "7.1.0-rc.2"
 dependencies = [
  "backtrace",
  "bytesize",

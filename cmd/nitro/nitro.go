@@ -711,7 +711,7 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = nitroinit.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
+		err = nitroinit.InitReorg(ctx, nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker, consensusNode.TxStreamer, consensusNode.MessageExtractor)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {

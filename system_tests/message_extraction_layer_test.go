@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -1040,7 +1040,7 @@ func createInitialMELState(
 	Require(t, err)
 	confirmedHash, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
-	latestConfirmedAssertion, err := bold.ReadBoldAssertionCreationInfo(
+	latestConfirmedAssertion, err := staker.ReadBoldAssertionCreationInfo(
 		ctx,
 		rollup,
 		client,

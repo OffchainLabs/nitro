@@ -437,6 +437,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		l2nodeA.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidatorA.Initialize(ctx))
@@ -447,6 +448,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		pcdsB,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
+		nil,
 		nil,
 	)
 	Require(t, err)

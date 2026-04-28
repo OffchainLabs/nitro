@@ -84,6 +84,10 @@ pub struct GlobalState {
     pub last_block_hash: Bytes32,
     #[clap(long, value_parser = cli_parsing::parse_hex)]
     pub last_send_root: Bytes32,
+    #[clap(long, value_parser = cli_parsing::parse_hex, default_value = "0x0000000000000000000000000000000000000000000000000000000000000000")]
+    pub mel_state_hash: Bytes32,
+    #[clap(long, value_parser = cli_parsing::parse_hex, default_value = "0x0000000000000000000000000000000000000000000000000000000000000000")]
+    pub mel_msg_hash: Bytes32,
     #[clap(long, default_value = "0")]
     pub inbox_position: u64,
     #[clap(long, default_value = "0")]
@@ -95,6 +99,8 @@ impl From<validation::GoGlobalState> for GlobalState {
         Self {
             last_block_hash: state.block_hash,
             last_send_root: state.send_root,
+            mel_state_hash: state.mel_state_hash,
+            mel_msg_hash: state.mel_msg_hash,
             inbox_position: state.batch,
             position_within_message: state.pos_in_batch,
         }
@@ -106,6 +112,8 @@ impl From<GlobalState> for validation::GoGlobalState {
         Self {
             block_hash: state.last_block_hash,
             send_root: state.last_send_root,
+            mel_state_hash: state.mel_state_hash,
+            mel_msg_hash: state.mel_msg_hash,
             batch: state.inbox_position,
             pos_in_batch: state.position_within_message,
         }
@@ -166,6 +174,8 @@ fn run_instance(
         new_state: GlobalState {
             last_block_hash: Bytes32(env.input.large_globals[0]),
             last_send_root: Bytes32(env.input.large_globals[1]),
+            mel_state_hash: Bytes32(env.input.large_globals[2]),
+            mel_msg_hash: Bytes32(env.input.large_globals[3]),
             inbox_position: env.input.small_globals[0],
             position_within_message: env.input.small_globals[1],
         },

@@ -9,7 +9,7 @@ use std::{
 };
 
 use arbutil::Color;
-use caller_env::GuestPtr;
+use caller_env::{GuestPtr, MemAccess};
 use validation::transfer::receive_validation_input;
 
 use crate::{
@@ -158,6 +158,13 @@ pub fn resolve_preimage_impl(
         name,
     )
     .map_err(Escape::HostIO)
+}
+
+pub fn get_end_parent_chain_block_hash(mut env: WasmEnvMut, out_ptr: GuestPtr) -> MaybeEscape {
+    let (mut mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
+    mem.write_slice(out_ptr, &exec.input.end_parent_chain_block_hash);
+    Ok(())
 }
 
 pub fn validate_certificate(

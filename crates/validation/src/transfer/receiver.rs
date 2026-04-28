@@ -23,6 +23,8 @@ pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationIn
     let preimages = receive_preimages(reader)?;
     let module_asms = receive_module_asms(reader)?;
     ensure_readiness(reader)?;
+    let mut end_parent_chain_block_hash = [0u8; 32];
+    reader.read_exact(&mut end_parent_chain_block_hash)?;
 
     Ok(ValidationInput {
         small_globals,
@@ -31,6 +33,7 @@ pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationIn
         sequencer_messages,
         delayed_messages,
         module_asms,
+        end_parent_chain_block_hash,
     })
 }
 
@@ -43,6 +46,8 @@ pub fn receive_response(reader: &mut impl Read) -> IOResult<Result<(GoGlobalStat
                 pos_in_batch: small[1],
                 block_hash: arbutil::Bytes32(large[0]),
                 send_root: arbutil::Bytes32(large[1]),
+                mel_state_hash: arbutil::Bytes32(large[2]),
+                mel_msg_hash: arbutil::Bytes32(large[3]),
             };
             let memory_used = read_u64(reader)?;
             Ok(Ok((new_state, memory_used)))
@@ -56,11 +61,13 @@ pub fn receive_response(reader: &mut impl Read) -> IOResult<Result<(GoGlobalStat
     }
 }
 
-fn receive_globals(reader: &mut impl Read) -> IOResult<([u64; 2], [[u8; 32]; 2])> {
+fn receive_globals(reader: &mut impl Read) -> IOResult<([u64; 2], [[u8; 32]; 4])> {
     let small_globals = [read_u64(reader)?, read_u64(reader)?];
-    let mut large_globals = [[0u8; 32]; 2];
+    let mut large_globals = [[0u8; 32]; 4];
     reader.read_exact(&mut large_globals[0])?;
     reader.read_exact(&mut large_globals[1])?;
+    reader.read_exact(&mut large_globals[2])?;
+    reader.read_exact(&mut large_globals[3])?;
     Ok((small_globals, large_globals))
 }
 

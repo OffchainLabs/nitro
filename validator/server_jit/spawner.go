@@ -23,6 +23,7 @@ type JitSpawnerConfig struct {
 	Cranelift        bool          `koanf:"cranelift"`
 	MaxExecutionTime time.Duration `koanf:"max-execution-time" reload:"hot"`
 	JitPath          string        `koanf:"jit-path"`
+	ProverBinPath    string        `koanf:"prover-bin-path"`
 
 	// TODO: change WasmMemoryUsageLimit to a string and use resourcemanager.ParseMemLimit
 	WasmMemoryUsageLimit int `koanf:"wasm-memory-usage-limit"`
@@ -35,7 +36,8 @@ var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	Cranelift:            true,
 	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memory limit
 	MaxExecutionTime:     time.Minute * 10,
-	JitPath:              "", // Empty string means use default path resolution
+	JitPath:              "",            // Empty string means use default path resolution
+	ProverBinPath:        "replay.wasm", // Path to prover WASM binary relative to machine path
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -44,6 +46,7 @@ func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
 	f.Duration(prefix+".max-execution-time", DefaultJitSpawnerConfig.MaxExecutionTime, "if execution time used by a jit wasm exceeds this limit, a rpc error is returned")
 	f.String(prefix+".jit-path", DefaultJitSpawnerConfig.JitPath, "path to jit executable, if empty, attempts to find jit executable relative to nitro binary or in PATH")
+	f.String(prefix+".prover-bin-path", DefaultJitSpawnerConfig.ProverBinPath, "path to prover WASM binary relative to machine path")
 }
 
 type JitSpawner struct {
@@ -59,6 +62,9 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 	machineConfig.JitCranelift = config().Cranelift
 	machineConfig.WasmMemoryUsageLimit = config().WasmMemoryUsageLimit
 	machineConfig.JitPath = config().JitPath
+	if config().ProverBinPath != "" {
+		machineConfig.ProverBinPath = config().ProverBinPath
+	}
 	maxExecutionTime := config().MaxExecutionTime
 	loader, err := NewJitMachineLoader(&machineConfig, locator, maxExecutionTime, fatalErrChan)
 	if err != nil {

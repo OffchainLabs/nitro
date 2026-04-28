@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -54,11 +55,10 @@ type BlockValidatorRegistrer interface {
 }
 
 type InboxTrackerInterface interface {
-	BlockValidatorRegistrer
 	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
-	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
 
@@ -70,6 +70,14 @@ type TransactionStreamerInterface interface {
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
+}
+
+type MELValidatorInterface interface {
+	UpdateValidationTarget(pos arbutil.MessageIndex)
+	LatestValidatedMELState(context.Context) (*mel.State, error)
+	FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error)
+	FetchMessageOriginMELStateHash(pos arbutil.MessageIndex) (common.Hash, error)
+	ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex)
 }
 
 type InboxReaderInterface interface {
@@ -143,9 +151,10 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  daprovider.PreimagesMap
-	UserWasms  state.UserWasms
-	DelayedMsg []byte
+	Preimages               daprovider.PreimagesMap
+	UserWasms               state.UserWasms
+	DelayedMsg              []byte
+	EndParentChainBlockHash common.Hash
 }
 
 func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.ValidationInput, error) {
@@ -153,15 +162,19 @@ func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.Va
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	res := validator.ValidationInput{
-		Id:            uint64(e.Pos),
-		HasDelayedMsg: e.HasDelayedMsg,
-		DelayedMsgNr:  e.DelayedMsgNr,
-		Preimages:     e.Preimages,
-		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
-		BatchInfo:     e.BatchInfo,
-		DelayedMsg:    e.DelayedMsg,
-		StartState:    e.Start,
-		DebugChain:    e.ChainConfig.DebugMode(),
+		Id:                      uint64(e.Pos),
+		HasDelayedMsg:           e.HasDelayedMsg,
+		DelayedMsgNr:            e.DelayedMsgNr,
+		Preimages:               e.Preimages,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
+		BatchInfo:               e.BatchInfo,
+		DelayedMsg:              e.DelayedMsg,
+		StartState:              e.Start,
+		DebugChain:              false,
+		EndParentChainBlockHash: e.EndParentChainBlockHash,
+	}
+	if e.ChainConfig != nil {
+		res.DebugChain = e.ChainConfig.DebugMode()
 	}
 	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
 		return nil, fmt.Errorf("stylus support is required")

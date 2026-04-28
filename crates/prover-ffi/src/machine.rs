@@ -303,3 +303,15 @@ pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut Rust
         (*out).write((*mach).serialize_proof());
     }
 }
+
+/// Sets the ending parent chain block hash used for a machine when executing message extraction
+/// algorithms.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_set_end_parent_chain_block_hash(
+    mach: *mut Machine,
+    block_hash: *const Bytes32,
+) {
+    unsafe {
+        (*mach).set_end_parent_chain_block_hash(*block_hash);
+    }
+}
