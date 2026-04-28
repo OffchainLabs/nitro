@@ -138,13 +138,13 @@ impl GenesisBuilder {
             a[19] = byte;
             user_entries
                 .entry(Address::new(a))
-                .or_insert_with(|| sentinel_alloc());
+                .or_insert_with(sentinel_alloc);
         }
         let mut ff = [0u8; 20];
         ff[19] = 0xff;
         user_entries
             .entry(Address::new(ff))
-            .or_insert_with(|| sentinel_alloc());
+            .or_insert_with(sentinel_alloc);
 
         let mut a4b05_short = [0u8; 20];
         a4b05_short[17] = 0x0a;
@@ -152,7 +152,7 @@ impl GenesisBuilder {
         a4b05_short[19] = 0x05;
         user_entries
             .entry(Address::new(a4b05_short))
-            .or_insert_with(|| sentinel_alloc());
+            .or_insert_with(sentinel_alloc);
 
         let arbos_state_addr = ARBOS_STATE_ADDRESS;
         let mut arbos_entry = Map::new();

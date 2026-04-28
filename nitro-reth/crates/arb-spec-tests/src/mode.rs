@@ -1,5 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum FixtureMode {
+    #[default]
     Verify,
     Record,
     Compare,
@@ -15,8 +17,3 @@ impl FixtureMode {
     }
 }
 
-impl Default for FixtureMode {
-    fn default() -> Self {
-        FixtureMode::Verify
-    }
-}

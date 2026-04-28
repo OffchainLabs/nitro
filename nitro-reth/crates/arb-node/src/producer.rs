@@ -429,7 +429,7 @@ where
                 let initial_version = std::env::var("ARB_INITIAL_ARBOS_VERSION")
                     .ok()
                     .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or_else(|| {
+                    .unwrap_or({
                         if parent_arbos_version > 0 {
                             parent_arbos_version
                         } else {

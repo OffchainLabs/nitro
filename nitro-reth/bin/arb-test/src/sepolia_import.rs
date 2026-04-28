@@ -201,7 +201,7 @@ fn lower(s: impl AsRef<str>) -> String {
 }
 
 fn addr_eq(a: &str, b: &str) -> bool {
-    a.to_ascii_lowercase() == b.to_ascii_lowercase()
+    a.eq_ignore_ascii_case(b)
 }
 
 struct Rpc {
