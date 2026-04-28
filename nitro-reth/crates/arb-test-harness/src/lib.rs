@@ -10,11 +10,8 @@ pub mod scenario;
 
 pub use error::{HarnessError, Result};
 
-pub use capture::{capture_from_node, CapturedScenario};
-pub use dual_exec::{BlockDiff, DiffReport, DualExec, LogDiff, StateDiff, StateField, TxDiff};
+pub use capture::capture_from_node;
+pub use dual_exec::{DiffReport, DualExec};
 pub use messaging::L1Message;
-pub use node::{
-    remote::RemoteNode, ArbReceiptFields, Block, BlockId, EvmLog, ExecutionNode, MultiGasDims,
-    NodeKind, NodeStartCtx, TxReceipt, TxRequest,
-};
+pub use node::{remote::RemoteNode, Block, ExecutionNode, MultiGasDims, NodeStartCtx};
 pub use scenario::{Scenario, ScenarioSetup, ScenarioStep};

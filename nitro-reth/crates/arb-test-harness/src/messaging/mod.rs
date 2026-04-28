@@ -80,11 +80,6 @@ pub mod encoding {
         hash.0
     }
 
-    pub fn encode_bytestring(data: &[u8], out: &mut Vec<u8>) {
-        out.extend_from_slice(&encode_uint64(data.len() as u64));
-        out.extend_from_slice(data);
-    }
-
     pub fn request_id_from_seq(seq: u64) -> B256 {
         B256::from(encode_uint256(U256::from(seq)))
     }

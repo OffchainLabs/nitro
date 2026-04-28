@@ -78,28 +78,8 @@ impl GenesisBuilder {
         }
     }
 
-    pub fn with_account(mut self, addr: Address, alloc: AccountAlloc) -> Self {
-        self.allocations.insert(addr, alloc);
-        self
-    }
-
     pub fn with_arbos_slot(mut self, slot: B256, value: B256) -> Self {
         self.arbos_storage.insert(slot, value);
-        self
-    }
-
-    pub fn with_chain_owner(mut self, owner: Address) -> Self {
-        self.initial_chain_owner = owner;
-        self
-    }
-
-    pub fn with_initial_block_num(mut self, n: u64) -> Self {
-        self.initial_block_num = n;
-        self
-    }
-
-    pub fn with_allow_debug_precompiles(mut self, allow: bool) -> Self {
-        self.allow_debug_precompiles = allow;
         self
     }
 
