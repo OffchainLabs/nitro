@@ -110,11 +110,10 @@ run: # Run sp1-runner on $(BLOCK_INPUTS_DIR)/$(BLOCK).json (override with BLOCK=
 		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json
 
 .PHONY: profile
-profile: # Profile bootloading, stylus compilation, and reexecution for BLOCK (default: stylus).
+profile: # Profile bootloading, stylus compilation, and reexecution across all block types.
 	@python3 $(CURDIR)/profile.py \
 		--output-dir $(OUTPUT_DIR) \
-		--block-inputs-dir $(BLOCK_INPUTS_DIR) \
-		--block $(BLOCK)
+		--block-inputs-dir $(BLOCK_INPUTS_DIR)
 
 .PHONY: clean
 clean: # Remove all generated artifacts.

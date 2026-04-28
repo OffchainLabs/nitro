@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Profile the SP1 zkVM pipeline for a given block input.
+Profile the SP1 zkVM pipeline across all block types.
 
 Usage:
-    python3 profile.py --output-dir TARGET/sp1 --block-inputs-dir TARGET/sp1/block-inputs --block stylus
+    python3 profile.py --output-dir TARGET/sp1 --block-inputs-dir TARGET/sp1/block-inputs
 
 Phases measured:
   bootloading         — SP1 execution time only (excludes WASM→LLVM compilation)
@@ -18,6 +18,8 @@ import os
 import re
 import subprocess
 import sys
+
+BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed"]
 
 # ---------------------------------------------------------------------------
 # Log parsing
@@ -93,36 +95,52 @@ def fmt_secs(v: str | None) -> str:
         return v
 
 
+# A table row is either a data dict or a section sentinel {"section": name}.
+
 def print_table(rows: list[dict]) -> None:
     headers = ["Phase", "Wasm size", "SP1 cycles", "Time"]
 
-    display = []
+    # Collect display cells for data rows only (to compute column widths).
+    display: list[list[str] | str] = []  # str entries are section labels
     for r in rows:
-        display.append([
-            r["label"],
-            fmt_bytes(r.get("wasm_size")),
-            fmt_int(r.get("cycles")),
-            fmt_secs(r.get("time_secs")),
-        ])
+        if "section" in r:
+            display.append(r["section"])
+        else:
+            display.append([
+                r["label"],
+                fmt_bytes(r.get("wasm_size")),
+                fmt_int(r.get("cycles")),
+                fmt_secs(r.get("time_secs")),
+            ])
 
+    data_rows = [d for d in display if isinstance(d, list)]
     col_widths = [
-        max(len(headers[i]), max(len(d[i]) for d in display))
+        max(len(headers[i]), max(len(d[i]) for d in data_rows))
         for i in range(len(headers))
     ]
 
-    # First column (phase label) is left-aligned; the rest are right-aligned.
+    total_inner = sum(col_widths) + 3 * (len(col_widths) - 1)  # widths + " | " separators
+
     def fmt_cell(value: str, width: int, col: int) -> str:
         return value.ljust(width) if col == 0 else value.rjust(width)
 
-    sep = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
-    header_row = "| " + " | ".join(h.ljust(w) for h, w in zip(headers, col_widths)) + " |"
+    sep      = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
+    thick    = "+=" + "=+=".join("=" * w for w in col_widths) + "=+"
+    hdr_row  = "| " + " | ".join(h.ljust(w) for h, w in zip(headers, col_widths)) + " |"
 
     print()
     print(sep)
-    print(header_row)
+    print(hdr_row)
     print(sep)
-    for d in display:
-        print("| " + " | ".join(fmt_cell(c, w, i) for i, (c, w) in enumerate(zip(d, col_widths))) + " |")
+    for item in display:
+        if isinstance(item, str):
+            # Section header row: block name centered across full table width.
+            label = f" {item} "
+            print(thick)
+            print("| " + label.center(total_inner) + " |")
+            print(sep)
+        else:
+            print("| " + " | ".join(fmt_cell(c, w, i) for i, (c, w) in enumerate(zip(item, col_widths))) + " |")
     print(sep)
     print()
 
@@ -135,15 +153,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--output-dir", required=True, help="Path to target/sp1")
     ap.add_argument("--block-inputs-dir", required=True, help="Path to target/sp1/block-inputs")
-    ap.add_argument("--block", default="stylus", help="Block input name (without .json)")
     args = ap.parse_args()
 
     out = args.output_dir
-    block_file = f"{args.block_inputs_dir}/{args.block}.json"
 
-    print(f"\nProfiling block: {args.block}")
-
-    print("\n[1/2] Running sp1-builder (WASM→LLVM compilation + SP1 bootloading):")
+    print("\n[1] Running sp1-builder (WASM→LLVM compilation + SP1 bootloading):")
     boot_log = run(
         "sp1-builder",
         [
@@ -153,32 +167,38 @@ def main() -> None:
         ],
     )
 
-    print("\n[2/2] Running sp1-runner (stylus compilation + reexecution):")
-    run_log = run(
-        "sp1-runner",
-        [
-            f"{out}/sp1-runner",
-            "--program", f"{out}/dumped_replay_wasm.elf",
-            "--stylus-compiler-program", f"{out}/stylus-compiler-program",
-            "--block-file", block_file,
-        ],
-    )
-
-    profile_rows = parse_profile_lines(boot_log) + parse_profile_lines(run_log)
-
     table: list[dict] = []
-    stylus_count = 0
-    for row in profile_rows:
-        phase = row["phase"]
-        if phase == "bootloading":
-            table.append({"label": "bootloading", "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
-        elif phase == "stylus_compilation":
-            stylus_count += 1
-            table.append({"label": f"stylus_compilation [{stylus_count}]", "wasm_size": row.get("wasm_size"), "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
-        elif phase == "reexecution":
-            table.append({"label": "reexecution", "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
 
-    if not table:
+    boot_rows = parse_profile_lines(boot_log)
+    for row in boot_rows:
+        if row["phase"] == "bootloading":
+            table.append({"label": "bootloading", "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
+
+    print(f"\n[2] Running sp1-runner on {len(BLOCKS)} block types:")
+    for i, block in enumerate(BLOCKS, 1):
+        block_file = f"{args.block_inputs_dir}/{block}.json"
+        run_log = run(
+            f"sp1-runner [{block}]",
+            [
+                f"{out}/sp1-runner",
+                "--program", f"{out}/dumped_replay_wasm.elf",
+                "--stylus-compiler-program", f"{out}/stylus-compiler-program",
+                "--block-file", block_file,
+            ],
+        )
+
+        table.append({"section": block})
+        stylus_count = 0
+        for row in parse_profile_lines(run_log):
+            phase = row["phase"]
+            if phase == "stylus_compilation":
+                stylus_count += 1
+                table.append({"label": f"stylus_compilation [{stylus_count}]", "wasm_size": row.get("wasm_size"), "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
+            elif phase == "reexecution":
+                table.append({"label": "reexecution", "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
+
+    data_rows = [r for r in table if "section" not in r]
+    if not data_rows:
         print("\nNo [PROFILE] lines found. Make sure RUST_LOG is not suppressing INFO logs.", file=sys.stderr)
         sys.exit(1)
 
