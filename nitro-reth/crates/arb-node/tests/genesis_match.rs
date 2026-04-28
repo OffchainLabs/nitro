@@ -178,7 +178,14 @@ fn parser_injects_sentinels_without_skip_flag() {
 }
 
 #[test]
-fn parser_honors_skip_genesis_injection_flag() {
+fn parser_with_skip_genesis_injection_still_injects_arbos_state() {
+    // SkipGenesisInjection used to disable the alloc-injection step entirely,
+    // but the cache files produced by `arb-genesis-capture` set the flag and
+    // are missing both `FilteredTransactionsState` and the storage trie of
+    // the ArbOS state account, so honoring the flag verbatim breaks the
+    // genesis state root. The parser now always merges the injection table:
+    // user-supplied accounts/fields/slots win on conflict, anything missing
+    // gets filled in.
     let user_addr: Address = address!("00000000000000000000000000000000deadbeef");
     let user_balance = U256::from(0x1234u64);
 
@@ -222,15 +229,81 @@ fn parser_honors_skip_genesis_injection_flag() {
     let spec = ArbChainSpecParser::parse(&json).expect("parse");
     let alloc = &spec.genesis().alloc;
 
-    assert_eq!(alloc.len(), 1, "alloc must contain only the supplied entry");
-    let entry = alloc.get(&user_addr).expect("supplied entry preserved");
+    let entry = alloc.get(&user_addr).expect("user-supplied entry preserved");
     assert_eq!(entry.balance, user_balance);
 
-    // Confirm none of the standard precompile sentinels were injected.
     let arbsys = address!("0000000000000000000000000000000000000064");
     let arb_owner = address!("0000000000000000000000000000000000000070");
-    assert!(!alloc.contains_key(&arbsys));
-    assert!(!alloc.contains_key(&arb_owner));
+    let arbos_state = address!("a4b05fffffffffffffffffffffffffffffffffff");
+    assert!(alloc.contains_key(&arbsys), "ArbSys sentinel must be injected");
+    assert!(alloc.contains_key(&arb_owner), "ArbOwner sentinel must be injected");
+    let state_account = alloc
+        .get(&arbos_state)
+        .expect("ArbOS state account must be injected");
+    let storage = state_account
+        .storage
+        .as_ref()
+        .expect("ArbOS state account must carry storage slots");
+    assert!(!storage.is_empty(), "ArbOS storage must be populated");
+}
+
+/// Pinning tests: parsing each captured Nitro genesis cache file plus the
+/// parser's always-on injection step must produce the exact state root and
+/// hash the spec fixtures pin. Regressions in storage layout, chain-config
+/// serialization, FilteredTransactionsState seeding, or header overrides
+/// will trip these long before the spec suite spins up the full binary.
+fn assert_cache_state_root_matches(version: u64, expected_state_root: B256, expected_hash: B256) {
+    let cache_path = format!(
+        "{}/../arb-spec-tests/fixtures/_genesis_cache/chain412346_v{version}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let spec = ArbChainSpecParser::parse(&cache_path).expect("parse cache");
+    let header = spec.genesis_header();
+    assert_eq!(
+        header.state_root, expected_state_root,
+        "state root mismatch for v{version} cache"
+    );
+    assert_eq!(
+        spec.genesis_hash(),
+        expected_hash,
+        "block hash mismatch for v{version} cache"
+    );
+}
+
+#[test]
+fn cache_state_root_matches_v10_baseline() {
+    assert_cache_state_root_matches(
+        10,
+        hex!("5c0b434552d04dcd5c723669d1b332f1837dee591bb24a3aac637e3a2aca7185").into(),
+        hex!("2116ae1892bcc05016222bd57af91945f425eeca1f7c6bacfcf0d67d4ed00f88").into(),
+    );
+}
+
+#[test]
+fn cache_state_root_matches_v32_baseline() {
+    assert_cache_state_root_matches(
+        32,
+        hex!("471d193420070fdfecec116f46b15937d7244f595901ca12ef4ce4ddbf53cd68").into(),
+        hex!("a6c2936f68ae2910e30976a234bb9f09aacb22b6dce5f3fe3a1b1c426b46fa57").into(),
+    );
+}
+
+#[test]
+fn cache_state_root_matches_v50_baseline() {
+    assert_cache_state_root_matches(
+        50,
+        hex!("7df9d696ad8176680f675557ef0a0e9276d9510c040dc1a24a9296b4a9d8d694").into(),
+        hex!("08cad158d0956351511d1e67cc48bc1ef089ec37c087d4e227b45a6fb71bac3e").into(),
+    );
+}
+
+#[test]
+fn cache_state_root_matches_v60_baseline() {
+    assert_cache_state_root_matches(
+        60,
+        hex!("6f96ed9046ded46b40bd3ac903158065be54827c0624229e9c6e0ff541c0c6df").into(),
+        hex!("d0564ff804de4b490ae5c3d252c66a886c10faa42730f983dd6bbe3dfbcfd07b").into(),
+    );
 }
 
 #[test]

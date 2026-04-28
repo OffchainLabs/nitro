@@ -78,15 +78,20 @@ impl ChainSpecParser for ArbChainSpecParser {
             .unwrap_or(false);
 
         if initial_arbos > 0 && chain_id > 0 {
-            if !skip_injection {
-                inject_arbos_alloc(
-                    &mut value,
-                    chain_id,
-                    initial_arbos,
-                    initial_owner,
-                    arbos_init,
-                )?;
-            }
+            // SkipGenesisInjection used to gate the call entirely, but the
+            // captured cache files miss accounts (FilteredTransactionsState)
+            // and never carry storage for the ArbOS state account. The
+            // injection helper merges per-account: user-supplied fields and
+            // explicit slots win on conflict, so it is safe to run
+            // unconditionally and always produces the trie Nitro would.
+            let _ = skip_injection;
+            inject_arbos_alloc(
+                &mut value,
+                chain_id,
+                initial_arbos,
+                initial_owner,
+                arbos_init,
+            )?;
             override_arbos_genesis_header(&mut value, initial_arbos)?;
         }
 
