@@ -5,7 +5,7 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
 use alloy_genesis::GenesisAccount;
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{hex, Address, B256, U256};
 use eyre::eyre;
 use reth_chainspec::ChainSpec;
 use reth_cli::chainspec::ChainSpecParser;
@@ -17,6 +17,13 @@ use serde_json::Value;
 use arbos::arbos_types::ParsedInitMessage;
 
 use crate::genesis;
+
+/// Block gas limit used by Nitro at genesis (`l2pricing.GethBlockGasLimit = 1 << 50`).
+const NITRO_GENESIS_GAS_LIMIT: u64 = 1 << 50;
+/// Initial L2 base fee in wei used by Nitro at genesis (`l2pricing.InitialBaseFeeWei = 0.1 gwei`).
+const NITRO_GENESIS_BASE_FEE: u64 = 100_000_000;
+/// JSON pointer for the flag that suppresses ArbOS alloc injection (used when the genesis already carries a complete pre-seeded alloc).
+const SKIP_GENESIS_INJECTION_POINTER: &str = "/config/arbitrum/SkipGenesisInjection";
 
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
@@ -62,19 +69,71 @@ impl ChainSpecParser for ArbChainSpecParser {
             .unwrap_or(false);
         arb_precompiles::set_allow_debug_precompiles(allow_debug);
 
+        let skip_injection = value
+            .pointer(SKIP_GENESIS_INJECTION_POINTER)
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
         if initial_arbos > 0 && chain_id > 0 {
-            inject_arbos_alloc(
-                &mut value,
-                chain_id,
-                initial_arbos,
-                initial_owner,
-                arbos_init,
-            )?;
+            if !skip_injection {
+                inject_arbos_alloc(
+                    &mut value,
+                    chain_id,
+                    initial_arbos,
+                    initial_owner,
+                    arbos_init,
+                )?;
+            }
+            override_arbos_genesis_header(&mut value, initial_arbos)?;
         }
 
         let augmented = serde_json::to_string(&value)?;
         EthereumChainSpecParser::parse(&augmented)
     }
+}
+
+/// Force the genesis header fields that Nitro hardcodes in `MakeGenesisBlock`.
+/// reth's `make_genesis_header` reads these directly from the JSON, so the
+/// only way to keep arbreth and Nitro in sync without forking reth is to
+/// rewrite them here before parsing.
+fn override_arbos_genesis_header(value: &mut Value, arbos_version: u64) -> eyre::Result<()> {
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| eyre!("chain spec is not a JSON object"))?;
+
+    // Genesis header reads the L1 init message → nonce field is set to 1.
+    obj.insert("nonce".into(), Value::String("0x1".into()));
+
+    // `extraData` carries `SendRoot` (32 zero bytes at genesis).
+    obj.insert(
+        "extraData".into(),
+        Value::String(format!("0x{}", hex::encode([0u8; 32]))),
+    );
+
+    // `mixHash` packs `[SendCount(8) | L1BlockNumber(8) | ArbOSFormatVersion(8) | flags(8)]`
+    // big-endian. At genesis only `ArbOSFormatVersion` is non-zero.
+    let mut mix_hash = [0u8; 32];
+    mix_hash[16..24].copy_from_slice(&arbos_version.to_be_bytes());
+    obj.insert(
+        "mixHash".into(),
+        Value::String(format!("0x{}", hex::encode(mix_hash))),
+    );
+
+    obj.insert("difficulty".into(), Value::String("0x1".into()));
+    obj.insert(
+        "gasLimit".into(),
+        Value::String(format!("{NITRO_GENESIS_GAS_LIMIT:#x}")),
+    );
+    obj.insert(
+        "baseFeePerGas".into(),
+        Value::String(format!("{NITRO_GENESIS_BASE_FEE:#x}")),
+    );
+    obj.insert(
+        "coinbase".into(),
+        Value::String(format!("0x{}", hex::encode([0u8; 20]))),
+    );
+
+    Ok(())
 }
 
 fn parse_arbos_init(value: &Value) -> genesis::ArbOSInit {
