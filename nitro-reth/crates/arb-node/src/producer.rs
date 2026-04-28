@@ -68,8 +68,19 @@ where
     }
 }
 
-/// Default number of blocks to buffer before flushing via save_blocks(Full).
 pub const DEFAULT_FLUSH_INTERVAL: u64 = 128;
+const DEFAULT_MAX_INFLIGHT: usize = 512;
+
+fn max_inflight() -> usize {
+    static MAX: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *MAX.get_or_init(|| {
+        std::env::var("ARB_RETH_MAX_INFLIGHT")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(DEFAULT_MAX_INFLIGHT)
+    })
+}
 
 /// Block producer using reth's save_blocks(Full) for persistence.
 pub struct ArbBlockProducer<Provider> {
@@ -284,30 +295,72 @@ where
             })
     }
 
-    /// Produce a block with full transaction execution.
+    fn drain_completed_flush(&self) -> bool {
+        if !self.pending_flush.load(Ordering::SeqCst) {
+            return false;
+        }
+        let Some(result) = crate::launcher::try_flush_result() else {
+            return false;
+        };
+        self.in_memory_state
+            .remove_persisted_blocks(result.last_num_hash);
+        *self.flushing_trie_input.lock() = None;
+        self.pending_flush.store(false, Ordering::SeqCst);
+        self.invalidate_cached_overlay();
+        self.invalidate_cached_prestate();
+        info!(
+            target: "block_producer",
+            flushed = result.count,
+            last_block = result.last_num_hash.number,
+            duration_ms = result.duration.as_millis(),
+            "Background flush completed"
+        );
+        true
+    }
+
+    fn apply_backpressure(&self) {
+        let chain_len = self
+            .in_memory_state
+            .head_state()
+            .map(|s| s.chain().count())
+            .unwrap_or(0);
+        let limit = max_inflight();
+        if chain_len <= limit {
+            return;
+        }
+        if !self.pending_flush.load(Ordering::SeqCst) {
+            self.start_async_flush();
+        }
+        let start = std::time::Instant::now();
+        let mut last_log = start;
+        while !self.drain_completed_flush() {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            if last_log.elapsed() >= std::time::Duration::from_secs(5) {
+                warn!(
+                    target: "block_producer",
+                    chain_len,
+                    waited_ms = start.elapsed().as_millis() as u64,
+                    "Backpressure: still waiting on flush"
+                );
+                last_log = std::time::Instant::now();
+            }
+        }
+        warn!(
+            target: "block_producer",
+            chain_len,
+            limit,
+            waited_ms = start.elapsed().as_millis() as u64,
+            "Backpressure: drained pending flush"
+        );
+    }
+
     fn produce_block_with_execution(
         &self,
         input: &BlockProductionInput,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
-        // Check if a background flush completed.
-        if self.pending_flush.load(Ordering::SeqCst) {
-            if let Some(result) = crate::launcher::try_flush_result() {
-                self.in_memory_state
-                    .remove_persisted_blocks(result.last_num_hash);
-                *self.flushing_trie_input.lock() = None;
-                self.pending_flush.store(false, Ordering::SeqCst);
-                self.invalidate_cached_overlay();
-                self.invalidate_cached_prestate();
-                info!(
-                    target: "block_producer",
-                    flushed = result.count,
-                    last_block = result.last_num_hash.number,
-                    duration_ms = result.duration.as_millis(),
-                    "Background flush completed"
-                );
-            }
-        }
+        self.drain_completed_flush();
+        self.apply_backpressure();
 
         let head_num = self.head_block_number()?;
         let l2_block_number = head_num + 1;
