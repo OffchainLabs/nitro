@@ -555,12 +555,11 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		assertionInputs rollupgen.AssertionInputs,
 		expectedAssertionHash [32]byte,
 	) (*types.Transaction, error) {
-		return a.userLogic.NewStakeOnNewAssertion611c3d80(
+		return a.userLogic.NewStakeOnNewAssertion7f62c2af(
 			opts,
 			tokenAmount,
 			assertionInputs,
 			expectedAssertionHash,
-			a.withdrawalAddress,
 		)
 	}
 	return a.createAndStakeOnAssertion(

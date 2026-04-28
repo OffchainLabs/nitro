@@ -73,6 +73,7 @@ type Manager struct {
 	chain                       protocol.AssertionChain
 	backend                     protocol.ChainBackend
 	execProvider                state.ExecutionProvider
+	melLookup                   state.ValidatedMELStateLookup // nil when MEL is not active
 	times                       timings
 	rollupAddr                  common.Address
 	validatorName               string
@@ -110,6 +111,15 @@ func WithPostingDisabled() Opt {
 		m.disablePosting = true
 	}
 }
+
+// WithMELStateLookup enables MEL-based assertion determinism. When set,
+// assertions use NextParentChainBlockHash instead of InboxMaxCount.
+func WithMELStateLookup(lookup state.ValidatedMELStateLookup) Opt {
+	return func(m *Manager) {
+		m.melLookup = lookup
+	}
+}
+
 
 func WithFastConfirmation() Opt {
 	return func(m *Manager) {

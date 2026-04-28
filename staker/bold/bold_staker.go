@@ -223,6 +223,7 @@ func NewBOLDStaker(
 	inboxReader staker.InboxReaderInterface,
 	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,
+	melValidator staker.MELValidatorInterface, // nil when MEL is not active
 ) (*BOLDStaker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -235,7 +236,7 @@ func NewBOLDStaker(
 	}
 
 	l1reader := l1Reader.Client()
-	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, l1reader, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader, proofEnhancer)
+	manager, err := newBOLDChallengeManager(ctx, stack, rollupAddress, txOpts, l1Reader, l1reader, blockValidator, statelessBlockValidator, config, strategy, dataPoster, inboxTracker, inboxStreamer, inboxReader, proofEnhancer, melValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -516,6 +517,7 @@ func newBOLDChallengeManager(
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
 	proofEnhancer proofenhancement.ProofEnhancer,
+	melValidator staker.MELValidatorInterface, // nil when MEL is not active
 ) (*challenge.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
 	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)
@@ -661,6 +663,10 @@ func newBOLDChallengeManager(
 	}
 	if config.EnableFastConfirmation {
 		stackOpts = append(stackOpts, challenge.StackWithFastConfirmationEnabled())
+	}
+	if melValidator != nil {
+		melLookup := NewMELStateLookup(melValidator, l1Reader.Client())
+		stackOpts = append(stackOpts, challenge.StackWithMELStateLookup(melLookup))
 	}
 
 	manager, err := challenge.NewChallengeStack(

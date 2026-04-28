@@ -58,6 +58,7 @@ type MultiProtocolStaker struct {
 	inboxStreamer     staker.TransactionStreamerInterface
 	inboxReader       staker.InboxReaderInterface
 	dapRegistry       *daprovider.DAProviderRegistry
+	melValidator      staker.MELValidatorInterface
 	fatalErr          chan<- error
 }
 
@@ -81,6 +82,7 @@ func NewMultiProtocolStaker(
 	inboxReader staker.InboxReaderInterface,
 	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,
+	melValidator staker.MELValidatorInterface, // nil when MEL is not active
 ) (*MultiProtocolStaker, error) {
 	if err := legacyConfig().Validate(); err != nil {
 		return nil, err
@@ -130,6 +132,7 @@ func NewMultiProtocolStaker(
 		inboxStreamer:           inboxStreamer,
 		inboxReader:             inboxReader,
 		dapRegistry:             dapRegistry,
+		melValidator:            melValidator,
 		fatalErr:                fatalErr,
 	}, nil
 }
@@ -293,6 +296,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		m.inboxReader,
 		m.dapRegistry,
 		m.fatalErr,
+		m.melValidator,
 	)
 	if err != nil {
 		return err

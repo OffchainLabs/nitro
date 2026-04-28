@@ -21,6 +21,25 @@ import (
 
 var ErrChainCatchingUp = errors.New("chain is catching up to the execution state")
 
+// MELStateInfo contains the key fields from a validated MEL state
+// needed by the BOLD assertion and challenge system.
+type MELStateInfo struct {
+	BatchCount             uint64
+	MsgCount               uint64
+	ParentChainBlockNumber uint64
+	StateHash              common.Hash
+}
+
+// ValidatedMELStateLookup translates a parent chain block hash (the post-MEL
+// determinism rule) into MEL batch/message counts. It only returns data for
+// states that have been validated by the MEL validator.
+type ValidatedMELStateLookup interface {
+	// GetValidatedMELStateByBlockHash returns MEL state info at the given
+	// parent chain block hash. Returns ErrChainCatchingUp if MEL validation
+	// hasn't reached this block yet.
+	GetValidatedMELStateByBlockHash(ctx context.Context, blockHash common.Hash) (*MELStateInfo, error)
+}
+
 // Batch index for an Arbitrum L2 state.
 type Batch uint64
 
