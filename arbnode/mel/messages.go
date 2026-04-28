@@ -84,3 +84,10 @@ type MessageSyncProgress struct {
 	BatchProcessed uint64
 	MsgCount       arbutil.MessageIndex
 }
+
+type MELConfig struct {
+	MelVersion      uint16
+	Inbox           common.Address
+	SequencerInbox  common.Address
+	ActivationBlock uint64
+}

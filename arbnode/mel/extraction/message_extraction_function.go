@@ -79,6 +79,7 @@ func ExtractMessages(
 		messagesFromBatchSegments,
 		arbstate.ParseSequencerMessage,
 		arbostypes.ParseBatchPostingReportMessageFields,
+		ParseMELConfigFromBlock,
 	)
 }
 
@@ -101,6 +102,7 @@ func extractMessagesImpl(
 	extractBatchMessages batchMsgExtractionFunc,
 	parseSequencerMessage sequencerMessageParserFunc,
 	parseBatchPostingReport batchPostingReportParserFunc,
+	lookupMELConfig melConfigLookupFunc,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, []*mel.BatchMetadata, error) {
 
 	state := inputState.Clone()
@@ -118,6 +120,7 @@ func extractMessagesImpl(
 	state.ParentChainBlockHash = parentChainHeader.Hash()
 	state.ParentChainBlockNumber = parentChainHeader.Number.Uint64()
 	state.ParentChainPreviousBlockHash = parentChainHeader.ParentHash
+
 	// Now, check for any logs emitted by the sequencer inbox by txs
 	// included in the parent chain block.
 	batches, batchTxs, err := lookupBatches(
@@ -267,5 +270,59 @@ func extractMessagesImpl(
 			return nil, nil, nil, nil, fmt.Errorf("batch AfterDelayedCount: %d and MEL state DelayedMessagesRead: %d mismatch", batch.AfterDelayedCount, state.DelayedMessagesRead)
 		}
 	}
+	// Check for MEL config events in this block.
+	melConfig, err := lookupMELConfig(
+		ctx,
+		parentChainHeader,
+		logsFetcher,
+		eventUnpacker,
+	)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to lookup MEL config event: %w", err)
+	}
+	if melConfig != nil {
+		// Sanity check: the contract sets activationBlock = block.number at emission time,
+		// so the event must be observed in the same parent chain block it was emitted.
+		if melConfig.ActivationBlock != parentChainHeader.Number.Uint64() {
+			return nil, nil, nil, nil, fmt.Errorf(
+				"MELConfigSet activation block %d does not match current parent chain block %d",
+				melConfig.ActivationBlock, parentChainHeader.Number.Uint64(),
+			)
+		}
+		// MEL consensus getting activated for the first time
+		if state.Version == 0 {
+			if err := moveUnreadDelayedMessagesToInboxAcc(state, delayedMsgDatabase); err != nil {
+				return nil, nil, nil, nil, err
+			}
+		}
+		state.Version = melConfig.MelVersion
+		state.DelayedMessagePostingTargetAddress = melConfig.Inbox
+		state.BatchPostingTargetAddress = melConfig.SequencerInbox
+	}
 	return state, messages, delayedMessages, batchMetas, nil
+}
+
+func moveUnreadDelayedMessagesToInboxAcc(state *mel.State, delayedMsgDatabase DelayedMessageDatabase) error {
+	var unreadDelayedMsgs []*mel.DelayedInboxMessage
+	for i := state.DelayedMessagesRead; i < state.DelayedMessagesSeen; i++ {
+		delayedMsg, err := delayedMsgDatabase.ReadDelayedMessage(state, i)
+		if err != nil {
+			return fmt.Errorf("failed creating delayed msg accumulators during MEL consensus activation: %w", err)
+		}
+		unreadDelayedMsgs = append(unreadDelayedMsgs, delayedMsg)
+	}
+	// Both the accumulators must be now empty
+	if state.DelayedMessageInboxAcc != (common.Hash{}) || state.DelayedMessageOutboxAcc != (common.Hash{}) {
+		return fmt.Errorf(
+			"one of DelayedMessageInboxAcc: %v and DelayedMessageOutboxAcc: %v is non zero after reading all delayed msgs for MEL activation",
+			state.DelayedMessageInboxAcc,
+			state.DelayedMessageOutboxAcc,
+		)
+	}
+	for _, delayedMsg := range unreadDelayedMsgs {
+		if err := state.AccumulateDelayedMessage(delayedMsg); err != nil {
+			return fmt.Errorf("failed creating delayed msg accumulators during MEL consensus activation: %w", err)
+		}
+	}
+	return nil
 }

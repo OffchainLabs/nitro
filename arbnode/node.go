@@ -119,6 +119,9 @@ func (c *Config) Validate() error {
 	if err := c.MELValidator.Validate(); err != nil {
 		return err
 	}
+	if c.MELValidator.Enable && !c.MessageExtraction.Enable {
+		return errors.New("cannot enable mel-validator without enabling message-extraction")
+	}
 	if err := c.MessageExtraction.Validate(); err != nil {
 		return err
 	}

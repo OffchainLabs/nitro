@@ -831,12 +831,13 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 					BeforeHash: oneStepData.BeforeHash,
 					Proof:      oneStepData.Proof,
 				},
+				// PR 427: ConfigData.NextInboxPosition replaced by NextParentChainBlockHash.
+				// Left zero pending follow-up PR.
 				challengeV2gen.ConfigData{
 					WasmModuleRoot:      creationInfo.WasmModuleRoot,
 					RequiredStake:       creationInfo.RequiredStake,
 					ChallengeManager:    creationInfo.ChallengeManager,
 					ConfirmPeriodBlocks: creationInfo.ConfirmPeriodBlocks,
-					NextInboxPosition:   creationInfo.InboxMaxCount.Uint64(),
 				},
 				pre,
 				post,

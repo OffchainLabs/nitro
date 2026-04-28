@@ -7,13 +7,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
 var BatchDeliveredID common.Hash
 var InboxMessageDeliveredID common.Hash
 var InboxMessageFromOriginID common.Hash
+var MELConfigEventID common.Hash
 var SeqInboxABI *abi.ABI
 var IBridgeABI *abi.ABI
+var RollupAdminABI *abi.ABI
 var iInboxABI *abi.ABI
 var iDelayedMessageProviderABI *abi.ABI
 
@@ -45,4 +48,11 @@ func init() {
 		panic(err)
 	}
 	iInboxABI = parsedIInboxABI
+
+	parsedRollupAdminABI, err := rollupgen.RollupAdminLogicMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	RollupAdminABI = parsedRollupAdminABI
+	MELConfigEventID = parsedRollupAdminABI.Events["MELConfigSet"].ID
 }

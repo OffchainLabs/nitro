@@ -1135,7 +1135,7 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 			EndHistoryRoot: [32]byte{},
 		}
 
-		assertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState, common.Hash{})
+		assertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState)
 		if err != nil {
 			return nil, assertionHash, false, err
 		}

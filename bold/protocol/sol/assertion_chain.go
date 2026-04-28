@@ -555,7 +555,7 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		assertionInputs rollupgen.AssertionInputs,
 		expectedAssertionHash [32]byte,
 	) (*types.Transaction, error) {
-		return a.userLogic.NewStakeOnNewAssertion50f32f68(
+		return a.userLogic.NewStakeOnNewAssertion611c3d80(
 			opts,
 			tokenAmount,
 			assertionInputs,
@@ -621,11 +621,11 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	if err != nil {
 		return nil, ErrBatchNotYetFound
 	}
+	_ = inboxBatchAcc // PR 427: inboxAcc no longer used in ComputeAssertionHash
 	computedHash, err := a.userLogic.ComputeAssertionHash(
 		a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
 		parentAssertionCreationInfo.AssertionHash.Hash,
 		postState.AsSolidityStruct(),
-		inboxBatchAcc,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not compute assertion hash")
@@ -656,12 +656,13 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 				BeforeStateData: rollupgen.BeforeStateData{
 					PrevPrevAssertionHash: parentAssertionCreationInfo.ParentAssertionHash.Hash,
 					SequencerBatchAcc:     parentAssertionCreationInfo.AfterInboxBatchAcc,
+					// PR 427: ConfigData.NextInboxPosition replaced by NextParentChainBlockHash.
+					// Left zero — assertion logic wiring will be completed in a follow-up PR.
 					ConfigData: rollupgen.ConfigData{
 						RequiredStake:       parentAssertionCreationInfo.RequiredStake,
 						ChallengeManager:    parentAssertionCreationInfo.ChallengeManager,
 						ConfirmPeriodBlocks: parentAssertionCreationInfo.ConfirmPeriodBlocks,
 						WasmModuleRoot:      parentAssertionCreationInfo.WasmModuleRoot,
-						NextInboxPosition:   parentAssertionCreationInfo.InboxMaxCount.Uint64(),
 					},
 				},
 				BeforeState: parentAssertionCreationInfo.AfterState,
@@ -845,6 +846,8 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 		return errors.New("assertion prev creation info inbox max count was not a uint64")
 	}
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		// PR 427: ConfirmAssertion dropped inboxAcc arg; ConfigData.NextInboxPosition
+		// replaced by NextParentChainBlockHash. Left zero pending follow-up PR.
 		return a.userLogic.ConfirmAssertion(
 			opts,
 			b,
@@ -856,9 +859,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 				ConfirmPeriodBlocks: prevCreationInfo.ConfirmPeriodBlocks,
 				RequiredStake:       prevCreationInfo.RequiredStake,
 				ChallengeManager:    prevCreationInfo.ChallengeManager,
-				NextInboxPosition:   prevCreationInfo.InboxMaxCount.Uint64(),
 			},
-			creationInfo.AfterInboxBatchAcc,
 		)
 	})
 	if err != nil {
@@ -879,12 +880,12 @@ func (a *AssertionChain) FastConfirmAssertion(
 		return a.fastConfirmSafe.fastConfirmAssertion(ctx, assertionCreationInfo)
 	}
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		// PR 427: FastConfirmAssertion dropped inboxAcc arg.
 		return a.userLogic.FastConfirmAssertion(
 			opts,
 			assertionCreationInfo.AssertionHash.Hash,
 			assertionCreationInfo.ParentAssertionHash.Hash,
 			assertionCreationInfo.AfterState,
-			assertionCreationInfo.AfterInboxBatchAcc,
 		)
 	})
 	if err != nil {
@@ -1077,8 +1078,10 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		ParentAssertionHash: protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
 		BeforeState:         parsedLog.Assertion.BeforeState,
 		AfterState:          afterState,
-		InboxMaxCount:       parsedLog.InboxMaxCount,
-		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
+		// PR 427: InboxMaxCount / AfterInboxBatchAcc dropped from AssertionCreated event.
+		// Left zero pending follow-up PR that rewires against NextParentChainBlockHash.
+		InboxMaxCount:       big.NewInt(0),
+		AfterInboxBatchAcc:  common.Hash{},
 		AssertionHash:       protocol.AssertionHash{Hash: parsedLog.AssertionHash},
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,
