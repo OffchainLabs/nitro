@@ -108,6 +108,10 @@ func (c *AuctioneerServerConfig) Validate() error {
 		}
 	}
 
+	if c.StreamTimeout <= 0 {
+		return fmt.Errorf("auctioneer-server.stream-timeout must be positive, got %v", c.StreamTimeout)
+	}
+
 	if err := c.S3Storage.Validate(); err != nil {
 		return err
 	}
