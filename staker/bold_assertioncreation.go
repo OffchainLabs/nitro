@@ -93,8 +93,10 @@ func ReadBoldAssertionCreationInfo(
 		ParentAssertionHash: protocol.AssertionHash{Hash: parsedLog.ParentAssertionHash},
 		BeforeState:         parsedLog.Assertion.BeforeState,
 		AfterState:          afterState,
-		InboxMaxCount:       parsedLog.InboxMaxCount,
-		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
+		// PR 427: InboxMaxCount / AfterInboxBatchAcc dropped from AssertionCreated event.
+		// Left zero pending follow-up PR that rewires against NextParentChainBlockHash.
+		InboxMaxCount:       big.NewInt(0),
+		AfterInboxBatchAcc:  common.Hash{},
 		AssertionHash:       protocol.AssertionHash{Hash: parsedLog.AssertionHash},
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 		ChallengeManager:    parsedLog.ChallengeManager,

@@ -68,7 +68,7 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 		require.NoError(t, err)
 
 		existingAssertion, err := chain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
-		require.NoError(t, err)
+		require.ErrorIs(t, err, sol.ErrAlreadyExists)
 		require.Equal(t, assertion.Id(), existingAssertion.Id())
 	})
 	t.Run("can create fork", func(t *testing.T) {

@@ -800,10 +800,14 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	newInbox := common.HexToAddress("0x0000000000000000000000000000000000001111")
 	newSequencerInbox := common.HexToAddress("0x0000000000000000000000000000000000002222")
 
-	// Pack the setMELConfig calldata using the generated rollup ABI
+	// Pack the setMELConfig calldata using the generated rollup ABI.
+	// PR 427 signature: setMELConfig(uint16 _melVersion, address _inbox, address _sequencerInbox)
+	// Use a non-trivial version (42) to explicitly check that MEL reads
+	// the version from the event rather than, say, incrementing from 0.
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err)
-	calldata, err := rollupABI.Pack("setMELConfig", newInbox, newSequencerInbox)
+	melVersion := uint16(42)
+	calldata, err := rollupABI.Pack("setMELConfig", melVersion, newInbox, newSequencerInbox)
 	Require(t, err)
 
 	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -839,8 +843,8 @@ func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
 	// Verify the config was applied immediately
 	postConfigState, err := msgExtractor.GetHeadState()
 	Require(t, err)
-	if postConfigState.Version != 1 {
-		t.Fatalf("Expected version 1 after config event, got %d", postConfigState.Version)
+	if postConfigState.Version != melVersion {
+		t.Fatalf("Expected version %d after config event, got %d", melVersion, postConfigState.Version)
 	}
 	if postConfigState.BatchPostingTargetAddress != newSequencerInbox {
 		t.Fatalf("Expected BatchPostingTargetAddress %s, got %s", newSequencerInbox.Hex(), postConfigState.BatchPostingTargetAddress.Hex())
@@ -1016,26 +1020,34 @@ func TestMELMigrationFromLegacyNode(t *testing.T) {
 	}
 
 	// Phase 3: Post-migration operations
-	// Wait for the execution layer to fully execute all messages MEL has extracted.
-	// We need to wait until the node's pending nonce reflects the fully executed state.
+	// Wait for the execution engine to fully process all messages including any
+	// delayed messages being sequenced after migration. We wait until both the
+	// consensus message count and execution head stabilize together.
 	{
-		ownerAddr := builder.L2Info.GetAddress("Owner")
 		timeout := time.NewTimer(30 * time.Second)
 		defer timeout.Stop()
-		tick := time.NewTicker(100 * time.Millisecond)
+		tick := time.NewTicker(200 * time.Millisecond)
 		defer tick.Stop()
-		var lastNonce uint64
+		var lastMsgCount arbutil.MessageIndex
+		stableCount := 0
 		for {
-			nonce, err := builder.L2.Client.NonceAt(ctx, ownerAddr, nil)
-			if err == nil && nonce > 0 && nonce == lastNonce {
-				// Nonce stabilized — execution has caught up
-				break
+			msgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+			Require(t, err)
+			execHead, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+			if err == nil && execHead+1 >= msgCount && msgCount == lastMsgCount {
+				stableCount++
+				if stableCount >= 3 {
+					break
+				}
+			} else {
+				stableCount = 0
 			}
-			lastNonce = nonce
+			lastMsgCount = msgCount
 			select {
 			case <-tick.C:
 			case <-timeout.C:
-				t.Fatalf("timed out waiting for execution to catch up, last nonce: %d", lastNonce)
+				currentHead, _ := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+				t.Fatalf("timed out waiting for execution to stabilize: execHead=%d, msgCount=%d", currentHead, msgCount)
 			}
 		}
 	}

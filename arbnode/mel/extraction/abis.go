@@ -54,5 +54,5 @@ func init() {
 		panic(err)
 	}
 	RollupAdminABI = parsedRollupAdminABI
-	MELConfigEventID = parsedRollupAdminABI.Events["MELConfigEvent"].ID
+	MELConfigEventID = parsedRollupAdminABI.Events["MELConfigSet"].ID
 }

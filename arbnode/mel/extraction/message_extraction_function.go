@@ -281,13 +281,21 @@ func extractMessagesImpl(
 		return nil, nil, nil, nil, fmt.Errorf("failed to lookup MEL config event: %w", err)
 	}
 	if melConfig != nil {
+		// Sanity check: the contract sets activationBlock = block.number at emission time,
+		// so the event must be observed in the same parent chain block it was emitted.
+		if melConfig.ActivationBlock != parentChainHeader.Number.Uint64() {
+			return nil, nil, nil, nil, fmt.Errorf(
+				"MELConfigSet activation block %d does not match current parent chain block %d",
+				melConfig.ActivationBlock, parentChainHeader.Number.Uint64(),
+			)
+		}
 		// MEL consensus getting activated for the first time
 		if state.Version == 0 {
 			if err := moveUnreadDelayedMessagesToInboxAcc(state, delayedMsgDatabase); err != nil {
 				return nil, nil, nil, nil, err
 			}
 		}
-		state.Version += 1
+		state.Version = melConfig.MelVersion
 		state.DelayedMessagePostingTargetAddress = melConfig.Inbox
 		state.BatchPostingTargetAddress = melConfig.SequencerInbox
 	}

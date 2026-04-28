@@ -31,6 +31,7 @@ func testValidationPostMEL(t *testing.T, useJit bool) {
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	builder.nodeConfig.MessageExtraction.Enable = true
 	builder.nodeConfig.MELValidator.Enable = true
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.EnableMEL = true

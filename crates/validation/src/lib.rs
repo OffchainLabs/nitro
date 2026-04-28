@@ -121,9 +121,11 @@ pub struct GoGlobalState {
     pub block_hash: Bytes32,
     #[serde(with = "As::<DisplayFromStr>")]
     pub send_root: Bytes32,
+    #[serde(default)]
     #[serde(with = "As::<DisplayFromStr>")]
     #[serde(rename = "MELStateHash")]
     pub mel_state_hash: Bytes32,
+    #[serde(default)]
     #[serde(with = "As::<DisplayFromStr>")]
     #[serde(rename = "MELMsgHash")]
     pub mel_msg_hash: Bytes32,
