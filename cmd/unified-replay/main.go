@@ -52,21 +52,29 @@ func main() {
 	startMELStateHash := melwavmio.GetStartMELRoot()
 	melState := readMELState(startMELStateHash)
 
+	var melMsgHashRelatedState *mel.State
 	if melMsgHash != (common.Hash{}) {
 		produceBlock(melMsgHash)
 		melwavmio.IncreasePositionInMEL()
 	} else {
+		positionInMEL := melwavmio.GetPositionInMEL()
 		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
 		chainConfig := readChainConfigFromLastBlock()
-		melState = extractMessagesUpTo(chainConfig, melState, targetBlockHash)
+		melState, melMsgHashRelatedState = extractMessagesUpTo(chainConfig, melState, targetBlockHash, positionInMEL)
 		melwavmio.SetEndMELRoot(melState.Hash())
+		if melState.MsgCount > positionInMEL && melMsgHashRelatedState == nil {
+			panic("melMsgHashRelatedState is nil when nextMsg was just extracted")
+		}
 	}
 
 	positionInMEL := melwavmio.GetPositionInMEL()
 	if melState.MsgCount > positionInMEL {
 		resolver := &wavmPreimageResolver{}
 		msgReader := melreplay.NewMessageReader(resolver)
-		nextMsg, err := msgReader.Read(context.Background(), melState, positionInMEL)
+		if melMsgHashRelatedState == nil {
+			melMsgHashRelatedState = melState
+		}
+		nextMsg, err := msgReader.Read(context.Background(), melMsgHashRelatedState, positionInMEL)
 		if err != nil {
 			panic(fmt.Errorf("error reading message idx %d: %w", positionInMEL, err))
 		}
@@ -237,7 +245,8 @@ func extractMessagesUpTo(
 	chainConfig *params.ChainConfig,
 	startState *mel.State,
 	targetBlockHash common.Hash,
-) *mel.State {
+	positionInMEL uint64,
+) (*mel.State, *mel.State) {
 	resolver := &wavmPreimageResolver{}
 	dapReader := daprovider.NewDAProviderRegistry()
 	blobReader := &BlobPreimageReader{}
@@ -255,6 +264,7 @@ func extractMessagesUpTo(
 		targetBlockHash,
 	)
 	currentState := startState
+	var melMsgHashRelatedState *mel.State
 
 	// Loops backwards over blocks, feeding them one by one into the extract messages function.
 	delayedMsgDatabase := melreplay.NewDelayedMessageDatabase(resolver)
@@ -279,8 +289,11 @@ func extractMessagesUpTo(
 			panic(fmt.Errorf("error extracting messages from block %s: %w", header.Hash().Hex(), err))
 		}
 		currentState = postState
+		if melMsgHashRelatedState == nil && postState.MsgCount > positionInMEL {
+			melMsgHashRelatedState = postState
+		}
 	}
-	return currentState
+	return currentState, melMsgHashRelatedState
 }
 
 // Extracts all block header hashes in the range from startHash to endHash.
