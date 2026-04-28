@@ -206,8 +206,7 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v50-rc.5 0xb90895a56a59c0267c2004a0e103ad725bd98d5a05c3262806ab4ccb3f997558
 #RUN ./download-machine.sh consensus-v50-rc.6 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 #RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
-# required=false so this also builds in public nitro (no secret wired).
-#RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-vXX 0x... OffchainLabs/nitro-private
+RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.3 0xeadc910d36a0eab43a3dd7acb1a3513885e333785689c7cf750b9949c5bb7227 OffchainLabs/nitro-private
 RUN ./download-machine.sh consensus-v60-alpha.1 0xe237db4636ba7878fb1d6998f40fa155260a26484f81db732f9aa7dc1b684bf7
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
