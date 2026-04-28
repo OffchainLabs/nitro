@@ -1,14 +1,18 @@
 #![no_main]
 
-use arb_fuzz::arbitrary_impls::{ArbosVersion, BoundedBytes, ScenarioMix, TxScenario};
-use arb_fuzz::corpus_helpers::dump_crash_as_fixture;
-use arb_fuzz::shared_nodes::shared_dual_exec;
+use arb_fuzz::{
+    arbitrary_impls::{ArbosVersion, BoundedBytes, ScenarioMix, TxScenario},
+    corpus_helpers::dump_crash_as_fixture,
+    shared_nodes::shared_dual_exec,
+};
 use libfuzzer_sys::fuzz_target;
 
 fn synth_mix_from_seed(seed: u64) -> ScenarioMix {
     let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
     let mut rng = || {
-        state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         state
     };
 

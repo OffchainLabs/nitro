@@ -8,10 +8,10 @@ use alloy_evm::{
 };
 use alloy_primitives::{address, Address, Bytes, Signature, B256, U256};
 use arb_alloy_consensus::tx::ArbRetryTx;
+use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     alice, balance_of, fund_account, ExecutorScaffold, ONE_ETH, ONE_GWEI,
 };
-use arb_evm::config::ArbEvmConfig;
 use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
 use arb_test_utils::ArbosHarness;
 use arbos::retryables::retryable_escrow_address;

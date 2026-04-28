@@ -22,7 +22,8 @@ use crate::genesis;
 const NITRO_GENESIS_GAS_LIMIT: u64 = 1 << 50;
 /// Initial L2 base fee in wei used by Nitro at genesis (`l2pricing.InitialBaseFeeWei = 0.1 gwei`).
 const NITRO_GENESIS_BASE_FEE: u64 = 100_000_000;
-/// JSON pointer for the flag that suppresses ArbOS alloc injection (used when the genesis already carries a complete pre-seeded alloc).
+/// JSON pointer for the flag that suppresses ArbOS alloc injection (used when the genesis already
+/// carries a complete pre-seeded alloc).
 const SKIP_GENESIS_INJECTION_POINTER: &str = "/config/arbitrum/SkipGenesisInjection";
 /// Default initial L1 base fee Nitro uses when no override is provided.
 /// Mirrors `arbostypes.DefaultInitialL1BaseFee = 50 * params.GWei`.
@@ -620,7 +621,10 @@ impl<'a> JsonWriter<'a> {
             "DataAvailabilityCommittee",
         ];
         for key in always_bool {
-            let v = map.and_then(|m| m.get(key)).and_then(Value::as_bool).unwrap_or(false);
+            let v = map
+                .and_then(|m| m.get(key))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             inner.write_bool_field(key, v);
         }
 
@@ -783,7 +787,9 @@ mod tests {
         });
         let bytes = serialize_chain_config_go_style(&cfg);
         let s = std::str::from_utf8(&bytes).unwrap();
-        assert!(s.contains("\"depositContractAddress\":\"0xabcdef0000000000000000000000000000000123\""));
+        assert!(
+            s.contains("\"depositContractAddress\":\"0xabcdef0000000000000000000000000000000123\"")
+        );
         assert!(s.contains("\"InitialChainOwner\":\"0xabcdef0000000000000000000000000000000123\""));
     }
 }

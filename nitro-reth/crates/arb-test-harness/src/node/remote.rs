@@ -100,10 +100,9 @@ impl ExecutionNode for RemoteNode {
     }
 
     fn balance(&self, addr: Address, at: BlockId) -> Result<U256> {
-        let v = self.rpc.call(
-            "eth_getBalance",
-            json!([format!("{addr:#x}"), at.to_rpc()]),
-        )?;
+        let v = self
+            .rpc
+            .call("eth_getBalance", json!([format!("{addr:#x}"), at.to_rpc()]))?;
         json_to_u256(&v)
     }
 
@@ -116,26 +115,20 @@ impl ExecutionNode for RemoteNode {
     }
 
     fn code(&self, addr: Address, at: BlockId) -> Result<Bytes> {
-        let v = self.rpc.call(
-            "eth_getCode",
-            json!([format!("{addr:#x}"), at.to_rpc()]),
-        )?;
+        let v = self
+            .rpc
+            .call("eth_getCode", json!([format!("{addr:#x}"), at.to_rpc()]))?;
         json_to_bytes(&v)
     }
 
     fn eth_call(&self, tx: TxRequest, at: BlockId) -> Result<Bytes> {
-        let v = self.rpc.call(
-            "eth_call",
-            json!([tx_request_to_json(&tx), at.to_rpc()]),
-        )?;
+        let v = self
+            .rpc
+            .call("eth_call", json!([tx_request_to_json(&tx), at.to_rpc()]))?;
         json_to_bytes(&v)
     }
 
-    fn debug_storage_range(
-        &self,
-        addr: Address,
-        at: BlockId,
-    ) -> Result<BTreeMap<B256, B256>> {
+    fn debug_storage_range(&self, addr: Address, at: BlockId) -> Result<BTreeMap<B256, B256>> {
         let block = self.block(at.clone())?;
         let v = self.rpc.call(
             "debug_storageRangeAt",
@@ -176,7 +169,10 @@ fn tx_request_to_json(tx: &TxRequest) -> Value {
         map.insert("from".into(), Value::String(format!("{from:#x}")));
     }
     if let Some(data) = &tx.data {
-        map.insert("data".into(), Value::String(format!("0x{}", hex::encode(data))));
+        map.insert(
+            "data".into(),
+            Value::String(format!("0x{}", hex::encode(data))),
+        );
     }
     if let Some(value) = tx.value {
         map.insert("value".into(), Value::String(format!("0x{value:x}")));
@@ -192,11 +188,7 @@ fn block_from_json(v: &Value) -> Result<Block> {
         return Err(HarnessError::Rpc("block not found".into()));
     }
     Ok(Block {
-        number: v
-            .get("number")
-            .map(json_to_u64)
-            .transpose()?
-            .unwrap_or(0),
+        number: v.get("number").map(json_to_u64).transpose()?.unwrap_or(0),
         hash: v
             .get("hash")
             .map(json_to_b256)
@@ -222,16 +214,8 @@ fn block_from_json(v: &Value) -> Result<Block> {
             .map(json_to_b256)
             .transpose()?
             .unwrap_or(B256::ZERO),
-        gas_used: v
-            .get("gasUsed")
-            .map(json_to_u64)
-            .transpose()?
-            .unwrap_or(0),
-        gas_limit: v
-            .get("gasLimit")
-            .map(json_to_u64)
-            .transpose()?
-            .unwrap_or(0),
+        gas_used: v.get("gasUsed").map(json_to_u64).transpose()?.unwrap_or(0),
+        gas_limit: v.get("gasLimit").map(json_to_u64).transpose()?.unwrap_or(0),
         timestamp: v
             .get("timestamp")
             .map(json_to_u64)
@@ -276,16 +260,8 @@ fn receipt_from_json(v: &Value) -> Result<TxReceipt> {
             .map(json_to_u64)
             .transpose()?
             .unwrap_or(0),
-        status: v
-            .get("status")
-            .map(json_to_u64)
-            .transpose()?
-            .unwrap_or(0) as u8,
-        gas_used: v
-            .get("gasUsed")
-            .map(json_to_u64)
-            .transpose()?
-            .unwrap_or(0),
+        status: v.get("status").map(json_to_u64).transpose()?.unwrap_or(0) as u8,
+        gas_used: v.get("gasUsed").map(json_to_u64).transpose()?.unwrap_or(0),
         cumulative_gas_used: v
             .get("cumulativeGasUsed")
             .map(json_to_u64)
@@ -337,7 +313,9 @@ fn extract_logs(v: &Value) -> Vec<EvmLog> {
             .get("data")
             .and_then(|x| x.as_str())
             .and_then(|s| {
-                hex::decode(s.trim_start_matches("0x")).ok().map(Bytes::from)
+                hex::decode(s.trim_start_matches("0x"))
+                    .ok()
+                    .map(Bytes::from)
             })
             .unwrap_or_default();
         let log_index = entry

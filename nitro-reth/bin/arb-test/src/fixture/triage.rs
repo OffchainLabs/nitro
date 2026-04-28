@@ -101,10 +101,7 @@ fn classify(report: &DiffReport) -> TriageStatus {
     if report.is_clean() {
         return TriageStatus::Ok;
     }
-    let only_presence = report
-        .block_diffs
-        .iter()
-        .all(|d| d.field == "presence")
+    let only_presence = report.block_diffs.iter().all(|d| d.field == "presence")
         && report.tx_diffs.iter().all(|d| d.field == "presence")
         && report.log_diffs.iter().all(|d| d.field == "presence");
     if only_presence {
@@ -122,8 +119,7 @@ fn collect_fixtures(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    let entries = std::fs::read_dir(dir)
-        .with_context(|| format!("read_dir {}", dir.display()))?;
+    let entries = std::fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))?;
     for entry in entries {
         let entry = entry.with_context(|| format!("iter {}", dir.display()))?;
         let path = entry.path();

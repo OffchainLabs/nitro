@@ -2,7 +2,10 @@ use alloy_consensus::{
     crypto::secp256k1::sign_message, EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930,
     TxLegacy,
 };
-use alloy_eips::{eip2718::Encodable2718, eip2930::AccessList, eip2930::AccessListItem};
+use alloy_eips::{
+    eip2718::Encodable2718,
+    eip2930::{AccessList, AccessListItem},
+};
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 
 use crate::{
@@ -171,8 +174,7 @@ fn build_access_list(items: &[(Address, Vec<B256>)]) -> AccessList {
 /// uncompressed public key (without the 0x04 prefix) with keccak256 and
 /// taking the last 20 bytes.
 pub fn derive_address(sk: B256) -> Address {
-    let signing_key =
-        k256::ecdsa::SigningKey::from_slice(sk.as_slice()).expect("32-byte secret");
+    let signing_key = k256::ecdsa::SigningKey::from_slice(sk.as_slice()).expect("32-byte secret");
     let verifying = *signing_key.verifying_key();
     let encoded = verifying.to_encoded_point(false);
     let pubkey = &encoded.as_bytes()[1..];
@@ -330,8 +332,9 @@ mod tests {
         let envelope = ArbTransactionSigned::decode_2718(&mut rlp.as_slice()).unwrap();
         assert_eq!(envelope.recover_signer().unwrap(), b.sender());
         // Also decode strictly via the alloy Ethereum envelope to check shape.
-        let eth_env = EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut rlp.as_slice())
-            .unwrap();
+        let eth_env =
+            EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut rlp.as_slice())
+                .unwrap();
         assert!(matches!(eth_env, EthereumTxEnvelope::Eip2930(_)));
     }
 
@@ -397,10 +400,9 @@ mod tests {
 
         // Re-decode the inner envelope using alloy and check chain id and shape.
         let inner = &fixture_bytes[1..];
-        let env = EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(
-            &mut inner.as_ref(),
-        )
-        .expect("alloy decodes fixture inner envelope");
+        let env =
+            EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut inner.as_ref())
+                .expect("alloy decodes fixture inner envelope");
         match env {
             EthereumTxEnvelope::Eip1559(signed) => {
                 assert_eq!(signed.tx().chain_id, 412_346);
@@ -418,10 +420,9 @@ mod tests {
         let body = b.encode_body().unwrap();
         assert_eq!(body[0], kinds::KIND_SIGNED_L2_TX);
         assert_eq!(body[1], 0x02);
-        let env_ours = EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(
-            &mut &body[1..],
-        )
-        .expect("alloy decodes our inner envelope");
+        let env_ours =
+            EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut &body[1..])
+                .expect("alloy decodes our inner envelope");
         assert!(matches!(env_ours, EthereumTxEnvelope::Eip1559(_)));
     }
 

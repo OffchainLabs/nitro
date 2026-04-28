@@ -234,7 +234,10 @@ mod tests {
         let cfg = g.get("config").unwrap();
         assert_eq!(cfg.get("chainId").unwrap().as_u64().unwrap(), 421614);
         let arb = cfg.get("arbitrum").unwrap();
-        assert_eq!(arb.get("InitialArbOSVersion").unwrap().as_u64().unwrap(), 10);
+        assert_eq!(
+            arb.get("InitialArbOSVersion").unwrap().as_u64().unwrap(),
+            10
+        );
         assert!(arb.get("AllowDebugPrecompiles").unwrap().as_bool().unwrap());
         assert_eq!(g.get("difficulty").unwrap().as_str().unwrap(), "0x1");
         assert!(g.get("alloc").unwrap().as_object().unwrap().len() >= 14);

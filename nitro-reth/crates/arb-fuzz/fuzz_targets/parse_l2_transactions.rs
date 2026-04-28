@@ -20,7 +20,9 @@ fuzz_target!(|data: &[u8]| {
     let l1_base_fee = if data[2] & 1 == 0 {
         None
     } else {
-        Some(U256::from(u64::from_le_bytes([data[3], data[4], 0, 0, 0, 0, 0, 0])))
+        Some(U256::from(u64::from_le_bytes([
+            data[3], data[4], 0, 0, 0, 0, 0, 0,
+        ])))
     };
 
     let _ = arbos::parse_l2::parse_l2_transactions(

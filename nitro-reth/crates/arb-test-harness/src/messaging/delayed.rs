@@ -98,7 +98,9 @@ mod tests {
 
     #[test]
     fn json_round_trip() {
-        let msg = sample(Bytes::from(vec![1, 2, 3]), Some(10)).build().unwrap();
+        let msg = sample(Bytes::from(vec![1, 2, 3]), Some(10))
+            .build()
+            .unwrap();
         let v = serde_json::to_value(&msg).unwrap();
         let back: L1Message = serde_json::from_value(v).unwrap();
         assert_eq!(back.header.kind, kinds::KIND_DELAYED_TX);

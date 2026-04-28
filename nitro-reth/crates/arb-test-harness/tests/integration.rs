@@ -32,7 +32,9 @@ fn mock_l1_serves_chain_id() {
     let receipt = client
         .call(
             "eth_getTransactionReceipt",
-            serde_json::json!(["0x0000000000000000000000000000000000000000000000000000000000000000"]),
+            serde_json::json!([
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]),
         )
         .expect("getTransactionReceipt on mock");
     assert!(receipt.is_null());

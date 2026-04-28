@@ -1,8 +1,9 @@
 #![no_main]
 
-use arb_fuzz::arbitrary_impls::DiffTxScenario;
-use arb_fuzz::corpus_helpers::dump_crash_as_fixture;
-use arb_fuzz::shared_nodes::shared_dual_exec;
+use arb_fuzz::{
+    arbitrary_impls::DiffTxScenario, corpus_helpers::dump_crash_as_fixture,
+    shared_nodes::shared_dual_exec,
+};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|scenario: DiffTxScenario| {

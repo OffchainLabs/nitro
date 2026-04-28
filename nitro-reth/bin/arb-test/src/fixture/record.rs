@@ -24,7 +24,11 @@ pub fn run(args: RecordArgs) -> Result<()> {
     let body = serde_json::to_vec_pretty(&fixture).context("serialize fixture")?;
     std::fs::write(target, body).with_context(|| format!("write {}", target.display()))?;
 
-    println!("recorded {} -> {}", args.fixture.display(), target.display());
+    println!(
+        "recorded {} -> {}",
+        args.fixture.display(),
+        target.display()
+    );
     Ok(())
 }
 

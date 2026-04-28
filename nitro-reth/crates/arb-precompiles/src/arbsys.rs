@@ -875,19 +875,10 @@ mod version_tests {
     #[test]
     fn arb_os_version_returns_format_plus_55() {
         // formatVersion 51 → user-visible ArbOS version 106 (0x6a)
-        assert_eq!(
-            arbos_version_from_format(U256::from(51)),
-            U256::from(106),
-        );
+        assert_eq!(arbos_version_from_format(U256::from(51)), U256::from(106),);
         // formatVersion 1 → 56 (the lowest publicly used Nitro version)
-        assert_eq!(
-            arbos_version_from_format(U256::from(1)),
-            U256::from(56),
-        );
+        assert_eq!(arbos_version_from_format(U256::from(1)), U256::from(56),);
         // formatVersion 0 → 55
-        assert_eq!(
-            arbos_version_from_format(U256::ZERO),
-            U256::from(55),
-        );
+        assert_eq!(arbos_version_from_format(U256::ZERO), U256::from(55),);
     }
 }

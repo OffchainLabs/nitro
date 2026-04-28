@@ -68,8 +68,16 @@ fn genesis_header_matches_nitro_for_arbos_v50() {
     let spec = ArbChainSpecParser::parse(&json).expect("parse");
     let header = spec.genesis_header();
 
-    assert_eq!(header.nonce, B64::from(1u64.to_be_bytes()), "nonce should be 1 (Nitro init message marker)");
-    assert_eq!(header.gas_limit, 1u64 << 50, "gasLimit should be GethBlockGasLimit");
+    assert_eq!(
+        header.nonce,
+        B64::from(1u64.to_be_bytes()),
+        "nonce should be 1 (Nitro init message marker)"
+    );
+    assert_eq!(
+        header.gas_limit,
+        1u64 << 50,
+        "gasLimit should be GethBlockGasLimit"
+    );
     assert_eq!(
         header.base_fee_per_gas,
         Some(100_000_000),
@@ -102,7 +110,11 @@ fn genesis_header_mix_hash_encodes_version_at_byte_23() {
         // bytes 16..24 should be the big-endian u64 of version
         let mut expected_high = [0u8; 8];
         expected_high.copy_from_slice(&v.to_be_bytes());
-        assert_eq!(&mix[16..24], &expected_high, "version {v} bytes 16..24 mismatch");
+        assert_eq!(
+            &mix[16..24],
+            &expected_high,
+            "version {v} bytes 16..24 mismatch"
+        );
         // all other bytes must be zero at genesis
         for i in 0..16 {
             assert_eq!(mix[i], 0, "version {v} byte {i} should be zero");
@@ -144,7 +156,8 @@ fn parser_overrides_garbage_header_fields() {
     let mut json = serde_json::from_str::<serde_json::Value>(&build_chain_json(50)).unwrap();
     // Make the fields even more obviously wrong.
     json["nonce"] = serde_json::json!("0xffffffff");
-    json["mixHash"] = serde_json::json!("0xabababababababababababababababababababababababababababababababab");
+    json["mixHash"] =
+        serde_json::json!("0xabababababababababababababababababababababababababababababababab");
     json["gasLimit"] = serde_json::json!("0x1");
 
     let spec = ArbChainSpecParser::parse(&json.to_string()).expect("parse");
@@ -161,8 +174,12 @@ fn genesis_state_root_is_non_empty_with_arbos_alloc() {
     let json = build_chain_json(50);
     let spec = ArbChainSpecParser::parse(&json).expect("parse");
     let header = spec.genesis_header();
-    let empty_root: B256 = hex!("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").into();
-    assert_ne!(header.state_root, empty_root, "state root should not be empty");
+    let empty_root: B256 =
+        hex!("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421").into();
+    assert_ne!(
+        header.state_root, empty_root,
+        "state root should not be empty"
+    );
 }
 
 #[test]
@@ -229,14 +246,22 @@ fn parser_with_skip_genesis_injection_still_injects_arbos_state() {
     let spec = ArbChainSpecParser::parse(&json).expect("parse");
     let alloc = &spec.genesis().alloc;
 
-    let entry = alloc.get(&user_addr).expect("user-supplied entry preserved");
+    let entry = alloc
+        .get(&user_addr)
+        .expect("user-supplied entry preserved");
     assert_eq!(entry.balance, user_balance);
 
     let arbsys = address!("0000000000000000000000000000000000000064");
     let arb_owner = address!("0000000000000000000000000000000000000070");
     let arbos_state = address!("a4b05fffffffffffffffffffffffffffffffffff");
-    assert!(alloc.contains_key(&arbsys), "ArbSys sentinel must be injected");
-    assert!(alloc.contains_key(&arb_owner), "ArbOwner sentinel must be injected");
+    assert!(
+        alloc.contains_key(&arbsys),
+        "ArbSys sentinel must be injected"
+    );
+    assert!(
+        alloc.contains_key(&arb_owner),
+        "ArbOwner sentinel must be injected"
+    );
     let state_account = alloc
         .get(&arbos_state)
         .expect("ArbOS state account must be injected");
@@ -394,8 +419,14 @@ fn fresh_boot_v10_state_root_matches_nitro() {
         hex!("ab6821d87dca1473891fee8b08d1582b61362bac1ce5bd7a6513afe6c86b1327").into();
     let expected_hash: B256 =
         hex!("c84425bb7ca6315b83ebcc96ca814b7b7fc7eab6a734c47b48c94195500414fa").into();
-    assert_eq!(header.state_root, expected_state_root, "state root must match Nitro Docker fresh boot");
-    assert_eq!(hash, expected_hash, "block hash must match Nitro Docker fresh boot");
+    assert_eq!(
+        header.state_root, expected_state_root,
+        "state root must match Nitro Docker fresh boot"
+    );
+    assert_eq!(
+        hash, expected_hash,
+        "block hash must match Nitro Docker fresh boot"
+    );
 
     // Sanity: 16 accounts (13 v0 precompile sentinels + ArbosActs + ArbosState
     // + FilteredTransactionsState).

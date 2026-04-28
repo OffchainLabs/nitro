@@ -97,15 +97,11 @@ fn refresh_storage(args: RefreshArgs) -> Result<()> {
         let mut new_storage: BTreeMap<String, String> = BTreeMap::new();
         let mut nonzero = 0usize;
         for slot in &candidate_slots {
-            let v = rpc.call(
-                "eth_getStorageAt",
-                json!([addr, slot, parent_hex.clone()]),
-            )?;
+            let v = rpc.call("eth_getStorageAt", json!([addr, slot, parent_hex.clone()]))?;
             let val = v
                 .as_str()
                 .ok_or_else(|| anyhow!("eth_getStorageAt returned non-string"))?;
-            if val
-                != "0x0000000000000000000000000000000000000000000000000000000000000000"
+            if val != "0x0000000000000000000000000000000000000000000000000000000000000000"
                 && val != "0x0"
             {
                 new_storage.insert(slot.clone(), val.to_string());

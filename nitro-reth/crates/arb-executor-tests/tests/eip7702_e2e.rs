@@ -11,11 +11,11 @@ use alloy_evm::{
     EvmFactory,
 };
 use alloy_primitives::{Address, Bytes, B256, U256};
+use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     alice, alice_key, bob, bob_key, deploy_contract, derive_address, fund_account, ONE_ETH,
     ONE_GWEI,
 };
-use arb_evm::config::ArbEvmConfig;
 use arb_primitives::ArbTransactionSigned;
 use arb_test_utils::ArbosHarness;
 use reth_chainspec::ChainSpec;

@@ -7,10 +7,12 @@ pub use stylus::StylusFuzzInput;
 pub use tx::{BoundedBytes, TxScenario};
 
 use alloy_primitives::{Address, Bytes, U256};
-use arb_test_harness::messaging::{
-    ContractTxBuilder, DepositBuilder, L1Message, MessageBuilder, UnsignedUserTxBuilder,
+use arb_test_harness::{
+    messaging::{
+        ContractTxBuilder, DepositBuilder, L1Message, MessageBuilder, UnsignedUserTxBuilder,
+    },
+    scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
-use arb_test_harness::scenario::{Scenario, ScenarioSetup, ScenarioStep};
 use arbitrary::{Arbitrary, Unstructured};
 use serde::Serialize;
 

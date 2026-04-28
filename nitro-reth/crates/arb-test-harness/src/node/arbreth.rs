@@ -11,8 +11,8 @@ use alloy_primitives::{Address, Bytes, B256, U256};
 use serde_json::{json, Value};
 
 use super::common::{
-    arb_receipt_fields, block_from_json, free_tcp_port, json_to_b256, json_to_bytes,
-    json_to_u256, json_to_u64, parse_b256, receipt_from_json, tail, tx_request_to_json,
+    arb_receipt_fields, block_from_json, free_tcp_port, json_to_b256, json_to_bytes, json_to_u256,
+    json_to_u64, parse_b256, receipt_from_json, tail, tx_request_to_json,
 };
 use crate::{
     error::HarnessError,
@@ -197,10 +197,9 @@ impl ExecutionNode for ArbrethProcess {
     }
 
     fn balance(&self, addr: Address, at: BlockId) -> Result<U256> {
-        let v = self.rpc.call(
-            "eth_getBalance",
-            json!([format!("{addr:#x}"), at.to_rpc()]),
-        )?;
+        let v = self
+            .rpc
+            .call("eth_getBalance", json!([format!("{addr:#x}"), at.to_rpc()]))?;
         json_to_u256(&v)
     }
 
@@ -213,26 +212,20 @@ impl ExecutionNode for ArbrethProcess {
     }
 
     fn code(&self, addr: Address, at: BlockId) -> Result<Bytes> {
-        let v = self.rpc.call(
-            "eth_getCode",
-            json!([format!("{addr:#x}"), at.to_rpc()]),
-        )?;
+        let v = self
+            .rpc
+            .call("eth_getCode", json!([format!("{addr:#x}"), at.to_rpc()]))?;
         json_to_bytes(&v)
     }
 
     fn eth_call(&self, tx: TxRequest, at: BlockId) -> Result<Bytes> {
-        let v = self.rpc.call(
-            "eth_call",
-            json!([tx_request_to_json(&tx), at.to_rpc()]),
-        )?;
+        let v = self
+            .rpc
+            .call("eth_call", json!([tx_request_to_json(&tx), at.to_rpc()]))?;
         json_to_bytes(&v)
     }
 
-    fn debug_storage_range(
-        &self,
-        addr: Address,
-        at: BlockId,
-    ) -> Result<BTreeMap<B256, B256>> {
+    fn debug_storage_range(&self, addr: Address, at: BlockId) -> Result<BTreeMap<B256, B256>> {
         let block = self.block(at.clone())?;
         let v = self.rpc.call(
             "debug_storageRangeAt",

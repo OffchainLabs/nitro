@@ -100,7 +100,9 @@ mod tests {
         .unwrap();
         assert_eq!(txs.len(), 1);
         match &txs[0] {
-            ParsedTransaction::EthDeposit { from, to, value, .. } => {
+            ParsedTransaction::EthDeposit {
+                from, to, value, ..
+            } => {
                 assert_eq!(*from, s.from);
                 assert_eq!(*to, s.to);
                 assert_eq!(*value, s.amount);

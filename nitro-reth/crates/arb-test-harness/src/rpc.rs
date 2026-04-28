@@ -57,7 +57,8 @@ impl JsonRpcClient {
             match self.call(method, params.clone()) {
                 Ok(v) => return Ok(v),
                 Err(e) => {
-                    let is_transport = matches!(&e, HarnessError::Rpc(m) if m.contains("transport"));
+                    let is_transport =
+                        matches!(&e, HarnessError::Rpc(m) if m.contains("transport"));
                     if !is_transport {
                         return Err(e);
                     }

@@ -76,10 +76,8 @@ pub fn run(cli: GenesisCaptureArgs) -> Result<()> {
             cli.allow_debug_precompiles,
             alloc,
         );
-        let body = serde_json::to_vec_pretty(&genesis)
-            .context("serialize genesis json")?;
-        std::fs::write(&cli.out, body)
-            .with_context(|| format!("write {}", cli.out.display()))?;
+        let body = serde_json::to_vec_pretty(&genesis).context("serialize genesis json")?;
+        std::fs::write(&cli.out, body).with_context(|| format!("write {}", cli.out.display()))?;
         eprintln!(
             "wrote {} ({} alloc entries)",
             cli.out.display(),
@@ -105,11 +103,7 @@ impl NitroRunner {
         chain_owner: Address,
         allow_debug_precompiles: bool,
     ) -> Result<Self> {
-        let name = format!(
-            "arb-genesis-capture-{}-{}",
-            std::process::id(),
-            now_nanos()
-        );
+        let name = format!("arb-genesis-capture-{}-{}", std::process::id(), now_nanos());
         let _ = Command::new("docker")
             .args(["rm", "-f", &name])
             .stdout(Stdio::null())
@@ -296,10 +290,7 @@ fn render_chain_info_json(
     serde_json::to_string(&entry).unwrap_or_default()
 }
 
-fn capture_alloc(
-    rpc: &JsonRpcClient,
-    chain_owner: Address,
-) -> Result<BTreeMap<String, Value>> {
+fn capture_alloc(rpc: &JsonRpcClient, chain_owner: Address) -> Result<BTreeMap<String, Value>> {
     if let Some(alloc) = try_debug_dump_block(rpc)? {
         if !alloc.is_empty() {
             return Ok(alloc);
@@ -362,9 +353,12 @@ fn parse_dump_account(raw: &Value) -> Result<Map<String, Value>> {
         .get("balance")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("account missing balance"))?;
-    let balance_u256 = parse_decimal_or_hex_u256(balance)
-        .with_context(|| format!("parse balance {balance}"))?;
-    entry.insert("balance".into(), Value::String(format!("{balance_u256:#x}")));
+    let balance_u256 =
+        parse_decimal_or_hex_u256(balance).with_context(|| format!("parse balance {balance}"))?;
+    entry.insert(
+        "balance".into(),
+        Value::String(format!("{balance_u256:#x}")),
+    );
 
     let nonce_opt = raw.get("nonce").and_then(|n| {
         n.as_u64().or_else(|| {
@@ -424,10 +418,7 @@ fn parse_decimal_or_hex_u256(s: &str) -> Result<U256> {
     U256::from_str_radix(s, 10).map_err(|e| anyhow!("decimal u256: {e}"))
 }
 
-fn enumerate_alloc(
-    rpc: &JsonRpcClient,
-    chain_owner: Address,
-) -> Result<BTreeMap<String, Value>> {
+fn enumerate_alloc(rpc: &JsonRpcClient, chain_owner: Address) -> Result<BTreeMap<String, Value>> {
     let block_zero_hash = block_zero_hash(rpc)?;
 
     let mut targets: Vec<Address> = Vec::new();
@@ -435,8 +426,12 @@ fn enumerate_alloc(
         targets.push(precompile_address(byte));
     }
     targets.push(precompile_address(0xff));
-    targets.push(parse_addr_unchecked("0x00000000000000000000000000000000000a4b05"));
-    targets.push(parse_addr_unchecked("0xa4b05fffffffffffffffffffffffffffffffffff"));
+    targets.push(parse_addr_unchecked(
+        "0x00000000000000000000000000000000000a4b05",
+    ));
+    targets.push(parse_addr_unchecked(
+        "0xa4b05fffffffffffffffffffffffffffffffffff",
+    ));
     if !chain_owner.is_zero() {
         targets.push(chain_owner);
     }
@@ -501,7 +496,10 @@ fn capture_account(
     }
 
     let mut entry = Map::new();
-    entry.insert("balance".into(), Value::String(format!("{balance_u256:#x}")));
+    entry.insert(
+        "balance".into(),
+        Value::String(format!("{balance_u256:#x}")),
+    );
     if nonce > 0 {
         entry.insert("nonce".into(), Value::String(format!("{nonce:#x}")));
     }

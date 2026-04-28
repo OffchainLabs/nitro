@@ -1,12 +1,18 @@
 #![no_main]
 
 use alloy_primitives::{Address, Bytes, U256};
-use arb_fuzz::arbitrary_impls::stylus::{smith_wasm, StylusFuzzInput};
-use arb_fuzz::arbitrary_impls::message_step;
-use arb_fuzz::corpus_helpers::dump_crash_as_fixture;
-use arb_fuzz::shared_nodes::{shared_dual_exec, FUZZ_L2_CHAIN_ID};
-use arb_test_harness::messaging::{ContractTxBuilder, DepositBuilder, MessageBuilder};
-use arb_test_harness::scenario::{Scenario, ScenarioSetup};
+use arb_fuzz::{
+    arbitrary_impls::{
+        message_step,
+        stylus::{smith_wasm, StylusFuzzInput},
+    },
+    corpus_helpers::dump_crash_as_fixture,
+    shared_nodes::{shared_dual_exec, FUZZ_L2_CHAIN_ID},
+};
+use arb_test_harness::{
+    messaging::{ContractTxBuilder, DepositBuilder, MessageBuilder},
+    scenario::{Scenario, ScenarioSetup},
+};
 use libfuzzer_sys::fuzz_target;
 use serde::Serialize;
 

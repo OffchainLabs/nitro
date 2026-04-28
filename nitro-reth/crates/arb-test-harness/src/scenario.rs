@@ -26,6 +26,10 @@ pub enum ScenarioStep {
         message: L1Message,
         delayed_messages_read: u64,
     },
-    AdvanceTime { seconds: u64 },
-    AdvanceL1Block { blocks: u64 },
+    AdvanceTime {
+        seconds: u64,
+    },
+    AdvanceL1Block {
+        blocks: u64,
+    },
 }

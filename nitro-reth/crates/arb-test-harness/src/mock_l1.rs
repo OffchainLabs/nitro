@@ -108,10 +108,7 @@ impl Drop for MockL1 {
     }
 }
 
-async fn handle(
-    State(state): State<AppState>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
+async fn handle(State(state): State<AppState>, Json(req): Json<Value>) -> impl IntoResponse {
     let id = req.get("id").cloned().unwrap_or_else(|| json!(1));
     let method = req
         .get("method")

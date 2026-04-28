@@ -1,9 +1,7 @@
 use alloy_primitives::{Address, B256, U256};
 
 use crate::messaging::{
-    encoding::{
-        encode_address, encode_hash, encode_uint256, encode_uint64, request_id_from_seq,
-    },
+    encoding::{encode_address, encode_hash, encode_uint256, encode_uint64, request_id_from_seq},
     kinds, L1Message, L1MessageHeader, MessageBuilder,
 };
 
@@ -70,9 +68,7 @@ mod tests {
         BatchBuilder {
             batch_poster: address!("a4b000000000000000000073657175656e636572"),
             batch_timestamp: 1_700_000_000,
-            data_hash: b256!(
-                "5566778899aabbccddeeff00112233445566778899aabbccddeeff0011223344"
-            ),
+            data_hash: b256!("5566778899aabbccddeeff00112233445566778899aabbccddeeff0011223344"),
             batch_number: 42,
             l1_base_fee: U256::from(30_000_000_000u64),
             variant,

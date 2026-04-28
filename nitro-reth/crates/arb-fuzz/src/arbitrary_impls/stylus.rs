@@ -24,7 +24,9 @@ pub fn smith_wasm(seed: u64) -> Result<Vec<u8>, SmithError> {
     let mut buf = [0u8; 1024];
     let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
     for byte in buf.iter_mut() {
-        state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         *byte = (state >> 33) as u8;
     }
     let mut u = Unstructured::new(&buf);

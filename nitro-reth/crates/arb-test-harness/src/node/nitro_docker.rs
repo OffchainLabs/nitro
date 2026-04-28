@@ -34,8 +34,7 @@ pub struct NitroDocker {
 
 impl NitroDocker {
     pub fn start(ctx: &NodeStartCtx) -> Result<Self> {
-        let image =
-            std::env::var("NITRO_REF_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
+        let image = std::env::var("NITRO_REF_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
         let seq = CONTAINER_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let name = format!("arb-harness-nitro-{}-{}", std::process::id(), seq);
 
@@ -90,9 +89,9 @@ impl NitroDocker {
             "--parent-chain.blob-client.beacon-url={parent_chain_url}"
         ));
 
-        let output = cmd.output().map_err(|e| {
-            HarnessError::Rpc(format!("docker run nitro: {e}"))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| HarnessError::Rpc(format!("docker run nitro: {e}")))?;
         if !output.status.success() {
             return Err(HarnessError::Rpc(format!(
                 "docker run nitro failed: {}",
@@ -327,11 +326,7 @@ impl ExecutionNode for NitroDocker {
         crate::node::common::json_to_bytes(&v)
     }
 
-    fn debug_storage_range(
-        &self,
-        _addr: Address,
-        _at: BlockId,
-    ) -> Result<BTreeMap<B256, B256>> {
+    fn debug_storage_range(&self, _addr: Address, _at: BlockId) -> Result<BTreeMap<B256, B256>> {
         Err(HarnessError::NotImplemented {
             what: "NitroDocker::debug_storage_range",
         })

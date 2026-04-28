@@ -45,7 +45,12 @@ fn stylus() {
         }
     }
     if !panics.is_empty() {
-        panic!("{}/{} stylus sub-dirs failed:\n{}", panics.len(), subs.len(), panics.join("\n"));
+        panic!(
+            "{}/{} stylus sub-dirs failed:\n{}",
+            panics.len(),
+            subs.len(),
+            panics.join("\n")
+        );
     }
 }
 
@@ -73,7 +78,11 @@ fn retryables_exec() {
             failures.push(format!("{}: {e}", path.display()));
         }
     }
-    assert!(had_exec, "no execution-shaped fixtures found in {}", retry_root.display());
+    assert!(
+        had_exec,
+        "no execution-shaped fixtures found in {}",
+        retry_root.display()
+    );
     if !failures.is_empty() {
         panic!(
             "{}/{} execution fixtures failed:\n  {}",

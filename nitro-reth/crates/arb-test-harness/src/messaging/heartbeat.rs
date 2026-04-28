@@ -15,7 +15,9 @@ pub struct HeartbeatBuilder {
 #[derive(Debug, Clone)]
 pub enum HeartbeatBody {
     ChainIdOnly,
-    V0 { chain_config: Vec<u8> },
+    V0 {
+        chain_config: Vec<u8>,
+    },
     V1 {
         initial_l1_base_fee: U256,
         chain_config: Vec<u8>,

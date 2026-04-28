@@ -62,7 +62,11 @@ pub struct ExecutionExpectations {
     pub state_diffs: Vec<ExpectedStateDiff>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logs: Vec<ExpectedLog>,
-    #[serde(default, rename = "acceptedDiffs", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        rename = "acceptedDiffs",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub accepted_diffs: Vec<AcceptedDiff>,
 }
 
@@ -70,7 +74,11 @@ pub struct ExecutionExpectations {
 pub struct ExpectedTxReceipt {
     #[serde(rename = "txHash")]
     pub tx_hash: B256,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "blockNumber")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "blockNumber"
+    )]
     pub block_number: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<u8>,
@@ -88,11 +96,23 @@ pub struct ExpectedTxReceipt {
         rename = "effectiveGasPrice"
     )]
     pub effective_gas_price: Option<u128>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "gasUsedForL1")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "gasUsedForL1"
+    )]
     pub gas_used_for_l1: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "l1BlockNumber")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "l1BlockNumber"
+    )]
     pub l1_block_number: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "contractAddress")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "contractAddress"
+    )]
     pub contract_address: Option<Address>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Address>,
@@ -139,7 +159,11 @@ pub struct ExpectedLog {
     pub address: Address,
     pub topics: Vec<B256>,
     pub data: Bytes,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "blockNumber")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "blockNumber"
+    )]
     pub block_number: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "txHash")]
     pub tx_hash: Option<B256>,
@@ -245,11 +269,7 @@ impl ExecutionFixture {
         Ok(())
     }
 
-    pub fn run_with_mode(
-        &mut self,
-        mode: FixtureMode,
-        rpc_url: &str,
-    ) -> Result<(), SpecError> {
+    pub fn run_with_mode(&mut self, mode: FixtureMode, rpc_url: &str) -> Result<(), SpecError> {
         match mode {
             FixtureMode::Verify => self.run(rpc_url),
             FixtureMode::Record => self.record_against_nitro(),
@@ -285,8 +305,8 @@ impl ExecutionFixture {
 
     pub fn record_against_nitro(&mut self) -> Result<(), SpecError> {
         let (_mock, ctx) = self.nitro_node_ctx()?;
-        let mut nitro = NitroDocker::start(&ctx)
-            .map_err(|e| SpecError::Action(format!("nitro start: {e}")))?;
+        let mut nitro =
+            NitroDocker::start(&ctx).map_err(|e| SpecError::Action(format!("nitro start: {e}")))?;
         let scenario = self.to_scenario()?;
         let captured = capture_from_node(&mut nitro, &scenario)
             .map_err(|e| SpecError::Action(format!("capture: {e}")))?;
@@ -306,8 +326,8 @@ impl ExecutionFixture {
 
     pub fn compare(&mut self, rpc_url: &str) -> Result<(), SpecError> {
         let (_mock, ctx) = self.nitro_node_ctx()?;
-        let left = NitroDocker::start(&ctx)
-            .map_err(|e| SpecError::Action(format!("nitro start: {e}")))?;
+        let left =
+            NitroDocker::start(&ctx).map_err(|e| SpecError::Action(format!("nitro start: {e}")))?;
         let right = RemoteNode::arbreth(rpc_url);
         let mut dual = DualExec::new(left, right);
         let scenario = self.to_scenario()?;
@@ -333,10 +353,10 @@ impl ExecutionFixture {
         let mut steps: Vec<ScenarioStep> = Vec::with_capacity(self.messages.len());
         let mut next_idx = 1u64;
         for (i, msg) in self.messages.iter().enumerate() {
-            let parsed: arb_test_harness::L1Message =
-                serde_json::from_value(msg.message.clone()).map_err(|e| {
-                    SpecError::Action(format!("message {i}: decode L1Message: {e}"))
-                })?;
+            let parsed: arb_test_harness::L1Message = serde_json::from_value(msg.message.clone())
+                .map_err(|e| {
+                SpecError::Action(format!("message {i}: decode L1Message: {e}"))
+            })?;
             if parsed.header.kind == KIND_INITIALIZE {
                 continue;
             }
@@ -560,7 +580,10 @@ fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), 
         return Ok(());
     };
     let receipt: serde_json::Value = client
-        .call("eth_getTransactionReceipt", serde_json::json!([exp.tx_hash]))
+        .call(
+            "eth_getTransactionReceipt",
+            serde_json::json!([exp.tx_hash]),
+        )
         .map_err(|e| SpecError::Assertion(format!("receipt {}: {e}", exp.tx_hash)))?;
     if receipt.is_null() {
         return Err(SpecError::Assertion(format!(
@@ -571,7 +594,9 @@ fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), 
     let got_logs = receipt
         .get("logs")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| SpecError::Assertion(format!("receipt {} missing logs array", exp.tx_hash)))?;
+        .ok_or_else(|| {
+            SpecError::Assertion(format!("receipt {} missing logs array", exp.tx_hash))
+        })?;
     if got_logs.len() != want_logs.len() {
         return Err(SpecError::Assertion(format!(
             "receipt {} log count: got {}, want {}",
@@ -612,7 +637,11 @@ fn verify_log(
                 .collect()
         })
         .unwrap_or_default();
-    let want_topics: Vec<String> = want.topics.iter().map(|t| format!("{t:#x}").to_lowercase()).collect();
+    let want_topics: Vec<String> = want
+        .topics
+        .iter()
+        .map(|t| format!("{t:#x}").to_lowercase())
+        .collect();
     if got_topics != want_topics {
         return Err(SpecError::Assertion(format!(
             "tx {tx} log[{index}] topics: got {got_topics:?}, want {want_topics:?}"

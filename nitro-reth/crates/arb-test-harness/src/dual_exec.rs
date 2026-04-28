@@ -27,8 +27,10 @@ impl<L: ExecutionNode, R: ExecutionNode> DualExec<L, R> {
                     message,
                     delayed_messages_read,
                 } => {
-                    self.left.submit_message(*idx, message, *delayed_messages_read)?;
-                    self.right.submit_message(*idx, message, *delayed_messages_read)?;
+                    self.left
+                        .submit_message(*idx, message, *delayed_messages_read)?;
+                    self.right
+                        .submit_message(*idx, message, *delayed_messages_read)?;
                 }
                 ScenarioStep::AdvanceTime { .. } | ScenarioStep::AdvanceL1Block { .. } => {}
             }
@@ -76,7 +78,13 @@ impl<L: ExecutionNode, R: ExecutionNode> DualExec<L, R> {
                     &r.transactions_root,
                     report,
                 );
-                push_block_field(number, "parent_hash", &l.parent_hash, &r.parent_hash, report);
+                push_block_field(
+                    number,
+                    "parent_hash",
+                    &l.parent_hash,
+                    &r.parent_hash,
+                    report,
+                );
                 push_block_field(number, "timestamp", &l.timestamp, &r.timestamp, report);
 
                 let tx_pairs = pair_tx_hashes(&l.tx_hashes, &r.tx_hashes);
@@ -222,14 +230,33 @@ fn diff_receipt(hash: B256, l: &TxReceipt, r: &TxReceipt, report: &mut DiffRepor
     }
     let n = l.logs.len().min(r.logs.len());
     for i in 0..n {
-        diff_log(l.block_number.max(r.block_number), &l.logs[i], &r.logs[i], report);
+        diff_log(
+            l.block_number.max(r.block_number),
+            &l.logs[i],
+            &r.logs[i],
+            report,
+        );
     }
 }
 
 fn diff_log(block_number: u64, l: &EvmLog, r: &EvmLog, report: &mut DiffReport) {
     let log_index = l.log_index.max(r.log_index);
-    push_log_field(block_number, log_index, "address", &l.address, &r.address, report);
-    push_log_field(block_number, log_index, "topics", &l.topics, &r.topics, report);
+    push_log_field(
+        block_number,
+        log_index,
+        "address",
+        &l.address,
+        &r.address,
+        report,
+    );
+    push_log_field(
+        block_number,
+        log_index,
+        "topics",
+        &l.topics,
+        &r.topics,
+        report,
+    );
     push_log_field(block_number, log_index, "data", &l.data, &r.data, report);
 }
 

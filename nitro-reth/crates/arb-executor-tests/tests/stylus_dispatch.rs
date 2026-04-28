@@ -17,11 +17,11 @@ use alloy_evm::{
     EvmFactory,
 };
 use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
+use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_legacy, ExecutorScaffold,
     ONE_ETH, ONE_GWEI,
 };
-use arb_evm::config::ArbEvmConfig;
 use arb_test_utils::ArbosHarness;
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};

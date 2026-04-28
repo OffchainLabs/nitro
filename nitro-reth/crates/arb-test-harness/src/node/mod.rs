@@ -148,11 +148,7 @@ pub trait ExecutionNode: Send {
 
     fn eth_call(&self, tx: TxRequest, at: BlockId) -> Result<Bytes>;
 
-    fn debug_storage_range(
-        &self,
-        addr: Address,
-        at: BlockId,
-    ) -> Result<BTreeMap<B256, B256>>;
+    fn debug_storage_range(&self, addr: Address, at: BlockId) -> Result<BTreeMap<B256, B256>>;
 
     fn shutdown(self: Box<Self>) -> Result<()>;
 }

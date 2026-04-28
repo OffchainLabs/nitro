@@ -77,7 +77,10 @@ fn receipt_to_expected_json(
     arb: Option<&crate::node::ArbReceiptFields>,
 ) -> Value {
     let mut map = Map::new();
-    map.insert("txHash".into(), Value::String(format!("{:#x}", receipt.tx_hash)));
+    map.insert(
+        "txHash".into(),
+        Value::String(format!("{:#x}", receipt.tx_hash)),
+    );
     map.insert("blockNumber".into(), json!(receipt.block_number));
     map.insert("status".into(), json!(receipt.status));
     map.insert("gasUsed".into(), json!(receipt.gas_used));

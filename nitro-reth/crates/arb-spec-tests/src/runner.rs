@@ -265,9 +265,8 @@ fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecErro
     let cache_path = cache_dir.join(format!("chain{chain_id}_v{arbos_version}.json"));
 
     if !cache_path.exists() {
-        std::fs::create_dir_all(&cache_dir).map_err(|e| {
-            SpecError::Action(format!("mkdir {}: {e}", cache_dir.display()))
-        })?;
+        std::fs::create_dir_all(&cache_dir)
+            .map_err(|e| SpecError::Action(format!("mkdir {}: {e}", cache_dir.display())))?;
         eprintln!(
             "[arb-spec] genesis cache miss for chain={chain_id} arbos=v{arbos_version}, capturing from reference node..."
         );
@@ -333,11 +332,14 @@ fn layer_fixture_alloc(
         .map_err(|e| SpecError::Action(format!("read cache {}: {e}", cache_path.display())))?;
     let mut cached: serde_json::Value = serde_json::from_slice(&cache_bytes)
         .map_err(|e| SpecError::Action(format!("parse cache {}: {e}", cache_path.display())))?;
-    let cached_obj = cached
-        .as_object_mut()
-        .ok_or_else(|| SpecError::Action(format!("cache {} not a JSON object", cache_path.display())))?;
+    let cached_obj = cached.as_object_mut().ok_or_else(|| {
+        SpecError::Action(format!("cache {} not a JSON object", cache_path.display()))
+    })?;
     if let Some(alloc) = fixture_alloc {
-        let merged_alloc = merge_alloc(cached_obj.get("alloc").unwrap_or(&serde_json::Value::Null), alloc);
+        let merged_alloc = merge_alloc(
+            cached_obj.get("alloc").unwrap_or(&serde_json::Value::Null),
+            alloc,
+        );
         cached_obj.insert("alloc".to_string(), serde_json::Value::Object(merged_alloc));
     }
     if let Some(arbitrum) = fixture_arbitrum {
@@ -360,11 +362,15 @@ fn merge_arbitrum_config(
     let config = cache_obj
         .entry("config")
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-    let Some(config_obj) = config.as_object_mut() else { return };
+    let Some(config_obj) = config.as_object_mut() else {
+        return;
+    };
     let arbitrum = config_obj
         .entry("arbitrum")
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-    let Some(arbitrum_obj) = arbitrum.as_object_mut() else { return };
+    let Some(arbitrum_obj) = arbitrum.as_object_mut() else {
+        return;
+    };
     for (k, v) in fixture_arbitrum {
         arbitrum_obj.insert(k.clone(), v.clone());
     }
@@ -427,7 +433,10 @@ mod tests {
         let arbos_addr = merged
             .get("0xa4b05fffffffffffffffffffffffffffffffffff")
             .expect("arbos system address present");
-        assert_eq!(arbos_addr.get("balance").and_then(|v| v.as_str()), Some("1"));
+        assert_eq!(
+            arbos_addr.get("balance").and_then(|v| v.as_str()),
+            Some("1")
+        );
 
         let user = merged
             .get("0x26E554a8acF9003b83495c7f45F06edCB803d4e3")
@@ -437,7 +446,10 @@ mod tests {
         let precompile = merged
             .get("0x0000000000000000000000000000000000000064")
             .expect("precompile slot retained");
-        assert_eq!(precompile.get("code").and_then(|v| v.as_str()), Some("0x60"));
+        assert_eq!(
+            precompile.get("code").and_then(|v| v.as_str()),
+            Some("0x60")
+        );
     }
 
     #[test]
@@ -452,10 +464,7 @@ mod tests {
                 "0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF": { "balance": "42" }
             }
         });
-        let fixture_alloc = fixture
-            .get("alloc")
-            .and_then(|v| v.as_object())
-            .unwrap();
+        let fixture_alloc = fixture.get("alloc").and_then(|v| v.as_object()).unwrap();
         let merged = merge_alloc(&cache, fixture_alloc);
         // We expect a single canonical entry under the cache's spelling.
         assert_eq!(merged.len(), 1);
@@ -467,10 +476,7 @@ mod tests {
 
     #[test]
     fn layer_skips_when_fixture_alloc_empty() {
-        let tmp = std::env::temp_dir().join(format!(
-            "arb-spec-merge-test-{}",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("arb-spec-merge-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         let cache_path = tmp.join("cache.json");
         std::fs::write(&cache_path, r#"{"alloc":{"0xaa":{"balance":"1"}}}"#).unwrap();

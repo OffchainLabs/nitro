@@ -1710,8 +1710,7 @@ where
             let max_priority: u128 =
                 revm::context_interface::Transaction::max_priority_fee_per_gas(&tx_env)
                     .unwrap_or(0);
-            let effective: u128 =
-                upfront_gas_price.min(base_fee_u128.saturating_add(max_priority));
+            let effective: u128 = upfront_gas_price.min(base_fee_u128.saturating_add(max_priority));
             arb_precompiles::set_current_tx_effective_gas_price(effective);
         }
 
