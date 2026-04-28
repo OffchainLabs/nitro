@@ -111,6 +111,8 @@ run: # Run sp1-runner on $(BLOCK_INPUTS_DIR)/$(BLOCK).json (override with BLOCK=
 
 .PHONY: profile
 profile: # Profile bootloading, stylus compilation, and reexecution across all block types.
+	@cargo build --release -p sp1-runner --features profiling
+	@cp $(TOP)/target/release/sp1-runner $(OUTPUT_DIR)/sp1-runner-profiling
 	@python3 $(CURDIR)/profile.py \
 		--output-dir $(OUTPUT_DIR) \
 		--block-inputs-dir $(BLOCK_INPUTS_DIR)

@@ -187,7 +187,7 @@ def main() -> None:
         run_log = run(
             f"sp1-runner [{block}]",
             [
-                f"{out}/sp1-runner",
+                f"{out}/sp1-runner-profiling",
                 "--program", f"{out}/dumped_replay_wasm.elf",
                 "--stylus-compiler-program", f"{out}/stylus-compiler-program",
                 "--block-file", block_file,
