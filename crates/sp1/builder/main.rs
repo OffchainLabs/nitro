@@ -1,4 +1,5 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time::SystemTime};
+
 use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, include_elf};
