@@ -61,3 +61,7 @@ crates/arb-spec-tests/fixtures/_captured/
 crates/arb-fuzz/corpus/
 crates/arb-fuzz/artifacts/
 target/spec-test-tmp/
+
+# Genesis cache (Nitro-captured per-(chainId, arbosVersion) golden files) — committed.
+!crates/arb-spec-tests/fixtures/_genesis_cache/
+!crates/arb-spec-tests/fixtures/_genesis_cache/**

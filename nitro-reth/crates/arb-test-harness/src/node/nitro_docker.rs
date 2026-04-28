@@ -1,19 +1,13 @@
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
     process::{Command, Stdio},
-    str::FromStr,
     time::{Duration, Instant},
 };
 
-use alloy_genesis::GenesisAccount;
-use alloy_primitives::{hex, Address, Bytes, B256, U256};
-use revm::database::{EmptyDB, State, StateBuilder};
-use revm_database::states::bundle_state::BundleRetention;
-use serde_json::{json, Map, Value};
+use alloy_primitives::{Address, Bytes, B256, U256};
+use serde_json::{json, Value};
 
-use arb_node::genesis::{initialize_arbos_state, ArbOSInit, INITIAL_ARBOS_VERSION};
-use arbos::arbos_types::ParsedInitMessage;
+use arb_node::genesis::INITIAL_ARBOS_VERSION;
 
 use crate::{
     error::HarnessError,
@@ -36,7 +30,6 @@ pub struct NitroDocker {
     rpc_url: String,
     rpc: JsonRpcClient,
     container_id: String,
-    genesis_path: Option<PathBuf>,
 }
 
 impl NitroDocker {
@@ -56,12 +49,6 @@ impl NitroDocker {
 
         let chain_config = build_chain_config(ctx);
         let chain_info_json = render_chain_info_json(ctx, &chain_config);
-        let genesis_path = write_genesis_json_file(ctx, &chain_config, seq)?;
-        let genesis_path_str = genesis_path
-            .to_str()
-            .ok_or_else(|| HarnessError::Rpc("genesis path is not valid UTF-8".into()))?
-            .to_string();
-        let genesis_mount = format!("{genesis_path_str}:/tmp/genesis.json:ro");
 
         let mut cmd = Command::new("docker");
         cmd.args([
@@ -73,12 +60,10 @@ impl NitroDocker {
             "127.0.0.1::8547",
             "--user",
             "root",
-            "-v",
-            &genesis_mount,
             "--entrypoint",
             "/usr/local/bin/nitro",
             &image,
-            "--init.genesis-json-file=/tmp/genesis.json",
+            "--init.empty=true",
             "--init.validate-genesis-assertion=false",
             "--persistent.global-config=/tmp/nitro-data",
             "--node.parent-chain-reader.enable=false",
@@ -139,7 +124,6 @@ impl NitroDocker {
             rpc_url,
             rpc,
             container_id,
-            genesis_path: Some(genesis_path),
         })
     }
 
@@ -155,11 +139,6 @@ impl NitroDocker {
 impl Drop for NitroDocker {
     fn drop(&mut self) {
         self.stop();
-        if let Some(path) = self.genesis_path.take() {
-            if std::env::var("ARB_HARNESS_KEEP_WORKDIR").is_err() {
-                let _ = std::fs::remove_file(path);
-            }
-        }
     }
 }
 
@@ -261,180 +240,6 @@ fn render_chain_info_json(ctx: &NodeStartCtx, chain_config: &Value) -> String {
         },
     }]);
     serde_json::to_string(&entry).unwrap_or_default()
-}
-
-/// Compute the genesis alloc by running ArbOS init in a scratch state, and
-/// write a geth-format genesis JSON file mountable into the Nitro container.
-/// The same file can be passed to arbreth via `--chain=<path>` and will produce
-/// an identical block-0 stateRoot.
-fn write_genesis_json_file(
-    ctx: &NodeStartCtx,
-    chain_config: &Value,
-    seq: u32,
-) -> Result<PathBuf> {
-    let chain_id = ctx.l2_chain_id;
-
-    let arbos_version = chain_config
-        .pointer("/arbitrum/InitialArbOSVersion")
-        .and_then(Value::as_u64)
-        .unwrap_or(INITIAL_ARBOS_VERSION);
-
-    let chain_owner = chain_config
-        .pointer("/arbitrum/InitialChainOwner")
-        .and_then(Value::as_str)
-        .and_then(|s| Address::from_str(s.trim_start_matches("0x")).ok())
-        .unwrap_or(Address::ZERO);
-
-    let arbos_init = ArbOSInit {
-        native_token_supply_management_enabled: chain_config
-            .pointer("/arbitrum/ArbOSInit/nativeTokenSupplyManagementEnabled")
-            .or_else(|| chain_config.pointer("/arbitrum/nativeTokenSupplyManagementEnabled"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        transaction_filtering_enabled: chain_config
-            .pointer("/arbitrum/ArbOSInit/transactionFilteringEnabled")
-            .or_else(|| chain_config.pointer("/arbitrum/transactionFilteringEnabled"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-    };
-
-    // Match `arb_node::chainspec::compute_arbos_alloc` exactly: empty
-    // serialized chain config and zero initial L1 base fee. The alloc we
-    // emit then equals what arbreth's chainspec parser injects when given
-    // the fixture's inline genesis.
-    let init_msg = ParsedInitMessage {
-        chain_id: U256::from(chain_id),
-        initial_l1_base_fee: U256::ZERO,
-        serialized_chain_config: Vec::new(),
-    };
-
-    let mut state: State<EmptyDB> = StateBuilder::new()
-        .with_database(EmptyDB::default())
-        .with_bundle_update()
-        .build();
-
-    initialize_arbos_state(
-        &mut state,
-        &init_msg,
-        chain_id,
-        arbos_version,
-        chain_owner,
-        arbos_init,
-    )
-    .map_err(|e| HarnessError::Rpc(format!("initialize_arbos_state: {e}")))?;
-
-    state.merge_transitions(BundleRetention::PlainState);
-    let bundle = state.take_bundle();
-
-    // Build the alloc, retaining slots that were written to zero. Nitro's
-    // `InitializeArbosInDatabase` runs its own ArbOS init before applying
-    // the alloc overlay, so any slot it would set to a non-zero value
-    // (e.g. `pricePerUnit` from `DefaultInitialL1BaseFee`) needs an
-    // explicit zero entry here to be reset.
-    let mut alloc: BTreeMap<String, Value> = BTreeMap::new();
-    for (addr, account) in bundle.state.iter() {
-        let info = match &account.info {
-            Some(i) => i,
-            None => continue,
-        };
-        let mut storage = BTreeMap::new();
-        for (slot, slot_value) in account.storage.iter() {
-            storage.insert(
-                B256::from(slot.to_be_bytes::<32>()),
-                B256::from(slot_value.present_value.to_be_bytes::<32>()),
-            );
-        }
-        let code = match &info.code {
-            Some(c) if !c.original_bytes().is_empty() => Some(c.original_bytes()),
-            _ => None,
-        };
-        let entry = GenesisAccount {
-            balance: info.balance,
-            nonce: Some(info.nonce),
-            code,
-            storage: if storage.is_empty() {
-                None
-            } else {
-                Some(storage)
-            },
-            private_key: None,
-        };
-        let key = format!("{:#x}", addr);
-        alloc.insert(key, account_to_geth_json(&entry));
-    }
-
-    // Re-serialize the chain config so Nitro can read it via `gen.GetConfig()`.
-    // Nitro requires a valid `serializedChainConfig` field to deserialize the
-    // chain config when the parent-chain reader is disabled (it constructs a
-    // fake init message from this).
-    let serialized_chain_config_bytes = serde_json::to_vec(chain_config)
-        .map_err(|e| HarnessError::Rpc(format!("encode chain config: {e}")))?;
-    let serialized_chain_config_str = String::from_utf8(serialized_chain_config_bytes)
-        .map_err(|e| HarnessError::Rpc(format!("chain config not utf-8: {e}")))?;
-
-    let genesis = json!({
-        "config": chain_config,
-        "serializedChainConfig": serialized_chain_config_str,
-        "nonce": "0x0",
-        "timestamp": "0x0",
-        "extraData": "0x",
-        "gasLimit": "0x4000000000000",
-        "difficulty": "0x1",
-        "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "coinbase": "0x0000000000000000000000000000000000000000",
-        "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "alloc": alloc,
-    });
-
-    let path = std::env::temp_dir().join(format!(
-        "arb-harness-nitro-genesis-{}-{}.json",
-        std::process::id(),
-        seq
-    ));
-    let body = serde_json::to_vec_pretty(&genesis)
-        .map_err(|e| HarnessError::Rpc(format!("encode genesis: {e}")))?;
-    std::fs::write(&path, body).map_err(HarnessError::Io)?;
-
-    // Geth's GenesisAlloc unmarshaller needs world-readable content because
-    // Nitro runs inside the container under root and we bind-mount this file.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644));
-    }
-
-    Ok(path)
-}
-
-/// Encode a `GenesisAccount` as the geth `core.Genesis` `alloc` entry shape:
-/// keys are decimal-or-hex JSON-friendly strings, balance is hex, nonce is
-/// hex, code is hex bytes, storage values are 32-byte hex.
-fn account_to_geth_json(account: &GenesisAccount) -> Value {
-    let mut entry = Map::new();
-    entry.insert("balance".into(), Value::String(format!("{:#x}", account.balance)));
-    if let Some(nonce) = account.nonce {
-        if nonce > 0 {
-            entry.insert("nonce".into(), Value::String(format!("{nonce:#x}")));
-        }
-    }
-    if let Some(code) = &account.code {
-        if !code.is_empty() {
-            entry.insert(
-                "code".into(),
-                Value::String(format!("0x{}", hex::encode(code))),
-            );
-        }
-    }
-    if let Some(storage) = &account.storage {
-        if !storage.is_empty() {
-            let mut sm = Map::new();
-            for (slot, val) in storage {
-                sm.insert(format!("{:#x}", slot), Value::String(format!("{:#x}", val)));
-            }
-            entry.insert("storage".into(), Value::Object(sm));
-        }
-    }
-    Value::Object(entry)
 }
 
 impl ExecutionNode for NitroDocker {

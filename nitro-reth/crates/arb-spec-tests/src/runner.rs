@@ -1,5 +1,4 @@
 use std::{
-    io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::atomic::{AtomicU16, Ordering},
@@ -167,16 +166,11 @@ impl SpawnedNode {
         std::fs::create_dir_all(&workdir)
             .map_err(|e| SpecError::Action(format!("mkdir {}: {e}", workdir.display())))?;
 
-        let chain_path = workdir.join("chain.json");
         let genesis = fixture
             .genesis
             .as_ref()
             .ok_or_else(|| SpecError::Action("internal: spawn called without genesis".into()))?;
-        let chain_json = serde_json::to_vec_pretty(genesis)
-            .map_err(|e| SpecError::Action(format!("serialize genesis: {e}")))?;
-        std::fs::File::create(&chain_path)
-            .and_then(|mut f| f.write_all(&chain_json))
-            .map_err(|e| SpecError::Action(format!("write chain.json: {e}")))?;
+        let chain_path = ensure_genesis_cache(genesis)?;
 
         let jwt_path = workdir.join("jwt.hex");
         std::fs::write(&jwt_path, hex::encode([0u8; 32]))
@@ -249,4 +243,65 @@ impl Drop for SpawnedNode {
             eprintln!("kept arbreth workdir: {}", self.workdir.display());
         }
     }
+}
+
+/// Ensure a `(chainId, arbosVersion)`-keyed genesis file exists under
+/// `fixtures/_genesis_cache/` and return its path. On miss, run
+/// `arb-genesis-capture` to produce it.
+fn ensure_genesis_cache(genesis: &serde_json::Value) -> Result<PathBuf, SpecError> {
+    let chain_id = genesis
+        .pointer("/config/chainId")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| SpecError::Action("genesis missing config.chainId".into()))?;
+    let arbos_version = genesis
+        .pointer("/config/arbitrum/InitialArbOSVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            SpecError::Action("genesis missing config.arbitrum.InitialArbOSVersion".into())
+        })?;
+
+    let cache_dir = fixtures_root().join("_genesis_cache");
+    let cache_path = cache_dir.join(format!("chain{chain_id}_v{arbos_version}.json"));
+
+    if !cache_path.exists() {
+        std::fs::create_dir_all(&cache_dir).map_err(|e| {
+            SpecError::Action(format!("mkdir {}: {e}", cache_dir.display()))
+        })?;
+        eprintln!(
+            "[arb-spec] genesis cache miss for chain={chain_id} arbos=v{arbos_version}, capturing from Nitro..."
+        );
+        let cache_str = cache_path
+            .to_str()
+            .ok_or_else(|| SpecError::Action("genesis cache path not UTF-8".into()))?;
+        let status = Command::new("cargo")
+            .args([
+                "run",
+                "--release",
+                "-q",
+                "-p",
+                "arb-genesis-capture",
+                "--",
+                "--chain-id",
+                &chain_id.to_string(),
+                "--arbos-version",
+                &arbos_version.to_string(),
+                "--out",
+                cache_str,
+            ])
+            .status()
+            .map_err(|e| SpecError::Action(format!("invoke arb-genesis-capture: {e}")))?;
+        if !status.success() {
+            return Err(SpecError::Action(format!(
+                "arb-genesis-capture failed for chain={chain_id} arbos=v{arbos_version}"
+            )));
+        }
+        if !cache_path.exists() {
+            return Err(SpecError::Action(format!(
+                "arb-genesis-capture exited 0 but did not produce {}",
+                cache_path.display()
+            )));
+        }
+    }
+
+    Ok(cache_path)
 }
