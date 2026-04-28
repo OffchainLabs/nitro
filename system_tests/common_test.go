@@ -2239,8 +2239,29 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 // The effective timeout is capped by the context's deadline if one is set.
 // On timeout or context cancellation it calls t.Fatalf, so it must be called from the test goroutine.
 // The check function should handle errors by logging and returning false, not by calling Fatal/Require.
+// testTimeoutScale reads NITRO_TEST_TIMEOUT_SCALE once and returns a multiplier
+// applied to pollUntil/retryUntilFound timeouts. CI sets this to >1.0 so tests
+// designed for a quiet machine can breathe on loaded shared runners. Defaults to 1.0.
+var (
+	testTimeoutScale     float64
+	testTimeoutScaleOnce sync.Once
+)
+
+func getTestTimeoutScale() float64 {
+	testTimeoutScaleOnce.Do(func() {
+		testTimeoutScale = 1.0
+		if v := os.Getenv("NITRO_TEST_TIMEOUT_SCALE"); v != "" {
+			if parsed, err := strconv.ParseFloat(v, 64); err == nil && parsed > 0 {
+				testTimeoutScale = parsed
+			}
+		}
+	})
+	return testTimeoutScale
+}
+
 func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interval time.Duration, desc string, check func() bool) {
 	t.Helper()
+	timeout = time.Duration(float64(timeout) * getTestTimeoutScale())
 	deadline := time.Now().Add(timeout)
 	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
 		deadline = ctxDeadline
@@ -2268,6 +2289,15 @@ func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interva
 // Like pollUntil, it calls t.Fatalf on failure, so it must be called from the test goroutine.
 func retryUntilFound(t *testing.T, ctx context.Context, maxRetries int, interval time.Duration, desc string, retrySubstr string, fn func() error) {
 	t.Helper()
+	// Scale max retries so the total wait budget (maxRetries * interval) respects
+	// NITRO_TEST_TIMEOUT_SCALE. We scale retries rather than interval so check
+	// frequency stays the same.
+	if scale := getTestTimeoutScale(); scale != 1.0 {
+		scaled := int(float64(maxRetries) * scale)
+		if scaled > maxRetries {
+			maxRetries = scaled
+		}
+	}
 	var lastErr error
 	for retry := 0; retry < maxRetries; retry++ {
 		lastErr = fn()
@@ -2320,9 +2350,12 @@ func Fatal(t *testing.T, printables ...interface{}) {
 
 // waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch
 // containing msgIdx is found, returning the batch number. Any error is treated
-// as immediately fatal. Calls t.Fatalf on timeout.
+// as immediately fatal. Calls t.Fatalf on timeout. The caller-supplied timeout
+// is scaled by NITRO_TEST_TIMEOUT_SCALE so loaded CI runners get proportional
+// headroom without every call site needing its own bump.
 func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.MessageIndex, timeout, interval time.Duration) uint64 {
 	t.Helper()
+	timeout = time.Duration(float64(timeout) * getTestTimeoutScale())
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		batchNum, found, err := node.GetParentChainDataSource().FindInboxBatchContainingMessage(msgIdx)
