@@ -177,44 +177,43 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 ##@ Setup
 
-.PHONY: init-submodules
-init-submodules: ## Initialize private submodules.
+.PHONY: init-submodules ## Initialize private submodules.
+init-submodules:
 	scripts/configure-private-submodules.sh
 	scripts/submodule-update-private.sh
 	scripts/configure-private-submodules.sh
 
-.PHONY: check-submodules
-check-submodules: ## Verify submodule configuration.
+.PHONY: check-submodules ## Verify submodule configuration.
+check-submodules:
 	@scripts/check-submodules.sh
 
 ##@ Help
 
-.PHONY: help
-help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-28s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+.PHONY: help ## Display this help.
+help:
+	@awk 'BEGIN { printf "Usage:\n  make \033[36m<target>\033[0m\n" } /^##@ / { section = substr($$0, 5); printed = 0; next } /^\.PHONY:/ { desc = ""; line = $$0; if (index(line, "##")) { desc = line; sub(/^.*##[[:space:]]*/, "", desc); sub(/[[:space:]]+$$/, "", desc); sub(/[[:space:]]*##.*$$/, "", line) } sub(/^\.PHONY:[[:space:]]*/, "", line); if (!printed && section != "") { printf "\n\033[1m%s\033[0m\n", section; printed = 1 } targets_len = split(line, targets, /[[:space:]]+/); for (i = 1; i <= targets_len; i++) if (targets[i] != "") printf "  \033[36m%-28s\033[0m %s\n", targets[i], desc }' $(MAKEFILE_LIST)
 
 ##@ Workflow
 
-.PHONY: push
-push: lint test-go .make/fmt ## Run lint, Go tests, and formatting checks before pushing.
+.PHONY: push ## Run lint, Go tests, and formatting checks before pushing.
+push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
 ##@ Build
 
-.PHONY: all
-all: build build-replay-env test-gen-proofs ## Build primary artifacts and generated proofs.
+.PHONY: all ## Build primary artifacts and generated proofs.
+all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-.PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report) ## Build Nitro binaries.
+.PHONY: build ## Build Nitro binaries.
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
 	@printf $(done)
 
-.PHONY: build-node-deps
-build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib ## Build dependencies needed by Nitro node binaries.
+.PHONY: build-node-deps ## Build dependencies needed by Nitro node binaries.
+build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
 
-.PHONY: test-go-deps
-test-go-deps: ## Build dependencies required by Go tests.
+.PHONY: test-go-deps ## Build dependencies required by Go tests.
 test-go-deps: \
 	build-replay-env \
 	build-validation-server \
@@ -223,76 +222,76 @@ test-go-deps: \
 	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
-.PHONY: build-prover-header
-build-prover-header: $(arbitrator_generated_header) ## Build the prover generated header.
+.PHONY: build-prover-header ## Build the prover generated header.
+build-prover-header: $(arbitrator_generated_header)
 
-.PHONY: build-prover-lib
-build-prover-lib: $(arbitrator_stylus_lib) ## Build the prover Stylus library.
+.PHONY: build-prover-lib ## Build the prover Stylus library.
+build-prover-lib: $(arbitrator_stylus_lib)
 
-.PHONY: build-prover-bin
-build-prover-bin: $(prover_bin) ## Build the prover binary.
+.PHONY: build-prover-bin ## Build the prover binary.
+build-prover-bin: $(prover_bin)
 
-.PHONY: build-jit
-build-jit: $(arbitrator_jit) ## Build the arbitrator JIT binary.
+.PHONY: build-jit ## Build the arbitrator JIT binary.
+build-jit: $(arbitrator_jit)
 
-.PHONY: build-validation-server
-build-validation-server: $(validation_server) ## Build the validation server.
+.PHONY: build-validation-server ## Build the validation server.
+build-validation-server: $(validation_server)
 
-.PHONY: build-replay-env
-build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br ## Build the replay environment.
+.PHONY: build-replay-env ## Build the replay environment.
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br
 
-.PHONY: build-wasm-libs
-build-wasm-libs: $(arbitrator_wasm_libs) ## Build arbitrator WASM libraries.
+.PHONY: build-wasm-libs ## Build arbitrator WASM libraries.
+build-wasm-libs: $(arbitrator_wasm_libs)
 
-.PHONY: build-wasm-bin
-build-wasm-bin: $(replay_wasm) ## Build the replay WASM binary.
+.PHONY: build-wasm-bin ## Build the replay WASM binary.
+build-wasm-bin: $(replay_wasm)
 
-.PHONY: build-solidity
-build-solidity: .make/solidity ## Build Solidity contracts.
+.PHONY: build-solidity ## Build Solidity contracts.
+build-solidity: .make/solidity
 
-.PHONY: contracts
-contracts: .make/solgen ## Generate Go bindings for contracts.
+.PHONY: contracts ## Generate Go bindings for contracts.
+contracts: .make/solgen
 	@printf $(done)
 
 ##@ Lint
 
-.PHONY: format fmt
-format: .make/fmt ## Format source files.
+.PHONY: format ## Format source files.
+.PHONY: fmt ## Alias for format.
+format: .make/fmt
 	@printf $(done)
-fmt: format ## Alias for format.
+fmt: format
 
-.PHONY: lint
-lint: .make/lint ## Run linters.
+.PHONY: lint ## Run linters.
+lint: .make/lint
 	@printf $(done)
 
 ##@ Test
 
-.PHONY: stylus-benchmarks
-stylus-benchmarks: $(stylus_benchmarks) ## Run Stylus benchmarks.
+.PHONY: stylus-benchmarks ## Run Stylus benchmarks.
+stylus-benchmarks: $(stylus_benchmarks)
 	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
 	@printf $(done)
 
-.PHONY: test-go
-test-go: .make/test-go ## Run Go tests.
+.PHONY: test-go ## Run Go tests.
+test-go: .make/test-go
 	@printf $(done)
 
-.PHONY: test-go-challenge
-test-go-challenge: test-go-deps ## Run Go challenge tests.
+.PHONY: test-go-challenge ## Run Go challenge tests.
+test-go-challenge: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestChallenge --tags challengetest --nolog
 	@printf $(done)
 
-.PHONY: test-go-stylus
-test-go-stylus: test-go-deps ## Run Go Stylus tests.
+.PHONY: test-go-stylus ## Run Go Stylus tests.
+test-go-stylus: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestProgramArbitrator --tags stylustest --nolog
 	@printf $(done)
 
-.PHONY: test-go-redis
-test-go-redis: test-go-deps ## Run Go Redis tests.
+.PHONY: test-go-redis ## Run Go Redis tests.
+test-go-redis: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
-.PHONY: test-gen-proofs
-test-gen-proofs: ## Generate prover test proofs.
+.PHONY: test-gen-proofs ## Generate prover test proofs.
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
@@ -300,30 +299,30 @@ test-gen-proofs: \
 	contracts/test/prover/proofs/go.json
 	@printf $(done)
 
-.PHONY: test-rust
-test-rust: .make/test-rust ## Run Rust tests.
+.PHONY: test-rust ## Run Rust tests.
+test-rust: .make/test-rust
 	@printf $(done)
 
 # Runs the fastest and most reliable and high-value tests.
-.PHONY: tests
-tests: test-go test-rust ## Run the fastest and most reliable tests.
+.PHONY: tests ## Run the fastest and most reliable tests.
+tests: test-go test-rust
 	@printf $(done)
 
 # Runs all tests, including slow and unreliable tests.
 #  Currently, NOT including:
 #  - test-go-redis (These testts require additional setup and are not as reliable)
-.PHONY: tests-all
-tests-all: tests test-go-challenge test-go-stylus test-gen-proofs ## Run all tests, including slow and unreliable tests.
+.PHONY: tests-all ## Run all tests, including slow and unreliable tests.
+tests-all: tests test-go-challenge test-go-stylus test-gen-proofs
 	@printf $(done)
 
-.PHONY: wasm-ci-build
-wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm ## Build WASM artifacts used by CI tests.
+.PHONY: wasm-ci-build ## Build WASM artifacts used by CI tests.
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
 	@printf $(done)
 
 ##@ Maintenance
 
-.PHONY: clean
-clean: ## Remove build outputs, generated files, and test caches.
+.PHONY: clean ## Remove build outputs, generated files, and test caches.
+clean:
 	go clean -testcache
 	rm -rf $(arbitrator_cases)/rust/target
 	rm -f $(arbitrator_cases)/*.wasm $(arbitrator_cases)/go/testcase.wasm
@@ -353,16 +352,16 @@ endef
 
 ##@ Docker
 
-.PHONY: docker
-docker: ## Build Nitro Docker images.
+.PHONY: docker ## Build Nitro Docker images.
+docker:
 	@$(resolve_gh_token_and_secret); \
 	for t in nitro-node-slim nitro-node nitro-node-dev; do \
 		echo "+ docker build $$SECRET -t $$t --target $$t ."; \
 		docker build $$SECRET -t "$$t" --target "$$t" . || exit 1; \
 	done
 
-.PHONY: docker-machine-versions
-docker-machine-versions: ## Build Docker image for machine versions.
+.PHONY: docker-machine-versions ## Build Docker image for machine versions.
+docker-machine-versions:
 	@$(resolve_gh_token_and_secret); \
 	for t in machine-versions; do \
 		echo "+ docker build $$SECRET -t nitro-$$t --target $$t ."; \
@@ -371,8 +370,8 @@ docker-machine-versions: ## Build Docker image for machine versions.
 
 ##@ Checks
 
-.PHONY: check-license-headers
-check-license-headers: ## Check source license headers.
+.PHONY: check-license-headers ## Check source license headers.
+check-license-headers:
 	@go run ./scripts/licenser.go
 
 # regular build rules
