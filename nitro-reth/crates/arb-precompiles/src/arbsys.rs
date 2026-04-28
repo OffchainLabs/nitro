@@ -227,6 +227,11 @@ fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
+/// User-visible ArbOS version: stored format version + 55.
+fn arbos_version_from_format(format_version: U256) -> U256 {
+    format_version + U256::from(55)
+}
+
 fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let internals = input.internals_mut();
 
@@ -234,11 +239,10 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // User-visible version = 55 + raw stored value.
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
-    let version = raw_version.data + U256::from(55);
+    let version = arbos_version_from_format(raw_version.data);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -861,5 +865,29 @@ mod alias_tests {
             let restored = undo_l1_alias(aliased);
             assert_eq!(restored, addr, "round trip failed for {addr}");
         }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn arb_os_version_returns_format_plus_55() {
+        // formatVersion 51 → user-visible ArbOS version 106 (0x6a)
+        assert_eq!(
+            arbos_version_from_format(U256::from(51)),
+            U256::from(106),
+        );
+        // formatVersion 1 → 56 (the lowest publicly used Nitro version)
+        assert_eq!(
+            arbos_version_from_format(U256::from(1)),
+            U256::from(56),
+        );
+        // formatVersion 0 → 55
+        assert_eq!(
+            arbos_version_from_format(U256::ZERO),
+            U256::from(55),
+        );
     }
 }
