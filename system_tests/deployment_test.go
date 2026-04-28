@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -120,7 +119,7 @@ func TestContractDeployment(t *testing.T) {
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(40000), account, vm.ErrMaxCodeSizeExceeded)
-	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(60000), account, core.ErrMaxInitCodeSizeExceeded)
+	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(60000), account, vm.ErrMaxInitCodeSizeExceeded)
 }
 
 func TestExtendedContractDeployment(t *testing.T) {
@@ -139,5 +138,5 @@ func TestExtendedContractDeployment(t *testing.T) {
 	}
 
 	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(100000), account, vm.ErrMaxCodeSizeExceeded)
-	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(200000), account, core.ErrMaxInitCodeSizeExceeded)
+	testContractDeployment(t, ctx, builder.L2.Client, makeContractOfLength(200000), account, vm.ErrMaxInitCodeSizeExceeded)
 }

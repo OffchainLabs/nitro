@@ -76,7 +76,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
-	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
@@ -206,7 +206,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
-	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
@@ -1972,7 +1972,7 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	if !bytes.Equal(result, want) {
 		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
-	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
 	// close nodeB
 	cleanupB()
@@ -2013,7 +2013,7 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
 	Require(t, err)
 
-	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
 
 	cleanupB()
@@ -2195,7 +2195,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		Fatal(t, "got wrong value")
 	}
 
-	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 
 	storeMap, err := createMapFromDb(wasmDB)
 	Require(t, err)
@@ -2217,7 +2217,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 
-	wasmDBAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDBAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	storeMapAfterDelete, err := createMapFromDb(wasmDBAfterDelete)
 	Require(t, err)
 	if len(storeMapAfterDelete) != 0 {
@@ -2229,7 +2229,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	execConfig := builder.execConfig
 	Require(t, gethexec.RebuildWasmStore(ctx, wasmDBAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDBAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDBAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 
 	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
 	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDBAfterRebuild, gethexec.RebuildingPositionKey)

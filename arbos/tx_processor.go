@@ -209,7 +209,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// This transfer is necessary because we don't actually invoke the EVM.
 		// Since MintBalance already called AddBalance on `from`,
 		// we don't have EIP-161 concerns around not touching `from`.
-		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
+		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value), evm.ChainRules())
 		return true, multigas.ZeroGas(), txnErr, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
@@ -903,7 +903,7 @@ func (p *TxProcessor) PosterGas() uint64 {
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	if p.CollectTips() {
-		return p.evm.GasPrice
+		return p.evm.GasPrice.ToBig()
 	}
 	// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
 	return p.evm.Context.BaseFee
@@ -913,7 +913,7 @@ func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 	if p.state.ArbOSVersion() >= params.ArbosVersion_3 {
 		return p.GetPaidGasPrice()
 	}
-	return evm.GasPrice
+	return evm.GasPrice.ToBig()
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {

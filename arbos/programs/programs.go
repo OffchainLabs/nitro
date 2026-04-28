@@ -262,7 +262,7 @@ func (p Programs) CallProgram(
 		moduleHash:      moduleHash,
 		msgSender:       scope.Contract.Caller(),
 		msgValue:        scope.Contract.Value().Bytes32(),
-		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
+		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice.ToBig()),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
 		cached:          program.cached,
@@ -649,10 +649,7 @@ func (p Programs) SetProgramCached(
 	}
 	if cache {
 		// Not passing in an address is supported pre-Verkle, as in Blockchain's ContractCodeWithPrefix method.
-		code, err := db.Reader().Code(common.Address{}, codeHash)
-		if err != nil {
-			return err
-		}
+		code := db.Reader().Code(common.Address{}, codeHash)
 		if len(code) == 0 {
 			return fmt.Errorf("code not found for codeHash: %x", codeHash)
 		}

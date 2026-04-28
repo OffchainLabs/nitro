@@ -435,7 +435,7 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 	require.Equal(t, val, common.BytesToHash(result))
 
 	// Verify Wasm Store
-	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Rebuild Test: Close, Delete Wasm, Reopen, Rebuild
@@ -449,7 +449,7 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	// Verify empty before rebuild
-	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
 	Require(t, err)
 	require.Empty(t, storeMapAfterDelete)
@@ -459,7 +459,7 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
@@ -487,7 +487,7 @@ func runExecuteWasmTest(t *testing.T, setLimit limitSetter, deleteWasm bool) {
 		l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
 		Require(t, err)
 
-		wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+		wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 		Require(t, deleteAnyKeysContainingModuleHash(wasmStore, l.ModuleHash))
 	}
 
@@ -522,7 +522,7 @@ func runCacheProgramTest(t *testing.T, setLimit limitSetter) {
 	Require(t, err)
 	l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
 	Require(t, err)
-	wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	Require(t, deleteAnyKeysContainingModuleHash(wasmStore, l.ModuleHash))
 
 	// Cache

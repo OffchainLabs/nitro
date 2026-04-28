@@ -41,7 +41,7 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 
 		// Create an EVM
-		gp := core.GasPool(fuzzGas)
+		gp := core.NewGasPool(fuzzGas)
 		blockContext := vm.BlockContext{
 			CanTransfer: core.CanTransfer,
 			Transfer:    core.Transfer,
@@ -83,6 +83,6 @@ func FuzzPrecompiles(f *testing.F) {
 			Data:       input,
 			AccessList: nil,
 		}
-		_, _ = core.ApplyMessage(evm, msg, &gp)
+		_, _ = core.ApplyMessage(evm, msg, gp)
 	})
 }
