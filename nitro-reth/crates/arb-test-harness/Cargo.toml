@@ -8,13 +8,18 @@ description = "Shared test orchestration for arbreth: spawn nodes, build L1 mess
 
 [dependencies]
 arb-chainspec = { workspace = true }
+arb-node = { workspace = true }
 arb-primitives = { workspace = true }
 arbos = { workspace = true }
 
+alloy-genesis = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "serde", "k256"] }
 alloy-consensus = { workspace = true, features = ["std", "k256"] }
 alloy-eips = { workspace = true, features = ["std"] }
 alloy-rlp = { workspace = true }
+
+revm = { workspace = true }
+revm-database = { workspace = true }
 
 k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
