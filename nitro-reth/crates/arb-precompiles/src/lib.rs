@@ -136,6 +136,9 @@ thread_local! {
     static CURRENT_RETRYABLE_ID: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
     /// Currently-executing redeemer (refund_to) address, left-padded into 32 bytes.
     static CURRENT_REDEEMER: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
+    /// Effective per-gas price the sender offered, captured before tip-drop
+    /// caps `tx_env.gas_price` to base_fee. Read by Stylus `tx.gasprice`.
+    static CURRENT_TX_EFFECTIVE_GAS_PRICE: Cell<u128> = const { Cell::new(0) };
     /// Poster fee balance correction for BALANCE opcode.
     /// The canonical implementation charges gas_limit * baseFee, but our reduced
     /// gas_limit charges less by posterGas * baseFee. The BALANCE opcode handler
@@ -312,10 +315,19 @@ pub fn get_current_redeemer() -> alloy_primitives::U256 {
     alloy_primitives::U256::from_be_bytes(CURRENT_REDEEMER.with(|v| v.get()))
 }
 
+pub fn set_current_tx_effective_gas_price(price: u128) {
+    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.set(price));
+}
+
+pub fn get_current_tx_effective_gas_price() -> u128 {
+    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.get())
+}
+
 pub fn clear_tx_scratch() {
     CURRENT_TX_POSTER_FEE.with(|v| v.set(0));
     CURRENT_RETRYABLE_ID.with(|v| v.set([0u8; 32]));
     CURRENT_REDEEMER.with(|v| v.set([0u8; 32]));
+    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.set(0));
 }
 
 /// Set the poster balance correction for BALANCE opcode adjustment.

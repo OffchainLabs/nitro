@@ -1703,6 +1703,18 @@ where
         // effective gas price after tip drop.
         let upfront_gas_price: u128 = revm::context_interface::Transaction::gas_price(&tx_env);
 
+        // Stash the pre-cap effective price for Stylus `tx.gasprice` before
+        // the tip-drop cap below rewrites `tx_env.gas_price` to base_fee.
+        {
+            let base_fee_u128: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
+            let max_priority: u128 =
+                revm::context_interface::Transaction::max_priority_fee_per_gas(&tx_env)
+                    .unwrap_or(0);
+            let effective: u128 =
+                upfront_gas_price.min(base_fee_u128.saturating_add(max_priority));
+            arb_precompiles::set_current_tx_effective_gas_price(effective);
+        }
+
         // Effective tip per gas (per EIP-1559): min(max_priority_fee, max_fee - base_fee).
         // This is what revm mints to coinbase. Used by commit_transaction to
         // redirect coinbase tip to network when CollectTips() is true.

@@ -1241,7 +1241,14 @@ where
     DB: Database,
 {
     let basefee = U256::from(context.block.basefee());
-    let gas_price = U256::from(context.tx.gas_price());
+    // Pre-cap effective price stashed by ArbBlockExecutor; fall back to the
+    // capped tx_env when unset (e.g. direct dispatch in unit tests).
+    let stashed = arb_precompiles::get_current_tx_effective_gas_price();
+    let gas_price = if stashed != 0 {
+        U256::from(stashed)
+    } else {
+        U256::from(context.tx.gas_price())
+    };
     let value = inputs.value.get();
 
     // Stylus's block.number is the L1 block number, not the L2 block number.
