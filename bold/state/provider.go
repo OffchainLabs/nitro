@@ -36,11 +36,12 @@ type StepSize uint64
 
 // ConfigSnapshot for an assertion on Arbitrum.
 type ConfigSnapshot struct {
-	RequiredStake           *big.Int
-	ChallengeManagerAddress common.Address
-	ConfirmPeriodBlocks     uint64
-	WasmModuleRoot          [32]byte
-	InboxMaxCount           *big.Int
+	RequiredStake            *big.Int
+	ChallengeManagerAddress  common.Address
+	ConfirmPeriodBlocks      uint64
+	WasmModuleRoot           [32]byte
+	InboxMaxCount            *big.Int    // Pre-MEL determinism rule.
+	NextParentChainBlockHash common.Hash // Post-MEL determinism rule.
 }
 
 type History struct {

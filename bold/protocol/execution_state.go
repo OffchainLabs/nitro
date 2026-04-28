@@ -27,10 +27,12 @@ type GoGlobalState struct {
 
 func GoGlobalStateFromSolidity(globalState rollupgen.GlobalState) GoGlobalState {
 	return GoGlobalState{
-		BlockHash:  globalState.Bytes32Vals[0],
-		SendRoot:   globalState.Bytes32Vals[1],
-		Batch:      globalState.U64Vals[0],
-		PosInBatch: globalState.U64Vals[1],
+		BlockHash:    globalState.Bytes32Vals[0],
+		SendRoot:     globalState.Bytes32Vals[1],
+		MELStateHash: globalState.Bytes32Vals[2],
+		MELMsgHash:   globalState.Bytes32Vals[3],
+		Batch:        globalState.U64Vals[0],
+		PosInBatch:   globalState.U64Vals[1],
 	}
 }
 
@@ -48,8 +50,21 @@ func ComputeSimpleMachineChallengeHash(
 
 func (s GoGlobalState) Hash() common.Hash {
 	data := []byte("Global state:")
-	data = append(data, s.BlockHash.Bytes()...)
-	data = append(data, s.SendRoot.Bytes()...)
+	// Include bytes32 values up to the last non-zero index, with a minimum of
+	// index 1 (BlockHash + SendRoot always included). This matches the Rust
+	// prover's bytes32_last_non_zero_index() for backwards compatibility:
+	// pre-MEL states (MEL fields zero) produce the same hash as before.
+	bytes32Vals := [4]common.Hash{s.BlockHash, s.SendRoot, s.MELStateHash, s.MELMsgHash}
+	endIdx := 1 // always include at least BlockHash and SendRoot
+	for i := len(bytes32Vals) - 1; i > 1; i-- {
+		if bytes32Vals[i] != (common.Hash{}) {
+			endIdx = i
+			break
+		}
+	}
+	for i := 0; i <= endIdx; i++ {
+		data = append(data, bytes32Vals[i].Bytes()...)
+	}
 	data = append(data, u64ToBe(s.Batch)...)
 	data = append(data, u64ToBe(s.PosInBatch)...)
 	return crypto.Keccak256Hash(data)
@@ -57,7 +72,7 @@ func (s GoGlobalState) Hash() common.Hash {
 
 func (s GoGlobalState) AsSolidityStruct() challengeV2gen.GlobalState {
 	return challengeV2gen.GlobalState{
-		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
+		Bytes32Vals: [4][32]byte{s.BlockHash, s.SendRoot, s.MELStateHash, s.MELMsgHash},
 		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
 	}
 }
