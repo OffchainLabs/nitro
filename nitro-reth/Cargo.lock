@@ -1208,6 +1208,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-genesis-capture"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "arb-test-harness",
+ "clap 4.5.60",
+ "hex",
+ "serde_json",
+]
+
+[[package]]
 name = "arb-node"
 version = "0.1.0"
 dependencies = [
