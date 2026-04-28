@@ -30,8 +30,22 @@ fn arbos_gates() {
 #[test]
 fn stylus() {
     let stylus_root = fixtures_root().join("stylus");
-    for sub in ["hostio", "subcall", "cache", "contract_limit"] {
-        run_execution_dir(&stylus_root.join(sub));
+    let subs = ["hostio", "subcall", "cache", "contract_limit"];
+    let mut panics: Vec<String> = Vec::new();
+    for sub in subs {
+        let dir = stylus_root.join(sub);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_execution_dir(&dir)));
+        if let Err(payload) = r {
+            let msg = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| format!("<panic in stylus/{sub} (non-string payload)>"));
+            panics.push(msg);
+        }
+    }
+    if !panics.is_empty() {
+        panic!("{}/{} stylus sub-dirs failed:\n{}", panics.len(), subs.len(), panics.join("\n"));
     }
 }
 
@@ -42,6 +56,8 @@ fn retryables_exec() {
         return;
     }
     let mut had_exec = false;
+    let mut count = 0;
+    let mut failures: Vec<String> = Vec::new();
     for entry in std::fs::read_dir(&retry_root).expect("read retryables dir") {
         let path = entry.expect("entry").path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -52,9 +68,18 @@ fn retryables_exec() {
             continue;
         }
         had_exec = true;
+        count += 1;
         if let Err(e) = arb_spec_tests::runner::run_execution_fixture(&path, None) {
-            panic!("{}: {e}", path.display());
+            failures.push(format!("{}: {e}", path.display()));
         }
     }
     assert!(had_exec, "no execution-shaped fixtures found in {}", retry_root.display());
+    if !failures.is_empty() {
+        panic!(
+            "{}/{} execution fixtures failed:\n  {}",
+            failures.len(),
+            count,
+            failures.join("\n  ")
+        );
+    }
 }
