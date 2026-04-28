@@ -421,10 +421,21 @@ where
         //     no way to know the real value.
         if let Some(init_msg) = self.cached_init.lock().take() {
             if !genesis::is_arbos_initialized(&mut db) {
+                // Honor the genesis-declared ArbOS version from the parent
+                // header's mix_hash so chain specs that target a higher
+                // initial version (e.g. v30 / v50 spec fixtures) get the
+                // matching hardfork-equivalent EVM activation rather than
+                // booting at the v10 default.
                 let initial_version = std::env::var("ARB_INITIAL_ARBOS_VERSION")
                     .ok()
                     .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(genesis::INITIAL_ARBOS_VERSION);
+                    .unwrap_or_else(|| {
+                        if parent_arbos_version > 0 {
+                            parent_arbos_version
+                        } else {
+                            genesis::INITIAL_ARBOS_VERSION
+                        }
+                    });
                 info!(
                     target: "block_producer",
                     initial_version,
