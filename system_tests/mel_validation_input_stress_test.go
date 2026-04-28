@@ -39,8 +39,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/inputs"
@@ -106,7 +108,8 @@ func buildLogCannonInitCode(numLogs, bytesPerLog int) []byte {
 
 // wrapAsInitCode wraps runtime bytecode in init code that deploys it.
 // Init prefix: PUSH2 runtimeLen, PUSH2 initPrefixLen, PUSH1 0, CODECOPY,
-//              PUSH2 runtimeLen, PUSH1 0, RETURN — 15 bytes total.
+//
+//	PUSH2 runtimeLen, PUSH1 0, RETURN — 15 bytes total.
 func wrapAsInitCode(runtime []byte) []byte {
 	runtimeLen := len(runtime)
 	const initPrefixLen = 15
@@ -366,7 +369,9 @@ func TestMELValidationInputStressMaxReceipt(t *testing.T) {
 		// 1.3 MB of log data per tx. See plan for gas budget math.
 		bytesPerLog = 1_363_148
 		gasPerTx    = 14_900_000
-		numL1Blocks = 15
+		// 17 blocks → ~52 MB JSON. 175 blocks → ~500 MB JSON (each block
+		// adds ~3 MB of preimages base64-encoded).
+		numL1Blocks = 175
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -512,6 +517,334 @@ func TestMELValidationInputStressMaxReceipt(t *testing.T) {
 	t.Log("")
 	t.Log("JSON written to ~/.arbitrum/validation-inputs/mel-stress-test-max/<timestamp>/block_inputs_1.json")
 	t.Log("Run benchbin to test arbitrator preimage loading:")
+	t.Log("  ./target/release/benchbin \\")
+	t.Log("    --json-inputs <above path> \\")
+	t.Log("    --binary target/machines/latest/machine.v2.wavm.br")
+}
+
+// TestMELExtractionStepStress generates a validation input that maximizes the
+// number of WAVM steps the arbitrator must execute during MEL extraction.
+//
+// Unlike the data stress tests (Part 1), this test produces a *valid* MEL
+// extraction validation entry — the arbitrator's unified replay binary will
+// take the `extractMessagesUpTo` path and run `melextraction.ExtractMessages`
+// for every L1 block in the range.
+//
+// Step-consuming work:
+//  1. Many delayed messages enqueued on L1 (each = hash chain accumulation step)
+//  2. Many L2 transactions in a sequencer batch (decompression + RLP iteration)
+//  3. The batch reads many delayed messages (each read advances accumulator)
+//  4. Many L1 blocks in the extraction range (loop iterations of ExtractMessages)
+//
+// The InputJSON written to disk can be fed to benchbin to measure WAVM step
+// throughput across step sizes.
+func TestMELExtractionStepStress(t *testing.T) {
+	runMELExtractionStress(t, 200, 500, "mel-step-stress", "STEP-STRESS")
+}
+
+// TestMELExtractionMaxMsgsPerBatch packs many minimal L2 transfer txs across
+// multiple sequencer batches. This is the worst case for the arbitrator's
+// per-batch decompression + RLP iteration cost.
+//
+// Note: at 20K txs the BatchPoster splits across many batches and the
+// resulting validation input runs the unified replay binary into a
+// "missing preimage 0x00..." error during MEL extraction (likely a corner
+// case in MEL recording when very many batches span the recording window).
+// At 1500 minimal txs the BatchPoster fits everything in a single batch
+// (compressed payload < 99 KB threshold). We include 5 delayed messages
+// because the validation input fails with "missing preimage 0x00..." when
+// the recording window contains zero delayed-message activity (this corner
+// case in MEL recording is worth investigating separately).
+func TestMELExtractionMaxMsgsPerBatch(t *testing.T) {
+	runMELExtractionStress(t, 5, 1_500, "mel-step-stress-max-msgs", "MAX-MSGS-PER-BATCH")
+}
+
+// TestMELExtractionMaxDelayedPerBlock spams `Inbox.SendL2Message` calls in a
+// tight loop without waiting for each, letting the L1 miner pack them into a
+// small number of L1 blocks. Then forces a batch post that reads them all.
+// This exercises the per-block delayed-msg accumulator hashing path.
+//
+// We include some L2 txs because the BatchPoster won't post a batch with
+// zero pending L2 messages, even if many delayed messages are waiting.
+// 50 minimal transfers is negligible work next to 300 delayed messages.
+func TestMELExtractionMaxDelayedPerBlock(t *testing.T) {
+	runMELExtractionStress(t, 300, 50, "mel-step-stress-max-delayed", "MAX-DELAYED-PER-BLOCK")
+}
+
+// runMELExtractionStress is the shared driver for the three step-stress tests.
+//
+//   - numDelayedMsgs: how many `Inbox.SendL2Message` calls to make on L1.
+//     Sent without waiting for each tx individually so the L1 miner can pack
+//     many into a single block.
+//   - numL2Txs: how many minimal L2 transfers to send to the sequencer before
+//     forcing a batch post. They all land in one batch (subject to
+//     BatchPoster size thresholds).
+//   - slug: subdirectory under ~/.arbitrum/validation-inputs/ for the output.
+//   - summaryLabel: header used in the printed summary.
+func runMELExtractionStress(
+	t *testing.T,
+	numDelayedMsgs int,
+	numL2Txs int,
+	slug string,
+	summaryLabel string,
+) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// --- Setup: full Arbitrum stack with MEL extraction + validation enabled ---
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+	builder.nodeConfig.MessageExtraction.Enable = true
+	builder.nodeConfig.MessageExtraction.RetryInterval = 100 * time.Millisecond
+	builder.nodeConfig.MELValidator.Enable = true
+	// BlockValidator must be enabled for MELValidator to share its spawner setup.
+	// We don't actually wait for it to validate every L2 message — we just call
+	// MELValidator.CreateNextValidationEntry directly once MEL has caught up.
+	builder.nodeConfig.BlockValidator.Enable = true
+	builder.nodeConfig.BlockValidator.EnableMEL = true
+	builder.nodeConfig.BlockValidator.ForwardBlocks = 0
+	builder.nodeConfig.BlockValidator.ClearMsgPreimagesPoll = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l1Client := builder.L1.Client
+	l1Info := builder.L1Info
+
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+
+	// Capture the L1 block number BEFORE any test-induced traffic. The MEL
+	// extraction range will start from this point, ensuring all subsequent
+	// delayed-msg posts and the batch land within the validation window.
+	startMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetHeadState()
+	Require(t, err)
+	startPCB := startMELState.ParentChainBlockNumber
+	t.Logf("Starting MEL state: PCB=%d, MsgCount=%d, DelayedRead=%d",
+		startPCB, startMELState.MsgCount, startMELState.DelayedMessagesRead)
+
+	// --- Phase 1: Send many delayed messages via L1 inbox ---
+	if numDelayedMsgs > 0 {
+		t.Logf("Phase 1: Sending %d delayed messages via L1 inbox (tightly packed)...", numDelayedMsgs)
+		delayedInbox, err := bridgegen.NewInbox(l1Info.GetAddress("Inbox"), l1Client)
+		Require(t, err)
+		// With MEL enabled, InboxTracker is nil — use MessageExtractor instead.
+		delayedCountBefore, err := builder.L2.ConsensusNode.MessageExtractor.GetDelayedCount()
+		Require(t, err)
+		// Submit all txs without waiting for each — the L1 miner will pack them.
+		// Manually set nonce per call (the auto-nonce path queries the client
+		// for "latest", which returns the same value before any tx mines, so
+		// every call after the first would be a "replacement underpriced" dup).
+		l1Txs := make([]*types.Transaction, 0, numDelayedMsgs)
+		usertxopts := l1Info.GetDefaultTransactOpts("User", ctx)
+		startNonce, err := l1Client.PendingNonceAt(ctx, usertxopts.From)
+		Require(t, err)
+		for i := 0; i < numDelayedMsgs; i++ {
+			tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas,
+				big.NewInt(int64(i+1)*1e6), nil)
+			txBytes, err := tx.MarshalBinary()
+			Require(t, err)
+			txWrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txBytes...)
+			usertxopts.Nonce = new(big.Int).SetUint64(startNonce + uint64(i))
+			l1tx, err := delayedInbox.SendL2Message(&usertxopts, txWrapped)
+			Require(t, err)
+			l1Txs = append(l1Txs, l1tx)
+		}
+		// Now wait for them all.
+		for _, l1tx := range l1Txs {
+			_, err := EnsureTxSucceeded(ctx, l1Client, l1tx)
+			Require(t, err)
+		}
+		AdvanceL1(t, ctx, l1Client, l1Info, 30)
+
+		// Wait for the message extractor to register all delayed messages.
+		deadline := time.Now().Add(2 * time.Minute)
+		for time.Now().Before(deadline) {
+			count, err := builder.L2.ConsensusNode.MessageExtractor.GetDelayedCount()
+			Require(t, err)
+			if count >= delayedCountBefore+uint64(numDelayedMsgs) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Logf("  All %d delayed messages registered", numDelayedMsgs)
+	}
+
+	// --- Phase 2: Send many L2 txs (the sequencer will batch them) ---
+	if numL2Txs > 0 {
+		t.Logf("Phase 2: Sending %d L2 transactions to sequencer...", numL2Txs)
+		var l2Txs types.Transactions
+		for i := 0; i < numL2Txs; i++ {
+			tx := builder.L2Info.PrepareTx("Faucet", "User2", builder.L2Info.TransferGas,
+				big.NewInt(1), nil)
+			Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+			l2Txs = append(l2Txs, tx)
+		}
+		// Wait for the LAST tx — sequential nonces from same account guarantee
+		// all earlier txs already mined. (Waiting per-tx is too slow at 20K+.)
+		_, err := builder.L2.EnsureTxSucceeded(l2Txs[len(l2Txs)-1])
+		Require(t, err)
+		// Give the BatchPoster a moment to register the new messages.
+		time.Sleep(2 * time.Second)
+		t.Logf("  All %d L2 txs accepted by sequencer", numL2Txs)
+	}
+
+	// --- Phase 3: Force a batch post (reads delayed messages too) ---
+	t.Log("Phase 3: Posting sequencer batch (reads pending delayed messages)...")
+	initialBatchCount := GetBatchCount(t, builder)
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
+	if !posted {
+		Fatal(t, "sequencer batch was not posted")
+	}
+	// MaybePostSequencerBatch returns true once the batch tx is sent to L1, but
+	// the L1 tx hasn't necessarily been mined yet (so on-chain batch count
+	// hasn't moved). Drain any follow-on batches the BatchPoster wants to
+	// produce, then wait for the on-chain batch count to advance.
+	for {
+		more, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+		Require(t, err)
+		if !more {
+			break
+		}
+	}
+	batchDeadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(batchDeadline) {
+		if GetBatchCount(t, builder) > initialBatchCount {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	finalBatchCount := GetBatchCount(t, builder)
+	if finalBatchCount <= initialBatchCount {
+		Fatal(t, "no batches posted (timed out waiting for L1 batch tx)")
+	}
+	_ = testClientB
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+
+	// --- Phase 4: Wait for MEL to catch up ---
+	// We only need MEL extraction to have processed the L1 blocks containing
+	// our delayed messages and the batch. We don't need any L2 execution
+	// validation — that's separate (and would be very slow).
+	t.Log("Phase 4: Waiting for MEL to catch up...")
+	AdvanceL1(t, ctx, l1Client, l1Info, 40)
+	extractedMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	melDeadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(melDeadline) {
+		melMsgCount, err := builder.L2.ConsensusNode.MessageExtractor.GetMsgCount()
+		Require(t, err)
+		if melMsgCount >= extractedMsgCount {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Logf("  MEL caught up to msg %d", extractedMsgCount-1)
+
+	// --- Phase 5: Generate the MEL-extraction validation entry ---
+	t.Log("Phase 5: Generating MEL-extraction validation entry...")
+	melValidator := builder.L2.ConsensusNode.MELValidator
+	headState, err := builder.L2.ConsensusNode.MessageExtractor.GetHeadState()
+	Require(t, err)
+	t.Logf("  Head MEL state: PCB=%d, MsgCount=%d, DelayedRead=%d",
+		headState.ParentChainBlockNumber, headState.MsgCount, headState.DelayedMessagesRead)
+	// CreateNextValidationEntry's loop breaks when `endState.MsgCount >
+	// validateMsgExtractionTill`. Passing headState.MsgCount exactly means the
+	// loop never breaks (no MEL state has MsgCount > head), iterates past the
+	// chain head, and returns nil. Pass MsgCount-1 so it breaks after reaching
+	// the head state.
+	target := headState.MsgCount - 1
+	t.Logf("  Extracting from PCB=%d to MsgCount=%d (%d-block range)",
+		startPCB, target, headState.ParentChainBlockNumber-startPCB)
+
+	entry, _, err := melValidator.CreateNextValidationEntry(ctx, startPCB, target)
+	Require(t, err)
+	if entry == nil {
+		Fatal(t, "CreateNextValidationEntry returned nil entry")
+	}
+
+	input, err := entry.ToInput([]rawdb.WasmTarget{})
+	Require(t, err)
+	inputJSON := server_api.ValidationInputToJson(input)
+
+	// Critical: ensure non-nil slices/maps so Rust deserializer doesn't reject `null`.
+	if inputJSON.BatchInfo == nil {
+		inputJSON.BatchInfo = []server_api.BatchInfoJson{}
+	}
+	if inputJSON.UserWasms == nil {
+		inputJSON.UserWasms = make(map[rawdb.WasmTarget]map[common.Hash]string)
+	}
+
+	// --- Phase 6: Per-block stats so we can see how the work is distributed ---
+	maxTxsPerL1Block := 0
+	maxGasPerL1Block := uint64(0)
+	for blockNum := startPCB + 1; blockNum <= headState.ParentChainBlockNumber; blockNum++ {
+		block, err := l1Client.BlockByNumber(ctx, new(big.Int).SetUint64(blockNum))
+		if err != nil {
+			continue
+		}
+		if len(block.Transactions()) > maxTxsPerL1Block {
+			maxTxsPerL1Block = len(block.Transactions())
+		}
+		if block.GasUsed() > maxGasPerL1Block {
+			maxGasPerL1Block = block.GasUsed()
+		}
+	}
+
+	// --- Phase 7: Measure and write to disk ---
+	jsonBytes, err := inputJSON.Marshal()
+	Require(t, err)
+
+	totalPreimageCount := 0
+	totalPreimageBytes := 0
+	for _, innerMap := range inputJSON.PreimagesB64 {
+		totalPreimageCount += len(innerMap.Map)
+		for _, v := range innerMap.Map {
+			totalPreimageBytes += len(v)
+		}
+	}
+
+	totalBatchInfoBytes := 0
+	for _, b := range inputJSON.BatchInfo {
+		totalBatchInfoBytes += len(b.DataB64)
+	}
+
+	t.Log("")
+	t.Logf("=== MEL EXTRACTION %s SUMMARY ===", summaryLabel)
+	t.Logf("  L1 PCB range:              %d → %d (%d blocks)",
+		startPCB, headState.ParentChainBlockNumber, headState.ParentChainBlockNumber-startPCB)
+	t.Logf("  Max txs in any L1 block:   %d", maxTxsPerL1Block)
+	t.Logf("  Max gas in any L1 block:   %d", maxGasPerL1Block)
+	t.Logf("  L2 messages extracted:     %d", headState.MsgCount-startMELState.MsgCount)
+	t.Logf("  Delayed messages enqueued: %d", numDelayedMsgs)
+	t.Logf("  Delayed messages read:     %d",
+		headState.DelayedMessagesRead-startMELState.DelayedMessagesRead)
+	t.Logf("  Batches in range:          %d (count went %d → %d)",
+		finalBatchCount-initialBatchCount, initialBatchCount, finalBatchCount)
+	t.Logf("  L2 txs sent to sequencer:  %d", numL2Txs)
+	t.Logf("  Total preimages:           %d", totalPreimageCount)
+	t.Logf("  Preimage raw bytes:        %d (%.2f MB)",
+		totalPreimageBytes, float64(totalPreimageBytes)/(1024*1024))
+	t.Logf("  Batch info size (b64):     %d bytes (%.2f MB)",
+		totalBatchInfoBytes, float64(totalBatchInfoBytes)/(1024*1024))
+	t.Logf("  InputJSON size:            %d bytes (%.2f MB)",
+		len(jsonBytes), float64(len(jsonBytes))/(1024*1024))
+	t.Logf("  Start MELStateHash:        %s", inputJSON.StartState.MELStateHash.Hex())
+	t.Logf("  End ParentChainBlockHash:  %s", inputJSON.EndParentChainBlockHash.Hex())
+
+	writer, err := inputs.NewWriter(
+		inputs.WithSlug(slug),
+		inputs.WithTimestampDirEnabled(true),
+	)
+	Require(t, err)
+	Require(t, writer.Write(inputJSON))
+	t.Log("")
+	t.Logf("JSON written to ~/.arbitrum/validation-inputs/%s/<timestamp>/block_inputs_<id>.json", slug)
+	t.Log("Run benchbin to measure arbitrator step count & timing:")
 	t.Log("  ./target/release/benchbin \\")
 	t.Log("    --json-inputs <above path> \\")
 	t.Log("    --binary target/machines/latest/machine.v2.wavm.br")

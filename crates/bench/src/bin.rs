@@ -3,7 +3,6 @@
 use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
-use eyre::bail;
 #[cfg(feature = "heapprof")]
 use gperftools::heap_profiler::HEAP_PROFILER;
 #[cfg(feature = "cpuprof")]
@@ -64,14 +63,21 @@ fn main() -> eyre::Result<()> {
             step_times.push(step_end_time);
             match machine.get_status() {
                 MachineStatus::Errored => {
-                    println!("Errored");
+                    println!("Errored at position {}", machine.get_steps());
                     break;
                 }
                 MachineStatus::TooFar => {
-                    bail!("Machine too far => position {}", machine.get_steps())
+                    // TooFar is a graceful end state: the machine asked for an
+                    // inbox message past `first_too_far`. Common when running a
+                    // validation input that doesn't carry inbox messages (e.g.
+                    // MEL-extraction-only InputJSON). Treat as completion so we
+                    // can measure full step counts.
+                    println!("TooFar at position {}", machine.get_steps());
+                    break;
                 }
                 MachineStatus::Running => {}
                 MachineStatus::Finished => {
+                    println!("Finished at position {}", machine.get_steps());
                     break;
                 }
             }
