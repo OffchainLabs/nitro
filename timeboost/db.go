@@ -5,7 +5,6 @@ package timeboost
 import (
 	"encoding/hex"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,7 @@ type SqliteDatabase struct {
 func NewDatabase(path string) (*SqliteDatabase, error) {
 	//#nosec G304
 	if _, err := os.Stat(path); err != nil {
-		if err = os.MkdirAll(path, fs.ModeDir); err != nil {
+		if err = os.MkdirAll(path, 0o755); err != nil {
 			return nil, err
 		}
 	}
@@ -37,6 +36,7 @@ func NewDatabase(path string) (*SqliteDatabase, error) {
 	}
 	err = dbInit(db, schemaList)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	return &SqliteDatabase{
@@ -83,9 +83,8 @@ func fetchVersion(db *sqlx.DB) (int, error) {
 	}
 	if len(flagValue) > 0 {
 		return flagValue[0], nil
-	} else {
-		return 0, fmt.Errorf("no version found")
 	}
+	return 0, fmt.Errorf("no version found")
 }
 
 func executeSchema(db *sqlx.DB, schema string, version int) error {
@@ -94,6 +93,7 @@ func executeSchema(db *sqlx.DB, schema string, version int) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = tx.Rollback() }() // No-op after successful commit
 
 	// Execute the schema
 	_, err = tx.Exec(schema)
@@ -126,10 +126,7 @@ func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 		"Signature":              hex.EncodeToString(b.Signature),
 	}
 	_, err := d.sqlDB.NamedExec(query, params)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (d *SqliteDatabase) GetBids(maxDbRows int) ([]*SqliteDatabaseBid, uint64, error) {
@@ -181,4 +178,8 @@ func (d *SqliteDatabase) DeleteBids(round uint64) error {
 	query := `DELETE FROM Bids WHERE Round < ?`
 	_, err := d.sqlDB.Exec(query, round)
 	return err
+}
+
+func (d *SqliteDatabase) Close() error {
+	return d.sqlDB.Close()
 }

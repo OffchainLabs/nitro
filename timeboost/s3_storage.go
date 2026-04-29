@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -36,14 +37,25 @@ func (c *S3StorageServiceConfig) Validate() error {
 	if !c.Enable {
 		return nil
 	}
+	if c.Bucket == "" {
+		return errors.New("s3-storage bucket cannot be empty when enabled")
+	}
+	if c.Region == "" {
+		return errors.New("s3-storage region cannot be empty when enabled")
+	}
+	if c.UploadInterval <= 0 {
+		return fmt.Errorf("s3-storage upload-interval must be positive when enabled, got: %s", c.UploadInterval)
+	}
 	if c.MaxBatchSize < 0 {
-		return fmt.Errorf("invalid max-batch-size value for auctioneer's s3-storage config, it should be non-negative, got: %d", c.MaxBatchSize)
+		return fmt.Errorf("s3-storage max-batch-size must be non-negative, got: %d", c.MaxBatchSize)
 	}
 	if c.MaxDbRows < 0 {
-		return fmt.Errorf("invalid max-db-rows value for auctioneer's s3-storage config, it should be non-negative, got: %d", c.MaxDbRows)
+		return fmt.Errorf("s3-storage max-db-rows must be non-negative, got: %d", c.MaxDbRows)
 	}
 	return nil
 }
+
+const s3ErrorRetryInterval = 5 * time.Second
 
 var DefaultS3StorageServiceConfig = S3StorageServiceConfig{
 	Enable:         false,
@@ -69,13 +81,16 @@ type S3StorageService struct {
 	sqlDB                 *SqliteDatabase
 	bucket                string
 	objectPrefix          string
-	lastFailedDeleteRound uint64
+	lastFailedDeleteRound uint64 // only accessed from the uploadBatches LaunchThread
 }
 
 func NewS3StorageService(config *S3StorageServiceConfig, sqlDB *SqliteDatabase) (*S3StorageService, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid S3 storage config: %w", err)
+	}
 	client, err := s3client.NewS3FullClientFromConfig(context.Background(), &config.Config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating S3 client: %w", err)
 	}
 	return &S3StorageService{
 		config:       config,
@@ -89,25 +104,21 @@ func NewS3StorageService(config *S3StorageServiceConfig, sqlDB *SqliteDatabase) 
 func (s *S3StorageService) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
 	if err := s.LaunchThreadSafe(func(ctx context.Context) {
-		ticker := time.NewTicker(s.config.UploadInterval)
-		defer ticker.Stop()
 		for {
 			interval := s.uploadBatches(ctx)
 			if ctx.Err() != nil {
 				return
 			}
-			if interval != s.config.UploadInterval { // Indicates error case, so we'll retry sooner than upload-interval
-				time.Sleep(interval)
-				continue
-			}
+			timer := time.NewTimer(interval)
 			select {
+			case <-timer.C:
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-ticker.C:
 			}
 		}
 	}); err != nil {
-		log.Error("Failed to launch s3-storage service of auctioneer", "err", err)
+		log.Crit("Failed to launch s3-storage service of auctioneer", "err", err)
 	}
 }
 
@@ -130,10 +141,8 @@ func (s *S3StorageService) uploadBatch(ctx context.Context, batch []byte, firstR
 		Key:    aws.String(key),
 		Body:   bytes.NewReader(compressedData),
 	}
-	if _, err = s.client.Upload(ctx, &putObjectInput); err != nil {
-		return err
-	}
-	return nil
+	_, err = s.client.Upload(ctx, &putObjectInput)
+	return err
 }
 
 // downloadBatch is only used for testing purposes
@@ -161,7 +170,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 	if s.lastFailedDeleteRound != 0 {
 		if err := s.sqlDB.DeleteBids(s.lastFailedDeleteRound); err != nil {
 			log.Error("error deleting s3-persisted bids from sql db using lastFailedDeleteRound", "lastFailedDeleteRound", s.lastFailedDeleteRound, "err", err)
-			return 5 * time.Second
+			return s3ErrorRetryInterval
 		}
 		s.lastFailedDeleteRound = 0
 	}
@@ -169,7 +178,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 	bids, round, err := s.sqlDB.GetBids(s.config.MaxDbRows)
 	if err != nil {
 		log.Error("Error fetching validated bids from sql DB", "round", round, "err", err)
-		return 5 * time.Second
+		return s3ErrorRetryInterval
 	}
 	// Nothing to persist or a contiguous set of bids wasn't found, so exit early
 	if len(bids) == 0 {
@@ -206,25 +215,25 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 	header := []string{"ChainID", "Bidder", "ExpressLaneController", "AuctionContractAddress", "Round", "Amount", "Signature"}
 	if err := csvWriter.Write(header); err != nil {
 		log.Error("Error writing to csv writer", "err", err)
-		return 5 * time.Second
+		return s3ErrorRetryInterval
 	}
 	for index, bid := range bids {
 		record := []string{bid.ChainId, bid.Bidder, bid.ExpressLaneController, bid.AuctionContractAddress, fmt.Sprintf("%d", bid.Round), bid.Amount, bid.Signature}
 		if err := csvWriter.Write(record); err != nil {
-			log.Error("Error writing to csv writer", "err", err)
-			return 5 * time.Second
+			log.Error("Error writing to csv writer", "err", err, "index", index, "round", bid.Round)
+			return s3ErrorRetryInterval
 		}
 		if s.config.MaxBatchSize != 0 {
 			size += csvRecordSize(record)
 			if size >= s.config.MaxBatchSize && index < len(bids)-1 && bid.Round != bids[index+1].Round {
 				if uploadAndDeleteBids(bids[firstBidId].Round, bid.Round, bids[index+1].Round) != nil {
-					return 5 * time.Second
+					return s3ErrorRetryInterval
 				}
 				// Reset csv for next batch
 				csvBuffer.Reset()
 				if err := csvWriter.Write(header); err != nil {
 					log.Error("Error writing to csv writer", "err", err)
-					return 5 * time.Second
+					return s3ErrorRetryInterval
 				}
 				size = 0
 				firstBidId = index + 1
@@ -233,12 +242,12 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 	}
 	if s.config.MaxBatchSize == 0 || size > 0 {
 		if uploadAndDeleteBids(bids[firstBidId].Round, bids[len(bids)-1].Round, round) != nil {
-			return 5 * time.Second
+			return s3ErrorRetryInterval
 		}
 	}
 
 	if s.lastFailedDeleteRound != 0 {
-		return 5 * time.Second
+		return s3ErrorRetryInterval
 	}
 
 	return s.config.UploadInterval
