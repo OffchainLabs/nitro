@@ -39,10 +39,18 @@ pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
     let hash = mem.read_fixed::<HASH_LENGTH>(hash_ptr);
 
     let sig_bytes = mem.read_fixed::<SIGNATURE_WITH_ID_LENGTH>(sig_ptr);
-    let sig = Signature::from_slice(&sig_bytes[..SIGNATURE_LENGTH]).expect("Length checked");
-    let Some(recovery_id) = RecoveryId::from_byte(sig_bytes[RECOVERY_ID_INDEX]) else {
+    let mut sig = Signature::from_slice(&sig_bytes[..SIGNATURE_LENGTH]).expect("Length checked");
+    let Some(mut recovery_id) = RecoveryId::from_byte(sig_bytes[RECOVERY_ID_INDEX]) else {
         return InvalidRecoveryId as u32;
     };
+
+    // k256 rejects high-S in verify_prehashed (EIP-2 / RFC 6979 canonicality).
+    // The ECRECOVER precompile must not apply that restriction: normalize s → N−s
+    // and flip the recovery point's y-parity so the recovered key is identical.
+    if let Some(normalized) = sig.normalize_s() {
+        sig = normalized;
+        recovery_id = RecoveryId::new(!recovery_id.is_y_odd(), recovery_id.is_x_reduced());
+    }
 
     let Ok(pubkey) = VerifyingKey::recover_from_prehash(&hash, &sig, recovery_id) else {
         return RecoveryFailed as u32;
