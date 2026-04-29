@@ -58,6 +58,8 @@ jobs:
           tags: localhost:5000/nitro-node:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          secrets: |
+            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Build nitro-node-dev docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -68,6 +70,8 @@ jobs:
           tags: localhost:5000/nitro-node-dev:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          secrets: |
+            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Build nitro-node-slim-stripped docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -78,6 +82,8 @@ jobs:
           tags: localhost:5000/nitro-node-slim-stripped:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          secrets: |
+            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Build nitro-node-stripped docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -88,6 +94,8 @@ jobs:
           tags: localhost:5000/nitro-node-stripped:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          secrets: |
+            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Start background nitro-testnode
         shell: bash
