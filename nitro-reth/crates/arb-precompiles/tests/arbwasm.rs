@@ -306,6 +306,7 @@ fn codehash_version_reverts_program_not_activated_for_unset_program() {
     assert!(out.reverted);
     let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
     assert_eq!(&out.bytes[..4], &sel[..4]);
+    assert_eq!(out.gas_used, 1603);
 }
 
 #[test]
@@ -329,6 +330,7 @@ fn codehash_version_reverts_program_needs_upgrade_for_stale_version() {
     let params_v = U256::from_be_slice(&out.bytes[36..68]);
     assert_eq!(prog_v, U256::from(1u64));
     assert_eq!(params_v, U256::from(default_params().version));
+    assert_eq!(out.gas_used, 1603);
 }
 
 #[test]
@@ -351,6 +353,7 @@ fn codehash_version_reverts_program_expired_after_expiry() {
     assert_eq!(&out.bytes[..4], &sel[..4]);
     let age = U256::from_be_slice(&out.bytes[4..36]);
     assert_eq!(age, U256::from(366u64 * 86_400));
+    assert_eq!(out.gas_used, 1603);
 }
 
 #[test]
@@ -518,6 +521,45 @@ fn program_time_left_returns_expiry_seconds_minus_age() {
     );
     let expected = 365u64 * 86_400 - 86_400;
     assert_eq!(decode_u256(run.output()), U256::from(expected));
+}
+
+#[test]
+fn codehash_asm_size_revert_charges_canonical_gas() {
+    // Pin against the canonical receipt for tx 0x08b6a928 at Sepolia block
+    // 109,336,195: revert must cost SLOAD + WARM + SLOAD + 2*COPY = 1706.
+    let codehash = B256::from_slice(&[0xeeu8; 32]);
+    let run = test_with(default_params(), ARBOS_V32).call(
+        &arbwasm(),
+        &calldata("codehashAsmSize(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+    assert_eq!(out.gas_used, 1706);
+}
+
+#[test]
+fn program_version_revert_charges_canonical_gas() {
+    let codehash = B256::from_slice(&[0xefu8; 32]);
+    let prog_addr = address!("00000000000000000000000000000000000000ef");
+    let run = test_with(default_params(), ARBOS_V32)
+        .account(
+            prog_addr,
+            AccountInfo {
+                code_hash: codehash,
+                ..Default::default()
+            },
+        )
+        .call(
+            &arbwasm(),
+            &calldata("programVersion(address)", &[word_address(prog_addr)]),
+        );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+    assert_eq!(out.gas_used, 2403);
 }
 
 #[test]
