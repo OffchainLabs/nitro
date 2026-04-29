@@ -310,6 +310,6 @@ pub unsafe extern "C" fn user_host__tx_origin(ptr: GuestPtr) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn user_host__pay_for_memory_grow(pages: u16) {
+pub unsafe extern "C" fn user_host__pay_for_memory_grow(pages: u32) {
     unsafe { hostio!(pay_for_memory_grow(pages)) }
 }

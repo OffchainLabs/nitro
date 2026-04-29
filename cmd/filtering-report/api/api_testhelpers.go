@@ -1,0 +1,34 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package api
+
+import (
+	"testing"
+
+	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/util/sqsclient"
+)
+
+func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient) *node.Node {
+	t.Helper()
+	stackConfig := DefaultStackConfig
+	stackConfig.HTTPHost = "127.0.0.1"
+	stackConfig.HTTPPort = 0
+	stackConfig.WSHost = "127.0.0.1"
+	stackConfig.WSPort = 0
+	stack, err := NewStack(&stackConfig, queueClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := stack.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return stack
+}

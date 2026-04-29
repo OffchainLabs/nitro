@@ -360,6 +360,7 @@ impl Module {
         allow_hostapi: bool,
         debug_funcs: bool,
         stylus_data: Option<StylusData>,
+        version: u16,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
@@ -439,7 +440,7 @@ impl Module {
             .map(|(name, (offset, _))| (name.to_owned(), *offset))
             .collect();
 
-        let internals = host::new_internal_funcs(stylus_data);
+        let internals = host::new_internal_funcs(stylus_data, version);
         let internals_offset = (code.len() + bin.codes.len()) as u32;
         let internals_types = internals.iter().map(|f| f.ty.clone());
 
@@ -486,7 +487,7 @@ impl Module {
         if let Some(limits) = bin.memories.first() {
             let page_size = Memory::PAGE_SIZE;
             let initial = limits.initial; // validate() checks this is less than max::u32
-            let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1; // we require the size remain *below* 2^32
+            let allowed = Memory::MAX_WASM_PAGES;
 
             let max_size = match limits.maximum {
                 Some(pages) => u64::min(allowed, pages),
@@ -621,6 +622,7 @@ impl Module {
         bin: &WasmBinary,
         debug_funcs: bool,
         stylus_data: Option<StylusData>,
+        version: u16,
     ) -> Result<Module> {
         Self::from_binary(
             bin,
@@ -629,6 +631,7 @@ impl Module {
             false,
             debug_funcs,
             stylus_data,
+            version,
         )
     }
 
@@ -1277,6 +1280,7 @@ impl Machine {
             inbox_contents,
             preimage_resolver,
             None,
+            0, // version only applies to user (Stylus) modules, not system libraries
         )
     }
 
@@ -1306,6 +1310,7 @@ impl Machine {
             HashMap::default(),
             Arc::new(|_, _, _| panic!("tried to read preimage")),
             Some(stylus_data),
+            compile.version,
         )?;
 
         let footprint: u32 = stylus_data.footprint.into();
@@ -1332,7 +1337,7 @@ impl Machine {
             self.debug_info = true;
         }
 
-        let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
+        let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data), version)?;
         let hash = module.hash();
         self.add_stylus_module(hash, module.into_bytes());
         Ok(hash)
@@ -1354,6 +1359,7 @@ impl Machine {
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
         stylus_data: Option<StylusData>,
+        version: u16,
     ) -> Result<Machine> {
         use ArbValueType::*;
 
@@ -1401,6 +1407,7 @@ impl Machine {
                 true,
                 debug_funcs,
                 None,
+                0, // version only applies to user (Stylus) modules, not system libraries
             )?;
             for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
@@ -1437,6 +1444,7 @@ impl Machine {
             allow_hostapi_from_main,
             debug_funcs,
             stylus_data,
+            version,
         )?);
 
         // Build the entrypoint module

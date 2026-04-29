@@ -86,6 +86,8 @@ impl Memory {
     pub const LEAF_SIZE: usize = 32;
     /// Only used when initializing a memory to determine its size
     pub const PAGE_SIZE: u64 = 65536;
+    /// Maximum pages supported by the prover while keeping byte offsets below 2^32.
+    pub const MAX_WASM_PAGES: u64 = u32::MAX as u64 / Self::PAGE_SIZE - 1;
     /// The number of layers in the memory merkle tree
     /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
     const MEMORY_LAYERS: usize = 1 + 32 - 5;

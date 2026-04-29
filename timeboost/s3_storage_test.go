@@ -11,12 +11,15 @@ import (
 	"io"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/nitro/util/s3client"
 )
 
 type mockS3FullClient struct {
@@ -54,6 +57,62 @@ func (m *mockS3FullClient) Download(ctx context.Context, w io.WriterAt, input *s
 		return int64(ret), nil
 	}
 	return 0, errors.New("key not found")
+}
+
+func TestS3StorageServiceConfigValidate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		config  S3StorageServiceConfig
+		wantErr string
+	}{
+		{
+			name:    "disabled config skips validation",
+			config:  S3StorageServiceConfig{Enable: false},
+			wantErr: "",
+		},
+		{
+			name:    "empty bucket",
+			config:  S3StorageServiceConfig{Enable: true, Bucket: "", Config: s3client.Config{Region: "us-east-1"}, UploadInterval: time.Minute},
+			wantErr: "bucket cannot be empty",
+		},
+		{
+			name:    "empty region",
+			config:  S3StorageServiceConfig{Enable: true, Bucket: "my-bucket", Config: s3client.Config{Region: ""}, UploadInterval: time.Minute},
+			wantErr: "region cannot be empty",
+		},
+		{
+			name:    "zero upload interval",
+			config:  S3StorageServiceConfig{Enable: true, Bucket: "my-bucket", Config: s3client.Config{Region: "us-east-1"}, UploadInterval: 0},
+			wantErr: "upload-interval must be positive",
+		},
+		{
+			name:    "negative upload interval",
+			config:  S3StorageServiceConfig{Enable: true, Bucket: "my-bucket", Config: s3client.Config{Region: "us-east-1"}, UploadInterval: -time.Second},
+			wantErr: "upload-interval must be positive",
+		},
+		{
+			name:    "negative max batch size",
+			config:  S3StorageServiceConfig{Enable: true, Bucket: "my-bucket", Config: s3client.Config{Region: "us-east-1"}, UploadInterval: time.Minute, MaxBatchSize: -1},
+			wantErr: "max-batch-size",
+		},
+		{
+			name:    "valid config",
+			config:  S3StorageServiceConfig{Enable: true, Bucket: "my-bucket", Config: s3client.Config{Region: "us-east-1"}, UploadInterval: time.Minute, MaxBatchSize: 100},
+			wantErr: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestS3StorageServiceUploadAndDownload(t *testing.T) {

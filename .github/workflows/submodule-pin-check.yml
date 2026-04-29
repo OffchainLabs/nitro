@@ -7,11 +7,9 @@ concurrency:
 
 on:
   merge_group:
-  # Using pull_request_target for security. If we had used pull_request, then it
-  # would be possible for malicious actors to create Pull Requests which would
-  # trigger workflows that they could have modified locally to extract secrets.
-  # For this reason, the pins below must be updated and merged in a separate PR
-  # before the PR that changes the actual submodule pins.
+  # pull_request_target (not pull_request) so secrets are available; the
+  # workflow body is careful not to execute attacker-controlled code — see
+  # the "No submodule fetch" note below and the base-ref read of .gitmodules.
   pull_request_target:
     branches: [master, main]
     types: [synchronize, opened, reopened]
@@ -23,65 +21,269 @@ jobs:
   submodule-pin-check:
     name: Check Submodule Pin
     runs-on: ubuntu-4
+    timeout-minutes: 10
     steps:
-      - name: Checkout
+      # No submodule fetch: `git clone` against attacker-controlled URLs
+      # from pull_request_target is the attack surface this workflow avoids.
+      - name: Checkout PR head (no submodules)
         uses: actions/checkout@v6
         with:
+          # persist-credentials: false keeps the PAT out of later steps.
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 0
-          submodules: recursive
           persist-credentials: false
-          ref: "${{ github.event.pull_request.head.sha }}"
+          ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Check all submodules are ancestors of origin/HEAD or configured branch
+      - name: Check submodule pins via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRIVATE_TOKEN: ${{ secrets.PRIVATE_REPO_PAT }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref || github.ref_name }}
+          REPO_URL: ${{ github.api_url }}/repos/${{ github.repository }}
+          IS_PRIVATE_REPO: ${{ endsWith(github.repository, '-private') }}
         run: |
-          status_state="pending"
+          set -euo pipefail
+
+          # gh_api METHOD URL TOKEN CONTEXT [DATA]
+          # Performs a GitHub API request; on non-2xx, emits ::error:: with
+          # the HTTP status and a message parsed from the body, then exits 1.
+          # On success, prints the response body to stdout.
+          # We don't use --fail-with-body because we want the HTTP status
+          # (401/403/404/500 need very different operator responses).
+          gh_api() {
+            local method="$1" url="$2" token="$3" context="$4" data="${5:-}"
+            local body_file err_file http_code curl_rc jq_rc msg body_preview
+            body_file=$(mktemp) || { echo "::error::${context}: mktemp failed"; return 1; }
+            err_file=$(mktemp) || { rm -f "$body_file"; echo "::error::${context}: mktemp failed"; return 1; }
+            local args=(
+              -sSL -o "$body_file" -w '%{http_code}'
+              -X "$method"
+              -H "Accept: application/vnd.github+json"
+              -H "Authorization: Bearer ${token}"
+              -H "X-GitHub-Api-Version: 2022-11-28"
+            )
+            if [ -n "$data" ]; then
+              args+=(-d "$data")
+            fi
+            curl_rc=0
+            http_code=$(curl "${args[@]}" "$url" 2>"$err_file") || curl_rc=$?
+            if [ "$curl_rc" -ne 0 ]; then
+              echo "::error::${context}: curl failed (rc=${curl_rc}): $(tr -cd '[:print:][:space:]' < "$err_file")" >&2
+              rm -f "$body_file" "$err_file"
+              return 1
+            fi
+            if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+              # Bound the bytes before scrubbing: `tr | head -c N` under
+              # `set -o pipefail` returns 141 from tr's SIGPIPE on large
+              # bodies, which would abort this error-reporting path.
+              # Branch on jq's rc, not its output string, so a literal
+              # sentinel "(non-object JSON)" in a future response body
+              # can't fake a match against the comparison below.
+              body_preview=$(head -c 200 "$body_file" | tr -cd '[:print:][:space:]')
+              jq_rc=0
+              msg=$(jq -r 'if type == "object" then (.message // "(empty .message field)") else "(non-object JSON)" end' "$body_file" 2>/dev/null) || jq_rc=$?
+              if [ "$jq_rc" -ne 0 ] || [ "$msg" = "(non-object JSON)" ]; then
+                msg="(non-JSON or non-object body): ${body_preview}"
+              fi
+              echo "::error::${context} failed (HTTP ${http_code}): $msg" >&2
+              rm -f "$body_file" "$err_file"
+              return 1
+            fi
+            cat "$body_file"
+            rm -f "$body_file" "$err_file"
+          }
+
           declare -Ar exceptions=(
-            [contracts]=origin/develop
-            [contracts-legacy]=origin/v2-main
-            [nitro-testnode]=origin/master
-            [bold]=origin/main
-            [safe-smart-account]=origin/release/v1.5.0
-            [crates/langs/bf]=origin/main
-            [crates/langs/c]=origin/main
-            [crates/tools/wasmer]=origin/stylus
-            [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
+            [contracts]=develop
+            [contracts-legacy]=v2-main
+            [nitro-testnode]=master
+            [bold]=main
+            [safe-smart-account]=release/v1.5.0
+            [crates/langs/bf]=main
+            [crates/langs/c]=main
+            [crates/tools/wasmer]=stylus
+            [contracts-local/lib/openzeppelin-contracts]=release-v4.7
           )
+
+          BASE_REF="${BASE_REF#refs/heads/}"
+          case "$BASE_REF" in
+            master|main) ;;
+            *)
+              echo "::error::Unexpected BASE_REF '${BASE_REF}'"
+              exit 1
+              ;;
+          esac
+
+          # On a -private nitro fork, some submodule repos are themselves
+          # private forks (see .private-submodules.conf). For those, query
+          # the -private variant using PRIVATE_REPO_PAT instead of the
+          # public repo with GITHUB_TOKEN. The conf is read from the base
+          # branch so a malicious PR cannot add or remove entries.
+          declare -A private_forks
+          if [ "$IS_PRIVATE_REPO" = "true" ]; then
+            if [ -z "${PRIVATE_TOKEN:-}" ]; then
+              echo "::error::Repository ends in '-private' but PRIVATE_REPO_PAT is not set."
+              exit 1
+            fi
+            conf=$(git show "origin/${BASE_REF}:.private-submodules.conf") || {
+              echo "::error::Failed to read .private-submodules.conf from origin/${BASE_REF}"
+              exit 1
+            }
+            # Parser must match scripts/configure-private-submodules.sh.
+            # Deliberately inlined: this workflow runs under
+            # pull_request_target and must not execute code from HEAD.
+            while IFS= read -r repo || [ -n "$repo" ]; do
+              repo="${repo#"${repo%%[![:space:]]*}"}"
+              repo="${repo%"${repo##*[![:space:]]}"}"
+              [[ -z "$repo" || "$repo" == \#* ]] && continue
+              if ! [[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+                echo "::error::Invalid entry in .private-submodules.conf: '${repo}'"
+                exit 1
+              fi
+              if [[ "$repo" == *-private ]]; then
+                echo "::error::.private-submodules.conf entries must not include the -private suffix: '${repo}'"
+                exit 1
+              fi
+              private_forks["OffchainLabs/$repo"]=1
+            done <<< "$conf"
+          fi
+
+          # Read .gitmodules paths/URLs from base so a malicious PR cannot
+          # add entries or swap URLs; only the pinned SHA at each
+          # base-listed path is read from HEAD (see git ls-tree below).
+          base_gitmodules=$(mktemp) || {
+            echo "::error::Failed to create temp file for base .gitmodules"
+            exit 1
+          }
+          trap 'rm -f "$base_gitmodules"' EXIT
+          if ! git show "origin/${BASE_REF}:.gitmodules" > "$base_gitmodules"; then
+            echo "::error::Failed to read .gitmodules from origin/${BASE_REF}"
+            exit 1
+          fi
+
           divergent=0
-          # The commit SHA of the PR or the current commit if a merge_group event
-          commit_sha="${{ github.event.pull_request.head.sha || github.sha }}"
-          for mod in `git submodule --quiet foreach 'echo $name'`; do
-            branch=origin/HEAD
-            if [[ -v exceptions[$mod] ]]; then
-              branch=${exceptions[$mod]}
+          submodule_count=0
+          while IFS= read -r key; do
+            submodule_count=$((submodule_count + 1))
+            name="${key#submodule.}"
+            name="${name%.path}"
+            path_rc=0
+            path=$(git config --file "$base_gitmodules" --get "submodule.${name}.path") || path_rc=$?
+            if [ "$path_rc" -ne 0 ] || [ -z "$path" ]; then
+              echo "::error::Failed to read submodule.${name}.path from base .gitmodules (rc=${path_rc})"
+              exit 1
+            fi
+            url_rc=0
+            url=$(git config --file "$base_gitmodules" --get "submodule.${name}.url") || url_rc=$?
+            if [ "$url_rc" -ne 0 ] || [ -z "$url" ]; then
+              echo "::error::Failed to read submodule.${name}.url from base .gitmodules (rc=${url_rc})"
+              exit 1
             fi
 
-            if ! git -C $mod merge-base --is-ancestor HEAD $branch; then
-              echo $mod diverges from $branch
-              divergent=1
+            owner_repo=$(printf '%s' "$url" | sed -E 's,^(https?://github\.com/|git@github\.com:),,; s/\.git$//; s,/+$,,')
+            if ! [[ "$owner_repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::Unrecognized submodule URL for '${path}': '${url}'"
+              exit 1
             fi
-          done
-          repo_url="${{ github.api_url }}/repos/$GITHUB_REPOSITORY"
-          if [ $divergent -eq 0 ]; then
+
+            # Split from the pipeline so a real `git ls-tree` failure
+            # (missing HEAD, dubious ownership) surfaces instead of being
+            # reported as "missing gitlink".
+            if ! lstree=$(git ls-tree HEAD -- "$path"); then
+              echo "::error::git ls-tree HEAD failed for '${path}'"
+              exit 1
+            fi
+            pinned_sha=$(printf '%s\n' "$lstree" | awk '$2 == "commit" {print $3}')
+            if [ -z "$pinned_sha" ]; then
+              echo "::error::No pinned SHA for submodule '${path}' (missing gitlink?)"
+              exit 1
+            fi
+
+            # Strip -private so both URL forms converge on the same conf lookup.
+            api_owner_repo="$owner_repo"
+            api_token="$GH_TOKEN"
+            stem_owner="${owner_repo%/*}"
+            stem_name="${owner_repo#*/}"
+            stem_name="${stem_name%-private}"
+            if [ -n "${private_forks[${stem_owner}/${stem_name}]:-}" ]; then
+              api_owner_repo="${stem_owner}/${stem_name}-private"
+              api_token="$PRIVATE_TOKEN"
+            fi
+
+            branch="${exceptions[$path]:-}"
+            if [ -z "$branch" ]; then
+              body=$(gh_api GET \
+                "https://api.github.com/repos/${api_owner_repo}" \
+                "$api_token" \
+                "Query ${api_owner_repo} for default branch")
+              branch=$(printf '%s' "$body" | jq -r '.default_branch // empty')
+              if [ -z "$branch" ]; then
+                echo "::error::No default_branch in response for ${api_owner_repo}"
+                exit 1
+              fi
+            fi
+
+            # Pass iff pinned SHA is equal to or an ancestor of the branch tip.
+            echo "Checking ${path} (${api_owner_repo}@${pinned_sha:0:12}) against ${branch}"
+            response=$(gh_api GET \
+              "https://api.github.com/repos/${api_owner_repo}/compare/${branch}...${pinned_sha}" \
+              "$api_token" \
+              "Compare ${api_owner_repo}/${branch}...${pinned_sha}")
+            status=$(printf '%s' "$response" | jq -r '.status // empty')
+            case "$status" in
+              identical|behind)
+                echo "  OK (${status})"
+                ;;
+              ahead|diverged)
+                echo "  ${path} diverges from ${branch} (${status})"
+                divergent=1
+                ;;
+              *)
+                echo "::error::Compare API returned no status for ${api_owner_repo}/${branch}...${pinned_sha}"
+                exit 1
+                ;;
+            esac
+          done < <(git config --file "$base_gitmodules" --name-only --get-regexp '^submodule\..+\.path$')
+
+          # Refuse to post a success status without having checked anything.
+          if [ "$submodule_count" -eq 0 ]; then
+            echo "::error::No submodule paths found in .gitmodules"
+            exit 1
+          fi
+
+          # "pending" (not "failure"): blocks merge via the required status without painting the PR red.
+          if [ "$divergent" -eq 0 ]; then
             status_state="success"
           else
-            resp="$(curl -sSL --fail-with-body \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${repo_url}/commits/$commit_sha/statuses")"
+            status_state="pending"
+          fi
+
+          if [ "$divergent" -ne 0 ]; then
+            resp=$(gh_api GET \
+              "${REPO_URL}/commits/${COMMIT_SHA}/statuses" \
+              "$GH_TOKEN" \
+              "List statuses for ${COMMIT_SHA}")
+
+            # Assert the response is an array before pattern-matching so a
+            # valid-JSON error envelope with HTTP 200 (rare API hiccup) is
+            # not conflated with "no prior status".
+            if ! jq -e 'type == "array"' > /dev/null <<< "$resp"; then
+              echo "::error::Unexpected shape for statuses response: $(printf '%s' "$resp" | head -c 200)"
+              exit 1
+            fi
 
             if ! jq -e '.[] | select(.context == "Submodule Pin Check")' > /dev/null <<< "$resp"; then
-              # Submodule pin check is failling and no status exists
-              # Keep it without a status to keep the green checkmark appearing
-              # Otherwise, the commit and PR's CI will appear to be indefinitely pending
-              # Merging will still be blocked until the required status appears
+              # No prior status exists: exit without posting so the PR keeps
+              # its green checkmark rather than going indefinitely pending.
+              # Merge remains blocked until the required status appears.
+              echo "::warning::Submodule pin check diverged but no prior status exists; exiting without posting status (merge remains blocked until the required status appears)"
               exit 0
             fi
           fi
-          curl -sSL --fail-with-body \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${repo_url}/statuses/$commit_sha" \
-            -d '{"context":"Submodule Pin Check","state":"'"$status_state"'"}'
+
+          gh_api POST \
+            "${REPO_URL}/statuses/${COMMIT_SHA}" \
+            "$GH_TOKEN" \
+            "Post Submodule Pin Check status=${status_state}" \
+            '{"context":"Submodule Pin Check","state":"'"$status_state"'"}' > /dev/null
