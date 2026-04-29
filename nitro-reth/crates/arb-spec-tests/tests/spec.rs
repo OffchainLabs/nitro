@@ -1,4 +1,7 @@
-use arb_spec_tests::{run_dir, run_execution_dir, runner::fixtures_root};
+use arb_spec_tests::{
+    run_dir, run_execution_dir,
+    runner::{fixtures_root, BINARY_ENV, RPC_URL_ENV},
+};
 
 macro_rules! spec_dir {
     ($name:ident, $dir:literal) => {
@@ -60,6 +63,17 @@ fn retryables_exec() {
     if !retry_root.exists() {
         return;
     }
+    let rpc_url = std::env::var(RPC_URL_ENV).ok();
+    let has_binary = std::env::var(BINARY_ENV).is_ok();
+    if rpc_url.is_none() && !has_binary {
+        if std::env::var("ARB_SPEC_REQUIRE_BINARY").is_ok() {
+            panic!("retryables_exec needs {RPC_URL_ENV} or {BINARY_ENV} set");
+        }
+        eprintln!(
+            "skipping retryables_exec: set {RPC_URL_ENV} (static node) and/or {BINARY_ENV} (per-fixture genesis)"
+        );
+        return;
+    }
     let mut had_exec = false;
     let mut count = 0;
     let mut failures: Vec<String> = Vec::new();
@@ -74,7 +88,7 @@ fn retryables_exec() {
         }
         had_exec = true;
         count += 1;
-        if let Err(e) = arb_spec_tests::runner::run_execution_fixture(&path, None) {
+        if let Err(e) = arb_spec_tests::runner::run_execution_fixture(&path, rpc_url.as_deref()) {
             failures.push(format!("{}: {e}", path.display()));
         }
     }

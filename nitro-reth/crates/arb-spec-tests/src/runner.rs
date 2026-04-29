@@ -1,7 +1,7 @@
 use std::{
+    net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::atomic::{AtomicU16, Ordering},
     time::{Duration, Instant},
 };
 
@@ -143,7 +143,19 @@ pub fn fixtures_root() -> PathBuf {
 
 // ─── Per-fixture arbreth process ────────────────────────────────────
 
-static NEXT_PORT: AtomicU16 = AtomicU16::new(28545);
+/// Bind to ephemeral port 0, drop the listener, return the port the OS
+/// picked. Used so concurrent test processes (nextest runs every #[test]
+/// in its own process) can't collide on a fixed port range.
+fn pick_free_port() -> Result<u16, SpecError> {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|e| SpecError::Action(format!("bind 127.0.0.1:0: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| SpecError::Action(format!("local_addr: {e}")))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
 
 struct SpawnedNode {
     pub rpc_url: String,
@@ -153,9 +165,8 @@ struct SpawnedNode {
 
 impl SpawnedNode {
     fn start(fixture: &ExecutionFixture, binary: &Path) -> Result<Self, SpecError> {
-        let port_pair = NEXT_PORT.fetch_add(2, Ordering::SeqCst);
-        let http_port = port_pair;
-        let auth_port = port_pair + 1;
+        let http_port = pick_free_port()?;
+        let auth_port = pick_free_port()?;
 
         let workdir =
             std::env::temp_dir().join(format!("arb-spec-{}-{}", fixture.name, std::process::id(),));
@@ -207,11 +218,15 @@ impl SpawnedNode {
             .map_err(|e| SpecError::Action(format!("spawn arbreth: {e}")))?;
 
         let rpc_url = format!("http://127.0.0.1:{http_port}");
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let timeout_secs: u64 = std::env::var("ARB_SPEC_STARTUP_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(90);
+        let deadline = Instant::now() + Duration::from_secs(timeout_secs);
         loop {
             if Instant::now() > deadline {
                 return Err(SpecError::Action(format!(
-                    "arbreth at {rpc_url} did not respond within 30s"
+                    "arbreth at {rpc_url} did not respond within {timeout_secs}s"
                 )));
             }
             let probe = ureq::post(&rpc_url)

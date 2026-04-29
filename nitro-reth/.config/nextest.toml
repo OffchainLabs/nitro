@@ -19,3 +19,15 @@ fail-fast = false
 retries = 0
 failure-output = "immediate-final"
 status-level = "all"
+
+# Spec-test categories spawn many arbreth processes per fixture; running
+# multiple categories in parallel oversubscribes CPU/memory on CI and
+# causes startup timeouts. Pin them to a single thread, with a long
+# slow-timeout to cover the sequential fixture sweep.
+[[profile.ci.overrides]]
+filter = 'package(arb-spec-tests)'
+test-group = 'spec-tests-serial'
+slow-timeout = { period = "10m", terminate-after = 3 }
+
+[test-groups]
+spec-tests-serial = { max-threads = 1 }
