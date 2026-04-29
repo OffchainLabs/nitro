@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -205,12 +206,20 @@ func TestEcrecoverHighSDivergence(t *testing.T) {
 		return found
 	})
 
-	moduleRoot := sbv.GetLatestWasmModuleRoot()
-	success, gsEnd, err := sbv.ValidateResult(ctx, msgIdx, true, moduleRoot)
+	nativeResult, err := builder.L2.ExecNode.ResultAtMessageIndex(msgIdx).Await(ctx)
 	Require(t, err)
+	_, nativeEndPos, err := sbv.GlobalStatePositionsAtCount(msgIdx + 1)
+	Require(t, err)
+	nativeGS := staker.BuildGlobalState(*nativeResult, nativeEndPos)
+
+	moduleRoot := sbv.GetLatestWasmModuleRoot()
+	success, jitGS, err := sbv.ValidateResult(ctx, msgIdx, true, moduleRoot)
+	Require(t, err)
+
+	t.Logf("native BlockHash: %v", nativeGS.BlockHash)
+	t.Logf("JIT    BlockHash: %v", jitGS.BlockHash)
 
 	if success {
 		t.Fatal("JIT and native produced the same state root — divergence not detected; either the high-S bug is fixed or the test input is wrong")
 	}
-	t.Logf("divergence confirmed: JIT gsEnd=%v (k256 rejected high-S → storage[0]=2) vs native storage[0]=1", gsEnd)
 }
