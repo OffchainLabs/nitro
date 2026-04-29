@@ -89,10 +89,12 @@ async fn main() {
             let (_output, report) = client.execute(program_elf, stdin).await.expect("run");
             let b = SystemTime::now();
 
+            tracing::info!("Exit code: {}", report.exit_code);
             tracing::info!(
-                "Completed execution, cycles: {}, execution time: {:?}",
+                "[PROFILE] reexecution: cycles={}, gas={}, time_secs={:.3}",
                 report.total_instruction_count(),
-                b.duration_since(a).unwrap(),
+                report.gas().unwrap_or(0),
+                b.duration_since(a).unwrap().as_secs_f64(),
             );
 
             tracing::info!("Syscalls:");

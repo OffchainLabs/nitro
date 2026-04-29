@@ -4,6 +4,10 @@ description = "Runner utility for validating Arbitrum blocks in SP1"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "sp1-runner"
+path = "main.rs"
+
 [dependencies]
 sp1-core-executor = { workspace = true }
 sp1-sdk = { workspace = true }
@@ -16,3 +20,6 @@ serde_json = { workspace = true }
 stylus-compiler-program = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+
+[features]
+profiling = ["sp1-sdk/profiling", "sp1-core-executor/profiling"]
