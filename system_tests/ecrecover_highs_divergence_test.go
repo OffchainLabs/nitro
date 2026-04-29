@@ -80,15 +80,20 @@ func TestEcrecoverHighSDivergencePrecompile(t *testing.T) {
 }
 
 // TestEcrecoverHighSDivergence deploys a contract that triggers the ECRECOVER precompile
-// with a high-S signature and verifies consistent behaviour across native and JIT execution:
+// with a high-S signature and verifies consistent behaviour across native and prover execution:
 //
 //  1. On-chain storage check: native execution stores 1 (accepted) rather than 2 (rejected).
 //
-//  2. JIT block re-execution: StatelessBlockValidator.ValidateResult re-executes the trigger
-//     block through the k256-based JIT prover. With the high-S fix applied (normalize_s +
-//     flip recovery point y-parity), the prover also stores 1 and the state roots match →
-//     ValidateResult returns success=true.
+//  2. Prover block re-execution: StatelessBlockValidator.ValidateResult re-executes the trigger
+//     block through the k256-based prover (JIT or WAVM). With the high-S fix applied
+//     (normalize_s + flip recovery point y-parity), the prover also stores 1 and the state
+//     roots match → ValidateResult returns success=true.
 func TestEcrecoverHighSDivergence(t *testing.T) {
+	t.Run("JIT", func(t *testing.T) { testEcrecoverHighSDivergence(t, true) })
+	t.Run("WAVM", func(t *testing.T) { testEcrecoverHighSDivergence(t, false) })
+}
+
+func testEcrecoverHighSDivergence(t *testing.T, useJit bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -100,7 +105,7 @@ func TestEcrecoverHighSDivergence(t *testing.T) {
 	builder.nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
 
 	valConf := valnode.TestValidationConfig
-	valConf.UseJit = true
+	valConf.UseJit = useJit
 	_, valStack := createTestValidationNode(t, ctx, &valConf)
 	configByValidationNode(builder.nodeConfig, valStack)
 
@@ -132,7 +137,7 @@ func TestEcrecoverHighSDivergence(t *testing.T) {
 		t.Fatalf("result = %d: expected 1 (native accepted high-S); either the bug is fixed or the test input is wrong", result.Uint64())
 	}
 
-	// Part 2: confirm JIT re-execution agrees with native (fix: k256 now accepts high-S).
+	// Part 2: confirm prover re-execution agrees with native (fix: k256 now accepts high-S).
 	msgIdx := arbutil.MessageIndex(triggerReceipt.BlockNumber.Uint64())
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 	doUntil(t, 250*time.Millisecond, 150, func() bool {
@@ -148,13 +153,13 @@ func TestEcrecoverHighSDivergence(t *testing.T) {
 	nativeGS := staker.BuildGlobalState(*nativeResult, nativeEndPos)
 
 	moduleRoot := sbv.GetLatestWasmModuleRoot()
-	success, jitGS, err := sbv.ValidateResult(ctx, msgIdx, true, moduleRoot)
+	success, proverGS, err := sbv.ValidateResult(ctx, msgIdx, useJit, moduleRoot)
 	Require(t, err)
 
 	t.Logf("native BlockHash: %v", nativeGS.BlockHash)
-	t.Logf("JIT    BlockHash: %v", jitGS.BlockHash)
+	t.Logf("prover BlockHash: %v", proverGS.BlockHash)
 
 	if !success {
-		t.Fatalf("JIT and native state roots diverge — high-S fix not effective: native=%v jit=%v", nativeGS.BlockHash, jitGS.BlockHash)
+		t.Fatalf("prover and native state roots diverge — high-S fix not effective: native=%v prover=%v", nativeGS.BlockHash, proverGS.BlockHash)
 	}
 }
