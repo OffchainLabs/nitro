@@ -79,13 +79,14 @@ func TestEcrecoverHighSDivergencePrecompile(t *testing.T) {
 }
 
 // TestEcrecoverHighSDivergence deploys a contract that triggers the ECRECOVER precompile
-// with a high-S signature and confirms the divergence in two ways:
+// with a high-S signature and verifies consistent behaviour across native and JIT execution:
 //
 //  1. On-chain storage check: native execution stores 1 (accepted) rather than 2 (rejected).
 //
 //  2. JIT block re-execution: StatelessBlockValidator.ValidateResult re-executes the trigger
-//     block through the k256-based JIT prover, which rejects high-S and stores 2, yielding a
-//     different state root → ValidateResult returns success=false.
+//     block through the k256-based JIT prover. With the high-S fix applied (normalize_s +
+//     flip recovery point y-parity), the prover also stores 1 and the state roots match →
+//     ValidateResult returns success=true.
 //
 // Runtime bytecode layout (59 bytes):
 //
@@ -197,7 +198,7 @@ func TestEcrecoverHighSDivergence(t *testing.T) {
 		t.Fatalf("storage[0] = %d: expected 1 (native accepted high-S); either the bug is fixed or the test input is wrong", slotVal)
 	}
 
-	// Part 2: confirm JIT re-execution diverges (k256 rejects high-S → different state root).
+	// Part 2: confirm JIT re-execution agrees with native (fix: k256 now accepts high-S).
 	msgIdx := arbutil.MessageIndex(triggerReceipt.BlockNumber.Uint64())
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 	doUntil(t, 250*time.Millisecond, 150, func() bool {
@@ -219,7 +220,7 @@ func TestEcrecoverHighSDivergence(t *testing.T) {
 	t.Logf("native BlockHash: %v", nativeGS.BlockHash)
 	t.Logf("JIT    BlockHash: %v", jitGS.BlockHash)
 
-	if success {
-		t.Fatal("JIT and native produced the same state root — divergence not detected; either the high-S bug is fixed or the test input is wrong")
+	if !success {
+		t.Fatalf("JIT and native state roots diverge — high-S fix not effective: native=%v jit=%v", nativeGS.BlockHash, jitGS.BlockHash)
 	}
 }
