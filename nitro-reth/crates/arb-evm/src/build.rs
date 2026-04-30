@@ -367,6 +367,20 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             self.arb_ctx.l1_block_number,
         );
 
+        // Recent-WASMs LRU is per-block (matches Nitro's RecentWasms). Reset
+        // at block start so cross-block hits don't falsely flag a program
+        // as cached, which would skip the init_gas charge on first call.
+        if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+            let cap = arb_state
+                .programs
+                .params()
+                .map(|p| p.block_cache_size as usize)
+                .unwrap_or(0);
+            arb_precompiles::reset_recent_wasms(cap);
+        } else {
+            arb_precompiles::reset_recent_wasms(0);
+        }
+
         // Set gas backlog for Redeem precompile's ShrinkBacklog cost computation.
         if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog() {
             arb_precompiles::set_current_gas_backlog(backlog);
