@@ -1,2 +1,2 @@
 ### Fixed
-- Allow custom genesis configuration to take precedence over `init.empty`, so operators do not need to explicitly set `init.empty=false` when providing a genesis file.
+- Do not require `init.empty=false` when `init.genesis-json-file-directory` provides a custom genesis file.

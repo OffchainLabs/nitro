@@ -868,14 +868,16 @@ func TestIsWasmDb(t *testing.T) {
 	}
 }
 
-func TestInitConfigAllowsEmptyWhenGenesisJsonIsPresent(t *testing.T) {
-	initConfig := conf.InitConfig{
-		GenesisJsonFile: "./genesis.json",
-		Empty:           true,
-	}
+func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
+	initConfig := conf.InitConfigDefault
+	initConfig.GenesisJsonFile = "./genesis.json"
+	initConfig.Empty = true
 	err := initConfig.Validate()
-	if err != nil {
-		t.Fatalf("expected genesis json to take precedence over empty init, got %v", err)
+	if err == nil {
+		t.Fatal("expected error when both GenesisJsonFile and Empty are set")
+	}
+	if !strings.Contains(err.Error(), "init config cannot be both empty and have a genesis json file specified") {
+		t.Fatal("expected conflict detection")
 	}
 }
 
@@ -1307,60 +1309,6 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	err = initDataReader.Close()
 	Require(t, err)
-}
-
-func TestGetInitWithGenesisAndEmpty(t *testing.T) {
-	t.Parallel()
-
-	genesisJsonFile := "testdata/testGenesis.json"
-	expectedChainId := uint64(3503995874084926)
-
-	testCases := []struct {
-		name      string
-		configure func(*testing.T, *config.NodeConfig)
-	}{
-		{
-			name: "file",
-			configure: func(t *testing.T, nodeConfig *config.NodeConfig) {
-				nodeConfig.Init.GenesisJsonFile = genesisJsonFile
-			},
-		},
-		{
-			name: "directory",
-			configure: func(t *testing.T, nodeConfig *config.NodeConfig) {
-				tempDir := t.TempDir()
-				genesisBytes, err := os.ReadFile(genesisJsonFile)
-				Require(t, err)
-				err = os.WriteFile(path.Join(tempDir, fmt.Sprintf("%d.json", expectedChainId)), genesisBytes, 0600)
-				Require(t, err)
-				nodeConfig.Init.GenesisJsonFileDirectory = tempDir
-			},
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			nodeConfig := config.NodeConfigDefault
-			nodeConfig.Chain.ID = expectedChainId
-			nodeConfig.Init.Empty = true
-			testCase.configure(t, &nodeConfig)
-
-			initDataReader, chainConfig, _, err := GetInit(&nodeConfig, rawdb.NewMemoryDatabase())
-			Require(t, err)
-			defer func() {
-				Require(t, initDataReader.Close())
-			}()
-
-			if chainConfig.ChainID.Uint64() != expectedChainId {
-				t.Fatalf("chainConfig chainID %d does not match expected chain ID: %d", chainConfig.ChainID.Uint64(), expectedChainId)
-			}
-			blockNumber, err := initDataReader.GetNextBlockNumber()
-			Require(t, err)
-			if blockNumber != 0 {
-				t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
-			}
-		})
-	}
 }
 
 func TestGetInitWithChainconfigInDB(t *testing.T) {
