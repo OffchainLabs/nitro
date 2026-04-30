@@ -137,7 +137,8 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 
 func (c *NodeConfig) Validate() error {
 	if c.Init.RecreateMissingStateFrom > 0 && !c.Execution.Caching.Archive {
-		return errors.New("recreate-missing-state-from enabled for a non-archive node")
+		return errors.New("--init.recreate-missing-state-from requires an archive node (--execution.caching.archive), " +
+			"because it needs historical state data. For pruned (full) nodes, use --init.latest pruned to reinitialize instead")
 	}
 	if err := c.Init.Validate(); err != nil {
 		return err
