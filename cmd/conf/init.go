@@ -116,6 +116,9 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func (c *InitConfig) Validate() error {
+	if c.Empty && c.GenesisJsonFile != "" {
+		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
+	}
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}
