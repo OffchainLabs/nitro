@@ -68,7 +68,7 @@ jobs:
             --markdown-out target/bench/abba/summary.md
       - name: Upload ABBA artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: abba-results
           path: target/bench/abba
