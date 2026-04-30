@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -181,7 +182,7 @@ func TestArbOwner(t *testing.T) {
 
 	want = 256 * 1024
 	params.MaxWasmSize = uint32(want)
-	if err := params.Save(); err != nil {
+	if err := params.Save(true); err != nil {
 		Fail(t, err)
 	}
 	params, err = state.Programs().Params()
@@ -209,7 +210,7 @@ func TestArbOwner(t *testing.T) {
 
 func TestArbWasmActivationGas(t *testing.T) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_60
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_59
 	evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
@@ -312,5 +313,336 @@ func TestArbInfraFeeAccount(t *testing.T) {
 	Require(t, err)
 	if addr != newAddr {
 		t.Fatal()
+	}
+}
+
+// setupArbOwnerTestWithRunMode creates an EVM with the given run context,
+// opens ArbOS state, adds a chain owner, and returns everything needed
+// for testing ArbOwner precompile methods.
+func setupArbOwnerTestWithRunMode(t *testing.T, runCtx *core.MessageRunContext) (*vm.EVM, *arbosState.ArbosState, *Context, *ArbOwner) {
+	t.Helper()
+	evm := newMockEVMForTestingWithVersionAndRunMode(nil, runCtx)
+	caller := testhelpers.RandomAddress()
+	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
+	Require(t, err)
+	Require(t, state.ChainOwners().Add(caller))
+	callCtx := testContext(caller, evm)
+	return evm, state, callCtx, &ArbOwner{}
+}
+
+func TestSavePersistToStorageTrue(t *testing.T) {
+	// When persistToStorage=true, Save should actually persist params to storage
+	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageCommitContext(nil))
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+	originalInkPrice := p.InkPrice
+
+	// Modify and save with persistToStorage=true
+	newInkPrice := originalInkPrice + 1000
+	p.InkPrice = newInkPrice
+	Require(t, p.Save(true))
+
+	// Read back — should see the new value
+	p2, err := state.Programs().Params()
+	Require(t, err)
+	if p2.InkPrice != newInkPrice {
+		Fail(t, "Expected InkPrice", newInkPrice, "got", p2.InkPrice)
+	}
+}
+
+func TestSavePersistToStorageFalse(t *testing.T) {
+	// When persistToStorage=false, Save should NOT persist params, but should not error
+	_, state, _, _ := setupArbOwnerTestWithRunMode(t, nil)
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+	originalInkPrice := p.InkPrice
+
+	// Modify and save with persistToStorage=false
+	p.InkPrice = originalInkPrice + 5000
+	Require(t, p.Save(false))
+
+	// Read back — should still see the original value
+	p2, err := state.Programs().Params()
+	Require(t, err)
+	if p2.InkPrice != originalInkPrice {
+		Fail(t, "Expected InkPrice to remain", originalInkPrice, "got", p2.InkPrice)
+	}
+}
+
+func TestSavePersistToStorageFalseMultipleFields(t *testing.T) {
+	// Verify that Save(false) does not persist any field changes
+	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+	origInkPrice := p.InkPrice
+	origFreePages := p.FreePages
+	origPageGas := p.PageGas
+	origPageLimit := p.PageLimit
+	origExpiryDays := p.ExpiryDays
+
+	// Modify multiple fields
+	p.InkPrice = origInkPrice + 1
+	p.FreePages = origFreePages + 10
+	p.PageGas = origPageGas + 100
+	p.PageLimit = origPageLimit + 50
+	p.ExpiryDays = origExpiryDays + 100
+
+	Require(t, p.Save(false))
+
+	// All fields should remain at original values
+	p2, err := state.Programs().Params()
+	Require(t, err)
+	if p2.InkPrice != origInkPrice {
+		Fail(t, "InkPrice changed: expected", origInkPrice, "got", p2.InkPrice)
+	}
+	if p2.FreePages != origFreePages {
+		Fail(t, "FreePages changed: expected", origFreePages, "got", p2.FreePages)
+	}
+	if p2.PageGas != origPageGas {
+		Fail(t, "PageGas changed: expected", origPageGas, "got", p2.PageGas)
+	}
+	if p2.PageLimit != origPageLimit {
+		Fail(t, "PageLimit changed: expected", origPageLimit, "got", p2.PageLimit)
+	}
+	if p2.ExpiryDays != origExpiryDays {
+		Fail(t, "ExpiryDays changed: expected", origExpiryDays, "got", p2.ExpiryDays)
+	}
+}
+
+func TestSavePersistToStorageGasParity(t *testing.T) {
+	// Save(false) (simulation) must charge the same gas as Save(true) (persist),
+	// so eth_call / gas-estimate against ArbOwner setters returns accurate gas.
+	_, state, _, _ := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+
+	before := state.Burner.Burned()
+	Require(t, p.Save(false))
+	deltaSim := state.Burner.Burned() - before
+
+	before = state.Burner.Burned()
+	Require(t, p.Save(true))
+	deltaPersist := state.Burner.Burned() - before
+
+	if deltaSim == 0 {
+		Fail(t, "Save(false) charged no gas")
+	}
+	if deltaSim != deltaPersist {
+		Fail(t, "gas mismatch between Save(false) and Save(true):", deltaSim, "vs", deltaPersist)
+	}
+}
+
+func TestArbOwnerSetInkPriceOnChain(t *testing.T) {
+	// When executed on-chain (commit mode), SetInkPrice should persist the change
+	evm, state, callCtx, prec := setupArbOwnerTestWithRunMode(t, core.NewMessageCommitContext(nil))
+
+	Require(t, prec.SetInkPrice(callCtx, evm, 20000))
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+	if uint32(p.InkPrice) != 20000 {
+		Fail(t, "Expected InkPrice 20000, got", p.InkPrice)
+	}
+}
+
+func TestArbOwnerSetInkPriceEthCall(t *testing.T) {
+	// When executed via eth_call, SetInkPrice should NOT persist the change
+	evm, state, callCtx, prec := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
+
+	p, err := state.Programs().Params()
+	Require(t, err)
+	originalInkPrice := p.InkPrice
+
+	Require(t, prec.SetInkPrice(callCtx, evm, 20000))
+
+	// Ink price should NOT have been persisted
+	p2, err := state.Programs().Params()
+	Require(t, err)
+	if p2.InkPrice != originalInkPrice {
+		Fail(t, "InkPrice should not change during eth_call: expected", originalInkPrice, "got", p2.InkPrice)
+	}
+}
+
+func TestArbOwnerSetInkPriceGasEstimation(t *testing.T) {
+	// When executed via gas estimation, ALL ArbOwner Stylus setters should NOT persist
+	evm, state, callCtx, prec := setupArbOwnerTestWithRunMode(t, core.NewMessageGasEstimationContext())
+
+	// Get original params
+	orig, err := state.Programs().Params()
+	Require(t, err)
+
+	// Call all setters with new values
+	Require(t, prec.SetInkPrice(callCtx, evm, 20000))
+	Require(t, prec.SetWasmMaxStackDepth(callCtx, evm, 999999))
+	Require(t, prec.SetWasmFreePages(callCtx, evm, 10))
+	Require(t, prec.SetWasmPageGas(callCtx, evm, 5000))
+	Require(t, prec.SetWasmPageLimit(callCtx, evm, 256))
+	Require(t, prec.SetWasmMinInitGas(callCtx, evm, 20000, 1000))
+	Require(t, prec.SetWasmInitCostScalar(callCtx, evm, 80))
+	Require(t, prec.SetWasmExpiryDays(callCtx, evm, 730))
+	Require(t, prec.SetWasmKeepaliveDays(callCtx, evm, 60))
+	Require(t, prec.SetWasmBlockCacheSize(callCtx, evm, 64))
+	Require(t, prec.SetWasmMaxSize(callCtx, evm, 256*1024))
+
+	// All params should still be at original values
+	after, err := state.Programs().Params()
+	Require(t, err)
+
+	if after.InkPrice != orig.InkPrice {
+		Fail(t, "InkPrice changed during gas estimation")
+	}
+	if after.MaxStackDepth != orig.MaxStackDepth {
+		Fail(t, "MaxStackDepth changed during gas estimation")
+	}
+	if after.FreePages != orig.FreePages {
+		Fail(t, "FreePages changed during gas estimation")
+	}
+	if after.PageGas != orig.PageGas {
+		Fail(t, "PageGas changed during gas estimation")
+	}
+	if after.PageLimit != orig.PageLimit {
+		Fail(t, "PageLimit changed during gas estimation")
+	}
+	if after.MinInitGas != orig.MinInitGas {
+		Fail(t, "MinInitGas changed during gas estimation")
+	}
+	if after.InitCostScalar != orig.InitCostScalar {
+		Fail(t, "InitCostScalar changed during gas estimation")
+	}
+	if after.ExpiryDays != orig.ExpiryDays {
+		Fail(t, "ExpiryDays changed during gas estimation")
+	}
+	if after.KeepaliveDays != orig.KeepaliveDays {
+		Fail(t, "KeepaliveDays changed during gas estimation")
+	}
+	if after.BlockCacheSize != orig.BlockCacheSize {
+		Fail(t, "BlockCacheSize changed during gas estimation")
+	}
+	if after.MaxWasmSize != orig.MaxWasmSize {
+		Fail(t, "MaxWasmSize changed during gas estimation")
+	}
+}
+
+func TestArbOwnerSettersNotPersistedOffChain(t *testing.T) {
+	// Verify that ALL ArbOwner Stylus setters do not persist in eth_call mode
+	evm, state, callCtx, prec := setupArbOwnerTestWithRunMode(t, core.NewMessageEthcallContext())
+
+	// Get original params
+	orig, err := state.Programs().Params()
+	Require(t, err)
+
+	// Call all setters with new values
+	Require(t, prec.SetInkPrice(callCtx, evm, 20000))
+	Require(t, prec.SetWasmMaxStackDepth(callCtx, evm, 999999))
+	Require(t, prec.SetWasmFreePages(callCtx, evm, 10))
+	Require(t, prec.SetWasmPageGas(callCtx, evm, 5000))
+	Require(t, prec.SetWasmPageLimit(callCtx, evm, 256))
+	Require(t, prec.SetWasmMinInitGas(callCtx, evm, 20000, 1000))
+	Require(t, prec.SetWasmInitCostScalar(callCtx, evm, 80))
+	Require(t, prec.SetWasmExpiryDays(callCtx, evm, 730))
+	Require(t, prec.SetWasmKeepaliveDays(callCtx, evm, 60))
+	Require(t, prec.SetWasmBlockCacheSize(callCtx, evm, 64))
+	Require(t, prec.SetWasmMaxSize(callCtx, evm, 256*1024))
+
+	// All params should still be at original values
+	after, err := state.Programs().Params()
+	Require(t, err)
+
+	if after.InkPrice != orig.InkPrice {
+		Fail(t, "InkPrice changed off-chain")
+	}
+	if after.MaxStackDepth != orig.MaxStackDepth {
+		Fail(t, "MaxStackDepth changed off-chain")
+	}
+	if after.FreePages != orig.FreePages {
+		Fail(t, "FreePages changed off-chain")
+	}
+	if after.PageGas != orig.PageGas {
+		Fail(t, "PageGas changed off-chain")
+	}
+	if after.PageLimit != orig.PageLimit {
+		Fail(t, "PageLimit changed off-chain")
+	}
+	if after.MinInitGas != orig.MinInitGas {
+		Fail(t, "MinInitGas changed off-chain")
+	}
+	if after.InitCostScalar != orig.InitCostScalar {
+		Fail(t, "InitCostScalar changed off-chain")
+	}
+	if after.ExpiryDays != orig.ExpiryDays {
+		Fail(t, "ExpiryDays changed off-chain")
+	}
+	if after.KeepaliveDays != orig.KeepaliveDays {
+		Fail(t, "KeepaliveDays changed off-chain")
+	}
+	if after.BlockCacheSize != orig.BlockCacheSize {
+		Fail(t, "BlockCacheSize changed off-chain")
+	}
+	if after.MaxWasmSize != orig.MaxWasmSize {
+		Fail(t, "MaxWasmSize changed off-chain")
+	}
+}
+
+func TestArbOwnerSettersPersistedOnChain(t *testing.T) {
+	// Verify that ALL ArbOwner Stylus setters DO persist in commit mode
+	evm, state, callCtx, prec := setupArbOwnerTestWithRunMode(t, core.NewMessageCommitContext(nil))
+
+	// Call all setters with new values
+	Require(t, prec.SetInkPrice(callCtx, evm, 20000))
+	Require(t, prec.SetWasmMaxStackDepth(callCtx, evm, 999999))
+	Require(t, prec.SetWasmFreePages(callCtx, evm, 10))
+	Require(t, prec.SetWasmPageGas(callCtx, evm, 5000))
+	Require(t, prec.SetWasmPageLimit(callCtx, evm, 256))
+	Require(t, prec.SetWasmMinInitGas(callCtx, evm, 20000, 1000))
+	Require(t, prec.SetWasmInitCostScalar(callCtx, evm, 80))
+	Require(t, prec.SetWasmExpiryDays(callCtx, evm, 730))
+	Require(t, prec.SetWasmKeepaliveDays(callCtx, evm, 60))
+	Require(t, prec.SetWasmBlockCacheSize(callCtx, evm, 64))
+	Require(t, prec.SetWasmMaxSize(callCtx, evm, 256*1024))
+
+	// All params should be at new values
+	after, err := state.Programs().Params()
+	Require(t, err)
+
+	if uint32(after.InkPrice) != 20000 {
+		Fail(t, "InkPrice not persisted on-chain: got", after.InkPrice)
+	}
+	if after.MaxStackDepth != 999999 {
+		Fail(t, "MaxStackDepth not persisted on-chain: got", after.MaxStackDepth)
+	}
+	if after.FreePages != 10 {
+		Fail(t, "FreePages not persisted on-chain: got", after.FreePages)
+	}
+	if after.PageGas != 5000 {
+		Fail(t, "PageGas not persisted on-chain: got", after.PageGas)
+	}
+	if after.PageLimit != 256 {
+		Fail(t, "PageLimit not persisted on-chain: got", after.PageLimit)
+	}
+	if after.MinInitGas != 157 { // ceil(20000 / MinInitGasUnits=128)
+		Fail(t, "MinInitGas not persisted on-chain: got", after.MinInitGas)
+	}
+	if after.MinCachedInitGas != 32 { // ceil(1000 / MinCachedGasUnits=32)
+		Fail(t, "MinCachedInitGas not persisted on-chain: got", after.MinCachedInitGas)
+	}
+	if after.InitCostScalar != 40 { // ceil(80 / CostScalarPercent=2)
+		Fail(t, "InitCostScalar not persisted on-chain: got", after.InitCostScalar)
+	}
+	if after.ExpiryDays != 730 {
+		Fail(t, "ExpiryDays not persisted on-chain: got", after.ExpiryDays)
+	}
+	if after.KeepaliveDays != 60 {
+		Fail(t, "KeepaliveDays not persisted on-chain: got", after.KeepaliveDays)
+	}
+	if after.BlockCacheSize != 64 {
+		Fail(t, "BlockCacheSize not persisted on-chain: got", after.BlockCacheSize)
+	}
+	if after.MaxWasmSize != 256*1024 {
+		Fail(t, "MaxWasmSize not persisted on-chain: got", after.MaxWasmSize)
 	}
 }

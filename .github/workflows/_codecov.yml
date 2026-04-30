@@ -26,6 +26,7 @@ jobs:
     name: Aggregate test results
     runs-on: ubuntu-4
     permissions:
+      contents: read
       pull-requests: write
 
     steps:
@@ -40,14 +41,14 @@ jobs:
 
       - name: Post test summary comment
         if: ${{ inputs.post_comment && github.event_name == 'pull_request' }}
-        uses: codecov/basic-test-results@v1
+        uses: codecov/basic-test-results@c46ff461955b5cd6eb57cbe9ff22f3b77fc15824  # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           directory: 'downloaded-reports/'
 
       - name: Upload test results to Codecov
         if: ${{ inputs.upload_report }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: 'downloaded-reports/'

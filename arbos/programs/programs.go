@@ -88,7 +88,7 @@ func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 
 // ActivationGas returns the constant gas charge burned at the start of each Stylus activation.
 func (p Programs) ActivationGas() (uint64, error) {
-	if p.ArbosVersion < gethParams.ArbosVersion_StylusActivationGas {
+	if p.ArbosVersion < gethParams.ArbosVersion_59 {
 		return 0, nil
 	}
 	return p.activationGas.Get()
@@ -242,6 +242,17 @@ func (p Programs) CallProgram(
 	if !cached {
 		callCost = arbmath.SaturatingUAdd(callCost, program.initGas(params))
 	}
+	// Check the cumulative open-pages total this frame would reach — the
+	// outer frames' `open` plus this program's static footprint — against
+	// both page caps. The static-footprint reservation (AddStylusPages
+	// below) bypasses the addPages hostio, so a program that never grows
+	// memory at runtime could otherwise push the cumulative total above
+	// PageLimit undetected. On exceed, the helper returns math.MaxUint64
+	// which saturates callCost so BurnGas below fails with vm.ErrOutOfGas.
+	newOpen := arbmath.SaturatingUAdd(open, program.footprint)
+	penalty := enforceStylusPageLimit(evm, statedb, runCtx, newOpen, contract.Address(), params, pageLimitCallProgram)
+	callCost = arbmath.SaturatingUAdd(callCost, penalty)
+
 	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
 	}

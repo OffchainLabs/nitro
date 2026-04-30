@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -170,4 +171,126 @@ func Require(t *testing.T, err error, printables ...interface{}) {
 func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+func TestPrecompileBucketMembership(t *testing.T) {
+	// Each PrecompiledContractsStartingFromArbOS<N> map is the active-precompile
+	// set for the ArbOS version range [N, nextN). A precompile with ArbosVersion()
+	// V is registered in a bucket iff V < nextN — i.e. the precompile has at
+	// least one active method during the range.
+	//
+	// If a new ArbOS version is introduced, add a new bucket entry below and bump
+	// maxKnownArbosVersion.
+	const maxKnownArbosVersion = params.ArbosVersion_60
+
+	if params.MaxDebugArbosVersionSupported > maxKnownArbosVersion {
+		t.Errorf("MaxDebugArbosVersionSupported (%d) > maxKnownArbosVersion (%d); add a new bucket and bump the constant",
+			params.MaxDebugArbosVersionSupported, maxKnownArbosVersion)
+	}
+
+	buckets := []struct {
+		name       string
+		contracts  map[common.Address]vm.PrecompiledContract
+		addrs      []common.Address
+		upperBound uint64 // exclusive
+		ethSubsets []map[common.Address]vm.PrecompiledContract
+	}{
+		{
+			name:       "BeforeArbOS30",
+			contracts:  vm.PrecompiledContractsBeforeArbOS30,
+			addrs:      vm.PrecompiledAddressesBeforeArbOS30,
+			upperBound: params.ArbosVersion_30,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsBerlin},
+		},
+		{
+			name:       "StartingFromArbOS30",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS30,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS30,
+			upperBound: params.ArbosVersion_41,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsCancun, vm.PrecompiledContractsP256Verify},
+		},
+		{
+			name:       "StartingFromArbOS41",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS41,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS41,
+			upperBound: params.ArbosVersion_50,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsCancun, vm.PrecompiledContractsP256Verify},
+		},
+		{
+			name:       "StartingFromArbOS50",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS50,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS50,
+			upperBound: params.ArbosVersion_60,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsOsaka},
+		},
+		{
+			name:       "StartingFromArbOS60",
+			contracts:  vm.PrecompiledContractsStartingFromArbOS60,
+			addrs:      vm.PrecompiledAddressesStartingFromArbOS60,
+			upperBound: maxKnownArbosVersion + 1,
+			ethSubsets: []map[common.Address]vm.PrecompiledContract{vm.PrecompiledContractsOsaka},
+		},
+	}
+
+	for addr, p := range precompiles.Precompiles() {
+		name := p.Precompile().Name()
+		v := p.Precompile().ArbosVersion()
+		if v > maxKnownArbosVersion {
+			t.Errorf("precompile %s has ArbosVersion %d > maxKnownArbosVersion %d; add a new bucket and bump the constant",
+				name, v, maxKnownArbosVersion)
+			continue
+		}
+		for _, b := range buckets {
+			_, present := b.contracts[addr]
+			want := v < b.upperBound
+			if present != want {
+				t.Errorf("precompile %s (v=%d) in bucket %s: got present=%v, want=%v",
+					name, v, b.name, present, want)
+			}
+		}
+	}
+
+	for _, b := range buckets {
+		// Every address from each assigned Ethereum subset must be present.
+		ethUnion := make(map[common.Address]struct{})
+		for _, subset := range b.ethSubsets {
+			for addr := range subset {
+				ethUnion[addr] = struct{}{}
+				if _, ok := b.contracts[addr]; !ok {
+					t.Errorf("bucket %s missing Ethereum precompile %s", b.name, addr.Hex())
+				}
+			}
+		}
+
+		// Total-size closure: bucket = arbos-in-bucket + eth-subsets-union.
+		// Catches accidental extras (e.g. a stray addPrecompiles line).
+		arbosInBucket := 0
+		for _, p := range precompiles.Precompiles() {
+			if p.Precompile().ArbosVersion() < b.upperBound {
+				arbosInBucket++
+			}
+		}
+		if got, want := len(b.contracts), arbosInBucket+len(ethUnion); got != want {
+			t.Errorf("bucket %s has %d entries, expected %d (%d arbos + %d ethereum)",
+				b.name, got, want, arbosInBucket, len(ethUnion))
+		}
+	}
+
+	// Address slice must match its contracts map (catches addAddresses drift).
+	for _, b := range buckets {
+		if len(b.addrs) != len(b.contracts) {
+			t.Errorf("bucket %s: addresses slice has %d entries but contracts map has %d",
+				b.name, len(b.addrs), len(b.contracts))
+		}
+		seen := make(map[common.Address]bool, len(b.addrs))
+		for _, a := range b.addrs {
+			if seen[a] {
+				t.Errorf("bucket %s: address %s appears twice in addresses slice", b.name, a.Hex())
+			}
+			seen[a] = true
+			if _, ok := b.contracts[a]; !ok {
+				t.Errorf("bucket %s: address %s in slice but not in contracts map", b.name, a.Hex())
+			}
+		}
+	}
 }

@@ -14,6 +14,9 @@ on:
         description: 'New changelog fragments.'
         value: ${{ jobs.changes.outputs.changelog_added }}
 
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Detect file changes
@@ -27,9 +30,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Detect changes
         id: changed

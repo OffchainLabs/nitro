@@ -1796,6 +1796,7 @@ func setupExpressLaneAuction(
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
 		DbDirectory:            dbDirPath,
+		StreamTimeout:          time.Minute,
 		Wallet: genericconf.WalletConfig{
 			PrivateKey: fmt.Sprintf("00%x", seqInfo.Accounts["AuctionContract"].PrivateKey.D.Bytes()),
 		},

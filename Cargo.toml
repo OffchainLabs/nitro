@@ -119,3 +119,10 @@ wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
 
 [profile.release]
 debug = true
+
+# Used by `make STRIP=1` and the nitro-node-*-stripped Docker targets.
+# Outputs to arbitrator/target/stripped/.
+[profile.stripped]
+inherits = "release"
+debug = false
+strip = "symbols"

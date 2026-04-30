@@ -4,9 +4,7 @@
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 
 use arbutil::{
-    Bytes32, Color, DebugColor,
-    evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
-    math::SaturatingSum,
+    Bytes32, Color, DebugColor, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum,
 };
 use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
@@ -25,9 +23,10 @@ use wasmparser::{
 
 use crate::{
     programs::{
-        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
-        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover,
+        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT,
+        STYLUS_VERSION_DISABLE_MULTIVALUE, StylusData, config::CompileConfig, counter::Counter,
+        depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound, meter::Meter,
+        start::StartMover,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -308,13 +307,13 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
-    parse_with_version(input, path, 0)
+    parse_with_stylus_version(input, path, 0)
 }
 
-pub fn parse_with_version<'a>(
+pub fn parse_with_stylus_version<'a>(
     input: &'a [u8],
     path: &'_ Path,
-    arbos_version: u64,
+    stylus_version: u16,
 ) -> Result<WasmBinary<'a>> {
     let mut features = WasmFeatures::empty();
     features.set(WasmFeatures::MUTABLE_GLOBAL, true);
@@ -323,7 +322,7 @@ pub fn parse_with_version<'a>(
     features.set(WasmFeatures::REFERENCE_TYPES, false);
     features.set(
         WasmFeatures::MULTI_VALUE,
-        arbos_version < ARBOS_VERSION_STYLUS_NO_MULTI_VALUE,
+        stylus_version < STYLUS_VERSION_DISABLE_MULTIVALUE,
     );
     features.set(WasmFeatures::BULK_MEMORY, true); // not all ops supported yet
     features.set(WasmFeatures::SIMD, false);
@@ -664,12 +663,13 @@ impl<'a> WasmBinary<'a> {
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
+        stylus_version: u16,
         arbos_version_for_activation: u64,
         page_limit: u16,
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse_with_version(wasm, Path::new("user"), arbos_version_for_activation)?;
+        let mut bin = parse_with_stylus_version(wasm, Path::new("user"), stylus_version)?;
 
         let stylus_data = bin.instrument(compile, codehash)?;
 
