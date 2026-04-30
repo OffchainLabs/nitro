@@ -101,7 +101,7 @@ jobs:
             [bold]=main
             [safe-smart-account]=release/v1.5.0
             [crates/langs/bf]=main
-            [crates/langs/c]=vm-storage-cache
+            [crates/langs/c]=main
             [crates/tools/wasmer]=stylus
             [contracts-local/lib/openzeppelin-contracts]=release-v4.7
           )

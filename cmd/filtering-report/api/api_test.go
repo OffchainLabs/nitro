@@ -28,32 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-func newTestStack(t *testing.T) *node.Node {
-	t.Helper()
-	return newTestStackWithFilterSetReporting(t, genericconf.HTTPClientConfig{})
-}
-
-func newTestStackWithFilterSetReporting(t *testing.T, filterSetReport genericconf.HTTPClientConfig) *node.Node {
-	t.Helper()
-
-	stackConfig := DefaultStackConfig
-	stackConfig.HTTPHost = "127.0.0.1"
-	stackConfig.HTTPPort = 0
-	stackConfig.WSHost = "127.0.0.1"
-	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, &sqsclient.MockQueueClient{}, filterSetReport)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stack.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { stack.Close() })
-	return stack
-}
-
 func TestLiveness(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -66,7 +42,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -79,7 +55,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 	client := stack.Attach()
 	defer client.Close()
 
@@ -105,7 +81,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 	client := stack.Attach()
 	defer client.Close()
 

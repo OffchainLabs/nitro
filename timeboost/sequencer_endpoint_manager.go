@@ -24,6 +24,7 @@ import (
 
 type SequencerEndpointManager interface {
 	GetSequencerRPC(ctx context.Context) (*rpc.Client, bool, error)
+	Close()
 }
 
 type RedisEndpointManager struct {
@@ -62,17 +63,21 @@ func (m *RedisEndpointManager) GetSequencerRPC(ctx context.Context) (*rpc.Client
 
 	if m.client != nil {
 		// Check if we're still using the correct sequencer
-		if err == nil && m.clientUrl == sequencerUrl {
+		if m.clientUrl == sequencerUrl {
 			return m.client, false, nil
 		}
-		// Sequencer changed, close old client
-		m.client.Close()
-		m.client = nil
 	}
 
+	// Create the new client before closing the old one so that a creation
+	// failure doesn't leave the manager without any working connection.
 	client, err := createRPCClient(ctx, sequencerUrl, m.jwtPath)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("creating RPC client for sequencer %s: %w", sequencerUrl, err)
+	}
+
+	if m.client != nil {
+		log.Info("Sequencer endpoint changed, closing stale client", "oldUrl", m.clientUrl, "newUrl", sequencerUrl)
+		m.client.Close()
 	}
 	log.Info("Created sequencer client", "url", sequencerUrl)
 
@@ -81,9 +86,24 @@ func (m *RedisEndpointManager) GetSequencerRPC(ctx context.Context) (*rpc.Client
 	return client, true, nil
 }
 
+func (m *RedisEndpointManager) Close() {
+	m.clientMutex.Lock()
+	defer m.clientMutex.Unlock()
+	if m.client != nil {
+		m.client.Close()
+		m.client = nil
+	}
+	if m.redisCoordinator != nil {
+		if err := m.redisCoordinator.Client.Close(); err != nil {
+			log.Warn("Error closing Redis coordinator client during endpoint manager shutdown", "error", err)
+		}
+	}
+}
+
 type StaticEndpointManager struct {
 	endpoint string
 	jwtPath  string
+	mu       sync.Mutex
 	client   *rpc.Client
 }
 
@@ -95,16 +115,27 @@ func NewStaticEndpointManager(endpoint string, jwtPath string) SequencerEndpoint
 }
 
 func (m *StaticEndpointManager) GetSequencerRPC(ctx context.Context) (*rpc.Client, bool, error) {
-	new := false
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	isNew := false
 	if m.client == nil {
 		client, err := createRPCClient(ctx, m.endpoint, m.jwtPath)
 		if err != nil {
-			return nil, false, err
+			return nil, false, fmt.Errorf("creating RPC client for static endpoint %s: %w", m.endpoint, err)
 		}
 		m.client = client
-		new = true
+		isNew = true
 	}
-	return m.client, new, nil
+	return m.client, isNew, nil
+}
+
+func (m *StaticEndpointManager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.client != nil {
+		m.client.Close()
+		m.client = nil
+	}
 }
 
 func createRPCClient(ctx context.Context, endpoint string, jwtPath string) (*rpc.Client, error) {
@@ -115,11 +146,11 @@ func createRPCClient(ctx context.Context, endpoint string, jwtPath string) (*rpc
 	// Create RPC client with JWT auth
 	sequencerJwtStr, err := os.ReadFile(jwtPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading JWT file %s: %w", jwtPath, err)
 	}
 	sequencerJwt, err := hexutil.Decode(string(sequencerJwtStr))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding JWT file content: %w", err)
 	}
 
 	return rpc.DialOptions(ctx, endpoint, rpc.WithHTTPAuth(func(h http.Header) error {

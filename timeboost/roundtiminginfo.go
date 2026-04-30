@@ -111,9 +111,11 @@ func (info *RoundTimingInfo) TimeOfNextRoundAt(currentTime time.Time) time.Time 
 }
 
 func (info *RoundTimingInfo) durationIntoRound(timestamp time.Time) time.Duration {
-	secondsSinceOffset := uint64(timestamp.Sub(info.Offset).Seconds())
-	roundDurationSeconds := uint64(info.Round.Seconds())
-	return arbmath.SaturatingCast[time.Duration](secondsSinceOffset % roundDurationSeconds)
+	elapsed := timestamp.Sub(info.Offset)
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed % info.Round
 }
 
 func (info *RoundTimingInfo) isAuctionRoundClosed() bool {
@@ -125,7 +127,7 @@ func (info *RoundTimingInfo) isAuctionRoundClosedAt(currentTime time.Time) bool 
 		return false
 	}
 
-	return info.durationIntoRound(currentTime)*time.Second >= info.Round-info.AuctionClosing
+	return info.durationIntoRound(currentTime) >= info.Round-info.AuctionClosing
 }
 
 func (info *RoundTimingInfo) IsWithinAuctionCloseWindow(timestamp time.Time) bool {

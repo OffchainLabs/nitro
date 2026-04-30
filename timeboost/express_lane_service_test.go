@@ -911,6 +911,36 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 	els.roundInfoMutex.Unlock()
 }
 
+// Test 5: Sender() must recover correct address for both V=27 and V=28.
+func Test_expressLaneSubmission_SenderRecoveryBothVValues(t *testing.T) {
+	t.Parallel()
+	auctionAddr := common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")
+
+	var sawV27, sawV28 bool
+	for iter := 0; iter < 50; iter++ {
+		privKey, err := crypto.GenerateKey()
+		require.NoError(t, err)
+		expectedAddr := crypto.PubkeyToAddress(privKey.PublicKey)
+
+		sub := buildValidSubmission(t, auctionAddr, privKey, 0)
+
+		// Track which V value this signature has.
+		v := sub.Signature[64]
+		if v == 0 {
+			sawV27 = true // Will become 27 when processed by Sender()
+		} else if v == 1 {
+			sawV28 = true // Will become 28 when processed by Sender()
+		}
+
+		recovered, err := sub.Sender()
+		require.NoError(t, err, "iter %d: Sender() must succeed (V=%d)", iter, v)
+		require.Equal(t, expectedAddr, recovered,
+			"iter %d: recovered sender must match signing key (V=%d)", iter, v)
+	}
+	require.True(t, sawV27 && sawV28,
+		"expected to see both V=0 and V=1 across iterations (saw V0=%v, V1=%v)", sawV27, sawV28)
+}
+
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	b.StopTimer()
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
