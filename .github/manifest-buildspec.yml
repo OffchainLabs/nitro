@@ -73,3 +73,27 @@ phases:
         docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-validator
         $REPOSITORY_URI:$IMAGE_TAG-validator-arm64 --arch arm64
       - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-validator
+
+      # Stripped variant
+      - >-
+        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-stripped $REPOSITORY_URI:$IMAGE_TAG-stripped-amd64
+        $REPOSITORY_URI:$IMAGE_TAG-stripped-arm64
+      - >-
+        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-stripped
+        $REPOSITORY_URI:$IMAGE_TAG-stripped-amd64 --arch amd64
+      - >-
+        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-stripped
+        $REPOSITORY_URI:$IMAGE_TAG-stripped-arm64 --arch arm64
+      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-stripped
+
+      # Slim-stripped variant
+      - >-
+        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-slim-stripped $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-amd64
+        $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-arm64
+      - >-
+        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim-stripped
+        $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-amd64 --arch amd64
+      - >-
+        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim-stripped
+        $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-arm64 --arch arm64
+      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-slim-stripped

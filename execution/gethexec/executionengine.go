@@ -359,6 +359,10 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
+		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
+		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
+	})
 	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
@@ -873,7 +877,12 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+//
+// isDelayedSequencing indicates the sequencer is actively building a block from
+// a delayed-inbox message (called by sequenceDelayedMessageWithBlockMutex).
+// Regular live sequencing of directly-received L2 transactions (which happens
+// in sequenceTransactionsWithBlockMutex) does not go through this function.
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isDelayedSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -914,11 +923,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isSequencing {
-		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
-	} else if isMsgForPrefetch {
+	switch {
+	case isDelayedSequencing:
+		runCtx = core.NewMessageDelayedSequencingContext(s.wasmTargets)
+	case isMsgForPrefetch:
 		runCtx = core.NewMessagePrefetchContext()
-	} else {
+	default:
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 
@@ -926,7 +936,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
 	// which tx caused the halt.
-	if !s.disableDelayedSequencingFilter && isSequencing {
+	if !s.disableDelayedSequencingFilter && isDelayedSequencing {
 		chainConfig := s.bc.Config()
 		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
 		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)
