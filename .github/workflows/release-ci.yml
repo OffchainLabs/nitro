@@ -20,7 +20,9 @@ jobs:
 
       - uses: ./.github/actions/init-submodules
         with:
-          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+          app-id: ${{ vars.NITRO_CI_APP_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3

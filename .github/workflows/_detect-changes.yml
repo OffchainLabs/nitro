@@ -36,7 +36,9 @@ jobs:
 
       - uses: ./.github/actions/init-submodules
         with:
-          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+          app-id: ${{ vars.NITRO_CI_APP_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Detect changes
         id: changed
