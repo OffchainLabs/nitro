@@ -8,8 +8,8 @@ description: >
   is private but neither auth source is configured.
 
 inputs:
-  app-id:
-    description: GitHub App ID (vars.NITRO_CI_APP_ID).
+  client-id:
+    description: GitHub App Client ID (vars.NITRO_CI_APP_CLIENT_ID).
     required: false
     default: ''
   app-private-key:
@@ -17,7 +17,7 @@ inputs:
     required: false
     default: ''
   pat:
-    description: PAT fallback used when app-id is unset (secrets.PRIVATE_REPO_PAT).
+    description: PAT fallback used when client-id is unset (secrets.PRIVATE_REPO_PAT).
     required: false
     default: ''
 
@@ -31,18 +31,28 @@ runs:
 
   steps:
     - id: app-token
-      if: inputs.app-id != ''
+      if: inputs.client-id != ''
       uses: actions/create-github-app-token@v3
       with:
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.client-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: ${{ github.repository_owner }}
+        # Tighten token scope to exactly the repos we touch. Keep this list
+        # in sync with the App's installation list (currently:
+        # nitro-private + every entry in .private-submodules.conf with the
+        # -private suffix). Mirrored in submodule-pin-check.yml's inline
+        # mint, which can't call this composite action under
+        # pull_request_target.
+        repositories: |
+          nitro-private
+          go-ethereum-private
+          wasmer-private
 
     - name: Verify private token is available
       if: endsWith(github.repository, '-private') && steps.app-token.outputs.token == '' && inputs.pat == ''
       shell: bash
       run: |
-        echo "::error::Repository ends in '-private' but no auth was provided. Configure the CI GitHub App (vars.NITRO_CI_APP_ID and secrets.NITRO_CI_APP_PRIVATE_KEY) or set the PRIVATE_REPO_PAT secret."
+        echo "::error::Repository ends in '-private' but no auth was provided. Configure the CI GitHub App (vars.NITRO_CI_APP_CLIENT_ID and secrets.NITRO_CI_APP_PRIVATE_KEY) or set the PRIVATE_REPO_PAT secret."
         exit 1
 
     - name: Initialize submodules (private)

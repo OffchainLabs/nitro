@@ -36,7 +36,7 @@ jobs:
       - id: submods
         uses: ./.github/actions/init-submodules
         with:
-          app-id: ${{ vars.NITRO_CI_APP_ID }}
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
           pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
