@@ -24,13 +24,26 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
+
+func CheckReportBlockNumberAndParentBlockHash(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport) {
+	t.Helper()
+	require.NotZero(t, report.BlockNumber, "block number shouldn't be genesis")
+	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
+	require.NoError(t, err)
+	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash,
+		"parent block hash should match hash of block N-1")
+}
 
 // sendDelayedTx sends a transaction via L1 delayed inbox.
 // Returns the L2 tx hash that will be used when sequenced.
@@ -151,6 +164,22 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
 
 	return transactionFiltererAPI
+}
+
+func SetupFilteringReport(t *testing.T, builder *NodeBuilder) *forwarder.MockExternalEndpoint {
+	t.Helper()
+
+	queueClient := &sqsclient.MockQueueClient{}
+	externalEndpoint := forwarder.NewMockExternalEndpoint(t)
+
+	stack := filteringreportapi.NewTestStack(t, queueClient)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = stack.HTTPEndpoint()
+
+	fwd := forwarder.NewTestForwarder(t, queueClient, externalEndpoint.URL())
+	fwd.Start(t.Context())
+	t.Cleanup(func() { fwd.StopAndWait() })
+
+	return externalEndpoint
 }
 
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
