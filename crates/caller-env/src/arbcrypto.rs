@@ -27,9 +27,10 @@ fn ecrecover_core(
     hash: &[u8; HASH_LENGTH],
     sig_with_id: &[u8; SIGNATURE_WITH_ID_LENGTH],
 ) -> Result<[u8; 65], ECRecoveryStatus> {
-    let mut sig = Signature::from_slice(&sig_with_id[..SIGNATURE_LENGTH]).expect("Length checked");
-    let mut recovery_id = RecoveryId::from_byte(sig_with_id[RECOVERY_ID_INDEX])
-        .ok_or(ECRecoveryStatus::InvalidRecoveryId)?;
+    let mut sig =
+        Signature::from_slice(&sig_with_id[..SIGNATURE_LENGTH]).map_err(|_| RecoveryFailed)?;
+    let mut recovery_id =
+        RecoveryId::from_byte(sig_with_id[RECOVERY_ID_INDEX]).ok_or(InvalidRecoveryId)?;
 
     // k256 rejects high-S in verify_prehashed (EIP-2 / RFC 6979 canonicality).
     // The ECRECOVER precompile must not apply that restriction: normalize s → N−s
@@ -39,8 +40,8 @@ fn ecrecover_core(
         recovery_id = RecoveryId::new(!recovery_id.is_y_odd(), recovery_id.is_x_reduced());
     }
 
-    let pubkey = VerifyingKey::recover_from_prehash(hash, &sig, recovery_id)
-        .map_err(|_| ECRecoveryStatus::RecoveryFailed)?;
+    let pubkey =
+        VerifyingKey::recover_from_prehash(hash, &sig, recovery_id).map_err(|_| RecoveryFailed)?;
     let mut out = [0u8; 65];
     out.copy_from_slice(pubkey.to_encoded_point(false).as_bytes());
     Ok(out)
@@ -154,10 +155,7 @@ mod tests {
     fn invalid_recovery_id_returns_error() {
         let (hash, mut sig_with_id) = random_low_s();
         sig_with_id[RECOVERY_ID_INDEX] = 4; // only 0–3 are valid
-        assert_eq!(
-            ecrecover_core(&hash, &sig_with_id),
-            Err(ECRecoveryStatus::InvalidRecoveryId)
-        );
+        assert_eq!(ecrecover_core(&hash, &sig_with_id), Err(InvalidRecoveryId));
     }
 }
 
