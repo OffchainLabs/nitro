@@ -697,13 +697,21 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		err              error
 	)
 
+	genesisJsonFile := config.Init.GenesisJsonFile
+	if genesisJsonFile == "" && config.Init.GenesisJsonFileDirectory != "" {
+		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
+		if err != nil {
+			log.Error("error getting genesis json file from directory", "err", err)
+		}
+	}
+
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("error reading import file: %w", err)
 		}
 	}
-	if config.Init.Empty {
+	if config.Init.Empty && genesisJsonFile == "" {
 		if initDataReader != nil {
 			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
@@ -728,14 +736,6 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 			ChainOwner: common.HexToAddress(config.Init.DevInitAddress),
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
-	}
-
-	genesisJsonFile := config.Init.GenesisJsonFile
-	if genesisJsonFile == "" && initDataReader != nil {
-		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
-		if err != nil {
-			log.Error("error getting genesis json file from directory", "err", err)
-		}
 	}
 
 	if genesisJsonFile != "" {
