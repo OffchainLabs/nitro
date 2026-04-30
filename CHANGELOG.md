@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.10.0-rc.9](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.8...v3.10.0-rc.9) - 2026-04-30
+
+### Added
+
+- Add `make help` for top-level Makefile targets
+
+### Changed
+
+- Improved error messages and log clarity for better node operator UX
+
+### Fixed
+
+- Fix ECRECOVER divergence between native execution and the WASM prover
+- Do not require `init.empty=false` when `init.genesis-json-file-directory` provides a custom genesis file
+
 ## [v3.10.0-rc.8](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.7...v3.10.0-rc.8) - 2026-04-27
 
 ### Configuration
