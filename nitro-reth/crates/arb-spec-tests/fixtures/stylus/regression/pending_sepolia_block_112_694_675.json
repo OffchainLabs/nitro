@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_112_694_675",
-  "description": "Regression: Arbitrum Sepolia tx 0x40ad…c5c0 at block 112,694,675 (tx index 153). Canonical Sepolia v32 reports gasUsed=2,446,219; this fixture (synthetic chain at block 1, real impl/proxy bytecode + storage seeded from prestateTracer) reports 2,465,181 (Δ=+18,962). The user-observed Δ on a synced arbreth was -7,500; absolute match requires seeding the full L1 pricing state (l1BaseFeeEstimate=0x97529fa4 at parent block, surplus, inertia, etc.) which we do not yet do. Use as a Stylus-runtime regression target — gasUsed will move when Stylus gas charging changes.",
+  "description": "Regression: Arbitrum Sepolia tx 0x40ad…c5c0 at block 112,694,675 (tx index 153). With L2 base_fee_wei seeded from real Sepolia state at parent block (0x6de25730 = 1.84 gwei), our local arbreth produces gasUsed=2,438,715 vs canonical 2,446,219 (Δ = -7,504 — exact match for the user-reported -7,500 divergence). Tx succeeds with all 15 logs identical to canon. The Stylus runtime under-charges by ~7,500 gas in this code path; root cause not yet identified, but the fixture is a deterministic regression target.",
   "genesis": {
     "alloc": {
       "0x6dc0fc4344817aba1e28841b8a144ca6bdda0e98": {
@@ -141,7 +141,8 @@
           "0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8201": "0x0000000000000000000000000000000000000000000000000000000001e84800",
           "0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204": "0x000000000000000000000000000000000000000000000000000000008a5b1e89",
           "0xef2f1c3ab1bf7d6e22622684b548118db61f551dcd1d88b88b5ac1e0a992b1a5": "0x00021dda01fb00010154f9000398000000000000000000000000000000000000",
-          "0xf748b11185f14cfa190f0f455f2c4da5635db0fa05ec598edc280514c5df5b98": "0xf824ddc124867d94a1ad432a44a0e749d095a4fa6bfb05dd2c3cb0a9aaca8bfb"
+          "0xf748b11185f14cfa190f0f455f2c4da5635db0fa05ec598edc280514c5df5b98": "0xf824ddc124867d94a1ad432a44a0e749d095a4fa6bfb05dd2c3cb0a9aaca8bfb",
+          "0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8202": "0x000000000000000000000000000000000000000000000000000000006de25730"
         }
       },
       "0xae1cf53605abedce05f6db076e3304c99c249113": {

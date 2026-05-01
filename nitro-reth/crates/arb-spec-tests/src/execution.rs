@@ -573,6 +573,61 @@ fn verify_storage(client: &RpcClient, exp: &ExpectedStorage) -> Result<(), SpecE
 }
 
 fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), SpecError> {
+    // ARB_SPEC_DUMP_HOSTIO_TRACE=path → dump Stylus hostio trace to that
+    // file before doing anything else. Used to diff arbreth's per-hostio
+    // ink charges against canonical for divergence root-causing.
+    if let Ok(path) = std::env::var("ARB_SPEC_DUMP_HOSTIO_TRACE") {
+        if let Ok(trace) = client.call::<serde_json::Value>(
+            "debug_traceTransaction",
+            serde_json::json!([exp.tx_hash, {"tracer": "stylusTracer"}]),
+        ) {
+            let _ = std::fs::write(&path, serde_json::to_vec_pretty(&trace).unwrap_or_default());
+            eprintln!("[arb-spec] dumped hostio trace to {path}");
+        }
+    }
+    // ARB_SPEC_DUMP_RECEIPT=path → dump full receipt JSON.
+    if let Ok(path) = std::env::var("ARB_SPEC_DUMP_RECEIPT") {
+        if let Ok(rcpt) = client.call::<serde_json::Value>(
+            "eth_getTransactionReceipt",
+            serde_json::json!([exp.tx_hash]),
+        ) {
+            let _ = std::fs::write(&path, serde_json::to_vec_pretty(&rcpt).unwrap_or_default());
+            eprintln!("[arb-spec] dumped receipt to {path}");
+        }
+    }
+    // ARB_SPEC_PROBE_ARBOS=1 → log key ArbOS state slots so we can verify
+    // chain init wiring at runtime.
+    if std::env::var("ARB_SPEC_PROBE_ARBOS").is_ok() {
+        let probes: &[(&str, &str)] = &[
+            (
+                "price_per_unit",
+                "0xa9f6f085d78d1d37c5819e5c16c9e03198bd14e08cd1f6f8191bc6207b9e9707",
+            ),
+            (
+                "arbos_version",
+                "0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b400",
+            ),
+            (
+                "network_fee_account",
+                "0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b403",
+            ),
+        ];
+        for (label, slot) in probes {
+            for block_tag in &["0x0", "latest"] {
+                let v = client
+                    .call::<String>(
+                        "eth_getStorageAt",
+                        serde_json::json!([
+                            "0xa4b05fffffffffffffffffffffffffffffffffff",
+                            slot,
+                            block_tag
+                        ]),
+                    )
+                    .unwrap_or_default();
+                eprintln!("[arb-spec] arbos.{label} @ {block_tag} = {v}");
+            }
+        }
+    }
     // Skip the RPC call entirely if the fixture didn't pin anything we
     // actually compare. Logs, gas_used, and status are checked when set.
     if exp.logs.is_none() && exp.gas_used.is_none() && exp.status.is_none() {
