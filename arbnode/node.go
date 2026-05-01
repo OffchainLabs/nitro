@@ -135,6 +135,9 @@ func (c *Config) Validate() error {
 	if err := c.DA.Validate(); err != nil {
 		return err
 	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && c.MessageExtraction.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da is not supported with message-extraction.enable=true")
+	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -286,27 +289,31 @@ func ConfigDefaultL2Test() *Config {
 }
 
 type DangerousConfig struct {
-	NoL1Listener           bool `koanf:"no-l1-listener"`
-	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
-	DisableBlobReader      bool `koanf:"disable-blob-reader"`
+	NoL1Listener                  bool `koanf:"no-l1-listener"`
+	NoSequencerCoordinator        bool `koanf:"no-sequencer-coordinator"`
+	DisableBlobReader             bool `koanf:"disable-blob-reader"`
+	AlwaysFallbackToParentChainDA bool `koanf:"always-fallback-to-parent-chain-da"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	NoL1Listener:           false,
-	NoSequencerCoordinator: false,
-	DisableBlobReader:      false,
+	NoL1Listener:                  false,
+	NoSequencerCoordinator:        false,
+	DisableBlobReader:             false,
+	AlwaysFallbackToParentChainDA: false,
 }
 
 var TestDangerousConfig = DangerousConfig{
-	NoL1Listener:           false,
-	NoSequencerCoordinator: false,
-	DisableBlobReader:      true,
+	NoL1Listener:                  false,
+	NoSequencerCoordinator:        false,
+	DisableBlobReader:             true,
+	AlwaysFallbackToParentChainDA: false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
+	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! makes the node behave as if the AnyTrust DA committee is unavailable: skips the AnyTrust-required check, forces the batch poster to always post to the parent chain (calldata / 4844 blobs) even if a DAC writer is configured, and converts AnyTrust messages encountered during sync into a fatal error. Intended for chains being deprecated off AnyTrust (e.g. Nova).")
 }
 
 type Node struct {
@@ -643,75 +650,75 @@ func getDAProviders(
 		}
 	}
 
-	// Create AnyTrust DA provider if enabled (can coexist with external DA)
+	// Create AnyTrust DA provider if enabled (can coexist with external DA).
 	if config.DA.AnyTrust.Enable {
-		// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
-		if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
-			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to da.anytrust.max-batch-size")
-			config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
-		}
+		if config.Dangerous.AlwaysFallbackToParentChainDA {
+			log.Error("DANGEROUS: ignoring DA.AnyTrust.Enable; node will halt on the first AnyTrust batch encountered")
+		} else {
+			// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
+			if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
+				log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to da.anytrust.max-batch-size")
+				config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
+			}
 
-		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
+			log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
 
-		// Create AnyTrust factory
-		daFactory := anytrust.NewFactory(
-			&config.DA.AnyTrust,
-			dataSigner,
-			l1client,
-			l1Reader,
-			deployInfo.SequencerInbox,
-			config.BatchPoster.Enable,
-		)
-		log.Info("Created AnyTrust DA factory")
+			daFactory := anytrust.NewFactory(
+				&config.DA.AnyTrust,
+				dataSigner,
+				l1client,
+				l1Reader,
+				deployInfo.SequencerInbox,
+				config.BatchPoster.Enable,
+			)
+			log.Info("Created AnyTrust DA factory")
 
-		if err := daFactory.ValidateConfig(); err != nil {
-			return nil, nil, nil, err
-		}
+			if err := daFactory.ValidateConfig(); err != nil {
+				return nil, nil, nil, err
+			}
 
-		var localCleanupFuncs []func()
-		reader, readerCleanup, err := daFactory.CreateReader(ctx)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if readerCleanup != nil {
-			localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
-		}
-
-		var writer daprovider.Writer
-		if config.BatchPoster.Enable {
-			var writerCleanup func()
-			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
+			var localCleanupFuncs []func()
+			reader, readerCleanup, err := daFactory.CreateReader(ctx)
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			if writerCleanup != nil {
-				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
+			if readerCleanup != nil {
+				localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
 			}
-			if writer != nil {
-				writers = append(writers, writer)
-				log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
-			}
-		}
 
-		headerBytes := daFactory.GetSupportedHeaderBytes()
-		// Register AnyTrust reader directly (no validator for AnyTrust)
-		for _, hb := range headerBytes {
-			if err := dapRegistry.Register(hb, reader, nil); err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
+			var writer daprovider.Writer
+			if config.BatchPoster.Enable {
+				var writerCleanup func()
+				writer, writerCleanup, err = daFactory.CreateWriter(ctx)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				if writerCleanup != nil {
+					localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
+				}
+				if writer != nil {
+					writers = append(writers, writer)
+					log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
+				}
 			}
-		}
 
-		// Create cleanup function for AnyTrust
-		anytrustCleanup := func() {
-			for _, cleanup := range localCleanupFuncs {
-				cleanup()
+			headerBytes := daFactory.GetSupportedHeaderBytes()
+			for _, hb := range headerBytes {
+				if err := dapRegistry.Register(hb, reader, nil); err != nil {
+					return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
+				}
 			}
+
+			anytrustCleanup := func() {
+				for _, cleanup := range localCleanupFuncs {
+					cleanup()
+				}
+			}
+			cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 		}
-		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
-	// Check if chain requires AnyTrust but none is configured
-	// We support a nil txStreamer for the pruning code
+	// We support a nil txStreamer for the pruning code.
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		if !config.DA.AnyTrust.Enable {
 			return nil, nil, nil, errors.New("AnyTrust DA service required but unconfigured")
@@ -729,6 +736,12 @@ func getDAProviders(
 	if dapRegistry.GetReader(daprovider.DACertificateMessageHeaderFlag) == nil {
 		if err := dapRegistry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register fallback DACert reader: %w", err)
+		}
+	}
+
+	if config.Dangerous.AlwaysFallbackToParentChainDA {
+		if err := dapRegistry.SetupAnyTrustReader(&daprovider.DangerousAlwaysFallbackReader{}, nil); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register dangerous fallback AnyTrust reader: %w", err)
 		}
 	}
 
@@ -754,6 +767,7 @@ func getInboxTrackerAndReader(
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
+	fatalErrChan chan<- error,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
 		log.Info("Inbox reader and tracker disabled")
@@ -764,7 +778,7 @@ func getInboxTrackerAndReader(
 		return nil, nil, err
 	}
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader }, fatalErrChan)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1427,7 +1441,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}

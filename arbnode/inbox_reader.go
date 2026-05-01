@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -96,13 +97,14 @@ type InboxReader struct {
 	caughtUpChan   chan struct{}
 	client         *ethclient.Client
 	l1Reader       *headerreader.HeaderReader
+	fatalErrChan   chan<- error
 
 	// Atomic
 	lastSeenBatchCount atomic.Uint64
 	lastReadBatchCount atomic.Uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher, fatalErrChan chan<- error) (*InboxReader, error) {
 	err := config().Validate()
 	if err != nil {
 		return nil, err
@@ -116,6 +118,7 @@ func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *h
 		firstMessageBlock: firstMessageBlock,
 		caughtUpChan:      make(chan struct{}),
 		config:            config,
+		fatalErrChan:      fatalErrChan,
 	}, nil
 }
 
@@ -131,6 +134,15 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 				log.Info("stopping block creation in inbox reader because transaction streamer has stopped")
 				close(runChan)
 			}
+			if errors.Is(err, daprovider.ErrAnyTrustRequiresFallback) {
+				log.Error("inbox reader halting", "err", err)
+				select {
+				case r.fatalErrChan <- fmt.Errorf("inbox reader: %w", err):
+				case <-ctx.Done():
+				}
+				close(runChan)
+				return time.Hour
+			}
 			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
 				log.Warn("error reading inbox", "err", err)
 				hadError = true
@@ -144,8 +156,13 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Ensure we read the init message before other things start up
+	// Ensure we read the init message before other things start up.
 	for i := 0; ; i++ {
+		select {
+		case <-runChan:
+			return errors.New("inbox reader: run loop exited before init message read")
+		default:
+		}
 		batchCount, err := r.tracker.GetBatchCount()
 		if err != nil {
 			return err
