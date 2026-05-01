@@ -14,11 +14,16 @@ import (
 
 const FilteringReportNamespace = "filteringreport"
 
+// DefaultFilteringReportRPCClientConfig keeps Retries=0 by default. The
+// filter-set-id report is rescheduled on each periodic tick, so transport-
+// level retries would only risk duplicate posts. Filtered-tx reports run
+// through this same client and accept the same trade-off — a network blip
+// drops a single report, which is preferable to the duplicate-delivery risk
+// retries would create downstream.
 var DefaultFilteringReportRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",
 	JWTSecret:                 "",
-	Retries:                   3,
-	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+	Retries:                   0,
 	ArgLogLimit:               2048,
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 }
@@ -52,7 +57,7 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressf
 	})
 }
 
-func (c *FilteringReportRPCClient) ReportCurrentFilterSetId(report addressfilter.FilterSetIdReport) containers.PromiseInterface[struct{}] {
+func (c *FilteringReportRPCClient) ReportCurrentFilterSetId(report *addressfilter.FilterSetIdReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetId", report)
 		return struct{}{}, err

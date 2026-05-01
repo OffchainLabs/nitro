@@ -16,25 +16,29 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-type FilteringReportAPI struct {
-	queueClient        sqsclient.QueueClient
-	filterSetReporting genericconf.HTTPClientConfig
-	httpClient         *http.Client
+type filterSetReporter struct {
+	url    string
+	client *http.Client
 }
 
-// NewFilteringReportAPI builds the API handler. When filterSetReporting.URL
-// is empty, ReportCurrentFilterSetId becomes a no-op so the service can run
-// without external forwarding configured.
-func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting genericconf.HTTPClientConfig) (*FilteringReportAPI, error) {
+type FilteringReportAPI struct {
+	queueClient     sqsclient.QueueClient
+	filterSetReport *filterSetReporter
+}
+
+// NewFilteringReportAPI builds the API handler. When filterSetReporting is
+// nil or has an empty URL, ReportCurrentFilterSetId becomes a no-op so the
+// service can run without external forwarding configured.
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig) (*FilteringReportAPI, error) {
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
 	}
-	api := &FilteringReportAPI{
-		queueClient:        queueClient,
-		filterSetReporting: filterSetReporting,
-	}
-	if filterSetReporting.URL != "" {
-		api.httpClient = &http.Client{Timeout: filterSetReporting.Timeout}
+	api := &FilteringReportAPI{queueClient: queueClient}
+	if filterSetReporting != nil && filterSetReporting.URL != "" {
+		api.filterSetReport = &filterSetReporter{
+			url:    filterSetReporting.URL,
+			client: &http.Client{Timeout: filterSetReporting.Timeout},
+		}
 	}
 	return api, nil
 }
@@ -63,7 +67,7 @@ var DefaultStackConfig = node.Config{
 func NewStack(
 	stackConfig *node.Config,
 	queueClient sqsclient.QueueClient,
-	filterSetReporting genericconf.HTTPClientConfig,
+	filterSetReporting *genericconf.HTTPClientConfig,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {

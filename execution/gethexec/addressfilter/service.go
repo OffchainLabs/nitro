@@ -122,8 +122,6 @@ func (s *FilterService) GetHashStore() *HashStore {
 	return s.hashStore
 }
 
-// CurrentFilterSetId returns the filter-set id of the currently loaded hash
-// list, or uuid.Nil when the service is disabled or no list has been loaded.
 func (s *FilterService) CurrentFilterSetId() uuid.UUID {
 	if !s.config.Enable {
 		return uuid.Nil

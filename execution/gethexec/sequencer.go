@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -1737,8 +1736,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-// isActiveSequencer reports whether this node is currently the active
-// sequencer (i.e. not paused and not forwarding to another sequencer).
 func (s *Sequencer) isActiveSequencer() bool {
 	pauseChan, forwarder := s.GetPauseAndForwarder()
 	return pauseChan == nil && forwarder == nil
@@ -1750,9 +1747,6 @@ func (s *Sequencer) isActiveSequencer() bool {
 // letting a misconfigured node spin on a zero-length wait.
 const filterSetReportingDisabledRetry = time.Minute
 
-// reportFilterSetID POSTs the current address-filter set id to the
-// filtering-report service. A nil address-filter service, missing RPC client
-// or uuid.Nil filter-set id are all treated as nothing-to-report.
 func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if s.addressFilterService == nil {
 		log.Debug("skipping filter-set id report: address-filter service not configured")
@@ -1770,9 +1764,9 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if rpcClient == nil {
 		return nil
 	}
-	_, err := rpcClient.ReportCurrentFilterSetId(addressfilter.FilterSetIdReport{
+	_, err := rpcClient.ReportCurrentFilterSetId(&addressfilter.FilterSetIdReport{
 		FilterSetId: filterSetID,
-		ChainId:     (*hexutil.Big)(s.execEngine.ChainId()),
+		ChainId:     s.execEngine.ChainId().Uint64(),
 		ReportedAt:  time.Now().UTC(),
 	}).Await(ctx)
 	return err

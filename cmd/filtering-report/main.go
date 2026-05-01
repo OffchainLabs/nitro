@@ -220,7 +220,7 @@ func mainImpl() int {
 	fwd.Start(ctx)
 	defer fwd.StopAndWait()
 
-	stack, err := api.NewStack(&stackConf, queueClient, config.FilterSetReporting)
+	stack, err := api.NewStack(&stackConf, queueClient, &config.FilterSetReporting)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

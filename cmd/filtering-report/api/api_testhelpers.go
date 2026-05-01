@@ -12,7 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient, filterSetReporting genericconf.HTTPClientConfig) *node.Node {
+func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig) *node.Node {
 	t.Helper()
 	stackConfig := DefaultStackConfig
 	stackConfig.HTTPHost = "127.0.0.1"

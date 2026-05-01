@@ -20,7 +20,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -28,7 +27,7 @@ import (
 )
 
 func TestLiveness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -41,7 +40,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -54,7 +53,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -80,7 +79,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -98,7 +97,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, mock, genericconf.HTTPClientConfig{})
+	stack, err := NewStack(&stackConfig, mock, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,13 +152,13 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 }
 
 func TestReportCurrentFilterSetId_NoEndpointIsNoOp(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
 	client := stack.Attach()
 	defer client.Close()
 
 	report := addressfilter.FilterSetIdReport{
 		FilterSetId: uuid.New(),
-		ChainId:     (*hexutil.Big)(big.NewInt(42161)),
+		ChainId:     42161,
 		ReportedAt:  time.Now().UTC(),
 	}
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
@@ -191,7 +190,7 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	}))
 	defer server.Close()
 
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
 		URL:     server.URL,
 		Timeout: 5 * time.Second,
 	})
@@ -199,11 +198,11 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	defer client.Close()
 
 	id := uuid.New()
-	chainID := big.NewInt(42161)
+	const chainID uint64 = 42161
 	reportedAt := time.Now().UTC().Truncate(time.Second)
 	report := addressfilter.FilterSetIdReport{
 		FilterSetId: id,
-		ChainId:     (*hexutil.Big)(chainID),
+		ChainId:     chainID,
 		ReportedAt:  reportedAt,
 	}
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
@@ -219,8 +218,8 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	if got.FilterSetId != id {
 		t.Errorf("filter-set id: want %s, got %s", id, got.FilterSetId)
 	}
-	if got.ChainId == nil || got.ChainId.ToInt().Cmp(chainID) != 0 {
-		t.Errorf("chain id: want %s, got %v", chainID, got.ChainId)
+	if got.ChainId != chainID {
+		t.Errorf("chain id: want %d, got %d", chainID, got.ChainId)
 	}
 	if !got.ReportedAt.Equal(reportedAt) {
 		t.Errorf("reported-at: want %s, got %s", reportedAt, got.ReportedAt)
@@ -235,7 +234,7 @@ func TestReportCurrentFilterSetId_Non2xxError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, genericconf.HTTPClientConfig{
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
 		URL:     server.URL,
 		Timeout: 5 * time.Second,
 	})
@@ -244,7 +243,7 @@ func TestReportCurrentFilterSetId_Non2xxError(t *testing.T) {
 
 	report := addressfilter.FilterSetIdReport{
 		FilterSetId: uuid.New(),
-		ChainId:     (*hexutil.Big)(big.NewInt(1)),
+		ChainId:     1,
 		ReportedAt:  time.Now().UTC(),
 	}
 	err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report)

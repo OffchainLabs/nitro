@@ -640,7 +640,10 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 			http.Error(w, "bad json", http.StatusBadRequest)
 			return
 		}
-		reportCh <- report
+		select {
+		case reportCh <- report:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer externalEndpoint.Close()
@@ -654,7 +657,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	filteringReportStack, err := filteringreportapi.NewStack(
 		&stackConfig,
 		&sqsclient.MockQueueClient{},
-		genericconf.HTTPClientConfig{
+		&genericconf.HTTPClientConfig{
 			URL:     externalEndpoint.URL,
 			Timeout: 5 * time.Second,
 		},
@@ -698,7 +701,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	id1 := uuid.New()
 	filterService.GetHashStore().Store(id1, salt, nil, "test-digest-1")
 
-	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainId()
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainId().Uint64()
 	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIdReport {
 		t.Helper()
 		deadline := time.After(10 * time.Second)
@@ -716,8 +719,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	}
 
 	first := waitForReport(id1)
-	require.NotNil(t, first.ChainId, "chain id should be set in report")
-	require.Equal(t, 0, first.ChainId.ToInt().Cmp(expectedChainID), "chain id mismatch: want %s got %s", expectedChainID, first.ChainId.ToInt())
+	require.Equal(t, expectedChainID, first.ChainId, "chain id mismatch")
 	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
 
 	// Rotate the filter set; the next reporting tick must pick up id2.
@@ -725,7 +727,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	filterService.GetHashStore().Store(id2, salt, nil, "test-digest-2")
 
 	second := waitForReport(id2)
-	require.Equal(t, 0, second.ChainId.ToInt().Cmp(expectedChainID), "chain id mismatch after rotation")
+	require.Equal(t, expectedChainID, second.ChainId, "chain id mismatch after rotation")
 	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
 		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
 }

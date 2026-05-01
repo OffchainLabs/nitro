@@ -7,9 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -17,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/httpclient"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -101,27 +100,5 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 }
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.ExternalEndpoint.URL, strings.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if _, drainErr := io.Copy(io.Discard, resp.Body); drainErr != nil {
-			log.Warn("Failed draining response body", "err", drainErr)
-		}
-		resp.Body.Close()
-	}()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024)) // cap error body to avoid unbounded reads
-		if readErr != nil {
-			return fmt.Errorf("external endpoint returned status %d (body read error: %w)", resp.StatusCode, readErr)
-		}
-		return fmt.Errorf("external endpoint returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
+	return httpclient.PostJSONBody(ctx, r.httpClient, r.config.ExternalEndpoint.URL, []byte(body))
 }
