@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_112_694_675",
-  "description": "Regression: tx 0x40ad…c5c0 at Arbitrum Sepolia block 112,694,675 reports gasUsed 2,438,719 locally vs canonical 2,446,219 (Δ = -7,500). Stylus impl 0x4112 behind proxy 0x9652. Captures Stylus pricing divergence at v60+ pricing.",
+  "description": "Regression: Arbitrum Sepolia tx 0x40ad…c5c0 at block 112,694,675 (tx index 153). Canonical Sepolia v32 reports gasUsed=2,446,219; this fixture (synthetic chain at block 1, real impl/proxy bytecode + storage seeded from prestateTracer) reports 2,465,181 (Δ=+18,962). The user-observed Δ on a synced arbreth was -7,500; absolute match requires seeding the full L1 pricing state (l1BaseFeeEstimate=0x97529fa4 at parent block, surplus, inertia, etc.) which we do not yet do. Use as a Stylus-runtime regression target — gasUsed will move when Stylus gas charging changes.",
   "genesis": {
     "alloc": {
       "0x6dc0fc4344817aba1e28841b8a144ca6bdda0e98": {
@@ -174,7 +174,7 @@
         "DataAvailabilityCommittee": false,
         "EnableArbOS": true,
         "GenesisBlockNum": 0,
-        "InitialArbOSVersion": 60,
+        "InitialArbOSVersion": 32,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000"
       },
       "berlinBlock": 0,
@@ -207,7 +207,7 @@
       "delayedMessagesRead": 1,
       "message": {
         "header": {
-          "baseFeeL1": 0,
+          "baseFeeL1": 5668302373,
           "blockNumber": 7411223,
           "kind": 3,
           "sender": "0xa4b000000000000000000073657175656e636572",
