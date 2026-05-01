@@ -196,6 +196,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				errors.Is(err, ErrIncorrectChainId) ||
 				errors.Is(err, ErrMissingFeedServerVersion) ||
 				errors.Is(err, ErrIncorrectFeedServerVersion) {
+				log.Error("Fatal feed connection error, node will shut down", "url", bc.websocketUrl, "err", err)
 				select {
 				case bc.fatalErrChan <- fmt.Errorf("failed connecting to server feed due to %w", err):
 				case <-ctx.Done():
@@ -336,7 +337,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		}
 	}
 	if !compressionNegotiated && config.EnableCompression {
-		log.Warn("Compression was not negotiated when connecting to feed server.")
+		log.Warn("Compression was not negotiated when connecting to feed server, non-critical: node will continue without compression")
 	}
 	if compressionNegotiated && !config.EnableCompression {
 		err := conn.Close()
