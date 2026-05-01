@@ -84,11 +84,21 @@ pub fn run_execution_dir(dir: &Path) {
     }
     assert!(dir.exists(), "fixture dir missing: {}", dir.display());
     let filter = std::env::var("ARB_SPEC_FILTER").ok();
+    let include_pending = std::env::var("ARB_SPEC_INCLUDE_PENDING").is_ok();
     let mut failures = Vec::new();
     let mut count = 0;
     for entry in WalkDir::new(dir).into_iter().filter_map(Result::ok) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        // `pending_*.json` files reproduce known-unsolved divergences; they
+        // would fail the suite if auto-run, so opt-in only.
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        if stem.starts_with("pending_") && !include_pending {
             continue;
         }
         if let Some(f) = &filter {

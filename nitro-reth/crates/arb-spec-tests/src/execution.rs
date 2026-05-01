@@ -573,12 +573,11 @@ fn verify_storage(client: &RpcClient, exp: &ExpectedStorage) -> Result<(), SpecE
 }
 
 fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), SpecError> {
-    // Only enforce log content when the fixture pinned logs explicitly.
-    // Other receipt fields (gas_used, status, etc.) are advisory-only here
-    // because they were recorded against a captured Nitro and may drift.
-    let Some(want_logs) = exp.logs.as_ref() else {
+    // Skip the RPC call entirely if the fixture didn't pin anything we
+    // actually compare. Logs, gas_used, and status are checked when set.
+    if exp.logs.is_none() && exp.gas_used.is_none() && exp.status.is_none() {
         return Ok(());
-    };
+    }
     let receipt: serde_json::Value = client
         .call(
             "eth_getTransactionReceipt",
@@ -591,22 +590,68 @@ fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), 
             exp.tx_hash
         )));
     }
-    let got_logs = receipt
-        .get("logs")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| {
-            SpecError::Assertion(format!("receipt {} missing logs array", exp.tx_hash))
+
+    if let Some(want_gas) = exp.gas_used {
+        let got_str = receipt
+            .get("gasUsed")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                SpecError::Assertion(format!("receipt {} missing gasUsed", exp.tx_hash))
+            })?;
+        let got = u64::from_str_radix(got_str.trim_start_matches("0x"), 16).map_err(|e| {
+            SpecError::Assertion(format!(
+                "receipt {} parse gasUsed {got_str}: {e}",
+                exp.tx_hash
+            ))
         })?;
-    if got_logs.len() != want_logs.len() {
-        return Err(SpecError::Assertion(format!(
-            "receipt {} log count: got {}, want {}",
-            exp.tx_hash,
-            got_logs.len(),
-            want_logs.len()
-        )));
+        if got != want_gas {
+            return Err(SpecError::Assertion(format!(
+                "receipt {} gasUsed: got {got}, want {want_gas} (Δ = {})",
+                exp.tx_hash,
+                got as i128 - want_gas as i128
+            )));
+        }
     }
-    for (i, (want, got)) in want_logs.iter().zip(got_logs.iter()).enumerate() {
-        verify_log(&exp.tx_hash, i, want, got)?;
+
+    if let Some(want_status) = exp.status {
+        let got_str = receipt
+            .get("status")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                SpecError::Assertion(format!("receipt {} missing status", exp.tx_hash))
+            })?;
+        let got = u8::from_str_radix(got_str.trim_start_matches("0x"), 16).map_err(|e| {
+            SpecError::Assertion(format!(
+                "receipt {} parse status {got_str}: {e}",
+                exp.tx_hash
+            ))
+        })?;
+        if got != want_status {
+            return Err(SpecError::Assertion(format!(
+                "receipt {} status: got {got}, want {want_status}",
+                exp.tx_hash
+            )));
+        }
+    }
+
+    if let Some(want_logs) = exp.logs.as_ref() {
+        let got_logs = receipt
+            .get("logs")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| {
+                SpecError::Assertion(format!("receipt {} missing logs array", exp.tx_hash))
+            })?;
+        if got_logs.len() != want_logs.len() {
+            return Err(SpecError::Assertion(format!(
+                "receipt {} log count: got {}, want {}",
+                exp.tx_hash,
+                got_logs.len(),
+                want_logs.len()
+            )));
+        }
+        for (i, (want, got)) in want_logs.iter().zip(got_logs.iter()).enumerate() {
+            verify_log(&exp.tx_hash, i, want, got)?;
+        }
     }
     Ok(())
 }

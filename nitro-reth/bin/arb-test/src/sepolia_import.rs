@@ -56,18 +56,32 @@ fn refresh_storage(args: RefreshArgs) -> Result<()> {
     )?;
     let mut storage_addrs: Vec<String> = Vec::new();
     collect_storage_addrs(&call_tree, &lower(tx_to(&tx)?), &mut storage_addrs);
-    storage_addrs.sort();
-    storage_addrs.dedup();
-    eprintln!(
-        "storage contexts in call tree ({}):\n  {}",
-        storage_addrs.len(),
-        storage_addrs.join("\n  ")
-    );
 
     let prestate = rpc.call(
         "debug_traceTransaction",
         json!([args.tx, {"tracer": "prestateTracer", "tracerConfig": {"diffMode": false}}]),
     )?;
+    // Also include any prestate address that has storage but never appears
+    // as a CALL target (e.g. the ArbOS-state pseudo-address 0xa4b05f...).
+    if let Some(map) = prestate.as_object() {
+        for (key, val) in map {
+            if val
+                .get("storage")
+                .and_then(Value::as_object)
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+            {
+                storage_addrs.push(lower(key));
+            }
+        }
+    }
+    storage_addrs.sort();
+    storage_addrs.dedup();
+    eprintln!(
+        "storage contexts in call tree+prestate ({}):\n  {}",
+        storage_addrs.len(),
+        storage_addrs.join("\n  ")
+    );
 
     let alloc_obj = fixture
         .pointer_mut("/genesis/alloc")
