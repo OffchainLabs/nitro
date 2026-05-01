@@ -9,6 +9,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Added
 
 - Add `make help` for top-level Makefile targets
+- Add consensus v60-rc.4 to Dockerfile
 
 ### Changed
 
