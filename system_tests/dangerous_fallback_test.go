@@ -131,6 +131,7 @@ func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
 
 	waitForAnyTrustBatchOnL1(t, ctx, builder, 30*time.Second)
 
+	// Setup syncing node that should fatal error
 	nodeBFatalErrChan := make(chan error, 10)
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.BlockValidator.Enable = false

@@ -313,7 +313,7 @@ func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
-	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! makes the node behave as if the AnyTrust DA committee is unavailable: skips the AnyTrust-required check, forces the batch poster to always post to the parent chain (calldata / 4844 blobs) even if a DAC writer is configured, and converts AnyTrust messages encountered during sync into a fatal error. Intended for chains being deprecated off AnyTrust (e.g. Nova).")
+	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! makes the node behave as if the AnyTrust DA committee is unavailable: skips the AnyTrust-required check, forces the batch poster to always post to the parent chain (calldata / 4844 blobs) even if a DAC writer is configured")
 }
 
 type Node struct {
