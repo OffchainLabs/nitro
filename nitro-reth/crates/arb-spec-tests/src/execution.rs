@@ -627,6 +627,22 @@ fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), 
                 eprintln!("[arb-spec] arbos.{label} @ {block_tag} = {v}");
             }
         }
+        // Block context probe: ts, baseFee, l1BlockNumber per block.
+        for block_tag in &["0x0", "latest"] {
+            if let Ok(b) = client.call::<serde_json::Value>(
+                "eth_getBlockByNumber",
+                serde_json::json!([block_tag, false]),
+            ) {
+                eprintln!(
+                    "[arb-spec] block {block_tag}: timestamp={} baseFee={} number={}",
+                    b.get("timestamp").and_then(|v| v.as_str()).unwrap_or(""),
+                    b.get("baseFeePerGas")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                    b.get("number").and_then(|v| v.as_str()).unwrap_or(""),
+                );
+            }
+        }
     }
     // Skip the RPC call entirely if the fixture didn't pin anything we
     // actually compare. Logs, gas_used, and status are checked when set.
