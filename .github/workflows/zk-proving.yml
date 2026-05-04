@@ -21,7 +21,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           submodules: recursive
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
