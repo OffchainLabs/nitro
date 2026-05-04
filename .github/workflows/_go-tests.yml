@@ -87,7 +87,8 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
-      - uses: ./.github/actions/init-submodules
+      - id: submods
+        uses: ./.github/actions/init-submodules
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
@@ -265,6 +266,8 @@ jobs:
 
       - name: run execution spec tests
         if: inputs.run-execution-spec-tests
+        env:
+          PRIVATE_REPO_TOKEN: ${{ steps.submods.outputs.token }}
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       # --------------------- PEBBLE MODE ---------------------
