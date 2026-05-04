@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time::SystemTime};
 
 use clap::Parser;
-use sp1_core_executor::{MinimalExecutor, Program};
+use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::{Elf, include_elf};
 use wasmer::{
     Module, Store,
@@ -105,7 +105,7 @@ fn main() {
         assert!(!std::fs::exists(&output).unwrap());
 
         let program = Arc::new(Program::from(&PROGRAM_ELF).expect("parse elf"));
-        let mut executor = MinimalExecutor::simple(program);
+        let mut executor = MinimalExecutor::<UserMode>::simple(program);
         executor.with_input(&wasmu_binary);
         executor.with_input(function_names_json.as_bytes());
         // The executed program expects an Arbitrum block, sending it an
