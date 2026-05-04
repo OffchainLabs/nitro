@@ -869,10 +869,9 @@ func TestIsWasmDb(t *testing.T) {
 }
 
 func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
-	initConfig := conf.InitConfig{
-		GenesisJsonFile: "./genesis.json",
-		Empty:           true,
-	}
+	initConfig := conf.InitConfigDefault
+	initConfig.GenesisJsonFile = "./genesis.json"
+	initConfig.Empty = true
 	err := initConfig.Validate()
 	if err == nil {
 		t.Fatal("expected error when both GenesisJsonFile and Empty are set")
