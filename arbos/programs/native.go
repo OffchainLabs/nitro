@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -517,7 +518,7 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 func doStylusCall(
 	asm []byte,
 	calldata []byte,
-	stylusParams *ProgParams,
+	progParams *ProgParams,
 	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
@@ -525,15 +526,16 @@ func doStylusCall(
 	evmData *EvmData,
 	debug bool,
 	runCtx *core.MessageRunContext,
+	stylusParams *StylusParams,
 ) (userStatus, []byte) {
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
 	defer evmApi.drop()
 
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
 		goSlice(asm),
 		goSlice(calldata),
-		stylusParams.encode(),
+		progParams.encode(),
 		evmApi.cNative,
 		evmData.encode(),
 		cbool(debug),
@@ -580,7 +582,7 @@ func callProgram(
 	saved := saveState(scope, db)
 
 	// First attempt with the locally-compiled ASM (singlepass or cranelift, depending on activation).
-	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, params)
 
 	if status == userNativeStackOverflow {
 		status, output = handleNativeStackOverflow(
@@ -602,6 +604,12 @@ func callProgram(
 			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain(), GetNativeStackSize()))
 	}
 	data, msg, err := status.toResult(output, debug)
+
+	if err != nil && strings.Contains(msg, "memory.fill value exceeds 8 bits") {
+		log.Error("memory.fill value overflow triggered")
+		evm.StateDB.FilterTx()
+	}
+
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -663,7 +671,7 @@ func handleNativeStackOverflow(
 	// host I/O before the overflow, then retry with cranelift.
 	saved.restore(scope, db)
 
-	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, params)
 }
 
 // getCraneliftAsm returns cranelift-compiled ASM for the given module.

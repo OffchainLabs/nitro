@@ -33,7 +33,7 @@ runs:
       uses: ./.github/actions/install-rust
 
     - name: Setup Foundry
-      uses: foundry-rs/foundry-toolchain@v1
+      uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10  # v1
       with:
         cache: false
         version: v1.0.0

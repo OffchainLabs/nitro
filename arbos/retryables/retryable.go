@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -26,6 +27,7 @@ const RetryableReapPrice = 58000
 type RetryableState struct {
 	retryables   *storage.Storage
 	TimeoutQueue *storage.Queue
+	ArbosVersion uint64
 }
 
 var (
@@ -37,10 +39,11 @@ func InitializeRetryableState(sto *storage.Storage) error {
 	return storage.InitializeQueue(sto.OpenCachedSubStorage(timeoutQueueKey))
 }
 
-func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
+func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB, arbosVersion uint64) *RetryableState {
 	return &RetryableState{
-		sto,
-		storage.OpenQueue(sto.OpenCachedSubStorage(timeoutQueueKey)),
+		retryables:   sto,
+		TimeoutQueue: storage.OpenQueue(sto.OpenCachedSubStorage(timeoutQueueKey)),
+		ArbosVersion: arbosVersion,
 	}
 }
 
@@ -105,12 +108,31 @@ func (rs *RetryableState) CreateRetryable(
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) (*Retryable, error) {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	timeoutStorage := sto.OpenStorageBackedUint64(timeoutOffset)
+	windowsLeftStorage := sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
 	timeout, err := timeoutStorage.Get()
-	if timeout == 0 || timeout < currentTimestamp || err != nil {
-		// Either no retryable here (real retryable never has a zero timeout),
-		// Or the timeout has expired and the retryable will soon be reaped,
+	if timeout == 0 || err != nil {
+		// no retryable here (real retryable never has a zero timeout)
 		// Or the user is out of gas
 		return nil, err
+	}
+	// Past raw timeout at ArbOS v60+, Keepalive may have extended the lifetime
+	// via timeoutWindowsLeft before TryToReapOneRetryable advanced the stored
+	// timeout. Gating the SLOAD on the expired branch keeps live retryables at
+	// pre-v60 gas.
+	if timeout < currentTimestamp {
+		effectiveTimeout := timeout
+		if rs.ArbosVersion >= params.ArbosVersion_60 {
+			var windowsLeft uint64
+			windowsLeft, err = windowsLeftStorage.Get()
+			if err != nil {
+				return nil, err
+			}
+			effectiveTimeout = timeout + windowsLeft*RetryableLifetimeSeconds
+		}
+		if effectiveTimeout < currentTimestamp {
+			// the timeout has expired and the retryable will soon be reaped
+			return nil, nil
+		}
 	}
 	return &Retryable{
 		id:                 id,
@@ -122,7 +144,7 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		beneficiary:        sto.OpenStorageBackedAddress(beneficiaryOffset),
 		calldata:           sto.OpenStorageBackedBytes(calldataKey),
 		timeout:            timeoutStorage,
-		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
+		timeoutWindowsLeft: windowsLeftStorage,
 	}, nil
 }
 

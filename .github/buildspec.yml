@@ -2,17 +2,45 @@
 version: 0.2
 
 env:
+  shell: bash
   exported-variables:
     - IMAGE_TAG
 
 phases:
   pre_build:
     commands:
-      - git submodule update --init --recursive
+      - |
+        set -euo pipefail
+        if [ -n "${GITHUB_APP_KEY:-}" ]; then
+          # Cover both secrets on any exit path — GITHUB_TOKEN is locally-minted
+          # here, so CodeBuild does not auto-mask it.
+          trap 'rm -f /tmp/github-app-key.pem; unset GITHUB_TOKEN' EXIT
+          printf '%s' "$GITHUB_APP_KEY" > /tmp/github-app-key.pem
+          NOW=$(date +%s)
+          HEADER=$(printf '%s' '{"alg":"RS256","typ":"JWT"}' | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          PAYLOAD=$(printf '%s' "{\"iat\":$((NOW-30)),\"exp\":$((NOW+570)),\"iss\":\"${GITHUB_APP_ID}\"}" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          SIGNATURE=$(printf '%s' "${HEADER}.${PAYLOAD}" | openssl dgst -sha256 -sign /tmp/github-app-key.pem -binary | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          JWT="${HEADER}.${PAYLOAD}.${SIGNATURE}"
+          TOKEN_RESPONSE=$(curl -sS --fail-with-body --max-time 30 -X POST \
+            -H "Authorization: Bearer ${JWT}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens")
+          export GITHUB_TOKEN
+          GITHUB_TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.token // empty')
+          if [ -z "$GITHUB_TOKEN" ]; then
+            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9]+/\1REDACTED/g')
+            echo "ERROR: installation token missing from response: ${redacted}" >&2
+            exit 1
+          fi
+          rm -f /tmp/github-app-key.pem
+          scripts/ci-init-submodules.sh
+        else
+          git submodule update --init --recursive
+        fi
       - echo Logging in to Dockerhub....
-      - docker login --username $DOCKERHUB_USERNAME --password $DOCKERHUB_PASSWORD
-      - aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $REPOSITORY_URI
-      - COMMIT_HASH=$(git rev-parse --short=7 HEAD || echo "latest")
+      - printf '%s' "$DOCKERHUB_PASSWORD" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+      - aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin "$REPOSITORY_URI"
+      - COMMIT_HASH=$(git rev-parse --short=7 HEAD)
       - >-
         VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV |
         sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' |
@@ -30,17 +58,47 @@ phases:
     commands:
       - echo Build started on `date`
       - echo Building the Docker image ${NITRO_VERSION}...
-      - >-
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim --target nitro-node-slim $BUILD_ARGS
-      - >-
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node --target nitro-node $BUILD_ARGS
-      - >-
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-dev --target nitro-node-dev $BUILD_ARGS
-      - DOCKER_BUILDKIT=1 docker build . --tag nitro-node-validator --target nitro-node-validator $BUILD_ARGS
+      - |
+        set -euo pipefail
+        # CodeBuild does not propagate env between phases (only IMAGE_TAG is
+        # in exported-variables), and installation tokens expire in ~10 min.
+        # Re-mint here so the docker builds can forward a fresh token to
+        # BuildKit as the gh_token secret consumed by scripts/download-machine.sh.
+        build_secret_arg=""
+        if [ -n "${GITHUB_APP_KEY:-}" ]; then
+          trap 'rm -f /tmp/github-app-key.pem; unset GITHUB_TOKEN' EXIT
+          printf '%s' "$GITHUB_APP_KEY" > /tmp/github-app-key.pem
+          NOW=$(date +%s)
+          HEADER=$(printf '%s' '{"alg":"RS256","typ":"JWT"}' | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          PAYLOAD=$(printf '%s' "{\"iat\":$((NOW-30)),\"exp\":$((NOW+570)),\"iss\":\"${GITHUB_APP_ID}\"}" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          SIGNATURE=$(printf '%s' "${HEADER}.${PAYLOAD}" | openssl dgst -sha256 -sign /tmp/github-app-key.pem -binary | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          JWT="${HEADER}.${PAYLOAD}.${SIGNATURE}"
+          TOKEN_RESPONSE=$(curl -sS --fail-with-body --max-time 30 -X POST \
+            -H "Authorization: Bearer ${JWT}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens")
+          export GITHUB_TOKEN
+          GITHUB_TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.token // empty')
+          if [ -z "$GITHUB_TOKEN" ]; then
+            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9]+/\1REDACTED/g')
+            echo "ERROR: installation token missing from response: ${redacted}" >&2
+            exit 1
+          fi
+          rm -f /tmp/github-app-key.pem
+          build_secret_arg="--secret id=gh_token,env=GITHUB_TOKEN"
+        fi
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim --target nitro-node-slim ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node --target nitro-node ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-dev --target nitro-node-dev ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-validator --target nitro-node-validator ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim-stripped --target nitro-node-slim-stripped ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-stripped --target nitro-node-stripped ${BUILD_ARGS:-} $build_secret_arg
       - docker tag nitro-node:latest $REPOSITORY_URI:$IMAGE_TAG-$ARCH_TAG
       - docker tag nitro-node-slim:latest $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
       - docker tag nitro-node-dev:latest $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG
       - docker tag nitro-node-validator:latest $REPOSITORY_URI:$IMAGE_TAG-validator-$ARCH_TAG
+      - docker tag nitro-node-slim-stripped:latest $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-$ARCH_TAG
+      - docker tag nitro-node-stripped:latest $REPOSITORY_URI:$IMAGE_TAG-stripped-$ARCH_TAG
   post_build:
     commands:
       - echo Build completed on `date`
@@ -49,3 +107,5 @@ phases:
       - docker push $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
       - docker push $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG
       - docker push $REPOSITORY_URI:$IMAGE_TAG-validator-$ARCH_TAG
+      - docker push $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-$ARCH_TAG
+      - docker push $REPOSITORY_URI:$IMAGE_TAG-stripped-$ARCH_TAG

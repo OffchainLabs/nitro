@@ -53,6 +53,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
 		DbDirectory:            tmpDir,
+		StreamTimeout:          time.Minute,
 		Wallet: genericconf.WalletConfig{
 			PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
 		},
@@ -110,9 +111,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 
 	// We verify that the auctioneer has consumed all validated bids from the single Redis stream.
 	// We also verify the top two bids are those we expect.
-	am.bidCache.Lock()
-	require.Equal(t, 3, len(am.bidCache.bidsByExpressLaneControllerAddr))
-	am.bidCache.Unlock()
+	require.Equal(t, 3, am.bidCache.size())
 	result := am.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(7), result.firstPlace.Amount) // Best bid should be Charlie's last bid 7
 	require.Equal(t, charlieAddr, result.firstPlace.Bidder)
@@ -142,6 +141,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ConsumerConfig:         DefaultAuctioneerConsumerConfig,
+			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDir,
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
@@ -203,9 +203,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	// Verify first auctioneer state before restart
-	auctioneer.bidCache.Lock()
-	require.Equal(t, 3, len(auctioneer.bidCache.bidsByExpressLaneControllerAddr))
-	auctioneer.bidCache.Unlock()
+	require.Equal(t, 3, auctioneer.bidCache.size())
 
 	result := auctioneer.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(20), result.firstPlace.Amount)
@@ -238,13 +236,9 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	// Verify new auctioneer state - Alice should still be winning with 20
-	newAuctioneer.bidCache.Lock()
-	bidCount := len(newAuctioneer.bidCache.bidsByExpressLaneControllerAddr)
-	newAuctioneer.bidCache.Unlock()
-
 	// We expect either 2 or 3 bids in the cache, depending on whether the new auctioneer recovered
 	// Alice's bid from the database or received it from Redis
-	require.GreaterOrEqual(t, bidCount, 2)
+	require.GreaterOrEqual(t, newAuctioneer.bidCache.size(), 2)
 
 	result = newAuctioneer.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(20), result.firstPlace.Amount, "Alice should still be the highest bidder after restart")
@@ -305,6 +299,39 @@ func TestRetryUntil(t *testing.T) {
 		}
 	})
 
+	t.Run("DeadlineAlreadyPassed", func(t *testing.T) {
+		var currentAttempt int
+		successAfter := 1
+		retryInterval := 100 * time.Millisecond
+		endTime := time.Now().Add(-time.Second) // already in the past
+
+		err := retryUntil(context.Background(), mockOperation(successAfter, &currentAttempt), retryInterval, endTime)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "operation not attempted")
+		require.Equal(t, 0, currentAttempt, "operation should never have been called")
+	})
+
+	t.Run("ContextCancelPreservesLastError", func(t *testing.T) {
+		retryInterval := 500 * time.Millisecond
+		endTime := time.Now().Add(10 * time.Second)
+		opErr := errors.New("specific RPC failure")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			cancel()
+		}()
+
+		start := time.Now()
+		err := retryUntil(ctx, func() error { return opErr }, retryInterval, endTime)
+		elapsed := time.Since(start)
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Contains(t, err.Error(), "specific RPC failure")
+		// Must return promptly after cancellation, not wait for the full retry interval.
+		require.Less(t, elapsed, 400*time.Millisecond, "retryUntil should return promptly on context cancellation")
+	})
+
 	t.Run("ContextCancel", func(t *testing.T) {
 		var currentAttempt int
 		successAfter := 5
@@ -325,6 +352,120 @@ func TestRetryUntil(t *testing.T) {
 			t.Errorf("expected failure due to context cancellation, but operation succeeded")
 		}
 	})
+}
+
+func TestParseAuctioneerLockValue(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		value     string
+		wantId    string
+		wantTs    int64
+		wantValid bool
+	}{
+		{"valid", "myid:1234567890", "myid", 1234567890, true},
+		{"no colon", "nocolon", "", 0, false},
+		{"empty", "", "", 0, false},
+		{"unparseable timestamp", "id:notanumber", "", 0, false},
+		{"empty timestamp", "id:", "", 0, false},
+		{"float timestamp", "id:123.456", "", 0, false},
+		{"negative timestamp", "id:-1000", "", 0, false},
+		{"zero timestamp", "id:0", "", 0, false},
+		{"colon in id", "my:id:123", "", 0, false},
+		{"empty id", ":1234567890", "", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ts, ok := parseAuctioneerLockValue(tt.value)
+			require.Equal(t, tt.wantValid, ok)
+			if ok {
+				require.Equal(t, tt.wantId, id)
+				require.Equal(t, tt.wantTs, ts)
+			}
+		})
+	}
+}
+
+func TestUpdateCoordination_MalformedRedisKey(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	redisURL := redisutil.CreateTestRedis(ctx, t)
+	redisClient, err := redisutil.RedisClientFromURL(redisURL)
+	require.NoError(t, err)
+
+	livenessTimeout := 3 * time.Second
+	a := &AuctioneerServer{
+		redisClient:               redisClient,
+		myId:                      "test-auctioneer",
+		auctioneerLivenessTimeout: livenessTimeout,
+	}
+
+	expectedRetry := livenessTimeout / 6
+
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"no colon separator", "nocolon"},
+		{"empty value", ""},
+		{"unparseable timestamp", "someid:notanumber"},
+		{"timestamp with spaces", "someid: 123"},
+		{"empty timestamp", "someid:"},
+		{"float timestamp", "someid:123.456"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := redisClient.Set(ctx, AUCTIONEER_CHOSEN_KEY, tt.value, 0).Err()
+			require.NoError(t, err)
+
+			result := a.updateCoordination(ctx)
+			require.Equal(t, expectedRetry, result)
+
+			// Key should be deleted after malformed value detected
+			exists, err := redisClient.Exists(ctx, AUCTIONEER_CHOSEN_KEY).Result()
+			require.NoError(t, err)
+			require.Equal(t, int64(0), exists, "malformed key should be deleted")
+		})
+	}
+}
+
+func TestCoordinationInterval_BackoffOnRedisErrors(t *testing.T) {
+	t.Parallel()
+	livenessTimeout := 6 * time.Second
+	a := &AuctioneerServer{
+		auctioneerLivenessTimeout: livenessTimeout,
+	}
+	baseInterval := livenessTimeout / 6
+
+	// No error: returns base interval and resets backoff.
+	require.Equal(t, baseInterval, a.coordinationInterval(false))
+	require.Equal(t, time.Duration(0), a.coordinationBackoff)
+
+	// First error: returns base interval (minimum), sets backoff for next call.
+	interval := a.coordinationInterval(true)
+	require.Equal(t, baseInterval, interval)
+
+	// Second error: backoff doubles.
+	interval = a.coordinationInterval(true)
+	require.Equal(t, baseInterval*2, interval)
+
+	// Third error: doubles again.
+	interval = a.coordinationInterval(true)
+	require.Equal(t, baseInterval*4, interval)
+
+	// Backoff is capped at livenessTimeout.
+	for range 10 {
+		interval = a.coordinationInterval(true)
+	}
+	require.LessOrEqual(t, interval, livenessTimeout)
+
+	// Success resets backoff.
+	interval = a.coordinationInterval(false)
+	require.Equal(t, baseInterval, interval)
+	require.Equal(t, time.Duration(0), a.coordinationBackoff)
 }
 
 // Mock operation function to simulate different scenarios
@@ -371,6 +512,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ConsumerConfig:         testConsumerConfig,
+			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirPrimary,
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
@@ -432,9 +574,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	// Verify primary auctioneer state before failover
-	primary.bidCache.Lock()
-	require.Equal(t, 3, len(primary.bidCache.bidsByExpressLaneControllerAddr))
-	primary.bidCache.Unlock()
+	require.Equal(t, 3, primary.bidCache.size())
 
 	result := primary.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(20), result.firstPlace.Amount)
@@ -460,6 +600,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ConsumerConfig:         testConsumerConfig,
+			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirSecondary, // Different DB directory
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
@@ -497,12 +638,8 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	// Verify secondary auctioneer state - should have all bids including reprocessed ones
-	secondary.bidCache.Lock()
-	bidCount := len(secondary.bidCache.bidsByExpressLaneControllerAddr)
-	secondary.bidCache.Unlock()
-
 	// We expect 3 bidders in the cache
-	require.Equal(t, 3, bidCount, "Should have all 3 bidders after reprocessing")
+	require.Equal(t, 3, secondary.bidCache.size(), "Should have all 3 bidders after reprocessing")
 
 	result = secondary.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(20), result.firstPlace.Amount, "Alice should still be the highest bidder after failover")
@@ -516,11 +653,9 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 
 	// The key test: verify that the secondary processed all the messages
 	// including those that were unacked by the primary
-	secondary.bidCache.Lock()
-	aliceBids := secondary.bidCache.bidsByExpressLaneControllerAddr[aliceAddr]
-	bobBids := secondary.bidCache.bidsByExpressLaneControllerAddr[bobAddr]
-	charlieBids := secondary.bidCache.bidsByExpressLaneControllerAddr[charlieAddr]
-	secondary.bidCache.Unlock()
+	aliceBids := secondary.bidCache.getBid(aliceAddr)
+	bobBids := secondary.bidCache.getBid(bobAddr)
+	charlieBids := secondary.bidCache.getBid(charlieAddr)
 
 	require.NotNil(t, aliceBids, "Should have Alice's bids")
 	require.NotNil(t, bobBids, "Should have Bob's bids")
@@ -534,35 +669,71 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	t.Log("Test complete - secondary successfully reprocessed unacked messages after failover")
 }
 
+func TestPersistBidsChannelFull_BidStillAddedToCache(t *testing.T) {
+	t.Parallel()
+	cache := newBidCache([32]byte{})
+	persistBids := make(chan *ValidatedBid, 1)
+
+	// Fill the persistence channel.
+	persistBids <- &ValidatedBid{
+		Bidder:                common.HexToAddress("0x1"),
+		Amount:                big.NewInt(1),
+		ExpressLaneController: common.HexToAddress("0x1"),
+		ChainId:               big.NewInt(1),
+	}
+
+	// Simulate the bid receiver logic: add to cache then non-blocking send to persist channel.
+	bid := &ValidatedBid{
+		Bidder:                common.HexToAddress("0xA"),
+		Amount:                big.NewInt(100),
+		ExpressLaneController: common.HexToAddress("0xA"),
+		ChainId:               big.NewInt(1),
+	}
+	cache.add(bid)
+	select {
+	case persistBids <- bid:
+		t.Fatal("expected persistence channel to be full")
+	default:
+		// Expected: channel full, bid not persisted but still in cache.
+	}
+
+	// Bid must still be in the cache for auction resolution despite persistence failure.
+	require.Equal(t, 1, cache.size())
+	result := cache.topTwoBids()
+	require.NotNil(t, result.firstPlace)
+	require.Equal(t, common.HexToAddress("0xA"), result.firstPlace.Bidder)
+	require.Equal(t, 0, result.firstPlace.Amount.Cmp(big.NewInt(100)))
+}
+
 func TestAuctioneerServerConfig_Validate(t *testing.T) {
 	tests := []struct {
-		name                   string
-		auctionContractAddress string
-		bidFloorAgentAddress   string
-		s3Storage              S3StorageServiceConfig
-		wantErr                string
+		name                     string
+		auctionContractAddress   string
+		reserveOriginatorAddress string
+		s3Storage                S3StorageServiceConfig
+		wantErr                  string
 	}{
 		{
 			name:    "both addresses empty is valid",
 			wantErr: "",
 		},
 		{
-			name:                 "bid floor agent zero address rejected",
-			bidFloorAgentAddress: "0x0000000000000000000000000000000000000000",
-			wantErr:              "cannot be the zero address",
+			name:                     "reserve originator zero address rejected",
+			reserveOriginatorAddress: "0x0000000000000000000000000000000000000000",
+			wantErr:                  "cannot be the zero address",
 		},
 		{
 			name:                   "valid auction contract address only",
 			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
 		},
 		{
-			name:                 "valid bid floor agent address only",
-			bidFloorAgentAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
+			name:                     "valid reserve originator address only",
+			reserveOriginatorAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
 		},
 		{
-			name:                   "both valid addresses",
-			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
-			bidFloorAgentAddress:   "0xabcdef1234567890abcdef1234567890abcdef12",
+			name:                     "both valid addresses",
+			auctionContractAddress:   "0x1234567890abcdef1234567890abcdef12345678",
+			reserveOriginatorAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
 		},
 		{
 			name:                   "invalid auction contract address",
@@ -570,21 +741,21 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 			wantErr:                "invalid auctioneer-server.auction-contract-address",
 		},
 		{
-			name:                 "invalid bid floor agent address",
-			bidFloorAgentAddress: "not-a-hex-address",
-			wantErr:              "invalid auctioneer-server.bid-floor-agent-address",
+			name:                     "invalid reserve originator address",
+			reserveOriginatorAddress: "not-a-hex-address",
+			wantErr:                  "invalid auctioneer-server.reserve-originator-address",
 		},
 		{
-			name:                   "valid auction contract but invalid bid floor agent",
-			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
-			bidFloorAgentAddress:   "xyz",
-			wantErr:                "invalid auctioneer-server.bid-floor-agent-address",
+			name:                     "valid auction contract but invalid reserve originator",
+			auctionContractAddress:   "0x1234567890abcdef1234567890abcdef12345678",
+			reserveOriginatorAddress: "xyz",
+			wantErr:                  "invalid auctioneer-server.reserve-originator-address",
 		},
 		{
-			name:                   "invalid auction contract checked first",
-			auctionContractAddress: "bad",
-			bidFloorAgentAddress:   "also-bad",
-			wantErr:                "invalid auctioneer-server.auction-contract-address",
+			name:                     "invalid auction contract checked first",
+			auctionContractAddress:   "bad",
+			reserveOriginatorAddress: "also-bad",
+			wantErr:                  "invalid auctioneer-server.auction-contract-address",
 		},
 		{
 			name: "s3 storage validation is delegated",
@@ -592,16 +763,17 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 				Enable:       true,
 				MaxBatchSize: -1,
 			},
-			wantErr: "invalid max-batch-size",
+			wantErr: "s3-storage bucket cannot be empty when enabled",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &AuctioneerServerConfig{
-				AuctionContractAddress: tt.auctionContractAddress,
-				BidFloorAgentAddress:   tt.bidFloorAgentAddress,
-				S3Storage:              tt.s3Storage,
+				AuctionContractAddress:   tt.auctionContractAddress,
+				ReserveOriginatorAddress: tt.reserveOriginatorAddress,
+				StreamTimeout:            time.Minute,
+				S3Storage:                tt.s3Storage,
 			}
 			err := cfg.Validate()
 			if tt.wantErr == "" {
@@ -609,6 +781,21 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
+		})
+	}
+}
+
+func TestAuctioneerServerConfig_Validate_StreamTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{"zero rejected", 0},
+		{"negative rejected", -1 * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &AuctioneerServerConfig{StreamTimeout: tt.timeout}
+			require.ErrorContains(t, cfg.Validate(), "stream-timeout must be positive")
 		})
 	}
 }

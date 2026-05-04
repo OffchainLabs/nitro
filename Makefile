@@ -27,8 +27,20 @@ ifneq ($(origin NITRO_MODIFIED),undefined)
  GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
 endif
 
+# Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go
+# build, and switches cargo to the stripped profile (strip = symbols).
+# Used by the nitro-node-*-stripped Docker targets.
+CARGO_PROFILE = release
+ifeq ($(STRIP),1)
+ GOLANG_LDFLAGS += -s -w
+ CARGO_PROFILE = stripped
+endif
+
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
  GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
+endif
+ifeq ($(STRIP),1)
+ GOLANG_PARAMS += -trimpath
 endif
 
 UNAME_S := $(shell uname -s)
@@ -163,23 +175,45 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
-.PHONY: push
+##@ Setup
+
+.PHONY: init-submodules ## Initialize private submodules.
+init-submodules:
+	scripts/configure-private-submodules.sh
+	scripts/submodule-update-private.sh
+	scripts/configure-private-submodules.sh
+
+.PHONY: check-submodules ## Verify submodule configuration.
+check-submodules:
+	@scripts/check-submodules.sh
+
+##@ Help
+
+.PHONY: help ## Display this help.
+help:
+	@awk 'BEGIN { printf "Usage:\n  make \033[36m<target>\033[0m\n" } /^##@ / { section = substr($$0, 5); printed = 0; next } /^\.PHONY:/ { desc = ""; line = $$0; if (index(line, "##")) { desc = line; sub(/^.*##[[:space:]]*/, "", desc); sub(/[[:space:]]+$$/, "", desc); sub(/[[:space:]]*##.*$$/, "", line) } sub(/^\.PHONY:[[:space:]]*/, "", line); if (!printed && section != "") { printf "\n\033[1m%s\033[0m\n", section; printed = 1 } targets_len = split(line, targets, /[[:space:]]+/); for (i = 1; i <= targets_len; i++) if (targets[i] != "") printf "  \033[36m%-28s\033[0m %s\n", targets[i], desc }' $(MAKEFILE_LIST)
+
+##@ Workflow
+
+.PHONY: push ## Run lint, Go tests, and formatting checks before pushing.
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
-.PHONY: all
+##@ Build
+
+.PHONY: all ## Build primary artifacts and generated proofs.
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-.PHONY: build
+.PHONY: build ## Build Nitro binaries.
 build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
 	@printf $(done)
 
-.PHONY: build-node-deps
+.PHONY: build-node-deps ## Build dependencies needed by Nitro node binaries.
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
 
-.PHONY: test-go-deps
+.PHONY: test-go-deps ## Build dependencies required by Go tests.
 test-go-deps: \
 	build-replay-env \
 	build-validation-server \
@@ -188,70 +222,76 @@ test-go-deps: \
 	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
-.PHONY: build-prover-header
+.PHONY: build-prover-header ## Build the prover generated header.
 build-prover-header: $(arbitrator_generated_header)
 
-.PHONY: build-prover-lib
+.PHONY: build-prover-lib ## Build the prover Stylus library.
 build-prover-lib: $(arbitrator_stylus_lib)
 
-.PHONY: build-prover-bin
+.PHONY: build-prover-bin ## Build the prover binary.
 build-prover-bin: $(prover_bin)
 
-.PHONY: build-jit
+.PHONY: build-jit ## Build the arbitrator JIT binary.
 build-jit: $(arbitrator_jit)
 
-.PHONY: build-validation-server
+.PHONY: build-validation-server ## Build the validation server.
 build-validation-server: $(validation_server)
 
-.PHONY: build-replay-env
+.PHONY: build-replay-env ## Build the replay environment.
 build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br
 
-.PHONY: build-wasm-libs
+.PHONY: build-wasm-libs ## Build arbitrator WASM libraries.
 build-wasm-libs: $(arbitrator_wasm_libs)
 
-.PHONY: build-wasm-bin
+.PHONY: build-wasm-bin ## Build the replay WASM binary.
 build-wasm-bin: $(replay_wasm)
 
-.PHONY: build-solidity
+.PHONY: build-solidity ## Build Solidity contracts.
 build-solidity: .make/solidity
 
-.PHONY: contracts
+.PHONY: contracts ## Generate Go bindings for contracts.
 contracts: .make/solgen
 	@printf $(done)
 
-.PHONY: format fmt
-format fmt: .make/fmt
-	@printf $(done)
+##@ Lint
 
-.PHONY: lint
+.PHONY: format ## Format source files.
+.PHONY: fmt ## Alias for format.
+format: .make/fmt
+	@printf $(done)
+fmt: format
+
+.PHONY: lint ## Run linters.
 lint: .make/lint
 	@printf $(done)
 
-.PHONY: stylus-benchmarks
+##@ Test
+
+.PHONY: stylus-benchmarks ## Run Stylus benchmarks.
 stylus-benchmarks: $(stylus_benchmarks)
 	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
 	@printf $(done)
 
-.PHONY: test-go
+.PHONY: test-go ## Run Go tests.
 test-go: .make/test-go
 	@printf $(done)
 
-.PHONY: test-go-challenge
+.PHONY: test-go-challenge ## Run Go challenge tests.
 test-go-challenge: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestChallenge --tags challengetest --nolog
 	@printf $(done)
 
-.PHONY: test-go-stylus
+.PHONY: test-go-stylus ## Run Go Stylus tests.
 test-go-stylus: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestProgramArbitrator --tags stylustest --nolog
 	@printf $(done)
 
-.PHONY: test-go-redis
+.PHONY: test-go-redis ## Run Go Redis tests.
 test-go-redis: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
-.PHONY: test-gen-proofs
+.PHONY: test-gen-proofs ## Generate prover test proofs.
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
@@ -259,27 +299,29 @@ test-gen-proofs: \
 	contracts/test/prover/proofs/go.json
 	@printf $(done)
 
-.PHONY: test-rust
+.PHONY: test-rust ## Run Rust tests.
 test-rust: .make/test-rust
 	@printf $(done)
 
 # Runs the fastest and most reliable and high-value tests.
-.PHONY: tests
+.PHONY: tests ## Run the fastest and most reliable tests.
 tests: test-go test-rust
 	@printf $(done)
 
 # Runs all tests, including slow and unreliable tests.
 #  Currently, NOT including:
 #  - test-go-redis (These testts require additional setup and are not as reliable)
-.PHONY: tests-all
+.PHONY: tests-all ## Run all tests, including slow and unreliable tests.
 tests-all: tests test-go-challenge test-go-stylus test-gen-proofs
 	@printf $(done)
 
-.PHONY: wasm-ci-build
+.PHONY: wasm-ci-build ## Build WASM artifacts used by CI tests.
 wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
 	@printf $(done)
 
-.PHONY: clean
+##@ Maintenance
+
+.PHONY: clean ## Remove build outputs, generated files, and test caches.
 clean:
 	go clean -testcache
 	rm -rf $(arbitrator_cases)/rust/target
@@ -300,13 +342,35 @@ clean:
 	@rm -rf contracts-local/out contracts-local/forge-cache
 	@rm -f .make/*
 
-.PHONY: docker
-docker:
-	docker build -t nitro-node-slim --target nitro-node-slim .
-	docker build -t nitro-node --target nitro-node .
-	docker build -t nitro-node-dev --target nitro-node-dev .
+define resolve_gh_token_and_secret
+TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}"; \
+if [ -z "$$TOKEN" ] && git config --get remote.origin.url 2>/dev/null | grep -q nitro-private; then \
+	echo "ERROR: in nitro-private without GitHub token; run 'gh auth login' or set GITHUB_TOKEN" >&2; exit 1; \
+fi; \
+SECRET=""; if [ -n "$$TOKEN" ]; then SECRET="--secret id=gh_token,env=GITHUB_TOKEN"; export GITHUB_TOKEN="$$TOKEN"; fi
+endef
 
-.PHONY: check-license-headers
+##@ Docker
+
+.PHONY: docker ## Build Nitro Docker images.
+docker:
+	@$(resolve_gh_token_and_secret); \
+	for t in nitro-node-slim nitro-node nitro-node-dev; do \
+		echo "+ docker build $$SECRET -t $$t --target $$t ."; \
+		docker build $$SECRET -t "$$t" --target "$$t" . || exit 1; \
+	done
+
+.PHONY: docker-machine-versions ## Build Docker image for machine versions.
+docker-machine-versions:
+	@$(resolve_gh_token_and_secret); \
+	for t in machine-versions; do \
+		echo "+ docker build $$SECRET -t nitro-$$t --target $$t ."; \
+		docker build $$SECRET -t "nitro-$$t" --target "$$t" . || exit 1; \
+	done
+
+##@ Checks
+
+.PHONY: check-license-headers ## Check source license headers.
 check-license-headers:
 	@go run ./scripts/licenser.go
 
@@ -374,23 +438,23 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
-	cargo build --release --bin prover ${CARGOFLAGS}
-	install target/release/prover $@
+	cargo build --profile $(CARGO_PROFILE) --bin prover ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/prover $@
 
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
-	cargo build --release --lib -p stylus ${CARGOFLAGS}
-	install target/release/libstylus.a $@
+	cargo build --profile $(CARGO_PROFILE) --lib -p stylus ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --release -p jit ${CARGOFLAGS}
-	install target/release/jit $@
+	cargo build --profile $(CARGO_PROFILE) -p jit ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/jit $@
 
 $(validation_server): $(DEP_PREDICATE) $(validator_files)
 	mkdir -p `dirname $(validation_server)`
-	cargo build --release -p validator ${CARGOFLAGS}
-	install target/release/validator $@
+	cargo build --profile $(CARGO_PROFILE) -p validator ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/validator $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
