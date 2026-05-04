@@ -774,7 +774,9 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		if initDataReader == nil {
 			chainConfig = gethexec.TryReadStoredChainConfig(executionDB)
 			if chainConfig == nil {
-				return nil, nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
+				return nil, nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory. " +
+					"Available modes: --init.latest pruned (recommended for new full nodes), --init.latest archive, --init.url <snapshot-url>. " +
+					"See https://docs.arbitrum.io/run-arbitrum-node/nitro/nitro-database-snapshots for more details")
 			}
 		} else {
 			genesisBlockNr, err := initDataReader.GetNextBlockNumber()
