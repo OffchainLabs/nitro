@@ -40,7 +40,7 @@ import (
 // CheckCommonReportFields asserts FilteredTxReport fields common to every reporter (prechecker, delayed sequencer, regular sequencer).
 func CheckCommonReportFields(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport, tx *types.Transaction) {
 	t.Helper()
-	require.Equal(t, tx.Hash(), report.TxHash, "txHash")
+	require.NotEmpty(t, report.TxHash, "report must have tx hash")
 	require.NotEmpty(t, report.ID, "report ID must be set")
 	require.NotEmpty(t, report.TxRLP, "txRLP must be set")
 	require.NotEmpty(t, report.FilteredAddresses, "report must contain at least one filtered address")
@@ -51,7 +51,12 @@ func CheckCommonReportFields(t *testing.T, ctx context.Context, builder *NodeBui
 
 	var decoded types.Transaction
 	require.NoError(t, decoded.UnmarshalBinary(report.TxRLP), "txRLP should decode")
-	require.Equal(t, tx.Hash(), decoded.Hash(), "decoded txRLP hash should match")
+	require.Equal(t, decoded.Hash(), report.TxHash, "decoded txRLP hash should match txHash field")
+
+	if tx != nil {
+		require.Equal(t, tx.Hash(), report.TxHash, "reported tx hash should match actual tx hash")
+		require.Equal(t, tx.Hash(), decoded.Hash(), "decoded tx hash should match actual tx hash")
+	}
 
 	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
 	require.NoError(t, err)
