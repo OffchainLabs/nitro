@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -42,6 +43,9 @@ func CheckCommonReportFields(t *testing.T, ctx context.Context, builder *NodeBui
 	t.Helper()
 	require.NotEmpty(t, report.TxHash, "report must have tx hash")
 	require.NotEmpty(t, report.ID, "report ID must be set")
+	parsedID, err := uuid.Parse(report.ID)
+	require.NoError(t, err, "report ID must be a valid UUID")
+	require.Equal(t, uuid.Version(7), parsedID.Version(), "report ID must be a UUID v7")
 	require.NotEmpty(t, report.TxRLP, "txRLP must be set")
 	require.NotEmpty(t, report.FilteredAddresses, "report must contain at least one filtered address")
 	require.Equal(t, builder.chainConfig.ChainID.Uint64(), report.ChainID, "chainID")
