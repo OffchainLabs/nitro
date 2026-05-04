@@ -4,6 +4,83 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.10.0-rc.9](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.8...v3.10.0-rc.9) - 2026-04-30
+
+### Added
+
+- Add `make help` for top-level Makefile targets
+- Add consensus v60-rc.4 to Dockerfile
+
+### Changed
+
+- Improved error messages and log clarity for better node operator UX
+
+### Fixed
+
+- Fix ECRECOVER divergence between native execution and the WASM prover
+- Do not require `init.empty=false` when `init.genesis-json-file-directory` provides a custom genesis file
+
+## [v3.10.0-rc.8](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.7...v3.10.0-rc.8) - 2026-04-27
+
+### Configuration
+
+- Add `--execution.disable-arbowner-ethcall` flag to disable ArbOwner precompile calls outside on-chain execution. [[PR]](https://github.com/OffchainLabs/nitro/pull/4591)
+- Add `--stylus-target.native-stack-size` config to set the initial Wasmer coroutine stack size for Stylus execution. [[PR]](https://github.com/OffchainLabs/nitro/pull/4538)
+
+### Added
+
+- `ValidationInputsAt` debug API now includes an `ExpectedEndState` field in the returned JSON, allowing the arbitrator and JIT provers to verify their computed end state when run from the command line with `--json-inputs`. [[PR]](https://github.com/OffchainLabs/nitro/pull/4563)
+- Add ReportFilteredTransactions RPC endpoint to cmd/filtering-report with shared FilteredTxReport types and client method.
+- Add SQS integration and report forwarder for filtered transactions.
+- Add chainId field to FilteredTxReport so consumers can distinguish mainnet vs testnet events.
+- Added precompile gating for ArbOS >= 60.
+
+### Changed
+
+- Update the L2 msgs accumulation from merkle tree to a hash-chain based accumulation and implement extracting of message from the accumulator using preimages. [[PR]](https://github.com/OffchainLabs/nitro/pull/4518)
+- Poll parent chain's `eth_config` RPC (EIP-7910) to dynamically fetch blob schedule configuration. [[PR]](https://github.com/OffchainLabs/nitro/pull/4511)
+- Update the delayed msgs accumulation from merkle tree to a hash-chain based accumulation (Inbox-Outbox) and implement recording of their preimages and subsequently reading them using preimages. [[PR]](https://github.com/OffchainLabs/nitro/pull/4520)
+- Change hashing algorithm for address filtering feature to match the provider specs. [[PR]](https://github.com/OffchainLabs/nitro/pull/4586)
+- Log submitted express lane transactions like eth_sendRawTransaction. [[PR]](https://github.com/OffchainLabs/nitro/pull/4588)
+- Preallocate slice capacity across codebase to reduce memory allocations. [[PR]](https://github.com/OffchainLabs/nitro/pull/4605)
+- Update Stylus SDK to v0.10.3. [[PR]](https://github.com/OffchainLabs/nitro/pull/4621)
+- Replace InboxReader and InboxTracker implementation with Message extractor code. [[PR]](https://github.com/OffchainLabs/nitro/pull/4593)
+- Force net.Dialer to use "tcp4" instead of falling back to "tcp6". [[PR]](https://github.com/OffchainLabs/nitro/pull/4611)
+- Update Go to 1.25.9 in Dockerfile. [[PR]](https://github.com/OffchainLabs/nitro/pull/4625)
+- Pin the Dockerfile `emsdk` clone to the `3.1.46` commit while continuing to install and activate `3.1.7`.
+- ArbOS 60: Increase the default Stylus `MaxWasmSize` to 256 KB and default `MaxFragmentCount` to 4.
+- Make multivalue allowance dependent on Stylus version, instead of on ArbOS version.
+
+### Fixed
+
+- Execution RPC client correctly handles ResultNotFound error. [[PR]](https://github.com/OffchainLabs/nitro/pull/4580)
+- Add some micro-optimization to hashing of address filter implementation. [[PR]](https://github.com/OffchainLabs/nitro/pull/4600)
+- Fix deadlock in `StopWaiterSafe.stopAndWaitImpl` by releasing `RLock` before blocking on `waitChan`. [[PR]](https://github.com/OffchainLabs/nitro/pull/4604)
+- Fix Wasmer stack pool reusing stale smaller stacks after a stack size change. [[PR]](https://github.com/OffchainLabs/nitro/pull/4538)
+- Automatically detect native stack overflow during Stylus execution and recover. [[PR]](https://github.com/OffchainLabs/nitro/pull/4538)
+- BoLD autodeposit no longer attempts to wrap ETH via WETH deposit on non-WETH staking tokens with insufficient balance.
+- Fix bug in L2 message extraction from batch segments and enable previously skipped system_tests.
+- Fixed assertion posting heuristics to make meaningful advancements to the assertion chain.
+- Fix extraPostTxFilter hook call to work with statedb rollback.
+- Shard pathdb and pathdb-MEL CI jobs into A/B halves and run them with `--reduce-parallelism` to eliminate timeout-driven flakes under runner contention.
+- propagate Stylus ArbNodeConfig into ephemeral state databases used by `debug_trace*` RPCs so `MaxStylusOpenPages` is enforced on traced calls.
+- ArbOS 60: retryables extended via `Keepalive` past their original 7-day timeout are now reachable throughout their extended lifetime.
+- Wasmer now enforces the Stylus heap bound as a hard memory maximum, preventing `memory.grow(1<<16)` from succeeding in the JIT when it would fail in the prover.
+- Make make init-submodules work zero-config on SSH-agent-forwarded dev boxes.
+- Fix ArbitrumUnsignedTx marshaling and unmarshaling with maxFeePerGas.
+
+### Internal
+
+- Introduce rustfmt.toml. [[PR]](https://github.com/OffchainLabs/nitro/pull/4579)
+- Extract C-FFI related code from prover crate to prover-ffi. [[PR]](https://github.com/OffchainLabs/nitro/pull/4570)
+- Tx pre-checker uses gas estimation dry-run to detect filtered addresses before forwarding. [[PR]](https://github.com/OffchainLabs/nitro/pull/4583)
+- Replace TransactionFiltererAPI mutex with channel-based sequential processing and simplify Filter to not return a transaction hash. [[PR]](https://github.com/OffchainLabs/nitro/pull/4428)
+- Nitro metrics for MEL and L3 system test. [[PR]](https://github.com/OffchainLabs/nitro/pull/4424)
+- Added support for id-set-filter for address filter reporting. [[PR]](https://github.com/OffchainLabs/nitro/pull/4594)
+- Linter for checking defer usage inside for loops. [[PR]](https://github.com/OffchainLabs/nitro/pull/4616)
+- Enable transitioning of node to using MEL when previously ran with Inbox Reader-Tracker.
+- Update TouchAddress to accept FilteredAddressRecord with filtering reason instead of just an address, and update IsFiltered to return filtered address records for use in transaction filtering reports.
+
 ## [v3.10.0-rc.7](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.6...v3.10.0-rc.7) - 2026-04-10
 
 ### Configuration

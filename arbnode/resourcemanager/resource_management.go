@@ -37,6 +37,7 @@ var (
 // Must be run before the go-ethereum stack is set up (ethereum/go-ethereum/node.New).
 func Init(conf *Config) error {
 	if conf.MemFreeLimit == "" {
+		log.Info("No memory free limit configured (--node.resource-mgmt.mem-free-limit), RPC requests will not be throttled based on memory usage")
 		return nil
 	}
 
