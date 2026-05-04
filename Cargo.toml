@@ -143,10 +143,13 @@ which = { git = "https://github.com/OffchainLabs/which-rs", rev = "f516e8a2e5453
 secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-6.0.0" }
 tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.0.0" }
 
-sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
-sp1-core-executor = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
-sp1-sdk = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
-sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
+# SP1 dependencies, all pinned to the same commit that brings the mprotect feature to the `main` branch
+# (https://github.com/succinctlabs/sp1/pull/2725). We use `rev` to avoid accidentally picking up newer commits that may
+# have breaking changes. This is an intermediate solution until SP1 publishes the next minor release.
+sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
+sp1-core-executor = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
+sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
 
 [profile.release]
 debug = true
