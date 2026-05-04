@@ -3,41 +3,71 @@ name: Initialize submodules
 description: >
   Initializes all submodules recursively. When the repository name ends
   in -private, rewrites submodule URLs listed in .private-submodules.conf
-  to their -private variants and uses the provided token for authentication.
-  Errors if the repo is private but no token is provided.
+  to their -private variants and authenticates using the GitHub App
+  installation token (preferred) or the provided PAT. Errors if the repo
+  is private but neither auth source is configured.
 
 inputs:
-  private-token:
-    description: >
-      PAT with access to private submodules. Required when the repository
-      name ends in -private.
+  client-id:
+    description: GitHub App Client ID (vars.NITRO_CI_APP_CLIENT_ID).
     required: false
     default: ''
+  app-private-key:
+    description: GitHub App private key PEM (secrets.NITRO_CI_APP_PRIVATE_KEY).
+    required: false
+    default: ''
+  pat:
+    description: PAT fallback used when client-id is unset (secrets.PRIVATE_REPO_PAT).
+    required: false
+    default: ''
+
+outputs:
+  token:
+    description: Resolved token (App installation token or PAT) — exposed so callers can reuse it (e.g. docker build secrets).
+    value: ${{ steps.app-token.outputs.token || inputs.pat }}
 
 runs:
   using: composite
 
   steps:
+    - id: app-token
+      if: inputs.client-id != ''
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: ${{ github.repository_owner }}
+        # Tighten token scope to exactly the repos we touch. Keep this list
+        # in sync with the App's installation list (currently:
+        # nitro-private + every entry in .private-submodules.conf with the
+        # -private suffix). Mirrored in submodule-pin-check.yml's inline
+        # mint, which can't call this composite action under
+        # pull_request_target.
+        repositories: |
+          nitro-private
+          go-ethereum-private
+          wasmer-private
+
     - name: Verify private token is available
-      if: endsWith(github.repository, '-private') && inputs.private-token == ''
+      if: endsWith(github.repository, '-private') && steps.app-token.outputs.token == '' && inputs.pat == ''
       shell: bash
       run: |
-        echo "::error::Repository ends in '-private' but no private-token was provided. Set the PRIVATE_REPO_PAT secret."
+        echo "::error::Repository ends in '-private' but no auth was provided. Configure the CI GitHub App (vars.NITRO_CI_APP_CLIENT_ID and secrets.NITRO_CI_APP_PRIVATE_KEY) or set the PRIVATE_REPO_PAT secret."
         exit 1
 
     - name: Initialize submodules (private)
       if: endsWith(github.repository, '-private')
       shell: bash
       env:
-        TOKEN: ${{ inputs.private-token }}
+        TOKEN: ${{ steps.app-token.outputs.token || inputs.pat }}
       run: |
         set -euo pipefail
         echo "::add-mask::${TOKEN}"
         # GitHub-issued PATs and installation tokens are [A-Za-z0-9_]; catch
         # stray whitespace/newline from a miscopied secret before it becomes
-        # a 401 the user blames on "wrong PAT".
+        # a 401 the user blames on "wrong token".
         if ! [[ "$TOKEN" =~ ^[A-Za-z0-9_]+$ ]]; then
-          echo "::error::PRIVATE_REPO_PAT contains unexpected characters; check the secret for stray whitespace."
+          echo "::error::Private token contains unexpected characters; check the secret for stray whitespace."
           exit 1
         fi
         GITHUB_TOKEN="$TOKEN" scripts/ci-init-submodules.sh

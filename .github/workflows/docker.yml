@@ -33,9 +33,12 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
-      - uses: ./.github/actions/init-submodules
+      - id: submods
+        uses: ./.github/actions/init-submodules
         with:
-          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
@@ -59,7 +62,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
           secrets: |
-            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
+            gh_token=${{ steps.submods.outputs.token }}
 
       - name: Build nitro-node-dev docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -71,7 +74,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
           secrets: |
-            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
+            gh_token=${{ steps.submods.outputs.token }}
 
       - name: Build nitro-node-slim-stripped docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -83,7 +86,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
           secrets: |
-            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
+            gh_token=${{ steps.submods.outputs.token }}
 
       - name: Build nitro-node-stripped docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -95,7 +98,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
           secrets: |
-            gh_token=${{ secrets.PRIVATE_REPO_PAT }}
+            gh_token=${{ steps.submods.outputs.token }}
 
       - name: Start background nitro-testnode
         shell: bash
