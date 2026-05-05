@@ -27,7 +27,7 @@ import (
 )
 
 func TestLiveness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -40,7 +40,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -53,7 +53,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -79,7 +79,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -152,7 +152,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 }
 
 func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault)
 	client := stack.Attach()
 	defer client.Close()
 
