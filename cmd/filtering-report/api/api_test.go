@@ -21,6 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
@@ -215,15 +217,7 @@ func TestReportCurrentFilterSetID_Posts(t *testing.T) {
 	if !ok {
 		t.Fatal("server did not record a report")
 	}
-	if got.FilterSetID != id {
-		t.Errorf("filter-set id: want %s, got %s", id, got.FilterSetID)
-	}
-	if got.ChainID != chainID {
-		t.Errorf("chain id: want %d, got %d", chainID, got.ChainID)
-	}
-	if !got.ReportedAt.Equal(reportedAt) {
-		t.Errorf("reported-at: want %s, got %s", reportedAt, got.ReportedAt)
-	}
+	require.Equal(t, report, got)
 }
 
 func TestReportCurrentFilterSetID_Non2xxError(t *testing.T) {
