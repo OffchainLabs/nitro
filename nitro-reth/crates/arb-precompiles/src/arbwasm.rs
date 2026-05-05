@@ -627,24 +627,6 @@ fn handle_activate_program(
     let cost_per_byte = (min_price as u64).saturating_mul(multiplier) / 10_000;
     let data_fee = U256::from(cost_per_byte.saturating_mul(info.asm_estimate as u64));
 
-    // Enforce `msg.value >= data_fee` (matches Go's payActivationDataFee).
-    // The executor zeroes tx_env.value for ArbWASM-bound calls, so we read
-    // the original tx value from the captured thread-local instead of
-    // input.value. Returning a revert (not a fatal error) so revm consumes
-    // only the gas charged so far rather than the full call gas limit.
-    let tx_value = crate::get_stylus_call_value();
-    if tx_value < data_fee {
-        let mut data = Vec::with_capacity(4 + 64);
-        // ProgramInsufficientValue(uint256 have, uint256 want) selector
-        data.extend_from_slice(&[0x09, 0x78, 0x1a, 0xb7]);
-        data.extend_from_slice(&tx_value.to_be_bytes::<32>());
-        data.extend_from_slice(&data_fee.to_be_bytes::<32>());
-        return Ok(PrecompileOutput::new_reverted(
-            crate::get_precompile_gas(),
-            data.into(),
-        ));
-    }
-
     // Store program data
     let estimate_kb = div_ceil(info.asm_estimate as u64, 1024).min(0xFF_FFFF) as u32;
     let hours = hours_since_arbitrum(time);
@@ -667,10 +649,22 @@ fn handle_activate_program(
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    // payActivationDataFee reads NetworkFeeAccount from storage (800 gas)
+    // payActivationDataFee: value check comes after the program-data write.
+    let tx_value = crate::get_stylus_call_value();
+    if tx_value < data_fee {
+        let mut data = Vec::with_capacity(4 + 64);
+        data.extend_from_slice(&[0x09, 0x78, 0x1a, 0xb7]);
+        data.extend_from_slice(&tx_value.to_be_bytes::<32>());
+        data.extend_from_slice(&data_fee.to_be_bytes::<32>());
+        crate::charge_precompile_gas(COPY_GAS * (data.len() as u64).div_ceil(32));
+        return Ok(PrecompileOutput::new_reverted(
+            crate::get_precompile_gas(),
+            data.into(),
+        ));
+    }
+
     crate::charge_precompile_gas(SLOAD_GAS);
 
-    // Signal executor to handle the data fee payment
     crate::set_stylus_activation_request(Some(program_address));
     crate::set_stylus_activation_data_fee(data_fee);
 
@@ -789,19 +783,6 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     let cost_per_byte = (min_price as u64).saturating_mul(multiplier) / 10_000;
     let data_fee = U256::from(cost_per_byte.saturating_mul(asm_size as u64));
 
-    // Enforce `msg.value >= data_fee` (matches Go's payActivationDataFee).
-    let tx_value = crate::get_stylus_call_value();
-    if tx_value < data_fee {
-        let mut data = Vec::with_capacity(4 + 64);
-        data.extend_from_slice(&[0x09, 0x78, 0x1a, 0xb7]);
-        data.extend_from_slice(&tx_value.to_be_bytes::<32>());
-        data.extend_from_slice(&data_fee.to_be_bytes::<32>());
-        return Ok(PrecompileOutput::new_reverted(
-            crate::get_precompile_gas(),
-            data.into(),
-        ));
-    }
-
     // Reset activatedAt
     let hours = hours_since_arbitrum(time);
     let mut pd = program_bytes;
@@ -814,6 +795,19 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
         .sstore(ARBOS_STATE_ADDRESS, program_slot, U256::from_be_bytes(pd))
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
+
+    let tx_value = crate::get_stylus_call_value();
+    if tx_value < data_fee {
+        let mut data = Vec::with_capacity(4 + 64);
+        data.extend_from_slice(&[0x09, 0x78, 0x1a, 0xb7]);
+        data.extend_from_slice(&tx_value.to_be_bytes::<32>());
+        data.extend_from_slice(&data_fee.to_be_bytes::<32>());
+        crate::charge_precompile_gas(COPY_GAS * (data.len() as u64).div_ceil(32));
+        return Ok(PrecompileOutput::new_reverted(
+            crate::get_precompile_gas(),
+            data.into(),
+        ));
+    }
 
     // payActivationDataFee reads NetworkFeeAccount from storage (800 gas)
     crate::charge_precompile_gas(SLOAD_GAS);

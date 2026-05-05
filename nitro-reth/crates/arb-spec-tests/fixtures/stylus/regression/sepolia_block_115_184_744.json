@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_115_184_744",
-  "description": "Reproduces ArbWASM activate-program status divergence at Sepolia block 115,184,744 tx idx 3 (hash 0x8856f5...79e). Sender pays value=0 to the ArbWASM precompile's activateProgram(0x0851...46). Canonical reverts with ProgramInsufficientValue(0, data_fee>0); arbreth (pre-fix) incorrectly returned success because handle_activate_program never checked msg.value >= data_fee. Expected gasUsed (2,346,259) is what arbreth produces post-fix with the seeded ArbOS state; canon's real-chain gasUsed=2,366,268 differs by ~20k due to incidental storage context (caller hot/cold access in the original tx setting); the status (revert) and zero-log behavior match canon exactly.",
+  "description": "Sepolia tx 0x8856...79e at block 115,184,744 idx 3: activateProgram with value=0 must revert (ProgramInsufficientValue) instead of succeeding.",
   "genesis": {
     "alloc": {
       "0x5f9fa55465515e42a8c5441866fa5e6f90725290": {
@@ -109,7 +109,7 @@
         "from": "0x5f9fa55465515e42a8c5441866fa5e6f90725290",
         "to": "0x0000000000000000000000000000000000000071",
         "status": 0,
-        "gasUsed": 2346259
+        "gasUsed": 2366268
       }
     ],
     "blocks": [],

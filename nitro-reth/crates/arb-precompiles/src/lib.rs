@@ -150,10 +150,6 @@ thread_local! {
     static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
     static STYLUS_KEEPALIVE_HASH: Cell<Option<[u8; 32]>> = const { Cell::new(None) };
     static STYLUS_ACTIVATION_DATA_FEE: Cell<u128> = const { Cell::new(0) };
-    /// Original `tx_env.value` for ArbWASM-bound calls. Captured by the
-    /// executor before zeroing tx_env.value (we zero so revm doesn't transfer
-    /// ETH to the precompile address). The activate/keepalive handlers read
-    /// this to enforce `value >= data_fee`.
     static STYLUS_CALL_VALUE_HI: Cell<u128> = const { Cell::new(0) };
     static STYLUS_CALL_VALUE_LO: Cell<u128> = const { Cell::new(0) };
 }
@@ -445,10 +441,6 @@ pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
     })
 }
 
-/// Set the original `msg.value` for the in-flight tx so ArbWASM's
-/// `activateProgram` / `codehashKeepalive` handlers can compare it against
-/// the activation data fee. Must be called before each EVM execution; the
-/// executor sets this for every tx and resets to zero for non-ArbWASM txs.
 pub fn set_stylus_call_value(value: alloy_primitives::U256) {
     let bytes = value.to_be_bytes::<32>();
     let hi = u128::from_be_bytes(bytes[0..16].try_into().unwrap_or([0u8; 16]));
@@ -457,8 +449,6 @@ pub fn set_stylus_call_value(value: alloy_primitives::U256) {
     STYLUS_CALL_VALUE_LO.with(|v| v.set(lo));
 }
 
-/// Read the original `msg.value` for the in-flight tx. Returns
-/// `U256::ZERO` when no tx-level value was captured.
 pub fn get_stylus_call_value() -> alloy_primitives::U256 {
     let hi = STYLUS_CALL_VALUE_HI.with(|v| v.get());
     let lo = STYLUS_CALL_VALUE_LO.with(|v| v.get());
