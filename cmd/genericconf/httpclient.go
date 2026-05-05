@@ -20,9 +20,6 @@ var HTTPClientConfigDefault = HTTPClientConfig{
 	Timeout: 5 * time.Second,
 }
 
-// Validate checks that c is well-formed when the feature it backs is enabled.
-// Callers gate on URL == "" to mean "feature disabled" and should skip
-// Validate in that case.
 func (c *HTTPClientConfig) Validate() error {
 	if c.URL == "" {
 		return errors.New("url is required")
