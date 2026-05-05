@@ -23,13 +23,32 @@ jobs:
     runs-on: ubuntu-4
     timeout-minutes: 10
     steps:
+      # Mint inline rather than via the init-submodules composite action:
+      # pull_request_target loads the workflow from base, but a local
+      # action would be loaded from the checked-out PR head and could be
+      # replaced by an attacker. Keep the marketplace action call here
+      # directly. The repositories list mirrors the one in
+      # init-submodules/action.yml; keep them in sync.
+      - name: Mint GitHub App token
+        id: app-token
+        if: vars.NITRO_CI_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            nitro-private
+            go-ethereum-private
+            wasmer-private
+
       # No submodule fetch: `git clone` against attacker-controlled URLs
       # from pull_request_target is the attack surface this workflow avoids.
       - name: Checkout PR head (no submodules)
         uses: actions/checkout@v6
         with:
-          # persist-credentials: false keeps the PAT out of later steps.
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+          # persist-credentials: false keeps the private-repo token out of later steps.
+          token: ${{ steps.app-token.outputs.token || secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
@@ -37,7 +56,7 @@ jobs:
       - name: Check submodule pins via GitHub API
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRIVATE_TOKEN: ${{ secrets.PRIVATE_REPO_PAT }}
+          PRIVATE_TOKEN: ${{ steps.app-token.outputs.token || secrets.PRIVATE_REPO_PAT }}
           COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref || github.ref_name }}
           REPO_URL: ${{ github.api_url }}/repos/${{ github.repository }}
@@ -117,13 +136,14 @@ jobs:
 
           # On a -private nitro fork, some submodule repos are themselves
           # private forks (see .private-submodules.conf). For those, query
-          # the -private variant using PRIVATE_REPO_PAT instead of the
+          # the -private variant using the App installation token (or
+          # PRIVATE_REPO_PAT during the migration window) instead of the
           # public repo with GITHUB_TOKEN. The conf is read from the base
           # branch so a malicious PR cannot add or remove entries.
           declare -A private_forks
           if [ "$IS_PRIVATE_REPO" = "true" ]; then
             if [ -z "${PRIVATE_TOKEN:-}" ]; then
-              echo "::error::Repository ends in '-private' but PRIVATE_REPO_PAT is not set."
+              echo "::error::Repository ends in '-private' but no private-repo token is available (set NITRO_CI_APP_CLIENT_ID/NITRO_CI_APP_PRIVATE_KEY or PRIVATE_REPO_PAT)."
               exit 1
             fi
             conf=$(git show "origin/${BASE_REF}:.private-submodules.conf") || {
