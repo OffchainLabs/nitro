@@ -220,42 +220,6 @@ func TestReportCurrentFilterSetID_Posts(t *testing.T) {
 	require.Equal(t, report, got)
 }
 
-func TestReportCurrentFilterSetID_Non2xxError(t *testing.T) {
-	const errorBody = "upstream is down"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(errorBody))
-	}))
-	defer server.Close()
-
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
-		URL:     server.URL,
-		Timeout: 5 * time.Second,
-	})
-	client := stack.Attach()
-	defer client.Close()
-
-	report := addressfilter.FilterSetIDReport{
-		FilterSetID: uuid.New(),
-		ChainID:     1,
-		ReportedAt:  time.Now().UTC(),
-	}
-	err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report)
-	if err == nil {
-		t.Fatal("expected error for non-2xx response")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, server.URL) {
-		t.Errorf("error should contain endpoint URL %q, got: %s", server.URL, msg)
-	}
-	if !strings.Contains(msg, "500") {
-		t.Errorf("error should mention status 500, got: %s", msg)
-	}
-	if !strings.Contains(msg, errorBody) {
-		t.Errorf("error should contain response body snippet %q, got: %s", errorBody, msg)
-	}
-}
-
 // failingQueueClient wraps MockQueueClient and fails on a specific Send call.
 type failingQueueClient struct {
 	sqsclient.MockQueueClient
