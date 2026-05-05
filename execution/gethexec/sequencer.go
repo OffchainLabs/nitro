@@ -219,7 +219,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
-	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set id to the filtering-report service (0 disables reporting)")
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set id to the filtering-report service")
 }
 
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
