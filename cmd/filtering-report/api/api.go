@@ -23,7 +23,7 @@ type filterSetReporter struct {
 
 type FilteringReportAPI struct {
 	queueClient     sqsclient.QueueClient
-	filterSetReport *filterSetReporter
+	filterSetReporter *filterSetReporter
 }
 
 func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig) (*FilteringReportAPI, error) {
@@ -32,7 +32,7 @@ func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting
 	}
 	api := &FilteringReportAPI{queueClient: queueClient}
 	if filterSetReporting != nil && filterSetReporting.URL != "" {
-		api.filterSetReport = &filterSetReporter{
+		api.filterSetReporter = &filterSetReporter{
 			url:    filterSetReporting.URL,
 			client: &http.Client{Timeout: filterSetReporting.Timeout},
 		}

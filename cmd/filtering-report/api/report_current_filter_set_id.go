@@ -12,11 +12,11 @@ import (
 )
 
 func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, report *addressfilter.FilterSetIDReport) error {
-	if a.filterSetReport == nil {
+	if a.filterSetReporter == nil {
 		return nil
 	}
 	if report == nil {
 		return errors.New("nil filter-set id report")
 	}
-	return httpclient.PostJSON(ctx, a.filterSetReport.client, a.filterSetReport.url, report)
+	return httpclient.PostJSON(ctx, a.filterSetReporter.client, a.filterSetReporter.url, report)
 }
