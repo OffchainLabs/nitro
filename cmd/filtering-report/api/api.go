@@ -22,7 +22,7 @@ type filterSetReporter struct {
 }
 
 type FilteringReportAPI struct {
-	queueClient     sqsclient.QueueClient
+	queueClient       sqsclient.QueueClient
 	filterSetReporter *filterSetReporter
 }
 
