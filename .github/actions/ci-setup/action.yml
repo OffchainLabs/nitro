@@ -7,7 +7,7 @@ runs:
 
   steps:
     - name: Install dependencies
-      run: sudo apt update && sudo apt install -y wabt gotestsum
+      run: sudo apt update && sudo apt install -y wabt gotestsum protobuf-compiler
       shell: bash
 
     - name: Setup Node.js
