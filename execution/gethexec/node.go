@@ -330,6 +330,7 @@ type ExecutionNode struct {
 	ArbInterface             *ArbInterface
 	ExecEngine               *ExecutionEngine
 	Recorder                 *BlockRecorder
+	ChainTipRecorder         *ChainTipBlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
@@ -390,6 +391,7 @@ func CreateExecutionNode(
 	}
 
 	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	chainTipRecorder := NewChainTipBlockRecorder(execEngine)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -472,6 +474,7 @@ func CreateExecutionNode(
 		ArbInterface:             arbInterface,
 		ExecEngine:               execEngine,
 		Recorder:                 recorder,
+		ChainTipRecorder:         chainTipRecorder,
 		Sequencer:                sequencer,
 		TxPreChecker:             txPreChecker,
 		TxPublisher:              txPublisher,
@@ -709,6 +712,10 @@ func (n *ExecutionNode) RecordBlockCreation(
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
+		if n.ChainTipRecorder != nil && n.ChainTipRecorder.Enabled() {
+			return n.ChainTipRecorder.Recording(pos)
+		}
+
 		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 	})
 }

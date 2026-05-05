@@ -2110,6 +2110,12 @@ func TestReturnDataCost_StylusFixes(t *testing.T) {
 func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
+	return setupProgramTestWithScheme(t, jit, rawdb.HashScheme, builderOpts...)
+}
+
+func setupProgramTestWithScheme(t *testing.T, jit bool, stateScheme string, builderOpts ...func(*NodeBuilder)) (
+	*NodeBuilder, bind.TransactOpts, func(),
+) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment()
@@ -2118,9 +2124,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 		opt(builder)
 	}
 
-	// setupProgramTest is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
-	builder.RequireScheme(t, rawdb.HashScheme)
+	builder.RequireScheme(t, stateScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true

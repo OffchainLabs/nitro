@@ -570,12 +570,10 @@ func callProgram(
 		panic("missing asm")
 	}
 
-	if runCtx.IsRecording() {
-		if stateDB, ok := db.(*state.StateDB); ok {
-			if err := stateDB.RecordProgram(runCtx.WasmTargets(), moduleHash); err != nil {
-				log.Error("failed to record program", "program", address, "module", moduleHash, "err", err)
-				panic(fmt.Sprintf("failed to record program: %v", err))
-			}
+	if stateDB, ok := db.(*state.StateDB); ok && stateDB.IsRecording() {
+		if err := stateDB.RecordProgram(runCtx.WasmTargets(), moduleHash); err != nil {
+			log.Error("failed to record program", "program", address, "module", moduleHash, "err", err)
+			panic(fmt.Sprintf("failed to record program: %v", err))
 		}
 	}
 
