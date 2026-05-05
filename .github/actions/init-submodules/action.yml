@@ -30,6 +30,24 @@ runs:
   using: composite
 
   steps:
+    # Same recipe is duplicated inline in submodule-pin-check.yml —
+    # that workflow can't call composite actions under pull_request_target.
+    - id: scope
+      if: inputs.client-id != ''
+      shell: bash
+      run: |
+        repos=$(
+          echo "${GITHUB_REPOSITORY##*/}"
+          awk 'NF && !/^[[:space:]]*#/ {print $1"-private"}' .private-submodules.conf
+        )
+        echo "App-token repo scope:"
+        echo "$repos"
+        {
+          echo 'repos<<EOF'
+          echo "$repos"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+
     - id: app-token
       if: inputs.client-id != ''
       uses: actions/create-github-app-token@v3
@@ -37,16 +55,7 @@ runs:
         client-id: ${{ inputs.client-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: ${{ github.repository_owner }}
-        # Tighten token scope to exactly the repos we touch. Keep this list
-        # in sync with the App's installation list (currently:
-        # nitro-private + every entry in .private-submodules.conf with the
-        # -private suffix). Mirrored in submodule-pin-check.yml's inline
-        # mint, which can't call this composite action under
-        # pull_request_target.
-        repositories: |
-          nitro-private
-          go-ethereum-private
-          wasmer-private
+        repositories: ${{ steps.scope.outputs.repos }}
 
     - name: Verify private token is available
       if: endsWith(github.repository, '-private') && steps.app-token.outputs.token == '' && inputs.pat == ''
