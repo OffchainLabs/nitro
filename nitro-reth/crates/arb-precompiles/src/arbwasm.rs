@@ -425,6 +425,17 @@ fn revert_with_gas(payload: Vec<u8>, gas_used: u64, gas_limit: u64) -> Precompil
     ))
 }
 
+/// Soft-revert a state-modifying handler with an abi-encoded sol error.
+/// Mirrors Go's precompile.go:822 — charges COPY_GAS for the encoded
+/// data words on top of whatever the handler has already accumulated.
+fn revert_sol_error(payload: Vec<u8>) -> PrecompileResult {
+    crate::charge_precompile_gas(COPY_GAS * (payload.len() as u64).div_ceil(32));
+    Ok(PrecompileOutput::new_reverted(
+        crate::get_precompile_gas(),
+        payload.into(),
+    ))
+}
+
 fn ok_u256(gas_cost: u64, value: U256) -> PrecompileResult {
     Ok(PrecompileOutput::new(
         gas_cost,
@@ -496,11 +507,13 @@ fn handle_activate_program(
     if code_bytes.is_empty()
         || !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version())
     {
-        return Err(PrecompileError::other("ProgramNotWasm()"));
+        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
     }
 
-    let wasm = arb_stylus::decompress_wasm(&code_bytes)
-        .map_err(|e| PrecompileError::other(format!("ProgramNotWasm: {e}")))?;
+    let wasm = match arb_stylus::decompress_wasm(&code_bytes) {
+        Ok(w) => w,
+        Err(_) => return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode()),
+    };
 
     // Params: charge WarmStorageReadCost (100), subsequent reads are free.
     load_arbos(&mut input)?;
@@ -536,7 +549,7 @@ fn handle_activate_program(
         let age = hours_to_age(time, activated_at);
         let expiry_days = u16::from_be_bytes([params_word[19], params_word[20]]);
         if age <= (expiry_days as u64) * 86400 {
-            return Err(PrecompileError::other("ProgramUpToDate()"));
+            return revert_sol_error(IArbWasm::ProgramUpToDate {}.abi_encode());
         }
     }
 
@@ -652,15 +665,13 @@ fn handle_activate_program(
     // payActivationDataFee: value check comes after the program-data write.
     let tx_value = crate::get_stylus_call_value();
     if tx_value < data_fee {
-        let mut data = Vec::with_capacity(4 + 64);
-        data.extend_from_slice(&[0x09, 0x78, 0x1a, 0xb7]);
-        data.extend_from_slice(&tx_value.to_be_bytes::<32>());
-        data.extend_from_slice(&data_fee.to_be_bytes::<32>());
-        crate::charge_precompile_gas(COPY_GAS * (data.len() as u64).div_ceil(32));
-        return Ok(PrecompileOutput::new_reverted(
-            crate::get_precompile_gas(),
-            data.into(),
-        ));
+        return revert_sol_error(
+            IArbWasm::ProgramInsufficientValue {
+                have: tx_value,
+                want: data_fee,
+            }
+            .abi_encode(),
+        );
     }
 
     crate::charge_precompile_gas(SLOAD_GAS);
@@ -720,20 +731,30 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     let program = parse_program(&program_bytes, &params_word);
 
     if program.version == 0 {
-        return Err(PrecompileError::other("ProgramNotActivated()"));
+        return revert_sol_error(IArbWasm::ProgramNotActivated {}.abi_encode());
     }
     let age = hours_to_age(
         time,
         program_bytes[8] as u32 * 65536 + program_bytes[9] as u32 * 256 + program_bytes[10] as u32,
     );
     if age > (expiry_days as u64) * 86400 {
-        return Err(PrecompileError::other("ProgramExpired()"));
+        return revert_sol_error(
+            IArbWasm::ProgramExpired { ageInSeconds: age }.abi_encode(),
+        );
     }
     if program.version != params_version {
-        return Err(PrecompileError::other("ProgramNeedsUpgrade()"));
+        return revert_sol_error(
+            IArbWasm::ProgramNeedsUpgrade {
+                version: program.version,
+                stylusVersion: params_version,
+            }
+            .abi_encode(),
+        );
     }
     if age < (keepalive_days as u64) * 86400 {
-        return Err(PrecompileError::other("ProgramKeepaliveTooSoon()"));
+        return revert_sol_error(
+            IArbWasm::ProgramKeepaliveTooSoon { ageInSeconds: age }.abi_encode(),
+        );
     }
 
     let asm_size = program.asm_estimate_kb * 1024;
@@ -798,15 +819,13 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
 
     let tx_value = crate::get_stylus_call_value();
     if tx_value < data_fee {
-        let mut data = Vec::with_capacity(4 + 64);
-        data.extend_from_slice(&[0x09, 0x78, 0x1a, 0xb7]);
-        data.extend_from_slice(&tx_value.to_be_bytes::<32>());
-        data.extend_from_slice(&data_fee.to_be_bytes::<32>());
-        crate::charge_precompile_gas(COPY_GAS * (data.len() as u64).div_ceil(32));
-        return Ok(PrecompileOutput::new_reverted(
-            crate::get_precompile_gas(),
-            data.into(),
-        ));
+        return revert_sol_error(
+            IArbWasm::ProgramInsufficientValue {
+                have: tx_value,
+                want: data_fee,
+            }
+            .abi_encode(),
+        );
     }
 
     // payActivationDataFee reads NetworkFeeAccount from storage (800 gas)
