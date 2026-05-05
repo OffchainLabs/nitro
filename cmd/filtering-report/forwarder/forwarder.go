@@ -5,6 +5,7 @@ package forwarder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -100,5 +101,5 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 }
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
-	return httpclient.PostJSONBody(ctx, r.httpClient, r.config.ExternalEndpoint.URL, []byte(body))
+	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, json.RawMessage(body))
 }
