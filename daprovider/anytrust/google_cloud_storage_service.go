@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"time"
 
 	googlestorage "cloud.google.com/go/storage"
-	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 	"google.golang.org/api/option"
 
@@ -159,22 +157,37 @@ func (gcs *GoogleCloudStorageService) String() string {
 }
 
 func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
+	// GCP's testIamPermissions API does not evaluate conditional IAM bindings,
+	// so it always returns empty results when permissions are granted via a
+	// condition (e.g. resource.name.startsWith(...)). Instead, we verify
+	// storage access by performing an actual write/read/delete round-trip on a
+	// small probe object within our configured prefix.
+	probeKey := gcs.objectPrefix + ".health-check-probe"
 	bucket := gcs.operator.Bucket(gcs.bucket)
-	// check if we have bucket permissions
-	permissions := []string{
-		"storage.objects.create",
-		"storage.objects.delete",
-		"storage.objects.list",
-		"storage.objects.get",
+
+	// write
+	w := bucket.Object(probeKey).NewWriter(ctx)
+	if _, err := w.Write([]byte("health-check")); err != nil {
+		return fmt.Errorf("health check: failed to write probe object: %w", err)
 	}
-	perms, err := bucket.IAM().TestPermissions(ctx, permissions)
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("health check: failed to close probe object writer: %w", err)
+	}
+
+	// read
+	r, err := bucket.Object(probeKey).NewReader(ctx)
 	if err != nil {
-		return fmt.Errorf("could not check permissions: %w", err)
+		return fmt.Errorf("health check: failed to read probe object: %w", err)
 	}
-	sort.Strings(permissions)
-	sort.Strings(perms)
-	if !cmp.Equal(perms, permissions) {
-		return fmt.Errorf("permissions mismatch (-want +got):\n%s", cmp.Diff(permissions, perms))
+	if _, err := io.ReadAll(r); err != nil {
+		r.Close()
+		return fmt.Errorf("health check: failed to read probe object data: %w", err)
+	}
+	r.Close()
+
+	// delete
+	if err := bucket.Object(probeKey).Delete(ctx); err != nil {
+		return fmt.Errorf("health check: failed to delete probe object: %w", err)
 	}
 
 	return nil
