@@ -151,14 +151,14 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	}
 }
 
-func TestReportCurrentFilterSetId_NoEndpointIsNoOp(t *testing.T) {
+func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
 	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, nil)
 	client := stack.Attach()
 	defer client.Close()
 
-	report := addressfilter.FilterSetIdReport{
-		FilterSetId: uuid.New(),
-		ChainId:     42161,
+	report := addressfilter.FilterSetIDReport{
+		FilterSetID: uuid.New(),
+		ChainID:     42161,
 		ReportedAt:  time.Now().UTC(),
 	}
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
@@ -166,7 +166,7 @@ func TestReportCurrentFilterSetId_NoEndpointIsNoOp(t *testing.T) {
 	}
 }
 
-func TestReportCurrentFilterSetId_Posts(t *testing.T) {
+func TestReportCurrentFilterSetID_Posts(t *testing.T) {
 	var received atomic.Value
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +181,7 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 		if err != nil {
 			t.Errorf("read body: %v", err)
 		}
-		var parsed addressfilter.FilterSetIdReport
+		var parsed addressfilter.FilterSetIDReport
 		if err := json.Unmarshal(body, &parsed); err != nil {
 			t.Errorf("unmarshal body: %v", err)
 		}
@@ -200,9 +200,9 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	id := uuid.New()
 	const chainID uint64 = 42161
 	reportedAt := time.Now().UTC().Truncate(time.Second)
-	report := addressfilter.FilterSetIdReport{
-		FilterSetId: id,
-		ChainId:     chainID,
+	report := addressfilter.FilterSetIDReport{
+		FilterSetID: id,
+		ChainID:     chainID,
 		ReportedAt:  reportedAt,
 	}
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
@@ -211,22 +211,22 @@ func TestReportCurrentFilterSetId_Posts(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("expected 1 POST, got %d", calls.Load())
 	}
-	got, ok := received.Load().(addressfilter.FilterSetIdReport)
+	got, ok := received.Load().(addressfilter.FilterSetIDReport)
 	if !ok {
 		t.Fatal("server did not record a report")
 	}
-	if got.FilterSetId != id {
-		t.Errorf("filter-set id: want %s, got %s", id, got.FilterSetId)
+	if got.FilterSetID != id {
+		t.Errorf("filter-set id: want %s, got %s", id, got.FilterSetID)
 	}
-	if got.ChainId != chainID {
-		t.Errorf("chain id: want %d, got %d", chainID, got.ChainId)
+	if got.ChainID != chainID {
+		t.Errorf("chain id: want %d, got %d", chainID, got.ChainID)
 	}
 	if !got.ReportedAt.Equal(reportedAt) {
 		t.Errorf("reported-at: want %s, got %s", reportedAt, got.ReportedAt)
 	}
 }
 
-func TestReportCurrentFilterSetId_Non2xxError(t *testing.T) {
+func TestReportCurrentFilterSetID_Non2xxError(t *testing.T) {
 	const errorBody = "upstream is down"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -241,9 +241,9 @@ func TestReportCurrentFilterSetId_Non2xxError(t *testing.T) {
 	client := stack.Attach()
 	defer client.Close()
 
-	report := addressfilter.FilterSetIdReport{
-		FilterSetId: uuid.New(),
-		ChainId:     1,
+	report := addressfilter.FilterSetIDReport{
+		FilterSetID: uuid.New(),
+		ChainID:     1,
 		ReportedAt:  time.Now().UTC(),
 	}
 	err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report)

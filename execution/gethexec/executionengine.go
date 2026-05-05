@@ -287,7 +287,7 @@ func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClien
 	return s.filteringReportRPCClient
 }
 
-func (s *ExecutionEngine) ChainId() *big.Int {
+func (s *ExecutionEngine) ChainID() *big.Int {
 	return s.bc.Config().ChainID
 }
 

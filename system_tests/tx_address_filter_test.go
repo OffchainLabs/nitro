@@ -613,15 +613,15 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 }
 
-// TestPeriodicFilterSetIdReporting exercises the end-to-end flow:
+// TestPeriodicFilterSetIDReporting exercises the end-to-end flow:
 // sequencer -> filtering-report RPC -> external HTTP endpoint. It also
 // rotates the hash store mid-run to verify a new filter-set id is picked up.
-func TestPeriodicFilterSetIdReporting(t *testing.T) {
+func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Capture every POST sent to the "external provider".
-	reportCh := make(chan addressfilter.FilterSetIdReport, 16)
+	reportCh := make(chan addressfilter.FilterSetIDReport, 16)
 	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -634,7 +634,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 			http.Error(w, "read failed", http.StatusInternalServerError)
 			return
 		}
-		var report addressfilter.FilterSetIdReport
+		var report addressfilter.FilterSetIDReport
 		if err := json.Unmarshal(body, &report); err != nil {
 			t.Errorf("unmarshal body: %v", err)
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -701,14 +701,14 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	id1 := uuid.New()
 	filterService.GetHashStore().Store(id1, salt, nil, "test-digest-1")
 
-	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainId().Uint64()
-	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIdReport {
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
+	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIDReport {
 		t.Helper()
 		deadline := time.After(10 * time.Second)
 		for {
 			select {
 			case got := <-reportCh:
-				if got.FilterSetId == wantID {
+				if got.FilterSetID == wantID {
 					return got
 				}
 				// Drop stale reports (e.g. from the previous id during rotation).
@@ -719,7 +719,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	}
 
 	first := waitForReport(id1)
-	require.Equal(t, expectedChainID, first.ChainId, "chain id mismatch")
+	require.Equal(t, expectedChainID, first.ChainID, "chain id mismatch")
 	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
 
 	// Rotate the filter set; the next reporting tick must pick up id2.
@@ -727,7 +727,7 @@ func TestPeriodicFilterSetIdReporting(t *testing.T) {
 	filterService.GetHashStore().Store(id2, salt, nil, "test-digest-2")
 
 	second := waitForReport(id2)
-	require.Equal(t, expectedChainID, second.ChainId, "chain id mismatch after rotation")
+	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
 	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
 		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
 }

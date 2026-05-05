@@ -11,11 +11,11 @@ import (
 	"github.com/offchainlabs/nitro/util/httpclient"
 )
 
-// ReportCurrentFilterSetId forwards the sequencer's current address-filter
-// set id to the configured external HTTP endpoint. When no endpoint is
+// ReportCurrentFilterSetID forwards the sequencer's current address-filter
+// set ID to the configured external HTTP endpoint. When no endpoint is
 // configured the call is a no-op, which lets the RPC stay callable without
 // blocking startup of callers that do not care about this feature.
-func (a *FilteringReportAPI) ReportCurrentFilterSetId(ctx context.Context, report *addressfilter.FilterSetIdReport) error {
+func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, report *addressfilter.FilterSetIDReport) error {
 	if a.filterSetReport == nil {
 		return nil
 	}

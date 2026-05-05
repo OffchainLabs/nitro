@@ -1752,7 +1752,7 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 		log.Debug("skipping filter-set id report: address-filter service not configured")
 		return nil
 	}
-	filterSetID := s.addressFilterService.CurrentFilterSetId()
+	filterSetID := s.addressFilterService.CurrentFilterSetID()
 	if filterSetID == uuid.Nil {
 		// The hash store starts at uuid.Nil until the first S3 fetch lands.
 		// Debug-log so an operator investigating a silent reporting loop
@@ -1764,9 +1764,9 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if rpcClient == nil {
 		return nil
 	}
-	_, err := rpcClient.ReportCurrentFilterSetId(&addressfilter.FilterSetIdReport{
-		FilterSetId: filterSetID,
-		ChainId:     s.execEngine.ChainId().Uint64(),
+	_, err := rpcClient.ReportCurrentFilterSetID(&addressfilter.FilterSetIDReport{
+		FilterSetID: filterSetID,
+		ChainID:     s.execEngine.ChainID().Uint64(),
 		ReportedAt:  time.Now().UTC(),
 	}).Await(ctx)
 	return err

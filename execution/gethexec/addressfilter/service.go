@@ -122,7 +122,7 @@ func (s *FilterService) GetHashStore() *HashStore {
 	return s.hashStore
 }
 
-func (s *FilterService) CurrentFilterSetId() uuid.UUID {
+func (s *FilterService) CurrentFilterSetID() uuid.UUID {
 	if !s.config.Enable {
 		return uuid.Nil
 	}
