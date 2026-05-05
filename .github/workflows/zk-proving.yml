@@ -49,3 +49,7 @@ jobs:
       - name: Run stylus-compiler-runner compare
         # Compare compilation consistency between running it natively and in the SP1 execution mode.
         run: cargo run -p stylus-compiler-runner --release -- compare
+
+      - name: Run stylus-compiler-runner proving
+        # Generate and verify a proof of correct Stylus compilation.
+        run: cargo run -p stylus-compiler-runner --release -- prove
