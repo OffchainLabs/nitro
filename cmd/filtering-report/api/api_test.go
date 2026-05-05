@@ -93,7 +93,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, mock, nil)
+	stack, err := NewStack(&stackConfig, mock, &genericconf.HTTPClientConfigDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
