@@ -167,11 +167,10 @@ fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) ->
 #[inline]
 #[cfg(not(feature = "rayon"))]
 fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) -> Vec<Bytes32> {
-    let new_layer = layer
+    layer
         .chunks(2)
         .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).unwrap_or(empty_hash)))
-        .collect();
-    new_layer
+        .collect()
 }
 
 impl Clone for Merkle {
