@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc, time::SystemTime};
 
 use clap::{ArgAction, Parser, ValueEnum};
-use sp1_core_executor::{MinimalExecutor, Program};
+use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
 use validation::{ValidationInput, ValidationRequest};
 
@@ -60,7 +60,7 @@ async fn main() {
         Mode::Fast => {
             let program = Arc::new(Program::from(&program_elf).expect("parse elf"));
 
-            let mut executor = MinimalExecutor::simple(program);
+            let mut executor = MinimalExecutor::<UserMode>::simple(program);
             for buf in stdin.buffer {
                 executor.with_input(&buf);
             }
@@ -159,7 +159,7 @@ fn run_in_sp1(cli: &Cli, wasm: &[u8]) -> Vec<u8> {
     let compiler_elf = std::fs::read(&cli.stylus_compiler_program).expect("read stylus program");
     let program = Arc::new(Program::from(&compiler_elf).expect("parse elf"));
 
-    let mut executor = MinimalExecutor::simple(program);
+    let mut executor = MinimalExecutor::<UserMode>::simple(program);
     for buf in stdin.buffer {
         executor.with_input(&buf);
     }
