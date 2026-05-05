@@ -2510,9 +2510,19 @@ func Create2ndNodeWithConfig(
 			select {
 			case customFatalErrChan <- err:
 			default:
-				t.Logf("custom fatal channel full, dropping init error: %v", err)
+				t.Fatalf("custom fatal channel full, dropping init error: %v", err)
 			}
-			return nil, currentNode, currentExec, func() { _ = chainStack.Close() }, consensusConfigFetcher, execConfigFetcher
+			return nil, currentNode, currentExec, func() {
+				if currentNode != nil {
+					currentNode.StopAndWait()
+				}
+				if currentExec != nil {
+					currentExec.StopAndWait()
+				}
+				if err := chainStack.Close(); err != nil {
+					t.Logf("failed-init cleanup: stack close error: %v", err)
+				}
+			}, consensusConfigFetcher, execConfigFetcher
 		}
 		Require(t, err)
 	}

@@ -126,6 +126,8 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
 	runChan := make(chan struct{}, 1)
+	// Set before close(runChan); the close synchronizes the read below.
+	var runFatalCause error
 	err := stopwaiter.CallIterativelyWith[struct{}](
 		&r.StopWaiterSafe,
 		func(ctx context.Context, ignored struct{}) time.Duration {
@@ -135,11 +137,18 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 				close(runChan)
 			}
 			if errors.Is(err, daprovider.ErrAnyTrustRequiresFallback) {
-				log.Error("inbox reader halting", "err", err)
+				var typed *daprovider.AnyTrustRequiresFallbackError
+				if errors.As(err, &typed) {
+					log.Error("inbox reader halting", "batch", typed.BatchNum, "err", err)
+				} else {
+					log.Error("inbox reader halting", "err", err)
+				}
+				wrapped := fmt.Errorf("inbox reader: %w", err)
 				select {
-				case r.fatalErrChan <- fmt.Errorf("inbox reader: %w", err):
+				case r.fatalErrChan <- wrapped:
 				case <-ctx.Done():
 				}
+				runFatalCause = wrapped
 				close(runChan)
 				return time.Hour
 			}
@@ -160,6 +169,9 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	for i := 0; ; i++ {
 		select {
 		case <-runChan:
+			if runFatalCause != nil {
+				return runFatalCause
+			}
 			return errors.New("inbox reader: run loop exited before init message read")
 		default:
 		}

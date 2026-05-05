@@ -154,6 +154,9 @@ func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
 		if !errors.As(err, &typed) {
 			t.Fatalf("expected error to wrap *AnyTrustRequiresFallbackError, got: %v", err)
 		}
+		if !strings.Contains(err.Error(), "inbox reader:") {
+			t.Fatalf("expected error to be wrapped with \"inbox reader:\" prefix, got: %v", err)
+		}
 		t.Logf("Node B fataled on batch %d: %v", typed.BatchNum, err)
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for Node B to fatal on AnyTrust batch")
@@ -171,6 +174,20 @@ func TestDangerousAlwaysFallback_RejectsMessageExtractionCombo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "message-extraction.enable=true") {
 		t.Fatalf("expected error to mention message-extraction.enable=true, got: %v", err)
+	}
+}
+
+func TestDangerousAlwaysFallback_RejectsAnyTrustDisabled(t *testing.T) {
+	cfg := arbnode.ConfigDefaultL1Test()
+	cfg.Dangerous.AlwaysFallbackToParentChainDA = true
+	cfg.DA.AnyTrust.Enable = false
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "da.anytrust.enable=true") {
+		t.Fatalf("expected error to mention da.anytrust.enable=true, got: %v", err)
 	}
 }
 
