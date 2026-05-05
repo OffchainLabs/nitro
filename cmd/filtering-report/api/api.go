@@ -26,9 +26,6 @@ type FilteringReportAPI struct {
 	filterSetReport *filterSetReporter
 }
 
-// NewFilteringReportAPI builds the API handler. When filterSetReporting is
-// nil or has an empty URL, ReportCurrentFilterSetId becomes a no-op so the
-// service can run without external forwarding configured.
 func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig) (*FilteringReportAPI, error) {
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
