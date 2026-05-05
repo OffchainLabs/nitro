@@ -41,9 +41,6 @@ jobs:
       - name: Install SP1 toolchain
         run: make -C crates/sp1 install-sp1
 
-      - name: Build binaries
-        run: make -C crates/sp1 build
-
       # Clippy runs after build because sp1-builder uses include_elf!(),
       # which requires the SP1 ELF to exist at compile time.
       - name: Clippy check (SP1 crates)
