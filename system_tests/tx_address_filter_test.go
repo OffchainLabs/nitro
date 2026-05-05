@@ -649,22 +649,10 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	defer externalEndpoint.Close()
 
 	// Stand up the filtering-report service pointing at the external endpoint.
-	stackConfig := filteringreportapi.DefaultStackConfig
-	stackConfig.HTTPHost = "127.0.0.1"
-	stackConfig.HTTPPort = 0
-	stackConfig.WSHost = "127.0.0.1"
-	stackConfig.WSPort = 0
-	filteringReportStack, err := filteringreportapi.NewStack(
-		&stackConfig,
-		&sqsclient.MockQueueClient{},
-		&genericconf.HTTPClientConfig{
-			URL:     externalEndpoint.URL,
-			Timeout: 5 * time.Second,
-		},
-	)
-	require.NoError(t, err)
-	require.NoError(t, filteringReportStack.Start())
-	t.Cleanup(func() { filteringReportStack.Close() })
+	filteringReportStack := filteringreportapi.NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
+		URL:     externalEndpoint.URL,
+		Timeout: 5 * time.Second,
+	})
 
 	// Build an active sequencer node wired to the filtering-report service.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
