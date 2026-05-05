@@ -98,7 +98,7 @@ type SequencerConfig struct {
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
-	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval" reload:"hot"`
+	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
@@ -156,6 +156,9 @@ func (c *SequencerConfig) Validate() error {
 				return fmt.Errorf("invalid timeboost.auctioneer-address \"%v\"", c.Timeboost.AuctioneerAddress)
 			}
 		}
+	}
+	if c.FilterSetReportingInterval <= 0 {
+		return fmt.Errorf("filter-set-reporting-interval must be positive, got %s", c.FilterSetReportingInterval)
 	}
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
@@ -1741,12 +1744,6 @@ func (s *Sequencer) isActiveSequencer() bool {
 	return pauseChan == nil && forwarder == nil
 }
 
-// filterSetReportingDisabledRetry is the sleep used when reporting is
-// runtime-disabled (FilterSetReportingInterval <= 0). Keeping it short lets a
-// hot-reload to a positive interval be picked up within a minute, without
-// letting a misconfigured node spin on a zero-length wait.
-const filterSetReportingDisabledRetry = time.Minute
-
 func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if s.addressFilterService == nil {
 		log.Debug("skipping filter-set id report: address-filter service not configured")
@@ -1776,11 +1773,8 @@ func (s *Sequencer) startFilterSetReporting() {
 	if s.execEngine.GetFilteringReportRPCClient() == nil {
 		return
 	}
+	interval := s.config().FilterSetReportingInterval
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		interval := s.config().FilterSetReportingInterval
-		if interval <= 0 {
-			return filterSetReportingDisabledRetry
-		}
 		if !s.isActiveSequencer() {
 			return interval
 		}
