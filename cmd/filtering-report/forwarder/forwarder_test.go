@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
@@ -24,7 +25,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	endpoint := NewMockExternalEndpoint(t)
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, nil)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
 	filteringReportClient := stack.Attach()
 	t.Cleanup(func() { filteringReportClient.Close() })
 
@@ -91,7 +92,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, nil)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
 	filteringReportClient := stack.Attach()
 	t.Cleanup(func() { filteringReportClient.Close() })
 
@@ -173,7 +174,7 @@ func TestForwarder_DeleteError(t *testing.T) {
 	queueClient := &sqsclient.MockQueueClient{
 		DeleteErr: fmt.Errorf("simulated SQS delete error"),
 	}
-	stack := api.NewTestStack(t, queueClient, nil)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
