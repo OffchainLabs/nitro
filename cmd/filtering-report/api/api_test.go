@@ -5,14 +5,10 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,8 +16,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -166,58 +160,6 @@ func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
 	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report); err != nil {
 		t.Fatalf("expected no-op call to succeed, got %v", err)
 	}
-}
-
-func TestReportCurrentFilterSetID_Posts(t *testing.T) {
-	var received atomic.Value
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
-		}
-		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
-			t.Errorf("expected application/json, got %s", ct)
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read body: %v", err)
-		}
-		var parsed addressfilter.FilterSetIDReport
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			t.Errorf("unmarshal body: %v", err)
-		}
-		received.Store(parsed)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
-		URL:     server.URL,
-		Timeout: 5 * time.Second,
-	})
-	client := stack.Attach()
-	defer client.Close()
-
-	id := uuid.New()
-	const chainID uint64 = 42161
-	reportedAt := time.Now().UTC().Truncate(time.Second)
-	report := addressfilter.FilterSetIDReport{
-		FilterSetID: id,
-		ChainID:     chainID,
-		ReportedAt:  reportedAt,
-	}
-	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report); err != nil {
-		t.Fatalf("rpc call failed: %v", err)
-	}
-	if calls.Load() != 1 {
-		t.Fatalf("expected 1 POST, got %d", calls.Load())
-	}
-	got, ok := received.Load().(addressfilter.FilterSetIDReport)
-	if !ok {
-		t.Fatal("server did not record a report")
-	}
-	require.Equal(t, report, got)
 }
 
 // failingQueueClient wraps MockQueueClient and fails on a specific Send call.

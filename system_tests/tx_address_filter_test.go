@@ -628,6 +628,9 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 			http.Error(w, "bad method", http.StatusMethodNotAllowed)
 			return
 		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", ct)
+		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("read body: %v", err)
