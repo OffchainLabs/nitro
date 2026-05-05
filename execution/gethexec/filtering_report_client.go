@@ -60,7 +60,7 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressf
 
 func (c *FilteringReportRPCClient) ReportCurrentFilterSetID(report *addressfilter.FilterSetIDReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetId", report)
+		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetID", report)
 		return struct{}{}, err
 	})
 }

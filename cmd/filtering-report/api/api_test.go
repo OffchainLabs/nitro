@@ -161,7 +161,7 @@ func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
 		ChainID:     42161,
 		ReportedAt:  time.Now().UTC(),
 	}
-	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
+	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report); err != nil {
 		t.Fatalf("expected no-op call to succeed, got %v", err)
 	}
 }
@@ -205,7 +205,7 @@ func TestReportCurrentFilterSetID_Posts(t *testing.T) {
 		ChainID:     chainID,
 		ReportedAt:  reportedAt,
 	}
-	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report); err != nil {
+	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report); err != nil {
 		t.Fatalf("rpc call failed: %v", err)
 	}
 	if calls.Load() != 1 {
@@ -246,7 +246,7 @@ func TestReportCurrentFilterSetID_Non2xxError(t *testing.T) {
 		ChainID:     1,
 		ReportedAt:  time.Now().UTC(),
 	}
-	err := client.Call(nil, "filteringreport_reportCurrentFilterSetId", report)
+	err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report)
 	if err == nil {
 		t.Fatal("expected error for non-2xx response")
 	}
