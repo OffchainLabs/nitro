@@ -1772,12 +1772,6 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	return err
 }
 
-// startFilterSetReporting schedules the periodic reporting loop whenever the
-// filtering-report RPC client is wired (its presence is immutable after node
-// construction). FilterSetReportingInterval carries reload:"hot", so it is
-// re-read on every tick; when the operator hot-reloads it to <=0 the loop
-// parks at filterSetReportingDisabledRetry instead of exiting, so a later
-// re-enable is picked up without restarting the node.
 func (s *Sequencer) startFilterSetReporting() {
 	if s.execEngine.GetFilteringReportRPCClient() == nil {
 		return
