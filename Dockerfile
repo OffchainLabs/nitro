@@ -206,12 +206,9 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v50-rc.5 0xb90895a56a59c0267c2004a0e103ad725bd98d5a05c3262806ab4ccb3f997558
 #RUN ./download-machine.sh consensus-v50-rc.6 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 #RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
-RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.3 0xeadc910d36a0eab43a3dd7acb1a3513885e333785689c7cf750b9949c5bb7227 OffchainLabs/nitro-private
-RUN ./download-machine.sh consensus-v60-alpha.1 0xe237db4636ba7878fb1d6998f40fa155260a26484f81db732f9aa7dc1b684bf7
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
-RUN ./download-machine.sh consensus-v60-alpha.2 0x5a79438ff2ab312234ee23839ea03b0c9348e856298b5ab1d2c067bf3c725bd0
-RUN ./download-machine.sh consensus-v60-rc.1 0x4a281197d799ef8e0430f5b94ed79fed72ce327311747819a593539f31938c34
+RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.4 0x333f5e036235b1ce1a34cbbe254ccbb2615218f9ae6f84aeef0511cb09ef9b67 OffchainLabs/nitro-private
 RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
 # Factored out of node-builder so the stripped variant doesn't depend on it.
