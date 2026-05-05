@@ -1859,13 +1859,23 @@ where
         // For payable ArbWasm calls (ActivateProgram, CodehashKeepalive),
         // zero out value so revm doesn't transfer ETH to the precompile.
         // We handle the data fee transfer from sender to network post-commit.
+        // We still need to pass the original `msg.value` to the precompile so
+        // it can enforce `value >= data_fee` (matching Go's
+        // `payActivationDataFee`); revm's `PrecompileInput.value` mirrors
+        // `tx_env.value`, which we just zeroed, so capture into a thread-
+        // local that the handler reads.
         {
             let to_addr = match recovered.tx().kind() {
                 TxKind::Call(a) => Some(a),
                 _ => None,
             };
-            if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) && tx_value > U256::ZERO {
-                tx_env.set_value(U256::ZERO);
+            if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) {
+                arb_precompiles::set_stylus_call_value(tx_value);
+                if tx_value > U256::ZERO {
+                    tx_env.set_value(U256::ZERO);
+                }
+            } else {
+                arb_precompiles::set_stylus_call_value(U256::ZERO);
             }
         }
 
