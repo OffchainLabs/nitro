@@ -154,7 +154,7 @@ type PebbleExperimentalConfig struct {
 	L0CompactionThreshold       int    `koanf:"l0-compaction-threshold"`
 	L0StopWritesThreshold       int    `koanf:"l0-stop-writes-threshold"`
 	LBaseMaxBytes               int64  `koanf:"l-base-max-bytes"`
-	MemTableStopWritesThreshold int    `koanf:"mem-table-stop-writes-threshold"`
+	MemTableNumber              int    `koanf:"mem-table-number"`
 	DisableAutomaticCompactions bool   `koanf:"disable-automatic-compactions"`
 	WALBytesPerSync             int    `koanf:"wal-bytes-per-sync"`
 	WALDir                      string `koanf:"wal-dir"`
@@ -196,7 +196,7 @@ var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
 	// limit unchanged allows writes to be flushed more smoothly. This helps
 	// avoid compaction spikes and mitigates write stalls caused by heavy
 	// compaction workloads.
-	MemTableStopWritesThreshold: 4,
+	MemTableNumber:              4,
 	DisableAutomaticCompactions: false,
 	// Pebble is configured to use asynchronous write mode, meaning write operations
 	// return as soon as the data is cached in memory, without waiting for the WAL
@@ -229,7 +229,7 @@ func PebbleExperimentalConfigAddOptions(prefix string, f *pflag.FlagSet, default
 	f.Int(prefix+".l0-compaction-threshold", defaultConfig.L0CompactionThreshold, "amount of L0 read-amplification necessary to trigger an L0 compaction")
 	f.Int(prefix+".l0-stop-writes-threshold", defaultConfig.L0StopWritesThreshold, "hard limit on L0 read-amplification, computed as the number of L0 sublevels. Writes are stopped when this threshold is reached")
 	f.Int64(prefix+".l-base-max-bytes", defaultConfig.LBaseMaxBytes, "The maximum number of bytes for LBase. The base level is the level which L0 is compacted into. The base level is determined dynamically based on the existing data in the LSM. The maximum number of bytes for other levels is computed dynamically based on the base level's maximum size. When the maximum number of bytes for a level is exceeded, compaction is requested.")
-	f.Int(prefix+".mem-table-stop-writes-threshold", defaultConfig.MemTableStopWritesThreshold, "hard limit on the number of queued of MemTables")
+	f.Int(prefix+".mem-table-number", defaultConfig.MemTableNumber, "number used to calculate MemTable size, half of hard limit on the number of queued of MemTables")
 	f.Bool(prefix+".disable-automatic-compactions", defaultConfig.DisableAutomaticCompactions, "disables automatic compactions")
 	f.Int(prefix+".wal-bytes-per-sync", defaultConfig.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the background")
 	f.String(prefix+".wal-dir", defaultConfig.WALDir, "absolute path of directory to store write-ahead logs (WALs) in. If empty, WALs will be stored in the same directory as sstables")
@@ -290,7 +290,7 @@ func (c *PebbleConfig) ExtraOptions(namespace string) *pebble.ExtraOptions {
 		L0CompactionThreshold:       c.Experimental.L0CompactionThreshold,
 		L0StopWritesThreshold:       c.Experimental.L0StopWritesThreshold,
 		LBaseMaxBytes:               c.Experimental.LBaseMaxBytes,
-		MemTableStopWritesThreshold: c.Experimental.MemTableStopWritesThreshold,
+		MemTableNumber:              c.Experimental.MemTableNumber,
 		MaxConcurrentCompactions:    maxConcurrentCompactions,
 		DisableAutomaticCompactions: c.Experimental.DisableAutomaticCompactions,
 		WALBytesPerSync:             c.Experimental.WALBytesPerSync,
