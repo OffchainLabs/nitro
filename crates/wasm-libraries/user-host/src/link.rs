@@ -14,7 +14,7 @@ use arbutil::{
 use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 use prover::{machine::Module, programs::config::StylusConfig};
 
-use crate::program::Program;
+use crate::program::{current_requester, Program};
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn programs__program_prepare(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
     unsafe {
-        let (req_type, len) = Program::current().request_handler().get_request_meta(id);
+        let (req_type, len) = current_requester().get_request_meta(id);
         if len_ptr != GuestPtr(0) {
             StaticMem.write_u32(len_ptr, len as u32);
         }
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
     unsafe {
-        let (_, data) = Program::current().request_handler().take_request(id);
+        let (_, data) = current_requester().take_request(id);
         StaticMem.write_slice(data_ptr, &data);
     }
 }
@@ -207,8 +207,7 @@ pub unsafe extern "C" fn programs__set_response(
     raw_data_len: usize,
 ) {
     unsafe {
-        let program = Program::current();
-        program.request_handler().set_response(
+        current_requester().set_response(
             id,
             StaticMem.read_slice(result_ptr, result_len),
             StaticMem.read_slice(raw_data_ptr, raw_data_len),
@@ -272,9 +271,7 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
         let mut output = Vec::with_capacity(8 + outs.len());
         output.extend(gas_left.to_be_bytes());
         output.extend(outs);
-        program
-            .request_handler()
-            .set_request(status as u32, &output)
+        current_requester().set_request(status as u32, &output)
     }
 }
 
