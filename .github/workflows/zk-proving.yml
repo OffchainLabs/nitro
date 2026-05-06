@@ -68,18 +68,18 @@ jobs:
         run: |
           # Exit if any command in a pipe fails
           set -e -o pipefail
-          
+
           echo "--- Running SP1 Validation ---"
           # Extracting only the hex string using grep -o
           SP1_HASH=$(make -C crates/sp1 run BLOCK=stylus 2>&1 \
             | grep "Validation succeeds with hash" \
             | awk '{print $NF}')
-          
+
           if [ -z "$SP1_HASH" ]; then
               echo "Error: Failed to capture hash."
               exit 1
           fi
-          
+
           echo "--- Running JIT Validation ---"
           JIT_HASH=$(./target/bin/jit \
             --debug --cranelift \
@@ -88,18 +88,88 @@ jobs:
             | grep "Completed in .* with hash" \
             | awk '{print $NF}' \
             | sed 's/\.$//')
-          
+
           if [ -z "$JIT_HASH" ]; then
               echo "Error: Failed to capture JIT hash."
               exit 1
           fi
-          
+
           echo "SP1 Hash: $SP1_HASH"
           echo "JIT Hash: $JIT_HASH"
-          
+
           if [ "$SP1_HASH" != "$JIT_HASH" ]; then
               echo "::error::Hash mismatch detected!"
               echo "Expected: $SP1_HASH"
               echo "Actual:   $JIT_HASH"
               exit 1
           fi
+
+      - name: Profile PR branch
+        if: github.event_name == 'pull_request'
+        run: make -C crates/sp1 profile JSON_OUTPUT=/tmp/profile-new.json
+
+      - name: Checkout base branch
+        if: github.event_name == 'pull_request'
+        run: |
+          cp crates/sp1/profile.py /tmp/profile.py
+          cp crates/sp1/profile_delta.py /tmp/profile_delta.py
+          cp crates/sp1/Makefile /tmp/Makefile
+          git fetch origin ${{ github.base_ref }}
+          git checkout FETCH_HEAD
+
+      - name: Init submodules (base branch)
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+
+      - name: Build binaries (base branch)
+        if: github.event_name == 'pull_request'
+        run: make -C crates/sp1 build
+
+      - name: Profile base branch
+        if: github.event_name == 'pull_request'
+        run: >
+          cd crates/sp1 && make -f /tmp/Makefile profile
+          PROFILE_SCRIPT=/tmp/profile.py
+          JSON_OUTPUT=/tmp/profile-old.json
+
+      - name: Compute profile delta
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 /tmp/profile_delta.py \
+            --old /tmp/profile-old.json \
+            --new /tmp/profile-new.json \
+            --output /tmp/comment.md
+
+      - name: Mint token
+        if: github.event_name == 'pull_request'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+
+      - name: Post profile delta comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/comment.md', 'utf8');
+            const marker = '<!-- sp1-profile-comment -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number }
+            );
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
