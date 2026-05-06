@@ -117,12 +117,6 @@ jobs:
           git fetch origin ${{ github.base_ref }}
           git checkout FETCH_HEAD
 
-      - name: Init submodules (base branch)
-        if: github.event_name == 'pull_request'
-        uses: ./.github/actions/init-submodules
-        with:
-          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
-
       - name: Build binaries (base branch)
         if: github.event_name == 'pull_request'
         run: make -C crates/sp1 build
