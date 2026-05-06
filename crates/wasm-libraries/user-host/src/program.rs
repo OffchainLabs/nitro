@@ -61,16 +61,6 @@ static REQUESTERS: SyncUnsafe<Vec<Box<UserHostRequester>>> = SyncUnsafe(UnsafeCe
 
 static LAST_REQUEST_ID: SyncUnsafe<u32> = SyncUnsafe(UnsafeCell::new(0x10000));
 
-pub(crate) static HOSTIO_ACTIVE: SyncUnsafe<bool> = SyncUnsafe(UnsafeCell::new(false));
-
-pub(crate) unsafe fn set_hostio_active(val: bool) {
-    unsafe { *HOSTIO_ACTIVE.0.get() = val }
-}
-
-pub(crate) fn is_hostio_active() -> bool {
-    unsafe { *HOSTIO_ACTIVE.0.get() }
-}
-
 #[derive(Clone, Default)]
 pub(crate) struct UserHostRequester {
     data: Option<Vec<u8>>,
@@ -162,7 +152,6 @@ unsafe fn send_request(req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, Gas
         let req_id = current_requester().set_request(req_type, &data);
         compiler_fence(Ordering::SeqCst);
         // No borrows held across this FFI call — host callbacks re-enter via current_requester().
-        println!("send_request: calling program_request (FFI) — no borrows held");
         let got_id = program_request(req_id);
         compiler_fence(Ordering::SeqCst);
         if got_id != req_id {
@@ -216,9 +205,6 @@ impl Program {
 
     /// Provides a reference to the current program.
     pub fn current() -> &'static mut Self {
-        if is_hostio_active() {
-            panic!("RE-ENTRANCY BUG: Program::current() called while hostio holds &mut Program — two &mut Program references coexist!");
-        }
         unsafe { (*PROGRAMS.0.get()).last_mut().expect("no program") }
     }
 
