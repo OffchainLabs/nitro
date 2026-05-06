@@ -14,6 +14,7 @@ All times are read from [PROFILE] log lines emitted by the binaries themselves.
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -131,9 +132,9 @@ def print_table(rows: list[dict]) -> None:
     def fmt_cell(value: str, width: int, col: int) -> str:
         return value.ljust(width) if col == 0 else value.rjust(width)
 
-    sep      = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
-    thick    = "+=" + "=+=".join("=" * w for w in col_widths) + "=+"
-    hdr_row  = "| " + " | ".join(h.ljust(w) for h, w in zip(headers, col_widths)) + " |"
+    sep = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
+    thick = "+=" + "=+=".join("=" * w for w in col_widths) + "=+"
+    hdr_row = "| " + " | ".join(h.ljust(w) for h, w in zip(headers, col_widths)) + " |"
 
     print()
     print(sep)
@@ -152,6 +153,25 @@ def print_table(rows: list[dict]) -> None:
     print()
 
 
+def write_json(table: list[dict], path: str) -> None:
+    data: dict = {"bootloading": None, "blocks": {}}
+    current = None
+    for r in table:
+        if "section" in r:
+            current = r["section"]
+            data["blocks"][current] = {"stylus_compilations": [], "reexecution": None}
+        elif r.get("label") == "bootloading":
+            data["bootloading"] = {k: v for k, v in r.items() if k != "label"}
+        elif r.get("label", "").startswith("stylus_compilation") and current:
+            data["blocks"][current]["stylus_compilations"].append(
+                {k: v for k, v in r.items() if k != "label"}
+            )
+        elif r.get("label") == "reexecution" and current:
+            data["blocks"][current]["reexecution"] = {k: v for k, v in r.items() if k != "label"}
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -160,6 +180,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--output-dir", required=True, help="Path to target/sp1")
     ap.add_argument("--block-inputs-dir", required=True, help="Path to target/sp1/block-inputs")
+    ap.add_argument("--json-output", help="Also write results as JSON to FILE")
     args = ap.parse_args()
 
     out = args.output_dir
@@ -216,9 +237,11 @@ def main() -> None:
             phase = row["phase"]
             if phase == "stylus_compilation":
                 stylus_count += 1
-                table.append({"label": f"stylus_compilation [{stylus_count}]", "wasm_size": row.get("wasm_size"), "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
+                table.append({"label": f"stylus_compilation [{stylus_count}]", "wasm_size": row.get("wasm_size"),
+                              "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
             elif phase == "reexecution":
-                table.append({"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"), "time_secs": row.get("time_secs")})
+                table.append({"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"),
+                              "time_secs": row.get("time_secs")})
 
     data_rows = [r for r in table if "section" not in r]
     if not data_rows:
@@ -226,6 +249,10 @@ def main() -> None:
         sys.exit(1)
 
     print_table(table)
+
+    if args.json_output:
+        write_json(table, args.json_output)
+        print(f"JSON written to {args.json_output}")
 
 
 if __name__ == "__main__":
