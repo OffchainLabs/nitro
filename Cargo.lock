@@ -7559,6 +7559,7 @@ dependencies = [
 name = "stylus-compiler-runner"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bincode",
  "clap 4.5.53",
  "sp1-build",

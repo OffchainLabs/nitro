@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use sp1_sdk::{
     Elf, ProvingKey, SP1Stdin,
@@ -63,11 +64,12 @@ enum Command {
     Compare,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     sp1_sdk::utils::setup_logger();
 
     let cli = Cli::parse();
-    let wasm = std::fs::read(&cli.wasm).expect("failed to read wasm file");
+    let wasm = std::fs::read(&cli.wasm)
+        .with_context(|| format!("failed to read '{}'", cli.wasm.display()))?;
     let input = CompileInput {
         version: cli.version,
         debug: cli.debug,
@@ -76,7 +78,14 @@ fn main() {
 
     match cli.command {
         Command::Native => {
-            let binary = compile(&input).expect("native compilation failed");
+            let binary = compile(&input).with_context(|| {
+                format!(
+                    "failed to compile '{}' (version={}, debug={})",
+                    cli.wasm.display(),
+                    input.version,
+                    input.debug
+                )
+            })?;
             tracing::info!("compiled successfully, output size: {} bytes", binary.len());
         }
         Command::Execute => {
@@ -88,12 +97,21 @@ fn main() {
         }
         Command::Prove => sp1_prove(&input),
         Command::Compare => {
-            let native = compile(&input).expect("native compilation failed");
+            let native = compile(&input).with_context(|| {
+                format!(
+                    "failed to compile '{}' natively (version={}, debug={})",
+                    cli.wasm.display(),
+                    input.version,
+                    input.debug
+                )
+            })?;
             let sp1 = sp1_execute(&input);
             assert_eq!(native, sp1, "native and SP1 outputs differ");
             tracing::info!("outputs match ({} bytes)", native.len());
         }
     }
+
+    Ok(())
 }
 
 fn build_stdin(input: &CompileInput) -> SP1Stdin {
