@@ -54,6 +54,12 @@ unsafe impl<T> Sync for SyncUnsafe<T> {}
 #[allow(clippy::vec_box)]
 static PROGRAMS: SyncUnsafe<Vec<Box<Program>>> = SyncUnsafe(UnsafeCell::new(vec![]));
 
+/// Separated from [`Program`] so that host callbacks can access request state
+/// without aliasing the active `&mut Program` held by a hostio method.
+#[allow(clippy::vec_box)]
+static REQUESTERS: SyncUnsafe<Vec<Box<UserHostRequester>>> =
+    SyncUnsafe(UnsafeCell::new(vec![]));
+
 static LAST_REQUEST_ID: SyncUnsafe<u32> = SyncUnsafe(UnsafeCell::new(0x10000));
 
 #[derive(Clone, Default)]
@@ -177,13 +183,17 @@ impl Program {
             config,
             early_exit: None,
         };
-        unsafe { (*PROGRAMS.0.get()).push(Box::new(program)) }
+        unsafe {
+            (*PROGRAMS.0.get()).push(Box::new(program));
+            (*REQUESTERS.0.get()).push(Box::new(UserHostRequester::default()));
+        }
     }
 
     /// Removes the current program
     pub fn pop() {
         unsafe {
             (*PROGRAMS.0.get()).pop().expect("no program");
+            (*REQUESTERS.0.get()).pop().expect("no requester");
         }
     }
 
@@ -219,6 +229,13 @@ impl Program {
     pub fn request_handler(&mut self) -> &mut UserHostRequester {
         self.evm_api.request_handler()
     }
+}
+
+/// Provides a mutable reference to the current requester.
+///
+/// Used by host callbacks that need request state without going through [`Program`].
+pub(crate) fn current_requester() -> &'static mut UserHostRequester {
+    unsafe { (*REQUESTERS.0.get()).last_mut().expect("no requester") }
 }
 
 #[allow(clippy::unit_arg)]
