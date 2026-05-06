@@ -14,7 +14,7 @@ use arbutil::{
 use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 use prover::{machine::Module, programs::config::StylusConfig};
 
-use crate::program::{Program, is_hostio_active};
+use crate::program::Program;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -172,10 +172,6 @@ pub unsafe extern "C" fn programs__program_prepare(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
     unsafe {
-        println!("programs__get_request: entered (HOSTIO_ACTIVE={})", is_hostio_active());
-        if is_hostio_active() {
-            panic!("RE-ENTRANCY BUG: programs__get_request called while hostio holds &mut Program — two &mut Program references coexist!");
-        }
         let (req_type, len) = Program::current().request_handler().get_request_meta(id);
         if len_ptr != GuestPtr(0) {
             StaticMem.write_u32(len_ptr, len as u32);
