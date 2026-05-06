@@ -56,23 +56,12 @@ static PROGRAMS: SyncUnsafe<Vec<Box<Program>>> = SyncUnsafe(UnsafeCell::new(vec!
 
 static LAST_REQUEST_ID: SyncUnsafe<u32> = SyncUnsafe(UnsafeCell::new(0x10000));
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct UserHostRequester {
     data: Option<Vec<u8>>,
     answer: Option<(Vec<u8>, VecReader, Gas)>,
     req_type: u32,
     id: u32,
-}
-
-impl UserHostRequester {
-    pub fn default() -> Self {
-        Self {
-            req_type: 0,
-            data: None,
-            answer: None,
-            id: 0,
-        }
-    }
 }
 
 /// An active user program.
