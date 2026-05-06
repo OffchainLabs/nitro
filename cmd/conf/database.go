@@ -19,6 +19,12 @@ import (
 	"github.com/offchainlabs/nitro/util"
 )
 
+const (
+	UninitializedReadSamplingMultiplier = -2
+	PathdbReadSamplingMultiplier        = 1
+	HashdbReadSamplingMultiplier        = -1 // read sampling disabled, original geth default for hashdb
+)
+
 type PersistentConfig struct {
 	GlobalConfig string       `koanf:"global-config"`
 	Chain        string       `koanf:"chain"`
@@ -215,10 +221,10 @@ var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
 	TargetFileSize:            2 << 20, // 2 MB
 	TargetFileSizeEqualLevels: false,
 
-	L0CompactionConcurrency:   10,
-	CompactionDebtConcurrency: 1 << 30, // 1GB
-	ReadCompactionRate:        16000,   // see ReadSamplingMultiplier comment
-	ReadSamplingMultiplier:    -1,      // geth default, disables read sampling and disables read triggered compaction
+	L0CompactionConcurrency:   1,                                   // latest geth upstream default update: https://github.com/ethereum/go-ethereum/pull/33353
+	CompactionDebtConcurrency: 1 << 28,                             // 256MB
+	ReadCompactionRate:        16000,                               // see ReadSamplingMultiplier comment
+	ReadSamplingMultiplier:    UninitializedReadSamplingMultiplier, // geth old disabled read sampling and disables read triggered compaction for hashdb, new changes with pathdb in mind re-enable read sampling; see: https://github.com/ethereum/go-ethereum/pull/33353
 	MaxWriterConcurrency:      0,
 	ForceWriterParallelism:    false,
 }
