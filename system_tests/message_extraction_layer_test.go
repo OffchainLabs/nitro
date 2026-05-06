@@ -1159,17 +1159,32 @@ func waitForDelayedCount(t *testing.T, ctx context.Context, builder *NodeBuilder
 }
 
 // forceBatchPost triggers a batch post and resets MaxDelay back to high.
+// It retries until the on-chain batch count actually increases, since
+// MaybePostSequencerBatch can return (false, nil) when batch-building
+// readiness conditions are not yet satisfied (no new messages past the last
+// batch, the batch lacks a useful message, or serialized batchData is empty).
+// AdvanceL1 between attempts nudges parent-chain progress.
 func forceBatchPost(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	t.Helper()
+
+	initialBatchCount := GetBatchCount(t, builder)
+
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
 	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
-	posted, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
-	Require(t, err)
-	if !posted {
-		t.Fatal("sequencer batch was not posted")
-	}
-	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
-	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	defer func() {
+		builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+		builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	}()
+
+	pollUntil(t, ctx, 30*time.Second, 200*time.Millisecond, "sequencer batch count to increase", func() bool {
+		_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+		Require(t, err)
+		if GetBatchCount(t, builder) > initialBatchCount {
+			return true
+		}
+		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+		return false
+	})
 }
 
 func forceSequencerMessageBatchPosting(

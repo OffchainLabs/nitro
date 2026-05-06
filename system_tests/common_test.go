@@ -3008,6 +3008,9 @@ func getFreePort(t testing.TB) int {
 	return tcpAddr.Port
 }
 
+// Used only by challengetest-tagged files; the linter doesn't see those callers in default builds.
+//
+//nolint:unused
 func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
 	for {
 		select {
