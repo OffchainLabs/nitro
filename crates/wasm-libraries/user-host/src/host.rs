@@ -5,7 +5,7 @@ use arbutil::evm::{api::Gas, user::UserOutcomeKind};
 use caller_env::GuestPtr;
 use user_host_trait::UserHost;
 
-use crate::program::Program;
+use crate::program::{Program, set_hostio_active};
 
 #[link(wasm_import_module = "forward")]
 unsafe extern "C" {
@@ -13,15 +13,21 @@ unsafe extern "C" {
 }
 
 macro_rules! hostio {
-    ($($func:tt)*) => {
-        match Program::current().$($func)* {
+    ($($func:tt)*) => {{
+        println!("hostio: entering {} — acquiring &mut Program", stringify!($($func)*));
+        unsafe { set_hostio_active(true) };
+        let result = match Program::current().$($func)* {
             Ok(value) => value,
             Err(_) => {
+                unsafe { set_hostio_active(false) };
                 set_trap();
                 Default::default()
             }
-        }
-    };
+        };
+        unsafe { set_hostio_active(false) };
+        println!("hostio: exiting {} — released &mut Program", stringify!($($func)*));
+        result
+    }};
 }
 
 #[unsafe(no_mangle)]

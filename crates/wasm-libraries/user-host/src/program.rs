@@ -56,6 +56,18 @@ static PROGRAMS: SyncUnsafe<Vec<Box<Program>>> = SyncUnsafe(UnsafeCell::new(vec!
 
 static LAST_REQUEST_ID: SyncUnsafe<u32> = SyncUnsafe(UnsafeCell::new(0x10000));
 
+/// Instrumentation flag: set to true while a hostio method holds `&mut Program`.
+/// Used to detect re-entrant aliasing via `programs__get_request`.
+pub(crate) static HOSTIO_ACTIVE: SyncUnsafe<bool> = SyncUnsafe(UnsafeCell::new(false));
+
+pub(crate) unsafe fn set_hostio_active(val: bool) {
+    unsafe { *HOSTIO_ACTIVE.0.get() = val }
+}
+
+pub(crate) fn is_hostio_active() -> bool {
+    unsafe { *HOSTIO_ACTIVE.0.get() }
+}
+
 #[derive(Clone)]
 pub(crate) struct UserHostRequester {
     data: Option<Vec<u8>>,
@@ -149,6 +161,7 @@ impl UserHostRequester {
             let req_id = self.set_request(req_type, &data);
             compiler_fence(Ordering::SeqCst);
 
+            println!("send_request: calling program_request (FFI) — &mut Program still held by hostio caller");
             let got_id = program_request(req_id);
             compiler_fence(Ordering::SeqCst);
 
