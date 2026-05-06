@@ -57,8 +57,7 @@ static PROGRAMS: SyncUnsafe<Vec<Box<Program>>> = SyncUnsafe(UnsafeCell::new(vec!
 /// Separated from [`Program`] so that host callbacks can access request state
 /// without aliasing the active `&mut Program` held by a hostio method.
 #[allow(clippy::vec_box)]
-static REQUESTERS: SyncUnsafe<Vec<Box<UserHostRequester>>> =
-    SyncUnsafe(UnsafeCell::new(vec![]));
+static REQUESTERS: SyncUnsafe<Vec<Box<UserHostRequester>>> = SyncUnsafe(UnsafeCell::new(vec![]));
 
 static LAST_REQUEST_ID: SyncUnsafe<u32> = SyncUnsafe(UnsafeCell::new(0x10000));
 
@@ -137,7 +136,6 @@ impl UserHostRequester {
         let data = self.data.take().expect("no request on take_request");
         (self.req_type, data)
     }
-
 }
 
 /// Zero-sized proxy that implements [`RequestHandler`] by delegating to the
@@ -233,7 +231,6 @@ impl Program {
         }
         Ok(())
     }
-
 }
 
 /// Provides a mutable reference to the current requester.

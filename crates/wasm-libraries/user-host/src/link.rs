@@ -14,7 +14,7 @@ use arbutil::{
 use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 use prover::{machine::Module, programs::config::StylusConfig};
 
-use crate::program::{current_requester, Program};
+use crate::program::{Program, current_requester};
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
