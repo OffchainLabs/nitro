@@ -104,6 +104,10 @@ jobs:
               exit 1
           fi
 
+      - name: Clean up stale profiling artifacts
+        if: github.event_name == 'pull_request'
+        run: rm -f /tmp/profile-{old,new}.json /tmp/comment.md /tmp/profile{,_delta}.py /tmp/Makefile
+
       - name: Profile PR branch
         if: github.event_name == 'pull_request'
         run: make -C crates/sp1 profile JSON_OUTPUT=/tmp/profile-new.json
