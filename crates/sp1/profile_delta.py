@@ -5,9 +5,8 @@ GitHub-flavoured markdown comment.
 
 Usage:
     python3 profile_delta.py \
-        --base base.json --pr pr.json \
-        --output comment.md \
-        [--base-ref BRANCH] [--base-sha SHA] [--pr-sha SHA]
+        --old old.json --new new.json \
+        --output comment.md
 """
 import argparse
 import json
