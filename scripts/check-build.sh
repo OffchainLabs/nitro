@@ -200,10 +200,11 @@ fi
 # Newer forge versions (> 1.0.0) use solar instead of solc for Yul compilation,
 # which causes `make build` to fail.
 if command_exists forge; then
-    FORGE_INSTALLED_VERSION=$(forge --version | head -n 1 | awk '{print $2}')
-    if compare_versions "$forge_max_version" "$FORGE_INSTALLED_VERSION" "exact"; then
-        echo -e "${GREEN}forge version $FORGE_INSTALLED_VERSION is installed (compatible).${NC}"
-    else
+    FORGE_INSTALLED_VERSION=$(forge --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+    if [[ -z "$FORGE_INSTALLED_VERSION" ]]; then
+        echo -e "${RED}Could not parse forge version from \`forge --version\`.${NC}"
+        EXIT_CODE=1
+    elif compare_versions "$forge_version_needed" "$FORGE_INSTALLED_VERSION" "exact"; then
         echo -e "${RED}forge version $FORGE_INSTALLED_VERSION is not compatible. Version $forge_max_version is required (newer versions use solar instead of solc for Yul compilation). Run: foundryup --version $forge_max_version${NC}"
         EXIT_CODE=1
     fi
