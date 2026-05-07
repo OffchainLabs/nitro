@@ -166,7 +166,7 @@ jobs:
               github.rest.issues.listComments,
               { owner, repo, issue_number }
             );
-            const existing = comments.find(c => c.body.includes(marker));
+            const existing = comments.find(c => (c.body || '').includes(marker));
 
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
