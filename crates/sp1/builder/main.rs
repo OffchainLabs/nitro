@@ -3,6 +3,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time::Sy
 use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::{Elf, include_elf};
+use validation::SP1_BOOTLOAD_SENTINEL;
 use wasmer::{
     Module, Store,
     sys::{CpuFeature, EngineBuilder, LLVM, Target, Triple},
@@ -108,15 +109,15 @@ fn main() {
         let mut executor = MinimalExecutor::<UserMode>::simple(program);
         executor.with_input(&wasmu_binary);
         executor.with_input(function_names_json.as_bytes());
-        // Sentinel: a bincode-serialized empty `Vec<u8>` tells the SP1
-        // program there is no validation input, so it should exit cleanly
-        // after the `beforeFirstIO` hook has dumped the ELF. This matches
-        // the wire format used by the runner (SP1Stdin::write -> bincode),
-        // so the program's `io::read::<Vec<u8>>()` deserializes it to an
-        // empty Vec instead of panicking on EOF.
-        let bootload_sentinel =
-            bincode::serialize(&Vec::<u8>::new()).expect("serialize empty input");
-        executor.with_input(&bootload_sentinel);
+        // Bincode-serialize the bootload sentinel so it matches the wire
+        // format the runner uses (SP1Stdin::write -> bincode). The program's
+        // `io::read::<Vec<u8>>()` will deserialize it back to
+        // SP1_BOOTLOAD_SENTINEL and halt cleanly. Any other unexpected
+        // payload (including a genuinely empty one) falls through to
+        // ValidationInput parsing on the program side and panics loudly
+        let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
+            .expect("serialize bootload sentinel");
+        executor.with_input(&bootload_input);
 
         let t0 = SystemTime::now();
         let _ = executor.execute_chunk();

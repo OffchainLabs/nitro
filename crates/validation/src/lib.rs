@@ -14,6 +14,14 @@ pub mod transfer;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
 
+/// Magic payload the SP1 builder feeds as the program's third input during
+/// the bootloading step. The program recognises this exact byte string,
+/// halts cleanly after the `beforeFirstIO` ELF dump, and skips parsing a
+/// `ValidationInput`. Any other payload, including a genuinely empty one,
+/// falls through to the normal parse path and panics loudly, so this
+/// sentinel cannot be triggered accidentally on the runner path.
+pub const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
+
 /// The runtime data needed by any machine (JIT, SP1, Prover) to execute
 /// a single block validation. Extracted from a `ValidationRequest` by
 /// selecting a target architecture and stripping request metadata.

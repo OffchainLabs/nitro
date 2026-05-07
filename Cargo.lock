@@ -6972,6 +6972,7 @@ dependencies = [
  "sp1-core-executor",
  "sp1-sdk",
  "tracing",
+ "validation",
  "wasmer",
  "wasmparser 0.245.1",
 ]
