@@ -28,6 +28,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }
 
+[dev-dependencies]
+wat = "1.0"
+
 [lib]
 name = "arb_fuzz"
 path = "src/lib.rs"
