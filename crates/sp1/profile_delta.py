@@ -96,7 +96,7 @@ def main() -> None:
     with open(getattr(args, "new")) as f:
         pr = json.load(f)
 
-    headers = ["Phase", "Metric", "Base", "PR", "Δ"]
+    headers = ["Phase", "Metric", "Base", "PR", "Delta"]
     lines = ["## SP1 Profile — Delta Report", ""]
 
     # Bootloading
