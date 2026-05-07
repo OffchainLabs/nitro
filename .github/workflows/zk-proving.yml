@@ -20,6 +20,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      PROFILE_OLD: /tmp/profile-old.json
+      PROFILE_NEW: /tmp/profile-new.json
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -106,11 +109,11 @@ jobs:
 
       - name: Clean up stale profiling artifacts
         if: github.event_name == 'pull_request'
-        run: rm -f /tmp/profile-{old,new}.json /tmp/comment.md /tmp/profile{,_delta}.py /tmp/Makefile
+        run: rm -f "$PROFILE_OLD" "$PROFILE_NEW" /tmp/comment.md /tmp/profile{,_delta}.py /tmp/Makefile
 
       - name: Profile PR branch
         if: github.event_name == 'pull_request'
-        run: make -C crates/sp1 profile JSON_OUTPUT=/tmp/profile-new.json
+        run: make -C crates/sp1 profile JSON_OUTPUT="$PROFILE_NEW"
 
       - name: Checkout base branch
         if: github.event_name == 'pull_request'
@@ -136,14 +139,14 @@ jobs:
         run: >
           cd crates/sp1 && make -f /tmp/Makefile profile
           PROFILE_SCRIPT=/tmp/profile.py
-          JSON_OUTPUT=/tmp/profile-old.json
+          JSON_OUTPUT="$PROFILE_OLD"
 
       - name: Compute profile delta
         if: github.event_name == 'pull_request'
         run: |
           python3 /tmp/profile_delta.py \
-            --old /tmp/profile-old.json \
-            --new /tmp/profile-new.json \
+            --old "$PROFILE_OLD" \
+            --new "$PROFILE_NEW" \
             --output /tmp/comment.md
 
       - name: Mint token
