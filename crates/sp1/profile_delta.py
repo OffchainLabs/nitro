@@ -11,6 +11,7 @@ Usage:
 """
 import argparse
 import json
+from itertools import zip_longest
 
 MARKER = "<!-- sp1-profile-comment -->"
 BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed"]
@@ -112,7 +113,7 @@ def main() -> None:
         rows = []
         b_sc = b_blk.get("stylus_compilations") or []
         p_sc = p_blk.get("stylus_compilations") or []
-        for i, (b_s, p_s) in enumerate(zip(b_sc, p_sc), 1):
+        for i, (b_s, p_s) in enumerate(zip_longest(b_sc, p_sc, fillvalue={}), 1):
             rows.extend(_phase_rows(f"stylus_compilation[{i}]", b_s, p_s))
         rows.extend(_phase_rows("reexecution", b_blk.get("reexecution") or {}, p_blk.get("reexecution") or {}))
 
