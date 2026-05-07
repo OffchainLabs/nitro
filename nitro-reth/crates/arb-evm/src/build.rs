@@ -1856,10 +1856,6 @@ where
             tx_env.set_nonce(sender_nonce);
         }
 
-        // ArbWasm activate/keepalive: capture the original tx_value for the
-        // precompile's value-vs-data_fee check, then zero out tx_env.value so
-        // revm doesn't transfer ETH to the precompile address. Data fee
-        // transfer happens post-commit.
         {
             let to_addr = match recovered.tx().kind() {
                 TxKind::Call(a) => Some(a),

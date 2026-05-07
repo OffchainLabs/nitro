@@ -425,9 +425,6 @@ fn revert_with_gas(payload: Vec<u8>, gas_used: u64, gas_limit: u64) -> Precompil
     ))
 }
 
-/// Soft-revert a state-modifying handler with an abi-encoded sol error.
-/// Mirrors Go's precompile.go:822 — charges COPY_GAS for the encoded
-/// data words on top of whatever the handler has already accumulated.
 fn revert_sol_error(payload: Vec<u8>) -> PrecompileResult {
     crate::charge_precompile_gas(COPY_GAS * (payload.len() as u64).div_ceil(32));
     Ok(PrecompileOutput::new_reverted(
@@ -662,7 +659,6 @@ fn handle_activate_program(
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    // payActivationDataFee: value check comes after the program-data write.
     let tx_value = crate::get_stylus_call_value();
     if tx_value < data_fee {
         return revert_sol_error(

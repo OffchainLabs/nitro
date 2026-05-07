@@ -427,14 +427,8 @@ where
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
 
-    // Create a journal checkpoint for the sub-call
     let checkpoint = context.journaled_state.inner.checkpoint();
 
-    // For CALL with value, transfer ETH. revm's `transfer` returns
-    // `Result<Option<TransferError>, DB::Error>`: outer Err is a DB
-    // failure, inner Some(_) is OutOfFunds / OverflowPayment. Both must
-    // revert the sub-call -- only checking is_err() let insufficient-funds
-    // calls silently succeed.
     if !is_delegate && !value.is_zero() {
         let transfer_result = context.journaled_state.inner.transfer(
             &mut context.journaled_state.database,
@@ -442,8 +436,7 @@ where
             contract,
             value,
         );
-        let failed = matches!(transfer_result, Err(_) | Ok(Some(_)));
-        if failed {
+        if matches!(transfer_result, Err(_) | Ok(Some(_))) {
             context.journaled_state.inner.checkpoint_revert(checkpoint);
             return SubCallResult {
                 output: Vec::new(),
