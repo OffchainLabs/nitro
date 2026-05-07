@@ -21,6 +21,14 @@ const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 const WARM_SLOAD_GAS: u64 = 100;
+const STORAGE_CODE_HASH_COST: u64 = 2_600;
+/// Framework cost: argsCost (CopyGas * 1 word for 32-byte address) + OpenArbosState (800).
+const FRAMEWORK_GAS_PROGRAM_ADDR: u64 = COPY_GAS + 800;
+/// Total gas for ArbWasm methods that look up program metadata by address: framework
+/// + Params (warm) + GetCodeHash (cold account access) + getProgram SLOAD. Mirrors
+/// Nitro's `con.getCodeHash` + `c.State.Programs().Params/Get` charge sequence.
+const PROGRAM_LOOKUP_GAS: u64 =
+    FRAMEWORK_GAS_PROGRAM_ADDR + WARM_SLOAD_GAS + STORAGE_CODE_HASH_COST + SLOAD_GAS;
 
 /// Initial page ramp constant (not stored in packed params).
 const INITIAL_PAGE_RAMP: u64 = 620674314;
@@ -173,7 +181,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(asm_size))
         }
         Calls::programVersion(c) => {
-            const METHOD_GAS: u64 = 3 * SLOAD_GAS + COPY_GAS;
+            const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -191,7 +199,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(program.version))
         }
         Calls::programInitGas(c) => {
-            const METHOD_GAS: u64 = 3 * SLOAD_GAS + COPY_GAS;
+            // Returns (uint64, uint64) → 64-byte output → 2 words of result_cost.
+            const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + 2 * COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -229,7 +238,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_two_u256(METHOD_GAS, U256::from(init_gas), U256::from(cached_gas))
         }
         Calls::programMemoryFootprint(c) => {
-            const METHOD_GAS: u64 = 3 * SLOAD_GAS + COPY_GAS;
+            const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -247,7 +256,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(program.footprint))
         }
         Calls::programTimeLeft(c) => {
-            const METHOD_GAS: u64 = 3 * SLOAD_GAS + COPY_GAS;
+            const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);

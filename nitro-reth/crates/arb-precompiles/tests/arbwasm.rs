@@ -559,7 +559,8 @@ fn program_version_revert_charges_canonical_gas() {
     assert!(out.reverted);
     let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
     assert_eq!(&out.bytes[..4], &sel[..4]);
-    assert_eq!(out.gas_used, 2403);
+    // Open(800) + argsCost(3) + Params warm(100) + GetCodeHash(2600) + getProgram(800) + result(3)
+    assert_eq!(out.gas_used, 4306);
 }
 
 #[test]
