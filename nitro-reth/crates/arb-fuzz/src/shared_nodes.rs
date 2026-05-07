@@ -11,16 +11,22 @@ use arb_test_harness::{
 pub const FUZZ_L2_CHAIN_ID: u64 = 412_346;
 /// L1 chain id served by the embedded mock.
 pub const FUZZ_L1_CHAIN_ID: u64 = 11_155_111;
-/// ArbOS version baked into the shared genesis. Arbitrary scenarios that pick
-/// other versions still drive the same nodes — only the per-message effects
-/// vary; on-chain bootstrap version is fixed for the lifetime of the process.
+/// ArbOS version baked into the shared genesis. Default v60; override per
+/// process via `ARB_FUZZ_ARBOS_VERSION=32|50|60`.
 pub const FUZZ_ARBOS_VERSION: u64 = 60;
+
+pub fn fuzz_arbos_version() -> u64 {
+    std::env::var("ARB_FUZZ_ARBOS_VERSION")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(FUZZ_ARBOS_VERSION)
+}
 
 static NODES: OnceLock<Mutex<DualExec<NitroDocker, ArbrethProcess>>> = OnceLock::new();
 
 /// Construct a `NodeStartCtx` pointing at the supplied mock L1.
 pub fn default_ctx(mock_rpc: String) -> NodeStartCtx {
-    let genesis = GenesisBuilder::new(FUZZ_L2_CHAIN_ID, FUZZ_ARBOS_VERSION)
+    let genesis = GenesisBuilder::new(FUZZ_L2_CHAIN_ID, fuzz_arbos_version())
         .build()
         .expect("genesis build");
     NodeStartCtx {

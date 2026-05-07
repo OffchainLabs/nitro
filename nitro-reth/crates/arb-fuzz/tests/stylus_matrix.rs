@@ -34,7 +34,7 @@ fn seen_tx() -> &'static Mutex<HashSet<(String, String)>> {
 use alloy_primitives::{b256, keccak256, Address, Bytes, B256, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
-    shared_nodes::{shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{fuzz_arbos_version, shared_dual_exec, FUZZ_L2_CHAIN_ID},
 };
 use arb_test_harness::{
     messaging::{
@@ -44,7 +44,6 @@ use arb_test_harness::{
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
 
-const FUZZ_ARBOS_VERSION: u64 = 60;
 const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
 const FUZZ_GAS_CAP: u64 = 4_000_000;
 const SEQUENCER_ALIAS: Address = Address::new([
@@ -89,6 +88,50 @@ const WAT_STORAGE_LOAD: &str = include_str!(concat!(
 const WAT_STORAGE_STORE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../arb-spec-tests/fixtures/_wat/hostio_storage_store_bytes32.wat"
+));
+const WAT_ACCOUNT_BALANCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_account_balance.wat"
+));
+const WAT_ACCOUNT_CODEHASH: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_account_codehash.wat"
+));
+const WAT_BLOCK_BASEFEE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_block_basefee.wat"
+));
+const WAT_BLOCK_NUMBER: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_block_number.wat"
+));
+const WAT_BLOCK_TIMESTAMP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_block_timestamp.wat"
+));
+const WAT_CHAINID: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_chainid.wat"
+));
+const WAT_MSG_VALUE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_msg_value.wat"
+));
+const WAT_PAY_FOR_MEMORY_GROW: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_pay_for_memory_grow.wat"
+));
+const WAT_TRANSIENT_LOAD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_transient_load_bytes32.wat"
+));
+const WAT_TRANSIENT_STORE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_transient_store_bytes32.wat"
+));
+const WAT_TX_ORIGIN: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../arb-spec-tests/fixtures/_wat/hostio_tx_origin.wat"
 ));
 
 #[derive(Clone)]
@@ -185,6 +228,68 @@ fn storage_store_variants() -> Vec<(String, Vec<u8>)> {
     v
 }
 
+fn account_addr_variants() -> Vec<(String, Vec<u8>)> {
+    let arbwasm = vec![
+        0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x71,
+    ];
+    let zero = vec![0u8; 20];
+    let mut max = vec![0u8; 20];
+    max.fill(0xff);
+    let mut sequencer = vec![
+        0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75,
+        0x65, 0x6e, 0x63, 0x65, 0x72,
+    ];
+    let _ = sequencer.len();
+    let mut eoa_addr = vec![0u8; 20];
+    let eoa = derive_address(signing_key());
+    eoa_addr.copy_from_slice(eoa.as_slice());
+    vec![
+        ("zero_addr".into(), zero),
+        ("self_eoa".into(), eoa_addr),
+        ("arbwasm_precompile".into(), arbwasm),
+        ("max_addr".into(), max),
+        ("sequencer_alias".into(), sequencer),
+    ]
+}
+
+fn empty_calldata_variants() -> Vec<(String, Vec<u8>)> {
+    vec![("empty".into(), vec![])]
+}
+
+fn pay_for_memory_grow_variants() -> Vec<(String, Vec<u8>)> {
+    let mut v = Vec::new();
+    for pages in [0u32, 1, 2, 4, 16, 32, 64, 100] {
+        let bytes = pages.to_be_bytes().to_vec();
+        v.push((format!("pages_{pages}"), bytes));
+    }
+    v
+}
+
+fn transient_load_variants() -> Vec<(String, Vec<u8>)> {
+    let mut v = Vec::new();
+    let mut zero = vec![0u8; 32];
+    v.push(("key_zero".into(), zero.clone()));
+    zero[31] = 1;
+    v.push(("key_one".into(), zero));
+    let max = vec![0xff; 32];
+    v.push(("key_max".into(), max));
+    v
+}
+
+fn transient_store_variants() -> Vec<(String, Vec<u8>)> {
+    let mut v = Vec::new();
+    fn pair(k: u8, val_pat: u8) -> Vec<u8> {
+        let mut out = vec![0u8; 64];
+        out[31] = k;
+        out[32..].fill(val_pat);
+        out
+    }
+    v.push(("set_zero_to_one".into(), pair(0xb0, 0x01)));
+    v.push(("overwrite_to_max".into(), pair(0xb0, 0xff)));
+    v.push(("clear_to_zero".into(), pair(0xb0, 0x00)));
+    v
+}
+
 fn primitives() -> Vec<Primitive> {
     vec![
         Primitive {
@@ -211,6 +316,61 @@ fn primitives() -> Vec<Primitive> {
             name: "storage_store",
             wat: WAT_STORAGE_STORE,
             variants: storage_store_variants(),
+        },
+        Primitive {
+            name: "account_balance",
+            wat: WAT_ACCOUNT_BALANCE,
+            variants: account_addr_variants(),
+        },
+        Primitive {
+            name: "account_codehash",
+            wat: WAT_ACCOUNT_CODEHASH,
+            variants: account_addr_variants(),
+        },
+        Primitive {
+            name: "block_basefee",
+            wat: WAT_BLOCK_BASEFEE,
+            variants: empty_calldata_variants(),
+        },
+        Primitive {
+            name: "block_number",
+            wat: WAT_BLOCK_NUMBER,
+            variants: empty_calldata_variants(),
+        },
+        Primitive {
+            name: "block_timestamp",
+            wat: WAT_BLOCK_TIMESTAMP,
+            variants: empty_calldata_variants(),
+        },
+        Primitive {
+            name: "chainid",
+            wat: WAT_CHAINID,
+            variants: empty_calldata_variants(),
+        },
+        Primitive {
+            name: "msg_value",
+            wat: WAT_MSG_VALUE,
+            variants: empty_calldata_variants(),
+        },
+        Primitive {
+            name: "pay_for_memory_grow",
+            wat: WAT_PAY_FOR_MEMORY_GROW,
+            variants: pay_for_memory_grow_variants(),
+        },
+        Primitive {
+            name: "transient_load",
+            wat: WAT_TRANSIENT_LOAD,
+            variants: transient_load_variants(),
+        },
+        Primitive {
+            name: "transient_store",
+            wat: WAT_TRANSIENT_STORE,
+            variants: transient_store_variants(),
+        },
+        Primitive {
+            name: "tx_origin",
+            wat: WAT_TX_ORIGIN,
+            variants: empty_calldata_variants(),
         },
     ]
 }
@@ -390,7 +550,7 @@ fn build_invoke_scenario(
         description: String::new(),
         setup: ScenarioSetup {
             l2_chain_id: FUZZ_L2_CHAIN_ID,
-            arbos_version: FUZZ_ARBOS_VERSION,
+            arbos_version: fuzz_arbos_version(),
             genesis: None,
         },
         steps: vec![message_step(idx, msg, delayed)],
@@ -434,7 +594,7 @@ fn stylus_diff_matrix() {
                 description: "fund the matrix's shared EOA".into(),
                 setup: ScenarioSetup {
                     l2_chain_id: FUZZ_L2_CHAIN_ID,
-                    arbos_version: FUZZ_ARBOS_VERSION,
+                    arbos_version: fuzz_arbos_version(),
                     genesis: None,
                 },
                 steps: fund_steps,
@@ -467,7 +627,7 @@ fn stylus_diff_matrix() {
             description: format!("deploy+activate {} at {}", primitive.name, deploy_addr),
             setup: ScenarioSetup {
                 l2_chain_id: FUZZ_L2_CHAIN_ID,
-                arbos_version: FUZZ_ARBOS_VERSION,
+                arbos_version: fuzz_arbos_version(),
                 genesis: None,
             },
             steps: deploy_steps,
