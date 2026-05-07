@@ -114,8 +114,14 @@ jobs:
           cp crates/sp1/profile.py /tmp/profile.py
           cp crates/sp1/profile_delta.py /tmp/profile_delta.py
           cp crates/sp1/Makefile /tmp/Makefile
-          git fetch origin ${{ github.base_ref }}
+          git fetch --no-recurse-submodules origin ${{ github.base_ref }}
           git checkout FETCH_HEAD
+
+      - name: Init submodules (base branch)
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/init-submodules
+        with:
+          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Build binaries (base branch)
         if: github.event_name == 'pull_request'
