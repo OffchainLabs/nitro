@@ -11,14 +11,25 @@
 //! Outputs to /tmp/stylus_matrix/{summary.json, divergences/}.
 
 use std::{
+    collections::HashSet,
     fs,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        OnceLock,
+        Mutex, OnceLock,
     },
     time::Instant,
 };
+
+static SEEN_BLOCK_DIFFS: OnceLock<Mutex<HashSet<(u64, String)>>> = OnceLock::new();
+static SEEN_TX_DIFFS: OnceLock<Mutex<HashSet<(String, String)>>> = OnceLock::new();
+
+fn seen_block() -> &'static Mutex<HashSet<(u64, String)>> {
+    SEEN_BLOCK_DIFFS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+fn seen_tx() -> &'static Mutex<HashSet<(String, String)>> {
+    SEEN_TX_DIFFS.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 use alloy_primitives::{b256, keccak256, Address, Bytes, B256, U256};
 use arb_fuzz::{
@@ -461,39 +472,56 @@ fn stylus_diff_matrix() {
             },
             steps: deploy_steps,
         };
-        let activate_ok = {
+        {
             let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
             match nodes.run(&setup_scen) {
                 Ok(report) => {
-                    let real_block_diffs: Vec<_> = report
+                    let mut sb = seen_block().lock().unwrap();
+                    let new_block_diffs: Vec<_> = report
                         .block_diffs
                         .iter()
                         .filter(|d| d.field != "state_root" && d.field != "parent_hash")
+                        .filter(|d| sb.insert((d.number, d.field.clone())))
                         .collect();
-                    let real = !real_block_diffs.is_empty()
-                        || !report.tx_diffs.is_empty()
+                    drop(sb);
+                    let mut st = seen_tx().lock().unwrap();
+                    let new_tx_diffs: Vec<_> = report
+                        .tx_diffs
+                        .iter()
+                        .filter(|d| {
+                            st.insert((format!("{:?}", d.tx_hash), d.field.clone()))
+                        })
+                        .collect();
+                    drop(st);
+                    let real = !new_block_diffs.is_empty()
+                        || !new_tx_diffs.is_empty()
                         || !report.state_diffs.is_empty()
                         || !report.log_diffs.is_empty();
                     if real {
+                        activate_failed.fetch_add(1, Ordering::Relaxed);
+                        let payload = serde_json::json!({
+                            "case": format!("{}_deploy_activate", primitive.name),
+                            "primitive": primitive.name,
+                            "phase": "deploy_activate",
+                            "deploy_addr": format!("{deploy_addr}"),
+                            "block_diffs_new": format!("{:#?}", new_block_diffs),
+                            "tx_diffs_new": format!("{:#?}", new_tx_diffs),
+                            "state_diffs": format!("{:#?}", report.state_diffs),
+                            "log_diffs": format!("{:#?}", report.log_diffs),
+                        });
+                        let path = div_dir.join(format!("{}_deploy_activate.json", primitive.name));
+                        let _ = fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
                         eprintln!(
-                            "[stylus_matrix] DEPLOY/ACTIVATE DIVERGED for {}: {:?}",
-                            primitive.name, report
+                            "[stylus_matrix] DEPLOY/ACTIVATE DIVERGED for {} -> {}",
+                            primitive.name,
+                            path.display()
                         );
-                        false
-                    } else {
-                        true
                     }
                 }
                 Err(e) => {
                     eprintln!("[stylus_matrix] activate err for {}: {e}", primitive.name);
-                    false
                 }
             }
-        };
-
-        if !activate_ok {
-            activate_failed.fetch_add(1, Ordering::Relaxed);
-            continue;
         }
 
         for (i, (variant_label, calldata)) in primitive
@@ -511,13 +539,25 @@ fn stylus_diff_matrix() {
             let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
             match nodes.run(&scen) {
                 Ok(report) => {
-                    let real_block_diffs: Vec<_> = report
+                    let mut sb = seen_block().lock().unwrap();
+                    let new_block_diffs: Vec<_> = report
                         .block_diffs
                         .iter()
                         .filter(|d| d.field != "state_root" && d.field != "parent_hash")
+                        .filter(|d| sb.insert((d.number, d.field.clone())))
                         .collect();
-                    let real = !real_block_diffs.is_empty()
-                        || !report.tx_diffs.is_empty()
+                    drop(sb);
+                    let mut st = seen_tx().lock().unwrap();
+                    let new_tx_diffs: Vec<_> = report
+                        .tx_diffs
+                        .iter()
+                        .filter(|d| {
+                            st.insert((format!("{:?}", d.tx_hash), d.field.clone()))
+                        })
+                        .collect();
+                    drop(st);
+                    let real = !new_block_diffs.is_empty()
+                        || !new_tx_diffs.is_empty()
                         || !report.state_diffs.is_empty()
                         || !report.log_diffs.is_empty();
                     if real {
@@ -529,8 +569,8 @@ fn stylus_diff_matrix() {
                             "calldata_len": calldata.len(),
                             "calldata_hex": format!("0x{}", hex::encode(calldata)),
                             "deploy_addr": format!("{deploy_addr}"),
-                            "block_diffs_filtered": format!("{:#?}", real_block_diffs),
-                            "tx_diffs": format!("{:#?}", report.tx_diffs),
+                            "block_diffs_new": format!("{:#?}", new_block_diffs),
+                            "tx_diffs_new": format!("{:#?}", new_tx_diffs),
                             "state_diffs": format!("{:#?}", report.state_diffs),
                             "log_diffs": format!("{:#?}", report.log_diffs),
                         });
