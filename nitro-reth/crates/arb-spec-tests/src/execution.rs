@@ -336,6 +336,9 @@ impl ExecutionFixture {
             .map_err(|e| SpecError::Action(format!("dual_exec: {e}")))?;
 
         let filtered = filter_accepted(&report, &self.expected.accepted_diffs);
+        if let Ok(path) = std::env::var("ARB_SPEC_COMPARE_DIFF_DUMP") {
+            let _ = std::fs::write(&path, format!("{:#?}", filtered));
+        }
         if !filtered.is_clean() {
             return Err(SpecError::Assertion(format!(
                 "compare mode: diffs after filtering accepted: {} block, {} tx, {} state, {} log",
