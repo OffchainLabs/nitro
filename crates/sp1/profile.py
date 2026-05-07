@@ -168,6 +168,8 @@ def write_json(table: list[dict], path: str) -> None:
             )
         elif r.get("label") == "reexecution" and current:
             data["blocks"][current]["reexecution"] = {k: v for k, v in r.items() if k != "label"}
+        else:
+            print(f"write_json: unrecognised row, skipping: {r}", file=sys.stderr)
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
