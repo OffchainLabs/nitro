@@ -109,6 +109,7 @@ impl ArbrethProcess {
             .arg(format!("--authrpc.port={auth_port}"))
             .arg(format!("--authrpc.jwtsecret={}", jwt_path.display()))
             .arg("--disable-discovery")
+            .arg("--port=0")
             .arg("--db.exclusive=true")
             .stdout(Stdio::from(stdout_file))
             .stderr(Stdio::from(stderr_file))
