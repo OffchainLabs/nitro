@@ -201,7 +201,7 @@ fn storage_load_variants() -> Vec<(String, Vec<u8>)> {
     let mut slot_one = vec![0u8; 32];
     slot_one[31] = 1;
     v.push(("slot_one_cold".into(), slot_one));
-    let mut slot_max = vec![0xff; 32];
+    let slot_max = vec![0xff; 32];
     v.push(("slot_max_cold".into(), slot_max));
     slot_zero[31] = 0;
     v.push(("slot_zero_again".into(), slot_zero));
@@ -235,11 +235,10 @@ fn account_addr_variants() -> Vec<(String, Vec<u8>)> {
     let zero = vec![0u8; 20];
     let mut max = vec![0u8; 20];
     max.fill(0xff);
-    let mut sequencer = vec![
+    let sequencer = vec![
         0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75,
         0x65, 0x6e, 0x63, 0x65, 0x72,
     ];
-    let _ = sequencer.len();
     let mut eoa_addr = vec![0u8; 20];
     let eoa = derive_address(signing_key());
     eoa_addr.copy_from_slice(eoa.as_slice());
