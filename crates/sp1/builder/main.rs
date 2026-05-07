@@ -108,15 +108,16 @@ fn main() {
         let mut executor = MinimalExecutor::<UserMode>::simple(program);
         executor.with_input(&wasmu_binary);
         executor.with_input(function_names_json.as_bytes());
-        // The executed program expects an Arbitrum block, sending it an
-        // empty buffer would fail. However, it does not matter here, since
-        // all we need to do is the bootloading process, which should finish
-        // before reading this input.
-        executor.with_input(&[]);
+        // Sentinel: a bincode-serialized empty `Vec<u8>` tells the SP1
+        // program there is no validation input, so it should exit cleanly
+        // after the `beforeFirstIO` hook has dumped the ELF. This matches
+        // the wire format used by the runner (SP1Stdin::write -> bincode),
+        // so the program's `io::read::<Vec<u8>>()` deserializes it to an
+        // empty Vec instead of panicking on EOF.
+        let bootload_sentinel =
+            bincode::serialize(&Vec::<u8>::new()).expect("serialize empty input");
+        executor.with_input(&bootload_sentinel);
 
-        // The executor will fail after bootloading completes because
-        // the empty input buffer cannot be parsed as an Arbitrum block.
-        // This is expected — we only need the bootloading side-effect (ELF dump).
         let t0 = SystemTime::now();
         let _ = executor.execute_chunk();
         let time_secs = t0.elapsed().unwrap().as_secs_f64();
