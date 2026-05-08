@@ -3,6 +3,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time::Sy
 use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::{Elf, include_elf};
+use validation::SP1_BOOTLOAD_SENTINEL;
 use wasmer::{
     Module, Store,
     sys::{CpuFeature, EngineBuilder, LLVM, Target, Triple},
@@ -108,15 +109,16 @@ fn main() {
         let mut executor = MinimalExecutor::<UserMode>::simple(program);
         executor.with_input(&wasmu_binary);
         executor.with_input(function_names_json.as_bytes());
-        // The executed program expects an Arbitrum block, sending it an
-        // empty buffer would fail. However, it does not matter here, since
-        // all we need to do is the bootloading process, which should finish
-        // before reading this input.
-        executor.with_input(&[]);
+        // Bincode-serialize the bootload sentinel so it matches the wire
+        // format the runner uses (SP1Stdin::write -> bincode). The program's
+        // `io::read::<Vec<u8>>()` will deserialize it back to
+        // SP1_BOOTLOAD_SENTINEL and halt cleanly. Any other unexpected
+        // payload (including a genuinely empty one) falls through to
+        // ValidationInput parsing on the program side and panics loudly
+        let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
+            .expect("serialize bootload sentinel");
+        executor.with_input(&bootload_input);
 
-        // The executor will fail after bootloading completes because
-        // the empty input buffer cannot be parsed as an Arbitrum block.
-        // This is expected — we only need the bootloading side-effect (ELF dump).
         let t0 = SystemTime::now();
         let _ = executor.execute_chunk();
         let time_secs = t0.elapsed().unwrap().as_secs_f64();

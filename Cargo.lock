@@ -6950,12 +6950,14 @@ dependencies = [
 name = "sp1-builder"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "clap 4.6.1",
  "serde_json",
  "sp1-build",
  "sp1-core-executor",
  "sp1-sdk",
  "tracing",
+ "validation",
  "wasmer",
  "wasmparser 0.245.1",
 ]
