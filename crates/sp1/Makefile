@@ -11,16 +11,6 @@ BLOCK ?= stylus
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
 
-# On macOS, point secp256k1-sys (and any other cc-rs crate) at the SP1-provided
-# RISC-V toolchain. Without these, the host ar/ranlib produce an empty
-# libsecp256k1.a (ELF objects can't be indexed by macOS ranlib) and linking
-# the SP1 program fails with undefined rustsecp256k1_v0_10_0_* symbols.
-ifeq ($(shell uname -s),Darwin)
-export RISCV_GNU_TOOLCHAIN               := $(HOME)/.sp1/riscv
-export AR_riscv64im_unknown_none_elf     := $(HOME)/.sp1/riscv/bin/riscv64-unknown-elf-ar
-export RANLIB_riscv64im_unknown_none_elf := $(HOME)/.sp1/riscv/bin/riscv64-unknown-elf-ranlib
-endif
-
 .PHONY: help
 help: # Show help for each of the Makefile recipes.
 	@grep -E '^[a-zA-Z0-9 -]+:.*#'  Makefile | sort | while read -r l; do printf "\033[1;32m$$(echo $$l | cut -f 1 -d':')\033[00m:$$(echo $$l | cut -f 2- -d'#')\n"; done

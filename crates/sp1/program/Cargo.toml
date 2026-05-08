@@ -23,7 +23,6 @@ once_cell = { workspace = true }
 rand_pcg = { workspace = true }
 rand = { workspace = true }
 ruint2 = { workspace = true }
-secp256k1 = { workspace = true, features = ["recovery", "global-context"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
