@@ -166,6 +166,28 @@ func TestRecordBlockMixed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// 6. Signature-heavy block — many ETH transfers in a single block to amplify
+//    ECRecover (sender recovery) signal in profile snapshots.
+// ---------------------------------------------------------------------------
+
+func TestRecordBlockSignatures(t *testing.T) {
+	builder, _, cleanup := setupProgramTest(t, true)
+	l2info := builder.L2Info
+	defer cleanup()
+
+	const numTransfers = 50
+	txs := make(types.Transactions, numTransfers)
+	for i := 0; i < numTransfers; i++ {
+		name := fmt.Sprintf("SigReceiver%d", i)
+		l2info.GenerateAccount(name)
+		txs[i] = l2info.PrepareTx("Owner", name, l2info.TransferGas, big.NewInt(1e16), nil)
+	}
+
+	blockNum, _ := sequenceInBlock(t, builder, txs)
+	record(t, blockNum, builder)
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

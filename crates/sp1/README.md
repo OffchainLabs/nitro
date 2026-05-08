@@ -66,6 +66,7 @@ This runs the block-recording system tests (under the `block_recording` build ta
 * `stylus.json` — a single Stylus call with one WASM storage write.
 * `stylus_heavy.json` — 32 cross-contract read/write pairs through a multicall Stylus program.
 * `mixed.json` — a mixed block: ETH transfers, an EVM call, and multiple Stylus programs.
+* `signatures.json` — 50 ETH transfers in a single block; amplifies ECRecover (sender recovery) signal in profile snapshots.
 
 Now you can use the following command to execute an Arbitrum block using SP1 runner:
 
@@ -93,3 +94,51 @@ Completed in 19ms with hash 624b2d504238ba9fe94ad3e19d1036a51894bc209b7f0ead1331
 ```
 
 If you want to generate additional Arbitrum blocks beyond the ones recorded by `make record-blocks`, you can add new tests to `system_tests/block_recording_test.go` (guarded by the `block_recording` build tag). There is one caveat: for any stylus programs that might be executed, you must include the original wasm source in the block JSON file as well. SP1 runner works either with the original WASM source files (it will invoke stylus compiler program automatically), or the `rv64` target binary after compilation.
+
+## Profiling
+
+Three Make targets drive `profile.py` and `profile_delta.py` in `crates/sp1/`:
+
+* `profile` — single ad-hoc run. Builds a profiling-instrumented `sp1-runner`, executes every recorded block, and prints a human-readable summary table. Pass `JSON_OUTPUT=<path>` to also write a JSON snapshot.
+* `profile-snapshot LABEL=<name>` — wrapper that runs `profile` and stores the JSON snapshot at `target/sp1/profile-<name>.json`.
+* `profile-compare BASE=<old> NEW=<new>` — runs `profile_delta.py` against two saved snapshots and writes a markdown delta report to `target/sp1/profile-delta-<old>-vs-<new>.md` (also `cat`s it).
+
+Each block's JSON snapshot includes per-phase `cycles`, `gas`, `wasm_size`, `time_secs`, plus the `syscalls` map (`SECP256K1_ADD`, `KECCAK_PERMUTE`, `MPROTECT`, …) and any `cycle_trackers` spans emitted by the runner. The delta report renders a per-block table for those scalars plus a separate syscall diff table (with crypto syscalls listed first) and a cycle-tracker diff table when present.
+
+### Typical "before / after" workflow
+
+When evaluating a change to the SP1 program (a library swap, new precompile, optimization), use snapshots to capture the impact:
+
+```bash
+# 1. Record block inputs once (only needs to be redone when block_recording_test.go changes).
+$ make -C crates/sp1 record-blocks
+
+# 2. On the baseline branch, capture a snapshot.
+$ git checkout master
+$ make -C crates/sp1 build
+$ make -C crates/sp1 profile-snapshot LABEL=baseline
+
+# 3. On the change branch, capture another snapshot.
+$ git checkout my-change
+$ make -C crates/sp1 build
+$ make -C crates/sp1 profile-snapshot LABEL=my-change
+
+# 4. Render the delta report.
+$ make -C crates/sp1 profile-compare BASE=baseline NEW=my-change
+```
+
+Snapshots persist under `target/sp1/profile-*.json`, so it's safe to switch branches between steps 2 and 3 — the JSON files are not removed by `make build`. Only `make clean` wipes them.
+
+### Sanity checks on a fresh snapshot
+
+```bash
+# Confirm the new fields are populated.
+$ jq '.blocks.transfer.reexecution | keys' target/sp1/profile-baseline.json
+[ "cycles", "cycle_trackers", "gas", "syscalls", "time_secs" ]
+
+# Confirm SECP256K1_* syscalls appear (one per transaction in the block).
+$ jq '.blocks.signatures.reexecution.syscalls | with_entries(select(.key | startswith("SECP256K1")))' \
+    target/sp1/profile-baseline.json
+```
+
+The `signatures` block is the most ECRecover-heavy input (~50 × per-tx SECP syscalls); use it when measuring changes that touch `arbcrypto::ecrecovery` or the SP1 `secp256k1` / `k256` patches.
