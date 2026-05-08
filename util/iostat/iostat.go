@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -69,8 +70,20 @@ func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 		log.Error("Failed to start iostat command", "err", err)
 		return
 	}
+	parseStream(stdout, receiver)
+	if err := cmd.Process.Kill(); err != nil {
+		log.Error("Failed to kill iostat process", "err", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		log.Error("Error waiting for iostat to exit", "err", err)
+	}
+	stdout.Close()
+	log.Info("Iostat command terminated")
+}
+
+func parseStream(r io.Reader, receiver chan<- DeviceStats) {
 	var fields []string
-	scanner := bufio.NewScanner(stdout)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "Device") {
@@ -84,6 +97,12 @@ func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 		stat := DeviceStats{}
 		var err error
 		for i, field := range fields {
+			if i >= len(data) {
+				// Some iostat builds emit a header with more columns than a data row.
+				// Stop matching schema fields once the data row is exhausted.
+				log.Warn("iostat row has fewer columns than header", "headerCols", len(fields), "dataCols", len(data), "header", fields, "row", data)
+				break
+			}
 			switch field {
 			case "Device", "Device:":
 				stat.DeviceName = data[i]
@@ -105,14 +124,6 @@ func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 		receiver <- stat
 	}
 	if scanner.Err() != nil {
-		log.Error("Iostat scanner error", err, scanner.Err())
+		log.Error("Iostat scanner error", "err", scanner.Err())
 	}
-	if err := cmd.Process.Kill(); err != nil {
-		log.Error("Failed to kill iostat process", "err", err)
-	}
-	if err := cmd.Wait(); err != nil {
-		log.Error("Error waiting for iostat to exit", "err", err)
-	}
-	stdout.Close()
-	log.Info("Iostat command terminated")
 }
