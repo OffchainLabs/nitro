@@ -18,9 +18,9 @@ func TestParseStream(t *testing.T) {
 		{
 			name: "well formed row",
 			input: `
-Device r/s w/s await
-nvme0n1 1.25 2.50 3.75
-`,
+				Device r/s w/s await
+				nvme0n1 1.25 2.50 3.75
+			`,
 			want: []DeviceStats{{
 				DeviceName:      "nvme0n1",
 				ReadsPerSecond:  1.25,
@@ -31,9 +31,9 @@ nvme0n1 1.25 2.50 3.75
 		{
 			name: "header has more columns than data row",
 			input: `
-Device r/s w/s await
-nvme0n1 1.25 2.50
-`,
+				Device r/s w/s await
+				nvme0n1 1.25 2.50
+			`,
 			want: []DeviceStats{{
 				DeviceName:      "nvme0n1",
 				ReadsPerSecond:  1.25,
@@ -44,9 +44,9 @@ nvme0n1 1.25 2.50
 		{
 			name: "device header with trailing colon",
 			input: `
-Device: r/s w/s await
-nvme0n1 4.25 5.50 6.75
-`,
+				Device: r/s w/s await
+				nvme0n1 4.25 5.50 6.75
+			`,
 			want: []DeviceStats{{
 				DeviceName:      "nvme0n1",
 				ReadsPerSecond:  4.25,
