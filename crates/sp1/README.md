@@ -103,7 +103,13 @@ Three Make targets drive `profile.py` and `profile_delta.py` in `crates/sp1/`:
 * `profile-snapshot LABEL=<name>` — wrapper that runs `profile` and stores the JSON snapshot at `target/sp1/profile-<name>.json`.
 * `profile-compare BASE=<old> NEW=<new>` — runs `profile_delta.py` against two saved snapshots and writes a markdown delta report to `target/sp1/profile-delta-<old>-vs-<new>.md` (also `cat`s it).
 
-Each block's JSON snapshot includes per-phase `cycles`, `gas`, `wasm_size`, `time_secs`, plus the `syscalls` map (`SECP256K1_ADD`, `KECCAK_PERMUTE`, `MPROTECT`, …) and any `cycle_trackers` spans emitted by the runner. The delta report renders a per-block table for those scalars plus a separate syscall diff table (with crypto syscalls listed first) and a cycle-tracker diff table when present.
+JSON snapshot shape:
+
+* Top-level `bootloading`: `cycles`, `time_secs`.
+* Per block, `stylus_compilations[i]`: `wasm_size`, `cycles`, `time_secs`.
+* Per block, `reexecution`: `cycles`, `gas`, `time_secs`, plus the optional `syscalls` map (`SECP256K1_ADD`, `KECCAK_PERMUTE`, `MPROTECT`, …) and an optional `cycle_trackers` map (only present when the program emits `cycle_tracker_start!` spans).
+
+The delta report renders a per-block scalar table for those phases plus a separate syscall diff table (with crypto syscalls listed first) and a cycle-tracker diff table when present.
 
 ### Typical "before / after" workflow
 
@@ -134,11 +140,13 @@ Snapshots persist under `target/sp1/profile-*.json`, so it's safe to switch bran
 ```bash
 # Confirm the new fields are populated.
 $ jq '.blocks.transfer.reexecution | keys' target/sp1/profile-baseline.json
-[ "cycles", "cycle_trackers", "gas", "syscalls", "time_secs" ]
+[ "cycles", "gas", "syscalls", "time_secs" ]
 
-# Confirm SECP256K1_* syscalls appear (one per transaction in the block).
+# Confirm SECP256K1_* syscalls appear. Each ECDSA recovery fans out into
+# hundreds of SECP256K1_ADD / SECP256K1_DOUBLE ecalls (windowed scalar mult),
+# so a 50-tx block produces tens of thousands of these entries.
 $ jq '.blocks.signatures.reexecution.syscalls | with_entries(select(.key | startswith("SECP256K1")))' \
     target/sp1/profile-baseline.json
 ```
 
-The `signatures` block is the most ECRecover-heavy input (~50 × per-tx SECP syscalls); use it when measuring changes that touch `arbcrypto::ecrecovery` or the SP1 `secp256k1` / `k256` patches.
+The `signatures` block is the most ECRecover-heavy input (50 transactions × one recovery each, each fanning out into hundreds of `SECP256K1_*` ecalls). Use it when measuring changes that touch `arbcrypto::ecrecovery` or the SP1 `k256` patch.

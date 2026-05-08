@@ -157,9 +157,12 @@ def main() -> None:
         b_blk = (base.get("blocks") or {}).get(block, {})
         p_blk = (pr.get("blocks") or {}).get(block, {})
 
+        # Sort compilations by (wasm_size, cycles) so positional zip-pairing
+        # remains stable across runs — runner iteration order is HashMap-random.
+        sort_key = lambda c: (int(c.get("wasm_size") or 0), int(c.get("cycles") or 0))
         rows = []
-        b_sc = b_blk.get("stylus_compilations") or []
-        p_sc = p_blk.get("stylus_compilations") or []
+        b_sc = sorted(b_blk.get("stylus_compilations") or [], key=sort_key)
+        p_sc = sorted(p_blk.get("stylus_compilations") or [], key=sort_key)
         for i, (b_s, p_s) in enumerate(zip_longest(b_sc, p_sc, fillvalue={}), 1):
             rows.extend(_phase_rows(f"stylus_compilation[{i}]", b_s, p_s))
         rows.extend(_phase_rows("reexecution", b_blk.get("reexecution") or {}, p_blk.get("reexecution") or {}))
