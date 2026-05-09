@@ -587,7 +587,13 @@ where
     let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
-    let gas_used = gas.saturating_sub(result.gas.remaining());
+    // Match geth's evm.Call: only Revert refunds remaining gas; revm's
+    // halt() leaves it unspent, so non-Revert halts must charge `gas`.
+    let gas_used = if success || matches!(result.result, InstructionResult::Revert) {
+        gas.saturating_sub(result.gas.remaining())
+    } else {
+        gas
+    };
     let refund = result.gas.refunded();
     if success {
         context.journaled_state.inner.checkpoint_commit();

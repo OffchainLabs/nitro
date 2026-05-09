@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_139_306_946",
-  "description": "Sepolia tx 0xdb77b3b2... at block 139,306,946 (idx 1). Direct Stylus call (no proxy) with selector 0x96b6c508 + 388-byte input on 0x344f40ca. Status=1 with 2 ERC20 Approval logs matching canon. Locks arbreth's pre-fix gasUsed=189,960 vs canon's 190,818 (\u0394 -858). The drift originates inside the Stylus\u2192Solidity sub-call to 0x101f443b: that call makes a nested CALL to 0x66eeab70, both reverting; canon charges 836 gas more for the failed chain. Same family as blocks 112,694,675 (-7,500) and 130,021,029 (-1,906): Stylus runtime gas/ink accounting drift in some hostio or sub-call path. Fixture is locked at arbreth's current value to act as a regression target while the precise opcode-level root cause is identified.",
+  "description": "Sepolia tx 0xdb77b3b2... at block 139,306,946 (idx 1). Direct Stylus call (no proxy) on 0x344f40ca; the Stylus contract makes a CALL into Solidity 0x101f443b, which CALLs Solidity 0x66eeab70, which halts on the SSTORE reentrancy sentry (remaining \u2264 2300). Pre-fix arbreth refunded the leftover ~836 gas back to the caller (revm's halt(ReentrancySentryOOG) doesn't spend gas, while geth consumes all forwarded gas on non-Revert errors), producing gasUsed=189,960 vs canon 190,818 (\u0394 -858). The fix in stylus_call_trampoline's run_evm_bytecode path matches geth's evm.Call: only Revert preserves remaining gas; every other failure consumes the full forwarded amount. Locks gasUsed=190,818 = canon byte-for-byte.",
   "genesis": {
     "config": {
       "chainId": 421614,
@@ -147,7 +147,7 @@
         "from": "0xa8a7da49bf284f2e00fc8857464c1652095ca338",
         "to": "0x344f40ca5ccd13642af7eea8abe7566d1ae5ca4f",
         "status": 1,
-        "gasUsed": 189960
+        "gasUsed": 190818
       }
     ],
     "blocks": [],
