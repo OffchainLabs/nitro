@@ -487,6 +487,16 @@ fn handle_activate_program(
     let args_cost = COPY_GAS * (input.data.len() as u64).saturating_sub(4).div_ceil(32);
     crate::charge_precompile_gas(args_cost);
     crate::charge_precompile_gas(SLOAD_GAS); // OpenArbosState version read
+
+    // Match Nitro's `programs.ActivationGas()` at ArbOS >= 60: it SLOADs the
+    // activationGas slot. Pre-v60 it short-circuits to 0 with no SLOAD.
+    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+        let programs_key_for_act = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+        let activation_gas_key = derive_subspace_key(programs_key_for_act.as_slice(), &[5]);
+        let activation_gas_slot = map_slot(activation_gas_key.as_slice(), 0);
+        let _activation_gas = sload_field(&mut input, activation_gas_slot)?;
+    }
+
     crate::charge_precompile_gas(ACTIVATION_UPFRONT_GAS);
 
     let code_hash = {
