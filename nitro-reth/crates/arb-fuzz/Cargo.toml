@@ -91,5 +91,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "diff_signed_tx"
+path = "fuzz_targets/diff_signed_tx.rs"
+test = false
+doc = false
+bench = false
+
 [lints]
 workspace = true

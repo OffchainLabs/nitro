@@ -1,8 +1,10 @@
 pub mod arbos;
+pub mod signed_tx;
 pub mod stylus;
 pub mod tx;
 
 pub use arbos::ArbosVersion;
+pub use signed_tx::{AuthInput, DiffSignedTxScenario, SignedTxKind};
 pub use stylus::StylusFuzzInput;
 pub use tx::{BoundedBytes, TxScenario};
 
@@ -19,9 +21,9 @@ use serde::Serialize;
 use crate::shared_nodes::FUZZ_L2_CHAIN_ID;
 
 /// Default precompile-call gas ceiling, capped to keep fuzz iterations cheap.
-const FUZZ_GAS_CAP: u64 = 4_000_000;
+pub(crate) const FUZZ_GAS_CAP: u64 = 4_000_000;
 /// Synthetic L1 base fee used when building messages.
-const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
+pub(crate) const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
 /// Max-fee-per-gas for unsigned user txs; well above the network minimum.
 const FUZZ_MAX_FEE: u128 = 2_000_000_000;
 
@@ -345,7 +347,7 @@ pub fn message_step(idx: u64, message: L1Message, delayed_messages_read: u64) ->
     }
 }
 
-fn build_or_skip<B: MessageBuilder>(b: &B) -> Option<L1Message> {
+pub(crate) fn build_or_skip<B: MessageBuilder>(b: &B) -> Option<L1Message> {
     b.build().ok()
 }
 

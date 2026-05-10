@@ -451,6 +451,7 @@ fn signed_eip1559(
         max_fee_per_gas: 2_000_000_000,
         max_priority_fee_per_gas: 0,
         access_list: Vec::new(),
+        authorization_list: Vec::new(),
         kind: L2TxKind::Eip1559,
         signing_key: signing_key(),
         l1_block_number: 2,
