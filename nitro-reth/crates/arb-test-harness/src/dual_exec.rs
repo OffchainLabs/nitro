@@ -62,6 +62,7 @@ impl<L: ExecutionNode, R: ExecutionNode> DualExec<L, R> {
 
         match (left, right) {
             (Some(l), Some(r)) => {
+                push_block_field(number, "block_hash", &l.hash, &r.hash, report);
                 push_block_field(number, "gas_used", &l.gas_used, &r.gas_used, report);
                 push_block_field(number, "state_root", &l.state_root, &r.state_root, report);
                 push_block_field(
