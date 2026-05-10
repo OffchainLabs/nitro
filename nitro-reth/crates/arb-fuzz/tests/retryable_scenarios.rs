@@ -57,11 +57,14 @@ fn live_against_nitro() {
             }
         };
         eprintln!(
-            "iter {i}: SubmitRetryable to={:?} l2_call_value={} deposit={} gas_limit={} — running",
+            "iter {i}: SubmitRetryable to={:?} l2_call_value={} deposit={} gas_limit={} l1_sender={:?} fee_refund={:?} cvalue_refund={:?} — running",
             scenario.to,
             scenario.l2_call_value,
             scenario.deposit_value,
-            scenario.gas_limit
+            scenario.gas_limit,
+            scenario.l1_sender,
+            scenario.fee_refund_addr,
+            scenario.call_value_refund_addr
         );
 
         let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
