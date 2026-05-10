@@ -730,13 +730,7 @@ impl ConsensusTx for ArbTransactionSigned {
     fn kind(&self) -> TxKind {
         match &self.transaction {
             ArbTypedTransaction::Legacy(tx) => tx.to,
-            ArbTypedTransaction::Deposit(tx) => {
-                if tx.to == Address::ZERO {
-                    TxKind::Create
-                } else {
-                    TxKind::Call(tx.to)
-                }
-            }
+            ArbTypedTransaction::Deposit(tx) => TxKind::Call(tx.to),
             ArbTypedTransaction::Unsigned(tx) => match tx.to {
                 Some(to) => TxKind::Call(to),
                 None => TxKind::Create,
