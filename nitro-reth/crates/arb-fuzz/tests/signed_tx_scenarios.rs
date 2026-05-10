@@ -112,9 +112,7 @@ fn eip7702_empty_auth_list_skipped_at_signed_step() {
 #[ignore]
 fn live_against_nitro() {
     use arb_fuzz::shared_nodes::shared_dual_exec;
-    use arb_test_harness::scenario::ScenarioStep;
     use arbitrary::{Arbitrary, Unstructured};
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     fn seed(i: usize) -> Vec<u8> {
         let mut state: u64 = 0x9E37_79B9_7F4A_7C15u64.wrapping_add(i as u64);
@@ -130,21 +128,6 @@ fn live_against_nitro() {
         out
     }
 
-    fn renumber_steps(steps: &mut Vec<ScenarioStep>, next: &AtomicU64) {
-        for step in steps.iter_mut() {
-            if let ScenarioStep::Message {
-                idx,
-                delayed_messages_read,
-                ..
-            } = step
-            {
-                let new_idx = next.fetch_add(1, Ordering::SeqCst);
-                *idx = new_idx;
-                *delayed_messages_read = new_idx;
-            }
-        }
-    }
-
     let iterations: usize = std::env::var("ARB_FUZZ_ITERATIONS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -155,7 +138,6 @@ fn live_against_nitro() {
     let mut errors: Vec<String> = Vec::new();
 
     let nodes = shared_dual_exec();
-    let next_msg_idx = AtomicU64::new(1);
 
     for i in 0..iterations {
         let bytes = seed(i);
@@ -168,14 +150,13 @@ fn live_against_nitro() {
                 continue;
             }
         };
-        let mut scen = match scenario.clone().into_scenario() {
+        let scen = match scenario.clone().into_scenario() {
             Some(s) if !s.steps.is_empty() => s,
             _ => {
                 skipped += 1;
                 continue;
             }
         };
-        renumber_steps(&mut scen.steps, &next_msg_idx);
         let kind_label = format!("{:?}", scenario.kind);
         eprintln!(
             "iter {i}: {kind_label} (auths={}) — running",

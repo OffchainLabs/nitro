@@ -18,7 +18,7 @@ use arb_test_harness::{
 use arbitrary::{Arbitrary, Unstructured};
 use serde::Serialize;
 
-use crate::shared_nodes::FUZZ_L2_CHAIN_ID;
+use crate::shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID};
 
 /// Default precompile-call gas ceiling, capped to keep fuzz iterations cheap.
 pub(crate) const FUZZ_GAS_CAP: u64 = 4_000_000;
@@ -40,14 +40,12 @@ pub struct PrecompileScenario {
 impl PrecompileScenario {
     pub fn into_scenario(self) -> Scenario {
         let mut steps = Vec::new();
-        let mut idx: u64 = 1;
-        let mut delayed: u64 = 0;
 
-        // Optional ETH deposit warm-up so the caller can pay fees.
         for (addr, amount) in &self.pre_state.balances {
             if *amount == 0 {
                 continue;
             }
+            let idx = next_msg_idx();
             let dep = DepositBuilder {
                 from: *addr,
                 to: *addr,
@@ -58,13 +56,11 @@ impl PrecompileScenario {
                 base_fee_l1: FUZZ_L1_BASE_FEE,
             };
             if let Some(msg) = build_or_skip(&dep) {
-                delayed += 1;
-                steps.push(message_step(idx, msg, delayed));
-                idx += 1;
+                steps.push(message_step(idx, msg, idx));
             }
         }
 
-        // Always fund the caller so the unsigned tx can pay gas + value=0.
+        let idx = next_msg_idx();
         let fund = DepositBuilder {
             from: self.caller,
             to: self.caller,
@@ -75,15 +71,12 @@ impl PrecompileScenario {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         if let Some(msg) = build_or_skip(&fund) {
-            delayed += 1;
-            steps.push(message_step(idx, msg, delayed));
-            idx += 1;
+            steps.push(message_step(idx, msg, idx));
         }
 
-        // The actual precompile invocation: unsigned user tx so we don't have
-        // to invent a valid ECDSA signature in the fuzz body.
         let to = precompile_address(self.precompile.0);
         let gas_limit = self.gas_limit.clamp(100_000, FUZZ_GAS_CAP);
+        let idx = next_msg_idx();
         let call = UnsignedUserTxBuilder {
             from: self.caller,
             gas_limit,
@@ -98,8 +91,7 @@ impl PrecompileScenario {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         if let Some(msg) = build_or_skip(&call) {
-            delayed += 1;
-            steps.push(message_step(idx, msg, delayed));
+            steps.push(message_step(idx, msg, idx));
         }
 
         Scenario {
@@ -141,14 +133,12 @@ pub struct DiffTxScenario {
 impl DiffTxScenario {
     pub fn into_scenario(self) -> Scenario {
         let mut steps = Vec::new();
-        let mut idx: u64 = 1;
-        let mut delayed: u64 = 0;
 
-        // Pre-state balances first so any address gets seed funds.
         for (addr, amount) in self.pre_state.balances.iter().take(4) {
             if *amount == 0 {
                 continue;
             }
+            let idx = next_msg_idx();
             let dep = DepositBuilder {
                 from: *addr,
                 to: *addr,
@@ -159,13 +149,12 @@ impl DiffTxScenario {
                 base_fee_l1: FUZZ_L1_BASE_FEE,
             };
             if let Some(msg) = build_or_skip(&dep) {
-                delayed += 1;
-                steps.push(message_step(idx, msg, delayed));
-                idx += 1;
+                steps.push(message_step(idx, msg, idx));
             }
         }
 
         let funding_amount = U256::from(10u128).pow(U256::from(20u64));
+        let idx = next_msg_idx();
         let fund = DepositBuilder {
             from: self.tx.from,
             to: self.tx.from,
@@ -176,15 +165,14 @@ impl DiffTxScenario {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         if let Some(msg) = build_or_skip(&fund) {
-            delayed += 1;
-            steps.push(message_step(idx, msg, delayed));
-            idx += 1;
+            steps.push(message_step(idx, msg, idx));
         }
 
         let gas_limit = self.tx.gas.clamp(100_000, FUZZ_GAS_CAP);
         let max_fee = self.tx.max_fee.min(FUZZ_MAX_FEE);
         let data = Bytes::from(self.tx.data.0.clone());
 
+        let idx = next_msg_idx();
         let msg_opt = match self.tx.to {
             Some(to) => {
                 let builder = UnsignedUserTxBuilder {
@@ -219,8 +207,7 @@ impl DiffTxScenario {
             }
         };
         if let Some(msg) = msg_opt {
-            delayed += 1;
-            steps.push(message_step(idx, msg, delayed));
+            steps.push(message_step(idx, msg, idx));
         }
 
         Scenario {
@@ -245,15 +232,13 @@ pub struct ScenarioMix {
 impl ScenarioMix {
     pub fn into_scenario(self) -> Scenario {
         let mut steps = Vec::new();
-        let mut idx: u64 = 1;
-        let mut delayed: u64 = 0;
 
-        // Cap the number of txs so a single fuzz iteration stays cheap.
         const MAX_TXS: usize = 8;
         let mut funded: std::collections::BTreeSet<Address> = std::collections::BTreeSet::new();
 
         for tx in self.txs.iter().take(MAX_TXS) {
             if funded.insert(tx.from) {
+                let idx = next_msg_idx();
                 let fund = DepositBuilder {
                     from: tx.from,
                     to: tx.from,
@@ -264,15 +249,14 @@ impl ScenarioMix {
                     base_fee_l1: FUZZ_L1_BASE_FEE,
                 };
                 if let Some(msg) = build_or_skip(&fund) {
-                    delayed += 1;
-                    steps.push(message_step(idx, msg, delayed));
-                    idx += 1;
+                    steps.push(message_step(idx, msg, idx));
                 }
             }
 
             let gas_limit = tx.gas.clamp(100_000, FUZZ_GAS_CAP);
             let max_fee = tx.max_fee.min(FUZZ_MAX_FEE);
             let data = Bytes::from(tx.data.0.clone());
+            let idx = next_msg_idx();
             let msg_opt = match tx.to {
                 Some(to) => {
                     let b = UnsignedUserTxBuilder {
@@ -307,9 +291,7 @@ impl ScenarioMix {
                 }
             };
             if let Some(msg) = msg_opt {
-                delayed += 1;
-                steps.push(message_step(idx, msg, delayed));
-                idx += 1;
+                steps.push(message_step(idx, msg, idx));
             }
         }
 

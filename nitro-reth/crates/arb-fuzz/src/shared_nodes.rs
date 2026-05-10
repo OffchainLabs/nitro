@@ -1,6 +1,9 @@
 use std::{
     path::PathBuf,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
 };
 
 use arb_test_harness::{
@@ -53,6 +56,29 @@ fn load_captured_or_build(chain_id: u64, arbos_version: u64) -> serde_json::Valu
 }
 
 static NODES: OnceLock<Mutex<DualExec<NitroDocker, ArbrethProcess>>> = OnceLock::new();
+
+/// Process-wide monotonic L1 message index. Every scenario builder must
+/// allocate idx values via [`next_msg_idx`] so the shared dual-exec inbox
+/// stays in lockstep across fuzz iterations. Resetting per-iteration (the
+/// historical pattern in `DiffTxScenario`, `ScenarioMix`, etc.) silently
+/// wedges Nitro's `digestMessage` after iter 0.
+static GLOBAL_MSG_IDX: AtomicU64 = AtomicU64::new(1);
+
+/// Allocate the next inbox idx and return it.
+pub fn next_msg_idx() -> u64 {
+    GLOBAL_MSG_IDX.fetch_add(1, Ordering::SeqCst)
+}
+
+/// Peek the next idx without consuming it.
+pub fn peek_msg_idx() -> u64 {
+    GLOBAL_MSG_IDX.load(Ordering::SeqCst)
+}
+
+/// Reset the counter for tests that need a clean slate (e.g. ones that
+/// spawn their own non-shared dual-exec).
+pub fn reset_msg_idx() {
+    GLOBAL_MSG_IDX.store(1, Ordering::SeqCst);
+}
 
 /// Construct a `NodeStartCtx` pointing at the supplied mock L1.
 pub fn default_ctx(mock_rpc: String) -> NodeStartCtx {

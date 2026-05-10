@@ -19,7 +19,7 @@ use crate::{
     arbitrary_impls::{
         build_or_skip, message_step, ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE,
     },
-    shared_nodes::FUZZ_L2_CHAIN_ID,
+    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
 };
 
 const SEQUENCER_ALIAS: Address = Address::new([
@@ -141,11 +141,8 @@ impl DiffSignedTxScenario {
         let signer = derive_address(signing_key);
 
         let mut steps = Vec::new();
-        let mut idx: u64 = 1;
-        let mut delayed: u64 = 0;
 
-        // Fund the signer so it can pay gas. Depositing 1e20 wei keeps the
-        // tx well under the balance limit even at the FUZZ_GAS_CAP.
+        let idx = next_msg_idx();
         let fund = DepositBuilder {
             from: signer,
             to: signer,
@@ -156,18 +153,8 @@ impl DiffSignedTxScenario {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         if let Some(msg) = build_or_skip(&fund) {
-            delayed += 1;
-            steps.push(message_step(idx, msg, delayed));
-            idx += 1;
+            steps.push(message_step(idx, msg, idx));
         }
-
-        // Optional CREATE: skip for 7702 (rejected above) and for 2930 since
-        // bare CREATE on Arbitrum requires careful nonce handling.
-        let to_field = if matches!(kind, L2TxKind::Eip7702) {
-            self.to
-        } else {
-            self.to
-        };
 
         let auth_list = self
             .authorizations
@@ -183,10 +170,11 @@ impl DiffSignedTxScenario {
         let max_fee_clamped = (self.max_fee as u128).max(FUZZ_L1_BASE_FEE as u128 / 100 + 1);
         let max_priority_clamped = (self.max_priority_fee as u128).min(max_fee_clamped);
 
+        let tx_idx = next_msg_idx();
         let builder = SignedL2TxBuilder {
             chain_id: FUZZ_L2_CHAIN_ID,
             nonce: 0,
-            to: to_field,
+            to: self.to,
             value: U256::from(self.value_low),
             data: Bytes::from(self.data.0.clone()),
             gas_limit: self.gas.clamp(50_000, FUZZ_GAS_CAP),
@@ -204,8 +192,7 @@ impl DiffSignedTxScenario {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         if let Some(msg) = build_or_skip(&builder) {
-            delayed += 1;
-            steps.push(message_step(idx, msg, delayed));
+            steps.push(message_step(tx_idx, msg, tx_idx));
         }
 
         Some(Scenario {
