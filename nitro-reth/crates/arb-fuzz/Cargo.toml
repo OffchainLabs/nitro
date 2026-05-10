@@ -98,5 +98,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "diff_retryable"
+path = "fuzz_targets/diff_retryable.rs"
+test = false
+doc = false
+bench = false
+
 [lints]
 workspace = true

@@ -1,9 +1,11 @@
 pub mod arbos;
+pub mod retryable;
 pub mod signed_tx;
 pub mod stylus;
 pub mod tx;
 
 pub use arbos::ArbosVersion;
+pub use retryable::DiffRetryableScenario;
 pub use signed_tx::{AuthInput, DiffSignedTxScenario, SignedTxKind};
 pub use stylus::StylusFuzzInput;
 pub use tx::{BoundedBytes, TxScenario};
