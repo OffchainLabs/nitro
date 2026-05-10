@@ -70,12 +70,14 @@ impl DiffRetryableScenario {
     pub fn into_scenario(self) -> Option<Scenario> {
         let mut steps = Vec::new();
 
-        // Pre-fund both refund recipients so non-zero refunds don't fail.
-        for addr in [self.fee_refund_addr, self.call_value_refund_addr] {
+        let aliased = arb_test_harness::messaging::retryable::apply_l1_to_l2_alias(self.l1_sender);
+        let safe_refund1 = Address::repeat_byte(0xee);
+        let safe_refund2 = Address::repeat_byte(0xdd);
+        for to in [aliased, safe_refund1, safe_refund2] {
             let idx = next_msg_idx();
             let dep = DepositBuilder {
-                from: addr,
-                to: addr,
+                from: Address::ZERO,
+                to,
                 amount: U256::from(10u128).pow(U256::from(20u64)),
                 l1_block_number: 1,
                 timestamp: 1_700_000_000,
@@ -85,23 +87,6 @@ impl DiffRetryableScenario {
             if let Ok(msg) = dep.build() {
                 steps.push(message_step(idx, msg, idx));
             }
-        }
-
-        // Pre-fund the L1 sender (aliased) so SubmitRetryable's deposit_value
-        // can be drawn against it.
-        let aliased = arb_test_harness::messaging::retryable::apply_l1_to_l2_alias(self.l1_sender);
-        let idx = next_msg_idx();
-        let dep = DepositBuilder {
-            from: aliased,
-            to: aliased,
-            amount: U256::from(10u128).pow(U256::from(21u64)),
-            l1_block_number: 1,
-            timestamp: 1_700_000_000,
-            request_seq: idx,
-            base_fee_l1: FUZZ_L1_BASE_FEE,
-        };
-        if let Ok(msg) = dep.build() {
-            steps.push(message_step(idx, msg, idx));
         }
 
         let builder = RetryableSubmitBuilder {
