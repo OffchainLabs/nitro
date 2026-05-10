@@ -1,4 +1,7 @@
-use std::sync::{Mutex, OnceLock};
+use std::{
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
+};
 
 use arb_test_harness::{
     dual_exec::DualExec,
@@ -22,13 +25,38 @@ pub fn fuzz_arbos_version() -> u64 {
         .unwrap_or(FUZZ_ARBOS_VERSION)
 }
 
+/// Path to the captured Nitro genesis for `(chain_id, arbos_version)`. The
+/// fuzz harness loads this so both nodes start from byte-identical state and
+/// genesis state_root matches without any post-hoc filter.
+pub fn captured_genesis_path(chain_id: u64, arbos_version: u64) -> PathBuf {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    PathBuf::from(manifest)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("crates"))
+        .join("arb-spec-tests")
+        .join("fixtures")
+        .join("_genesis_cache")
+        .join(format!("chain{chain_id}_v{arbos_version}.json"))
+}
+
+fn load_captured_or_build(chain_id: u64, arbos_version: u64) -> serde_json::Value {
+    let path = captured_genesis_path(chain_id, arbos_version);
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            return value;
+        }
+    }
+    GenesisBuilder::new(chain_id, arbos_version)
+        .build()
+        .expect("genesis build")
+}
+
 static NODES: OnceLock<Mutex<DualExec<NitroDocker, ArbrethProcess>>> = OnceLock::new();
 
 /// Construct a `NodeStartCtx` pointing at the supplied mock L1.
 pub fn default_ctx(mock_rpc: String) -> NodeStartCtx {
-    let genesis = GenesisBuilder::new(FUZZ_L2_CHAIN_ID, fuzz_arbos_version())
-        .build()
-        .expect("genesis build");
+    let genesis = load_captured_or_build(FUZZ_L2_CHAIN_ID, fuzz_arbos_version());
     NodeStartCtx {
         binary: None,
         l2_chain_id: FUZZ_L2_CHAIN_ID,
