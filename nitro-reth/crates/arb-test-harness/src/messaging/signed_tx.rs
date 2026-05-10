@@ -1,10 +1,11 @@
 use alloy_consensus::{
     crypto::secp256k1::sign_message, EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930,
-    TxLegacy,
+    TxEip7702, TxLegacy,
 };
 use alloy_eips::{
     eip2718::Encodable2718,
     eip2930::{AccessList, AccessListItem},
+    eip7702::{Authorization, SignedAuthorization},
 };
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 
@@ -20,6 +21,17 @@ pub enum L2TxKind {
     Legacy,
     Eip2930,
     Eip1559,
+    Eip7702,
+}
+
+/// Pre-signed authorization tuple for an EIP-7702 envelope. The signing key
+/// is the authority's secret key, used to ECDSA-sign the auth hash.
+#[derive(Debug, Clone)]
+pub struct AuthorizationItem {
+    pub chain_id: u64,
+    pub address: Address,
+    pub nonce: u64,
+    pub signing_key: B256,
 }
 
 /// Builds an L1 message of kind 3 (L2Message) carrying a SignedTx sub-message
@@ -40,8 +52,11 @@ pub struct SignedL2TxBuilder {
     pub max_fee_per_gas: u128,
     /// Used for EIP-1559 envelopes.
     pub max_priority_fee_per_gas: u128,
-    /// Used for EIP-2930 and EIP-1559 envelopes.
+    /// Used for EIP-2930, EIP-1559, and EIP-7702 envelopes.
     pub access_list: Vec<(Address, Vec<B256>)>,
+    /// Authorizations attached when `kind == L2TxKind::Eip7702`. Empty for all
+    /// other kinds; an EIP-7702 tx with an empty list fails revm validation.
+    pub authorization_list: Vec<AuthorizationItem>,
     pub kind: L2TxKind,
     /// 32-byte secp256k1 secret key.
     pub signing_key: B256,
@@ -137,8 +152,55 @@ impl SignedL2TxBuilder {
                     .map_err(|e| HarnessError::Invalid(format!("eip1559 sign failed: {e}")))?;
                 Ok(EthereumTxEnvelope::Eip1559(tx.into_signed(sig)))
             }
+            L2TxKind::Eip7702 => {
+                let to_addr = match self.to {
+                    Some(a) => a,
+                    None => {
+                        return Err(HarnessError::Invalid(
+                            "eip7702 cannot be CREATE: TxEip7702.to is non-optional".into(),
+                        ));
+                    }
+                };
+                if self.authorization_list.is_empty() {
+                    return Err(HarnessError::Invalid(
+                        "eip7702 requires a non-empty authorization_list".into(),
+                    ));
+                }
+                let auth_list = self
+                    .authorization_list
+                    .iter()
+                    .map(sign_authorization)
+                    .collect::<crate::Result<Vec<_>>>()?;
+                let tx = TxEip7702 {
+                    chain_id: self.chain_id,
+                    nonce: self.nonce,
+                    gas_limit: self.gas_limit,
+                    max_fee_per_gas: self.max_fee_per_gas,
+                    max_priority_fee_per_gas: self.max_priority_fee_per_gas,
+                    to: to_addr,
+                    value: self.value,
+                    access_list: build_access_list(&self.access_list),
+                    authorization_list: auth_list,
+                    input: self.data.clone(),
+                };
+                let sig_hash = tx.signature_hash();
+                let sig = sign_message(self.signing_key, sig_hash)
+                    .map_err(|e| HarnessError::Invalid(format!("eip7702 sign failed: {e}")))?;
+                Ok(EthereumTxEnvelope::Eip7702(tx.into_signed(sig)))
+            }
         }
     }
+}
+
+fn sign_authorization(item: &AuthorizationItem) -> crate::Result<SignedAuthorization> {
+    let auth = Authorization {
+        chain_id: U256::from(item.chain_id),
+        address: item.address,
+        nonce: item.nonce,
+    };
+    let sig = sign_message(item.signing_key, auth.signature_hash())
+        .map_err(|e| HarnessError::Invalid(format!("auth sign failed: {e}")))?;
+    Ok(auth.into_signed(sig))
 }
 
 impl MessageBuilder for SignedL2TxBuilder {
@@ -213,6 +275,7 @@ mod tests {
             max_fee_per_gas: 0,
             max_priority_fee_per_gas: 0,
             access_list: Vec::new(),
+            authorization_list: Vec::new(),
             kind: L2TxKind::Legacy,
             signing_key: key,
             l1_block_number: 50,
@@ -240,6 +303,7 @@ mod tests {
                     "0000000000000000000000000000000000000000000000000000000000000001"
                 )],
             )],
+            authorization_list: Vec::new(),
             kind: L2TxKind::Eip2930,
             signing_key: key,
             l1_block_number: 60,
@@ -262,6 +326,7 @@ mod tests {
             max_fee_per_gas: 2_000_000_000,
             max_priority_fee_per_gas: 100_000_000,
             access_list: Vec::new(),
+            authorization_list: Vec::new(),
             kind: L2TxKind::Eip1559,
             signing_key: key,
             l1_block_number: 70,
@@ -381,6 +446,77 @@ mod tests {
                 _ => panic!("envelope variant did not match builder kind: {kind:?}"),
             }
         }
+    }
+
+    fn eip7702_builder(key: B256) -> SignedL2TxBuilder {
+        SignedL2TxBuilder {
+            chain_id: 421_614,
+            nonce: 3,
+            to: Some(address!("00000000000000000000000000000000000000dd")),
+            value: U256::ZERO,
+            data: Bytes::new(),
+            gas_limit: 200_000,
+            gas_price: 0,
+            max_fee_per_gas: 2_000_000_000,
+            max_priority_fee_per_gas: 100_000_000,
+            access_list: Vec::new(),
+            authorization_list: vec![AuthorizationItem {
+                chain_id: 421_614,
+                address: address!("00000000000000000000000000000000000000ee"),
+                nonce: 0,
+                signing_key: key,
+            }],
+            kind: L2TxKind::Eip7702,
+            signing_key: key,
+            l1_block_number: 80,
+            timestamp: 1_700_002_000,
+            request_id: None,
+            sender: address!("a4b000000000000000000073657175656e636572"),
+            base_fee_l1: 0,
+        }
+    }
+
+    #[test]
+    fn eip7702_round_trips_through_arbos_parser() {
+        let b = eip7702_builder(hardhat_key_0());
+        let msg = b.build().unwrap();
+        let parsed = round_trip(&msg);
+        let txs = parse_l2_transactions(
+            parsed.header.kind,
+            parsed.header.poster,
+            &parsed.l2_msg,
+            parsed.header.request_id,
+            parsed.header.l1_base_fee,
+            b.chain_id,
+        )
+        .unwrap();
+        let rlp = match &txs[0] {
+            ParsedTransaction::Signed(rlp) => rlp.clone(),
+            other => panic!("unexpected parsed kind: {other:?}"),
+        };
+        let eth_env =
+            EthereumTxEnvelope::<alloy_consensus::TxEip4844>::decode_2718(&mut rlp.as_slice())
+                .unwrap();
+        let signed = match eth_env {
+            EthereumTxEnvelope::Eip7702(s) => s,
+            other => panic!("expected Eip7702 envelope, got: {other:?}"),
+        };
+        assert_eq!(signed.tx().authorization_list.len(), 1);
+        assert_eq!(signed.tx().authorization_list[0].nonce, 0);
+        let envelope = ArbTransactionSigned::decode_2718(&mut rlp.as_slice()).unwrap();
+        assert_eq!(envelope.recover_signer().unwrap(), b.sender());
+    }
+
+    #[test]
+    fn eip7702_empty_auth_list_rejected() {
+        let mut b = eip7702_builder(hardhat_key_0());
+        b.authorization_list.clear();
+        let err = b.build().expect_err("empty auth list must fail to build");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("authorization_list"),
+            "unexpected error message: {msg}"
+        );
     }
 
     #[test]
