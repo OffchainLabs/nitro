@@ -170,7 +170,6 @@ impl DiffSignedTxScenario {
         let max_fee_clamped = (self.max_fee as u128).max(FUZZ_L1_BASE_FEE as u128 / 100 + 1);
         let max_priority_clamped = (self.max_priority_fee as u128).min(max_fee_clamped);
 
-        let tx_idx = next_msg_idx();
         let builder = SignedL2TxBuilder {
             chain_id: FUZZ_L2_CHAIN_ID,
             nonce: 0,
@@ -192,6 +191,7 @@ impl DiffSignedTxScenario {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         if let Some(msg) = build_or_skip(&builder) {
+            let tx_idx = next_msg_idx();
             steps.push(message_step(tx_idx, msg, tx_idx));
         }
 
