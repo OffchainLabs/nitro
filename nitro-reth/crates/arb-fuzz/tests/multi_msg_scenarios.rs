@@ -31,6 +31,10 @@ fn live_against_nitro() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(50);
+    let start: usize = std::env::var("ARB_FUZZ_START")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
 
     let mut clean = 0usize;
     let mut skipped = 0usize;
@@ -39,7 +43,7 @@ fn live_against_nitro() {
 
     let nodes = shared_dual_exec();
 
-    for i in 0..iterations {
+    for i in start..(start + iterations) {
         let bytes = seed(i);
         let mut u = Unstructured::new(&bytes);
         let scenario = match DiffMultiMsgScenario::arbitrary(&mut u) {
@@ -74,6 +78,11 @@ fn live_against_nitro() {
             }
         };
         eprintln!("iter {i}: msgs=[{kinds}] — running");
+        if std::env::var("ARB_FUZZ_DUMP").is_ok() {
+            for (mi, m) in scenario.messages.iter().enumerate() {
+                eprintln!("    msg[{mi}]: {m:?}");
+            }
+        }
 
         let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
         match nodes.run(&scen) {
