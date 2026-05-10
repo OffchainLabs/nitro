@@ -30,6 +30,17 @@ pub enum MessageStep {
         to: Address,
         amount: u64,
     },
+    /// Read-only call into ArbWasm precompile (programVersion / programInitGas
+    /// / programMemoryFootprint / programTimeLeft / programCodehash). These
+    /// methods all do codehash + StylusParams reads — historically bug-dense
+    /// for gas accounting (see commit 77a226b).
+    ArbWasmRead {
+        method: ArbWasmReadMethod,
+        target: Address,
+        signing_key: [u8; 32],
+        gas: u64,
+        max_fee: u64,
+    },
     SubmitRetryable {
         l1_sender: Address,
         to: Option<Address>,
@@ -91,13 +102,57 @@ impl<'a> Arbitrary<'a> for SignedKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum ArbWasmReadMethod {
+    ProgramVersion,
+    ProgramInitGas,
+    ProgramMemoryFootprint,
+    ProgramTimeLeft,
+}
+
+impl<'a> Arbitrary<'a> for ArbWasmReadMethod {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(match u.int_in_range::<u8>(0..=3)? {
+            0 => Self::ProgramVersion,
+            1 => Self::ProgramInitGas,
+            2 => Self::ProgramMemoryFootprint,
+            _ => Self::ProgramTimeLeft,
+        })
+    }
+}
+
+impl ArbWasmReadMethod {
+    pub fn selector(&self) -> [u8; 4] {
+        match self {
+            Self::ProgramVersion => [0x2e, 0xe6, 0xfb, 0x33],
+            Self::ProgramInitGas => [0xa6, 0xf2, 0xf3, 0xa6],
+            Self::ProgramMemoryFootprint => [0xb1, 0xa3, 0xc1, 0xea],
+            Self::ProgramTimeLeft => [0xc1, 0x86, 0x66, 0x05],
+        }
+    }
+}
+
 impl<'a> Arbitrary<'a> for MessageStep {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        match u.int_in_range::<u8>(0..=4)? {
+        match u.int_in_range::<u8>(0..=5)? {
             0 => Ok(Self::Deposit {
                 to: Address::arbitrary(u)?,
                 amount: u.int_in_range::<u64>(0..=10_000_000_000_000)?,
             }),
+            5 => {
+                let mut sk = [0u8; 32];
+                u.fill_buffer(&mut sk)?;
+                if sk.iter().all(|b| *b == 0) {
+                    sk[31] = 1;
+                }
+                Ok(Self::ArbWasmRead {
+                    method: ArbWasmReadMethod::arbitrary(u)?,
+                    target: Address::arbitrary(u)?,
+                    signing_key: sk,
+                    gas: u.int_in_range::<u64>(50_000..=FUZZ_GAS_CAP)?,
+                    max_fee: u.int_in_range::<u64>(200_000_000..=2_000_000_000)?,
+                })
+            }
             1 => {
                 let mut sk = [0u8; 32];
                 u.fill_buffer(&mut sk)?;
@@ -240,6 +295,63 @@ impl DiffMultiMsgScenario {
 
     fn emit_step(&self, step: &MessageStep, steps: &mut Vec<arb_test_harness::scenario::ScenarioStep>) {
         match step {
+            MessageStep::ArbWasmRead {
+                method,
+                target,
+                signing_key,
+                gas,
+                max_fee,
+            } => {
+                let signing_key_b256 = B256::from(*signing_key);
+                let signer = derive_address(signing_key_b256);
+                let pre_idx = next_msg_idx();
+                let pre = DepositBuilder {
+                    from: Address::repeat_byte(0xa1),
+                    to: signer,
+                    amount: U256::from(10u128).pow(U256::from(20u64)),
+                    l1_block_number: 1,
+                    timestamp: 1_700_000_000,
+                    request_seq: pre_idx,
+                    base_fee_l1: FUZZ_L1_BASE_FEE,
+                };
+                if let Ok(msg) = pre.build() {
+                    steps.push(message_step(pre_idx, msg, pre_idx));
+                }
+                // ArbWasm precompile address.
+                let arbwasm = Address::new([
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x71,
+                ]);
+                let mut data = Vec::with_capacity(36);
+                data.extend_from_slice(&method.selector());
+                let mut padded = [0u8; 32];
+                padded[12..].copy_from_slice(target.as_slice());
+                data.extend_from_slice(&padded);
+                let max_fee_clamped = (*max_fee as u128).max(FUZZ_L1_BASE_FEE as u128 / 100 + 1);
+                let builder = SignedL2TxBuilder {
+                    chain_id: FUZZ_L2_CHAIN_ID,
+                    nonce: 0,
+                    to: Some(arbwasm),
+                    value: U256::ZERO,
+                    data: Bytes::from(data),
+                    gas_limit: (*gas).clamp(50_000, FUZZ_GAS_CAP),
+                    gas_price: max_fee_clamped,
+                    max_fee_per_gas: max_fee_clamped,
+                    max_priority_fee_per_gas: 0,
+                    access_list: Vec::new(),
+                    authorization_list: Vec::new(),
+                    kind: L2TxKind::Eip1559,
+                    signing_key: signing_key_b256,
+                    l1_block_number: 1,
+                    timestamp: 1_700_000_001,
+                    request_id: None,
+                    sender: SEQUENCER_ALIAS,
+                    base_fee_l1: FUZZ_L1_BASE_FEE,
+                };
+                if let Some(msg) = build_or_skip(&builder) {
+                    let idx = next_msg_idx();
+                    steps.push(message_step(idx, msg, idx));
+                }
+            }
             MessageStep::Deposit { to, amount } => {
                 let dep = DepositBuilder {
                     from: Address::repeat_byte(0xa1),

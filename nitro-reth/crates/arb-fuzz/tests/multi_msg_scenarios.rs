@@ -67,6 +67,12 @@ fn live_against_nitro() {
                 },
                 arb_fuzz::arbitrary_impls::MessageStep::UnsignedUserTx { .. } => "Uns",
                 arb_fuzz::arbitrary_impls::MessageStep::ContractTx { .. } => "Con",
+                arb_fuzz::arbitrary_impls::MessageStep::ArbWasmRead { method, .. } => match method {
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramVersion => "AWv",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramInitGas => "AWi",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramMemoryFootprint => "AWm",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramTimeLeft => "AWt",
+                },
             })
             .collect::<Vec<_>>()
             .join("/");

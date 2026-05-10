@@ -6,7 +6,7 @@ pub mod stylus;
 pub mod tx;
 
 pub use arbos::ArbosVersion;
-pub use multi::{DiffMultiMsgScenario, MessageStep, SignedKind};
+pub use multi::{ArbWasmReadMethod, DiffMultiMsgScenario, MessageStep, SignedKind};
 pub use retryable::DiffRetryableScenario;
 pub use signed_tx::{AuthInput, DiffSignedTxScenario, SignedTxKind};
 pub use stylus::StylusFuzzInput;
