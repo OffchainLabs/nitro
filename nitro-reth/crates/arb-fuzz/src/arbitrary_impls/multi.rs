@@ -137,8 +137,13 @@ impl<'a> Arbitrary<'a> for MessageStep {
                 },
                 value: u.int_in_range::<u64>(0..=1_000_000_000)?,
                 gas: u.int_in_range::<u64>(50_000..=FUZZ_GAS_CAP)?,
-                max_fee: u.int_in_range::<u64>(1..=2_000_000_000)?,
-                nonce: u.int_in_range::<u8>(0..=3)?,
+                // Floor at L2 base fee (~0.1 gwei in genesis) so under-priced
+                // txs don't drift between nodes' validation paths. Fuzzing
+                // under-pricing semantics is a separate scenario class.
+                max_fee: u.int_in_range::<u64>(200_000_000..=2_000_000_000)?,
+                // Always nonce 0 for an unsigned-user-tx — we don't track
+                // sender nonce growth across iterations.
+                nonce: 0,
                 data: BoundedBytes::<256>::arbitrary(u)?,
             }),
             3 => Ok(Self::ContractTx {
@@ -150,7 +155,7 @@ impl<'a> Arbitrary<'a> for MessageStep {
                 },
                 value: u.int_in_range::<u64>(0..=1_000_000_000)?,
                 gas: u.int_in_range::<u64>(50_000..=FUZZ_GAS_CAP)?,
-                max_fee: u.int_in_range::<u64>(1..=2_000_000_000)?,
+                max_fee: u.int_in_range::<u64>(200_000_000..=2_000_000_000)?,
                 data: BoundedBytes::<256>::arbitrary(u)?,
             }),
             _ => Ok(Self::SubmitRetryable {
