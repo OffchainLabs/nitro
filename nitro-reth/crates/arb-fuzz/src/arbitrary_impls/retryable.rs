@@ -71,12 +71,11 @@ impl DiffRetryableScenario {
         let mut steps = Vec::new();
 
         let aliased = arb_test_harness::messaging::retryable::apply_l1_to_l2_alias(self.l1_sender);
-        let safe_refund1 = Address::repeat_byte(0xee);
-        let safe_refund2 = Address::repeat_byte(0xdd);
-        for to in [aliased, safe_refund1, safe_refund2] {
+        let l1_poster = Address::repeat_byte(0xa1);
+        for to in [aliased, self.fee_refund_addr, self.call_value_refund_addr] {
             let idx = next_msg_idx();
             let dep = DepositBuilder {
-                from: Address::ZERO,
+                from: l1_poster,
                 to,
                 amount: U256::from(10u128).pow(U256::from(20u64)),
                 l1_block_number: 1,
