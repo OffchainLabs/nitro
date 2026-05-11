@@ -162,4 +162,4 @@ We love working with people that are autonomous, bring new experience to the tea
 
 Join our dynamic team of innovators and explore exciting career opportunities below to make a meaningful impact in a collaborative environment. Browse open positions and take the next step in your career today!
 
-[Offchain Labs Careers](https://www.offchainlabs.com/careers)
+[Offchain Labs Careers](https://www.offchain.io/careers)
