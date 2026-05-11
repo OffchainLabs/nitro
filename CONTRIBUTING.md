@@ -160,6 +160,6 @@ $ git push mynitrorepo feature-in-progress-branch
 
 We love working with people that are autonomous, bring new experience to the team, and are excited for their work. 
 
-Join our dynamic team of innovators and explore exciting career opportunities below to make a meaningful impact in a collaborative environment. Browse open positions and take the next step in your career today!
+Interested in working on Nitro full time? See open roles at Offchain.
 
 [Offchain Labs Careers](https://www.offchain.io/careers)
