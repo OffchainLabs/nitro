@@ -701,6 +701,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	var statedb *state.StateDB
 	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
 	recordAtTip := s.tipRecorder != nil && s.tipRecorder.Enabled()
+	runCtx := core.NewMessageSequencingContext(s.wasmTargets)
 	if recordAtTip {
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
 		statedb, err = state.NewDeterministic(lastBlockHeader.Root, tipRecordingStateDatabase)
@@ -711,6 +712,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		if err := recordReplayInitialStatePreimages(statedb); err != nil {
 			return nil, err
 		}
+		runCtx = core.NewTipRecordingContext(runCtx)
 	} else {
 		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
 		if err != nil {
@@ -748,7 +750,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageSequencingContext(s.wasmTargets),
+		runCtx,
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -797,6 +799,16 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
+	var pendingTipRecording *pendingChainTipRecording
+	if recordAtTip {
+		pendingTipRecording = &pendingChainTipRecording{
+			block:      block,
+			preimages:  tipRecordingStateDatabase.Preimages(),
+			codeHashes: tipRecordingStateDatabase.CodeHashes(),
+			userWasms:  statedb.UserWasms(),
+		}
+	}
+
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
 	// it will naturally recover on startup by regenerating the missing block.
 	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
@@ -804,9 +816,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	if recordAtTip {
-		s.tipRecorder.RecordTip(block, tipRecordingStateDatabase.Preimages(), statedb.UserWasms())
-	}
+	pendingTipRecording.Record(s.tipRecorder)
 
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
 
@@ -931,6 +941,16 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
 
+	var runCtx *core.MessageRunContext
+	switch {
+	case isDelayedSequencing:
+		runCtx = core.NewMessageDelayedSequencingContext(s.wasmTargets)
+	case isMsgForPrefetch:
+		runCtx = core.NewMessagePrefetchContext()
+	default:
+		runCtx = core.NewMessageCommitContext(s.wasmTargets)
+	}
+
 	var statedb *state.StateDB
 	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
 	recordAtTip := s.tipRecorder != nil && s.tipRecorder.Enabled() && !isMsgForPrefetch
@@ -944,6 +964,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		if err := recordReplayInitialStatePreimages(statedb); err != nil {
 			return nil, nil, nil, nil, err
 		}
+		runCtx = core.NewTipRecordingContext(runCtx)
 	} else {
 		statedb, err = s.bc.StateAt(currentHeader.Root)
 		if err != nil {
@@ -969,16 +990,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
 	defer statedb.StopPrefetcher()
-
-	var runCtx *core.MessageRunContext
-	switch {
-	case isDelayedSequencing:
-		runCtx = core.NewMessageDelayedSequencingContext(s.wasmTargets)
-	case isMsgForPrefetch:
-		runCtx = core.NewMessagePrefetchContext()
-	default:
-		runCtx = core.NewMessageCommitContext(s.wasmTargets)
-	}
 
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
@@ -1030,9 +1041,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		var pendingTipRecording *pendingChainTipRecording
 		if recordAtTip {
 			pendingTipRecording = &pendingChainTipRecording{
-				block:     block,
-				preimages: tipRecordingStateDatabase.Preimages(),
-				userWasms: statedb.UserWasms(),
+				block:      block,
+				preimages:  tipRecordingStateDatabase.Preimages(),
+				codeHashes: tipRecordingStateDatabase.CodeHashes(),
+				userWasms:  statedb.UserWasms(),
 			}
 		}
 
@@ -1056,9 +1068,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	var pendingTipRecording *pendingChainTipRecording
 	if recordAtTip {
 		pendingTipRecording = &pendingChainTipRecording{
-			block:     block,
-			preimages: tipRecordingStateDatabase.Preimages(),
-			userWasms: statedb.UserWasms(),
+			block:      block,
+			preimages:  tipRecordingStateDatabase.Preimages(),
+			codeHashes: tipRecordingStateDatabase.CodeHashes(),
+			userWasms:  statedb.UserWasms(),
 		}
 	}
 
@@ -1066,16 +1079,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 }
 
 type pendingChainTipRecording struct {
-	block     *types.Block
-	preimages map[common.Hash][]byte
-	userWasms state.UserWasms
+	block      *types.Block
+	preimages  map[common.Hash][]byte
+	codeHashes []common.Hash
+	userWasms  state.UserWasms
 }
 
 func (r *pendingChainTipRecording) Record(recorder *ChainTipBlockRecorder) {
 	if r == nil || recorder == nil {
 		return
 	}
-	recorder.RecordTip(r.block, r.preimages, r.userWasms)
+	recorder.RecordTip(r.block, r.preimages, r.codeHashes, r.userWasms)
 }
 
 func recordReplayInitialStatePreimages(statedb *state.StateDB) error {
