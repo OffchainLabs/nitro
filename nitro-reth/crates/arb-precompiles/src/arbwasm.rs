@@ -174,8 +174,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(SLOAD_GAS + SLOAD_GAS + COPY_GAS, gas)
         }
         Calls::codehashVersion(c) => {
-            // argsCost(3) + Open(800) + Params warm(100) + getProgram SLOAD(800) + result(3) = 1706.
-            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + 2 * COPY_GAS;
+            // argsCost(3) + Open(800) + Params warm(100) + getProgram SLOAD(800) = 1703 (lookup);
+            // success adds result(3) → 1706. Revert sizes resultCost from the error payload.
+            const LOOKUP_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + COPY_GAS;
+            const METHOD_GAS: u64 = LOOKUP_GAS + COPY_GAS;
             let (params_word, program_word) = load_params_and_program(&mut input, c.codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
@@ -185,14 +187,15 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 params_version,
                 expiry_days,
                 input.gas,
-                METHOD_GAS,
+                LOOKUP_GAS,
             ) {
                 return r;
             }
             ok_u256(METHOD_GAS, U256::from(program.version))
         }
         Calls::codehashAsmSize(c) => {
-            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + 2 * COPY_GAS;
+            const LOOKUP_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + COPY_GAS;
+            const METHOD_GAS: u64 = LOOKUP_GAS + COPY_GAS;
             let (params_word, program_word) = load_params_and_program(&mut input, c.codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
@@ -202,7 +205,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 params_version,
                 expiry_days,
                 input.gas,
-                METHOD_GAS,
+                LOOKUP_GAS,
             ) {
                 return r;
             }
@@ -221,7 +224,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 params_version,
                 expiry_days,
                 input.gas,
-                METHOD_GAS,
+                PROGRAM_LOOKUP_GAS,
             ) {
                 return r;
             }
@@ -240,7 +243,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 params_version,
                 expiry_days,
                 input.gas,
-                METHOD_GAS,
+                PROGRAM_LOOKUP_GAS,
             ) {
                 return r;
             }
@@ -278,7 +281,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 params_version,
                 expiry_days,
                 input.gas,
-                METHOD_GAS,
+                PROGRAM_LOOKUP_GAS,
             ) {
                 return r;
             }
@@ -296,7 +299,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 params_version,
                 expiry_days,
                 input.gas,
-                METHOD_GAS,
+                PROGRAM_LOOKUP_GAS,
             ) {
                 return r;
             }
@@ -423,19 +426,22 @@ fn hours_to_age(time: u64, hours: u32) -> u64 {
 }
 
 /// Returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
-/// or ProgramExpired(ageSeconds), in that order. `method_gas` is the
-/// gas the calling method's success path reports — the revert uses the
-/// same value so failure and success cost the same (Nitro behaviour).
+/// or ProgramExpired(ageSeconds), in that order. `lookup_gas` is the
+/// method's argsCost + state-access charges (everything except the
+/// result-copy cost). The revert charges `lookup_gas + COPY_GAS * words`
+/// where `words` is rounded up from the actual error payload length —
+/// matching Nitro's precompile framework which sizes resultCost from
+/// `len(solErr.data)` rather than the success-path output.
 fn validate_active_program(
     program: &ProgramInfo,
     params_version: u16,
     expiry_days: u16,
     gas_limit: u64,
-    method_gas: u64,
+    lookup_gas: u64,
 ) -> Result<(), PrecompileResult> {
     if program.version == 0 {
         let data = IArbWasm::ProgramNotActivated {}.abi_encode();
-        return Err(revert_with_gas(data, method_gas, gas_limit));
+        return Err(revert_with_payload(data, lookup_gas, gas_limit));
     }
     if program.version != params_version {
         let data = IArbWasm::ProgramNeedsUpgrade {
@@ -443,7 +449,7 @@ fn validate_active_program(
             stylusVersion: params_version,
         }
         .abi_encode();
-        return Err(revert_with_gas(data, method_gas, gas_limit));
+        return Err(revert_with_payload(data, lookup_gas, gas_limit));
     }
     let expiry_seconds = (expiry_days as u64).saturating_mul(86_400);
     if program.age_seconds > expiry_seconds {
@@ -451,12 +457,15 @@ fn validate_active_program(
             ageInSeconds: program.age_seconds,
         }
         .abi_encode();
-        return Err(revert_with_gas(data, method_gas, gas_limit));
+        return Err(revert_with_payload(data, lookup_gas, gas_limit));
     }
     Ok(())
 }
 
-fn revert_with_gas(payload: Vec<u8>, gas_used: u64, gas_limit: u64) -> PrecompileResult {
+/// Revert with `lookup_gas + CopyGas * ceil(payload_len / 32)` charged.
+fn revert_with_payload(payload: Vec<u8>, lookup_gas: u64, gas_limit: u64) -> PrecompileResult {
+    let result_cost = COPY_GAS.saturating_mul((payload.len() as u64).div_ceil(32));
+    let gas_used = lookup_gas.saturating_add(result_cost);
     Ok(PrecompileOutput::new_reverted(
         gas_used.min(gas_limit),
         payload.into(),
@@ -517,15 +526,6 @@ fn handle_activate_program(
     crate::charge_precompile_gas(args_cost);
     crate::charge_precompile_gas(SLOAD_GAS); // OpenArbosState version read
 
-    // Match Nitro's `programs.ActivationGas()` at ArbOS >= 60: it SLOADs the
-    // activationGas slot. Pre-v60 it short-circuits to 0 with no SLOAD.
-    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
-        let programs_key_for_act = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-        let activation_gas_key = derive_subspace_key(programs_key_for_act.as_slice(), &[5]);
-        let activation_gas_slot = map_slot(activation_gas_key.as_slice(), 0);
-        let _activation_gas = sload_field(&mut input, activation_gas_slot)?;
-    }
-
     crate::charge_precompile_gas(ACTIVATION_UPFRONT_GAS);
 
     let code_hash = {
@@ -549,20 +549,13 @@ fn handle_activate_program(
             .to_vec()
     };
 
-    if code_bytes.is_empty()
-        || !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version())
-    {
-        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
-    }
-
-    let wasm = match arb_stylus::decompress_wasm(&code_bytes) {
-        Ok(w) => w,
-        Err(_) => return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode()),
-    };
-
-    // Params: charge WarmStorageReadCost (100), subsequent reads are free.
+    // Charge Params warm read (100) and existing-program SLOAD (800) *before*
+    // the prefix check so revert and success paths both account for them.
+    // Mirrors the order in Nitro's `programs.ActivateProgram`: `Params()` then
+    // `programExists()` (SLOAD of `programs[codeHash]`) run before `getWasm`,
+    // which is where a non-Stylus prefix is rejected.
     load_arbos(&mut input)?;
-    crate::charge_precompile_gas(100); // WarmStorageReadCostEIP2929
+    crate::charge_precompile_gas(100); // WarmStorageReadCostEIP2929 (Params)
     let params_word = {
         let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
         let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
@@ -577,12 +570,23 @@ fn handle_activate_program(
     let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
     let page_limit = u16::from_be_bytes([params_word[13], params_word[14]]);
 
-    let time = block_timestamp();
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
     let program_slot = map_slot_b256(data_key.as_slice(), &code_hash);
-
     let existing = sload_field(&mut input, program_slot)?;
+
+    if code_bytes.is_empty()
+        || !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version())
+    {
+        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
+    }
+
+    let wasm = match arb_stylus::decompress_wasm(&code_bytes) {
+        Ok(w) => w,
+        Err(_) => return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode()),
+    };
+
+    let time = block_timestamp();
     let existing_bytes = existing.to_be_bytes::<32>();
     let existing_version = u16::from_be_bytes([existing_bytes[0], existing_bytes[1]]);
     let was_cached = existing_bytes[14] != 0;
@@ -906,38 +910,33 @@ mod failure_gas_tests {
         }
     }
 
-    fn revert_gas(method_gas: u64) -> u64 {
-        let r = validate_active_program(&unactivated(), 1, 365, 1_000_000, method_gas)
+    fn revert_gas(lookup_gas: u64) -> u64 {
+        let r = validate_active_program(&unactivated(), 1, 365, 1_000_000, lookup_gas)
             .expect_err("unactivated program should revert");
         let out = r.expect("revert wraps an Ok(PrecompileOutput)");
         out.gas_used
     }
 
     #[test]
-    fn codehash_asm_size_failure_matches_success_path_gas() {
-        const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + 2 * COPY_GAS;
-        assert_eq!(METHOD_GAS, 1706);
-        assert_eq!(revert_gas(METHOD_GAS), 1706);
+    fn codehash_asm_size_failure_charges_lookup_plus_error_word() {
+        // lookup = argsCost(3) + Open(800) + Params warm(100) + getProgram SLOAD(800) = 1703;
+        // ProgramNotActivated() = 4 bytes = 1 word → +3.
+        const LOOKUP_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + COPY_GAS;
+        assert_eq!(LOOKUP_GAS, 1703);
+        assert_eq!(revert_gas(LOOKUP_GAS), 1706);
     }
 
     #[test]
-    fn codehash_version_failure_matches_success_path_gas() {
-        const METHOD_GAS: u64 = 2 * SLOAD_GAS + COPY_GAS;
-        assert_eq!(METHOD_GAS, 1603);
-        assert_eq!(revert_gas(METHOD_GAS), 1603);
-    }
-
-    #[test]
-    fn program_version_family_failure_matches_success_path_gas() {
-        const METHOD_GAS: u64 = 3 * SLOAD_GAS + COPY_GAS;
-        assert_eq!(METHOD_GAS, 2403);
-        assert_eq!(revert_gas(METHOD_GAS), 2403);
+    fn program_version_family_failure_charges_lookup_plus_error_word() {
+        // lookup = framework(803) + Params warm(100) + GetCodeHash(2600) + getProgram(800) = 4303;
+        // ProgramNotActivated() = 4 bytes = 1 word → +3.
+        assert_eq!(PROGRAM_LOOKUP_GAS, 4303);
+        assert_eq!(revert_gas(PROGRAM_LOOKUP_GAS), 4306);
     }
 
     #[test]
     fn revert_is_capped_at_gas_limit() {
-        const METHOD_GAS: u64 = 1706;
-        let r = validate_active_program(&unactivated(), 1, 365, 500, METHOD_GAS)
+        let r = validate_active_program(&unactivated(), 1, 365, 500, 1703)
             .expect_err("unactivated program should revert");
         let out = r.expect("revert wraps an Ok(PrecompileOutput)");
         assert_eq!(out.gas_used, 500);

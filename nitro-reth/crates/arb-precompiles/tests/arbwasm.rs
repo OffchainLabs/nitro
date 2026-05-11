@@ -306,7 +306,8 @@ fn codehash_version_reverts_program_not_activated_for_unset_program() {
     assert!(out.reverted);
     let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
     assert_eq!(&out.bytes[..4], &sel[..4]);
-    assert_eq!(out.gas_used, 1603);
+    // lookup(1703) + 1-word error(3) = 1706.
+    assert_eq!(out.gas_used, 1706);
 }
 
 #[test]
@@ -330,7 +331,8 @@ fn codehash_version_reverts_program_needs_upgrade_for_stale_version() {
     let params_v = U256::from_be_slice(&out.bytes[36..68]);
     assert_eq!(prog_v, U256::from(1u64));
     assert_eq!(params_v, U256::from(default_params().version));
-    assert_eq!(out.gas_used, 1603);
+    // lookup(1703) + 3-word error(9) = 1712.
+    assert_eq!(out.gas_used, 1712);
 }
 
 #[test]
@@ -353,7 +355,8 @@ fn codehash_version_reverts_program_expired_after_expiry() {
     assert_eq!(&out.bytes[..4], &sel[..4]);
     let age = U256::from_be_slice(&out.bytes[4..36]);
     assert_eq!(age, U256::from(366u64 * 86_400));
-    assert_eq!(out.gas_used, 1603);
+    // lookup(1703) + 2-word error(6) = 1709.
+    assert_eq!(out.gas_used, 1709);
 }
 
 #[test]
