@@ -74,33 +74,41 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS, U256::from(version))
         }
         Calls::inkPrice(_) => {
+            // Open(800) + Params warm(100) + result(3) = 903.
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let ink_price = (params[2] as u32) << 16 | (params[3] as u32) << 8 | params[4] as u32;
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(ink_price))
+            ok_u256(METHOD_GAS, U256::from(ink_price))
         }
         Calls::maxStackDepth(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let depth = u32::from_be_bytes([params[5], params[6], params[7], params[8]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(depth))
+            ok_u256(METHOD_GAS, U256::from(depth))
         }
         Calls::freePages(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let pages = u16::from_be_bytes([params[9], params[10]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(pages))
+            ok_u256(METHOD_GAS, U256::from(pages))
         }
         Calls::pageGas(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let gas = u16::from_be_bytes([params[11], params[12]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(gas))
+            ok_u256(METHOD_GAS, U256::from(gas))
         }
         Calls::pageRamp(_) => {
+            // Nitro reads Params() — same Open(800) + warm(100) + result(3).
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             load_arbos(&mut input)?;
-            ok_u256(COPY_GAS, U256::from(INITIAL_PAGE_RAMP))
+            ok_u256(METHOD_GAS, U256::from(INITIAL_PAGE_RAMP))
         }
         Calls::pageLimit(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let limit = u16::from_be_bytes([params[13], params[14]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(limit))
+            ok_u256(METHOD_GAS, U256::from(limit))
         }
         Calls::minInitGas(_) => {
             if let Some(result) = crate::check_method_version(
@@ -110,42 +118,60 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ) {
                 return result;
             }
+            // Returns (uint64, uint64) → 2 result words → 2*COPY_GAS.
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + 2 * COPY_GAS;
             let params = load_params_word(&mut input)?;
             let min_init = params[15] as u64;
             let min_cached = params[16] as u64;
             let init = min_init.saturating_mul(MIN_INIT_GAS_UNITS);
             let cached = min_cached.saturating_mul(MIN_CACHED_GAS_UNITS);
-            ok_two_u256(SLOAD_GAS + COPY_GAS, U256::from(init), U256::from(cached))
+            ok_two_u256(METHOD_GAS, U256::from(init), U256::from(cached))
         }
         Calls::initCostScalar(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let scalar = params[17] as u64;
             ok_u256(
-                SLOAD_GAS + COPY_GAS,
+                METHOD_GAS,
                 U256::from(scalar.saturating_mul(COST_SCALAR_PERCENT)),
             )
         }
         Calls::expiryDays(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let days = u16::from_be_bytes([params[19], params[20]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(days))
+            ok_u256(METHOD_GAS, U256::from(days))
         }
         Calls::keepaliveDays(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let days = u16::from_be_bytes([params[21], params[22]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(days))
+            ok_u256(METHOD_GAS, U256::from(days))
         }
         Calls::blockCacheSize(_) => {
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let size = u16::from_be_bytes([params[23], params[24]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(size))
+            ok_u256(METHOD_GAS, U256::from(size))
         }
         Calls::activationGas(_) => {
-            let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-            let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
-            let slot = map_slot(activation_key.as_slice(), 0);
-            let gas = sload_field(&mut input, slot)?;
-            ok_u256(SLOAD_GAS + COPY_GAS, gas)
+            // Nitro's `programs.ActivationGas()` SLOADs the activationGas slot
+            // (800) at ArbOS >= 60; pre-v60 it returns 0 with no SLOAD. The
+            // sload_field below mirrors the v60+ behaviour exactly — gate it.
+            let v60 = crate::get_arbos_version()
+                >= arb_chainspec::arbos_version::ARBOS_VERSION_60;
+            if v60 {
+                let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+                let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
+                let slot = map_slot(activation_key.as_slice(), 0);
+                let gas = sload_field(&mut input, slot)?;
+                // Open(800) + ActivationGas SLOAD(800) + result(3) = 1603.
+                ok_u256(SLOAD_GAS + SLOAD_GAS + COPY_GAS, gas)
+            } else {
+                load_arbos(&mut input)?;
+                // Pre-v60: Open(800) + result(3) = 803; ActivationGas returns 0.
+                ok_u256(SLOAD_GAS + COPY_GAS, U256::ZERO)
+            }
         }
         Calls::codehashVersion(c) => {
             // argsCost(3) + Open(800) + Params warm(100) + getProgram SLOAD(800) + result(3) = 1706.

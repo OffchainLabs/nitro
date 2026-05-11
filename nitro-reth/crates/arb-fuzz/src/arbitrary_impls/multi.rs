@@ -104,6 +104,21 @@ impl<'a> Arbitrary<'a> for SignedKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ArbWasmReadMethod {
+    StylusVersion,
+    InkPrice,
+    MaxStackDepth,
+    FreePages,
+    PageGas,
+    PageRamp,
+    PageLimit,
+    MinInitGas,
+    InitCostScalar,
+    ExpiryDays,
+    KeepaliveDays,
+    BlockCacheSize,
+    ActivationGas,
+    CodehashVersion,
+    CodehashAsmSize,
     ProgramVersion,
     ProgramInitGas,
     ProgramMemoryFootprint,
@@ -112,22 +127,83 @@ pub enum ArbWasmReadMethod {
 
 impl<'a> Arbitrary<'a> for ArbWasmReadMethod {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(match u.int_in_range::<u8>(0..=3)? {
-            0 => Self::ProgramVersion,
-            1 => Self::ProgramInitGas,
-            2 => Self::ProgramMemoryFootprint,
+        Ok(match u.int_in_range::<u8>(0..=18)? {
+            0 => Self::StylusVersion,
+            1 => Self::InkPrice,
+            2 => Self::MaxStackDepth,
+            3 => Self::FreePages,
+            4 => Self::PageGas,
+            5 => Self::PageRamp,
+            6 => Self::PageLimit,
+            7 => Self::MinInitGas,
+            8 => Self::InitCostScalar,
+            9 => Self::ExpiryDays,
+            10 => Self::KeepaliveDays,
+            11 => Self::BlockCacheSize,
+            12 => Self::ActivationGas,
+            13 => Self::CodehashVersion,
+            14 => Self::CodehashAsmSize,
+            15 => Self::ProgramVersion,
+            16 => Self::ProgramInitGas,
+            17 => Self::ProgramMemoryFootprint,
             _ => Self::ProgramTimeLeft,
         })
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArbWasmArgKind {
+    NoArg,
+    Codehash,
+    Address,
+}
+
 impl ArbWasmReadMethod {
     pub fn selector(&self) -> [u8; 4] {
+        // keccak256("<sig>")[0..4]
         match self {
-            Self::ProgramVersion => [0x2e, 0xe6, 0xfb, 0x33],
-            Self::ProgramInitGas => [0xa6, 0xf2, 0xf3, 0xa6],
-            Self::ProgramMemoryFootprint => [0xb1, 0xa3, 0xc1, 0xea],
-            Self::ProgramTimeLeft => [0xc1, 0x86, 0x66, 0x05],
+            Self::StylusVersion => [0xa9, 0x96, 0xe0, 0xc2],
+            Self::InkPrice => [0xd1, 0xc1, 0x7a, 0xbc],
+            Self::MaxStackDepth => [0x8c, 0xcf, 0xaa, 0x70],
+            Self::FreePages => [0x44, 0x90, 0xc1, 0x9d],
+            Self::PageGas => [0x7a, 0xf4, 0xba, 0x49],
+            Self::PageRamp => [0x11, 0xc8, 0x2a, 0xe8],
+            Self::PageLimit => [0x97, 0x86, 0xf9, 0x6e],
+            Self::MinInitGas => [0x99, 0xd0, 0xb3, 0x8d],
+            Self::InitCostScalar => [0x5f, 0xc9, 0x4c, 0x0b],
+            Self::ExpiryDays => [0x30, 0x9f, 0x65, 0x55],
+            Self::KeepaliveDays => [0x0a, 0x93, 0x64, 0x55],
+            Self::BlockCacheSize => [0x7a, 0xf6, 0xe8, 0x19],
+            Self::ActivationGas => [0x22, 0x78, 0xc2, 0x78],
+            Self::CodehashVersion => [0xd7, 0x0c, 0x0c, 0xa7],
+            Self::CodehashAsmSize => [0x40, 0x89, 0x26, 0x7f],
+            Self::ProgramVersion => [0xcc, 0x8f, 0x4e, 0x88],
+            Self::ProgramInitGas => [0x62, 0xb6, 0x88, 0xaa],
+            Self::ProgramMemoryFootprint => [0xae, 0xf3, 0x6b, 0xe3],
+            Self::ProgramTimeLeft => [0xc7, 0x75, 0xa6, 0x2a],
+        }
+    }
+
+    pub fn arg_kind(&self) -> ArbWasmArgKind {
+        match self {
+            Self::StylusVersion
+            | Self::InkPrice
+            | Self::MaxStackDepth
+            | Self::FreePages
+            | Self::PageGas
+            | Self::PageRamp
+            | Self::PageLimit
+            | Self::MinInitGas
+            | Self::InitCostScalar
+            | Self::ExpiryDays
+            | Self::KeepaliveDays
+            | Self::BlockCacheSize
+            | Self::ActivationGas => ArbWasmArgKind::NoArg,
+            Self::CodehashVersion | Self::CodehashAsmSize => ArbWasmArgKind::Codehash,
+            Self::ProgramVersion
+            | Self::ProgramInitGas
+            | Self::ProgramMemoryFootprint
+            | Self::ProgramTimeLeft => ArbWasmArgKind::Address,
         }
     }
 }
@@ -323,9 +399,28 @@ impl DiffMultiMsgScenario {
                 ]);
                 let mut data = Vec::with_capacity(36);
                 data.extend_from_slice(&method.selector());
-                let mut padded = [0u8; 32];
-                padded[12..].copy_from_slice(target.as_slice());
-                data.extend_from_slice(&padded);
+                match method.arg_kind() {
+                    ArbWasmArgKind::NoArg => {}
+                    ArbWasmArgKind::Address => {
+                        let mut padded = [0u8; 32];
+                        padded[12..].copy_from_slice(target.as_slice());
+                        data.extend_from_slice(&padded);
+                    }
+                    ArbWasmArgKind::Codehash => {
+                        // Use target bytes (left-padded) as the codehash. The
+                        // actual hash doesn't need to resolve to an active
+                        // program — only the gas accounting through the read
+                        // path matters for differential testing.
+                        let mut hash = [0u8; 32];
+                        hash[12..].copy_from_slice(target.as_slice());
+                        // Also fill the first 12 bytes with a deterministic
+                        // pattern so the codehash isn't always EVM-address-shaped.
+                        for (i, b) in hash[..12].iter_mut().enumerate() {
+                            *b = target.as_slice()[i % 20];
+                        }
+                        data.extend_from_slice(&hash);
+                    }
+                }
                 let max_fee_clamped = (*max_fee as u128).max(FUZZ_L1_BASE_FEE as u128 / 100 + 1);
                 let builder = SignedL2TxBuilder {
                     chain_id: FUZZ_L2_CHAIN_ID,
