@@ -67,9 +67,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match call {
         Calls::stylusVersion(_) => {
+            // Open(800) + Params warm(100) + result(3) = 903 — matches Nitro's
+            // `c.State.Programs().Params()` charge sequence.
             let params = load_params_word(&mut input)?;
             let version = u16::from_be_bytes([params[0], params[1]]);
-            ok_u256(SLOAD_GAS + COPY_GAS, U256::from(version))
+            ok_u256(SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS, U256::from(version))
         }
         Calls::inkPrice(_) => {
             let params = load_params_word(&mut input)?;
@@ -146,7 +148,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(SLOAD_GAS + COPY_GAS, gas)
         }
         Calls::codehashVersion(c) => {
-            const METHOD_GAS: u64 = 2 * SLOAD_GAS + COPY_GAS;
+            // argsCost(3) + Open(800) + Params warm(100) + getProgram SLOAD(800) + result(3) = 1706.
+            const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + 2 * COPY_GAS;
             let (params_word, program_word) = load_params_and_program(&mut input, c.codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let expiry_days = params_expiry_days(&params_word);
