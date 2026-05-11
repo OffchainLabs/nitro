@@ -526,6 +526,19 @@ fn handle_activate_program(
     crate::charge_precompile_gas(args_cost);
     crate::charge_precompile_gas(SLOAD_GAS); // OpenArbosState version read
 
+    // Nitro's `programs.ActivationGas()` SLOADs the activationGas slot (800) at
+    // ArbOS >= 60; pre-v60 it short-circuits with no SLOAD. Mirror that exactly
+    // so live Sepolia activations at v60+ match canon. The Nitro Docker
+    // reference image (v3.10.0-rc.2) predates this feature, so the matrix
+    // differential test will report a baseline -800 against that older image
+    // at v60 — an artifact of the Docker, not an arbreth bug.
+    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+        let programs_key_for_act = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+        let activation_gas_key = derive_subspace_key(programs_key_for_act.as_slice(), &[5]);
+        let activation_gas_slot = map_slot(activation_gas_key.as_slice(), 0);
+        let _activation_gas = sload_field(&mut input, activation_gas_slot)?;
+    }
+
     crate::charge_precompile_gas(ACTIVATION_UPFRONT_GAS);
 
     let code_hash = {
