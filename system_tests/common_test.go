@@ -3008,6 +3008,9 @@ func getFreePort(t testing.TB) int {
 	return tcpAddr.Port
 }
 
+// Used only by challengetest-tagged files; the linter doesn't see those callers in default builds.
+//
+//nolint:unused
 func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
 	for {
 		select {
@@ -3021,10 +3024,16 @@ func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1I
 			to := l1Info.GetAddress("Faucet")
 			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
 			if err := client.SendTransaction(ctx, tx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				t.Log("Error sending tx:", err)
 				continue
 			}
 			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				t.Log("Error ensuring tx succeeded:", err)
 				continue
 			}
