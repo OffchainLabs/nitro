@@ -155,23 +155,23 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(size))
         }
         Calls::activationGas(_) => {
-            // Nitro's `programs.ActivationGas()` SLOADs the activationGas slot
-            // (800) at ArbOS >= 60; pre-v60 it returns 0 with no SLOAD. The
-            // sload_field below mirrors the v60+ behaviour exactly — gate it.
-            let v60 = crate::get_arbos_version()
-                >= arb_chainspec::arbos_version::ARBOS_VERSION_60;
-            if v60 {
-                let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-                let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
-                let slot = map_slot(activation_key.as_slice(), 0);
-                let gas = sload_field(&mut input, slot)?;
-                // Open(800) + ActivationGas SLOAD(800) + result(3) = 1603.
-                ok_u256(SLOAD_GAS + SLOAD_GAS + COPY_GAS, gas)
-            } else {
-                load_arbos(&mut input)?;
-                // Pre-v60: Open(800) + result(3) = 803; ActivationGas returns 0.
-                ok_u256(SLOAD_GAS + COPY_GAS, U256::ZERO)
+            // Nitro registers `ActivationGas` only at ArbOS >= 60 (see
+            // precompile.go: methodsByName["ActivationGas"].arbosVersion =
+            // ArbosVersion_StylusActivationGas). Calling it pre-v60 hits the
+            // unregistered-method path and burns the full gas budget.
+            if let Some(r) = crate::check_method_version(
+                input.gas,
+                arb_chainspec::arbos_version::ARBOS_VERSION_60,
+                0,
+            ) {
+                return r;
             }
+            let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+            let activation_key = derive_subspace_key(programs_key.as_slice(), &[5]);
+            let slot = map_slot(activation_key.as_slice(), 0);
+            let gas = sload_field(&mut input, slot)?;
+            // Open(800) + ActivationGas SLOAD(800) + result(3) = 1603.
+            ok_u256(SLOAD_GAS + SLOAD_GAS + COPY_GAS, gas)
         }
         Calls::codehashVersion(c) => {
             // argsCost(3) + Open(800) + Params warm(100) + getProgram SLOAD(800) + result(3) = 1706.
