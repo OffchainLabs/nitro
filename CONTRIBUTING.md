@@ -13,7 +13,7 @@ You can explore our [Open Issues](https://github.com/offchainlabs/nitro/issues) 
 > If you are unsure, please open an issue first to discuss the change.
 > Here are some examples of trivial PRs that will most-likely be rejected:
 > * Fixing typos
-> * AI-generated code
+> * Non-impactful/not-useful AI generated code
 > * Refactors that don't improve usability
 <!-- end-trivial-prs -->
 
