@@ -17,6 +17,17 @@ You can explore our [Open Issues](https://github.com/offchainlabs/nitro/issues) 
 > * Refactors that don't improve usability
 <!-- end-trivial-prs -->
 
+## How contributions are merged
+
+Our development model has changed. The private repository (`nitro-private`) is now the source of truth for day-to-day development; the public `nitro` repository is a published mirror of private.
+
+External pull requests are still welcome and should be opened against the public `nitro` repository as described in the steps below. When a contribution is accepted, a core developer will:
+
+1. Port your changes into the private repository, preserving you as the commit author.
+2. Push the same commits to the public repository when the private repository is synced.
+
+As a result, the feedback loop is somewhat slower than a direct merge, and there will be a delay between acceptance and the change appearing in the public repository. We appreciate your patience and will work to keep communication clear throughout the process.
+
 ## Contribution Steps
 
 **1. Build Nitro locally following our instructions in our [docs](https://docs.arbitrum.io/run-arbitrum-node/nitro/build-nitro-locally).**
@@ -99,6 +110,9 @@ $ git push mynitrorepo feature-in-progress-branch
 **14. Create a pull request.**
 
 Navigate your browser to https://github.com/offchainlabs/nitro and click on the new pull request button. In the “base” box on the left, leave the default selection “base master”, the branch that you want your changes to be applied to. In the “compare” box on the right, select feature-in-progress-branch, the branch containing the changes you want to apply. 
+
+> [!NOTE]
+> As described in [How contributions are merged](#how-contributions-are-merged) above, accepted pull requests are ported into our private development repository rather than merged directly. Your change will appear in the public repository once the private repository is synced.
 
 **15. Respond to comments by Core Contributors.**
 
