@@ -39,6 +39,7 @@ const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
 const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
 const SLOAD_GAS: u64 = 800;
+const WARM_SLOAD_GAS: u64 = 100;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
@@ -356,9 +357,12 @@ fn handle_get_all_set_members(
 
 fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
+    // Nitro's GetMaxStylusContractFragments always calls programs.Params(),
+    // which charges Open(800) + Params warm(100). Result (32 bytes) adds 3.
+    const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
     if crate::get_arbos_version() < ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
         return Ok(PrecompileOutput::new(
-            (SLOAD_GAS + COPY_GAS).min(gas_limit),
+            METHOD_GAS.min(gas_limit),
             vec![0u8; 32].into(),
         ));
     }
@@ -375,7 +379,7 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
     let mut out = [0u8; 32];
     out[31] = count;
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        METHOD_GAS.min(gas_limit),
         out.to_vec().into(),
     ))
 }
