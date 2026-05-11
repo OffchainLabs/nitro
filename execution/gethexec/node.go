@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/transactionfeed"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -745,6 +746,10 @@ func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClie
 	}
 	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
+}
+
+func (n *ExecutionNode) SetTransactionFeedServer(srv *transactionfeed.Server) {
+	n.ExecEngine.SetTransactionFeedServer(srv)
 }
 
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {

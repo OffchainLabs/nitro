@@ -56,6 +56,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/transactionfeed"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -331,6 +332,7 @@ type Node struct {
 	Staker                   *multiprotocolstaker.MultiProtocolStaker
 	BroadcastServer          *broadcaster.Broadcaster
 	BroadcastClients         *broadcastclients.BroadcastClients
+	TransactionFeedServer    *transactionfeed.Server
 	SeqCoordinator           *SeqCoordinator
 	MaintenanceRunner        *MaintenanceRunner
 	providerServerCloseFn    func()
@@ -1300,6 +1302,7 @@ func getNodeParentChainReaderDisabled(
 	syncMonitor *SyncMonitor,
 	configFetcher ConfigFetcher,
 	blockMetadataFetcher *BlockMetadataFetcher,
+	transactionFeedServer *transactionfeed.Server,
 ) *Node {
 	// Create ConsensusExecutionSyncer even in L2-only mode to push sync data
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
@@ -1334,6 +1337,7 @@ func getNodeParentChainReaderDisabled(
 		Staker:                   nil,
 		BroadcastServer:          broadcastServer,
 		BroadcastClients:         broadcastClients,
+		TransactionFeedServer:    transactionFeedServer,
 		SeqCoordinator:           coordinator,
 		MaintenanceRunner:        maintenanceRunner,
 		SyncMonitor:              syncMonitor,
@@ -1383,6 +1387,11 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	var transactionFeedServer *transactionfeed.Server
+	if config.Feed.TransactionFeed.Enable {
+		transactionFeedServer = transactionfeed.NewServer(config.Feed.TransactionFeed)
+	}
+
 	txStreamer, err := getTransactionStreamer(ctx, consensusDB, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
@@ -1414,7 +1423,7 @@ func createNodeImpl(
 	}
 
 	if !config.ParentChainReader.Enable {
-		return getNodeParentChainReaderDisabled(ctx, consensusDB, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher), nil
+		return getNodeParentChainReaderDisabled(ctx, consensusDB, stack, executionClient, executionSequencer, executionRecorder, txStreamer, blobReader, broadcastServer, broadcastClients, coordinator, maintenanceRunner, syncMonitor, configFetcher, blockMetadataFetcher, transactionFeedServer), nil
 	}
 
 	delayedBridge, sequencerInbox, err := getDelayedBridgeAndSequencerInbox(deployInfo, l1client)
@@ -1538,6 +1547,7 @@ func createNodeImpl(
 		Staker:                   stakerObj,
 		BroadcastServer:          broadcastServer,
 		BroadcastClients:         broadcastClients,
+		TransactionFeedServer:    transactionFeedServer,
 		SeqCoordinator:           coordinator,
 		MaintenanceRunner:        maintenanceRunner,
 		providerServerCloseFn:    providerServerCloseFn,
@@ -1731,6 +1741,12 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting feed broadcast server: %w", err)
 		}
 	}
+	if n.TransactionFeedServer != nil {
+		err = n.TransactionFeedServer.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting transaction feed server: %w", err)
+		}
+	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else if n.ExecutionSequencer != nil {
@@ -1881,6 +1897,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
+	}
+	if n.TransactionFeedServer != nil && n.TransactionFeedServer.Started() {
+		n.TransactionFeedServer.StopAndWait()
 	}
 	// n.BroadcastServer is stopped after txStreamer and inboxReader because if done before it would lead to a deadlock, as the threads from these two components
 	// attempt to Broadcast i.e send feedMessage to clientManager's broadcastChan when there won't be any reader to read it as n.BroadcastServer would've been stopped

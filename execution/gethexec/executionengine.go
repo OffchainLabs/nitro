@@ -51,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/transactionfeed"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -246,6 +247,11 @@ type ExecutionEngine struct {
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
 	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
+	transactionFeedServer          *transactionfeed.Server
+}
+
+func (s *ExecutionEngine) SetTransactionFeedServer(srv *transactionfeed.Server) {
+	s.transactionFeedServer = srv
 }
 
 func NewL1PriceData() *L1PriceData {

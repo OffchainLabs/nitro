@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/transactionfeed"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/ctxhelper"
@@ -925,6 +926,7 @@ type FullSequencingHooks struct {
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
+	transactionFeedServer    *transactionfeed.Server
 }
 
 func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
@@ -984,6 +986,13 @@ func (s *FullSequencingHooks) TxFailed(err error) {
 		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
 	}
 	s.txErrors = append(s.txErrors, err)
+}
+
+func (s *FullSequencingHooks) OnTxIncluded(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int) {
+	if s.transactionFeedServer == nil {
+		return
+	}
+	s.transactionFeedServer.BroadcastTransaction(transactionfeed.BuildFeedMessage(header, tx, receipt, txIndex))
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
@@ -1054,6 +1063,7 @@ func MakeSequencingHooks(
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
+	transactionFeedServer *transactionfeed.Server,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
 		queueItems:               items,
@@ -1063,6 +1073,7 @@ func MakeSequencingHooks(
 		preTxFilter:              preTxFilter,
 		postTxFilter:             postTxFilter,
 		blockFilter:              blockFilter,
+		transactionFeedServer:    transactionFeedServer,
 	}
 	return res
 }
@@ -1087,6 +1098,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 		preTxFilter,
 		postTxFilter,
 		blockFilter,
+		nil,
 	)
 }
 
@@ -1357,6 +1369,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.preTxFilter,
 		s.postTxFilter,
 		nil,
+		s.execEngine.transactionFeedServer,
 	)
 
 	for _, queueItem := range queueItems {

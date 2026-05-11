@@ -223,6 +223,8 @@ type SequencingHooks interface {
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.
 	TxFailed(error)
+	// OnTxIncluded is called after a transaction is included in the block.
+	OnTxIncluded(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int)
 }
 
 type NoopSequencingHooks struct {
@@ -259,6 +261,9 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 func (n *NoopSequencingHooks) TxSucceeded() {}
 
 func (n *NoopSequencingHooks) TxFailed(error) {}
+
+func (n *NoopSequencingHooks) OnTxIncluded(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int) {
+}
 
 func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
 
@@ -640,6 +645,7 @@ func ProduceBlockAdvanced(
 
 		buildState.complete = append(buildState.complete, tx)
 		buildState.receipts = append(buildState.receipts, receipt)
+		sequencingHooks.OnTxIncluded(header, tx, receipt, len(buildState.receipts)-1)
 
 		if isUserTx {
 			if buildState.activeGroupCP == nil {
