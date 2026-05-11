@@ -115,7 +115,7 @@ profile: # Profile bootloading, stylus compilation, and reexecution across all b
 .PHONY: profile-snapshot
 profile-snapshot: # Run `profile` and save the JSON snapshot to $(OUTPUT_DIR)/profile-$(LABEL).json.
 	@if [ -z "$(LABEL)" ]; then echo "ERROR: LABEL is required (e.g. make profile-snapshot LABEL=baseline)" >&2; exit 1; fi
-	@$(MAKE) profile JSON_OUTPUT=$(OUTPUT_DIR)/profile-$(LABEL).json
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) profile JSON_OUTPUT=$(OUTPUT_DIR)/profile-$(LABEL).json
 	@echo "Snapshot written to $(OUTPUT_DIR)/profile-$(LABEL).json"
 
 .PHONY: profile-compare
