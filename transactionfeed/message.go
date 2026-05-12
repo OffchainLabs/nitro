@@ -9,6 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type TransactionFeedMessageVersion uint32
@@ -89,10 +91,10 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 	return &TransactionFeedMessage{
 		Version:     uint32(TransactionFeedV1),
 		PGARound:    1, // TODO: placeholder until we connect with PGA round logic
-		TimestampMs: uint64(time.Now().UnixMilli()),
+		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
 		Transaction: TransactionIncluded{
 			BlockNumber: header.Number.Uint64(),
-			TxIndex:     uint32(txIndex),
+			TxIndex:     arbmath.SaturatingUCast[uint32](txIndex),
 			RawTx:       hexutil.Encode(rawTx),
 			TxHash:      tx.Hash().Hex(),
 			Receipt: IncompleteReceipt{

@@ -11,10 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -98,7 +99,10 @@ func (s *Server) handleHandshake(ctx context.Context, conn net.Conn) {
 		return
 	}
 	// Clear the handshake deadline; clientReader manages its own.
-	conn.SetReadDeadline(time.Time{})
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return
+	}
 	select {
 	case s.register <- conn:
 	case <-ctx.Done():
@@ -175,17 +179,21 @@ func (s *Server) clientWriter(ctx context.Context, cc *clientConn) {
 			if !ok {
 				return
 			}
-			cc.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
-			err := wsutil.WriteServerText(cc.conn, data)
-			if err != nil {
+			if err := cc.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
+				s.sendUnregister(cc.conn)
+				return
+			}
+			if err := wsutil.WriteServerText(cc.conn, data); err != nil {
 				s.sendUnregister(cc.conn)
 				return
 			}
 
 		case <-ticker.C:
-			cc.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
-			err := wsutil.WriteServerMessage(cc.conn, ws.OpPing, nil)
-			if err != nil {
+			if err := cc.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
+				s.sendUnregister(cc.conn)
+				return
+			}
+			if err := wsutil.WriteServerMessage(cc.conn, ws.OpPing, nil); err != nil {
 				s.sendUnregister(cc.conn)
 				return
 			}
@@ -210,7 +218,10 @@ func (s *Server) clientReader(ctx context.Context, cc *clientConn) {
 			return
 		default:
 		}
-		cc.conn.SetReadDeadline(time.Now().Add(s.config.ClientTimeout))
+		if err := cc.conn.SetReadDeadline(time.Now().Add(s.config.ClientTimeout)); err != nil {
+			s.sendUnregister(cc.conn)
+			return
+		}
 		hdr, err := reader.NextFrame()
 		if err != nil {
 			s.sendUnregister(cc.conn)

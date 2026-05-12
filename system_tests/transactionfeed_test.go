@@ -13,11 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
 
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/transactionfeed"
@@ -238,11 +239,11 @@ func TestTransactionFeedOrdering(t *testing.T) {
 
 	for i, m := range feedMsgs {
 		wantBlock := receipts[i].BlockNumber.Uint64()
-		wantIdx := uint32(receipts[i].TransactionIndex)
+		wantIdx := uint64(receipts[i].TransactionIndex)
 		if m.Transaction.BlockNumber != wantBlock {
 			t.Fatalf("tx %d: block mismatch feed=%d receipt=%d", i, m.Transaction.BlockNumber, wantBlock)
 		}
-		if m.Transaction.TxIndex != wantIdx {
+		if uint64(m.Transaction.TxIndex) != wantIdx {
 			t.Fatalf("tx %d: tx_index mismatch feed=%d receipt=%d", i, m.Transaction.TxIndex, wantIdx)
 		}
 		// PGARound is currently a placeholder hardcoded to 1; revisit when PGA wiring lands.
