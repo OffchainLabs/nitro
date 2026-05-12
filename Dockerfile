@@ -332,6 +332,7 @@ COPY --from=node-builder  /workspace/target/bin/blobtool                 /usr/lo
 COPY --from=node-builder  /workspace/target/bin/el-proxy                 /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/filtering-report         /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/genesis-generator        /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/transaction-filterer     /usr/local/bin/
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
 USER user
@@ -445,6 +446,7 @@ COPY --from=node-builder-stripped  /workspace/target/bin/blobtool               
 COPY --from=node-builder-stripped  /workspace/target/bin/el-proxy                 /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/filtering-report         /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/genesis-generator        /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/transaction-filterer     /usr/local/bin/
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
 USER user
