@@ -21,6 +21,7 @@ mod reinterpret;
 pub mod utils;
 pub mod value;
 pub mod wavm;
+pub mod wavm_serialize;
 
 #[cfg(test)]
 mod test;

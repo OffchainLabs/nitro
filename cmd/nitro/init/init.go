@@ -64,6 +64,11 @@ var errNotFound = errors.New("file not found")
 const WasmerSerializeVersion = 16
 const InitialWasmerSerializeVersion = 8
 
+// Version of the WAVM module wire format used for activated Stylus programs under
+// the activatedAsmWavm prefix in wasmdb. Bump together with the on-disk format in
+// crates/prover/src/wavm_serialize.rs. Old or missing entries are purged on startup.
+const WavmSerializeVersion uint32 = 1
+
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
 	if initConfig.DownloadPath == "" {
@@ -495,9 +500,23 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 						return fmt.Errorf("failed to write batch: %w", err)
 					}
 					batch.Reset()
+					// Surface mid-loop iterator I/O errors before releasing,
+					// symmetric with the end-of-loop check below. Without
+					// this, a transient storage error on the first batch
+					// would be silently dropped when the iterator is
+					// recreated, leaving the purge half-complete but the
+					// version key written.
+					if err := it.Error(); err != nil {
+						return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
+					}
 					it.Release()
 					it = db.NewIterator(prefix, key)
 				}
+			}
+			// Surface iterator I/O errors so a mid-traversal failure does not
+			// leave the DB in a half-purged state with the version key written.
+			if err := it.Error(); err != nil {
+				return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
 			}
 			return nil
 		}(); err != nil {
@@ -534,6 +553,51 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 			if err != nil {
 				return fmt.Errorf("failed to write wasmer serialize version: %w", err)
 			}
+		}
+	}
+	return nil
+}
+
+// Purges activated Stylus WAVM entries when the on-disk WAVM serialize version is
+// absent or does not match the current `WavmSerializeVersion`. Unlike the Wasmer
+// variant, a missing key in a non-empty wasmdb is treated as incompatible;
+// existing nodes upgrading to the new WAVM wire format do not have a
+// `WavmSerializeVersion` entry, and their previously-stored WAVM bytes were
+// produced by the old bincode-derived layout.
+//
+// On a fresh (empty) wasmdb we write the version key proactively so that the
+// next non-empty startup, which will have new-format entries from this
+// session's activations, does not mistake the absence of the key for "old
+// format" and purge those legitimate entries.
+func validateOrUpgradeWavmSerializeVersion(db ethdb.Database) error {
+	if databaseIsEmpty(db) {
+		if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
+			return fmt.Errorf("failed to write wavm serialize version on empty db: %w", err)
+		}
+		return nil
+	}
+	versionInDB, err := rawdb.ReadWavmSerializeVersion(db)
+	missing := false
+	if err != nil {
+		if rawdb.IsDbErrNotFound(err) {
+			missing = true
+		} else {
+			return fmt.Errorf("failed to retrieve wavm serialize version: %w", err)
+		}
+	}
+	if missing || versionInDB != WavmSerializeVersion {
+		if missing {
+			log.Warn("No WavmSerializeVersion key found - removing old WAVM stylus module entries", "expected", WavmSerializeVersion)
+		} else {
+			log.Warn("Detected wavm serialize version, removing old WAVM stylus module entries", "found", versionInDB, "expected", WavmSerializeVersion)
+		}
+		prefixes := rawdb.WavmPrefixes()
+		if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
+			return fmt.Errorf("failed to purge wavm entries: %w", err)
+		}
+		log.Info("WAVM stylus module entries successfully removed.")
+		if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
+			return fmt.Errorf("failed to write wavm serialize version: %w", err)
 		}
 	}
 	return nil
@@ -992,6 +1056,9 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 		return nil, nil, err
 	}
 	if err := validateOrUpgradeWasmerSerializeVersion(wasmDB); err != nil {
+		return nil, nil, err
+	}
+	if err := validateOrUpgradeWavmSerializeVersion(wasmDB); err != nil {
 		return nil, nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(wasmDB); err != nil {

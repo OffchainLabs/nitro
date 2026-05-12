@@ -51,6 +51,15 @@ use crate::{
         self, FloatingPointImpls, IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm,
     },
+    wavm_serialize::{
+        Cursor, FunctionParts, TableElementParts, TableParts, WAVM_COMPRESSION_BROTLI,
+        WAVM_COMPRESSION_NONE, WAVM_MAGIC, WAVM_SERIALIZE_VERSION, read_count, read_export_map,
+        read_func_exports, read_function_parts, read_function_type, read_host_call_hooks,
+        read_names, read_table_parts, read_value, write_bytes, write_bytes32, write_count,
+        write_export_map, write_func_exports, write_function_parts, write_function_type,
+        write_host_call_hooks, write_names, write_optional_u32, write_table_parts, write_u32,
+        write_u64, write_value,
+    },
 };
 
 #[cfg(feature = "counters")]
@@ -686,126 +695,273 @@ impl Module {
         data
     }
 
-    /// Serializes the `Module` into bytes that can be stored in the db.
-    /// The format employed is forward-compatible with future brotli dictionary and caching
-    /// policies.
-    pub fn into_bytes(&self) -> Vec<u8> {
-        let data = bincode::serialize::<ModuleSerdeAll>(&self.into()).unwrap();
-        let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
-        brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
+    /// Serializes the `Module` into the WAVM wire format
+    /// (`MAGIC | VERSION | COMPRESSION_TAG | u32 LEN | brotli(body)`). Fields
+    /// are emitted in `Module` declaration order; schema changes require bumping
+    /// `WAVM_SERIALIZE_VERSION`, which `validateOrUpgradeWavmSerializeVersion`
+    /// translates into an on-disk purge. Returns `Err` instead of panicking so
+    /// failures cross the FFI boundary as status codes.
+    pub fn to_wavm_bytes(&self) -> Result<Vec<u8>> {
+        // Body follows `Module`'s declaration order; `tables_merkle` and
+        // `funcs_merkle` are re-derived on decode.
+        //
+        // Pre-size to skip the ~10 doubling reallocations a multi-MB body would
+        // otherwise cost. Instruction stream + memory buffer dominate.
+        let body_capacity_hint = self.memory.size() as usize
+            + self
+                .funcs
+                .iter()
+                .map(|f| 64 + f.code.len() * 16)
+                .sum::<usize>()
+            + 4096;
+        let mut body = Vec::with_capacity(body_capacity_hint);
+
+        write_count(&mut body, self.globals.len())?;
+        for v in &self.globals {
+            write_value(&mut body, *v);
+        }
+
+        // `get_range(0, size)` is total by construction (`size == buffer.len()`);
+        // the `bail!` makes a future Memory-invariant break loud instead of
+        // silently diverging the hash from the activator's.
+        let size = self.memory.size() as usize;
+        let buffer = self.memory.get_range(0, size).ok_or_else(|| {
+            eyre!(
+                "wavm encode: memory.get_range(0, {size}) returned None — Memory invariant broken"
+            )
+        })?;
+        write_bytes(&mut body, buffer)?;
+        write_u64(&mut body, self.memory.max_size);
+
+        write_count(&mut body, self.tables.len())?;
+        for t in &self.tables {
+            let parts = TableParts {
+                ty: t.ty,
+                elems: t
+                    .elems
+                    .iter()
+                    .map(|e| TableElementParts {
+                        func_ty: e.func_ty.clone(),
+                        val: e.val,
+                    })
+                    .collect(),
+            };
+            write_table_parts(&mut body, &parts)?;
+        }
+
+        write_count(&mut body, self.funcs.len())?;
+        for f in self.funcs.iter() {
+            let parts = FunctionParts {
+                local_types: f.local_types.clone(),
+                ty: f.ty.clone(),
+                code: f.code.clone(),
+            };
+            write_function_parts(&mut body, &parts)?;
+        }
+
+        write_count(&mut body, self.types.len())?;
+        for ty in self.types.iter() {
+            write_function_type(&mut body, ty)?;
+        }
+
+        write_u32(&mut body, self.internals_offset);
+        write_names(&mut body, &self.names)?;
+        write_host_call_hooks(&mut body, &self.host_call_hooks)?;
+        write_optional_u32(&mut body, self.start_function);
+
+        write_count(&mut body, self.func_types.len())?;
+        for ty in self.func_types.iter() {
+            write_function_type(&mut body, ty)?;
+        }
+
+        write_func_exports(&mut body, &self.func_exports)?;
+        write_export_map(&mut body, &self.all_exports)?;
+        write_bytes32(&mut body, &self.extra_hash);
+
+        // q=0 shrinks realistic modules ~20–80x at sub-ms cost; higher q saves
+        // little on an already-tiny payload.
+        let compressed = brotli::compress(&body, 0, 22, Dictionary::Empty)
+            .map_err(|s| eyre!("wavm encode: brotli compression failed: {s:?}"))?;
+
+        // Length-prefix the body so the decoder catches trailing-bytes
+        // corruption regardless of brotli's behavior on extra input.
+        let mut out = Vec::with_capacity(WAVM_MAGIC.len() + 1 + 1 + 4 + compressed.len());
+        out.extend_from_slice(WAVM_MAGIC);
+        out.push(WAVM_SERIALIZE_VERSION);
+        out.push(WAVM_COMPRESSION_BROTLI);
+        write_bytes(&mut out, &compressed)?;
+
+        Ok(out)
     }
 
-    /// Deserializes a `Module` from db bytes.
-    ///
-    /// # Safety
-    ///
-    /// The bytes must have been produced by `into_bytes` and represent a valid `Module`.
-    pub unsafe fn from_bytes(data: &[u8]) -> Self {
-        let module = if data[0] > 0 {
-            let dict = Dictionary::try_from(data[0] - 1).expect("unknown dictionary");
-            let data = brotli::decompress(&data[1..], dict).expect("failed to inflate");
-            bincode::deserialize::<ModuleSerdeAll>(&data)
-        } else {
-            bincode::deserialize::<ModuleSerdeAll>(&data[1..])
+    /// Deserializes a `Module` from the stable WAVM wire format. Returns `Err` on
+    /// header mismatch, malformed payload, or trailing bytes; never panics. The
+    /// rebuilt module's `Module::hash()` matches the activator's by construction:
+    /// `Table::elems_merkle` is left as `Merkle::default()` to mirror
+    /// `Module::from_binary`.
+    pub fn from_wavm_bytes(data: &[u8]) -> Result<Module> {
+        ensure!(
+            data.len() > WAVM_MAGIC.len(),
+            "wavm decode: data too short for header"
+        );
+        ensure!(
+            &data[..WAVM_MAGIC.len()] == WAVM_MAGIC,
+            "wavm decode: magic mismatch"
+        );
+        let version = data[WAVM_MAGIC.len()];
+        ensure!(
+            version == WAVM_SERIALIZE_VERSION,
+            "wavm decode: unsupported WavmSerializeVersion {version}, expected {WAVM_SERIALIZE_VERSION}",
+        );
+
+        // Read the envelope: COMPRESSION_TAG | u32 BODY_LEN | BODY. Length
+        // prefix is verified against `env.is_empty()` below so trailing
+        // bytes after the body are rejected regardless of brotli's
+        // trailing-byte behavior.
+        let mut env = Cursor::new(&data[WAVM_MAGIC.len() + 1..]);
+        let compression_tag = env.read_u8()?;
+        let raw_body = env.read_bytes()?;
+        ensure!(
+            env.is_empty(),
+            "wavm decode: {} trailing byte(s) after envelope",
+            env.remaining(),
+        );
+
+        let body: Vec<u8> = match compression_tag {
+            WAVM_COMPRESSION_NONE => raw_body,
+            WAVM_COMPRESSION_BROTLI => brotli::decompress(&raw_body, Dictionary::Empty)
+                .map_err(|s| eyre!("wavm decode: brotli decompression failed: {s:?}"))?,
+            other => bail!("wavm decode: unknown compression tag {other}"),
         };
-        module.unwrap().into()
-    }
-}
 
-/// This type exists to provide a serde option for serializing all the fields of a `Module`.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ModuleSerdeAll {
-    globals: Vec<Value>,
-    memory: Memory,
-    tables: Vec<Table>,
-    tables_merkle: Merkle,
-    funcs: Vec<FunctionSerdeAll>,
-    funcs_merkle: Arc<Merkle>,
-    types: Arc<Vec<FunctionType>>,
-    internals_offset: u32,
-    names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
-    start_function: Option<u32>,
-    func_types: Arc<Vec<FunctionType>>,
-    func_exports: Arc<HashMap<String, u32>>,
-    all_exports: Arc<ExportMap>,
-    extra_hash: Arc<Bytes32>,
-}
+        let mut c = Cursor::new(&body);
 
-impl From<ModuleSerdeAll> for Module {
-    fn from(module: ModuleSerdeAll) -> Self {
-        let funcs = module.funcs.into_iter().map(Function::from).collect();
-        Self {
-            globals: module.globals,
-            memory: module.memory,
-            tables: module.tables,
-            tables_merkle: module.tables_merkle,
+        // globals (each `Value` is at least 1 tag byte)
+        let n_globals = read_count(&mut c, 1)?;
+        let mut globals = Vec::with_capacity(n_globals);
+        for _ in 0..n_globals {
+            globals.push(read_value(&mut c)?);
+        }
+
+        // memory: buffer + max_size
+        let memory_buffer = c.read_bytes()?;
+        let memory_max_size = c.read_u64()?;
+
+        // tables (each table is at least kind(1) + initial(8) + maximum-flag(1)
+        // + table64(1) + shared(1) + elem-count(4) = 16 bytes)
+        let n_tables = read_count(&mut c, 16)?;
+        let mut tables = Vec::with_capacity(n_tables);
+        for _ in 0..n_tables {
+            let parts = read_table_parts(&mut c)?;
+            let elems = parts
+                .elems
+                .into_iter()
+                .map(|e| TableElement {
+                    func_ty: e.func_ty,
+                    val: e.val,
+                })
+                .collect();
+            tables.push(Table {
+                ty: parts.ty,
+                elems,
+                elems_merkle: Merkle::default(),
+            });
+        }
+
+        // funcs (each function is at least local-count(4) + input-count(4)
+        // + output-count(4) + inst-count(4) = 16 bytes)
+        let n_funcs = read_count(&mut c, 16)?;
+        let mut funcs: Vec<Function> = Vec::with_capacity(n_funcs);
+        for _ in 0..n_funcs {
+            let parts = read_function_parts(&mut c)?;
+            funcs.push(Function::new_from_wavm(
+                parts.code,
+                parts.ty,
+                parts.local_types,
+            ));
+        }
+
+        // types (each FunctionType has two u32 counts = 8 bytes minimum)
+        let n_types = read_count(&mut c, 8)?;
+        let mut types = Vec::with_capacity(n_types);
+        for _ in 0..n_types {
+            types.push(read_function_type(&mut c)?);
+        }
+
+        // internals_offset
+        let internals_offset = c.read_u32()?;
+
+        // names (module + functions map)
+        let names = read_names(&mut c)?;
+
+        // host_call_hooks
+        let host_call_hooks = read_host_call_hooks(&mut c)?;
+
+        // start_function
+        let start_function = c.read_optional_u32()?;
+
+        // func_types
+        let n_func_types = read_count(&mut c, 8)?;
+        let mut func_types = Vec::with_capacity(n_func_types);
+        for _ in 0..n_func_types {
+            func_types.push(read_function_type(&mut c)?);
+        }
+
+        // func_exports
+        let func_exports = read_func_exports(&mut c)?;
+
+        // all_exports
+        let all_exports = read_export_map(&mut c)?;
+
+        // extra_hash
+        let extra_hash = c.read_bytes32()?;
+
+        ensure!(
+            c.is_empty(),
+            "wavm decode: {} trailing byte(s) after module",
+            c.remaining(),
+        );
+
+        // Reconstruct memory.
+        let mut memory = Memory::new(memory_buffer.len(), memory_max_size);
+        if !memory_buffer.is_empty() {
+            memory.set_range(0, &memory_buffer)?;
+        }
+        memory.cache_merkle_tree();
+
+        // Leave each `table.elems_merkle` as `Merkle::default()` to mirror the activator
+        // path (`Module::from_binary`): `Table::hash` reads `elems_merkle.root()`, so
+        // hashing here with an empty merkle keeps `Module::hash()` identical to the
+        // hash reported by `stylus_activate`. Repopulating would diverge from the
+        // activator's commitment and from the on-chain `module_hash`.
+        let tables_hashes: Result<_> = tables.iter().map(Table::hash).collect();
+        let tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
+
+        // funcs_merkle is over Function::hash() values (which themselves merkleize the
+        // instruction stream). new_from_wavm above already populated each Function's
+        // code_merkle, so this is straightforward.
+        let funcs_merkle = Arc::new(Merkle::new(
+            MerkleType::Function,
+            funcs.iter().map(Function::hash).collect(),
+        ));
+
+        Ok(Module {
+            globals,
+            memory,
+            tables,
+            tables_merkle,
             funcs: Arc::new(funcs),
-            funcs_merkle: module.funcs_merkle,
-            types: module.types,
-            internals_offset: module.internals_offset,
-            names: module.names,
-            host_call_hooks: module.host_call_hooks,
-            start_function: module.start_function,
-            func_types: module.func_types,
-            func_exports: module.func_exports,
-            all_exports: module.all_exports,
-            extra_hash: module.extra_hash,
-        }
-    }
-}
-
-impl From<&Module> for ModuleSerdeAll {
-    fn from(module: &Module) -> Self {
-        let funcs = Vec::clone(&module.funcs);
-        Self {
-            globals: module.globals.clone(),
-            memory: module.memory.clone(),
-            tables: module.tables.clone(),
-            tables_merkle: module.tables_merkle.clone(),
-            funcs: funcs.into_iter().map(FunctionSerdeAll::from).collect(),
-            funcs_merkle: module.funcs_merkle.clone(),
-            types: module.types.clone(),
-            internals_offset: module.internals_offset,
-            names: module.names.clone(),
-            host_call_hooks: module.host_call_hooks.clone(),
-            start_function: module.start_function,
-            func_types: module.func_types.clone(),
-            func_exports: module.func_exports.clone(),
-            all_exports: module.all_exports.clone(),
-            extra_hash: module.extra_hash.clone(),
-        }
-    }
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FunctionSerdeAll {
-    code: Vec<Instruction>,
-    ty: FunctionType,
-    code_merkle: Merkle,
-    local_types: Vec<ArbValueType>,
-}
-
-impl From<FunctionSerdeAll> for Function {
-    fn from(func: FunctionSerdeAll) -> Self {
-        Self {
-            code: func.code,
-            ty: func.ty,
-            code_merkle: func.code_merkle,
-            local_types: func.local_types,
-        }
-    }
-}
-
-impl From<Function> for FunctionSerdeAll {
-    fn from(func: Function) -> Self {
-        Self {
-            code: func.code,
-            ty: func.ty,
-            code_merkle: func.code_merkle,
-            local_types: func.local_types,
-        }
+            funcs_merkle,
+            types: Arc::new(types),
+            internals_offset,
+            names: Arc::new(names),
+            host_call_hooks: Arc::new(host_call_hooks),
+            start_function,
+            func_types: Arc::new(func_types),
+            func_exports: Arc::new(func_exports),
+            all_exports: Arc::new(all_exports),
+            extra_hash: Arc::new(extra_hash),
+        })
     }
 }
 
@@ -1339,7 +1495,7 @@ impl Machine {
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data), version)?;
         let hash = module.hash();
-        self.add_stylus_module(hash, module.into_bytes());
+        self.add_stylus_module(hash, module.to_wavm_bytes()?);
         Ok(hash)
     }
 
@@ -1827,7 +1983,14 @@ impl Machine {
         };
         let ty = &source_func.ty;
         if ty.inputs.len() != args.len() {
-            let name = source_module.names.functions.get(&func).unwrap();
+            // `names.functions` is sparse (Wasm name section is optional); fall
+            // back to the numeric index for functions that have no symbol.
+            let name = source_module
+                .names
+                .functions
+                .get(&func)
+                .cloned()
+                .unwrap_or_else(|| format!("#{func}"));
             bail!(
                 "func {} has type {} but received args {:?}",
                 name.red(),
@@ -2623,11 +2786,33 @@ impl Machine {
                         bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
 
-                    // put the new module's offset on the stack
+                    // `Module::from_wavm_bytes` mirrors the activator's empty
+                    // `Table::elems_merkle` semantics, so `new_module.hash() == hash`
+                    // is guaranteed by construction. Enforce that invariant in
+                    // release as well: a silent mismatch would install a module
+                    // whose `hash()` no longer equals the WAVM-level lookup key,
+                    // breaking the BOLD fraud-proof commitment.
+                    //
+                    // Decode and hash-check BEFORE mutating `value_stack` /
+                    // `self.modules` so the machine's pre-step state is
+                    // preserved on the bail path; the previous order pushed
+                    // the module index before validating and left
+                    // `value_stack` with a phantom index when bailing.
+                    let new_module = match Module::from_wavm_bytes(bytes) {
+                        Ok(m) => m,
+                        Err(e) => bail!("failed to decode stylus module {hash}: {e}"),
+                    };
+                    let new_hash = new_module.hash();
+                    if new_hash != hash {
+                        bail!(
+                            "decoded stylus module hash {new_hash} diverged from lookup key {hash} — wavm round-trip invariant broken",
+                        );
+                    }
+                    // Now commit: push the offset on the stack and install
+                    // the module.
                     let index = self.modules.len() as u32;
                     value_stack.push(index.into());
-
-                    self.modules.push(unsafe { Module::from_bytes(bytes) });
+                    self.modules.push(new_module);
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.push_leaf(hash);
                     }
@@ -2781,8 +2966,10 @@ impl Machine {
             println!("{module}\n");
         }
         for module in self.stylus_modules.values() {
-            let module = unsafe { Module::from_bytes(module) };
-            println!("{module}\n");
+            match Module::from_wavm_bytes(module) {
+                Ok(m) => println!("{m}\n"),
+                Err(e) => println!("<failed to decode stylus module: {e}>\n"),
+            }
         }
     }
 
@@ -3384,5 +3571,729 @@ impl Machine {
         if frame_stack.len() > 25 {
             print(format!("  ... and {} more", frame_stack.len() - 25).grey());
         }
+    }
+}
+
+#[cfg(test)]
+mod wavm_format_tests {
+    //! End-to-end tests for `Module::to_wavm_bytes` / `from_wavm_bytes`.
+    //!
+    //! These tests construct `Module`s directly (taking advantage of `pub(crate)`
+    //! field access from inside `machine.rs`) so they exercise the full round-trip
+    //! and merkle reconstruction without requiring a full Stylus toolchain.
+
+    use std::sync::Arc;
+
+    use arbutil::Bytes32;
+    use wasmparser::{RefType, TableType};
+
+    use super::*;
+    use crate::{
+        memory::Memory,
+        value::{ArbValueType, FunctionType, Value},
+        wavm::{Instruction, Opcode},
+        wavm_serialize::{WAVM_MAGIC, WAVM_SERIALIZE_VERSION},
+    };
+
+    /// Build a small but non-trivial `Module` covering the consensus-relevant
+    /// fields. The exact contents don't have to be executable — what matters is
+    /// that `Module::hash()` inputs (globals, memory, `tables_merkle.root()`,
+    /// `funcs_merkle.root()`, `extra_hash`, `internals_offset`) and the
+    /// non-hashed but round-tripped fields are populated.
+    fn build_test_module() -> Module {
+        let mut memory = Memory::new(64, 1);
+        memory.set_range(0, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        memory.cache_merkle_tree();
+
+        let function_type = FunctionType {
+            inputs: vec![ArbValueType::I32, ArbValueType::I64],
+            outputs: vec![ArbValueType::I32],
+        };
+
+        let func = Function::new_from_wavm(
+            vec![
+                Instruction {
+                    opcode: Opcode::InitFrame,
+                    argument_data: 0,
+                    proving_argument_data: Some(Bytes32([0u8; 32])),
+                },
+                Instruction::with_data(Opcode::I32Const, 42),
+                Instruction::simple(Opcode::Return),
+            ],
+            function_type.clone(),
+            vec![ArbValueType::I32, ArbValueType::I64],
+        );
+
+        // Match the activator path (`Module::from_binary`): `elems_merkle` stays
+        // empty so `Table::hash` sees `Merkle::default().root()` (all zeros), which
+        // is what gets committed in `tables_merkle` on activation.
+        let table = Table {
+            ty: TableType {
+                element_type: RefType::FUNCREF,
+                initial: 2,
+                maximum: Some(8),
+                table64: false,
+                shared: false,
+            },
+            elems: vec![
+                TableElement {
+                    func_ty: function_type.clone(),
+                    val: Value::FuncRef(0),
+                },
+                TableElement::default(),
+            ],
+            elems_merkle: Merkle::default(),
+        };
+        let tables = vec![table];
+        let tables_hashes: Result<_> = tables.iter().map(Table::hash).collect();
+        let tables_merkle = Merkle::new(MerkleType::Table, tables_hashes.unwrap());
+
+        let funcs = Arc::new(vec![func]);
+        let funcs_merkle = Arc::new(Merkle::new(
+            MerkleType::Function,
+            funcs.iter().map(Function::hash).collect(),
+        ));
+
+        let mut func_exports: HashMap<String, u32> = HashMap::default();
+        func_exports.insert("main".to_owned(), 0);
+
+        let mut all_exports = ExportMap::default();
+        all_exports.insert("main".to_owned(), (0, ExportKind::Func));
+
+        Module {
+            globals: vec![Value::I32(7), Value::I64(99), Value::RefNull],
+            memory,
+            tables,
+            tables_merkle,
+            funcs,
+            funcs_merkle,
+            types: Arc::new(vec![function_type.clone()]),
+            internals_offset: 0,
+            names: Arc::new(NameCustomSection {
+                module: "test_module".to_owned(),
+                functions: Default::default(),
+            }),
+            host_call_hooks: Arc::new(vec![None, Some(("env".to_owned(), "alloc".to_owned()))]),
+            start_function: Some(0),
+            func_types: Arc::new(vec![function_type]),
+            func_exports: Arc::new(func_exports),
+            all_exports: Arc::new(all_exports),
+            extra_hash: Arc::new(Bytes32([0xAA; 32])),
+        }
+    }
+
+    #[test]
+    fn module_round_trip_preserves_hash() {
+        // The core invariant: `Module::hash()` (consensus-locked) must be
+        // identical after a serialize → deserialize round trip.
+        let original = build_test_module();
+        let original_hash = original.hash();
+
+        let bytes = original.to_wavm_bytes().expect("encode should succeed");
+        let rebuilt = Module::from_wavm_bytes(&bytes).expect("round-trip should succeed");
+
+        assert_eq!(
+            rebuilt.hash(),
+            original_hash,
+            "rebuilt module hash differs from original",
+        );
+    }
+
+    fn assert_activation_round_trip(label: &str, wat: &[u8]) {
+        let wasm = wasmer::wat2wasm(wat).expect("wat2wasm");
+
+        let codehash = Bytes32::default();
+        let stylus_version = 3u16;
+        let mut gas = u64::MAX;
+        let (module, _stylus_data) =
+            Module::activate(&wasm, &codehash, stylus_version, 0, 65535, false, &mut gas)
+                .expect("activation");
+
+        let activation_hash = module.hash();
+        let bytes = module
+            .to_wavm_bytes()
+            .expect("to_wavm_bytes after activation");
+        let rebuilt = Module::from_wavm_bytes(&bytes).expect("from_wavm_bytes after activation");
+
+        assert_eq!(
+            rebuilt.hash(),
+            activation_hash,
+            "[{label}] deserialized hash must match the activator's hash so LinkModule's lookup-by-hash matches the rebuilt module's identity",
+        );
+    }
+
+    #[test]
+    fn activation_to_round_trip_hash_matches() {
+        // Take a real Stylus user WASM through `Module::activate` (the
+        // production activator path), serialize, deserialize, and assert hash
+        // equality. The WAT declares a table with `initial > 0` and a
+        // non-empty `elem` segment, so `Table::hash` is evaluated against a
+        // non-trivially-shaped table; any future code that re-derives
+        // `elems_merkle` from `elems` on one side but not the other would
+        // change `tables_merkle.root()` and fail this assertion. (Today both
+        // activator and deserializer hold `Merkle::default()` for this field;
+        // the test guards against either side starting to populate it.)
+        let minimal = br#"(module
+            (import "vm_hooks" "pay_for_memory_grow" (func $pay_for_memory_grow (param i32)))
+            (memory (export "memory") 1 1)
+            (table 2 funcref)
+            (elem (i32.const 0) $user_entrypoint)
+            (func $user_entrypoint (export "user_entrypoint") (param i32) (result i32)
+                i32.const 0
+            )
+        )"#;
+        assert_activation_round_trip("minimal", minimal);
+
+        // Richer WAT: exercises IBinOp (add/sub/mul), IRelOp (eq),
+        // MemoryLoad/MemoryStore, branching (if/else), a multi-entry function
+        // table, and a non-entrypoint helper. This is the configuration that
+        // catches "an encoding bug in a non-hashed sub-arg surfaces only on
+        // contracts with control flow"; the minimal WAT above does not reach
+        // any of these opcodes through its 1-instruction body.
+        let rich = br#"(module
+            (import "vm_hooks" "pay_for_memory_grow" (func $pay_for_memory_grow (param i32)))
+            (memory (export "memory") 1 1)
+            (table 2 funcref)
+            (elem (i32.const 0) $user_entrypoint $helper)
+            (func $helper (param i32) (result i32)
+                local.get 0
+                i32.const 7
+                i32.add
+            )
+            (func $user_entrypoint (export "user_entrypoint") (param i32) (result i32)
+                (local $acc i32)
+                ;; memory store + load
+                i32.const 0
+                i32.const 42
+                i32.store
+                i32.const 0
+                i32.load
+                local.set $acc
+                ;; branch on argument
+                local.get 0
+                i32.const 0
+                i32.eq
+                if (result i32)
+                    local.get $acc
+                    i32.const 1
+                    i32.add
+                else
+                    local.get $acc
+                    i32.const 1
+                    i32.sub
+                end
+                ;; call a helper to exercise an extra Function entry
+                call $helper
+                ;; final mul to exercise another IBinOp variant
+                i32.const 3
+                i32.mul
+            )
+        )"#;
+        assert_activation_round_trip("rich", rich);
+    }
+
+    #[test]
+    fn non_hashed_fields_round_trip() {
+        // `Module::hash()` (consensus) only covers globals/memory/tables_merkle/
+        // funcs_merkle/extra_hash/internals_offset. Several fields round-trip
+        // through the wire format but never contribute to the hash, so a
+        // serialize/deserialize bug in any of them would slip past the hash
+        // assertion in `module_round_trip_preserves_hash`.
+        //
+        // The most important of these is `TableElement::{val, func_ty}`; for
+        // activator-shaped modules `Table::hash` only commits `elems.len()` +
+        // empty `elems_merkle.root()`, so per-element data is invisible to the
+        // hash until a `Machine` rebuilds `elems_merkle`. A bug here would
+        // surface only mid-execution, far from the encode/decode site.
+        let original = build_test_module();
+        let bytes = original.to_wavm_bytes().unwrap();
+        let r = Module::from_wavm_bytes(&bytes).expect("decode");
+
+        assert_eq!(r.types, original.types, "types");
+        assert_eq!(r.func_types, original.func_types, "func_types");
+        assert_eq!(
+            r.internals_offset, original.internals_offset,
+            "internals_offset"
+        );
+        assert_eq!(r.names.module, original.names.module, "names.module");
+        assert_eq!(
+            r.names.functions, original.names.functions,
+            "names.functions"
+        );
+        assert_eq!(
+            r.host_call_hooks, original.host_call_hooks,
+            "host_call_hooks"
+        );
+        assert_eq!(r.start_function, original.start_function, "start_function");
+        assert_eq!(r.func_exports, original.func_exports, "func_exports");
+        // `all_exports` is a HashMap — compare via sorted keys to be order-insensitive.
+        let mut got: Vec<_> = r.all_exports.iter().collect();
+        let mut want: Vec<_> = original.all_exports.iter().collect();
+        got.sort_by_key(|(k, _)| (*k).clone());
+        want.sort_by_key(|(k, _)| (*k).clone());
+        assert_eq!(got, want, "all_exports");
+
+        // Per-function: `ty` and `local_types` are not in Function::hash().
+        assert_eq!(r.funcs.len(), original.funcs.len(), "funcs.len()");
+        for (rf, of) in r.funcs.iter().zip(original.funcs.iter()) {
+            assert_eq!(rf.ty, of.ty, "Function::ty");
+            assert_eq!(rf.local_types, of.local_types, "Function::local_types");
+            // (Function::code itself IS covered by code_merkle in Function::hash,
+            // which is in turn covered by funcs_merkle in module_round_trip_preserves_hash.)
+        }
+
+        // Per-table: TableType invariants beyond element_type + elems.len() are
+        // not in Table::hash() (Table::hash uses elems.len() + elems_merkle.root()).
+        assert_eq!(r.tables.len(), original.tables.len(), "tables.len()");
+        for (rt, ot) in r.tables.iter().zip(original.tables.iter()) {
+            assert_eq!(
+                rt.ty.element_type, ot.ty.element_type,
+                "TableType.element_type"
+            );
+            assert_eq!(rt.ty.initial, ot.ty.initial, "TableType.initial");
+            assert_eq!(rt.ty.maximum, ot.ty.maximum, "TableType.maximum");
+            assert_eq!(rt.ty.table64, ot.ty.table64, "TableType.table64");
+            assert_eq!(rt.ty.shared, ot.ty.shared, "TableType.shared");
+
+            // The highest-leverage assertion: per-element `val` and `func_ty`.
+            // `Table::hash` only commits `elems_merkle.root()` (empty for
+            // activator modules), so without this check a corrupt encoder/
+            // decoder for `TableElement` would silently round-trip.
+            assert_eq!(rt.elems.len(), ot.elems.len(), "table.elems.len()");
+            for (re, oe) in rt.elems.iter().zip(ot.elems.iter()) {
+                assert_eq!(re.val, oe.val, "TableElement.val");
+                assert_eq!(re.func_ty, oe.func_ty, "TableElement.func_ty");
+            }
+        }
+
+        // memory.max_size is covered by Memory::hash, but explicit here for clarity.
+        assert_eq!(
+            r.memory.max_size, original.memory.max_size,
+            "memory.max_size"
+        );
+        assert_eq!(r.memory.size(), original.memory.size(), "memory.size()");
+    }
+
+    #[test]
+    fn distinct_modules_differing_in_non_hashed_fields_hash_equally() {
+        // Property: two modules that differ ONLY in fields outside `Module::hash`'s
+        // commit set (globals + memory + tables_merkle + funcs_merkle + extra_hash
+        // + internals_offset) must produce identical hashes. This is what catches
+        // "a future PR adds a non-consensus field anywhere in the Module type
+        // graph and on-chain `module_hash` silently shifts for every contract";
+        // round-trip tests pass trivially in that scenario because encode→decode
+        // is symmetric on the new field.
+        let base_hash = build_test_module().hash();
+
+        let check = |label: &str, m: &Module| {
+            assert_eq!(
+                m.hash(),
+                base_hash,
+                "[{label}] mutating a non-hashed field changed Module::hash() — \
+                 either the mutation accidentally touched a hashed input, or this \
+                 field actually IS in the hash",
+            );
+        };
+
+        // 1. Module.types
+        {
+            let mut v = build_test_module();
+            v.types = Arc::new(vec![]);
+            check("Module.types", &v);
+        }
+
+        // 2. Module.names.module
+        {
+            let mut v = build_test_module();
+            v.names = Arc::new(NameCustomSection {
+                module: "a_different_module_name".to_owned(),
+                functions: Default::default(),
+            });
+            check("Module.names.module", &v);
+        }
+
+        // 3. Module.names.functions
+        {
+            let mut v = build_test_module();
+            let mut fnames: HashMap<u32, String> = HashMap::default();
+            fnames.insert(0, "named_function".to_owned());
+            v.names = Arc::new(NameCustomSection {
+                module: "test_module".to_owned(),
+                functions: fnames,
+            });
+            check("Module.names.functions", &v);
+        }
+
+        // 4. Module.host_call_hooks
+        {
+            let mut v = build_test_module();
+            v.host_call_hooks =
+                Arc::new(vec![Some(("env".to_owned(), "different_hook".to_owned()))]);
+            check("Module.host_call_hooks", &v);
+        }
+
+        // 5. Module.start_function
+        {
+            let mut v = build_test_module();
+            v.start_function = None;
+            check("Module.start_function", &v);
+        }
+
+        // 6. Module.func_types
+        {
+            let mut v = build_test_module();
+            v.func_types = Arc::new(vec![]);
+            check("Module.func_types", &v);
+        }
+
+        // 7. Module.func_exports
+        {
+            let mut v = build_test_module();
+            let mut e: HashMap<String, u32> = HashMap::default();
+            e.insert("renamed_main".to_owned(), 0);
+            v.func_exports = Arc::new(e);
+            check("Module.func_exports", &v);
+        }
+
+        // 8. Module.all_exports
+        {
+            let mut v = build_test_module();
+            let mut e = ExportMap::default();
+            e.insert("renamed_main".to_owned(), (0, ExportKind::Func));
+            v.all_exports = Arc::new(e);
+            check("Module.all_exports", &v);
+        }
+
+        // 9. Function.ty and Function.local_types (keep code identical so the
+        // function's code_merkle — and therefore Function::hash — is unchanged).
+        // funcs_merkle is rebuilt from the mutated funcs to prove the property
+        // rather than rely on a stale merkle root.
+        {
+            let mut v = build_test_module();
+            let same_code = v.funcs[0].code.clone();
+            let different_ty = FunctionType {
+                inputs: vec![ArbValueType::F32],
+                outputs: vec![ArbValueType::F64],
+            };
+            let different_locals = vec![ArbValueType::F32, ArbValueType::F64, ArbValueType::I32];
+            let new_func = Function::new_from_wavm(same_code, different_ty, different_locals);
+            v.funcs = Arc::new(vec![new_func]);
+            v.funcs_merkle = Arc::new(Merkle::new(
+                MerkleType::Function,
+                v.funcs.iter().map(Function::hash).collect(),
+            ));
+            check("Function.ty + Function.local_types", &v);
+        }
+
+        // 10. TableElement.val and TableElement.func_ty. `Table::hash` reads
+        // `elems_merkle.root()` + `elems.len()` + `ty`; for activator-shaped
+        // tables `elems_merkle = Merkle::default()` so per-element bytes never
+        // feed it. `elems.len()` and `ty` are unchanged here. Rebuild
+        // tables_merkle from the mutated tables to prove the property.
+        {
+            let mut v = build_test_module();
+            let different_func_ty = FunctionType {
+                inputs: vec![ArbValueType::F32],
+                outputs: vec![ArbValueType::F64],
+            };
+            v.tables[0].elems[0] = TableElement {
+                func_ty: different_func_ty,
+                val: Value::FuncRef(99),
+            };
+            let tables_hashes: Result<_> = v.tables.iter().map(Table::hash).collect();
+            v.tables_merkle = Merkle::new(MerkleType::Table, tables_hashes.unwrap());
+            check("TableElement.val + TableElement.func_ty", &v);
+        }
+    }
+
+    #[test]
+    fn module_serialization_is_canonical() {
+        // Same logical module → same bytes. Catches HashMap-iteration-order leaks
+        // and any other non-determinism creeping into the wire format.
+        let module = build_test_module();
+        let a = module.to_wavm_bytes().unwrap();
+        let b = module.to_wavm_bytes().unwrap();
+        assert_eq!(a, b, "two serializations of the same module differ");
+
+        // And byte-for-byte identical to a fresh round-trip's re-serialization.
+        let rebuilt = Module::from_wavm_bytes(&a).unwrap();
+        let c = rebuilt.to_wavm_bytes().unwrap();
+        assert_eq!(
+            a, c,
+            "round-tripped module re-serializes to different bytes"
+        );
+    }
+
+    #[test]
+    fn header_magic_and_version_are_emitted() {
+        let bytes = build_test_module().to_wavm_bytes().unwrap();
+        assert!(bytes.len() > 5);
+        assert_eq!(&bytes[..4], WAVM_MAGIC);
+        assert_eq!(bytes[4], WAVM_SERIALIZE_VERSION);
+    }
+
+    #[test]
+    fn bad_magic_is_rejected() {
+        let mut bytes = build_test_module().to_wavm_bytes().unwrap();
+        bytes[0] = b'X';
+        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
+        assert!(err.to_string().contains("magic"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn wrong_version_is_rejected() {
+        let mut bytes = build_test_module().to_wavm_bytes().unwrap();
+        bytes[4] = WAVM_SERIALIZE_VERSION.wrapping_add(1);
+        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
+        assert!(
+            err.to_string().contains("WavmSerializeVersion"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn truncated_header_is_rejected() {
+        // Just the magic, no version byte and no body.
+        let bytes = WAVM_MAGIC.to_vec();
+        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
+        assert!(
+            err.to_string().contains("too short"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn empty_body_is_rejected() {
+        // Valid header but no body — the decoder must error on the first missing
+        // field rather than producing a half-built Module or panicking.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(WAVM_MAGIC);
+        bytes.push(WAVM_SERIALIZE_VERSION);
+
+        let result = Module::from_wavm_bytes(&bytes);
+        assert!(result.is_err(), "empty body should error: {result:?}");
+    }
+
+    #[test]
+    fn truncation_anywhere_in_body_is_rejected() {
+        // Build a valid module, then truncate the body at every byte boundary.
+        // The positional decoder must report an error rather than panic for any
+        // cut — coarser sweeps would miss truncations that land inside
+        // u8/u16/u32/Bytes32 reads, which is where slice-indexing-without-bounds
+        // regressions would surface.
+        let bytes = build_test_module().to_wavm_bytes().unwrap();
+        let header = WAVM_MAGIC.len() + 1;
+        for cut in header + 1..bytes.len() {
+            let result = Module::from_wavm_bytes(&bytes[..cut]);
+            assert!(
+                result.is_err(),
+                "truncation at byte {cut} should error, got {result:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn trailing_garbage_is_rejected() {
+        // Positional decoder consumes exactly the bytes it needs; anything left
+        // over indicates either corruption or an encoder bug, and must error
+        // rather than silently succeed.
+        let mut bytes = build_test_module().to_wavm_bytes().unwrap();
+        bytes.extend_from_slice(b"unexpected trailing content");
+        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
+        assert!(
+            err.to_string().contains("trailing"),
+            "expected trailing-bytes error, got: {err}",
+        );
+    }
+
+    #[test]
+    fn unknown_compression_tag_is_rejected() {
+        // Flip the compression tag byte (position MAGIC.len() + 1 = 5) to a
+        // value the decoder doesn't recognise. The decoder must bail with the
+        // tag value in the error rather than treating it as raw or brotli.
+        let mut bytes = build_test_module().to_wavm_bytes().unwrap();
+        bytes[WAVM_MAGIC.len() + 1] = 0xFF;
+        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("compression tag") || msg.contains("compression"),
+            "expected compression-tag error, got: {err}",
+        );
+    }
+
+    #[test]
+    fn raw_compression_tag_is_accepted() {
+        // Operationally we keep the raw tag as a forward-compat hook: if brotli
+        // ever needs to be disabled for a payload, the decoder must accept
+        // tag=0 without bumping `WAVM_SERIALIZE_VERSION`. Manually construct a
+        // raw-tagged envelope around the same inner body brotli would have
+        // wrapped, and assert the decoded module hashes match the original.
+        let original = build_test_module();
+        let brotli_bytes = original.to_wavm_bytes().unwrap();
+
+        // Decompress the brotli body to recover the raw inner body that the
+        // encoder produced before wrapping it.
+        let inner = {
+            use brotli::Dictionary;
+            let mut env = Cursor::new(&brotli_bytes[WAVM_MAGIC.len() + 1..]);
+            let tag = env.read_u8().unwrap();
+            assert_eq!(tag, WAVM_COMPRESSION_BROTLI);
+            let compressed = env.read_bytes().unwrap();
+            brotli::decompress(&compressed, Dictionary::Empty).unwrap()
+        };
+
+        // Re-wrap with tag=0 (raw) and verify the decoder accepts it.
+        let mut raw_envelope = Vec::with_capacity(WAVM_MAGIC.len() + 1 + 1 + 4 + inner.len());
+        raw_envelope.extend_from_slice(WAVM_MAGIC);
+        raw_envelope.push(WAVM_SERIALIZE_VERSION);
+        raw_envelope.push(WAVM_COMPRESSION_NONE);
+        raw_envelope.extend_from_slice(&(inner.len() as u32).to_be_bytes());
+        raw_envelope.extend_from_slice(&inner);
+
+        let rebuilt =
+            Module::from_wavm_bytes(&raw_envelope).expect("raw-tagged envelope must decode");
+        assert_eq!(
+            rebuilt.hash(),
+            original.hash(),
+            "raw-tagged decode must yield the same module hash as brotli-tagged decode",
+        );
+    }
+
+    #[test]
+    fn corrupt_compressed_payload_is_rejected() {
+        // Flip a byte inside the brotli stream. Decompression must fail
+        // rather than producing partial / garbage output, and the error must
+        // surface — not be silently fed to the inner cursor which could then
+        // bail with a confusing wire-format error far from the real cause.
+        let mut bytes = build_test_module().to_wavm_bytes().unwrap();
+        // Skip header + tag + u32 length = 4 + 1 + 1 + 4 = 10 bytes; flip
+        // a byte well inside the brotli payload.
+        let target = WAVM_MAGIC.len() + 1 + 1 + 4 + 5;
+        assert!(target < bytes.len(), "test setup: payload too small");
+        bytes[target] ^= 0xFF;
+        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
+        let msg = err.to_string();
+        // The error should mention brotli — if we end up downstream of the
+        // decompressor (e.g. with the inner cursor bailing on a garbage
+        // count), the diagnostic for operators chasing a corrupt cache
+        // entry becomes much harder to read.
+        assert!(
+            msg.contains("brotli"),
+            "expected brotli decompression error, got: {err}",
+        );
+    }
+
+    #[test]
+    fn linkmodule_hash_mismatch_is_detectable() {
+        // Pins the property the LinkModule runtime check (machine.rs ~line
+        // 2785) relies on: if wasmdb is corrupted such that the bytes
+        // stored under key K decode to a module whose hash is K' != K, the
+        // mismatch is observable. The full bail! site requires driving a
+        // `Machine` through the LinkModule opcode, which is heavy for a
+        // unit test; this exercises the underlying detection logic
+        // instead.
+        //
+        // Two distinct modules with different HASHED fields must produce
+        // different `Module::hash()` outputs after a wire-format round trip.
+        let mut module_a = build_test_module();
+        let mut module_b = build_test_module();
+        // Mutate a HASHED field on B so the hashes diverge. `extra_hash` is
+        // covered by `Module::hash`, so changing it shifts B's hash.
+        module_b.extra_hash = Arc::new(Bytes32([0xBB; 32]));
+
+        let hash_a = module_a.hash();
+        let hash_b = module_b.hash();
+        assert_ne!(
+            hash_a, hash_b,
+            "test setup: A and B must have different hashes for the check to discriminate",
+        );
+
+        // Encode A's bytes and decode them. The decoded module's hash must
+        // match A (the round-trip invariant) and must NOT match B (the
+        // discriminating property the LinkModule check exploits).
+        let bytes_a = module_a.to_wavm_bytes().expect("encode A");
+        let decoded_hash = Module::from_wavm_bytes(&bytes_a).expect("decode A").hash();
+        assert_eq!(
+            decoded_hash, hash_a,
+            "round-trip preserves the encoded module's hash",
+        );
+        assert_ne!(
+            decoded_hash, hash_b,
+            "if bytes for A were stored under B's wasmdb key, LinkModule's \
+             `decoded.hash() != lookup_key` check would fire",
+        );
+
+        // Suppress unused-mut warnings; the modules are mutable so this
+        // test can be extended to other hashed-field mutations without
+        // restructuring.
+        let _ = (&mut module_a, &mut module_b);
+    }
+
+    #[test]
+    fn compression_actually_shrinks_realistic_modules() {
+        // Activate a realistic WAT with branching, calls, and arithmetic.
+        // The output of `to_wavm_bytes` must be smaller than the inner body
+        // — otherwise compression is silently disabled and we've regressed
+        // to the 20–80x disk growth the wire format was designed to avoid.
+        // This is a guard against future changes that accidentally skip
+        // the brotli step (e.g. swapping `compress` for a passthrough).
+        let wat = br#"(module
+            (import "vm_hooks" "pay_for_memory_grow" (func $pay_for_memory_grow (param i32)))
+            (memory (export "memory") 4 4)
+            (table 4 funcref)
+            (elem (i32.const 0) $user_entrypoint $h1 $h2 $h3)
+            (func $h1 (param i32) (result i32) local.get 0 i32.const 1 i32.add)
+            (func $h2 (param i32) (result i32) local.get 0 i32.const 2 i32.mul)
+            (func $h3 (param i32) (result i32) local.get 0 i32.const 3 i32.sub)
+            (func $user_entrypoint (export "user_entrypoint") (param i32) (result i32)
+                (local $i i32) (local $acc i32)
+                i32.const 0 local.set $acc
+                i32.const 0 local.set $i
+                (loop $L
+                    local.get $i i32.const 4 i32.rem_s
+                    local.get $acc i32.const 7 i32.add local.set $acc
+                    drop
+                    local.get $i i32.const 1 i32.add local.set $i
+                    local.get $i i32.const 64 i32.lt_s br_if $L
+                )
+                local.get $acc
+            )
+        )"#;
+        let wasm = wasmer::wat2wasm(wat).expect("wat2wasm");
+        let codehash = Bytes32::default();
+        let mut gas = u64::MAX;
+        let (module, _) =
+            Module::activate(&wasm, &codehash, 3u16, 0, 65535, false, &mut gas).expect("activate");
+
+        let envelope = module.to_wavm_bytes().expect("to_wavm_bytes");
+        // The envelope overhead is 10 bytes (MAGIC=4 + VERSION=1 + TAG=1 +
+        // u32 LEN=4). Anything close to "inner body length + 10" means we
+        // failed to compress.
+        let envelope_overhead = WAVM_MAGIC.len() + 1 + 1 + 4;
+        let compressed_payload_len = envelope.len() - envelope_overhead;
+
+        // For a module of this shape, brotli q=0 reliably hits ~20x or
+        // better. A 2x ratio is the floor we'd ever expect; if we drop
+        // below that, something has gone badly wrong with compression.
+        // Reconstruct the uncompressed body length the way the encoder
+        // would have built it (round-trip through decoder, re-emit raw).
+        let rebuilt = Module::from_wavm_bytes(&envelope).expect("from_wavm_bytes");
+        let body_len = {
+            // Re-emit then unwrap to count the inner body the encoder built.
+            use brotli::Dictionary;
+            let again = rebuilt.to_wavm_bytes().unwrap();
+            let mut env = Cursor::new(&again[WAVM_MAGIC.len() + 1..]);
+            let _tag = env.read_u8().unwrap();
+            let compressed = env.read_bytes().unwrap();
+            brotli::decompress(&compressed, Dictionary::Empty)
+                .unwrap()
+                .len()
+        };
+        assert!(
+            compressed_payload_len * 2 < body_len,
+            "brotli payload ({compressed_payload_len}) must compress the body \
+             ({body_len}) by at least 2x; if this fails, compression is silently \
+             disabled or window settings have regressed",
+        );
     }
 }

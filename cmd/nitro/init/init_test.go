@@ -19,7 +19,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -608,6 +610,127 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 	Require(t, err)
 	if currWasmerSerializeVersion != WasmerSerializeVersion {
 		t.Fatalf("Expected current WasmerSerializeVersion to be %d, got %d", WasmerSerializeVersion, currWasmerSerializeVersion)
+	}
+}
+
+func TestPurgeIncompatibleWavmSerializeVersionEntries(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed all the wasmdb prefixes the production validators interact with.
+	// The wavm validator must purge only `wavmKeys` and leave everything else.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 20)
+	armKeys := generateKeys([]byte{0x00, 'w', 'r'}, 20)
+	x86Keys := generateKeys([]byte{0x00, 'w', 'x'}, 20)
+	hostKeys := generateKeys([]byte{0x00, 'w', 'h'}, 20)
+	otherKeys := generateKeys([]byte{0x01, 'z', 'z'}, 20)
+
+	writeKeys(t, db, wavmKeys)
+	writeKeys(t, db, armKeys)
+	writeKeys(t, db, x86Keys)
+	writeKeys(t, db, hostKeys)
+	writeKeys(t, db, otherKeys)
+
+	// Case 1: no WavmSerializeVersion key in the DB. The validator must treat
+	// this as incompatible (existing nodes upgrading from bincode have no key
+	// and their stored bytes are in the old format), purge wavm entries, leave
+	// the wasmer-managed prefixes untouched, and write the current version.
+	Require(t, validateOrUpgradeWavmSerializeVersion(db))
+	checkKeys(t, db, wavmKeys, false)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("after missing-key purge, expected version %d, got %d", WavmSerializeVersion, got)
+	}
+
+	// Case 2: matching version. Re-seed wavm keys and confirm the validator
+	// preserves them.
+	writeKeys(t, db, wavmKeys)
+	Require(t, validateOrUpgradeWavmSerializeVersion(db))
+	checkKeys(t, db, wavmKeys, true)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+
+	// Case 3: mismatched version. Wavm entries are purged, the wasmer-managed
+	// prefixes survive untouched, and the version key is rewritten to current.
+	Require(t, rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion+1))
+	Require(t, validateOrUpgradeWavmSerializeVersion(db))
+	checkKeys(t, db, wavmKeys, false)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	got, err = rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("after mismatched-version purge, expected version %d, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// Empty-wasmdb startup must write the version key proactively rather than
+// running the "missing key = old format" purge branch. Without this, the next
+// non-empty startup would mistake the absence of the key for legacy bincode
+// data and purge legitimate new-format entries activated during this session.
+func TestValidateOrUpgradeWavmOnEmptyDbWritesVersionKey(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// DB is empty: validator must write the version key and otherwise do nothing.
+	Require(t, validateOrUpgradeWavmSerializeVersion(db))
+
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d on empty-db startup, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// Asserts that the Go-side `WavmSerializeVersion` const agrees with the Rust-side
+// `WAVM_SERIALIZE_VERSION` const in crates/prover/src/wavm_serialize.rs. The two
+// are bumped together by hand; this guards against silent drift where a future PR
+// bumps one and forgets the other — which would make the purge here silently skip
+// while the Rust decoder rejects every existing entry at LinkModule time.
+func TestWavmSerializeVersionMatchesRustConstant(t *testing.T) {
+	const relPath = "../../../crates/prover/src/wavm_serialize.rs"
+	src, err := os.ReadFile(relPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", relPath, err)
+	}
+	re := regexp.MustCompile(`(?m)^pub const WAVM_SERIALIZE_VERSION:\s*u8\s*=\s*(\d+)\s*;`)
+	m := re.FindSubmatch(src)
+	if m == nil {
+		t.Fatalf("could not find `pub const WAVM_SERIALIZE_VERSION: u8 = N;` in %s", relPath)
+	}
+	rustVersion, err := strconv.ParseUint(string(m[1]), 10, 32)
+	if err != nil {
+		t.Fatalf("failed to parse Rust WAVM_SERIALIZE_VERSION value %q: %v", m[1], err)
+	}
+	if uint32(rustVersion) != WavmSerializeVersion {
+		t.Fatalf("WavmSerializeVersion drift: Go=%d, Rust=%d. Bump both together.", WavmSerializeVersion, rustVersion)
 	}
 }
 

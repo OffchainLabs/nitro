@@ -70,10 +70,25 @@ pub enum IBinOpType {
     Rotr,
 }
 
-// WARNING: NEW OPCODES MUST BE ADDED TO THE END OF THE ENUM
-// Raul says: The order of the Opcode enum matters because of how we serialize and deserialize
-// machines. We use a naive encoding approach using a crate named bincode, which just uses struct
-// layouts as a way of turning stuff to bytes and back.
+// WIRE-FORMAT SYNC: persisted WAVM modules identify each opcode by its `repr()`
+// value (a stable u16), not by Rust enum variant order. When adding a new variant
+// here you MUST also:
+//   1. extend `Opcode::repr()` below with a fresh, unique value, and
+//   2. extend `Opcode::from_repr` below with the inverse arm, and
+//   3. add the variant (or a representative sub-arg combination) to `all_known_opcodes` in the
+//      `wavm_serialize::tests` module.
+// The tests `every_known_opcode_round_trips` and `every_decodable_repr_round_trips`
+// will fail at CI time if these three pieces drift out of sync.
+//
+// Note: `Machine::serialize_binary` / `Machine::new_from_wavm` (see `machine.rs`)
+// still use bincode over `Vec<Module>` for the on-disk WAVM replay binary
+// (`*.wavm.br`). Bincode reaches `Opcode` transitively via
+// `Function::code: Vec<Instruction>` and encodes each variant by its
+// declaration-order discriminant, so reordering variants would silently break
+// every committed replay binary on disk. The test
+// `opcode_bincode_discriminants_are_pinned` (below) will fire at CI time if
+// the first variants shift. Add new variants to the end of the enum to preserve
+// this format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
@@ -307,6 +322,234 @@ impl Opcode {
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
         )
+    }
+
+    /// Inverse of `Opcode::repr()`. Picks canonical sub-arguments where `repr()` is lossy
+    /// (currently only `IRelOp::Eq`/`Ne`, where `signed` does not affect the wire form).
+    pub fn from_repr(repr: u16) -> Result<Self> {
+        use ArbValueType::{F32, F64, I32 as VI32, I64 as VI64};
+        use IBinOpType::{
+            Add, And, DivS, DivU, Mul, Or, RemS, RemU, Rotl, Rotr, Shl, ShrS, ShrU, Sub, Xor,
+        };
+        use IRelOpType::{Eq, Ge, Gt, Le, Lt, Ne};
+        use IUnOpType::{Clz, Ctz, Popcnt};
+        use IntegerValType::{I32, I64};
+        Ok(match repr {
+            0x00 => Opcode::Unreachable,
+            0x01 => Opcode::Nop,
+            0x0F => Opcode::Return,
+            0x10 => Opcode::Call,
+            0x11 => Opcode::CallIndirect,
+            0x1A => Opcode::Drop,
+            0x1B => Opcode::Select,
+            0x20 => Opcode::LocalGet,
+            0x21 => Opcode::LocalSet,
+            0x23 => Opcode::GlobalGet,
+            0x24 => Opcode::GlobalSet,
+
+            // Memory loads
+            0x28 => Opcode::MemoryLoad {
+                ty: VI32,
+                bytes: 4,
+                signed: false,
+            },
+            0x29 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 8,
+                signed: false,
+            },
+            0x2A => Opcode::MemoryLoad {
+                ty: F32,
+                bytes: 4,
+                signed: false,
+            },
+            0x2B => Opcode::MemoryLoad {
+                ty: F64,
+                bytes: 8,
+                signed: false,
+            },
+            0x2C => Opcode::MemoryLoad {
+                ty: VI32,
+                bytes: 1,
+                signed: true,
+            },
+            0x2D => Opcode::MemoryLoad {
+                ty: VI32,
+                bytes: 1,
+                signed: false,
+            },
+            0x2E => Opcode::MemoryLoad {
+                ty: VI32,
+                bytes: 2,
+                signed: true,
+            },
+            0x2F => Opcode::MemoryLoad {
+                ty: VI32,
+                bytes: 2,
+                signed: false,
+            },
+            0x30 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 1,
+                signed: true,
+            },
+            0x31 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 1,
+                signed: false,
+            },
+            0x32 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 2,
+                signed: true,
+            },
+            0x33 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 2,
+                signed: false,
+            },
+            0x34 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 4,
+                signed: true,
+            },
+            0x35 => Opcode::MemoryLoad {
+                ty: VI64,
+                bytes: 4,
+                signed: false,
+            },
+
+            // Memory stores
+            0x36 => Opcode::MemoryStore { ty: VI32, bytes: 4 },
+            0x37 => Opcode::MemoryStore { ty: VI64, bytes: 8 },
+            0x38 => Opcode::MemoryStore { ty: F32, bytes: 4 },
+            0x39 => Opcode::MemoryStore { ty: F64, bytes: 8 },
+            0x3A => Opcode::MemoryStore { ty: VI32, bytes: 1 },
+            0x3B => Opcode::MemoryStore { ty: VI32, bytes: 2 },
+            0x3C => Opcode::MemoryStore { ty: VI64, bytes: 1 },
+            0x3D => Opcode::MemoryStore { ty: VI64, bytes: 2 },
+            0x3E => Opcode::MemoryStore { ty: VI64, bytes: 4 },
+
+            0x3F => Opcode::MemorySize,
+            0x40 => Opcode::MemoryGrow,
+
+            0x41 => Opcode::I32Const,
+            0x42 => Opcode::I64Const,
+            0x43 => Opcode::F32Const,
+            0x44 => Opcode::F64Const,
+            0x45 => Opcode::I32Eqz,
+            0x50 => Opcode::I64Eqz,
+
+            // I32 IRelOp 0x46..=0x4F (Eq/Ne ignore `signed`; canonical = false)
+            0x46 => Opcode::IRelOp(I32, Eq, false),
+            0x47 => Opcode::IRelOp(I32, Ne, false),
+            0x48 => Opcode::IRelOp(I32, Lt, true),
+            0x49 => Opcode::IRelOp(I32, Lt, false),
+            0x4A => Opcode::IRelOp(I32, Gt, true),
+            0x4B => Opcode::IRelOp(I32, Gt, false),
+            0x4C => Opcode::IRelOp(I32, Le, true),
+            0x4D => Opcode::IRelOp(I32, Le, false),
+            0x4E => Opcode::IRelOp(I32, Ge, true),
+            0x4F => Opcode::IRelOp(I32, Ge, false),
+
+            // I64 IRelOp 0x51..=0x5A
+            0x51 => Opcode::IRelOp(I64, Eq, false),
+            0x52 => Opcode::IRelOp(I64, Ne, false),
+            0x53 => Opcode::IRelOp(I64, Lt, true),
+            0x54 => Opcode::IRelOp(I64, Lt, false),
+            0x55 => Opcode::IRelOp(I64, Gt, true),
+            0x56 => Opcode::IRelOp(I64, Gt, false),
+            0x57 => Opcode::IRelOp(I64, Le, true),
+            0x58 => Opcode::IRelOp(I64, Le, false),
+            0x59 => Opcode::IRelOp(I64, Ge, true),
+            0x5A => Opcode::IRelOp(I64, Ge, false),
+
+            // I32 IUnOp 0x67..=0x69
+            0x67 => Opcode::IUnOp(I32, Clz),
+            0x68 => Opcode::IUnOp(I32, Ctz),
+            0x69 => Opcode::IUnOp(I32, Popcnt),
+
+            // I32 IBinOp 0x6a..=0x78
+            0x6a => Opcode::IBinOp(I32, Add),
+            0x6b => Opcode::IBinOp(I32, Sub),
+            0x6c => Opcode::IBinOp(I32, Mul),
+            0x6d => Opcode::IBinOp(I32, DivS),
+            0x6e => Opcode::IBinOp(I32, DivU),
+            0x6f => Opcode::IBinOp(I32, RemS),
+            0x70 => Opcode::IBinOp(I32, RemU),
+            0x71 => Opcode::IBinOp(I32, And),
+            0x72 => Opcode::IBinOp(I32, Or),
+            0x73 => Opcode::IBinOp(I32, Xor),
+            0x74 => Opcode::IBinOp(I32, Shl),
+            0x75 => Opcode::IBinOp(I32, ShrS),
+            0x76 => Opcode::IBinOp(I32, ShrU),
+            0x77 => Opcode::IBinOp(I32, Rotl),
+            0x78 => Opcode::IBinOp(I32, Rotr),
+
+            // I64 IUnOp 0x79..=0x7B
+            0x79 => Opcode::IUnOp(I64, Clz),
+            0x7A => Opcode::IUnOp(I64, Ctz),
+            0x7B => Opcode::IUnOp(I64, Popcnt),
+
+            // I64 IBinOp 0x7c..=0x8a
+            0x7c => Opcode::IBinOp(I64, Add),
+            0x7d => Opcode::IBinOp(I64, Sub),
+            0x7e => Opcode::IBinOp(I64, Mul),
+            0x7f => Opcode::IBinOp(I64, DivS),
+            0x80 => Opcode::IBinOp(I64, DivU),
+            0x81 => Opcode::IBinOp(I64, RemS),
+            0x82 => Opcode::IBinOp(I64, RemU),
+            0x83 => Opcode::IBinOp(I64, And),
+            0x84 => Opcode::IBinOp(I64, Or),
+            0x85 => Opcode::IBinOp(I64, Xor),
+            0x86 => Opcode::IBinOp(I64, Shl),
+            0x87 => Opcode::IBinOp(I64, ShrS),
+            0x88 => Opcode::IBinOp(I64, ShrU),
+            0x89 => Opcode::IBinOp(I64, Rotl),
+            0x8a => Opcode::IBinOp(I64, Rotr),
+
+            0xA7 => Opcode::I32WrapI64,
+            0xAC => Opcode::I64ExtendI32(true),
+            0xAD => Opcode::I64ExtendI32(false),
+
+            0xBC => Opcode::Reinterpret(VI32, F32),
+            0xBD => Opcode::Reinterpret(VI64, F64),
+            0xBE => Opcode::Reinterpret(F32, VI32),
+            0xBF => Opcode::Reinterpret(F64, VI64),
+
+            0xC0 => Opcode::I32ExtendS(8),
+            0xC1 => Opcode::I32ExtendS(16),
+            0xC2 => Opcode::I64ExtendS(8),
+            0xC3 => Opcode::I64ExtendS(16),
+            0xC4 => Opcode::I64ExtendS(32),
+
+            // Internal / Arbitrum-specific opcodes
+            0x8002 => Opcode::InitFrame,
+            0x8003 => Opcode::ArbitraryJump,
+            0x8004 => Opcode::ArbitraryJumpIf,
+            0x8005 => Opcode::MoveFromStackToInternal,
+            0x8006 => Opcode::MoveFromInternalToStack,
+            0x8008 => Opcode::Dup,
+            0x8009 => Opcode::CrossModuleCall,
+            0x800A => Opcode::CallerModuleInternalCall,
+            0x800B => Opcode::CrossModuleForward,
+            0x800C => Opcode::CrossModuleInternalCall,
+            0x8010 => Opcode::GetGlobalStateBytes32,
+            0x8011 => Opcode::SetGlobalStateBytes32,
+            0x8012 => Opcode::GetGlobalStateU64,
+            0x8013 => Opcode::SetGlobalStateU64,
+            0x8019 => Opcode::ValidateCertificate,
+            0x8020 => Opcode::ReadPreImage,
+            0x8021 => Opcode::ReadInboxMessage,
+            0x8022 => Opcode::HaltAndSetFinished,
+            0x8023 => Opcode::LinkModule,
+            0x8024 => Opcode::UnlinkModule,
+            0x8030 => Opcode::NewCoThread,
+            0x8031 => Opcode::PopCoThread,
+            0x8032 => Opcode::SwitchThread,
+
+            other => bail!("wavm decode: unknown opcode repr 0x{other:04X}"),
+        })
     }
 }
 
@@ -1121,4 +1364,57 @@ pub fn wasm_to_wavm(
         };
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pins the on-disk byte format that `Machine::serialize_binary` /
+    /// `Machine::new_from_wavm` produce for the WAVM replay binary. Bincode 1.x
+    /// (the workspace pin) encodes enum variants by their declaration-order
+    /// discriminant as little-endian `u32`, so reordering `Opcode` variants
+    /// would silently shift every byte position in every committed `.wavm.br`
+    /// file on disk. This test fires at CI time if the first variants shift.
+    #[test]
+    fn opcode_bincode_discriminants_are_pinned() {
+        let cases: &[(Opcode, u32, &str)] = &[
+            (Opcode::Unreachable, 0, "Unreachable"),
+            (Opcode::Nop, 1, "Nop"),
+            (Opcode::Return, 2, "Return"),
+            (Opcode::Call, 3, "Call"),
+            (Opcode::CallIndirect, 4, "CallIndirect"),
+        ];
+        for (op, expected_disc, label) in cases {
+            let bytes = bincode::serialize(op).unwrap();
+            let expected: Vec<u8> = expected_disc.to_le_bytes().to_vec();
+            assert_eq!(
+                bytes, expected,
+                "Opcode::{label} bincode discriminant shifted — reordering the \
+                 Opcode enum breaks every committed `.wavm.br` replay binary",
+            );
+        }
+    }
+
+    /// Sanity-check that bincode round-trips mixed variant shapes (unit, tuple,
+    /// struct). Guards against accidental field-order changes inside a struct
+    /// variant, which would also shift on-disk bytes.
+    #[test]
+    fn opcode_bincode_round_trips_mixed_shapes() {
+        let samples = vec![
+            Opcode::Unreachable,
+            Opcode::Return,
+            Opcode::MemoryLoad {
+                ty: ArbValueType::I32,
+                bytes: 4,
+                signed: false,
+            },
+            Opcode::IRelOp(IntegerValType::I32, IRelOpType::Eq, false),
+        ];
+        for op in &samples {
+            let bytes = bincode::serialize(op).unwrap();
+            let decoded: Opcode = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(*op, decoded, "round-trip failed for {op:?}");
+        }
+    }
 }
