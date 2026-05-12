@@ -171,7 +171,7 @@ func (c *TransactionFilteringConfig) Validate() error {
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	DisableDelayedSequencingFilter: false,
-	EnableETHCallFilter:            true,
+	EnableETHCallFilter:            false,
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
@@ -209,6 +209,7 @@ type Config struct {
 	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
 	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
+	LegacyZeroBaseFeeUntil      uint64                     `koanf:"legacy-zero-base-fee-until"`
 
 	forwardingTarget string
 }
@@ -265,6 +266,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
+	f.Uint64(prefix+".legacy-zero-base-fee-until", ConfigDefault.LegacyZeroBaseFeeUntil, "orbit-chain compat: re-enables the pre-v3.7 behavior of treating ArbOS<=40 blocks with zero base fee as non-arbitrum, for blocks with unix timestamp strictly less than this value (0 disables; set to a timestamp past the last zero-basefee block on the chain)")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
@@ -306,6 +308,7 @@ var ConfigDefault = Config{
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
 	DisableArbOwnerEthCall:      false,
+	LegacyZeroBaseFeeUntil:      0,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
