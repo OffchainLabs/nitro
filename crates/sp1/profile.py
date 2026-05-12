@@ -20,7 +20,7 @@ import re
 import subprocess
 import sys
 
-BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed"]
+BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed", "signatures"]
 
 # Sample 1 in every N cycles for the SP1 trace file.
 # Lower = more detail, larger file; higher = coarser, smaller file.
@@ -32,6 +32,14 @@ TRACE_SAMPLE_RATE = 300
 
 _PROFILE_RE = re.compile(r"\[PROFILE] (\w+): (.*)")
 _KV_RE = re.compile(r"(\w+)=([^\s,]+)")
+
+# Syscalls / Cycle trackers blocks emitted by sp1-runner Normal mode after
+# `[PROFILE] reexecution: ...`. The runner uses bare `tracing::info!` lines
+# (no `[PROFILE]` marker), so we anchor on the headers and the indented rows.
+_SYSCALLS_HEADER_RE = re.compile(r"\bSyscalls:\s*$")
+_CYCLE_TRACKERS_HEADER_RE = re.compile(r"\bCycle trackers:\s*$")
+_SYSCALL_ROW_RE = re.compile(r"  ([A-Z][A-Z0-9_]+):\s+(\d+)\s*$")
+_CYCLE_TRACKER_ROW_RE = re.compile(r"  (.+?)\s+consumed cycles:\s+(\d+)\s*$")
 
 
 def parse_profile_lines(text: str) -> list[dict]:
@@ -46,6 +54,38 @@ def parse_profile_lines(text: str) -> list[dict]:
             row[k] = v
         rows.append(row)
     return rows
+
+
+def parse_runner_aux_blocks(text: str) -> dict:
+    """Extract syscalls and cycle_trackers maps from a runner's combined output.
+
+    Each runner invocation in Normal mode emits at most one of each block, so
+    we collapse all matches into single dicts. We end the active section on
+    the next [PROFILE] marker or on the other section's header — intervening
+    non-matching log noise is ignored, not treated as a terminator.
+    """
+    syscalls: dict[str, int] = {}
+    cycle_trackers: dict[str, int] = {}
+    section: str | None = None  # "syscalls" | "cycle_trackers" | None
+    for line in text.splitlines():
+        if _PROFILE_RE.search(line):
+            section = None
+            continue
+        if _SYSCALLS_HEADER_RE.search(line):
+            section = "syscalls"
+            continue
+        if _CYCLE_TRACKERS_HEADER_RE.search(line):
+            section = "cycle_trackers"
+            continue
+        if section == "syscalls":
+            m = _SYSCALL_ROW_RE.search(line)
+            if m:
+                syscalls[m.group(1)] = int(m.group(2))
+        elif section == "cycle_trackers":
+            m = _CYCLE_TRACKER_ROW_RE.search(line)
+            if m:
+                cycle_trackers[m.group(1).strip()] = int(m.group(2))
+    return {"syscalls": syscalls, "cycle_trackers": cycle_trackers}
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +274,7 @@ def main() -> None:
         print(f"    trace -> {trace_file}")
 
         table.append({"section": block})
+        aux = parse_runner_aux_blocks(run_log)
         stylus_count = 0
         for row in parse_profile_lines(run_log):
             phase = row["phase"]
@@ -242,8 +283,13 @@ def main() -> None:
                 table.append({"label": f"stylus_compilation [{stylus_count}]", "wasm_size": row.get("wasm_size"),
                               "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
             elif phase == "reexecution":
-                table.append({"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"),
-                              "time_secs": row.get("time_secs")})
+                entry = {"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"),
+                         "time_secs": row.get("time_secs")}
+                if aux["syscalls"]:
+                    entry["syscalls"] = aux["syscalls"]
+                if aux["cycle_trackers"]:
+                    entry["cycle_trackers"] = aux["cycle_trackers"]
+                table.append(entry)
 
     data_rows = [r for r in table if "section" not in r]
     if not data_rows:

@@ -21,8 +21,8 @@ jobs:
       run:
         shell: bash
     env:
-      PROFILE_OLD: /tmp/profile-old.json
-      PROFILE_NEW: /tmp/profile-new.json
+      BASE_LABEL: base
+      HEAD_LABEL: head
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -109,11 +109,14 @@ jobs:
 
       - name: Clean up stale profiling artifacts
         if: github.event_name == 'pull_request'
-        run: rm -f "$PROFILE_OLD" "$PROFILE_NEW" /tmp/comment.md /tmp/profile{,_delta}.py /tmp/Makefile
+        run: |
+          rm -f "target/sp1/profile-${BASE_LABEL}.json" "target/sp1/profile-${HEAD_LABEL}.json"
+          rm -f "target/sp1/profile-delta-${BASE_LABEL}-vs-${HEAD_LABEL}.md"
+          rm -f /tmp/profile.py /tmp/profile_delta.py /tmp/Makefile
 
       - name: Profile PR branch
         if: github.event_name == 'pull_request'
-        run: make -C crates/sp1 profile JSON_OUTPUT="$PROFILE_NEW"
+        run: make -C crates/sp1 profile-snapshot LABEL="$HEAD_LABEL"
 
       - name: Checkout base branch
         if: github.event_name == 'pull_request'
@@ -137,17 +140,16 @@ jobs:
       - name: Profile base branch
         if: github.event_name == 'pull_request'
         run: >
-          cd crates/sp1 && make -f /tmp/Makefile profile
+          cd crates/sp1 && make -f /tmp/Makefile profile-snapshot
+          LABEL="$BASE_LABEL"
           PROFILE_SCRIPT=/tmp/profile.py
-          JSON_OUTPUT="$PROFILE_OLD"
 
-      - name: Compute profile delta
+      - name: Compare profiles
         if: github.event_name == 'pull_request'
-        run: |
-          python3 /tmp/profile_delta.py \
-            --old "$PROFILE_OLD" \
-            --new "$PROFILE_NEW" \
-            --output /tmp/comment.md
+        run: >
+          cd crates/sp1 && make -f /tmp/Makefile profile-compare
+          BASE="$BASE_LABEL" NEW="$HEAD_LABEL"
+          PROFILE_DELTA_SCRIPT=/tmp/profile_delta.py
 
       - name: Mint token
         if: github.event_name == 'pull_request'
@@ -164,7 +166,8 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const fs = require('fs');
-            const body = fs.readFileSync('/tmp/comment.md', 'utf8');
+            const deltaPath = `target/sp1/profile-delta-${process.env.BASE_LABEL}-vs-${process.env.HEAD_LABEL}.md`;
+            const body = fs.readFileSync(deltaPath, 'utf8');
             const marker = '<!-- sp1-profile-comment -->';
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;

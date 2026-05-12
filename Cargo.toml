@@ -86,7 +86,6 @@ rkyv = { version = "0.8.8" }
 reqwest = { version = "0.13.1" }
 ruint2 = { version = "1.9.0" }
 rustc-demangle = { version = "0.1.21" }
-secp256k1 = { version = "0.30.0" }
 serde = { version = "1.0.130" }
 serde_json = { version = "1.0.67" }
 serde_with = { version = "3.8.1" }
@@ -141,7 +140,7 @@ target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag =
 region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1-2448769" }
 corosensei = { git = "https://github.com/OffchainLabs/corosensei", tag = "v0.3.3-sp1-2448769" }
 which = { git = "https://github.com/OffchainLabs/which-rs", tag = "v8.0.2-sp1" }
-secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-6.0.0-rc.2" }
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.0.0-rc.2" }
 tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0-pre" }
 sp1-lib = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
 sp1-primitives = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }

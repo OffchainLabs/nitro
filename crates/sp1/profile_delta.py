@@ -13,7 +13,16 @@ import json
 from itertools import zip_longest
 
 MARKER = "<!-- sp1-profile-comment -->"
-BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed"]
+BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed", "signatures"]
+
+# Crypto-related syscall name prefixes — these get sorted to the top of the
+# syscall diff table for visibility (the migration we care about most affects
+# SECP256K1_*).
+_CRYPTO_SYSCALL_PREFIXES = ("SECP256K1", "KECCAK", "SHA256", "BN254", "BLS12381", "ED25519")
+
+
+def _is_crypto_syscall(code: str) -> bool:
+    return any(code.startswith(p) for p in _CRYPTO_SYSCALL_PREFIXES)
 
 
 def _parse(v) -> float | None:
@@ -42,6 +51,10 @@ def _fmt_secs(v: float | None) -> str:
     return "—" if v is None else f"{v:.3f} s"
 
 
+def _fmt_int(v: float | None) -> str:
+    return "—" if v is None else f"{int(v):,}"
+
+
 FIELDS = [
     ("cycles",    "cycles",    _fmt_cycles),
     ("gas",       "gas",       _fmt_gas),
@@ -59,13 +72,13 @@ def _delta_cell(b: float | None, p: float | None, fmt) -> str:
     return f"{sign}{fmt(abs(d))} ({sign}{abs(pct):.1f}%)"
 
 
-def _md_table(rows: list[list[str]], headers: list[str]) -> str:
+def _md_table(rows: list[list[str]], headers: list[str], right_align_from: int = 2) -> str:
     widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
     sep = "| " + " | ".join("-" * w for w in widths) + " |"
     hdr = "| " + " | ".join(h.ljust(w) for h, w in zip(headers, widths)) + " |"
     data = [
         "| " + " | ".join(
-            c.rjust(w) if i >= 2 else c.ljust(w)
+            c.rjust(w) if i >= right_align_from else c.ljust(w)
             for i, (c, w) in enumerate(zip(r, widths))
         ) + " |"
         for r in rows
@@ -81,6 +94,41 @@ def _phase_rows(phase: str, b: dict, p: dict) -> list[list[str]]:
         if bv is None and pv is None:
             continue
         rows.append([phase, label, fmt(bv), fmt(pv), _delta_cell(bv, pv, fmt)])
+    return rows
+
+
+def _syscall_rows(b: dict, p: dict) -> list[list[str]]:
+    """Build [code, base, pr, delta] rows for syscalls present in either snapshot.
+
+    Crypto-related codes (SECP256K1_*, KECCAK_*, etc.) are listed first.
+    """
+    b_sys = b.get("syscalls") or {}
+    p_sys = p.get("syscalls") or {}
+    codes = set(b_sys) | set(p_sys)
+    if not codes:
+        return []
+    crypto = sorted(c for c in codes if _is_crypto_syscall(c))
+    other = sorted(c for c in codes if not _is_crypto_syscall(c))
+    rows = []
+    for code in crypto + other:
+        bv = _parse(b_sys.get(code))
+        pv = _parse(p_sys.get(code))
+        rows.append([code, _fmt_int(bv), _fmt_int(pv), _delta_cell(bv, pv, _fmt_int)])
+    return rows
+
+
+def _cycle_tracker_rows(b: dict, p: dict) -> list[list[str]]:
+    """Build [entry, base, pr, delta] rows for cycle-tracker spans."""
+    b_ct = b.get("cycle_trackers") or {}
+    p_ct = p.get("cycle_trackers") or {}
+    entries = set(b_ct) | set(p_ct)
+    if not entries:
+        return []
+    rows = []
+    for entry in sorted(entries):
+        bv = _parse(b_ct.get(entry))
+        pv = _parse(p_ct.get(entry))
+        rows.append([entry, _fmt_int(bv), _fmt_int(pv), _delta_cell(bv, pv, _fmt_int)])
     return rows
 
 
@@ -109,15 +157,39 @@ def main() -> None:
         b_blk = (base.get("blocks") or {}).get(block, {})
         p_blk = (pr.get("blocks") or {}).get(block, {})
 
+        # Sort compilations by (wasm_size, cycles) so positional zip-pairing
+        # remains stable across runs — runner iteration order is HashMap-random.
+        sort_key = lambda c: (int(c.get("wasm_size") or 0), int(c.get("cycles") or 0))
         rows = []
-        b_sc = b_blk.get("stylus_compilations") or []
-        p_sc = p_blk.get("stylus_compilations") or []
+        b_sc = sorted(b_blk.get("stylus_compilations") or [], key=sort_key)
+        p_sc = sorted(p_blk.get("stylus_compilations") or [], key=sort_key)
         for i, (b_s, p_s) in enumerate(zip_longest(b_sc, p_sc, fillvalue={}), 1):
             rows.extend(_phase_rows(f"stylus_compilation[{i}]", b_s, p_s))
         rows.extend(_phase_rows("reexecution", b_blk.get("reexecution") or {}, p_blk.get("reexecution") or {}))
 
         if rows:
             lines += [f"### Block: {block}", "", _md_table(rows, headers), ""]
+
+        b_re = b_blk.get("reexecution") or {}
+        p_re = p_blk.get("reexecution") or {}
+
+        sys_rows = _syscall_rows(b_re, p_re)
+        if sys_rows:
+            lines += [
+                f"#### Block {block} — syscalls",
+                "",
+                _md_table(sys_rows, ["Syscall", "Base", "PR", "Delta"], right_align_from=1),
+                "",
+            ]
+
+        ct_rows = _cycle_tracker_rows(b_re, p_re)
+        if ct_rows:
+            lines += [
+                f"#### Block {block} — cycle trackers",
+                "",
+                _md_table(ct_rows, ["Entry", "Base", "PR", "Delta"], right_align_from=1),
+                "",
+            ]
 
     lines.append(MARKER)
 
