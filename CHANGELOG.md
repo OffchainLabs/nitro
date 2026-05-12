@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [v3.10.0](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.9...v3.10.0) - 2026-05-05
 
+**Note for v3.10.0:** Please add this option to nodes running v3.10:
+```--execution.transaction-filtering.enable-ethcall-filter=false```
+ The default of `true` doesn't make anything behave incorrectly, but it does a lot of unnecessary work for the sequencer and for precheckers/forwarders.
+
 ### Configuration
 
 - Add `--execution.disable-arbowner-ethcall` flag to disable ArbOwner precompile calls outside on-chain execution. [[PR]](https://github.com/OffchainLabs/nitro/pull/4591)
