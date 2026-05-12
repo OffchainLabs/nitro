@@ -40,13 +40,20 @@ jobs:
           echo "### Ignored" > "$FILENAME"
           echo "- Update license headers" >> "$FILENAME"
 
+      - name: Mint token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
           branch: automation/update-licenses
           commit-message: "Update license headers for ${{ github.event.schedule || 'manual trigger' }}"
           title: "License header update"
-          token: ${{ secrets.CHANGELOG_PUSH_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           body: |
             Automated license header update.
             
