@@ -3,6 +3,14 @@
 
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+use ArbValueType::{F32, F64, I32 as VI32, I64 as VI64};
+use IBinOpType::{
+    Add as IAdd, And, DivS, DivU, Mul, Or, RemS, RemU, Rotl, Rotr, Shl, ShrS, ShrU, Sub as ISub,
+    Xor,
+};
+use IRelOpType::{Eq as IEq, Ge, Gt, Le, Lt, Ne};
+use IUnOpType::{Clz, Ctz, Popcnt};
+use IntegerValType::{I32, I64};
 use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
 use eyre::{Result, bail, ensure};
@@ -327,13 +335,6 @@ impl Opcode {
     /// Inverse of `Opcode::repr()`. Picks canonical sub-arguments where `repr()` is lossy
     /// (currently only `IRelOp::Eq`/`Ne`, where `signed` does not affect the wire form).
     pub fn from_repr(repr: u16) -> Result<Self> {
-        use ArbValueType::{F32, F64, I32 as VI32, I64 as VI64};
-        use IBinOpType::{
-            Add, And, DivS, DivU, Mul, Or, RemS, RemU, Rotl, Rotr, Shl, ShrS, ShrU, Sub, Xor,
-        };
-        use IRelOpType::{Eq, Ge, Gt, Le, Lt, Ne};
-        use IUnOpType::{Clz, Ctz, Popcnt};
-        use IntegerValType::{I32, I64};
         Ok(match repr {
             0x00 => Opcode::Unreachable,
             0x01 => Opcode::Nop,
@@ -441,7 +442,7 @@ impl Opcode {
             0x50 => Opcode::I64Eqz,
 
             // I32 IRelOp 0x46..=0x4F (Eq/Ne ignore `signed`; canonical = false)
-            0x46 => Opcode::IRelOp(I32, Eq, false),
+            0x46 => Opcode::IRelOp(I32, IEq, false),
             0x47 => Opcode::IRelOp(I32, Ne, false),
             0x48 => Opcode::IRelOp(I32, Lt, true),
             0x49 => Opcode::IRelOp(I32, Lt, false),
@@ -453,7 +454,7 @@ impl Opcode {
             0x4F => Opcode::IRelOp(I32, Ge, false),
 
             // I64 IRelOp 0x51..=0x5A
-            0x51 => Opcode::IRelOp(I64, Eq, false),
+            0x51 => Opcode::IRelOp(I64, IEq, false),
             0x52 => Opcode::IRelOp(I64, Ne, false),
             0x53 => Opcode::IRelOp(I64, Lt, true),
             0x54 => Opcode::IRelOp(I64, Lt, false),
@@ -470,8 +471,8 @@ impl Opcode {
             0x69 => Opcode::IUnOp(I32, Popcnt),
 
             // I32 IBinOp 0x6a..=0x78
-            0x6a => Opcode::IBinOp(I32, Add),
-            0x6b => Opcode::IBinOp(I32, Sub),
+            0x6a => Opcode::IBinOp(I32, IAdd),
+            0x6b => Opcode::IBinOp(I32, ISub),
             0x6c => Opcode::IBinOp(I32, Mul),
             0x6d => Opcode::IBinOp(I32, DivS),
             0x6e => Opcode::IBinOp(I32, DivU),
@@ -492,8 +493,8 @@ impl Opcode {
             0x7B => Opcode::IUnOp(I64, Popcnt),
 
             // I64 IBinOp 0x7c..=0x8a
-            0x7c => Opcode::IBinOp(I64, Add),
-            0x7d => Opcode::IBinOp(I64, Sub),
+            0x7c => Opcode::IBinOp(I64, IAdd),
+            0x7d => Opcode::IBinOp(I64, ISub),
             0x7e => Opcode::IBinOp(I64, Mul),
             0x7f => Opcode::IBinOp(I64, DivS),
             0x80 => Opcode::IBinOp(I64, DivU),

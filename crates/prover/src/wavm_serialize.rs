@@ -662,7 +662,13 @@ pub fn read_names(c: &mut Cursor<'_>) -> Result<NameCustomSection> {
 
 #[cfg(test)]
 mod tests {
+    use ArbValueType::{F32, F64, I32 as VI32, I64 as VI64};
+
     use super::*;
+    use crate::{
+        value::IntegerValType::{I32, I64},
+        wavm::{IBinOpType::*, IRelOpType::*, IUnOpType::*},
+    };
 
     /// Exhaustive fixture of every WAVM `Opcode` value the wire format must handle.
     ///
@@ -676,13 +682,6 @@ mod tests {
     /// `every_decodable_repr_round_trips` together guarantee that any divergence
     /// between this list, `repr()`, and `Opcode::from_repr` is caught at test time.
     fn all_known_opcodes() -> Vec<Opcode> {
-        use ArbValueType::{F32, F64, I32 as VI32, I64 as VI64};
-
-        use crate::{
-            value::IntegerValType::{I32, I64},
-            wavm::{IBinOpType::*, IRelOpType::*, IUnOpType::*},
-        };
-
         let mut ops = vec![
             Opcode::Unreachable,
             Opcode::Nop,

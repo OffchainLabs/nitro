@@ -3585,6 +3585,7 @@ mod wavm_format_tests {
     use std::sync::Arc;
 
     use arbutil::Bytes32;
+    use brotli::Dictionary;
     use wasmparser::{RefType, TableType};
 
     use super::*;
@@ -3592,7 +3593,7 @@ mod wavm_format_tests {
         memory::Memory,
         value::{ArbValueType, FunctionType, Value},
         wavm::{Instruction, Opcode},
-        wavm_serialize::{WAVM_MAGIC, WAVM_SERIALIZE_VERSION},
+        wavm_serialize::{WAVM_COMPRESSION_BROTLI, WAVM_MAGIC, WAVM_SERIALIZE_VERSION},
     };
 
     /// Build a small but non-trivial `Module` covering the consensus-relevant
@@ -4134,7 +4135,6 @@ mod wavm_format_tests {
         // Decompress the brotli body to recover the raw inner body that the
         // encoder produced before wrapping it.
         let inner = {
-            use brotli::Dictionary;
             let mut env = Cursor::new(&brotli_bytes[WAVM_MAGIC.len() + 1..]);
             let tag = env.read_u8().unwrap();
             assert_eq!(tag, WAVM_COMPRESSION_BROTLI);
@@ -4280,7 +4280,6 @@ mod wavm_format_tests {
         let rebuilt = Module::from_wavm_bytes(&envelope).expect("from_wavm_bytes");
         let body_len = {
             // Re-emit then unwrap to count the inner body the encoder built.
-            use brotli::Dictionary;
             let again = rebuilt.to_wavm_bytes().unwrap();
             let mut env = Cursor::new(&again[WAVM_MAGIC.len() + 1..]);
             let _tag = env.read_u8().unwrap();
