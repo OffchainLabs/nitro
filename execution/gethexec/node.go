@@ -171,7 +171,7 @@ func (c *TransactionFilteringConfig) Validate() error {
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	DisableDelayedSequencingFilter: false,
-	EnableETHCallFilter:            true,
+	EnableETHCallFilter:            false,
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
