@@ -801,6 +801,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 
 	var pendingTipRecording *pendingChainTipRecording
 	if recordAtTip {
+		tipRecordingStateDatabase.StopRecording()
 		pendingTipRecording = &pendingChainTipRecording{
 			block:      block,
 			preimages:  tipRecordingStateDatabase.Preimages(),
@@ -1040,6 +1041,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 		var pendingTipRecording *pendingChainTipRecording
 		if recordAtTip {
+			tipRecordingStateDatabase.StopRecording()
 			pendingTipRecording = &pendingChainTipRecording{
 				block:      block,
 				preimages:  tipRecordingStateDatabase.Preimages(),
@@ -1067,6 +1069,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 	var pendingTipRecording *pendingChainTipRecording
 	if recordAtTip {
+		tipRecordingStateDatabase.StopRecording()
 		pendingTipRecording = &pendingChainTipRecording{
 			block:      block,
 			preimages:  tipRecordingStateDatabase.Preimages(),
