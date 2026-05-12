@@ -11,16 +11,6 @@ BLOCK ?= stylus
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
 
-# On macOS, point secp256k1-sys (and any other cc-rs crate) at the SP1-provided
-# RISC-V toolchain. Without these, the host ar/ranlib produce an empty
-# libsecp256k1.a (ELF objects can't be indexed by macOS ranlib) and linking
-# the SP1 program fails with undefined rustsecp256k1_v0_10_0_* symbols.
-ifeq ($(shell uname -s),Darwin)
-export RISCV_GNU_TOOLCHAIN               := $(HOME)/.sp1/riscv
-export AR_riscv64im_unknown_none_elf     := $(HOME)/.sp1/riscv/bin/riscv64-unknown-elf-ar
-export RANLIB_riscv64im_unknown_none_elf := $(HOME)/.sp1/riscv/bin/riscv64-unknown-elf-ranlib
-endif
-
 .PHONY: help
 help: # Show help for each of the Makefile recipes.
 	@grep -E '^[a-zA-Z0-9 -]+:.*#'  Makefile | sort | while read -r l; do printf "\033[1;32m$$(echo $$l | cut -f 1 -d':')\033[00m:$$(echo $$l | cut -f 2- -d'#')\n"; done
@@ -83,6 +73,7 @@ record-blocks: nitro-deps
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylus/*.json      $(BLOCK_INPUTS_DIR)/stylus.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusHeavy/*.json $(BLOCK_INPUTS_DIR)/stylus_heavy.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockMixed/*.json       $(BLOCK_INPUTS_DIR)/mixed.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSignatures/*.json  $(BLOCK_INPUTS_DIR)/signatures.json; \
 		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
 		echo "Blocks successfully recorded"; \
 	else \
@@ -109,7 +100,8 @@ run: # Run sp1-runner on $(BLOCK_INPUTS_DIR)/$(BLOCK).json (override with BLOCK=
 		--stylus-compiler-program $(OUTPUT_DIR)/stylus-compiler-program \
 		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json
 
-PROFILE_SCRIPT ?= $(CURDIR)/profile.py
+PROFILE_SCRIPT       ?= $(CURDIR)/profile.py
+PROFILE_DELTA_SCRIPT ?= $(CURDIR)/profile_delta.py
 
 .PHONY: profile
 profile: # Profile bootloading, stylus compilation, and reexecution across all block types.
@@ -119,6 +111,23 @@ profile: # Profile bootloading, stylus compilation, and reexecution across all b
 		--output-dir $(OUTPUT_DIR) \
 		--block-inputs-dir $(BLOCK_INPUTS_DIR) \
 		$(if $(JSON_OUTPUT),--json-output $(JSON_OUTPUT),)
+
+.PHONY: profile-snapshot
+profile-snapshot: # Run `profile` and save the JSON snapshot to $(OUTPUT_DIR)/profile-$(LABEL).json.
+	@if [ -z "$(LABEL)" ]; then echo "ERROR: LABEL is required (e.g. make profile-snapshot LABEL=baseline)" >&2; exit 1; fi
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) profile JSON_OUTPUT=$(OUTPUT_DIR)/profile-$(LABEL).json
+	@echo "Snapshot written to $(OUTPUT_DIR)/profile-$(LABEL).json"
+
+.PHONY: profile-compare
+profile-compare: # Compare two snapshots: BASE=<old-label> NEW=<new-label>; writes markdown to $(OUTPUT_DIR).
+	@if [ -z "$(BASE)" ] || [ -z "$(NEW)" ]; then \
+		echo "ERROR: BASE and NEW are required (e.g. make profile-compare BASE=baseline NEW=k256)" >&2; exit 1; \
+	fi
+	@python3 $(PROFILE_DELTA_SCRIPT) \
+		--old $(OUTPUT_DIR)/profile-$(BASE).json \
+		--new $(OUTPUT_DIR)/profile-$(NEW).json \
+		--output $(OUTPUT_DIR)/profile-delta-$(BASE)-vs-$(NEW).md
+	@cat $(OUTPUT_DIR)/profile-delta-$(BASE)-vs-$(NEW).md
 
 .PHONY: clean
 clean: # Remove all generated artifacts.

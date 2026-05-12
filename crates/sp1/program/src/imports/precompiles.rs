@@ -1,10 +1,10 @@
-use secp256k1::{
-    Message,
-    ecdsa::{RecoverableSignature, RecoveryId},
-};
 use wasmer::FunctionEnvMut;
 
-use crate::{Escape, MaybeEscape, Ptr, keccak, platform, read_slice, replay::CustomEnvData};
+use crate::{
+    Escape, MaybeEscape, Ptr, keccak, platform, read_slice,
+    replay::CustomEnvData,
+    state::{gp, sp1_env},
+};
 
 pub fn ecrecover(
     mut ctx: FunctionEnvMut<CustomEnvData>,
@@ -14,33 +14,16 @@ pub fn ecrecover(
     sig_len: u32,
     output: Ptr,
 ) -> Result<u32, Escape> {
-    assert_eq!(hash_len, 32, "Hash length must be 32 bytes");
-    assert_eq!(
-        sig_len, 65,
-        "Signature length must be 65 bytes (64 for signature + 1 for recovery id)"
-    );
-
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
-
-    let hash = read_slice(hash, 32, &memory)?;
-    let sig = read_slice(sig, 65, &memory)?;
-
-    let message = Message::from_digest(hash.try_into().unwrap());
-    let Ok(recovery_id) = RecoveryId::try_from(sig[64] as i32) else {
-        return Ok(1);
-    };
-    let Ok(signature) = RecoverableSignature::from_compact(&sig[0..64], recovery_id) else {
-        return Ok(2);
-    };
-
-    let Ok(public_key) = signature.recover(&message) else {
-        return Ok(3);
-    };
-    let serialized_pub_key = public_key.serialize_uncompressed();
-
-    memory.write(output.offset() as u64, &serialized_pub_key)?;
-    Ok(0)
+    let (mut mem, state) = sp1_env(&mut ctx);
+    Ok(caller_env::arbcrypto::ecrecovery(
+        &mut mem,
+        state,
+        gp(hash),
+        hash_len,
+        gp(sig),
+        sig_len,
+        gp(output),
+    ))
 }
 
 pub fn keccak256(
