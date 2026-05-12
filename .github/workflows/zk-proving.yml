@@ -31,7 +31,9 @@ jobs:
 
       - uses: ./.github/actions/init-submodules
         with:
-          private-token: ${{ secrets.PRIVATE_REPO_PAT }}
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -46,11 +48,6 @@ jobs:
 
       - name: Install SP1 toolchain
         run: make -C crates/sp1 install-sp1
-
-      - name: Print versions
-        run: |
-          rustc +succinct --version
-          rustc +succinct --print target-list | grep succinct
 
       - name: Build binaries
         run: make -C crates/sp1 build
