@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.10.1](https://github.com/OffchainLabs/nitro/compare/v3.10.0...v3.10.1) - 2026-05-12
+
+### Configuration
+
+- Add `--execution.legacy-zero-base-fee-until <unix-ts>` opt-in compatibility flag (default 0 = disabled). When set, restores the pre-v3.7 behavior of treating headers with `ArbOSFormatVersion <= 40` and `BaseFee == 0` as non-arbitrum, for blocks with timestamp strictly less than the given value.
+
+### Added
+
+- Include transaction-filterer binary in nitro-node and nitro-node-stripped Docker images.
+
+### Changed
+
+- Set default `EnableETHCallFilter` to false.
+
 ## [v3.10.0](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.9...v3.10.0) - 2026-05-05
 
 **Note for v3.10.0:** Please add this option to nodes running v3.10:
@@ -387,18 +401,18 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Add new boolean option to `BlocksReExecutor` called `CommitStateToDisk` that will allow `BlocksReExecutor.Blocks` range to not only re-executes blocks but it will also commit their state to triedb on disk. [[PR]](https://github.com/OffchainLabs/nitro/pull/4132)
 
 
-## [v3.10.0-rc.10](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.9...v3.10.0-rc.10) - 2026-05-05
+## [v3.10.0-rc.10](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.9...v3.10.0-rc.10) - 2026-05-05
 
 ### Added
 
-- ArbOS60 supported. [[PR]](https://github.com/OffchainLabs/nitro-private/pull/227)
+- ArbOS60 supported.
 
 
 ### Internal
 
-- Refactor filtering report test infrastructure: rename `CheckReportBlockNumberAndParentBlockHash` to `CheckCommonReportFields` with additional common assertions and update `SetupFilteringReport` to return the RPC stack. [[PR]](https://github.com/OffchainLabs/nitro-private/pull/205)
+- Refactor filtering report test infrastructure: rename `CheckReportBlockNumberAndParentBlockHash` to `CheckCommonReportFields` with additional common assertions and update `SetupFilteringReport` to return the RPC stack.
 
-## [v3.10.0-rc.9](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.8...v3.10.0-rc.9) - 2026-04-30
+## [v3.10.0-rc.9](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.8...v3.10.0-rc.9) - 2026-04-30
 
 ### Added
 
@@ -414,7 +428,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Fix ECRECOVER divergence between native execution and the WASM prover
 - Do not require `init.empty=false` when `init.genesis-json-file-directory` provides a custom genesis file
 
-## [v3.10.0-rc.8](https://github.com/OffchainLabs/nitro-private/compare/v3.10.0-rc.7...v3.10.0-rc.8) - 2026-04-27
+## [v3.10.0-rc.8](https://github.com/OffchainLabs/nitro/compare/v3.10.0-rc.7...v3.10.0-rc.8) - 2026-04-27
 
 ### Configuration
 
