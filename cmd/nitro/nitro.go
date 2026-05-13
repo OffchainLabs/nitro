@@ -181,6 +181,12 @@ func mainImpl() int {
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 	log.Info("Resources detected", "GOMAXPROCS", nitroutil.GoMaxProcs())
 
+	if nodeConfig.Execution.LegacyZeroBaseFeeUntil != 0 {
+		log.Warn("legacy zero-basefee header behavior enabled — only valid for orbit chains that produced ArbOS<=40 blocks with BaseFee==0",
+			"legacyZeroBaseFeeUntil", nodeConfig.Execution.LegacyZeroBaseFeeUntil)
+		types.SetLegacyZeroBaseFeeUntil(nodeConfig.Execution.LegacyZeroBaseFeeUntil)
+	}
+
 	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.ParentChainReader.Enable = false
 		nodeConfig.Node.BatchPoster.Enable = false
