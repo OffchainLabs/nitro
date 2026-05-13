@@ -614,7 +614,7 @@ fn data_pricer_slot(offset: u64) -> U256 {
     map_slot(pricer_key.as_slice(), offset)
 }
 
-fn keepalive_test_setup(codehash: B256, now: u64) -> PrecompileTest {
+fn keepalive_test_setup_at(codehash: B256, now: u64, arbos_version: u64) -> PrecompileTest {
     let mut params = default_params();
     params.version = 1;
     params.keepalive_days = 30;
@@ -623,7 +623,7 @@ fn keepalive_test_setup(codehash: B256, now: u64) -> PrecompileTest {
     let activated_at_hours = hours_since_start(now - 40 * 86_400);
     let prog_word = pack_program_full(1, 0, 0, 0, activated_at_hours, 5);
 
-    test_with(params, ARBOS_V32)
+    test_with(params, arbos_version)
         .block_timestamp(now)
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word)
         .storage(ARBOS_STATE_ADDRESS, data_pricer_slot(0), U256::ZERO)
@@ -639,6 +639,10 @@ fn keepalive_test_setup(codehash: B256, now: u64) -> PrecompileTest {
             data_pricer_slot(4),
             U256::from(21_360_419_u64),
         )
+}
+
+fn keepalive_test_setup(codehash: B256, now: u64) -> PrecompileTest {
+    keepalive_test_setup_at(codehash, now, ARBOS_V32)
 }
 
 #[test]
@@ -700,4 +704,67 @@ fn keepalive_inner_call_with_zero_value_still_reverts() {
         &sel[..4],
         "expected ProgramInsufficientValue revert selector"
     );
+}
+
+#[test]
+fn keepalive_inner_call_value_passes_at_arbos_v40() {
+    // Sepolia at block 169,854,826 is at ArbOS v40 (Prague-era), same as
+    // 149,889,087 and 152,429,039. Run the same check at that version to
+    // confirm the fix is not version-gated.
+    arb_precompiles::set_stylus_call_value(U256::ZERO);
+
+    let codehash = B256::from_slice(&[0xe0u8; 32]);
+    let now = 1_700_000_000_u64;
+    let test = keepalive_test_setup_at(codehash, now, 40)
+        .value(U256::from(10u128).pow(U256::from(18u64)));
+
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+
+    let out = run.assert_ok();
+    if out.reverted {
+        let sel = &out.bytes[..4];
+        let insufficient =
+            alloy_primitives::keccak256(b"ProgramInsufficientValue(uint256,uint256)");
+        if sel == &insufficient[..4] {
+            panic!(
+                "BUG: keepalive at ArbOS v40 reverted with ProgramInsufficientValue \
+                 even though input.value = 1 ETH was passed via inner CALL"
+            );
+        }
+        panic!("unexpected revert at v40: selector {:02x?}", sel);
+    }
+}
+
+#[test]
+fn keepalive_inner_call_value_passes_at_arbos_v50() {
+    // Belt-and-braces: also exercise the Dia-era v50 (next upgrade after
+    // v40). Same expectation: the fix is structural, not version-gated.
+    arb_precompiles::set_stylus_call_value(U256::ZERO);
+
+    let codehash = B256::from_slice(&[0xe1u8; 32]);
+    let now = 1_700_000_000_u64;
+    let test = keepalive_test_setup_at(codehash, now, 50)
+        .value(U256::from(10u128).pow(U256::from(18u64)));
+
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+
+    let out = run.assert_ok();
+    if out.reverted {
+        let sel = &out.bytes[..4];
+        let insufficient =
+            alloy_primitives::keccak256(b"ProgramInsufficientValue(uint256,uint256)");
+        if sel == &insufficient[..4] {
+            panic!(
+                "BUG: keepalive at ArbOS v50 reverted with ProgramInsufficientValue \
+                 even though input.value = 1 ETH was passed via inner CALL"
+            );
+        }
+        panic!("unexpected revert at v50: selector {:02x?}", sel);
+    }
 }
