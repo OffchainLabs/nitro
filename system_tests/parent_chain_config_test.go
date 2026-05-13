@@ -88,17 +88,14 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create a custom L1 chain config: all forks active at genesis except BPO1
-	// far in the future. The pointer is shared with the geth node's config so we
-	// can mutate it later to simulate a fork activation without restarting the node.
-	// Start with BPO1 very far in the future; we'll adjust after setup when we
-	// know the current L1 block timestamp (setup creates many L1 blocks, each
-	// advancing the timestamp by at least 1 second, so a small offset gets
-	// exceeded before phase 1 even runs).
+	// Pick a BPO1 activation far enough in the future that Build()'s setup
+	// blocks won't already cross it, and drive L1 past it explicitly later.
+	// The pointer is set once before Build() and never mutated again, so we
+	// don't depend on geth retaining the same struct pointer we passed in.
 	// #nosec G115
-	farFuture := uint64(time.Now().Unix()) + 1_000_000
+	bpo1Time := uint64(time.Now().Unix()) + 600
 	l1ChainConfig := *params.AllDevChainProtocolChanges
-	l1ChainConfig.BPO1Time = &farFuture
+	l1ChainConfig.BPO1Time = &bpo1Time
 	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
 		Cancun: params.DefaultCancunBlobConfig,
 		Prague: params.DefaultPragueBlobConfig,
@@ -110,18 +107,9 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// Now that setup is done, set BPO1 activation to a time reachable by
-	// keepChainMoving (each block advances the timestamp by at least 1s)
-	// but far enough that phase 1 polling won't trigger it.
-	latestBlock, err := builder.L1.Client.BlockByNumber(ctx, nil)
-	Require(t, err)
-	farFuture = latestBlock.Time() + 150
-
-	// Create a header reader connected to the L1
-	l1Client := builder.L1.Client
 	l1HeaderReader, err := headerreader.New(
 		ctx,
-		l1Client,
+		builder.L1.Client,
 		func() *headerreader.Config { return &headerreader.TestConfig },
 		nil,
 	)
@@ -129,7 +117,6 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	l1HeaderReader.Start(ctx)
 	defer l1HeaderReader.StopAndWait()
 
-	// Create a ParentChain with fast polling
 	testConfig := parent.Config{ConfigPollInterval: 200 * time.Millisecond}
 	pc := parent.NewParentChainWithConfig(
 		ctx,
@@ -140,55 +127,50 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	pc.Start(ctx)
 	defer pc.StopAndWait()
 
-	// Phase 1: Verify initial config is Osaka (BPO1 is far in the future)
-	var blobConfigPhase1 *params.BlobConfig
-	for i := 0; i < 50; i++ {
-		time.Sleep(200 * time.Millisecond)
-		blobConfigPhase1 = pc.CachedBlobConfig()
-		if blobConfigPhase1 != nil {
-			break
+	logBlobConfig := func(phase string, cfg, expect *params.BlobConfig) {
+		if cfg == nil {
+			t.Logf("%s: cached blob config is nil (expected target=%d max=%d)", phase, expect.Target, expect.Max)
+			return
 		}
-	}
-	if blobConfigPhase1 == nil {
-		t.Fatal("ParentChain did not fetch initial blob config within timeout")
-	}
-
-	// Phase 2: Activate BPO1 by advancing L1
-	go keepChainMoving(t, 100*time.Millisecond, ctx, builder.L1Info, builder.L1.Client)
-
-	t.Logf("Phase 1: got initial blob config target=%d max=%d (expecting Osaka: target=%d max=%d)",
-		blobConfigPhase1.Target, blobConfigPhase1.Max,
-		params.DefaultOsakaBlobConfig.Target, params.DefaultOsakaBlobConfig.Max)
-
-	if blobConfigPhase1.Target != params.DefaultOsakaBlobConfig.Target ||
-		blobConfigPhase1.Max != params.DefaultOsakaBlobConfig.Max {
-		t.Fatalf("initial blob config should be Osaka, got target=%d max=%d",
-			blobConfigPhase1.Target, blobConfigPhase1.Max)
+		t.Logf("%s: cached blob config target=%d max=%d updateFraction=%d (expected target=%d max=%d)",
+			phase, cfg.Target, cfg.Max, cfg.UpdateFraction, expect.Target, expect.Max)
 	}
 
-	var blobConfigPhase2 *params.BlobConfig
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(200 * time.Millisecond)
-		blobConfigPhase2 = pc.CachedBlobConfig()
-		if blobConfigPhase2 != nil && blobConfigPhase2.Target == params.DefaultBPO1BlobConfig.Target {
-			break
+	var lastPhase1Cfg *params.BlobConfig
+	defer func() {
+		logBlobConfig("Phase 1 (Osaka)", lastPhase1Cfg, params.DefaultOsakaBlobConfig)
+	}()
+	pollUntil(t, ctx, 15*time.Second, 200*time.Millisecond, "initial Osaka blob config", func() bool {
+		lastPhase1Cfg = pc.CachedBlobConfig()
+		return lastPhase1Cfg != nil &&
+			lastPhase1Cfg.Target == params.DefaultOsakaBlobConfig.Target &&
+			lastPhase1Cfg.Max == params.DefaultOsakaBlobConfig.Max
+	})
+
+	pollUntil(t, ctx, 60*time.Second, 100*time.Millisecond, "L1 timestamp past BPO1Time", func() bool {
+		head, err := builder.L1.Client.BlockByNumber(ctx, nil)
+		if err != nil {
+			t.Logf("BlockByNumber failed: %v", err)
+			return false
 		}
-	}
+		if head.Time() >= bpo1Time {
+			return true
+		}
+		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+		return false
+	})
 
-	// Now we verify the activated fork was indeed BPO1
-	if blobConfigPhase2 == nil ||
-		blobConfigPhase2.Target != params.DefaultBPO1BlobConfig.Target ||
-		blobConfigPhase2.Max != params.DefaultBPO1BlobConfig.Max {
-		t.Fatalf("blob config did not transition to BPO1: got target=%d max=%d, want target=%d max=%d",
-			blobConfigPhase2.Target, blobConfigPhase2.Max,
-			params.DefaultBPO1BlobConfig.Target, params.DefaultBPO1BlobConfig.Max)
-	}
+	var lastPhase2Cfg *params.BlobConfig
+	defer func() {
+		logBlobConfig("Phase 2 (BPO1)", lastPhase2Cfg, params.DefaultBPO1BlobConfig)
+	}()
+	pollUntil(t, ctx, 30*time.Second, 200*time.Millisecond, "blob config transition to BPO1", func() bool {
+		lastPhase2Cfg = pc.CachedBlobConfig()
+		return lastPhase2Cfg != nil &&
+			lastPhase2Cfg.Target == params.DefaultBPO1BlobConfig.Target &&
+			lastPhase2Cfg.Max == params.DefaultBPO1BlobConfig.Max
+	})
 
-	t.Logf("Phase 2: blob config transitioned to BPO1 target=%d max=%d updateFraction=%d",
-		blobConfigPhase2.Target, blobConfigPhase2.Max, blobConfigPhase2.UpdateFraction)
-
-	// Also verify MaxBlobGasPerBlock reflects the new config
 	maxBlobGas, err := pc.MaxBlobGasPerBlock(ctx, nil)
 	Require(t, err)
 	// #nosec G115

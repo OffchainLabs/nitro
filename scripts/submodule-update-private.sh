@@ -75,6 +75,15 @@ detect_prefers_ssh
 idx=0
 set --
 
+# Broad HTTPS→SSH rewrite so non-conf submodules also clone over SSH
+# when SSH is preferred (otherwise an SSO-only setup with no global
+# insteadOf falls back to HTTPS). Per-repo -private rules below still
+# win via longest-prefix. Persistent copy: configure-private-submodules.sh.
+if [ "$prefers_ssh" = "1" ]; then
+  set -- "$@" "GIT_CONFIG_KEY_${idx}=url.git@github.com:.insteadof" "GIT_CONFIG_VALUE_${idx}=https://github.com/"
+  idx=$((idx + 1))
+fi
+
 while IFS= read -r repo || [ -n "$repo" ]; do
   repo=${repo#"${repo%%[![:space:]]*}"}
   repo=${repo%"${repo##*[![:space:]]}"}

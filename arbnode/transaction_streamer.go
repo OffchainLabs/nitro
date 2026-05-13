@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -86,6 +87,11 @@ type TransactionStreamer struct {
 
 	trackBlockMetadataFrom arbutil.MessageIndex
 	syncTillMessage        arbutil.MessageIndex
+
+	// Throttles log spam on transient AccumulatorNotFoundErr in ExecuteNextMsg
+	// (e.g. during sync, broadcast-feed lead, or inbox reorg windows). Single-goroutine
+	// access via the executeMessages loop, so no lock is needed.
+	accNotFoundErrHandler *util.EphemeralErrorHandler
 }
 
 type TransactionStreamerConfig struct {
@@ -143,6 +149,9 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
+		accNotFoundErrHandler: util.NewEphemeralErrorHandler(
+			5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute,
+		),
 	}
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
@@ -1434,6 +1443,19 @@ func (s *TransactionStreamer) storeResult(
 	return batch.Put(key, msgResultBytes)
 }
 
+// logReadMessageErr logs a message-read failure from ExecuteNextMsg. For
+// AccumulatorNotFoundErr it routes through accNotFoundErrHandler so the level
+// decays Debug → Warn → Error as the error persists, with a description that
+// points at the inbox tracker. All other failures (DB, RLP, data-hash
+// mismatch, etc.) are logged at Error under the generic "failed to readMessage".
+func (s *TransactionStreamer) logReadMessageErr(err error, msgIdx arbutil.MessageIndex) {
+	msg := "ExecuteNextMsg failed to readMessage"
+	if errors.Is(err, AccumulatorNotFoundErr) {
+		msg = "ExecuteNextMsg waiting for inbox tracker to index batch referenced by message; usually transient while the parent-chain reader catches up"
+	}
+	s.accNotFoundErrHandler.LogLevel(err, log.Error)(msg, "err", err, "msgIdx", msgIdx)
+}
+
 // exposed for testing
 // return value: true if should be called again immediately
 func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
@@ -1470,18 +1492,21 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 
 	msgAndBlockInfo, err := s.getMessageWithMetadataAndBlockInfo(msgIdxToExecute)
 	if err != nil {
-		log.Error("ExecuteNextMsg failed to readMessage", "err", err, "msgIdxToExecute", msgIdxToExecute)
+		s.logReadMessageErr(err, msgIdxToExecute)
 		return false
 	}
 	var msgForPrefetch *arbostypes.MessageWithMetadata
 	if msgIdxToExecute+1 <= consensusHeadMsgIdx {
 		msg, err := s.GetMessage(msgIdxToExecute + 1)
 		if err != nil {
-			log.Error("ExecuteNextMsg failed to readMessage", "err", err, "msgIdxToExecute+1", msgIdxToExecute+1)
+			s.logReadMessageErr(err, msgIdxToExecute+1)
 			return false
 		}
 		msgForPrefetch = msg
 	}
+	// Reset on the success path: a later AccumulatorNotFoundErr should start a
+	// fresh throttle window, not reuse a stale FirstOccurrence.
+	s.accNotFoundErrHandler.Reset()
 	msgResult, err := s.exec.DigestMessage(msgIdxToExecute, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn

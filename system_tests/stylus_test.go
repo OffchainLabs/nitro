@@ -109,3 +109,7 @@ func TestProgramLongArbitratorCall(t *testing.T) {
 func TestProgramArbitratorStylusUpgrade(t *testing.T) {
 	testStylusUpgrade(t, false)
 }
+
+func TestProgramArbitratorMemoryGrowMachineLimit(t *testing.T) {
+	testMemoryGrowMachineLimit(t, false)
+}
