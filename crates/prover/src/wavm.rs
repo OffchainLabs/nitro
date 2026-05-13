@@ -25,6 +25,8 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType},
 };
 
+// Wire-format: bincode-reachable as `Opcode::IRelOp(_, IRelOpType, _)` in
+// `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
     Eq,
@@ -50,6 +52,9 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
     }
 }
 
+// Wire-format: bincode-reachable as `Opcode::IUnOp(_, IUnOpType)` in
+// `*.wavm.br`. `#[repr(u8)]` doesn't constrain bincode (still
+// declaration-order). Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IUnOpType {
@@ -58,6 +63,9 @@ pub enum IUnOpType {
     Popcnt,
 }
 
+// Wire-format: bincode-reachable as `Opcode::IBinOp(_, IBinOpType)` in
+// `*.wavm.br`. `#[repr(u8)]` doesn't constrain bincode (still
+// declaration-order). Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IBinOpType {
@@ -556,6 +564,9 @@ impl Opcode {
 
 pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
 
+// Wire-format: bincode-reachable via `Function::code: Vec<Instruction>` in
+// `*.wavm.br`. Fields are serialized in declaration order — swapping or
+// inserting breaks every committed replay binary. Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Instruction {
     pub opcode: Opcode,

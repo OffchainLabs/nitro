@@ -164,6 +164,14 @@ func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
 }
 
+// RustWavmFormatVersion returns the WAVM wire-format version Rust will
+// produce and accept. `validateOrUpgradeWavmSerializeVersion` in
+// cmd/nitro/init compares this against `WavmSerializeVersion` on startup
+// and refuses to proceed on mismatch.
+func RustWavmFormatVersion() uint32 {
+	return uint32(C.stylus_wavm_format_version())
+}
+
 // DrainStackPool discards all cached Wasmer coroutine stacks so that
 // subsequent allocations use the current process-wide stack size.
 func DrainStackPool() {

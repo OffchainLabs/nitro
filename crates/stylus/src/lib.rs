@@ -265,6 +265,14 @@ pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
 }
 
+/// On-disk WAVM module wire format version. `validateOrUpgradeWavmSerializeVersion`
+/// in `cmd/nitro/init` reads this and bails on mismatch with the Go-side
+/// `WavmSerializeVersion`, so a one-sided bump fails fast.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_wavm_format_version() -> u32 {
+    prover::wavm_serialize::WAVM_SERIALIZE_VERSION as u32
+}
+
 /// Calls an activated user program.
 ///
 /// Returns `UserOutcomeKind::NativeStackOverflow` if the Wasmer coroutine

@@ -52,13 +52,12 @@ use crate::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm,
     },
     wavm_serialize::{
-        Cursor, FunctionParts, TableElementParts, TableParts, WAVM_COMPRESSION_BROTLI,
-        WAVM_COMPRESSION_NONE, WAVM_MAGIC, WAVM_SERIALIZE_VERSION, read_count, read_export_map,
-        read_func_exports, read_function_parts, read_function_type, read_host_call_hooks,
-        read_names, read_table_parts, read_value, write_bytes, write_bytes32, write_count,
-        write_export_map, write_func_exports, write_function_parts, write_function_type,
-        write_host_call_hooks, write_names, write_optional_u32, write_table_parts, write_u32,
-        write_u64, write_value,
+        Cursor, FunctionParts, TableElementParts, TableParts, WAVM_MAGIC, WAVM_SERIALIZE_VERSION,
+        read_count, read_export_map, read_func_exports, read_function_parts, read_function_type,
+        read_host_call_hooks, read_names, read_table_parts, read_value, write_bytes, write_bytes32,
+        write_count, write_export_map, write_func_exports, write_function_parts,
+        write_function_type, write_host_call_hooks, write_names, write_optional_u32,
+        write_table_parts, write_u32, write_u64, write_value,
     },
 };
 
@@ -695,12 +694,11 @@ impl Module {
         data
     }
 
-    /// Serializes the `Module` into the WAVM wire format
-    /// (`MAGIC | VERSION | COMPRESSION_TAG | u32 LEN | brotli(body)`). Fields
-    /// are emitted in `Module` declaration order; schema changes require bumping
-    /// `WAVM_SERIALIZE_VERSION`, which `validateOrUpgradeWavmSerializeVersion`
-    /// translates into an on-disk purge. Returns `Err` instead of panicking so
-    /// failures cross the FFI boundary as status codes.
+    /// Serializes a `Module` into `MAGIC | VERSION | u32 LEN | brotli(body)`.
+    /// Body fields are positional, in `Module` declaration order; schema changes
+    /// require bumping `WAVM_SERIALIZE_VERSION` (the Go validator then purges).
+    /// Returns `Err` rather than panicking so the FFI surfaces failures as
+    /// status codes.
     pub fn to_wavm_bytes(&self) -> Result<Vec<u8>> {
         // Body follows `Module`'s declaration order; `tables_merkle` and
         // `funcs_merkle` are re-derived on decode.
@@ -785,10 +783,9 @@ impl Module {
 
         // Length-prefix the body so the decoder catches trailing-bytes
         // corruption regardless of brotli's behavior on extra input.
-        let mut out = Vec::with_capacity(WAVM_MAGIC.len() + 1 + 1 + 4 + compressed.len());
+        let mut out = Vec::with_capacity(WAVM_MAGIC.len() + 1 + 4 + compressed.len());
         out.extend_from_slice(WAVM_MAGIC);
         out.push(WAVM_SERIALIZE_VERSION);
-        out.push(WAVM_COMPRESSION_BROTLI);
         write_bytes(&mut out, &compressed)?;
 
         Ok(out)
@@ -814,25 +811,17 @@ impl Module {
             "wavm decode: unsupported WavmSerializeVersion {version}, expected {WAVM_SERIALIZE_VERSION}",
         );
 
-        // Read the envelope: COMPRESSION_TAG | u32 BODY_LEN | BODY. Length
-        // prefix is verified against `env.is_empty()` below so trailing
-        // bytes after the body are rejected regardless of brotli's
-        // trailing-byte behavior.
+        // `is_empty()` after read rejects trailing bytes regardless of
+        // brotli's tolerance for extra input.
         let mut env = Cursor::new(&data[WAVM_MAGIC.len() + 1..]);
-        let compression_tag = env.read_u8()?;
         let raw_body = env.read_bytes()?;
         ensure!(
             env.is_empty(),
             "wavm decode: {} trailing byte(s) after envelope",
             env.remaining(),
         );
-
-        let body: Vec<u8> = match compression_tag {
-            WAVM_COMPRESSION_NONE => raw_body,
-            WAVM_COMPRESSION_BROTLI => brotli::decompress(&raw_body, Dictionary::Empty)
-                .map_err(|s| eyre!("wavm decode: brotli decompression failed: {s:?}"))?,
-            other => bail!("wavm decode: unknown compression tag {other}"),
-        };
+        let body: Vec<u8> = brotli::decompress(&raw_body, Dictionary::Empty)
+            .map_err(|s| eyre!("wavm decode: brotli decompression failed: {s:?}"))?;
 
         let mut c = Cursor::new(&body);
 
@@ -929,17 +918,12 @@ impl Module {
         }
         memory.cache_merkle_tree();
 
-        // Leave each `table.elems_merkle` as `Merkle::default()` to mirror the activator
-        // path (`Module::from_binary`): `Table::hash` reads `elems_merkle.root()`, so
-        // hashing here with an empty merkle keeps `Module::hash()` identical to the
-        // hash reported by `stylus_activate`. Repopulating would diverge from the
-        // activator's commitment and from the on-chain `module_hash`.
+        // Mirror the activator: `Module::from_binary` leaves `elems_merkle`
+        // default, so `Module::hash()` here must too — that's the on-chain
+        // `module_hash` invariant. Repopulating would diverge.
         let tables_hashes: Result<_> = tables.iter().map(Table::hash).collect();
         let tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
 
-        // funcs_merkle is over Function::hash() values (which themselves merkleize the
-        // instruction stream). new_from_wavm above already populated each Function's
-        // code_merkle, so this is straightforward.
         let funcs_merkle = Arc::new(Merkle::new(
             MerkleType::Function,
             funcs.iter().map(Function::hash).collect(),
@@ -1397,6 +1381,43 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
     Arc::new(|_, _, _| None) as _
 }
 
+// Extracted so a test can pin the diagnostic (operator needs the hex hash
+// to find the offending wasmdb key).
+fn format_missing_stylus_module_error(
+    hash: Bytes32,
+    modules: &HashMap<Bytes32, Vec<u8>>,
+) -> String {
+    let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
+    let dots = if modules.len() > 16 { "..." } else { "" };
+    format!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
+}
+
+// Repopulates merkle caches on a freshly-deserialized module
+// (replay-binary path). `Arc::get_mut` is sound today because `modules` was
+// just locally deserialized, but returning `Err` instead of panicking keeps
+// a future caller that clones `module.funcs` first from crashing the FFI.
+fn recompute_module_merkles(module: &mut Module) -> Result<()> {
+    for table in module.tables.iter_mut() {
+        table.elems_merkle = Merkle::new(
+            MerkleType::TableElement,
+            table.elems.iter().map(TableElement::hash).collect(),
+        );
+    }
+    let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
+    module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
+
+    let funcs = Arc::get_mut(&mut module.funcs)
+        .ok_or_else(|| eyre!("module.funcs Arc is shared; cannot recompute code merkles"))?;
+    funcs.iter_mut().for_each(Function::set_code_merkle);
+
+    module.funcs_merkle = Arc::new(Merkle::new(
+        MerkleType::Function,
+        module.funcs.iter().map(Function::hash).collect(),
+    ));
+    module.memory.cache_merkle_tree();
+    Ok(())
+}
+
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
     pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
@@ -1793,23 +1814,7 @@ impl Machine {
         };
 
         for module in modules.iter_mut() {
-            for table in module.tables.iter_mut() {
-                table.elems_merkle = Merkle::new(
-                    MerkleType::TableElement,
-                    table.elems.iter().map(TableElement::hash).collect(),
-                );
-            }
-            let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
-            module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
-
-            let funcs = Arc::get_mut(&mut module.funcs).expect("Multiple copies of module funcs");
-            funcs.iter_mut().for_each(Function::set_code_merkle);
-
-            module.funcs_merkle = Arc::new(Merkle::new(
-                MerkleType::Function,
-                module.funcs.iter().map(Function::hash).collect(),
-            ));
-            module.memory.cache_merkle_tree();
+            recompute_module_merkles(module)?;
         }
         let modules_merkle = Some(Merkle::new(
             MerkleType::Module,
@@ -2776,28 +2781,17 @@ impl Machine {
                         error!("no hash for {}", ptr)
                     };
                     let Some(bytes) = self.stylus_modules.get(&hash) else {
-                        let modules = &self.stylus_modules;
-                        let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
-                        let dots = if modules.len() > 16 {
-                            "..."
-                        } else {
-                            Default::default()
-                        };
-                        bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
+                        bail!(format_missing_stylus_module_error(
+                            hash,
+                            &self.stylus_modules
+                        ))
                     };
 
-                    // `Module::from_wavm_bytes` mirrors the activator's empty
-                    // `Table::elems_merkle` semantics, so `new_module.hash() == hash`
-                    // is guaranteed by construction. Enforce that invariant in
-                    // release as well: a silent mismatch would install a module
-                    // whose `hash()` no longer equals the WAVM-level lookup key,
-                    // breaking the BOLD fraud-proof commitment.
-                    //
                     // Decode and hash-check BEFORE mutating `value_stack` /
-                    // `self.modules` so the machine's pre-step state is
-                    // preserved on the bail path; the previous order pushed
-                    // the module index before validating and left
-                    // `value_stack` with a phantom index when bailing.
+                    // `self.modules` so the pre-step state survives bail.
+                    // The hash equality must hold by construction (see
+                    // `from_wavm_bytes`); the runtime check guards the BOLD
+                    // commitment against a future regression.
                     let new_module = match Module::from_wavm_bytes(bytes) {
                         Ok(m) => m,
                         Err(e) => bail!("failed to decode stylus module {hash}: {e}"),
@@ -2808,8 +2802,6 @@ impl Machine {
                             "decoded stylus module hash {new_hash} diverged from lookup key {hash} — wavm round-trip invariant broken",
                         );
                     }
-                    // Now commit: push the offset on the stack and install
-                    // the module.
                     let index = self.modules.len() as u32;
                     value_stack.push(index.into());
                     self.modules.push(new_module);
@@ -2962,15 +2954,24 @@ impl Machine {
     }
 
     pub fn print_modules(&self) {
+        // Swallow stdout io::Error so a broken pipe doesn't crash a
+        // diagnostic dump; partial output is preferable to a panic.
+        let _ = self.write_modules(&mut std::io::stdout());
+    }
+
+    // Sink-agnostic counterpart so tests can exercise the corrupt-entry path
+    // without capturing stdout.
+    pub fn write_modules<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         for module in &self.modules {
-            println!("{module}\n");
+            writeln!(w, "{module}\n")?;
         }
         for module in self.stylus_modules.values() {
             match Module::from_wavm_bytes(module) {
-                Ok(m) => println!("{m}\n"),
-                Err(e) => println!("<failed to decode stylus module: {e}>\n"),
+                Ok(m) => writeln!(w, "{m}\n")?,
+                Err(e) => writeln!(w, "<failed to decode stylus module: {e}>\n")?,
             }
         }
+        Ok(())
     }
 
     pub fn is_halted(&self) -> bool {
@@ -3593,7 +3594,7 @@ mod wavm_format_tests {
         memory::Memory,
         value::{ArbValueType, FunctionType, Value},
         wavm::{Instruction, Opcode},
-        wavm_serialize::{WAVM_COMPRESSION_BROTLI, WAVM_MAGIC, WAVM_SERIALIZE_VERSION},
+        wavm_serialize::{WAVM_MAGIC, WAVM_SERIALIZE_VERSION},
     };
 
     /// Build a small but non-trivial `Module` covering the consensus-relevant
@@ -4108,67 +4109,14 @@ mod wavm_format_tests {
     }
 
     #[test]
-    fn unknown_compression_tag_is_rejected() {
-        // Flip the compression tag byte (position MAGIC.len() + 1 = 5) to a
-        // value the decoder doesn't recognise. The decoder must bail with the
-        // tag value in the error rather than treating it as raw or brotli.
-        let mut bytes = build_test_module().to_wavm_bytes().unwrap();
-        bytes[WAVM_MAGIC.len() + 1] = 0xFF;
-        let err = Module::from_wavm_bytes(&bytes).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("compression tag") || msg.contains("compression"),
-            "expected compression-tag error, got: {err}",
-        );
-    }
-
-    #[test]
-    fn raw_compression_tag_is_accepted() {
-        // Operationally we keep the raw tag as a forward-compat hook: if brotli
-        // ever needs to be disabled for a payload, the decoder must accept
-        // tag=0 without bumping `WAVM_SERIALIZE_VERSION`. Manually construct a
-        // raw-tagged envelope around the same inner body brotli would have
-        // wrapped, and assert the decoded module hashes match the original.
-        let original = build_test_module();
-        let brotli_bytes = original.to_wavm_bytes().unwrap();
-
-        // Decompress the brotli body to recover the raw inner body that the
-        // encoder produced before wrapping it.
-        let inner = {
-            let mut env = Cursor::new(&brotli_bytes[WAVM_MAGIC.len() + 1..]);
-            let tag = env.read_u8().unwrap();
-            assert_eq!(tag, WAVM_COMPRESSION_BROTLI);
-            let compressed = env.read_bytes().unwrap();
-            brotli::decompress(&compressed, Dictionary::Empty).unwrap()
-        };
-
-        // Re-wrap with tag=0 (raw) and verify the decoder accepts it.
-        let mut raw_envelope = Vec::with_capacity(WAVM_MAGIC.len() + 1 + 1 + 4 + inner.len());
-        raw_envelope.extend_from_slice(WAVM_MAGIC);
-        raw_envelope.push(WAVM_SERIALIZE_VERSION);
-        raw_envelope.push(WAVM_COMPRESSION_NONE);
-        raw_envelope.extend_from_slice(&(inner.len() as u32).to_be_bytes());
-        raw_envelope.extend_from_slice(&inner);
-
-        let rebuilt =
-            Module::from_wavm_bytes(&raw_envelope).expect("raw-tagged envelope must decode");
-        assert_eq!(
-            rebuilt.hash(),
-            original.hash(),
-            "raw-tagged decode must yield the same module hash as brotli-tagged decode",
-        );
-    }
-
-    #[test]
     fn corrupt_compressed_payload_is_rejected() {
         // Flip a byte inside the brotli stream. Decompression must fail
         // rather than producing partial / garbage output, and the error must
         // surface — not be silently fed to the inner cursor which could then
         // bail with a confusing wire-format error far from the real cause.
         let mut bytes = build_test_module().to_wavm_bytes().unwrap();
-        // Skip header + tag + u32 length = 4 + 1 + 1 + 4 = 10 bytes; flip
-        // a byte well inside the brotli payload.
-        let target = WAVM_MAGIC.len() + 1 + 1 + 4 + 5;
+        // 9-byte envelope (MAGIC+VERSION+LEN) + 5 into the brotli payload.
+        let target = WAVM_MAGIC.len() + 1 + 4 + 5;
         assert!(target < bytes.len(), "test setup: payload too small");
         bytes[target] ^= 0xFF;
         let err = Module::from_wavm_bytes(&bytes).unwrap_err();
@@ -4185,13 +4133,11 @@ mod wavm_format_tests {
 
     #[test]
     fn linkmodule_hash_mismatch_is_detectable() {
-        // Pins the property the LinkModule runtime check (machine.rs ~line
-        // 2785) relies on: if wasmdb is corrupted such that the bytes
-        // stored under key K decode to a module whose hash is K' != K, the
-        // mismatch is observable. The full bail! site requires driving a
-        // `Machine` through the LinkModule opcode, which is heavy for a
-        // unit test; this exercises the underlying detection logic
-        // instead.
+        // Pins the property the `Opcode::LinkModule` arm in `Machine::step`
+        // relies on: if wasmdb bytes stored under key K decode to a module
+        // whose hash is K' != K, the mismatch is observable. The bail! site
+        // needs a full `Machine` to exercise; this hits the detection logic
+        // directly.
         //
         // Two distinct modules with different HASHED fields must produce
         // different `Module::hash()` outputs after a wire-format round trip.
@@ -4266,23 +4212,15 @@ mod wavm_format_tests {
             Module::activate(&wasm, &codehash, 3u16, 0, 65535, false, &mut gas).expect("activate");
 
         let envelope = module.to_wavm_bytes().expect("to_wavm_bytes");
-        // The envelope overhead is 10 bytes (MAGIC=4 + VERSION=1 + TAG=1 +
-        // u32 LEN=4). Anything close to "inner body length + 10" means we
-        // failed to compress.
-        let envelope_overhead = WAVM_MAGIC.len() + 1 + 1 + 4;
+        // Envelope = MAGIC(4) + VERSION(1) + LEN(4) = 9 bytes.
+        let envelope_overhead = WAVM_MAGIC.len() + 1 + 4;
         let compressed_payload_len = envelope.len() - envelope_overhead;
 
-        // For a module of this shape, brotli q=0 reliably hits ~20x or
-        // better. A 2x ratio is the floor we'd ever expect; if we drop
-        // below that, something has gone badly wrong with compression.
-        // Reconstruct the uncompressed body length the way the encoder
-        // would have built it (round-trip through decoder, re-emit raw).
+        // 2x is the floor; q=0 reliably hits ~20x on real modules.
         let rebuilt = Module::from_wavm_bytes(&envelope).expect("from_wavm_bytes");
         let body_len = {
-            // Re-emit then unwrap to count the inner body the encoder built.
             let again = rebuilt.to_wavm_bytes().unwrap();
             let mut env = Cursor::new(&again[WAVM_MAGIC.len() + 1..]);
-            let _tag = env.read_u8().unwrap();
             let compressed = env.read_bytes().unwrap();
             brotli::decompress(&compressed, Dictionary::Empty)
                 .unwrap()
@@ -4293,6 +4231,89 @@ mod wavm_format_tests {
             "brotli payload ({compressed_payload_len}) must compress the body \
              ({body_len}) by at least 2x; if this fails, compression is silently \
              disabled or window settings have regressed",
+        );
+    }
+
+    /// Catches silent field swaps in the positional encoder — round-trip
+    /// tests miss adjacent same-width swaps. Pins keccak of the full envelope
+    /// (brotli output included). On legitimate format change: bump
+    /// `WAVM_SERIALIZE_VERSION` and paste the new `actual=` hex from the
+    /// failure into `WAVM_BLOB_LAYOUT_GOLDEN_HEX`.
+    #[test]
+    fn wavm_blob_layout_keccak_pinned_to_golden() {
+        const WAVM_BLOB_LAYOUT_GOLDEN_HEX: &str =
+            "653ce8d72e0ecb73ed08a7e406deaec698ffa2b5296b62bb8cb3c6192340cfbf";
+
+        let module = build_test_module();
+        let bytes = module.to_wavm_bytes().expect("encode");
+        let mut h = Keccak256::new();
+        h.update(&bytes);
+        let actual_hex = hex::encode(h.finalize());
+
+        assert_eq!(
+            actual_hex, WAVM_BLOB_LAYOUT_GOLDEN_HEX,
+            "WAVM wire-format keccak drifted; if this is intentional, bump \
+             WAVM_SERIALIZE_VERSION and update WAVM_BLOB_LAYOUT_GOLDEN_HEX in \
+             crates/prover/src/machine.rs. actual=0x{actual_hex}",
+        );
+
+        // Sanity: a mutated module must hash differently. Without this, a
+        // regression encoding a constant would still match the pin.
+        let mut mutated = build_test_module();
+        mutated.internals_offset = mutated.internals_offset.wrapping_add(1);
+        let mutated_bytes = mutated.to_wavm_bytes().expect("encode mutated");
+        let mut mh = Keccak256::new();
+        mh.update(&mutated_bytes);
+        let mutated_hex = hex::encode(mh.finalize());
+        assert_ne!(
+            actual_hex, mutated_hex,
+            "encoder must produce a different keccak after mutating a \
+             persisted field; otherwise the pin is vacuous",
+        );
+    }
+
+    /// Pins the failure branch: operator triage needs the marker line to
+    /// see that a wasmdb key is bad.
+    #[test]
+    fn write_modules_emits_corrupt_entry_marker() {
+        let corrupt_bytes = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let corrupt_hash = Bytes32([0x42; 32]);
+
+        let mut machine = Machine::new_finished(GlobalState::default());
+        machine.stylus_modules.insert(corrupt_hash, corrupt_bytes);
+
+        let mut buf: Vec<u8> = Vec::new();
+        machine.write_modules(&mut buf).expect("write_modules");
+        let out = String::from_utf8(buf).expect("utf-8 output");
+
+        assert!(
+            out.contains("<failed to decode stylus module"),
+            "corrupt entry must render the failure marker; got:\n{out}",
+        );
+    }
+
+    /// Pins the hash hex in the bail message — without it, recovery becomes
+    /// "grep every wasmdb key".
+    #[test]
+    fn link_module_bail_names_missing_hash() {
+        let missing_hash = Bytes32([0xAB; 32]);
+        let modules: HashMap<Bytes32, Vec<u8>> = Default::default();
+        let formatted = format_missing_stylus_module_error(missing_hash, &modules);
+        let expected_hex = hex::encode(missing_hash.0);
+        assert!(
+            formatted.contains(&expected_hex),
+            "LinkModule diagnostic must include the offending hash hex; got: {formatted}",
+        );
+
+        // Populated cache: hash must still be present (the key list is
+        // auxiliary signal, not a substitute).
+        let mut populated: HashMap<Bytes32, Vec<u8>> = Default::default();
+        populated.insert(Bytes32([0x01; 32]), vec![]);
+        populated.insert(Bytes32([0x02; 32]), vec![]);
+        let formatted2 = format_missing_stylus_module_error(missing_hash, &populated);
+        assert!(
+            formatted2.contains(&expected_hex),
+            "diagnostic must still name the missing hash when other keys are present; got: {formatted2}",
         );
     }
 }

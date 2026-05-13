@@ -30,21 +30,10 @@ use crate::{
 // ===== format header =====
 
 pub const WAVM_MAGIC: &[u8; 4] = b"WAVM";
+// Bump on any on-disk shape change; the Go validator purges incompatible
+// entries on next boot. Brotli is part of the contract — switching schemes
+// requires a version bump.
 pub const WAVM_SERIALIZE_VERSION: u8 = 1;
-
-// ===== compression tag =====
-//
-// The body that follows the header is length-prefixed and may be brotli-
-// compressed. The tag lets future formats add new compression schemes (or
-// disable compression for a specific payload) without bumping
-// `WAVM_SERIALIZE_VERSION`, since the on-disk shape stays
-// `MAGIC | VERSION | TAG | u32 LEN | BODY`. Today the encoder always emits
-// `WAVM_COMPRESSION_BROTLI` because brotli q=0 shrinks realistic activated
-// modules ~20–80x (mostly because the WAVM instruction stream is highly
-// repetitive). The decoder accepts both tags so that operationally we can
-// swap to raw without bumping the version.
-pub const WAVM_COMPRESSION_NONE: u8 = 0;
-pub const WAVM_COMPRESSION_BROTLI: u8 = 1;
 
 // ===== ref type kind byte =====
 //

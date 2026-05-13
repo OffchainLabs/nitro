@@ -17,6 +17,10 @@ use wasmparser::{FuncType, RefType, ValType};
 
 use crate::binary::FloatType;
 
+// Wire-format: bincode-reachable via `Function.local_types` and
+// `FunctionType.inputs/outputs` in `*.wavm.br` replay binaries. Append-only
+// — reordering shifts the declaration-order discriminant and breaks every
+// committed replay binary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ArbValueType {
@@ -111,6 +115,8 @@ impl From<FloatType> for ArbValueType {
     }
 }
 
+// Wire-format: bincode-reachable as the width parameter of `Opcode::IRelOp`,
+// `IUnOp`, `IBinOp` (and other integer-width variants) in `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
@@ -189,6 +195,8 @@ impl Display for ProgramCounter {
     }
 }
 
+// Wire-format: bincode-reachable via `Module.globals: Vec<Value>` in
+// `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
