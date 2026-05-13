@@ -6,8 +6,9 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 use crate::{
     interfaces::IArbWasm,
     storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
-        PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, map_slot_b256, root_slot, ARBOS_STATE_ADDRESS,
+        NETWORK_FEE_ACCOUNT_OFFSET, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
+        ROOT_STORAGE_KEY,
     },
 };
 
@@ -724,21 +725,56 @@ fn handle_activate_program(
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    let tx_value = crate::get_stylus_call_value();
-    if tx_value < data_fee {
+    // The activation `value` is the value of the call frame entering 0x71,
+    // which differs by call site:
+    //   * Outer EOA → 0x71: `build.rs` zeros `tx_env.value` (so revm won't
+    //     transfer ETH to the precompile) and stashes the original tx value
+    //     in `STYLUS_CALL_VALUE`. `input.value` is therefore 0 here; the
+    //     stashed value drives the check, and the post-commit hook burns
+    //     the data fee from the sender.
+    //   * Inner CONTRACT → 0x71 (e.g. a Solidity factory calling
+    //     `ArbWasm.activateProgram{value: budget}(...)`): revm has already
+    //     transferred `budget` from the caller to 0x71 by the time the
+    //     precompile runs. `input.value == budget`; the stashed value is 0.
+    //     We mirror Nitro's `payActivationDataFee` here by forwarding the
+    //     data fee to NetworkFeeAccount and refunding the rest to the
+    //     immediate caller, so the post-commit hook is skipped.
+    let stashed_outer_value = crate::get_stylus_call_value();
+    let inner_call_value = input.value;
+    let effective_value = if inner_call_value > U256::ZERO {
+        inner_call_value
+    } else {
+        stashed_outer_value
+    };
+    if effective_value < data_fee {
         return revert_sol_error(
             IArbWasm::ProgramInsufficientValue {
-                have: tx_value,
+                have: effective_value,
                 want: data_fee,
             }
             .abi_encode(),
         );
     }
 
-    crate::charge_precompile_gas(SLOAD_GAS);
-
-    crate::set_stylus_activation_request(Some(program_address));
-    crate::set_stylus_activation_data_fee(data_fee);
+    if inner_call_value > U256::ZERO {
+        let caller = input.caller;
+        let net_acct_word = sload_field(&mut input, root_slot(NETWORK_FEE_ACCOUNT_OFFSET))?;
+        let network_addr = Address::from_word(B256::from(net_acct_word.to_be_bytes::<32>()));
+        let _ = input
+            .internals_mut()
+            .transfer(ARBWASM_ADDRESS, network_addr, data_fee);
+        let repay = inner_call_value.saturating_sub(data_fee);
+        if repay > U256::ZERO {
+            let _ = input
+                .internals_mut()
+                .transfer(ARBWASM_ADDRESS, caller, repay);
+        }
+        crate::set_stylus_activation_request(Some(program_address));
+    } else {
+        crate::charge_precompile_gas(SLOAD_GAS);
+        crate::set_stylus_activation_request(Some(program_address));
+        crate::set_stylus_activation_data_fee(data_fee);
+    }
 
     let event_topic = IArbWasm::ProgramActivated::SIGNATURE_HASH;
     let mut event_data = Vec::with_capacity(128);
@@ -878,23 +914,43 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    let tx_value = crate::get_stylus_call_value();
-    if tx_value < data_fee {
+    // See `handle_activate_program` for the call-frame-value rationale.
+    let stashed_outer_value = crate::get_stylus_call_value();
+    let inner_call_value = input.value;
+    let effective_value = if inner_call_value > U256::ZERO {
+        inner_call_value
+    } else {
+        stashed_outer_value
+    };
+    if effective_value < data_fee {
         return revert_sol_error(
             IArbWasm::ProgramInsufficientValue {
-                have: tx_value,
+                have: effective_value,
                 want: data_fee,
             }
             .abi_encode(),
         );
     }
 
-    // payActivationDataFee reads NetworkFeeAccount from storage (800 gas)
-    crate::charge_precompile_gas(SLOAD_GAS);
-
-    // Signal executor to handle the data fee payment
-    crate::set_stylus_keepalive_request(Some(codehash));
-    crate::set_stylus_activation_data_fee(data_fee);
+    if inner_call_value > U256::ZERO {
+        let caller = input.caller;
+        let net_acct_word = sload_field(&mut input, root_slot(NETWORK_FEE_ACCOUNT_OFFSET))?;
+        let network_addr = Address::from_word(B256::from(net_acct_word.to_be_bytes::<32>()));
+        let _ = input
+            .internals_mut()
+            .transfer(ARBWASM_ADDRESS, network_addr, data_fee);
+        let repay = inner_call_value.saturating_sub(data_fee);
+        if repay > U256::ZERO {
+            let _ = input
+                .internals_mut()
+                .transfer(ARBWASM_ADDRESS, caller, repay);
+        }
+        crate::set_stylus_keepalive_request(Some(codehash));
+    } else {
+        crate::charge_precompile_gas(SLOAD_GAS);
+        crate::set_stylus_keepalive_request(Some(codehash));
+        crate::set_stylus_activation_data_fee(data_fee);
+    }
 
     let event_topic = IArbWasm::ProgramLifetimeExtended::SIGNATURE_HASH;
     let mut event_data = Vec::with_capacity(32);
