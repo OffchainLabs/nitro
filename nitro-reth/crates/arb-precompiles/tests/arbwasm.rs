@@ -591,3 +591,113 @@ fn program_version_returns_program_version_for_fresh_program() {
         U256::from(default_params().version)
     );
 }
+
+// ── codehashKeepalive value-source regression ─────────────────────────
+//
+// Pre-fix, the handler read the activation value from STYLUS_CALL_VALUE — a
+// thread-local that `build.rs` only sets when the outer tx target IS 0x71.
+// When a Solidity contract makes a nested call into ArbWasm.codehashKeepalive
+// (the same shape that breaks ArbWasm.activateProgram in Sepolia block
+// 169,854,826), the thread-local stays at 0 and the precompile reverts with
+// `ProgramInsufficientValue(0, data_fee)` even though revm has already
+// transferred the value into 0x71 and exposed it as `input.value`.
+//
+// The fix prefers `input.value` (call-frame value) over the thread-local,
+// then mirrors Nitro's `payActivationDataFee` for the success path. These
+// tests pin the symptom in both directions.
+
+const KEEPALIVE_DATA_PRICER_OFFSET: u8 = 3;
+
+fn data_pricer_slot(offset: u64) -> U256 {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let pricer_key = derive_subspace_key(programs_key.as_slice(), &[KEEPALIVE_DATA_PRICER_OFFSET]);
+    map_slot(pricer_key.as_slice(), offset)
+}
+
+fn keepalive_test_setup(codehash: B256, now: u64) -> PrecompileTest {
+    let mut params = default_params();
+    params.version = 1;
+    params.keepalive_days = 30;
+    params.expiry_days = 365;
+
+    let activated_at_hours = hours_since_start(now - 40 * 86_400);
+    let prog_word = pack_program_full(1, 0, 0, 0, activated_at_hours, 5);
+
+    test_with(params, ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word)
+        .storage(ARBOS_STATE_ADDRESS, data_pricer_slot(0), U256::ZERO)
+        .storage(ARBOS_STATE_ADDRESS, data_pricer_slot(1), U256::ZERO)
+        .storage(ARBOS_STATE_ADDRESS, data_pricer_slot(2), U256::from(now))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            data_pricer_slot(3),
+            U256::from(82_928_201_u64),
+        )
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            data_pricer_slot(4),
+            U256::from(21_360_419_u64),
+        )
+}
+
+#[test]
+fn keepalive_inner_call_with_value_passes() {
+    // Reset the thread-local that `build.rs` would normally manage; in
+    // unit tests it stays set across runs in the same process.
+    arb_precompiles::set_stylus_call_value(U256::ZERO);
+
+    let codehash = B256::from_slice(&[0xdeu8; 32]);
+    let now = 1_700_000_000_u64;
+    // input.value = 1 ETH, far above the ~0.0004 ETH data_fee for a 5KB
+    // program. Simulates revm's value-transfer-into-0x71 for an inner CALL.
+    let test =
+        keepalive_test_setup(codehash, now).value(U256::from(10u128).pow(U256::from(18u64)));
+
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+
+    let out = run.assert_ok();
+    if out.reverted {
+        let sel = &out.bytes[..4];
+        let insufficient =
+            alloy_primitives::keccak256(b"ProgramInsufficientValue(uint256,uint256)");
+        if sel == &insufficient[..4] {
+            panic!(
+                "BUG: keepalive reverted with ProgramInsufficientValue even though \
+                 input.value = 1 ETH was passed via inner CALL. Pre-fix arbwasm.rs \
+                 read STYLUS_CALL_VALUE (thread-local, only set for outer-EOA→0x71); \
+                 fix should read input.value instead."
+            );
+        }
+        panic!(
+            "keepalive reverted unexpectedly (selector {:02x?}); inner-call value path broken",
+            sel
+        );
+    }
+}
+
+#[test]
+fn keepalive_inner_call_with_zero_value_still_reverts() {
+    arb_precompiles::set_stylus_call_value(U256::ZERO);
+
+    let codehash = B256::from_slice(&[0xdfu8; 32]);
+    let now = 1_700_000_000_u64;
+    let test = keepalive_test_setup(codehash, now).value(U256::ZERO);
+
+    let run = test.call(
+        &arbwasm(),
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+
+    let out = run.assert_ok();
+    assert!(out.reverted, "expected revert with value=0");
+    let sel = alloy_primitives::keccak256(b"ProgramInsufficientValue(uint256,uint256)");
+    assert_eq!(
+        &out.bytes[..4],
+        &sel[..4],
+        "expected ProgramInsufficientValue revert selector"
+    );
+}
