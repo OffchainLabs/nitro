@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -52,7 +53,7 @@ func (p *DataPoster) updateNonce(ctx context.Context, s *state.LockedInternalSta
 		return nil
 	}
 	// #nosec G115
-	latestFinalizedNonceGauge.Update(int64(nonce))
+	datapostermetrics.LatestFinalizedNonceGauge.Update(int64(nonce))
 	log.Info("Data poster transactions confirmed", "previousNonce", s.Nonce, "newNonce", nonce, "previousL1Block", s.LastBlock, "newL1Block", header.Number)
 	if len(s.ErrorCount) > 0 {
 		for x := s.Nonce; x < nonce; x++ {
@@ -136,7 +137,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, s *state.LockedIntern
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
 		// #nosec G115
-		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
+		datapostermetrics.LatestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
 		}
@@ -149,7 +150,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, s *state.LockedIntern
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
 		// #nosec G115
-		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
+		datapostermetrics.LatestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if unconfirmedNonce > nextNonce {
 			return fmt.Errorf("latest on-chain nonce %v is greater than to next nonce %v", unconfirmedNonce, nextNonce)
 		}

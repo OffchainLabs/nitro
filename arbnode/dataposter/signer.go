@@ -21,6 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+
+	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 )
 
 // signerFn is a signer function callback when a contract requires a method to
@@ -28,7 +30,7 @@ import (
 // This can be local or external, hence the context parameter.
 type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
 
-func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
+func rpcClient(ctx context.Context, opts *config.ExternalSignerCfg) (*rpc.Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		// Dataposter verifies that signed transaction was signed by the account
@@ -116,7 +118,7 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendT
 	}, nil
 }
 
-func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.TransactOpts, error) {
+func ExternalSignerTxOpts(ctx context.Context, opts *config.ExternalSignerCfg) (*bind.TransactOpts, error) {
 	signer, sender, err := externalSigner(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -132,7 +134,7 @@ func ExternalSignerTxOpts(ctx context.Context, opts *ExternalSignerCfg) (*bind.T
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
-func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, common.Address, error) {
+func externalSigner(ctx context.Context, opts *config.ExternalSignerCfg) (signerFn, common.Address, error) {
 	if opts.Address == "" {
 		return nil, common.Address{}, errors.New("external signer (From) address specified")
 	}

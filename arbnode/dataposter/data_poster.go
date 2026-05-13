@@ -23,10 +23,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
@@ -38,14 +40,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-)
-
-var (
-	latestFinalizedNonceGauge     = metrics.NewRegisteredGauge("arb/dataposter/nonce/finalized", nil)
-	latestSoftConfirmedNonceGauge = metrics.NewRegisteredGauge("arb/dataposter/nonce/softconfirmed", nil)
-	latestUnconfirmedNonceGauge   = metrics.NewRegisteredGauge("arb/dataposter/nonce/unconfirmed", nil)
-	totalQueueLengthGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/length", nil)
-	totalQueueWeightGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/weight", nil)
 )
 
 // DataPoster implements functionality to post transactions on the chain. It
@@ -61,7 +55,7 @@ type DataPoster struct {
 	client            *ethclient.Client
 	auth              *bind.TransactOpts
 	signer            signerFn
-	config            ConfigFetcher
+	config            config.ConfigFetcher
 	usingNoOpStorage  bool
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	extraBacklog      func() uint64
@@ -78,7 +72,7 @@ type DataPosterOpts struct {
 	HeaderReader      *headerreader.HeaderReader
 	Auth              *bind.TransactOpts
 	RedisClient       redis.UniversalClient
-	Config            ConfigFetcher
+	Config            config.ConfigFetcher
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
@@ -166,6 +160,25 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	return dp, nil
 }
 
+func (p *DataPoster) Client() *ethclient.Client {
+	return p.client
+}
+
+func (p *DataPoster) Config() *config.DataPosterConfig {
+	return p.config()
+}
+
+func (p *DataPoster) ExtraBacklog() uint64 {
+	return p.extraBacklog()
+}
+
+func (p *DataPoster) MaxFeeCapExpression() *govaluate.EvaluableExpression {
+	return p.maxFeeCapExpression
+}
+ func (p *DataPoster) ParentChain() *parent.ParentChain {
+	return p.parentChain
+}
+
 func (p *DataPoster) Auth() *bind.TransactOpts {
 	return p.auth
 }
@@ -229,7 +242,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInterna
 		return nil, err
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, s, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
+	caps, err := fees.FeeAndTipCaps(ctx, p, s, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -271,15 +284,15 @@ func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInterna
 			ChainID:    p.parentChainID256,
 		}
 		// reuse the code to convert gas fee and tip caps to uint256s
-		err = updateTxDataGasCaps(inner, feeCap, tipCap, blobFeeCap)
+		err = fees.UpdateTxDataGasCaps(inner, caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		deprecatedData = types.DynamicFeeTx{
 			Nonce:      nonce,
-			GasFeeCap:  feeCap,
-			GasTipCap:  tipCap,
+			GasFeeCap:  caps.Fee.NonBlob,
+			GasTipCap:  caps.Tip,
 			Gas:        gasLimit,
 			To:         &to,
 			Value:      value,
@@ -427,28 +440,24 @@ func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState
 		return err
 	}
 
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, s, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
+	caps, err := fees.FeeAndTipCaps(ctx, p, s, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
 	if err != nil {
 		return err
 	}
 
-	minRbfIncrease := minNonBlobRbfIncrease
-	if len(prevTx.FullTx.BlobHashes()) > 0 {
-		minRbfIncrease = minBlobRbfIncrease
-	}
-
+	minRbfIncrease := fees.MinRbfIncrease.SelectIfBlobs(len(prevTx.FullTx.BlobHashes()) > 0)
 	newTx := *prevTx
-	if (prevTx.FullTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease) ||
-		(prevTx.FullTx.BlobGasFeeCap() != nil && prevTx.FullTx.BlobGasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
+	if (prevTx.FullTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(caps.Fee.NonBlob, prevTx.FullTx.GasFeeCap()) < minRbfIncrease) ||
+		(prevTx.FullTx.BlobGasFeeCap() != nil && prevTx.FullTx.BlobGasFeeCap().Sign() > 0 && arbmath.BigDivToBips(caps.Fee.Blob, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
 		log.Debug(
 			"no need to replace by fee transaction",
 			"nonce", prevTx.FullTx.Nonce(),
 			"lastFeeCap", prevTx.FullTx.GasFeeCap(),
-			"recommendedFeeCap", newFeeCap,
+			"recommendedFeeCap", caps.Fee.NonBlob,
 			"lastTipCap", prevTx.FullTx.GasTipCap(),
-			"recommendedTipCap", newTipCap,
+			"recommendedTipCap", caps.Tip,
 			"lastBlobFeeCap", prevTx.FullTx.BlobGasFeeCap(),
-			"recommendedBlobFeeCap", newBlobFeeCap,
+			"recommendedBlobFeeCap", caps.Fee.Blob,
 		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
 		return p.sendTx(ctx, s, prevTx, &newTx)
@@ -468,9 +477,9 @@ func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState
 		break
 	}
 	newTx.Sent = false
-	newTx.DeprecatedData.GasFeeCap = newFeeCap
-	newTx.DeprecatedData.GasTipCap = newTipCap
-	unsignedTx, err := updateGasCaps(newTx.FullTx, newFeeCap, newTipCap, newBlobFeeCap)
+	newTx.DeprecatedData.GasFeeCap = caps.Fee.NonBlob
+	newTx.DeprecatedData.GasTipCap = caps.Tip
+	unsignedTx, err := fees.UpdateGasCaps(newTx.FullTx, caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob)
 	if err != nil {
 		return err
 	}
@@ -515,7 +524,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			return minWait
 		}
 		// #nosec G115
-		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
+		datapostermetrics.LatestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
@@ -538,9 +547,9 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			confirmedMeta, err := lockedState.Queue.Get(ctx, confirmedNonce)
 			if err == nil && confirmedMeta != nil {
 				// #nosec G115
-				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
+				datapostermetrics.TotalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
 				// #nosec G115
-				totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
+				datapostermetrics.TotalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
 			} else {
 				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
 			}

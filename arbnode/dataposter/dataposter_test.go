@@ -26,7 +26,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -73,7 +75,7 @@ func TestExternalSigner(t *testing.T) {
 			return
 		}
 	}()
-	signerCfg, err := ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := config.ExternalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting signer test config: %v", err)
 	}
@@ -121,18 +123,18 @@ func TestExternalSigner(t *testing.T) {
 func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	// This test alerts, by failing, if the max fee cap formula were to be changed in the DefaultDataPosterConfig to
 	// use new variables other than the ones that are keys of 'parameters' map below
-	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	expression, err := govaluate.NewEvaluableExpression(config.DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
 		t.Fatalf("Error creating govaluate evaluable expression for calculating default maxFeeCap formula: %v", err)
 	}
-	config := DefaultDataPosterConfig
-	config.TargetPriceGwei = 0
+	cfg := config.DefaultDataPosterConfig
+	cfg.TargetPriceGwei = 0
 	p := &DataPoster{
-		config:              func() *DataPosterConfig { return &config },
+		config:              func() *config.DataPosterConfig { return &cfg },
 		internalState:       state.NewInternalState(nil),
 		maxFeeCapExpression: expression,
 	}
-	result, err := p.evalMaxFeeCapExpr(0, 0)
+	result, err := fees.EvalMaxFeeCapExpr(p, 0, 0)
 	if err != nil {
 		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
@@ -140,7 +142,7 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 		t.Fatalf("Unexpected result. Got: %d, want: 0", result)
 	}
 
-	result, err = p.evalMaxFeeCapExpr(0, time.Since(time.Time{}))
+	result, err = fees.EvalMaxFeeCapExpr(p, 0, time.Since(time.Time{}))
 	if err != nil {
 		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
@@ -181,10 +183,10 @@ func (c *stubL1ClientInner) BatchCallContext(ctx context.Context, b []rpc.BatchE
 func (c *stubL1ClientInner) Close() {}
 
 func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T) {
-	conf := func() *DataPosterConfig {
+	conf := func() *config.DataPosterConfig {
 		// Set only the fields that are used by feeAndTipCaps
 		// Start with defaults, maybe change for test.
-		return &DataPosterConfig{
+		return &config.DataPosterConfig{
 			MaxMempoolTransactions: 18,
 			MaxMempoolWeight:       18,
 			MinTipCapGwei:          0.05,
@@ -200,7 +202,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 			TargetPriceGwei:       60.,
 		}
 	}
-	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	expression, err := govaluate.NewEvaluableExpression(config.DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
 		t.Fatalf("error creating govaluate evaluable expression: %v", err)
 	}
@@ -243,7 +245,8 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 
 	lockedState.Balance = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	caps, err := fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	newGasFeeCap, newTipCap, newBlobFeeCap := caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -277,7 +280,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 	}
 
 	lastBlobTx := &types.BlobTx{}
-	err = updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	err = fees.UpdateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +295,8 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	caps, err = fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	newGasFeeCap, newTipCap, newBlobFeeCap = caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
 	/*
 		// I think we expect an increase by *2 due to rbf rules for blob txs,
@@ -319,10 +323,10 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 }
 
 func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
-	conf := func() *DataPosterConfig {
+	conf := func() *config.DataPosterConfig {
 		// Set only the fields that are used by feeAndTipCaps
 		// Start with defaults, maybe change for test.
-		return &DataPosterConfig{
+		return &config.DataPosterConfig{
 			MaxMempoolTransactions: 18,
 			MaxMempoolWeight:       18,
 			MinTipCapGwei:          0.05,
@@ -338,7 +342,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 			TargetPriceGwei:       60.,
 		}
 	}
-	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	expression, err := govaluate.NewEvaluableExpression(config.DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
 		t.Fatalf("error creating govaluate evaluable expression: %v", err)
 	}
@@ -381,7 +385,8 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 
 	lockedState.Balance = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	caps, err := fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	newGasFeeCap, newTipCap, newBlobFeeCap := caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -415,7 +420,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 	}
 
 	lastBlobTx := &types.BlobTx{}
-	err = updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	err = fees.UpdateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +437,8 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	caps, err = fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	newGasFeeCap, newTipCap, newBlobFeeCap = caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 
 	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
 	if arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
@@ -763,7 +769,7 @@ func TestUpdateNonce(t *testing.T) {
 	})
 
 	t.Run("waitForL1Finality uses finalized block tag", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.WaitForL1Finality = true
 		stub := defaultTestStub()
 		stub.senderNonce = 0
@@ -790,7 +796,7 @@ func TestUpdateNonce(t *testing.T) {
 	})
 
 	t.Run("waitForL1Finality false uses latest block tag", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.WaitForL1Finality = false
 		stub := defaultTestStub()
 		stub.senderNonce = 0
@@ -838,7 +844,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	})
 
 	t.Run("MaxQueuedTransactions exceeded", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 2
 		stub := defaultTestStub()
 		stub.senderNonce = 0
@@ -860,7 +866,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	})
 
 	t.Run("MaxQueuedTransactions zero means unlimited", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0  // unlimited
 		cfg.MaxMempoolTransactions = 0 // don't trigger other checks
 		cfg.MaxMempoolWeight = 0
@@ -884,7 +890,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	})
 
 	t.Run("MaxMempoolTransactions exceeded", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0 // don't trigger queue limit
 		cfg.MaxMempoolTransactions = 5
 		stub := defaultTestStub()
@@ -904,7 +910,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	})
 
 	t.Run("MaxMempoolTransactions just under limit", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0
 		cfg.MaxMempoolTransactions = 5
 		stub := defaultTestStub()
@@ -922,7 +928,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	})
 
 	t.Run("MaxMempoolTransactions zero means unlimited", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0
 		cfg.MaxMempoolTransactions = 0 // unlimited
 		cfg.MaxMempoolWeight = 0       // also unlimited
@@ -940,7 +946,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	})
 
 	t.Run("unconfirmedNonce greater than nextNonce", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0
 		cfg.MaxMempoolTransactions = 0 // skip mempool tx check
 		cfg.MaxMempoolWeight = 18      // enable weight check
@@ -960,7 +966,7 @@ func TestCanPostWithNonce(t *testing.T) {
 	t.Run("MaxMempoolWeight with Post4844Blobs false is effectively no-op", func(t *testing.T) {
 		// When Post4844Blobs=false, maxBlobGasPerBlock=0, so
 		// weightDiff = min(newWeight-confirmedWeight, 0) = 0, always passes.
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0
 		cfg.MaxMempoolTransactions = 0
 		cfg.MaxMempoolWeight = 1 // very low limit
@@ -1047,7 +1053,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 	})
 
 	t.Run("queue empty updateNonce fails non-persistent with finality returns error", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.WaitForL1Finality = true
 		stub := defaultTestStub()
 		stub.headerByNumberErr = errors.New("header fetch failed")
@@ -1064,7 +1070,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 	})
 
 	t.Run("queue empty updateNonce fails non-persistent no finality falls back", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.WaitForL1Finality = false
 		stub := defaultTestStub()
 		stub.latestBlockNumber = 100
@@ -1104,7 +1110,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 	})
 
 	t.Run("canPostWithNonce rejects", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxMempoolTransactions = 1 // very restrictive
 		stub := defaultTestStub()
 		stub.senderNonce = 0
@@ -1299,7 +1305,7 @@ func TestEvalMaxFeeCapExpr_EdgeCases(t *testing.T) {
 		dp, _ := newTestDataPoster(t, stub, nil)
 
 		// Huge backlog should produce a massive fee cap, but it's capped at 1e9 * GWei
-		result, err := dp.evalMaxFeeCapExpr(1e18, 10*time.Hour)
+		result, err := fees.EvalMaxFeeCapExpr(dp, 1e18, 10*time.Hour)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1313,7 +1319,7 @@ func TestEvalMaxFeeCapExpr_EdgeCases(t *testing.T) {
 		stub := defaultTestStub()
 		dp, _ := newTestDataPoster(t, stub, nil)
 
-		result, err := dp.evalMaxFeeCapExpr(0, 0)
+		result, err := fees.EvalMaxFeeCapExpr(dp, 0, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1345,8 +1351,8 @@ func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
 
 		header := defaultTestHeader()
 
-		feeCap, tipCap, _, err := dp.feeAndTipCaps(
-			ctx, s,
+		caps, err := fees.FeeAndTipCaps(
+			ctx, dp, s,
 			0,       // nonce
 			300_000, // gasLimit
 			0,       // numBlobs
@@ -1359,12 +1365,12 @@ func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		// feeCap is floored to 1 wei
-		if feeCap.Cmp(big.NewInt(1)) != 0 {
-			t.Errorf("feeCap = %v, want 1 (minimum floor)", feeCap)
+		if caps.Fee.NonBlob.Cmp(big.NewInt(1)) != 0 {
+			t.Errorf("feeCap = %v, want 1 (minimum floor)", caps.Fee.NonBlob)
 		}
 		// tipCap is clamped to feeCap (line 689-696)
-		if tipCap.Cmp(feeCap) > 0 {
-			t.Errorf("tipCap %v > feeCap %v (should be clamped)", tipCap, feeCap)
+		if caps.Tip.Cmp(caps.Fee.NonBlob) > 0 {
+			t.Errorf("tipCap %v > feeCap %v (should be clamped)", caps.Tip, caps.Fee.NonBlob)
 		}
 	})
 
@@ -1388,8 +1394,8 @@ func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
 			Value:     big.NewInt(0),
 		})
 
-		feeCap, tipCap, blobFeeCap, err := dp.feeAndTipCaps(
-			ctx, s,
+		caps, err := fees.FeeAndTipCaps(
+			ctx, dp, s,
 			0,       // nonce
 			300_000, // gasLimit
 			0,       // numBlobs
@@ -1402,15 +1408,15 @@ func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		// When balance is zero and replacing, should return lastTx's caps
-		if feeCap.Cmp(lastTx.GasFeeCap()) != 0 {
-			t.Errorf("feeCap = %v, want %v (lastTx.GasFeeCap)", feeCap, lastTx.GasFeeCap())
+		if caps.Fee.NonBlob.Cmp(lastTx.GasFeeCap()) != 0 {
+			t.Errorf("feeCap = %v, want %v (lastTx.GasFeeCap)", caps.Fee.NonBlob, lastTx.GasFeeCap())
 		}
-		if tipCap.Cmp(lastTx.GasTipCap()) != 0 {
-			t.Errorf("tipCap = %v, want %v (lastTx.GasTipCap)", tipCap, lastTx.GasTipCap())
+		if caps.Tip.Cmp(lastTx.GasTipCap()) != 0 {
+			t.Errorf("tipCap = %v, want %v (lastTx.GasTipCap)", caps.Tip, lastTx.GasTipCap())
 		}
 		// BlobGasFeeCap should be nil for non-blob tx
-		if blobFeeCap != nil {
-			t.Errorf("blobFeeCap = %v, want nil", blobFeeCap)
+		if caps.Fee.Blob != nil {
+			t.Errorf("blobFeeCap = %v, want nil", caps.Fee.Blob)
 		}
 	})
 }
@@ -1653,7 +1659,7 @@ func TestCanPostWithNonce_WeightPath(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("weight under limit with blobs", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0
 		cfg.MaxMempoolTransactions = 0
 		cfg.MaxMempoolWeight = 18
@@ -1673,7 +1679,7 @@ func TestCanPostWithNonce_WeightPath(t *testing.T) {
 	})
 
 	t.Run("weight exceeds limit with blobs", func(t *testing.T) {
-		cfg := TestDataPosterConfig
+		cfg := config.TestDataPosterConfig
 		cfg.MaxQueuedTransactions = 0
 		cfg.MaxMempoolTransactions = 0
 		cfg.MaxMempoolWeight = 2

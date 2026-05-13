@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -217,11 +218,11 @@ func defaultTestStub() *testStubClient {
 //
 // After construction, stub.clearConstructionCalls() is called to clear the eth_config
 // call from the recording, giving tests a clean slate.
-func newTestDataPoster(t testing.TB, stub *testStubClient, cfg *DataPosterConfig) (*DataPoster, *state.InternalState) {
+func newTestDataPoster(t testing.TB, stub *testStubClient, cfg *config.DataPosterConfig) (*DataPoster, *state.InternalState) {
 	t.Helper()
 
 	if cfg == nil {
-		c := TestDataPosterConfig
+		c := config.TestDataPosterConfig
 		cfg = &c
 	}
 
@@ -245,7 +246,7 @@ func newTestDataPoster(t testing.TB, stub *testStubClient, cfg *DataPosterConfig
 	})
 	internalState := state.NewInternalState(sliceStorage)
 
-	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	expression, err := govaluate.NewEvaluableExpression(config.DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
 		t.Fatalf("govaluate.NewEvaluableExpression: %v", err)
 	}
@@ -259,7 +260,7 @@ func newTestDataPoster(t testing.TB, stub *testStubClient, cfg *DataPosterConfig
 		signer: func(_ context.Context, _ common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return tx, nil // passthrough: return the transaction as-is
 		},
-		config:              func() *DataPosterConfig { return cfg },
+		config:              func() *config.DataPosterConfig { return cfg },
 		extraBacklog:        func() uint64 { return 0 },
 		parentChainID256:    parentChainID256,
 		parentChain:         pc,
