@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 node_version_needed="v24"
 rust_version_needed="1.93.0"
 golangci_lint_version_needed="2.5.0"
-forge_max_version="1.0.0"
+forge_version_needed="1.0.0"
 
 if [[ -f go.mod ]]; then
     go_version_needed=$(grep "^go " go.mod | awk '{print $2}')
@@ -188,29 +188,26 @@ else
     EXIT_CODE=1
 fi
 
-# Check Foundry installation
-if command_exists foundryup; then
-    echo -e "${GREEN}Foundry is installed.${NC}"
-else
-    echo -e "${RED}Foundry is not installed.${NC}"
-    EXIT_CODE=1
-fi
-
-# Check forge installation and version compatibility
+# Check Foundry / forge installation and version compatibility
 # Newer forge versions (> 1.0.0) use solar instead of solc for Yul compilation,
 # which causes `make build` to fail.
-if command_exists forge; then
+if ! command_exists foundryup; then
+    echo -e "${RED}Foundry is not installed.${NC}"
+    EXIT_CODE=1
+elif ! command_exists forge; then
+    echo -e "${RED}forge is not installed. Run: foundryup --version $forge_version_needed${NC}"
+    EXIT_CODE=1
+else
     FORGE_INSTALLED_VERSION=$(forge --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
     if [[ -z "$FORGE_INSTALLED_VERSION" ]]; then
         echo -e "${RED}Could not parse forge version from \`forge --version\`.${NC}"
         EXIT_CODE=1
     elif compare_versions "$forge_version_needed" "$FORGE_INSTALLED_VERSION" "exact"; then
-        echo -e "${RED}forge version $FORGE_INSTALLED_VERSION is not compatible. Version $forge_max_version is required (newer versions use solar instead of solc for Yul compilation). Run: foundryup --version $forge_max_version${NC}"
+        echo -e "${GREEN}forge version $FORGE_INSTALLED_VERSION is installed.${NC}"
+    else
+        echo -e "${RED}forge version $FORGE_INSTALLED_VERSION is not compatible. Version $forge_version_needed is required (newer versions use solar instead of solc for Yul compilation). Run: foundryup --version $forge_version_needed${NC}"
         EXIT_CODE=1
     fi
-else
-    echo -e "${RED}forge is not installed. Install Foundry and run: foundryup --version $forge_max_version${NC}"
-    EXIT_CODE=1
 fi
 
 if [ $EXIT_CODE != 0 ]; then
