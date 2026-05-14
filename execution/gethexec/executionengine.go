@@ -793,21 +793,14 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
+	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase); err != nil {
+		return nil, err
+	}
+
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
 	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
 		return nil, err
-	}
-
-	var pendingTipRecording *pendingChainTipRecording
-	if recordAtTip {
-		tipRecordingStateDatabase.StopRecording()
-		pendingTipRecording = &pendingChainTipRecording{
-			block:      block,
-			preimages:  tipRecordingStateDatabase.Preimages(),
-			codeHashes: tipRecordingStateDatabase.CodeHashes(),
-			userWasms:  statedb.UserWasms(),
-		}
 	}
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
@@ -816,9 +809,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-
-	pendingTipRecording.Record(s.tipRecorder)
-
 	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
 
 	return block, nil
@@ -875,7 +865,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, pendingTipRecording, err := s.createBlockFromNextMessage(&messageWithMeta, false, true)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +886,6 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
-	pendingTipRecording.Record(s.tipRecorder)
 	s.cacheL1PriceDataOfMsg(msgIdx, block, true)
 
 	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayedMsgIdx", delayedMsgIdx, "block-header", block.Header())
@@ -926,20 +915,20 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 // a delayed-inbox message (called by sequenceDelayedMessageWithBlockMutex).
 // Regular live sequencing of directly-received L2 transactions (which happens
 // in sequenceTransactionsWithBlockMutex) does not go through this function.
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isDelayedSequencing bool) (*types.Block, *state.StateDB, types.Receipts, *pendingChainTipRecording, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isDelayedSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
-		return nil, nil, nil, nil, errors.New("failed to get current block header")
+		return nil, nil, nil, errors.New("failed to get current block header")
 	}
 
 	currentBlock := s.bc.GetBlock(currentHeader.Hash(), currentHeader.Number.Uint64())
 	if currentBlock == nil {
-		return nil, nil, nil, nil, errors.New("can't find block for current header")
+		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
 	err := s.bc.RecoverState(currentBlock)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
+		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
 
 	var runCtx *core.MessageRunContext
@@ -959,17 +948,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
 		statedb, err = state.NewDeterministic(currentHeader.Root, tipRecordingStateDatabase)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		statedb.StartRecording()
 		if err := recordReplayInitialStatePreimages(statedb); err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		runCtx = core.NewTipRecordingContext(runCtx)
 	} else {
 		statedb, err = s.bc.StateAt(currentHeader.Root)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -983,7 +972,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		if s.bc.GetVMConfig().EnableWitnessStats {
 			witnessStats = stateless.NewWitnessStats()
@@ -1018,7 +1007,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			s.exposeMultiGas,
 		)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
 		if len(filteringHooks.FilteredTxHashes) > 0 {
@@ -1033,24 +1022,16 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 				})
 			}
 
-			return nil, nil, nil, nil, &ErrFilteredDelayedMessage{
+			return nil, nil, nil, &ErrFilteredDelayedMessage{
 				TxHashes:      filteringHooks.FilteredTxHashes,
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
 		}
 
-		var pendingTipRecording *pendingChainTipRecording
-		if recordAtTip {
-			tipRecordingStateDatabase.StopRecording()
-			pendingTipRecording = &pendingChainTipRecording{
-				block:      block,
-				preimages:  tipRecordingStateDatabase.Preimages(),
-				codeHashes: tipRecordingStateDatabase.CodeHashes(),
-				userWasms:  statedb.UserWasms(),
-			}
+		if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase); err != nil {
+			return nil, nil, nil, err
 		}
-
-		return block, statedb, receipts, pendingTipRecording, nil
+		return block, statedb, receipts, nil
 	}
 
 	block, statedb, receipts, err := arbos.ProduceBlock(
@@ -1064,35 +1045,23 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.exposeMultiGas,
 	)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	var pendingTipRecording *pendingChainTipRecording
-	if recordAtTip {
-		tipRecordingStateDatabase.StopRecording()
-		pendingTipRecording = &pendingChainTipRecording{
-			block:      block,
-			preimages:  tipRecordingStateDatabase.Preimages(),
-			codeHashes: tipRecordingStateDatabase.CodeHashes(),
-			userWasms:  statedb.UserWasms(),
-		}
+	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase); err != nil {
+		return nil, nil, nil, err
 	}
-
-	return block, statedb, receipts, pendingTipRecording, nil
+	return block, statedb, receipts, nil
 }
 
-type pendingChainTipRecording struct {
-	block      *types.Block
-	preimages  map[common.Hash][]byte
-	codeHashes []common.Hash
-	userWasms  state.UserWasms
-}
-
-func (r *pendingChainTipRecording) Record(recorder *ChainTipBlockRecorder) {
-	if r == nil || recorder == nil {
-		return
+func (s *ExecutionEngine) recordChainTipCandidate(block *types.Block, statedb *state.StateDB, tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase) error {
+	if block == nil || statedb == nil || tipRecordingStateDatabase == nil || s.tipRecorder == nil || !s.tipRecorder.Enabled() {
+		return nil
 	}
-	recorder.RecordTip(r.block, r.preimages, r.codeHashes, r.userWasms)
+	// Record before consensus/block side effects; canonical validation prevents
+	// serving this candidate if a later side effect fails.
+	tipRecordingStateDatabase.StopRecording()
+	return s.tipRecorder.RecordTip(block, tipRecordingStateDatabase.Preimages(), tipRecordingStateDatabase.CodeHashes(), statedb.UserWasms())
 }
 
 func recordReplayInitialStatePreimages(statedb *state.StateDB) error {
@@ -1293,14 +1262,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
 		go func() {
-			_, _, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, pendingTipRecording, err := s.createBlockFromNextMessage(msg, false, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1311,7 +1280,6 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	if err != nil {
 		return nil, err
 	}
-	pendingTipRecording.Record(s.tipRecorder)
 	s.cacheL1PriceDataOfMsg(msgIdxToDigest, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {

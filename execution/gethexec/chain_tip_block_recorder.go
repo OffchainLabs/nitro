@@ -115,14 +115,13 @@ func copyChainTipRecording(recording *chainTipRecording) *chainTipRecording {
 	}
 }
 
-func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[common.Hash][]byte, codeHashes []common.Hash, userWasms state.UserWasms) {
+func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[common.Hash][]byte, codeHashes []common.Hash, userWasms state.UserWasms) error {
 	if !r.Enabled() || block == nil {
-		return
+		return nil
 	}
 	pos, err := r.execEngine.BlockNumberToMessageIndex(block.NumberU64())
 	if err != nil {
-		log.Warn("failed to calculate message index for chain-tip recording", "block", block.NumberU64(), "err", err)
-		return
+		return fmt.Errorf("failed to calculate message index for chain-tip recording block %d: %w", block.NumberU64(), err)
 	}
 	preimages = copyPreimageMap(preimages)
 
@@ -141,9 +140,10 @@ func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[comm
 	defer r.lock.Unlock()
 	if r.lastRecording != nil && r.lastRecording.record != nil && pos < r.lastRecording.record.Pos {
 		log.Warn("ignoring older chain-tip recording", "pos", pos, "lastPos", r.lastRecording.record.Pos)
-		return
+		return nil
 	}
 	r.lastRecording = record
+	return nil
 }
 
 func (r *ChainTipBlockRecorder) loadCodePreimages(record *execution.RecordResult, codeHashes []common.Hash) error {
@@ -203,6 +203,9 @@ func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.
 	if recording == nil || recording.record == nil || recording.record.Pos != pos {
 		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
 	}
+	if err := r.validateRecording(pos, recording); err != nil {
+		return nil, err
+	}
 	if err := r.loadCodePreimages(recording.record, recording.codeHashes); err != nil {
 		return nil, err
 	}
@@ -214,6 +217,18 @@ func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.
 	}
 	r.servedTipRecordings.Add(1)
 	return recording.record, nil
+}
+
+func (r *ChainTipBlockRecorder) validateRecording(pos arbutil.MessageIndex, recording *chainTipRecording) error {
+	expectedBlockNumber := r.execEngine.MessageIndexToBlockNumber(pos)
+	if recording.blockNumber != expectedBlockNumber {
+		return fmt.Errorf("chain-tip recording block number mismatch for pos %d: got %d expected %d", pos, recording.blockNumber, expectedBlockNumber)
+	}
+	canonicalHash := r.execEngine.bc.GetCanonicalHash(recording.blockNumber)
+	if canonicalHash != recording.record.BlockHash {
+		return fmt.Errorf("chain-tip recording stale for pos %d block %d: got hash %s canonical %s", pos, recording.blockNumber, recording.record.BlockHash, canonicalHash)
+	}
+	return nil
 }
 
 func (r *ChainTipBlockRecorder) ServedTipRecordings() uint64 {
