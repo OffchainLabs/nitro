@@ -1,5 +1,5 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
@@ -788,7 +788,15 @@ fn handle_activate_program(
     // Event gas: LogGas(375) + (1 + indexed_count) * LogTopicGas(375) + LogDataGas(8) * data_bytes
     let event_gas = 375 + 2 * 375 + 8 * event_data.len() as u64;
     crate::charge_precompile_gas(event_gas);
-    crate::emit_log(ARBWASM_ADDRESS, &[event_topic, code_hash], &event_data);
+    // Insert the log directly into the journal at the call-frame's
+    // position so it interleaves correctly with the caller's own LOG
+    // opcodes. Buffering it for a post-tx flush would append it after
+    // every inline log emitted by the calling contract.
+    input.internals_mut().log(Log::new_unchecked(
+        ARBWASM_ADDRESS,
+        vec![event_topic, code_hash],
+        event_data.into(),
+    ));
 
     // Return encoding gas: CopyGas * words(return_len)
     let return_data = {
@@ -957,7 +965,11 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     event_data.extend_from_slice(&data_fee.to_be_bytes::<32>());
     let event_gas = 375 + 2 * 375 + 8 * event_data.len() as u64;
     crate::charge_precompile_gas(event_gas);
-    crate::emit_log(ARBWASM_ADDRESS, &[event_topic, codehash], &event_data);
+    input.internals_mut().log(Log::new_unchecked(
+        ARBWASM_ADDRESS,
+        vec![event_topic, codehash],
+        event_data.into(),
+    ));
 
     // No return value for keepalive
     let gas_used = crate::get_precompile_gas();

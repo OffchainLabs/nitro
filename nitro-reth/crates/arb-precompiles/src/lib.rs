@@ -157,7 +157,6 @@ thread_local! {
 use std::cell::RefCell;
 
 thread_local! {
-    static PENDING_PRECOMPILE_LOGS: RefCell<Vec<(alloy_primitives::Address, Vec<alloy_primitives::B256>, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
     /// Per-block LRU of recently invoked Stylus program codehashes. Used by
     /// ArbOS v60+ pricing; capacity set per-block from `params.BlockCacheSize`.
     static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = const { RefCell::new((Vec::new(), 0)) };
@@ -456,25 +455,6 @@ pub fn get_stylus_call_value() -> alloy_primitives::U256 {
     bytes[0..16].copy_from_slice(&hi.to_be_bytes());
     bytes[16..32].copy_from_slice(&lo.to_be_bytes());
     alloy_primitives::U256::from_be_bytes(bytes)
-}
-
-pub fn emit_log(
-    address: alloy_primitives::Address,
-    topics: &[alloy_primitives::B256],
-    data: &[u8],
-) {
-    PENDING_PRECOMPILE_LOGS.with(|logs| {
-        logs.borrow_mut()
-            .push((address, topics.to_vec(), data.to_vec()));
-    });
-}
-
-pub fn take_pending_precompile_logs() -> Vec<(
-    alloy_primitives::Address,
-    Vec<alloy_primitives::B256>,
-    Vec<u8>,
-)> {
-    PENDING_PRECOMPILE_LOGS.with(|logs| std::mem::take(&mut *logs.borrow_mut()))
 }
 
 fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {

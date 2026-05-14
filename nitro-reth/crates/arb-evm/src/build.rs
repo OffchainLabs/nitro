@@ -2007,20 +2007,6 @@ where
             U256::ZERO
         };
 
-        // Inject pending precompile logs into the execution result.
-        let pending_logs = arb_precompiles::take_pending_precompile_logs();
-        if !pending_logs.is_empty() {
-            if let ExecutionResult::Success { ref mut logs, .. } = output.result.result {
-                for (address, topics, data) in pending_logs {
-                    logs.push(Log {
-                        address,
-                        data: alloy_primitives::LogData::new(topics, data.into())
-                            .unwrap_or_default(),
-                    });
-                }
-            }
-        }
-
         let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
             .saturating_add(MultiGas::computation_gas(evm_gas_used));
 
