@@ -1,0 +1,27 @@
+[workspace]
+
+[package]
+name = "counter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stylus-sdk = "0.10.5"
+alloy-primitives = "1.5"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[features]
+default = ["mini-alloc"]
+export-abi = ["stylus-sdk/export-abi"]
+debug = ["stylus-sdk/debug"]
+mini-alloc = ["stylus-sdk/mini-alloc"]
+contract-client-gen = []
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+opt-level = 3
