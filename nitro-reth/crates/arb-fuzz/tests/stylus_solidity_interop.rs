@@ -36,7 +36,8 @@ use arb_test_harness::{
 };
 
 const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
-const FUZZ_GAS_CAP: u64 = 8_000_000;
+const INVOKE_GAS_CAP: u64 = 30_000_000;
+const DEPLOY_GAS_CAP: u64 = 150_000_000;
 const SEQUENCER_ALIAS: Address = Address::new([
     0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
     0x6e, 0x63, 0x65, 0x72,
@@ -109,7 +110,7 @@ fn stylus_solidity_reentrancy_matches_canon() {
         None,
         Bytes::from(initcode),
         U256::ZERO,
-        FUZZ_GAS_CAP,
+        DEPLOY_GAS_CAP,
     )
     .build()
     .expect("stylus deploy");
@@ -127,7 +128,7 @@ fn stylus_solidity_reentrancy_matches_canon() {
         Some(ARBWASM_ADDR),
         Bytes::from(activate_data),
         U256::from(10u128).pow(U256::from(15u64)),
-        FUZZ_GAS_CAP,
+        INVOKE_GAS_CAP,
     )
     .build()
     .expect("activate");
@@ -142,7 +143,7 @@ fn stylus_solidity_reentrancy_matches_canon() {
         None,
         Bytes::from(wrap_init_code(&reentrant_runtime())),
         U256::ZERO,
-        FUZZ_GAS_CAP,
+        DEPLOY_GAS_CAP,
     )
     .build()
     .expect("reentrant deploy");
@@ -160,7 +161,7 @@ fn stylus_solidity_reentrancy_matches_canon() {
         Some(reentrant_addr),
         Bytes::from(attack_calldata),
         U256::ZERO,
-        FUZZ_GAS_CAP,
+        INVOKE_GAS_CAP,
     )
     .build()
     .expect("attack");

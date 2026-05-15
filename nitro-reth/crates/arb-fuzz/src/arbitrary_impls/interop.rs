@@ -20,9 +20,15 @@ use arb_test_harness::{
 };
 
 use crate::{
-    arbitrary_impls::{message_step, ArbosVersion, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE},
+    arbitrary_impls::{message_step, ArbosVersion, FUZZ_L1_BASE_FEE},
     shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
 };
+
+/// Gas cap for invocations.
+const INVOKE_GAS_CAP: u64 = 30_000_000;
+/// Gas cap for deploys of real Stylus initcode (up to ~14 KB of calldata).
+/// Has to absorb posterGas for the whole initcode at L1 base fee = 30 Gwei.
+const DEPLOY_GAS_CAP: u64 = 150_000_000;
 
 const SEQUENCER_ALIAS: Address = Address::new([
     0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
@@ -153,7 +159,7 @@ impl DiffStylusInteropScenario {
             None,
             Bytes::from(deploy_initcode),
             U256::ZERO,
-            FUZZ_GAS_CAP,
+            DEPLOY_GAS_CAP,
         )
         .build()
         .ok()?;
@@ -171,7 +177,7 @@ impl DiffStylusInteropScenario {
             Some(ARBWASM_ADDR),
             Bytes::from(activate_data),
             U256::from(10u128).pow(U256::from(15u64)),
-            FUZZ_GAS_CAP,
+            INVOKE_GAS_CAP,
         )
         .build()
         .ok()?;
@@ -187,7 +193,7 @@ impl DiffStylusInteropScenario {
             let companion = create_address(eoa, next_nonce);
             companion_addr = Some(companion);
             let deploy_companion =
-                signed_eip1559(next_nonce, None, Bytes::from(initcode), U256::ZERO, FUZZ_GAS_CAP)
+                signed_eip1559(next_nonce, None, Bytes::from(initcode), U256::ZERO, DEPLOY_GAS_CAP)
                     .build()
                     .ok()?;
             let idx = next_msg_idx();
@@ -198,7 +204,7 @@ impl DiffStylusInteropScenario {
         // 5. Action-seeded invoke.
         let calldata = self.build_calldata(companion_addr);
         let invoke =
-            signed_eip1559(next_nonce, Some(stylus_addr), Bytes::from(calldata), U256::ZERO, FUZZ_GAS_CAP)
+            signed_eip1559(next_nonce, Some(stylus_addr), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
                 .build()
                 .ok()?;
         let idx = next_msg_idx();
