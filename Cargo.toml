@@ -93,6 +93,10 @@ sha2 = { version = "0.10.9" }
 sha3 = { version = "0.10.8" }
 siphasher = { version = "0.3.10" }
 smallvec = { version = "1.10.0" }
+sp1-build = { version = "6.2.1", features = ["may_dump_elf"] }
+sp1-core-executor = { version = "6.2.1" }
+sp1-sdk = { version = "6.2.1", features = ["mprotect"] }
+sp1-zkvm = { version = "6.2.1", features = ["untrusted_programs", "may_dump_elf"] }
 spin = { version = "0.10.0" }
 static_assertions = { version = "1.1.0" }
 structopt = { version = "0.3.26" }
@@ -126,14 +130,6 @@ wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }
 wasmer-compiler-singlepass = { path = "crates/tools/wasmer/lib/compiler-singlepass", default-features = false }
 wasmer-types = { path = "crates/tools/wasmer/lib/types" }
 wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
-
-# SP1 dependencies, all pinned to the same commit that brings the mprotect feature to the `main` branch
-# (https://github.com/succinctlabs/sp1/pull/2725). We use `rev` to avoid accidentally picking up newer commits that may
-# have breaking changes. This is an intermediate solution until SP1 publishes the next minor release.
-sp1-build = { version = "6.2.1", features = ["may_dump_elf"] }
-sp1-core-executor = { version = "6.2.1" }
-sp1-sdk = { version = "6.2.1", features = ["mprotect"] }
-sp1-zkvm = { version = "6.2.1", features = ["untrusted_programs", "may_dump_elf"] }
 
 [patch.crates-io]
 target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
