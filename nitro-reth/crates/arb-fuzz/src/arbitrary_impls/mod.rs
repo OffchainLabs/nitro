@@ -1,4 +1,5 @@
 pub mod arbos;
+pub mod interop;
 pub mod multi;
 pub mod retryable;
 pub mod signed_tx;
@@ -6,6 +7,7 @@ pub mod stylus;
 pub mod tx;
 
 pub use arbos::ArbosVersion;
+pub use interop::{DiffStylusInteropScenario, WhichProgram};
 pub use multi::{ArbWasmArgKind, ArbWasmReadMethod, DiffMultiMsgScenario, MessageStep, SignedKind};
 pub use retryable::DiffRetryableScenario;
 pub use signed_tx::{AuthInput, DiffSignedTxScenario, SignedTxKind};
