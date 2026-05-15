@@ -105,5 +105,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "diff_stylus_interop"
+path = "fuzz_targets/diff_stylus_interop.rs"
+test = false
+doc = false
+bench = false
+
 [lints]
 workspace = true
