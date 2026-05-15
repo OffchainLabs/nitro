@@ -88,6 +88,10 @@ sha2 = { version = "0.10.9" }
 sha3 = { version = "0.10.8" }
 siphasher = { version = "0.3.10" }
 smallvec = { version = "1.10.0" }
+sp1-build = { version = "6.2.1" }
+sp1-core-executor = { version = "6.2.1" }
+sp1-sdk = { version = "6.2.1" }
+sp1-zkvm = { version = "6.2.1" }
 spin = { version = "0.10.0" }
 static_assertions = { version = "1.1.0" }
 structopt = { version = "0.3.26" }
@@ -122,24 +126,13 @@ wasmer-compiler-singlepass = { path = "crates/tools/wasmer/lib/compiler-singlepa
 wasmer-types = { path = "crates/tools/wasmer/lib/types" }
 wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
 
-# SP1 dependencies, all pinned to the same commit that brings the mprotect feature to the `main` branch
-# (https://github.com/succinctlabs/sp1/pull/2725). We use `rev` to avoid accidentally picking up newer commits that may
-# have breaking changes. This is an intermediate solution until SP1 publishes the next minor release.
-sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "2448769", features = ["may_dump_elf"] }
-sp1-core-executor = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
-sp1-sdk = { git = "https://github.com/succinctlabs/sp1", rev = "2448769", features = ["mprotect"] }
-sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "2448769", features = ["untrusted_programs", "may_dump_elf"] }
-
 [patch.crates-io]
 target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
-region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1-2448769" }
-corosensei = { git = "https://github.com/OffchainLabs/corosensei", tag = "v0.3.3-sp1-2448769" }
+region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1-v6.2.1" }
+corosensei = { git = "https://github.com/OffchainLabs/corosensei", tag = "v0.3.3-sp1-v6.2.1" }
 which = { git = "https://github.com/OffchainLabs/which-rs", tag = "v8.0.2-sp1" }
-
-tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0-pre" }
-secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-6.0.0-rc.2" }
-sp1-lib = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
-sp1-primitives = { git = "https://github.com/succinctlabs/sp1", rev = "2448769" }
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.2.0" }
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0" }
 
 [profile.release]
 debug = true
