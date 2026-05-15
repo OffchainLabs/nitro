@@ -640,7 +640,6 @@ fn stylus_diff_matrix() {
                     let new_block_diffs: Vec<_> = report
                         .block_diffs
                         .iter()
-                        .filter(|d| d.field != "state_root" && d.field != "parent_hash")
                         .filter(|d| sb.insert((d.number, d.field.clone())))
                         .collect();
                     drop(sb);
@@ -703,7 +702,6 @@ fn stylus_diff_matrix() {
                     let new_block_diffs: Vec<_> = report
                         .block_diffs
                         .iter()
-                        .filter(|d| d.field != "state_root" && d.field != "parent_hash")
                         .filter(|d| sb.insert((d.number, d.field.clone())))
                         .collect();
                     drop(sb);

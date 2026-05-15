@@ -312,21 +312,7 @@ fn factory_activate_inner_call_matches_canon() {
         nodes.run(&scen).expect("run factory_activate scenario")
     };
 
-    // state_root/parent_hash diffs are pre-existing harness noise from
-    // Nitro's geth-fork trie hashing; ignore them and only fail on the
-    // signals that indicate the value-flow bug: tx status/gas, logs, or
-    // per-account state.
-    let real_block: Vec<_> = report
-        .block_diffs
-        .iter()
-        .filter(|d| d.field != "state_root" && d.field != "parent_hash")
-        .filter(|d| {
-            // gas_used differences on the deploy + trampoline-deploy blocks
-            // would also be unrelated to the value-flow bug; only flag the
-            // activate block (idx 4 in this scenario).
-            true
-        })
-        .collect();
+    let real_block: Vec<_> = report.block_diffs.iter().collect();
 
     if !real_block.is_empty()
         || !report.tx_diffs.is_empty()

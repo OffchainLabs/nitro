@@ -180,12 +180,7 @@ fn multi_block_manual_redeem_underpriced_matches_canon() {
         nodes.run(&scen).expect("run scenario")
     };
 
-    // Strip pre-existing Nitro vs reth state-trie hashing noise.
-    let real_block: Vec<_> = report
-        .block_diffs
-        .iter()
-        .filter(|d| d.field != "state_root" && d.field != "parent_hash")
-        .collect();
+    let real_block: Vec<_> = report.block_diffs.iter().collect();
 
     if !real_block.is_empty()
         || !report.tx_diffs.is_empty()

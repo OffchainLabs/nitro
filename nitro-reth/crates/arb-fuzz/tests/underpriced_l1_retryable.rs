@@ -120,13 +120,7 @@ fn underpriced_submit_retryable_matches_canon() {
         nodes.run(&scen).expect("run scenario")
     };
 
-    // state_root / parent_hash are pre-existing harness noise from Nitro's
-    // geth-fork trie hashing; ignore them. Anything else is a real divergence.
-    let real_block: Vec<_> = report
-        .block_diffs
-        .iter()
-        .filter(|d| d.field != "state_root" && d.field != "parent_hash")
-        .collect();
+    let real_block: Vec<_> = report.block_diffs.iter().collect();
 
     if !real_block.is_empty()
         || !report.tx_diffs.is_empty()

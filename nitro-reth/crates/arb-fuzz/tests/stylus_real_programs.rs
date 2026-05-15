@@ -2,13 +2,13 @@
 //!
 //! For each program (counter, erc20_mini, sol_caller, storage_stress) we
 //! deploy once, activate once, then fire a handful of calldata patterns and
-//! diff against the Nitro Docker reference via `shared_dual_exec`. Anything
-//! beyond pre-known state_root/parent_hash trie noise is dumped to
+//! diff against the Nitro Docker reference via `shared_dual_exec`. Any
+//! divergence (no field-level filters) is dumped to
 //! `/tmp/stylus_real_programs/divergences/`.
 //!
 //! Run with:
 //!   ARB_SPEC_BINARY=$(pwd)/target/release/arb-reth \
-//!     NITRO_REF_IMAGE=offchainlabs/nitro-node:v3.10.0-rc.2-746bda2 \
+//!     NITRO_REF_IMAGE=offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db \
 //!     cargo test -p arb-fuzz --test stylus_real_programs --release \
 //!     -- --ignored --nocapture
 
@@ -102,7 +102,6 @@ fn stylus_real_programs_diff_matrix() {
                         let new_block_diffs: Vec<_> = report
                             .block_diffs
                             .iter()
-                            .filter(|d| d.field != "state_root" && d.field != "parent_hash")
                             .filter(|d| sb.insert((d.number, d.field.clone())))
                             .collect();
                         drop(sb);

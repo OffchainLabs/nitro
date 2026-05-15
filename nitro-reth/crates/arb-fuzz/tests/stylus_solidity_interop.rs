@@ -12,7 +12,7 @@
 //!
 //! Run with:
 //!   ARB_SPEC_BINARY=$(pwd)/target/release/arb-reth \
-//!     NITRO_REF_IMAGE=offchainlabs/nitro-node:v3.10.0-rc.2-746bda2 \
+//!     NITRO_REF_IMAGE=offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db \
 //!     cargo test -p arb-fuzz --test stylus_solidity_interop --release \
 //!     -- --ignored --nocapture
 
@@ -183,11 +183,7 @@ fn stylus_solidity_reentrancy_matches_canon() {
     let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
     let report = nodes.run(&scen).expect("run reentrancy scenario");
 
-    let real_block: Vec<_> = report
-        .block_diffs
-        .iter()
-        .filter(|d| d.field != "state_root" && d.field != "parent_hash")
-        .collect();
+    let real_block: Vec<_> = report.block_diffs.iter().collect();
 
     if !real_block.is_empty()
         || !report.tx_diffs.is_empty()
