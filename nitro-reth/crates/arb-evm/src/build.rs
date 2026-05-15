@@ -1831,20 +1831,22 @@ where
                 }
             }
 
-            // Base fee check. cfg.disable_base_fee is on chain-wide for
-            // tx types with special fee semantics (RetryTx, SubmitRetryable,
-            // Deposit, Internal). Enforce it per-tx for everything else,
-            // including ArbitrumUnsignedTx (0x65) — underpriced unsigned
-            // txs from L2FundedByL1 messages must be dropped pre-EVM, not
-            // executed. ContractTx (0x66) keeps the skip.
-            if !is_contract_tx {
-                let base_fee = self.arb_ctx.basefee;
-                if U256::from(upfront_gas_price) < base_fee {
-                    rollback_pre_exec_state(self, calldata_units);
-                    return Err(BlockExecutionError::msg(format!(
-                        "max fee per gas less than block base fee: address {sender}, maxFeePerGas: {upfront_gas_price}, baseFee: {base_fee}"
-                    )));
-                }
+            // Base fee check. cfg.disable_base_fee is set chain-wide so revm
+            // skips London's preCheck for every tx. The Go preCheck (state_transition.go
+            // preCheck) only skips the basefee comparison when NoBaseFee is on AND
+            // both GasFeeCap and GasTipCap are zero — i.e. tx types with no fee
+            // intent (ArbitrumDepositTx, ArbitrumInternalTx). Every other user tx,
+            // including ArbitrumUnsignedTx (0x65), ArbitrumContractTx (0x66),
+            // ArbitrumRetryTx (0x68), and ArbitrumSubmitRetryableTx (0x69), has a
+            // non-zero GasFeeCap and gets the check applied. is_user_tx already
+            // excludes deposit and internal, and retry/submit-retryable are not
+            // user txs in this branch.
+            let base_fee = self.arb_ctx.basefee;
+            if U256::from(upfront_gas_price) < base_fee {
+                rollback_pre_exec_state(self, calldata_units);
+                return Err(BlockExecutionError::msg(format!(
+                    "max fee per gas less than block base fee: address {sender}, maxFeePerGas: {upfront_gas_price}, baseFee: {base_fee}"
+                )));
             }
 
             let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
