@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 
 use arb_test_harness::rpc::JsonRpcClient;
 
-const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.2-746bda2";
+const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const RPC_TIMEOUT: Duration = Duration::from_secs(60);
 

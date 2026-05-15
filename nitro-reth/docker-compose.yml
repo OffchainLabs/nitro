@@ -43,7 +43,7 @@ services:
       start_period: 30s
 
   nitro:
-    image: ${NITRO_IMAGE:-offchainlabs/nitro-node:v3.10.0-rc.2-746bda2}
+    image: ${NITRO_IMAGE:-offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db}
     container_name: nitro
     user: root
     entrypoint: /usr/local/bin/nitro
