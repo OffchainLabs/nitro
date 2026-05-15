@@ -45,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/rpcserver"
@@ -436,7 +437,21 @@ func CreateExecutionNode(
 	case BlockRecorderModeLegacy:
 		recorder = NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	case BlockRecorderModeChainTip:
-		recorder = NewChainTipBlockRecorder(execEngine)
+		var chainTipBlockRecordsDB ethdb.Database
+		if stack.Config().DBEngine == dbutil.MemoryDB {
+			chainTipBlockRecordsDB = rawdb.NewMemoryDatabase()
+		} else {
+			chainTipBlockRecordsDB, err = stack.OpenDatabaseWithOptions(chainTipBlockRecordsDatabaseName, node.DatabaseOptions{
+				MetricsNamespace: "chaintipblockrecords/",
+				Cache:            0,
+				Handles:          0,
+				NoFreezer:        true,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to open chain-tip block records database: %w", err)
+			}
+		}
+		recorder = NewChainTipBlockRecorder(execEngine, newBlockRecordsDatabase(chainTipBlockRecordsDB))
 	default:
 		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
 	}

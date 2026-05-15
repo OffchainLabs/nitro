@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 
@@ -37,9 +38,10 @@ func newTestRecorderEngine(t *testing.T, blocks int) *ExecutionEngine {
 	return &ExecutionEngine{bc: bc}
 }
 
-func TestChainTipRecorderMissesNonTipPositions(t *testing.T) {
+func TestChainTipRecorderMissesUnrecordedPositions(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
-	recorder := NewChainTipBlockRecorder(engine)
+	store := newBlockRecordsDatabase(rawdb.NewMemoryDatabase())
+	recorder := NewChainTipBlockRecorder(engine, store)
 
 	if _, err := recorder.Recording(2, nil); err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("expected unavailable error before any recording, got err=%v", err)
@@ -72,59 +74,10 @@ func TestChainTipRecorderMissesNonTipPositions(t *testing.T) {
 	}
 }
 
-func TestChainTipRecorderIgnoresOlderRecordings(t *testing.T) {
-	engine := newTestRecorderEngine(t, 3)
-	recorder := NewChainTipBlockRecorder(engine)
-
-	record := func(block *types.Block) {
-		t.Helper()
-		if err := recorder.RecordTip(block, nil, block.NumberU64(), nil, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	posOf := func(number uint64) arbutil.MessageIndex {
-		t.Helper()
-		pos, err := engine.BlockNumberToMessageIndex(number)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return pos
-	}
-
-	record(engine.bc.GetBlockByNumber(2))
-
-	record(engine.bc.GetBlockByNumber(1))
-	served, err := recorder.Recording(posOf(2), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if served.BlockHash != engine.bc.GetBlockByNumber(2).Hash() {
-		t.Fatalf("expected retained tip to survive older write, got %s", served.BlockHash)
-	}
-
-	record(engine.bc.GetBlockByNumber(3))
-	if _, err := recorder.Recording(posOf(2), nil); err == nil {
-		t.Fatal("expected previous tip to be replaced by newer recording")
-	}
-	served, err = recorder.Recording(posOf(3), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if served.BlockHash != engine.bc.GetBlockByNumber(3).Hash() {
-		t.Fatalf("expected newer recording to serve, got %s", served.BlockHash)
-	}
-
-	header := engine.bc.GetBlockByNumber(3).Header()
-	header.Extra = []byte("same-height fork")
-	record(types.NewBlock(header, &types.Body{}, nil, trie.NewStackTrie(nil)))
-	if _, err := recorder.Recording(posOf(3), nil); err == nil || !strings.Contains(err.Error(), "stale") {
-		t.Fatalf("expected same-position overwrite to replace the tip, got err=%v", err)
-	}
-}
-
 func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
-	recorder := NewChainTipBlockRecorder(engine)
+	store := newBlockRecordsDatabase(rawdb.NewMemoryDatabase())
+	recorder := NewChainTipBlockRecorder(engine, store)
 
 	block := engine.bc.GetBlockByNumber(2)
 	pos, err := engine.BlockNumberToMessageIndex(block.NumberU64())
@@ -132,7 +85,8 @@ func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	fabricate := func(codeHashes []common.Hash, wasmKeys []wasmKey) {
-		recorder.lastRecording = &chainTipRecording{
+		t.Helper()
+		if err := store.writeRecording(&chainTipRecording{
 			record: &execution.RecordResult{
 				Pos:       pos,
 				BlockHash: block.Hash(),
@@ -142,6 +96,8 @@ func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 			firstHeaderNumber: block.NumberU64(),
 			codeHashes:        codeHashes,
 			wasmKeys:          wasmKeys,
+		}); err != nil {
+			t.Fatal(err)
 		}
 	}
 
@@ -167,7 +123,8 @@ func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 
 func TestChainTipRecorderRejectsStaleRecording(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
-	recorder := NewChainTipBlockRecorder(engine)
+	store := newBlockRecordsDatabase(rawdb.NewMemoryDatabase())
+	recorder := NewChainTipBlockRecorder(engine, store)
 
 	header := engine.bc.GetBlockByNumber(2).Header()
 	header.Extra = []byte("orphaned fork")
@@ -186,12 +143,14 @@ func TestChainTipRecorderRejectsStaleRecording(t *testing.T) {
 		t.Fatalf("expected served count 0, got %d", recorder.ServedTipRecordings())
 	}
 
-	recorder.lastRecording = &chainTipRecording{
+	if err := store.writeRecording(&chainTipRecording{
 		record: &execution.RecordResult{
 			Pos:       pos,
 			BlockHash: engine.bc.GetBlockByNumber(2).Hash(),
 		},
 		blockNumber: 3,
+	}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := recorder.Recording(pos, nil); err == nil || !strings.Contains(err.Error(), "mismatch") {
 		t.Fatalf("expected block number mismatch to be rejected, got err=%v", err)
@@ -305,5 +264,214 @@ func TestRecentHeaderPreimageCacheRetainsRecentEntries(t *testing.T) {
 	}
 	if _, ok := recorder.GetRecordedHeaderPreimage(newestHeader); !ok {
 		t.Fatal("expected newest block to be cached")
+	}
+}
+
+func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	store := newBlockRecordsDatabase(db)
+	pos := arbutil.MessageIndex(42)
+	preimageHash := testHash(1)
+	preimage := []byte{1, 2, 3}
+	recording := &chainTipRecording{
+		record: &execution.RecordResult{
+			Pos:       pos,
+			BlockHash: testHash(2),
+			Preimages: map[common.Hash][]byte{
+				preimageHash: preimage,
+			},
+		},
+		blockNumber:       100,
+		parentHash:        testHash(3),
+		firstHeaderNumber: 99,
+		codeHashes:        []common.Hash{testHash(4)},
+		wasmKeys: []wasmKey{{
+			moduleHash: testHash(5),
+			target:     rawdb.TargetWavm,
+		}},
+	}
+
+	if err := store.writeRecording(recording); err != nil {
+		t.Fatal(err)
+	}
+	preimage[0] = 9
+
+	loaded, ok, err := store.readRecording(pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected persisted recording")
+	}
+	if loaded.record.Pos != pos {
+		t.Fatalf("unexpected pos: %d", loaded.record.Pos)
+	}
+	if loaded.record.BlockHash != recording.record.BlockHash {
+		t.Fatalf("unexpected block hash: %s", loaded.record.BlockHash)
+	}
+	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
+		t.Fatalf("unexpected preimage: %v", loaded.record.Preimages[preimageHash])
+	}
+	if loaded.blockNumber != recording.blockNumber || loaded.parentHash != recording.parentHash || loaded.firstHeaderNumber != recording.firstHeaderNumber {
+		t.Fatalf("unexpected block metadata: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
+	}
+	if len(loaded.codeHashes) != 1 || loaded.codeHashes[0] != recording.codeHashes[0] {
+		t.Fatalf("unexpected code hashes: %v", loaded.codeHashes)
+	}
+	if len(loaded.wasmKeys) != 1 || loaded.wasmKeys[0] != recording.wasmKeys[0] {
+		t.Fatalf("unexpected wasm keys: %v", loaded.wasmKeys)
+	}
+
+	loaded.record.Preimages[preimageHash][0] = 8
+	loaded, ok, err = store.readRecording(pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected persisted recording after caller mutation")
+	}
+	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
+		t.Fatalf("persisted preimage was mutable, got %v", loaded.record.Preimages[preimageHash])
+	}
+}
+
+func TestBlockRecordsDatabasePersistsAcrossReopen(t *testing.T) {
+	dir := t.TempDir()
+	db, err := node.NewPebbleDBDatabase(dir, 0, 0, "", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newBlockRecordsDatabase(db)
+	pos := arbutil.MessageIndex(42)
+	preimageHash := testHash(1)
+	if err := store.writeRecording(&chainTipRecording{
+		record: &execution.RecordResult{
+			Pos:       pos,
+			BlockHash: testHash(2),
+			Preimages: map[common.Hash][]byte{
+				preimageHash: {1, 2, 3},
+			},
+		},
+		blockNumber:       100,
+		parentHash:        testHash(3),
+		firstHeaderNumber: 99,
+		codeHashes:        []common.Hash{testHash(4)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = node.NewPebbleDBDatabase(dir, 0, 0, "", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store = newBlockRecordsDatabase(db)
+	loaded, ok, err := store.readRecording(pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected persisted recording after reopening database")
+	}
+	if loaded.record.Pos != pos || loaded.record.BlockHash != testHash(2) {
+		t.Fatalf("unexpected loaded record: %+v", loaded.record)
+	}
+	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
+		t.Fatalf("unexpected preimage after reopening database: %v", loaded.record.Preimages[preimageHash])
+	}
+	if loaded.blockNumber != 100 || loaded.parentHash != testHash(3) || loaded.firstHeaderNumber != 99 {
+		t.Fatalf("unexpected block metadata after reopening database: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
+	}
+	if len(loaded.codeHashes) != 1 || loaded.codeHashes[0] != testHash(4) {
+		t.Fatalf("unexpected code hashes after reopening database: %v", loaded.codeHashes)
+	}
+}
+
+func TestBlockRecordsDatabaseReadMissing(t *testing.T) {
+	store := newBlockRecordsDatabase(rawdb.NewMemoryDatabase())
+	loaded, ok, err := store.readRecording(arbutil.MessageIndex(42))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || loaded != nil {
+		t.Fatalf("expected missing recording, got ok=%t loaded=%+v", ok, loaded)
+	}
+}
+
+func TestChainTipRecorderReadsPersistedRecording(t *testing.T) {
+	store := newBlockRecordsDatabase(rawdb.NewMemoryDatabase())
+	pos := arbutil.MessageIndex(42)
+	preimageHash := testHash(1)
+	if err := store.writeRecording(&chainTipRecording{
+		record: &execution.RecordResult{
+			Pos:       pos,
+			BlockHash: testHash(2),
+			Preimages: map[common.Hash][]byte{
+				preimageHash: {1, 2, 3},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &ChainTipBlockRecorder{
+		recordsDatabase: store,
+	}
+
+	record, err := recorder.Recording(pos, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Pos != pos {
+		t.Fatalf("unexpected pos: %d", record.Pos)
+	}
+	if !bytes.Equal(record.Preimages[preimageHash], []byte{1, 2, 3}) {
+		t.Fatalf("unexpected preimage: %v", record.Preimages[preimageHash])
+	}
+	if recorder.ServedTipRecordings() != 1 {
+		t.Fatalf("expected served count 1, got %d", recorder.ServedTipRecordings())
+	}
+}
+
+func TestChainTipRecorderReadsMultiplePersistedRecordings(t *testing.T) {
+	store := newBlockRecordsDatabase(rawdb.NewMemoryDatabase())
+	preimageHash := testHash(1)
+	positions := []arbutil.MessageIndex{40, 41, 42}
+	for _, pos := range positions {
+		if err := store.writeRecording(&chainTipRecording{
+			record: &execution.RecordResult{
+				Pos:       pos,
+				BlockHash: testHash(byte(pos)),
+				Preimages: map[common.Hash][]byte{
+					preimageHash: {byte(pos)},
+				},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorder := &ChainTipBlockRecorder{
+		recordsDatabase: store,
+	}
+
+	for _, pos := range positions {
+		record, err := recorder.Recording(pos, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.Pos != pos {
+			t.Fatalf("unexpected pos: %d", record.Pos)
+		}
+		if record.BlockHash != testHash(byte(pos)) {
+			t.Fatalf("unexpected block hash: %s", record.BlockHash)
+		}
+		if !bytes.Equal(record.Preimages[preimageHash], []byte{byte(pos)}) {
+			t.Fatalf("unexpected preimage for pos %d: %v", pos, record.Preimages[preimageHash])
+		}
+	}
+	if recorder.ServedTipRecordings() != uint64(len(positions)) {
+		t.Fatalf("expected served count %d, got %d", len(positions), recorder.ServedTipRecordings())
 	}
 }
