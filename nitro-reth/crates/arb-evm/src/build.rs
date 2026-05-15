@@ -1831,6 +1831,22 @@ where
                 }
             }
 
+            // Base fee check. cfg.disable_base_fee is on chain-wide for
+            // tx types with special fee semantics (RetryTx, SubmitRetryable,
+            // Deposit, Internal). Enforce it per-tx for everything else,
+            // including ArbitrumUnsignedTx (0x65) — underpriced unsigned
+            // txs from L2FundedByL1 messages must be dropped pre-EVM, not
+            // executed. ContractTx (0x66) keeps the skip.
+            if !is_contract_tx {
+                let base_fee = self.arb_ctx.basefee;
+                if U256::from(upfront_gas_price) < base_fee {
+                    rollback_pre_exec_state(self, calldata_units);
+                    return Err(BlockExecutionError::msg(format!(
+                        "max fee per gas less than block base fee: address {sender}, maxFeePerGas: {upfront_gas_price}, baseFee: {base_fee}"
+                    )));
+                }
+            }
+
             let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
             let tx_value = revm::context_interface::Transaction::value(&tx_env);
             let total_cost = gas_cost.saturating_add(tx_value);
