@@ -16,7 +16,7 @@ path = "main.rs"
 [dependencies]
 bincode = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-sp1-sdk = { workspace = true, features = ["blocking"] }
+sp1-sdk = { workspace = true, features = ["blocking", "mprotect"] }
 stylus-compiler-program = { workspace = true }
 tracing = { workspace = true }
 
