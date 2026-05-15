@@ -39,7 +39,6 @@ type ChainTipBlockRecorder struct {
 	execEngine *ExecutionEngine
 
 	lock                sync.Mutex
-	enabled             atomic.Bool
 	lastRecording       *chainTipRecording
 	headerPreimages     recentHeaderPreimageCache
 	servedTipRecordings atomic.Uint64
@@ -51,18 +50,6 @@ func NewChainTipBlockRecorder(execEngine *ExecutionEngine) *ChainTipBlockRecorde
 	}
 	execEngine.SetTipRecorder(recorder)
 	return recorder
-}
-
-func (r *ChainTipBlockRecorder) Enable() {
-	r.enabled.Store(true)
-}
-
-func (r *ChainTipBlockRecorder) Disable() {
-	r.enabled.Store(false)
-}
-
-func (r *ChainTipBlockRecorder) Enabled() bool {
-	return r != nil && r.enabled.Load()
 }
 
 func copyPreimageMap(preimages map[common.Hash][]byte) map[common.Hash][]byte {
@@ -116,7 +103,7 @@ func copyChainTipRecording(recording *chainTipRecording) *chainTipRecording {
 }
 
 func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[common.Hash][]byte, codeHashes []common.Hash, userWasms state.UserWasms) error {
-	if !r.Enabled() || block == nil {
+	if block == nil {
 		return nil
 	}
 	pos, err := r.execEngine.BlockNumberToMessageIndex(block.NumberU64())
@@ -194,9 +181,6 @@ func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, ke
 }
 
 func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.RecordResult, error) {
-	if !r.Enabled() {
-		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
-	}
 	r.lock.Lock()
 	recording := copyChainTipRecording(r.lastRecording)
 	r.lock.Unlock()

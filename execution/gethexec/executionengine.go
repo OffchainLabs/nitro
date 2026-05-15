@@ -700,7 +700,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 
 	var statedb *state.StateDB
 	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
-	recordAtTip := s.tipRecorder != nil && s.tipRecorder.Enabled()
+	recordAtTip := s.tipRecorder != nil
 	runCtx := core.NewMessageSequencingContext(s.wasmTargets)
 	if recordAtTip {
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
@@ -943,7 +943,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 	var statedb *state.StateDB
 	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
-	recordAtTip := s.tipRecorder != nil && s.tipRecorder.Enabled() && !isMsgForPrefetch
+	recordAtTip := s.tipRecorder != nil && !isMsgForPrefetch
 	if recordAtTip {
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
 		statedb, err = state.NewDeterministic(currentHeader.Root, tipRecordingStateDatabase)
@@ -1055,7 +1055,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 }
 
 func (s *ExecutionEngine) recordChainTipCandidate(block *types.Block, statedb *state.StateDB, tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase) error {
-	if block == nil || statedb == nil || tipRecordingStateDatabase == nil || s.tipRecorder == nil || !s.tipRecorder.Enabled() {
+	if block == nil || statedb == nil || tipRecordingStateDatabase == nil || s.tipRecorder == nil {
 		return nil
 	}
 	// Record before consensus/block side effects; canonical validation prevents

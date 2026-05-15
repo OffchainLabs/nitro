@@ -96,7 +96,7 @@ func TestValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 }
 
 func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme string) {
-	builder, auth, cleanup := setupProgramTestWithScheme(t, false, stateScheme)
+	builder, auth, cleanup := setupProgramTestWithScheme(t, false, stateScheme, enableChainTipBlockRecorder)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
@@ -122,7 +122,6 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme 
 
 	recorderUsers := seedValidationRecordingTrieShape(t, ctx, builder, programAddress)
 
-	builder.L2.ExecNode.ChainTipRecorder.Enable()
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	tx = l2info.PrepareTxTo(recorderUsers[0], &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
@@ -186,6 +185,10 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme 
 	moduleRoot := builder.L2.ConsensusNode.StatelessBlockValidator.GetLatestWasmModuleRoot()
 	runValidationInput(t, ctx, valClient, storageValidationInput, moduleRoot, storageExpectedEndState)
 	runValidationInput(t, ctx, valClient, blockHashValidationInput, moduleRoot, blockHashInputJson.ExpectedEndState)
+}
+
+func enableChainTipBlockRecorder(builder *NodeBuilder) {
+	builder.execConfig.ChainTipBlockRecorder.Enable = true
 }
 
 func seedValidationRecordingTrieShape(t *testing.T, ctx context.Context, builder *NodeBuilder, programAddress common.Address) []string {
