@@ -282,12 +282,17 @@ fn assert_cache_state_root_matches(version: u64, expected_state_root: B256, expe
     );
 }
 
+// Expected state roots and block hashes pinned against Nitro
+// v3.10.0-rc.10-b1cf6db running with the same chain config. These values
+// were captured by booting Nitro with `--init.empty=true` for chain
+// 412346 at each ArbOS version and reading `eth_getBlockByNumber("0x0")`.
+
 #[test]
 fn cache_state_root_matches_v10_baseline() {
     assert_cache_state_root_matches(
         10,
-        hex!("5c0b434552d04dcd5c723669d1b332f1837dee591bb24a3aac637e3a2aca7185").into(),
-        hex!("2116ae1892bcc05016222bd57af91945f425eeca1f7c6bacfcf0d67d4ed00f88").into(),
+        hex!("d425eb86b27a5a4ceae5c438301cb33721bebc1bd61e8ce13ade2afd2e98186e").into(),
+        hex!("7494afa12bd58d3cd38ffd7532d9967286bfe9f21df4dff22a95d1879960b32d").into(),
     );
 }
 
@@ -295,8 +300,8 @@ fn cache_state_root_matches_v10_baseline() {
 fn cache_state_root_matches_v32_baseline() {
     assert_cache_state_root_matches(
         32,
-        hex!("471d193420070fdfecec116f46b15937d7244f595901ca12ef4ce4ddbf53cd68").into(),
-        hex!("a6c2936f68ae2910e30976a234bb9f09aacb22b6dce5f3fe3a1b1c426b46fa57").into(),
+        hex!("2cc6d4bdd16580d653d2be4ec9eabf2116b8e8cc230d06e71dff340e7d618b69").into(),
+        hex!("679982fc32cb754244dcebbb143aed0dc4605f880bc1a9edac2e47eb6d649d59").into(),
     );
 }
 
@@ -304,8 +309,8 @@ fn cache_state_root_matches_v32_baseline() {
 fn cache_state_root_matches_v50_baseline() {
     assert_cache_state_root_matches(
         50,
-        hex!("7df9d696ad8176680f675557ef0a0e9276d9510c040dc1a24a9296b4a9d8d694").into(),
-        hex!("08cad158d0956351511d1e67cc48bc1ef089ec37c087d4e227b45a6fb71bac3e").into(),
+        hex!("76e063d48844f9be7f3e8c73fd8ab7ae0bbd1fba7102d61af7f4558e2a175618").into(),
+        hex!("e5544442fca4856d090f0905f0826c4c4fb85297d10ddf0f4cae9cb8212d03e9").into(),
     );
 }
 
@@ -313,8 +318,8 @@ fn cache_state_root_matches_v50_baseline() {
 fn cache_state_root_matches_v60_baseline() {
     assert_cache_state_root_matches(
         60,
-        hex!("6f96ed9046ded46b40bd3ac903158065be54827c0624229e9c6e0ff541c0c6df").into(),
-        hex!("d0564ff804de4b490ae5c3d252c66a886c10faa42730f983dd6bbe3dfbcfd07b").into(),
+        hex!("9f4d8a5f0c44ef796a28a0991f29c25dfafa4f08a5437d237b6564f60bf12411").into(),
+        hex!("cd9ea204ea07cfd2850511ca736828fc663cdbfb89b7276fd7f75fc747b0b67d").into(),
     );
 }
 
@@ -367,9 +372,13 @@ fn fresh_boot_v10_state_root_matches_nitro() {
     // at ArbOS v10. The harness sends Nitro the chain-config JSON below, then
     // Nitro re-marshals it during init and writes it to the chain_config
     // subspace. This test checks the resulting state root and block hash
-    // match what Nitro produces from that same input, including the
-    // pre-fix FilteredTransactionsState account that older Nitro builds
-    // unconditionally bump nonce on.
+    // match what Nitro v3.10.0-rc.10 produces from that same input.
+    //
+    // Note: as of the version-gating fix in nitro/master (commit 8e20d6348)
+    // the FilteredTransactionsState account no longer appears in the genesis
+    // trie for arbos < 60 — `openFilteredTransactions` is gated by
+    // ArbosVersion_TransactionFiltering (= v60). At v10 the account is
+    // therefore absent.
     let cfg = serde_json::json!({
         "config": {
             "chainId": 421614,
@@ -403,32 +412,27 @@ fn fresh_boot_v10_state_root_matches_nitro() {
     let hash = spec.genesis_hash();
 
     let expected_state_root: B256 =
-        hex!("ab6821d87dca1473891fee8b08d1582b61362bac1ce5bd7a6513afe6c86b1327").into();
+        hex!("856a97648b4620384242e1f8668a539136b547238821739ba9c390c50a7c3ffb").into();
     let expected_hash: B256 =
-        hex!("c84425bb7ca6315b83ebcc96ca814b7b7fc7eab6a734c47b48c94195500414fa").into();
+        hex!("a731172c44d43268eaafb374bb03f1320ce0dafa508153938c81a896bd576707").into();
     assert_eq!(
         header.state_root, expected_state_root,
-        "state root must match Nitro Docker fresh boot"
+        "state root must match Nitro Docker fresh boot (rc.10)"
     );
     assert_eq!(
         hash, expected_hash,
-        "block hash must match Nitro Docker fresh boot"
+        "block hash must match Nitro Docker fresh boot (rc.10)"
     );
 
-    // Sanity: 16 accounts (13 v0 precompile sentinels + ArbosActs + ArbosState
-    // + FilteredTransactionsState).
-    assert_eq!(spec.genesis().alloc.len(), 16);
+    // 15 accounts at v10: 14 v0 precompile sentinels + ArbosState.
+    assert_eq!(spec.genesis().alloc.len(), 15);
 
+    // FilteredTransactionsState account must not be present at v10.
     let filtered_tx_state: Address = address!("a4b0500000000000000000000000000000000001");
-    let acc = spec
-        .genesis()
-        .alloc
-        .get(&filtered_tx_state)
-        .expect("filtered tx state account must be present");
-    assert_eq!(acc.nonce, Some(1));
-    assert_eq!(acc.balance, U256::ZERO);
-    assert!(acc.code.is_none() || acc.code.as_ref().unwrap().is_empty());
-    assert!(acc.storage.is_none() || acc.storage.as_ref().unwrap().is_empty());
+    assert!(
+        spec.genesis().alloc.get(&filtered_tx_state).is_none(),
+        "filtered tx state account must not be present at arbos < v60",
+    );
 }
 
 /// The curated `genesis/arbitrum-sepolia.json` is the production-Sepolia

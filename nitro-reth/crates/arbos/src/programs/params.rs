@@ -16,7 +16,7 @@ pub const INITIAL_PAGE_GAS: u16 = 1000;
 pub const INITIAL_PAGE_RAMP: u64 = 620674314;
 const INITIAL_PAGE_LIMIT: u16 = 128;
 const INITIAL_INK_PRICE: u32 = 10000;
-const INITIAL_MAX_FRAGMENT_COUNT: u8 = 2;
+const INITIAL_MAX_FRAGMENT_COUNT: u8 = 4;
 const INITIAL_MIN_INIT_GAS: u8 = 72;
 const INITIAL_MIN_CACHED_GAS: u8 = 11;
 const INITIAL_INIT_COST_SCALAR: u8 = 50;
@@ -31,7 +31,8 @@ pub const MIN_CACHED_GAS_UNITS: u64 = 32;
 pub const MIN_INIT_GAS_UNITS: u64 = 128;
 pub const COST_SCALAR_PERCENT: u64 = 2;
 
-const ARBOS_50_MAX_WASM_SIZE: u32 = 22000;
+const ARBOS_50_MAX_STACK_DEPTH: u32 = 22000;
+const ARBOS_60_MAX_WASM_SIZE: u32 = 256 * 1024;
 
 /// Stylus configuration parameters packed into storage words.
 #[derive(Debug, Clone)]
@@ -136,7 +137,7 @@ impl StylusParams {
         Ok(())
     }
 
-    /// Upgrade the params version (e.g. 1 -> 2).
+    /// Upgrade the params version (e.g. 1 -> 2 -> 3).
     pub fn upgrade_to_version(&mut self, version: u16) -> Result<(), &'static str> {
         match version {
             2 => {
@@ -145,6 +146,13 @@ impl StylusParams {
                 }
                 self.version = 2;
                 self.min_init_gas = V2_MIN_INIT_GAS;
+                Ok(())
+            }
+            3 => {
+                if self.version != 2 {
+                    return Err("unexpected version for upgrade to 3");
+                }
+                self.version = 3;
                 Ok(())
             }
             _ => Err("unsupported version upgrade"),
@@ -159,8 +167,8 @@ impl StylusParams {
 
         match new_arbos_version {
             ARBOS_VERSION_50 => {
-                if self.max_stack_depth > ARBOS_50_MAX_WASM_SIZE {
-                    self.max_stack_depth = ARBOS_50_MAX_WASM_SIZE;
+                if self.max_stack_depth > ARBOS_50_MAX_STACK_DEPTH {
+                    self.max_stack_depth = ARBOS_50_MAX_STACK_DEPTH;
                 }
             }
             ARBOS_VERSION_40 => {
@@ -170,6 +178,7 @@ impl StylusParams {
                 self.max_wasm_size = INITIAL_MAX_WASM_SIZE;
             }
             ARBOS_VERSION_STYLUS_CONTRACT_LIMIT => {
+                self.max_wasm_size = ARBOS_60_MAX_WASM_SIZE;
                 self.max_fragment_count = INITIAL_MAX_FRAGMENT_COUNT;
             }
             _ => {}
@@ -201,7 +210,9 @@ pub fn init_stylus_params<D: Database>(arbos_version: u64, sto: &Storage<D>) {
         max_wasm_size: 0,
         max_fragment_count: 0,
     };
-    if arbos_version >= ARBOS_VERSION_40 {
+    if arbos_version >= ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
+        params.max_wasm_size = ARBOS_60_MAX_WASM_SIZE;
+    } else if arbos_version >= ARBOS_VERSION_40 {
         params.max_wasm_size = INITIAL_MAX_WASM_SIZE;
     }
     if arbos_version >= ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {

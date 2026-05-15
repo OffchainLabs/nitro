@@ -20,7 +20,7 @@ pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x6b,
 ]);
 
-const INITIAL_MAX_FRAGMENT_COUNT: u8 = 2;
+const INITIAL_MAX_FRAGMENT_COUNT: u8 = 4;
 // ArbOS version where MaxFragmentCount was introduced.
 const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 60;
 // ArbOS version where collectTips storage flag was introduced.
