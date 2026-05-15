@@ -589,9 +589,25 @@ fn handle_activate_program(
     let program_slot = map_slot_b256(data_key.as_slice(), &code_hash);
     let existing = sload_field(&mut input, program_slot)?;
 
-    if code_bytes.is_empty()
-        || !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version())
-    {
+    // Nitro distinguishes two failure modes for invalid Stylus bytecode at v40
+    // and below. Empty bytecode returns the `ProgramNotWasm()` Solidity error
+    // (3 gas result-copy cost). A non-empty but non-classic-prefix bytecode
+    // returns a non-Solidity error (`errors.New("specified bytecode is not a
+    // Stylus program")`) which the framework reverts WITHOUT charging
+    // result-copy cost. See `arbos/programs/programs.go::getWasmFromContractCode`
+    // line 420-421 ("Old arbOS behavior - this is not a solidity error").
+    if code_bytes.is_empty() {
+        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
+    }
+    if !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version()) {
+        let arbos_v = crate::get_arbos_version();
+        if arbos_v < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
+            // Old ArbOS behavior: revert with empty payload, no result-copy cost.
+            return Ok(PrecompileOutput::new_reverted(
+                crate::get_precompile_gas().min(input.gas),
+                Default::default(),
+            ));
+        }
         return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
     }
 
