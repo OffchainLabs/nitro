@@ -51,7 +51,7 @@ type Log struct {
 	Data    string   `json:"data"`
 }
 
-func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int) *TransactionFeedMessage {
+func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) *TransactionFeedMessage {
 	switch tx.Type() {
 	case types.ArbitrumInternalTxType, types.ArbitrumRetryTxType:
 		return nil
@@ -94,7 +94,7 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
 		Transaction: TransactionIncluded{
 			BlockNumber: header.Number.Uint64(),
-			TxIndex:     arbmath.SaturatingUCast[uint32](txIndex),
+			TxIndex:     uint32(receipt.TransactionIndex),
 			RawTx:       hexutil.Encode(rawTx),
 			TxHash:      tx.Hash().Hex(),
 			Receipt: IncompleteReceipt{

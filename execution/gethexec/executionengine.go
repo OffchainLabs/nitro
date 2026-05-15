@@ -156,6 +156,10 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	return nil
 }
 
+func (f *DelayedFilteringSequencingHooks) FilteredTxCount() int {
+	return len(f.FilteredTxHashes)
+}
+
 func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
 
 // TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
@@ -967,7 +971,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			return nil, nil, nil, err
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
-		if len(filteringHooks.FilteredTxHashes) > 0 {
+		if filteringHooks.FilteredTxCount() > 0 {
 			if s.transactionFiltererRPCClient != nil {
 				s.LaunchThread(func(ctx context.Context) {
 					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {

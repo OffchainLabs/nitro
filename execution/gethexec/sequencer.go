@@ -926,6 +926,7 @@ type FullSequencingHooks struct {
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
+	filteredTxCount          int
 	transactionFeedServer    *transactionfeed.Server
 }
 
@@ -988,11 +989,11 @@ func (s *FullSequencingHooks) TxFailed(err error) {
 	s.txErrors = append(s.txErrors, err)
 }
 
-func (s *FullSequencingHooks) OnTxIncluded(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int) {
+func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
 	if s.transactionFeedServer == nil {
 		return
 	}
-	s.transactionFeedServer.BroadcastTransaction(transactionfeed.BuildFeedMessage(header, tx, receipt, txIndex))
+	s.transactionFeedServer.BroadcastTransaction(transactionfeed.BuildFeedMessage(header, tx, receipt))
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
@@ -1035,7 +1036,13 @@ func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) 
 
 func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info) error {
 	if s.preTxFilter != nil {
-		return s.preTxFilter(config, header, db, a, transaction, options, address, info)
+		err := s.preTxFilter(config, header, db, a, transaction, options, address, info)
+		if err != nil {
+			if errors.Is(err, state.ErrArbTxFilter) {
+				s.filteredTxCount++
+			}
+			return err
+		}
 	}
 	return nil
 }
@@ -1045,16 +1052,32 @@ func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 		return nil
 	}
 	if s.postTxFilter != nil {
-		return s.postTxFilter(header, db, a, transaction, address, u, result)
+		err := s.postTxFilter(header, db, a, transaction, address, u, result)
+		if err != nil {
+			if errors.Is(err, state.ErrArbTxFilter) {
+				s.filteredTxCount++
+			}
+			return err
+		}
 	}
 	return nil
 }
 
 func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
 	if s.blockFilter != nil {
-		return s.blockFilter(header, db, transactions, receipts)
+		err := s.blockFilter(header, db, transactions, receipts)
+		if err != nil {
+			if errors.Is(err, state.ErrArbTxFilter) {
+				s.filteredTxCount++
+			}
+			return err
+		}
 	}
 	return nil
+}
+
+func (s *FullSequencingHooks) FilteredTxCount() int {
+	return s.filteredTxCount
 }
 
 func MakeSequencingHooks(

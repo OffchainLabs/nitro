@@ -219,12 +219,15 @@ type SequencingHooks interface {
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+	// FilteredTxCount returns the number of transactions filtered during this block's processing.
+	FilteredTxCount() int
 	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.
 	TxFailed(error)
-	// OnTxIncluded is called after a transaction is included in the block.
-	OnTxIncluded(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int)
+	// TxAccepted is called after a transaction has been committed to the block
+	// and will not be rolled back.
+	TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt)
 }
 
 type NoopSequencingHooks struct {
@@ -258,11 +261,15 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 	return nil
 }
 
+func (n *NoopSequencingHooks) FilteredTxCount() int {
+	return 0
+}
+
 func (n *NoopSequencingHooks) TxSucceeded() {}
 
 func (n *NoopSequencingHooks) TxFailed(error) {}
 
-func (n *NoopSequencingHooks) OnTxIncluded(header *types.Header, tx *types.Transaction, receipt *types.Receipt, txIndex int) {
+func (n *NoopSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
 }
 
 func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
@@ -366,6 +373,19 @@ func ProduceBlockAdvanced(
 		activeGroupCP:        nil,
 	}
 
+	emitGroupAccepted := func(s *blockBuildState) {
+		if runCtx.IsDelayedSequencing() {
+			return
+		}
+		if s.activeGroupCP == nil {
+			log.Warn("emitGroupAccepted was called with no active group checkpoint")
+			return
+		}
+		for i := s.activeGroupCP.completeLen; i < len(s.complete); i++ {
+			sequencingHooks.TxAccepted(header, s.complete[i], s.receipts[i])
+		}
+	}
+
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
@@ -392,6 +412,7 @@ func ProduceBlockAdvanced(
 			// Previous group (if any) completed successfully
 			if buildState.activeGroupCP != nil {
 				sequencingHooks.TxSucceeded()
+				emitGroupAccepted(buildState)
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
@@ -645,16 +666,31 @@ func ProduceBlockAdvanced(
 
 		buildState.complete = append(buildState.complete, tx)
 		buildState.receipts = append(buildState.receipts, receipt)
-		sequencingHooks.OnTxIncluded(header, tx, receipt, len(buildState.receipts)-1)
 
 		if isUserTx {
 			if buildState.activeGroupCP == nil {
 				sequencingHooks.TxSucceeded()
+				if !runCtx.IsDelayedSequencing() {
+					sequencingHooks.TxAccepted(header, tx, receipt)
+				}
 			}
+
 			buildState.userTxsProcessed++
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
-			buildState.activeGroupCP = nil
 			sequencingHooks.TxSucceeded()
+			// Redeem chain complete; emit deferred TxAccepted for the whole group.
+			emitGroupAccepted(buildState)
+			buildState.clearGroupCheckpoint()
+		}
+	}
+
+	if runCtx.IsDelayedSequencing() && sequencingHooks.FilteredTxCount() == 0 {
+		for i, receipt := range buildState.receipts {
+			tx := buildState.complete[i]
+			if tx.Type() == types.ArbitrumInternalTxType {
+				continue
+			}
+			sequencingHooks.TxAccepted(header, tx, receipt)
 		}
 	}
 
