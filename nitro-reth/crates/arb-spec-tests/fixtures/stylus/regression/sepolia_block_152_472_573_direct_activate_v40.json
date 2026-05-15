@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_152_472_573_direct_activate_v40",
-  "description": "Sepolia tx 0xb0d3394d17860f9ed3248705becc56ab52c81ac6a90c7c71a5e6d4b67d9355c7 at block 152,472,573 (idx 6). Direct EOA -> ArbWasm.activateProgram(0x30f9...) at ArbOS v40. Canon: status=1, gasUsed=2,464,996. arbreth currently charges 2,464,484 (= canon - 512). Locks the divergence so the eventual fix is permanent.",
+  "description": "Sepolia tx 0xb0d3394d17860f9ed3248705becc56ab52c81ac6a90c7c71a5e6d4b67d9355c7 at block 152,472,573 (idx 6). Direct EOA -> ArbWasm.activateProgram(0x30f9...) at ArbOS v40. Canon receipt: status=1, gasUsed=0x259ae4 (=2,464,484). Locks the full happy-path v40 activate via the outer EOA branch (which stashes value, deducts data_fee post-commit, and SLOADs NetworkFeeAccount inside the precompile).",
   "genesis": {
     "config": {
       "chainId": 421614,
@@ -79,7 +79,7 @@
         "from": "0x315e6c09d888805977ffe42dc7d78266b4bb29bb",
         "to": "0x0000000000000000000000000000000000000071",
         "status": 1,
-        "gasUsed": 2464996
+        "gasUsed": 2464484
       }
     ],
     "blocks": [],
