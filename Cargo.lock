@@ -1508,14 +1508,14 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "corosensei"
 version = "0.3.3"
-source = "git+https://github.com/OffchainLabs/corosensei?tag=v0.3.3-sp1-2448769#f4592da22f5c61194646285392357b260f2284f1"
+source = "git+https://github.com/OffchainLabs/corosensei?tag=v0.3.3-sp1-v6.2.1#c6095da5f9c803b1ec0441f1452dc758fc12c65c"
 dependencies = [
  "autocfg",
  "cfg-if 1.0.4",
  "libc",
  "scopeguard",
- "sp1-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "sp1-zkvm 6.1.0",
+ "sp1-primitives 6.2.1",
+ "sp1-zkvm",
  "windows-sys 0.59.0",
 ]
 
@@ -3648,7 +3648,7 @@ dependencies = [
 [[package]]
 name = "k256"
 version = "0.13.4"
-source = "git+https://github.com/sp1-patches/elliptic-curves?tag=patch-k256-13.4-sp1-6.0.0-rc.2#31315f46b6a06dea517e9af82ad8ff6431fb1193"
+source = "git+https://github.com/sp1-patches/elliptic-curves?tag=patch-k256-13.4-sp1-6.2.0#41374de1febd88e67faa695a5641ae46460a8cb6"
 dependencies = [
  "cfg-if 1.0.4",
  "ecdsa 0.16.9 (git+https://github.com/sp1-patches/signatures?tag=sp1-skip-verify-on-recovery)",
@@ -4994,7 +4994,7 @@ dependencies = [
  "rand_pcg",
  "ruint2",
  "serde_json",
- "sp1-zkvm 6.2.1",
+ "sp1-zkvm",
  "thiserror 1.0.69",
  "tiny-keccak",
  "validation",
@@ -5506,13 +5506,13 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 [[package]]
 name = "region"
 version = "3.0.2"
-source = "git+https://github.com/OffchainLabs/region-rs?tag=v3.0.2-sp1-2448769#78ec7e78e9816fe5e467e16356e0b2eb5c649962"
+source = "git+https://github.com/OffchainLabs/region-rs?tag=v3.0.2-sp1-v6.2.1#001684d6bd5f209638a15147b660c111305f2256"
 dependencies = [
  "bitflags 1.3.2",
  "libc",
  "mach2 0.4.3",
- "sp1-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "sp1-zkvm 6.1.0",
+ "sp1-primitives 6.2.1",
+ "sp1-zkvm",
  "windows-sys 0.52.0",
 ]
 
@@ -6431,16 +6431,6 @@ dependencies = [
 
 [[package]]
 name = "slop-algebra"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "itertools 0.14.0",
- "p3-field",
- "serde",
-]
-
-[[package]]
-name = "slop-algebra"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a473c3a06b466dd0708829415a8a9fab451740da066e07862c8c098904aaad6"
@@ -6534,25 +6524,10 @@ dependencies = [
  "ff 0.13.1",
  "p3-bn254-fr",
  "serde",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-challenger 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-poseidon2 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "zkhash",
-]
-
-[[package]]
-name = "slop-bn254"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "ff 0.13.1",
- "p3-bn254-fr",
- "serde",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-challenger 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-poseidon2 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
+ "slop-algebra 6.1.0",
+ "slop-challenger 6.1.0",
+ "slop-poseidon2 6.1.0",
+ "slop-symmetric 6.1.0",
  "zkhash",
 ]
 
@@ -6579,20 +6554,8 @@ dependencies = [
  "futures",
  "p3-challenger",
  "serde",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
-]
-
-[[package]]
-name = "slop-challenger"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "futures",
- "p3-challenger",
- "serde",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
+ "slop-algebra 6.1.0",
+ "slop-symmetric 6.1.0",
 ]
 
 [[package]]
@@ -6708,24 +6671,10 @@ dependencies = [
  "lazy_static",
  "p3-koala-bear",
  "serde",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-challenger 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-poseidon2 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
-]
-
-[[package]]
-name = "slop-koala-bear"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "lazy_static",
- "p3-koala-bear",
- "serde",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-challenger 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-poseidon2 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
+ "slop-algebra 6.1.0",
+ "slop-challenger 6.1.0",
+ "slop-poseidon2 6.1.0",
+ "slop-symmetric 6.1.0",
 ]
 
 [[package]]
@@ -6818,14 +6767,6 @@ dependencies = [
 
 [[package]]
 name = "slop-poseidon2"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "p3-poseidon2",
-]
-
-[[package]]
-name = "slop-poseidon2"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c956b11fff1b8a071fa4ba982dc35e458cff1620dc7b33d9cf22d8df30895f79"
@@ -6838,15 +6779,7 @@ name = "slop-primitives"
 version = "6.1.0"
 source = "git+https://github.com/succinctlabs/sp1?branch=main#ae473cc24d394de821a156ca1818e9773ed9a554"
 dependencies = [
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
-]
-
-[[package]]
-name = "slop-primitives"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
+ "slop-algebra 6.1.0",
 ]
 
 [[package]]
@@ -6903,14 +6836,6 @@ dependencies = [
 name = "slop-symmetric"
 version = "6.1.0"
 source = "git+https://github.com/succinctlabs/sp1?branch=main#ae473cc24d394de821a156ca1818e9773ed9a554"
-dependencies = [
- "p3-symmetric",
-]
-
-[[package]]
-name = "slop-symmetric"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
 dependencies = [
  "p3-symmetric",
 ]
@@ -7298,17 +7223,7 @@ source = "git+https://github.com/succinctlabs/sp1?branch=main#ae473cc24d394de821
 dependencies = [
  "bincode",
  "serde",
- "sp1-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
-]
-
-[[package]]
-name = "sp1-lib"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "bincode",
- "serde",
- "sp1-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
+ "sp1-primitives 6.1.0",
 ]
 
 [[package]]
@@ -7337,36 +7252,13 @@ dependencies = [
  "num-bigint 0.4.6",
  "serde",
  "sha2 0.10.9",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-bn254 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-challenger 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-koala-bear 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-poseidon2 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
-]
-
-[[package]]
-name = "sp1-primitives"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "bincode",
- "blake3",
- "elf",
- "hex",
- "itertools 0.14.0",
- "lazy_static",
- "num-bigint 0.4.6",
- "serde",
- "sha2 0.10.9",
- "slop-algebra 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-bn254 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-challenger 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-koala-bear 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-poseidon2 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "slop-symmetric 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
+ "slop-algebra 6.1.0",
+ "slop-bn254 6.1.0",
+ "slop-challenger 6.1.0",
+ "slop-koala-bear 6.1.0",
+ "slop-poseidon2 6.1.0",
+ "slop-primitives 6.1.0",
+ "slop-symmetric 6.1.0",
 ]
 
 [[package]]
@@ -7694,24 +7586,6 @@ dependencies = [
 
 [[package]]
 name = "sp1-zkvm"
-version = "6.1.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=2448769#24487699901bfa9732876103c0b546a15cf53428"
-dependencies = [
- "cfg-if 1.0.4",
- "critical-section",
- "embedded-alloc",
- "getrandom 0.2.17",
- "getrandom 0.3.4",
- "lazy_static",
- "libm",
- "rand 0.8.6",
- "sha2 0.10.9",
- "sp1-lib 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
- "sp1-primitives 6.1.0 (git+https://github.com/succinctlabs/sp1?rev=2448769)",
-]
-
-[[package]]
-name = "sp1-zkvm"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa10f689c4384daf7ece04176c727e6f2e56193e10a406406aa7c9c6c8f8f478"
@@ -7883,7 +7757,7 @@ dependencies = [
  "anyhow",
  "prover",
  "serde",
- "sp1-zkvm 6.2.1",
+ "sp1-zkvm",
  "wasmer",
 ]
 
@@ -8176,7 +8050,7 @@ source = "git+https://github.com/sp1-patches/tiny-keccak?tag=patch-2.0.2-sp1-6.2
 dependencies = [
  "cfg-if 1.0.4",
  "crunchy",
- "sp1-lib 6.1.0 (git+https://github.com/succinctlabs/sp1?branch=main)",
+ "sp1-lib 6.1.0",
 ]
 
 [[package]]
