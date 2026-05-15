@@ -22,7 +22,7 @@ wasmparser = { workspace = true }
 
 nitro-prover = { workspace = true }
 nitro-arbutil = { workspace = true }
-nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4", features = ["cc_brotli"] }
+nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", features = ["cc_brotli"] }
 
 # Revm
 revm = { workspace = true }

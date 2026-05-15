@@ -1440,7 +1440,7 @@ dependencies = [
  "tracing",
  "wasmer",
  "wasmer-compiler",
- "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
+ "wasmer-types 4.2.8",
  "wasmparser 0.121.2",
  "wat",
 ]
@@ -1544,7 +1544,7 @@ dependencies = [
 [[package]]
 name = "arbutil"
 version = "0.1.0"
-source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=b1cf6db81afbc1f67c898ac9add5d37391ebd87b#b1cf6db81afbc1f67c898ac9add5d37391ebd87b"
 dependencies = [
  "digest 0.10.7",
  "eyre",
@@ -1556,7 +1556,7 @@ dependencies = [
  "serde",
  "siphasher 0.3.11",
  "tiny-keccak",
- "wasmparser 0.121.2",
+ "wasmparser 0.245.1",
 ]
 
 [[package]]
@@ -2400,7 +2400,7 @@ dependencies = [
 [[package]]
 name = "brotli"
 version = "0.1.0"
-source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=b1cf6db81afbc1f67c898ac9add5d37391ebd87b#b1cf6db81afbc1f67c898ac9add5d37391ebd87b"
 dependencies = [
  "cc",
  "lazy_static",
@@ -2477,8 +2477,20 @@ version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23cdc57ce23ac53c931e88a43d06d070a6fd142f2617be5855eb75efc9beb1c2"
 dependencies = [
- "bytecheck_derive",
- "ptr_meta",
+ "bytecheck_derive 0.6.12",
+ "ptr_meta 0.1.4",
+ "simdutf8",
+]
+
+[[package]]
+name = "bytecheck"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0caa33a2c0edca0419d15ac723dff03f1956f7978329b1e3b5fdaaaed9d3ca8b"
+dependencies = [
+ "bytecheck_derive 0.8.2",
+ "ptr_meta 0.3.1",
+ "rancor",
  "simdutf8",
 ]
 
@@ -2491,6 +2503,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "bytecheck_derive"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89385e82b5d1821d2219e0b095efa2cc1f246cbf99080f3be46a1a85c0d392d9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -3032,7 +3055,7 @@ dependencies = [
  "log",
  "regalloc2",
  "smallvec",
- "target-lexicon",
+ "target-lexicon 0.12.16",
 ]
 
 [[package]]
@@ -3079,7 +3102,7 @@ dependencies = [
  "cranelift-codegen",
  "log",
  "smallvec",
- "target-lexicon",
+ "target-lexicon 0.12.16",
 ]
 
 [[package]]
@@ -4272,7 +4295,7 @@ dependencies = [
 [[package]]
 name = "forward"
 version = "0.1.0"
-source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=b1cf6db81afbc1f67c898ac9add5d37391ebd87b#b1cf6db81afbc1f67c898ac9add5d37391ebd87b"
 dependencies = [
  "eyre",
  "structopt",
@@ -4477,10 +4500,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "139ef39800118c7683f2fd3c98c1b23c09ae076556b435f8e9064ae108aaeeec"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasip2",
  "wasip3",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4663,6 +4688,12 @@ dependencies = [
  "serde",
  "serde_core",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hashlink"
@@ -6182,6 +6213,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "munge"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e17401f259eba956ca16491461b6e8f72913a0a114e39736ce404410f915a0c"
+dependencies = [
+ "munge_macro",
+]
+
+[[package]]
+name = "munge_macro"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4568f25ccbd45ab5d5603dc34318c1ec56b117531781260002151b8530a9f931"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7135,7 +7186,7 @@ dependencies = [
 [[package]]
 name = "prover"
 version = "0.1.0"
-source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=b1cf6db81afbc1f67c898ac9add5d37391ebd87b#b1cf6db81afbc1f67c898ac9add5d37391ebd87b"
 dependencies = [
  "arbutil",
  "bincode",
@@ -7149,13 +7200,10 @@ dependencies = [
  "forward",
  "hex",
  "lazy_static",
- "libc",
- "lru 0.16.3",
  "nom",
  "num",
  "num-derive",
  "num-traits",
- "once_cell",
  "parking_lot",
  "rustc-demangle",
  "serde",
@@ -7164,11 +7212,10 @@ dependencies = [
  "sha2 0.10.9",
  "sha3",
  "smallvec",
- "static_assertions",
  "structopt",
  "validation",
- "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4)",
- "wasmparser 0.121.2",
+ "wasmer-types 7.1.0",
+ "wasmparser 0.245.1",
  "wat",
 ]
 
@@ -7178,7 +7225,16 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0738ccf7ea06b608c10564b31debd4f5bc5e197fc8bfe088f68ae5ce81e7a4f1"
 dependencies = [
- "ptr_meta_derive",
+ "ptr_meta_derive 0.1.4",
+]
+
+[[package]]
+name = "ptr_meta"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9a0cf95a1196af61d4f1cbdab967179516d9a4a4312af1f31948f8f6224a79"
+dependencies = [
+ "ptr_meta_derive 0.3.1",
 ]
 
 [[package]]
@@ -7190,6 +7246,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "ptr_meta_derive"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7347867d0a7e1208d93b46767be83e2b8f978c3dad35f775ac8d8847551d6fe1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -7297,6 +7364,15 @@ name = "radium"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
+
+[[package]]
+name = "rancor"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a063ea72381527c2a0561da9c80000ef822bdd7c3241b1cc1b12100e3df081ee"
+dependencies = [
+ "ptr_meta 0.3.1",
+]
 
 [[package]]
 name = "rand"
@@ -7610,7 +7686,16 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71fe3824f5629716b1589be05dacd749f6aa084c87e00e016714a8cdfccc997c"
 dependencies = [
- "bytecheck",
+ "bytecheck 0.6.12",
+]
+
+[[package]]
+name = "rend"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cadadef317c2f20755a64d7fdc48f9e7178ee6b0e1f7fce33fa60f1d68a276e6"
+dependencies = [
+ "bytecheck 0.8.2",
 ]
 
 [[package]]
@@ -10422,14 +10507,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2297bf9c81a3f0dc96bc9521370b88f054168c29826a75e89c55ff196e7ed6a1"
 dependencies = [
  "bitvec",
- "bytecheck",
+ "bytecheck 0.6.12",
  "bytes",
  "hashbrown 0.12.3",
  "indexmap 1.9.3",
- "ptr_meta",
- "rend",
- "rkyv_derive",
+ "ptr_meta 0.1.4",
+ "rend 0.4.2",
+ "rkyv_derive 0.7.46",
  "seahash",
+ "tinyvec",
+ "uuid",
+]
+
+[[package]]
+name = "rkyv"
+version = "0.8.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73389e0c99e664f919275ab5b5b0471391fe9a8de61e1dff9b1eaf56a90f16e3"
+dependencies = [
+ "bytecheck 0.8.2",
+ "bytes",
+ "hashbrown 0.17.1",
+ "indexmap 2.13.0",
+ "munge",
+ "ptr_meta 0.3.1",
+ "rancor",
+ "rend 0.5.3",
+ "rkyv_derive 0.8.16",
  "tinyvec",
  "uuid",
 ]
@@ -10443,6 +10547,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "rkyv_derive"
+version = "0.8.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d2ed0b54125315fb36bd021e82d314d1c126548f871634b483f46b31d13cac6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -11534,6 +11649,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
+name = "target-lexicon"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
+
+[[package]]
 name = "tempfile"
 version = "3.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12400,7 +12521,7 @@ dependencies = [
 [[package]]
 name = "validation"
 version = "0.1.0"
-source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=b1cf6db81afbc1f67c898ac9add5d37391ebd87b#b1cf6db81afbc1f67c898ac9add5d37391ebd87b"
 dependencies = [
  "arbutil",
  "brotli 0.1.0",
@@ -12666,14 +12787,14 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "shared-buffer",
- "target-lexicon",
+ "target-lexicon 0.12.16",
  "thiserror 1.0.69",
  "tracing",
  "wasm-bindgen",
  "wasmer-compiler",
  "wasmer-compiler-cranelift",
  "wasmer-derive",
- "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
+ "wasmer-types 4.2.8",
  "wasmer-vm",
  "winapi",
 ]
@@ -12693,12 +12814,12 @@ dependencies = [
  "memmap2 0.5.10",
  "more-asserts 0.2.2",
  "region",
- "rkyv",
+ "rkyv 0.7.46",
  "self_cell",
  "shared-buffer",
  "smallvec",
  "thiserror 1.0.69",
- "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
+ "wasmer-types 4.2.8",
  "wasmer-vm",
  "wasmparser 0.121.2",
  "winapi",
@@ -12716,10 +12837,10 @@ dependencies = [
  "more-asserts 0.2.2",
  "rayon",
  "smallvec",
- "target-lexicon",
+ "target-lexicon 0.12.16",
  "tracing",
  "wasmer-compiler",
- "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
+ "wasmer-types 4.2.8",
 ]
 
 [[package]]
@@ -12738,29 +12859,32 @@ name = "wasmer-types"
 version = "4.2.8"
 source = "git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76#6b15433d83f951555c24f0c56dc05e4751b0cc76"
 dependencies = [
- "bytecheck",
+ "bytecheck 0.6.12",
  "enum-iterator 0.7.0",
  "enumset",
  "indexmap 1.9.3",
  "more-asserts 0.2.2",
- "rkyv",
- "target-lexicon",
+ "rkyv 0.7.46",
+ "target-lexicon 0.12.16",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "wasmer-types"
-version = "4.2.8"
-source = "git+https://github.com/OffchainLabs/nitro.git?rev=d7fe12c77aaf06c279e79d0dac38d89e67c711a4#d7fe12c77aaf06c279e79d0dac38d89e67c711a4"
+version = "7.1.0"
+source = "git+https://github.com/OffchainLabs/nitro.git?rev=b1cf6db81afbc1f67c898ac9add5d37391ebd87b#b1cf6db81afbc1f67c898ac9add5d37391ebd87b"
 dependencies = [
- "bytecheck",
- "enum-iterator 0.7.0",
+ "bytecheck 0.8.2",
+ "enum-iterator 2.3.0",
  "enumset",
- "indexmap 1.9.3",
- "more-asserts 0.2.2",
- "rkyv",
- "target-lexicon",
- "thiserror 1.0.69",
+ "getrandom 0.4.1",
+ "hex",
+ "indexmap 2.13.0",
+ "more-asserts 0.3.1",
+ "rkyv 0.8.16",
+ "sha2 0.11.0",
+ "target-lexicon 0.13.5",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -12786,7 +12910,7 @@ dependencies = [
  "region",
  "scopeguard",
  "thiserror 1.0.69",
- "wasmer-types 4.2.8 (git+https://github.com/OffchainLabs/wasmer.git?rev=6b15433d83f951555c24f0c56dc05e4751b0cc76)",
+ "wasmer-types 4.2.8",
  "winapi",
 ]
 
@@ -12821,6 +12945,19 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.13.0",
  "semver 1.0.27",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f08c9adee0428b7bddf3890fc27e015ac4b761cc608c822667102b8bfd6995e"
+dependencies = [
+ "bitflags 2.11.0",
+ "hashbrown 0.16.1",
+ "indexmap 2.13.0",
+ "semver 1.0.27",
+ "serde",
 ]
 
 [[package]]

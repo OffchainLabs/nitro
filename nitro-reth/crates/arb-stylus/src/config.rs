@@ -133,7 +133,7 @@ impl CompileConfig {
 
         match version {
             0 => {}
-            1 | 2 => {
+            1..=3 => {
                 config.bounds.heap_bound = 128; // 128 pages = 8 MB
                 config.bounds.max_frame_size = 10 * 1024;
                 config.bounds.max_frame_contention = 4096;

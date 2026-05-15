@@ -182,8 +182,8 @@ brotli = { version = "8", default-features = false, features = ["std"] }
 wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "6b15433d83f951555c24f0c56dc05e4751b0cc76", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
 
-nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4", default-features = false }
-nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4" }
+nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
+nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
 
 # Transitive deps for Nitro crates
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
