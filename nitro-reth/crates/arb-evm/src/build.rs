@@ -1628,7 +1628,7 @@ where
             if let Some(hooks) = self.arb_hooks.as_ref() {
                 let action = hooks.tx_proc.reverted_tx_hook(
                     Some(tx_hash),
-                    None, // pre_recorded_gas: sequencer-specific, not used in state machine
+                    None, // pre_recorded_gas: tx_proc looks up its hardcoded table
                     is_filtered,
                 );
 
@@ -1637,7 +1637,15 @@ where
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                         increment_nonce(db, sender);
                         self.touched_accounts.insert(sender);
-                        let gas_used = poster_gas + gas_to_consume;
+                        // Nitro's RevertedTxHook fires after intrinsic deduction, so
+                        // final gasUsed = intrinsic + adjustedGas + posterGas. The
+                        // EVM never runs on this path, so add intrinsic manually.
+                        let spec =
+                            arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version);
+                        let intrinsic = estimate_intrinsic_gas(recovered.tx(), spec);
+                        let gas_used = intrinsic
+                            .saturating_add(gas_to_consume)
+                            .saturating_add(poster_gas);
                         let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
                             .saturating_add(MultiGas::computation_gas(gas_to_consume));
                         self.pending_tx = Some(PendingArbTx {

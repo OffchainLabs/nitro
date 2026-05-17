@@ -22,5 +22,6 @@ pub mod merkle_accumulator;
 pub mod parse_l2;
 pub mod programs;
 pub mod retryables;
+pub mod reverted_tx_gas;
 pub mod tx_processor;
 pub mod util;
