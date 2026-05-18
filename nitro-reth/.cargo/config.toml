@@ -2,13 +2,22 @@
 # JIT WASM code calls it at runtime to probe its native stack. When wasmer_vm is
 # statically linked into a Rust binary, that symbol collides with the
 # compiler-builtins `__rust_probestack` that rustc auto-emits on x86_64. Both
-# implementations are byte-identical stack-probe assembly, so letting the linker
+# implementations are byte-identical stack-probe assembly so letting the linker
 # pick the first definition is safe and has no behavioural effect.
 #
-# Scoped narrowly to Linux x86_64 (lld) — macOS uses ld64 and aarch64 doesn't
-# emit a compiler-builtins probestack, so no collision on those targets.
+# We pin `linker = "cc"` explicitly so that the linker driver is deterministic
+# (recent rustc may default to invoking `rust-lld` directly on linux-gnu, which
+# does not understand the `-Wl,` prefix). With `cc` as driver, the `-Wl,...`
+# syntax is universally parsed: cc forwards the flag to whichever ld it uses
+# (binutils ld, gold, or lld) and all three accept `--allow-multiple-definition`.
+#
+# Scoped narrowly to Linux x86_64 (gnu + musl) — macOS uses ld64 and aarch64
+# does not emit a compiler-builtins probestack, so neither target exhibits the
+# collision and they keep stricter linking semantics by default.
 [target.x86_64-unknown-linux-gnu]
+linker = "cc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
 [target.x86_64-unknown-linux-musl]
+linker = "cc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
