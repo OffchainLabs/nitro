@@ -129,7 +129,7 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
 // Collects tx hashes that touch filtered addresses but are not in the onchain filter.
 // For redeems, returns ErrArbTxFilter to trigger group rollback.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if tx.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
