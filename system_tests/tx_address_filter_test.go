@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -53,6 +55,8 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -66,10 +70,10 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	addrFilter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
-	// Test 1: Transaction TO a filtered address should fail
+	// Test 1: Transaction TO a filtered address should fail and produce a report
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
@@ -78,10 +82,32 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundToReason := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == filteredAddr {
+			if fa.FilterReason.Reason != filter.ReasonTo {
+				t.Fatalf("expected filter reason %q for TO address, got %q", filter.ReasonTo, fa.FilterReason.Reason)
+			}
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter")
+			}
+			foundToReason = true
+			break
+		}
+	}
+	if !foundToReason {
+		t.Fatalf("report should contain filtered address %s with ReasonTo", filteredAddr.Hex())
+	}
+
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
 
-	// Test 2: Transaction FROM a filtered address should fail
+	// Test 2: Transaction FROM a filtered address should fail and produce a report
 	tx = builder.L2Info.PrepareTx("FilteredUser", "NormalUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
@@ -90,10 +116,32 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
+
+	report2 := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report2, tx)
+	if report2.IsDelayed {
+		t.Fatal("report2 should not be marked as delayed")
+	}
+	foundFromReason := false
+	for _, fa := range report2.FilteredAddresses {
+		if fa.Address == filteredAddr {
+			if fa.FilterReason.Reason != filter.ReasonFrom {
+				t.Fatalf("expected filter reason %q for FROM address, got %q", filter.ReasonFrom, fa.FilterReason.Reason)
+			}
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter")
+			}
+			foundFromReason = true
+			break
+		}
+	}
+	if !foundFromReason {
+		t.Fatalf("report2 should contain filtered address %s with ReasonFrom", filteredAddr.Hex())
+	}
 	// Reset nonce since tx was rejected
 	builder.L2Info.GetInfoWithPrivKey("FilteredUser").Nonce.Store(0)
 
-	// Test 3: Transaction between non-filtered addresses should succeed
+	// Test 3: Transaction between non-filtered addresses should succeed with no report
 	builder.L2Info.GenerateAccount("AnotherUser")
 	builder.L2.TransferBalance(t, "Owner", "AnotherUser", big.NewInt(1e18), builder.L2Info)
 	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -101,6 +149,100 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterEventRuleReport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Set up Transfer event filter rule
+	transferEvent := "Transfer(address,address,uint256)"
+	selector, _, err := eventfilter.CanonicalSelectorFromEvent(transferEvent)
+	Require(t, err)
+	rules := []eventfilter.EventRule{{
+		Event:          transferEvent,
+		Selector:       selector,
+		TopicAddresses: []int{1, 2},
+	}}
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithEventFilterRules(rules)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Deploy test contract
+	contractAddr, contract := deployAddressFilterTestContract(t, ctx, builder)
+
+	// Create filtered address and set up address filter
+	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
+	addrFilter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	// Emit Transfer event with filtered address as recipient (topic[2])
+	// This triggers postTxFilter via the event filter path
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err := contract.EmitTransfer(&auth, auth.From, filteredAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransfer to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	// Verify that the report contains the filtered address with an EventRuleMatch
+	foundEventRule := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == filteredAddr && fa.FilterReason.Reason == filter.ReasonEventRule {
+			if fa.FilterReason.EventRuleMatch == nil {
+				t.Fatal("expected non-nil EventRuleMatch for event rule filter")
+			}
+			if fa.FilterReason.EventRuleMatch.MatchedEvent != transferEvent {
+				t.Fatalf("expected MatchedEvent %q, got %q", transferEvent, fa.FilterReason.EventRuleMatch.MatchedEvent)
+			}
+			if fa.FilterReason.EventRuleMatch.MatchedTopicIndex != 2 {
+				t.Fatalf("expected MatchedTopicIndex 2, got %d", fa.FilterReason.EventRuleMatch.MatchedTopicIndex)
+			}
+			rawLog := fa.FilterReason.EventRuleMatch.RawLog
+			if rawLog == nil {
+				t.Fatal("expected non-nil RawLog in EventRuleMatch")
+			}
+			if rawLog.Address != contractAddr {
+				t.Fatalf("expected RawLog.Address %s, got %s", contractAddr.Hex(), rawLog.Address.Hex())
+			}
+			if len(rawLog.Topics) != 3 {
+				t.Fatalf("expected 3 topics, got %d", len(rawLog.Topics))
+			}
+			expectedSelector := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
+			if rawLog.Topics[0] != expectedSelector {
+				t.Fatalf("expected topic[0] %s, got %s", expectedSelector.Hex(), rawLog.Topics[0].Hex())
+			}
+			if rawLog.Topics[1] != common.BytesToHash(auth.From.Bytes()) {
+				t.Fatalf("expected topic[1] to contain Owner address %s, got %s", auth.From.Hex(), rawLog.Topics[1].Hex())
+			}
+			if rawLog.Topics[2] != common.BytesToHash(filteredAddr.Bytes()) {
+				t.Fatalf("expected topic[2] to contain filtered address %s, got %s", filteredAddr.Hex(), rawLog.Topics[2].Hex())
+			}
+			expectedData := common.BigToHash(big.NewInt(1)).Bytes()
+			if !bytes.Equal(rawLog.Data, expectedData) {
+				t.Fatalf("expected RawLog.Data %x, got %x", expectedData, rawLog.Data)
+			}
+			foundEventRule = true
+			break
+		}
+	}
+	if !foundEventRule {
+		t.Fatalf("report should contain filtered address %s with ReasonEventRule and EventRuleMatch", filteredAddr.Hex())
+	}
 }
 
 func deployAddressFilterTestContract(t *testing.T, ctx context.Context, builder *NodeBuilder) (common.Address, *localgen.AddressFilterTest) {
@@ -119,6 +261,8 @@ func TestAddressFilterCall(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -129,12 +273,12 @@ func TestAddressFilterCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	checker := newHashedChecker([]common.Address{targetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
 
 	// Test: CALL to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	_, err := caller.CallTarget(&auth, targetAddr)
+	tx, err := caller.CallTarget(&auth, targetAddr)
 	if err == nil {
 		t.Fatal("expected CALL to filtered address to be rejected")
 	}
@@ -142,13 +286,37 @@ func TestAddressFilterCall(t *testing.T) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundTarget := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == targetAddr {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter via CALL")
+			}
+			if fa.FilterReason.Reason != filter.ReasonContractAddress {
+				t.Fatalf("expected filter reason %q, got %q", filter.ReasonContractAddress, fa.FilterReason.Reason)
+			}
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Fatalf("report should contain filtered target address %s", targetAddr.Hex())
+	}
+
 	// Deploy another target (not filtered) - should succeed
 	cleanTargetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	tx, err := caller.CallTarget(&auth, cleanTargetAddr)
+	tx, err = caller.CallTarget(&auth, cleanTargetAddr)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
 }
 
 func TestAddressFilterStaticCall(t *testing.T) {

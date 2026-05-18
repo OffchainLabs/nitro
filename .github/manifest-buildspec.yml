@@ -1,6 +1,9 @@
 ---
 version: 0.2
 
+env:
+  shell: bash
+
 phases:
   pre_build:
     commands:
@@ -24,76 +27,53 @@ phases:
         if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_PASSWORD" ]; then
           echo "$DOCKERHUB_PASSWORD" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
         fi
-      # Enable experimental features while preserving auth
-      - mkdir -p $HOME/.docker
-      - |
-        if [ -f "$HOME/.docker/config.json" ]; then
-          # Add experimental flag to existing config
-          cat $HOME/.docker/config.json | jq '. + {"experimental":"enabled"}' > $HOME/.docker/config.json.tmp
-          mv $HOME/.docker/config.json.tmp $HOME/.docker/config.json
-        else
-          # Create new config with experimental flag
-          echo '{"experimental":"enabled"}' > $HOME/.docker/config.json
-        fi
 
   build:
     commands:
-      # Regular node image
-      - >-
-        docker manifest create $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG-amd64
-        $REPOSITORY_URI:$IMAGE_TAG-arm64
-      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG-amd64 --arch amd64
-      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG-arm64 --arch arm64
-      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG
+      - |
+        set -euo pipefail
+        # ECR is immutable: reruns must skip when the remote list already
+        # aggregates current per-arch digests. The classifier below exists so
+        # auth/network/5xx don't get treated as tag-missing.
+        commit="${CODEBUILD_RESOLVED_SOURCE_VERSION:-unknown}"
+        imagetools_create_or_skip_existing() {
+          local ref="$1"; shift
+          local inspect_out remote_amd64 remote_arm64 current_amd64 current_arm64
+          echo "=== $ref ==="
+          if inspect_out=$(docker buildx imagetools inspect "$ref" --raw 2>&1); then
+            remote_amd64=$(printf '%s' "$inspect_out" | jq -r '.manifests[]? | select(.platform.architecture=="amd64") | .digest')
+            remote_arm64=$(printf '%s' "$inspect_out" | jq -r '.manifests[]? | select(.platform.architecture=="arm64") | .digest')
+            current_amd64=$(docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+            current_arm64=$(docker buildx imagetools inspect "$2" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+            if [ -n "$remote_amd64" ] && [ -n "$remote_arm64" ] && \
+               [ "$remote_amd64" = "$current_amd64" ] && [ "$remote_arm64" = "$current_arm64" ]; then
+              echo "INFO: $ref already aggregates current per-arch digests (commit $commit); skipping."
+              return 0
+            fi
+            echo "ERROR: $ref exists but children diverge from current per-arch tags (remote amd64=$remote_amd64 arm64=$remote_arm64; current amd64=$current_amd64 arm64=$current_arm64; commit $commit)" >&2
+            return 1
+          fi
+          case "$inspect_out" in
+            *"manifest unknown"*|*"MANIFEST_UNKNOWN"*|*"no such manifest"*|*"not found"*)
+              echo "creating $ref"
+              docker buildx imagetools create -t "$ref" "$@"
+              ;;
+            *)
+              echo "ERROR: inspect for $ref failed: $inspect_out" >&2
+              return 1
+              ;;
+          esac
+        }
 
-      # Slim variant
-      - >-
-        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-slim $REPOSITORY_URI:$IMAGE_TAG-slim-amd64
-        $REPOSITORY_URI:$IMAGE_TAG-slim-arm64
-      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim $REPOSITORY_URI:$IMAGE_TAG-slim-amd64 --arch amd64
-      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim $REPOSITORY_URI:$IMAGE_TAG-slim-arm64 --arch arm64
-      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-slim
+        push_variant() {
+          local suffix="$1"
+          local ref="$REPOSITORY_URI:$IMAGE_TAG${suffix}"
+          imagetools_create_or_skip_existing "$ref" "${ref}-amd64" "${ref}-arm64"
+        }
 
-      # Dev variant
-      - >-
-        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-dev $REPOSITORY_URI:$IMAGE_TAG-dev-amd64
-        $REPOSITORY_URI:$IMAGE_TAG-dev-arm64
-      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-dev $REPOSITORY_URI:$IMAGE_TAG-dev-amd64 --arch amd64
-      - docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-dev $REPOSITORY_URI:$IMAGE_TAG-dev-arm64 --arch arm64
-      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-dev
-
-      # Validator variant
-      - >-
-        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-validator $REPOSITORY_URI:$IMAGE_TAG-validator-amd64
-        $REPOSITORY_URI:$IMAGE_TAG-validator-arm64
-      - >-
-        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-validator
-        $REPOSITORY_URI:$IMAGE_TAG-validator-amd64 --arch amd64
-      - >-
-        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-validator
-        $REPOSITORY_URI:$IMAGE_TAG-validator-arm64 --arch arm64
-      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-validator
-
-      # Stripped variant
-      - >-
-        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-stripped $REPOSITORY_URI:$IMAGE_TAG-stripped-amd64
-        $REPOSITORY_URI:$IMAGE_TAG-stripped-arm64
-      - >-
-        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-stripped
-        $REPOSITORY_URI:$IMAGE_TAG-stripped-amd64 --arch amd64
-      - >-
-        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-stripped
-        $REPOSITORY_URI:$IMAGE_TAG-stripped-arm64 --arch arm64
-      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-stripped
-
-      # Slim-stripped variant
-      - >-
-        docker manifest create $REPOSITORY_URI:$IMAGE_TAG-slim-stripped $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-amd64
-        $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-arm64
-      - >-
-        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim-stripped
-        $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-amd64 --arch amd64
-      - >-
-        docker manifest annotate $REPOSITORY_URI:$IMAGE_TAG-slim-stripped
-        $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-arm64 --arch arm64
-      - docker manifest push $REPOSITORY_URI:$IMAGE_TAG-slim-stripped
+        push_variant ""
+        push_variant "-slim"
+        push_variant "-dev"
+        push_variant "-validator"
+        push_variant "-stripped"
+        push_variant "-slim-stripped"
