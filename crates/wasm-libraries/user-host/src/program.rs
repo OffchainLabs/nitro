@@ -157,7 +157,10 @@ unsafe fn send_request(req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, Gas
         if got_id != req_id {
             panic!("bad req id returning from send_request")
         }
-        current_requester().answer.take().unwrap()
+        current_requester()
+            .answer
+            .take()
+            .expect("host did not call set_response before returning from program_request")
     }
 }
 
