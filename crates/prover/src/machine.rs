@@ -790,9 +790,9 @@ impl Module {
 
         // Length-prefix the body so the decoder catches trailing-bytes
         // corruption regardless of brotli's behavior on extra input.
-        let mut out = Vec::with_capacity(WAVM_MAGIC.len() + 1 + 4 + compressed.len());
+        let mut out = Vec::with_capacity(WAVM_MAGIC.len() + 4 + 4 + compressed.len());
         out.extend_from_slice(WAVM_MAGIC);
-        out.push(WAVM_SERIALIZE_VERSION);
+        out.extend_from_slice(&WAVM_SERIALIZE_VERSION.to_be_bytes());
         write_bytes(&mut out, &compressed)?;
 
         Ok(out)
@@ -804,8 +804,8 @@ impl Module {
     /// `Table::elems_merkle` is left as `Merkle::default()` to mirror
     /// `Module::from_binary`.
     pub fn from_wavm_bytes(data: &[u8]) -> Result<Module> {
-        // magic(4) + version(1) + envelope-length prefix u32(4) = 9 bytes
-        const HEADER_MIN: usize = WAVM_MAGIC.len() + 1 + 4;
+        // magic(4) + version u32(4) + envelope-length prefix u32(4) = 12 bytes
+        const HEADER_MIN: usize = WAVM_MAGIC.len() + 4 + 4;
         ensure!(
             data.len() >= HEADER_MIN,
             "wavm decode: data too short for header ({} < {})",
@@ -816,7 +816,10 @@ impl Module {
             &data[..WAVM_MAGIC.len()] == WAVM_MAGIC,
             "wavm decode: magic mismatch"
         );
-        let version = data[WAVM_MAGIC.len()];
+        let version_bytes: [u8; 4] = data[WAVM_MAGIC.len()..WAVM_MAGIC.len() + 4]
+            .try_into()
+            .expect("HEADER_MIN guarantees 4 bytes here");
+        let version = u32::from_be_bytes(version_bytes);
         ensure!(
             version == WAVM_SERIALIZE_VERSION,
             "wavm decode: unsupported WavmSerializeVersion {version}, expected {WAVM_SERIALIZE_VERSION}",
@@ -824,7 +827,7 @@ impl Module {
 
         // `is_empty()` after read rejects trailing bytes regardless of
         // brotli's tolerance for extra input.
-        let mut env = Cursor::new(&data[WAVM_MAGIC.len() + 1..]);
+        let mut env = Cursor::new(&data[WAVM_MAGIC.len() + 4..]);
         let raw_body = env.read_bytes()?;
         ensure!(
             env.is_empty(),

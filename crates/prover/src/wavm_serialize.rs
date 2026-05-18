@@ -33,7 +33,7 @@ pub const WAVM_MAGIC: &[u8; 4] = b"WAVM";
 // Bump on any on-disk shape change; the Go validator purges incompatible
 // entries on next boot. Brotli is part of the contract — switching schemes
 // requires a version bump.
-pub const WAVM_SERIALIZE_VERSION: u8 = 1;
+pub const WAVM_SERIALIZE_VERSION: u32 = 1;
 
 // ===== ref type kind byte =====
 //

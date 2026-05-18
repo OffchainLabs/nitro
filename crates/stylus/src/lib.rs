@@ -265,7 +265,7 @@ pub extern "C" fn stylus_get_native_stack_size() -> u64 {
 /// `WavmSerializeVersion`, so a one-sided bump fails fast.
 #[unsafe(no_mangle)]
 pub extern "C" fn stylus_wavm_format_version() -> u32 {
-    prover::wavm_serialize::WAVM_SERIALIZE_VERSION as u32
+    prover::wavm_serialize::WAVM_SERIALIZE_VERSION
 }
 
 /// Calls an activated user program.

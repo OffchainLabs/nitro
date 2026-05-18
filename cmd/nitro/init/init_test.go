@@ -835,6 +835,10 @@ func TestValidateOrUpgradeWavmRefusesOnFFIMismatch(t *testing.T) {
 	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
 	writeKeys(t, db, wavmKeys)
 
+	// NOTE: do NOT add t.Parallel() to any test that touches
+	// readRustWavmFormatVersion: the package-level override is restored via
+	// t.Cleanup at the end of this test, which is only safe under sequential
+	// execution within the package.
 	original := readRustWavmFormatVersion
 	t.Cleanup(func() { readRustWavmFormatVersion = original })
 	readRustWavmFormatVersion = func() uint32 { return WavmSerializeVersion + 1 }

@@ -460,9 +460,9 @@ fn module_serialization_is_canonical() {
 #[test]
 fn header_magic_and_version_are_emitted() {
     let bytes = build_test_module().to_wavm_bytes().unwrap();
-    assert!(bytes.len() > 5);
+    assert!(bytes.len() > 8);
     assert_eq!(&bytes[..4], WAVM_MAGIC);
-    assert_eq!(bytes[4], WAVM_SERIALIZE_VERSION);
+    assert_eq!(&bytes[4..8], &WAVM_SERIALIZE_VERSION.to_be_bytes());
 }
 
 #[test]
@@ -476,7 +476,7 @@ fn bad_magic_is_rejected() {
 #[test]
 fn wrong_version_is_rejected() {
     let mut bytes = build_test_module().to_wavm_bytes().unwrap();
-    bytes[4] = WAVM_SERIALIZE_VERSION.wrapping_add(1);
+    bytes[4..8].copy_from_slice(&WAVM_SERIALIZE_VERSION.wrapping_add(1).to_be_bytes());
     let err = Module::from_wavm_bytes(&bytes).unwrap_err();
     assert!(
         err.to_string().contains("WavmSerializeVersion"),
@@ -501,7 +501,7 @@ fn empty_body_is_rejected() {
     // field rather than producing a half-built Module or panicking.
     let mut bytes = Vec::new();
     bytes.extend_from_slice(WAVM_MAGIC);
-    bytes.push(WAVM_SERIALIZE_VERSION);
+    bytes.extend_from_slice(&WAVM_SERIALIZE_VERSION.to_be_bytes());
 
     let result = Module::from_wavm_bytes(&bytes);
     assert!(result.is_err(), "empty body should error: {result:?}");
@@ -643,15 +643,15 @@ fn compression_actually_shrinks_realistic_modules() {
         Module::activate(&wasm, &codehash, 3u16, 0, 65535, false, &mut gas).expect("activate");
 
     let envelope = module.to_wavm_bytes().expect("to_wavm_bytes");
-    // Envelope = MAGIC(4) + VERSION(1) + LEN(4) = 9 bytes.
-    let envelope_overhead = WAVM_MAGIC.len() + 1 + 4;
+    // Envelope = MAGIC(4) + VERSION u32(4) + LEN u32(4) = 12 bytes.
+    let envelope_overhead = WAVM_MAGIC.len() + 4 + 4;
     let compressed_payload_len = envelope.len() - envelope_overhead;
 
     // 2x is the floor; q=0 reliably hits ~20x on real modules.
     let rebuilt = Module::from_wavm_bytes(&envelope).expect("from_wavm_bytes");
     let body_len = {
         let again = rebuilt.to_wavm_bytes().unwrap();
-        let mut env = Cursor::new(&again[WAVM_MAGIC.len() + 1..]);
+        let mut env = Cursor::new(&again[WAVM_MAGIC.len() + 4..]);
         let compressed = env.read_bytes().unwrap();
         brotli::decompress(&compressed, Dictionary::Empty)
             .unwrap()
@@ -673,7 +673,7 @@ fn compression_actually_shrinks_realistic_modules() {
 #[test]
 fn wavm_blob_layout_keccak_pinned_to_golden() {
     const WAVM_BLOB_LAYOUT_GOLDEN_HEX: &str =
-        "653ce8d72e0ecb73ed08a7e406deaec698ffa2b5296b62bb8cb3c6192340cfbf";
+        "2f845c1167e83eba161345841522a9de3e8192506500b8a43327c4753f77e105";
 
     let module = build_test_module();
     let bytes = module.to_wavm_bytes().expect("encode");
