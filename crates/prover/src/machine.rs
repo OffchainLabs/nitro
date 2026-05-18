@@ -1397,6 +1397,7 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
 
 // Extracted so a test can pin the diagnostic (operator needs the hex hash
 // to find the offending wasmdb key).
+#[cfg(any(feature = "native", test))]
 pub(crate) fn format_missing_stylus_module_error(
     hash: Bytes32,
     modules: &HashMap<Bytes32, Vec<u8>>,
