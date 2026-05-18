@@ -2,23 +2,21 @@ use arb_spec_tests::runner::{fixtures_root, run_execution_fixture};
 
 /// Sepolia tx 0xe22b6570… at block 204,060,502 (idx 6). EOA -> Stylus
 /// contract 0x68c7… selector 0xab11ec20. Canon receipt: status=0,
-/// gasUsed=45606, gasUsedForL1=0. Local arbreth produces 45748 (+142).
-/// Fixture replay produces 45984 (+378; inflated because we omit the
-/// contract's storage, forcing cold reads).
+/// gasUsed=0xb226=45_606, gasUsedForL1=0.
 ///
-/// NOT in Nitro's hardcoded RevertedTxGasUsed table — Nitro naturally
-/// computes 45606 on this control path. Per-hostio trace
-/// (`STYLUS_HOSTIO_TRACE=1 ARB_SPEC_KEEP_WORKDIR=1`) shows only three
-/// hostios fire before revert: `msg_reentrant`, `pay_for_memory_grow(0)`,
-/// `read_args` — so the +142/+378 delta lives in the WASM bytecode
-/// portion (per-opcode ink ⊕ ink_header_cost basic-block overhead),
-/// not in host-function gas charges. Pricing constants, opcode costs,
-/// and basic-block detection were audited line-by-line vs Nitro and
-/// match exactly.
+/// Root cause: the contract at 0x68c7… was activated at block 204,059,808
+/// with `MaxStackDepth=262_144` (ArbOS v40 default). It recurses deeply,
+/// and Cranelift's compiled output uses different Rust call-stack per
+/// frame on ARM vs x86 → recursion terminates at different ink levels →
+/// different gas. Nitro committed canon on x86; ARM nodes diverge.
 ///
-/// Marked `#[ignore]` until root-caused: leaves the fixture as a
-/// reproducer without breaking the green regression suite.
-#[ignore = "stylus runtime gas drift; root cause not yet isolated"]
+/// Nitro hardcoded the analogous tx 34s earlier (`0x58df300a…`, block
+/// 204,060,366) — see `nitro/go-ethereum/core/reverted_tx_gas.go`
+/// (original commit message: "*bypass transaction execution for
+/// problematic txs execution on ARM architecture*"). This tx wasn't
+/// added to Nitro's table (likely oversight). arbreth on arm64 runs the
+/// same ARM-divergent path so we add it to our own `reverted_tx_gas`
+/// table to keep consensus on sync.
 #[test]
 fn sepolia_block_204_060_502_stylus_gas_drift() {
     let path = fixtures_root()
