@@ -20,9 +20,11 @@ use std::{collections::HashMap, sync::Arc};
 
 use arb_stylus::{config::CompileConfig, middleware::opcode_ink_cost};
 use wasmer::{
-    imports, sys::EngineBuilder, wasmparser::Operator, CompilerConfig, Cranelift,
-    CraneliftOptLevel, Function, Imports, Instance, Module, Store, Value,
+    imports,
+    sys::{Cranelift, CraneliftOptLevel, EngineBuilder},
+    Function, Imports, Instance, Module, Store, Value,
 };
+use wasmer_compiler::{wasmparser::Operator, CompilerConfig};
 
 // ── Test fixtures (verbatim from Nitro's crates/stylus/tests/) ─────
 
@@ -384,13 +386,13 @@ fn opcode_ink_cost_matches_nitro_pricing_v1() {
         // Block control
         (
             Operator::Block {
-                blockty: wasmer::wasmparser::BlockType::Empty,
+                blockty: wasmer_compiler::wasmparser::BlockType::Empty,
             },
             1,
         ),
         (
             Operator::Loop {
-                blockty: wasmer::wasmparser::BlockType::Empty,
+                blockty: wasmer_compiler::wasmparser::BlockType::Empty,
             },
             1,
         ),
@@ -400,7 +402,7 @@ fn opcode_ink_cost_matches_nitro_pricing_v1() {
         (Operator::BrIf { relative_depth: 0 }, 765),
         (
             Operator::If {
-                blockty: wasmer::wasmparser::BlockType::Empty,
+                blockty: wasmer_compiler::wasmparser::BlockType::Empty,
             },
             765,
         ),
@@ -410,21 +412,9 @@ fn opcode_ink_cost_matches_nitro_pricing_v1() {
         (Operator::LocalSet { local_index: 0 }, 210),
         (Operator::GlobalGet { global_index: 0 }, 225),
         (Operator::GlobalSet { global_index: 0 }, 575),
-        // Memory
-        (
-            Operator::MemorySize {
-                mem: 0,
-                mem_byte: 0,
-            },
-            3000,
-        ),
-        (
-            Operator::MemoryGrow {
-                mem: 0,
-                mem_byte: 0,
-            },
-            8050,
-        ),
+        // Memory (wasmparser 0.245 dropped the `mem_byte` reserved field)
+        (Operator::MemorySize { mem: 0 }, 3000),
+        (Operator::MemoryGrow { mem: 0 }, 8050),
         (
             Operator::MemoryCopy {
                 dst_mem: 0,

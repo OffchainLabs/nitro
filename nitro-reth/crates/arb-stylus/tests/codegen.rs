@@ -21,9 +21,11 @@ use std::sync::Arc;
 
 use arb_stylus::config::CompileConfig;
 use wasmer::{
-    imports, sys::EngineBuilder, CompilerConfig, Cranelift, CraneliftOptLevel, Imports, Instance,
-    Module, Store, Value,
+    imports,
+    sys::{Cranelift, CraneliftOptLevel, EngineBuilder},
+    Imports, Instance, Module, Store, Value,
 };
+use wasmer_compiler::CompilerConfig;
 
 // ── Shared helpers (kept identical to wavm.rs on purpose) ──────────
 

@@ -123,7 +123,10 @@ impl CompileConfig {
     /// Create a wasmer Engine with the configured middleware.
     pub fn engine(&self) -> Engine {
         use std::sync::Arc;
-        use wasmer::{sys::EngineBuilder, CompilerConfig, Cranelift, CraneliftOptLevel};
+        // wasmer 7: Cranelift + CraneliftOptLevel moved under `sys`; CompilerConfig
+        // is now re-exported via `wasmer_compiler`.
+        use wasmer::sys::{Cranelift, CraneliftOptLevel, EngineBuilder};
+        use wasmer_compiler::CompilerConfig;
 
         use crate::middleware;
 
