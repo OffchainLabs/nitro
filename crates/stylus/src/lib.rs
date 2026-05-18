@@ -140,14 +140,9 @@ pub unsafe extern "C" fn stylus_activate(
             Err(err) => return write_err(output, err),
         };
 
-        // Serialize first so the FFI out-params are written only on the
-        // success path. Today `to_wavm_bytes` is reachable-but-not-triggered
-        // (the only failure modes are impossible-shape inputs the activator
-        // doesn't produce), but writing outputs before the last fallible
-        // step relies on the Go caller never inspecting them on failure —
-        // a subtle contract the sibling FFI fns (`stylus_compile`, etc.)
-        // don't take on. Match their pattern: outputs are visible iff the
-        // outcome is Success.
+        // Match sibling FFI fns (stylus_compile, etc.): write FFI out-params
+        // only on the success path. Failure paths return via write_err and must
+        // leave outputs untouched, since Go does not inspect them on failure.
         let bytes = match module.to_wavm_bytes() {
             Ok(b) => b,
             Err(err) => return write_err(output, err),

@@ -37,6 +37,19 @@ impl ArbValueType {
     pub fn serialize(self) -> u8 {
         self as u8
     }
+
+    pub fn from_u8(b: u8) -> Result<Self> {
+        Ok(match b {
+            0 => Self::I32,
+            1 => Self::I64,
+            2 => Self::F32,
+            3 => Self::F64,
+            4 => Self::RefNull,
+            5 => Self::FuncRef,
+            6 => Self::InternalRef,
+            other => bail!("unknown ArbValueType byte {other}"),
+        })
+    }
 }
 
 impl TryFrom<ValType> for ArbValueType {

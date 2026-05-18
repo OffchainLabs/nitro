@@ -1055,26 +1055,26 @@ func downloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig
 }
 
 func openDownloadedExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
-	executionDB, wasmDB, wavmPurged, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+	opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to open executionDB: %w", err)
 	}
 
-	if wavmPurged {
+	if opened.wavmPurged {
 		// Leave RebuildingPositionKey unset so rebuildLocalWasm runs the
 		// recovery on this boot; stamping done here would short-circuit it.
 		log.Info("WAVM entries were purged during open; rebuild will run instead of stamping done")
-		return executionDB, wasmDB, nil
+		return opened.executionDB, opened.wasmDB, nil
 	}
 
 	// Rebuilding wasm store is not required when just starting out
-	err = gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
+	err = gethexec.WriteToKeyValueStore(opened.wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
 	log.Info("Setting codehash position in rebuilding of wasm store to done")
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to set codehash position in rebuilding of wasm store to done: %w", err)
 	}
 
-	return executionDB, wasmDB, nil
+	return opened.executionDB, opened.wasmDB, nil
 }
 
 func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Database, error) {
@@ -1092,42 +1092,52 @@ func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Databas
 	return consensusDB, nil
 }
 
-// Opens l2chaindata + wasm DBs and runs schema/version validators. The bool
-// reports whether the wavm-version validator purged entries; callers that
-// stamp RebuildingPositionKey after open must gate on it.
-func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, bool, error) {
+// openedExecutionDB bundles the outputs of openExecutionDB so callers can't
+// mix up the bool with another return value at the call site.
+type openedExecutionDB struct {
+	executionDB ethdb.Database
+	wasmDB      ethdb.Database
+	// wavmPurged is true when validateOrUpgradeWavmSerializeVersion deleted
+	// entries on this open. Callers that stamp RebuildingPositionKey must
+	// gate on it, or the rebuild that recovers the purged entries is
+	// short-circuited on the same boot.
+	wavmPurged bool
+}
+
+// Opens l2chaindata + wasm DBs and runs schema/version validators.
+func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (*openedExecutionDB, error) {
 	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
-		return nil, nil, false, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+		return nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 	}
 
 	wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDB); err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 	if err := validateOrUpgradeWasmerSerializeVersion(wasmDB); err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 	wavmPurged, err := validateOrUpgradeWavmSerializeVersion(wasmDB)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(wasmDB); err != nil {
-		return nil, nil, false, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
+		return nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmDB)
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, executionDB)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 
-	return executionDB, wasmDB, wavmPurged, nil
+	return &openedExecutionDB{executionDB: executionDB, wasmDB: wasmDB, wavmPurged: wavmPurged}, nil
 }
 
 func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
@@ -1141,17 +1151,17 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 
 				// wavmPurged is fine to drop here: the purge already deleted
 				// RebuildingPositionKey, so rebuildLocalWasm fires on its own.
-				executionDB, wasmDB, _, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
 
-				l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+				l2BlockChain, err := gethexec.GetBlockChain(opened.executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
 
-				return executionDB, wasmDB, l2BlockChain, chainConfig, nil
+				return opened.executionDB, opened.wasmDB, l2BlockChain, chainConfig, nil
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {

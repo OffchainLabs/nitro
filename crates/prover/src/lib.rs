@@ -26,4 +26,7 @@ pub mod wavm_serialize;
 #[cfg(test)]
 mod test;
 
+#[cfg(test)]
+mod wavm_format_tests;
+
 pub use machine::Machine;

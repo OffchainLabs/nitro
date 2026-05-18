@@ -86,6 +86,11 @@ pub enum IBinOpType {
     Rotr,
 }
 
+// TWO ENCODINGS, TWO CONTEXTS (the wasmdb half is new in this change):
+//   - wasmdb cached modules (wavm_serialize.rs): stable `Opcode::repr()` u16   [NEW]
+//   - committed `*.wavm.br` replay binary (machine.rs):  bincode discriminant  [unchanged]
+// Both must stay stable; the rules below cover each.
+//
 // WIRE-FORMAT SYNC: persisted WAVM modules identify each opcode by its `repr()`
 // value (a stable u16), not by Rust enum variant order. When adding a new variant
 // here you MUST also:

@@ -1,4 +1,4 @@
-// Copyright 2021-2026, Offchain Labs, Inc.
+// Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //! Stable wire format for persisting WAVM `Module`s in the wasmdb.
@@ -67,13 +67,7 @@ pub fn write_bytes32(out: &mut Vec<u8>, v: &Bytes32) {
 }
 
 pub fn write_bytes(out: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
-    let len = u32::try_from(bytes.len()).map_err(|_| {
-        eyre::eyre!(
-            "wavm encode: byte slice of length {} exceeds u32",
-            bytes.len()
-        )
-    })?;
-    write_u32(out, len);
+    write_count(out, bytes.len())?;
     out.extend_from_slice(bytes);
     Ok(())
 }
@@ -225,19 +219,20 @@ impl<'a> Cursor<'a> {
 /// preventing an attacker-controlled count from triggering a multi-GB
 /// `Vec::with_capacity` before the per-element reads error out.
 ///
-/// `min_elem_bytes` is the smallest possible size of one element in the
-/// stream. Passing `0` disables the bound (use only when the element really
-/// can be zero-length, e.g., `Option<...>` with all-`None` payload).
+/// `min_elem_bytes` must be `>= 1`: every WAVM-encoded element carries at
+/// least a tag byte (including `Option<...>` payloads, which spend a byte
+/// on the present/absent flag).
 pub fn read_count(c: &mut Cursor<'_>, min_elem_bytes: usize) -> Result<usize> {
-    let n = c.read_u32()? as usize;
-    if min_elem_bytes > 0 {
-        let needed = n.saturating_mul(min_elem_bytes);
-        ensure!(
-            needed <= c.remaining(),
-            "wavm decode: count {n} \u{00d7} {min_elem_bytes} = {needed} bytes exceeds {} remaining",
-            c.remaining(),
-        );
+    if min_elem_bytes == 0 {
+        bail!("wavm decode: read_count called with min_elem_bytes = 0 (internal bug)");
     }
+    let n = c.read_u32()? as usize;
+    let needed = n.saturating_mul(min_elem_bytes);
+    ensure!(
+        needed <= c.remaining(),
+        "wavm decode: count {n} \u{00d7} {min_elem_bytes} = {needed} bytes exceeds {} remaining",
+        c.remaining(),
+    );
     Ok(n)
 }
 
@@ -248,17 +243,7 @@ pub fn write_arb_value_type(out: &mut Vec<u8>, v: ArbValueType) {
 }
 
 pub fn read_arb_value_type(c: &mut Cursor<'_>) -> Result<ArbValueType> {
-    let b = c.read_u8()?;
-    Ok(match b {
-        0 => ArbValueType::I32,
-        1 => ArbValueType::I64,
-        2 => ArbValueType::F32,
-        3 => ArbValueType::F64,
-        4 => ArbValueType::RefNull,
-        5 => ArbValueType::FuncRef,
-        6 => ArbValueType::InternalRef,
-        other => bail!("wavm decode: unknown ArbValueType byte {other}"),
-    })
+    ArbValueType::from_u8(c.read_u8()?)
 }
 
 // ===== Value =====
@@ -937,13 +922,16 @@ mod tests {
     }
 
     #[test]
-    fn read_count_allows_zero_element_size() {
-        // Per docs, passing 0 disables the bound (some payloads really can be
-        // zero-byte-per-element). The reader must still accept any u32.
+    fn read_count_rejects_zero_min_elem_bytes() {
+        // min_elem_bytes = 0 is an internal-bug signal, not a valid call.
         let mut out = Vec::new();
-        write_u32(&mut out, u32::MAX);
+        write_u32(&mut out, 0);
         let mut c = Cursor::new(&out);
-        assert_eq!(read_count(&mut c, 0).unwrap(), u32::MAX as usize);
+        let err = read_count(&mut c, 0).unwrap_err().to_string();
+        assert!(
+            err.contains("min_elem_bytes = 0"),
+            "expected read_count to bail on min_elem_bytes = 0, got: {err}",
+        );
     }
 
     #[test]
