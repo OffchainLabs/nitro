@@ -47,7 +47,20 @@ impl NitroDocker {
         let parent_chain_url = ctx.mock_l1_rpc.replace("127.0.0.1", "host.docker.internal");
 
         let chain_config = build_chain_config(ctx);
-        let chain_info_json = render_chain_info_json(ctx, &chain_config);
+        // Seed Nitro's genesis from the fixture's alloc by writing a
+        // geth-compatible genesis file and mounting it into the container.
+        // Without this, --init.empty=true makes Nitro start from a chain-config-
+        // only state, dropping fixture-defined accounts and rejecting any tx
+        // whose sender lacks balance or has a fresh nonce. The conversion
+        // matches the layout Nitro's init.go parses (serializedChainConfig
+        // string + standard geth genesis fields + alloc).
+        let seed_genesis = ctx.genesis.get("alloc").is_some();
+        let genesis_host_dir = if seed_genesis {
+            Some(write_nitro_genesis_file(ctx, &chain_config)?)
+        } else {
+            None
+        };
+        let chain_info_json = render_chain_info_json(ctx, &chain_config, seed_genesis);
 
         let mut cmd = Command::new("docker");
         cmd.args([
@@ -59,10 +72,19 @@ impl NitroDocker {
             "127.0.0.1::8547",
             "--user",
             "root",
-            "--entrypoint",
-            "/usr/local/bin/nitro",
-            &image,
-            "--init.empty=true",
+        ]);
+        if let Some(dir) = &genesis_host_dir {
+            // Mount the directory holding genesis.json read-only into the container.
+            cmd.arg("-v");
+            cmd.arg(format!("{}:/arb-harness-genesis:ro", dir.display()));
+        }
+        cmd.args(["--entrypoint", "/usr/local/bin/nitro", &image]);
+        if seed_genesis {
+            cmd.arg("--init.genesis-json-file=/arb-harness-genesis/genesis.json");
+        } else {
+            cmd.arg("--init.empty=true");
+        }
+        cmd.args([
             "--init.validate-genesis-assertion=false",
             "--persistent.global-config=/tmp/nitro-data",
             "--node.parent-chain-reader.enable=false",
@@ -221,11 +243,14 @@ fn build_chain_config(ctx: &NodeStartCtx) -> Value {
     chain_config
 }
 
-fn render_chain_info_json(ctx: &NodeStartCtx, chain_config: &Value) -> String {
+fn render_chain_info_json(ctx: &NodeStartCtx, chain_config: &Value, seed_genesis: bool) -> String {
     let entry = json!([{
         "chain-name": format!("arbreth-test-{}", ctx.l2_chain_id),
         "parent-chain-id": ctx.l1_chain_id,
         "parent-chain-is-arbitrum": false,
+        // When seed_genesis is set, nitro loads init.genesis-json-file
+        // and its state takes precedence over chain-config-only init.
+        // has-genesis-state stays false so nitro reads our JSON path.
         "has-genesis-state": false,
         "chain-config": chain_config,
         "rollup": {
@@ -238,7 +263,60 @@ fn render_chain_info_json(ctx: &NodeStartCtx, chain_config: &Value) -> String {
             "deployed-at": 0,
         },
     }]);
+    let _ = seed_genesis; // reserved for future use if the flag has to flip
     serde_json::to_string(&entry).unwrap_or_default()
+}
+
+/// Materialise a Nitro-compatible genesis file from the fixture's `genesis`
+/// section and return the host directory containing `genesis.json` (which the
+/// caller bind-mounts into the container). Nitro's `init.go::OpenInitDb`
+/// expects:
+///   - `serializedChainConfig`: stringified JSON of the chain config
+///   - standard geth genesis fields (`alloc`, `gasLimit`, etc.)
+fn write_nitro_genesis_file(
+    ctx: &NodeStartCtx,
+    chain_config: &Value,
+) -> Result<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join(format!(
+        "arb-harness-nitro-genesis-{}-{}",
+        std::process::id(),
+        CONTAINER_SEQ.load(std::sync::atomic::Ordering::SeqCst),
+    ));
+    std::fs::create_dir_all(&dir).map_err(HarnessError::Io)?;
+
+    let alloc = ctx
+        .genesis
+        .get("alloc")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    // Pull through any geth fields the fixture supplied; default the rest.
+    let take = |key: &str, default: Value| -> Value {
+        ctx.genesis.get(key).cloned().unwrap_or(default)
+    };
+
+    let serialized_chain_config = serde_json::to_string(chain_config).unwrap_or_default();
+
+    let genesis = json!({
+        "serializedChainConfig": serialized_chain_config,
+        "alloc": alloc,
+        "nonce": take("nonce", json!("0x0")),
+        "timestamp": take("timestamp", json!("0x0")),
+        "extraData": take("extraData", json!("0x")),
+        "gasLimit": take("gasLimit", json!("0x4000000000000")),
+        "difficulty": take("difficulty", json!("0x1")),
+        "mixHash": take("mixHash", json!("0x0000000000000000000000000000000000000000000000000000000000000000")),
+        "coinbase": take("coinbase", json!("0x0000000000000000000000000000000000000000")),
+        "number": take("number", json!("0x0")),
+        "gasUsed": take("gasUsed", json!("0x0")),
+        "parentHash": take("parentHash", json!("0x0000000000000000000000000000000000000000000000000000000000000000")),
+        "baseFeePerGas": take("baseFeePerGas", json!("0x5f5e100")),
+    });
+
+    let path = dir.join("genesis.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&genesis).unwrap_or_default())
+        .map_err(HarnessError::Io)?;
+    Ok(dir)
 }
 
 impl ExecutionNode for NitroDocker {
