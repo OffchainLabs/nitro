@@ -353,6 +353,7 @@ fn block0_parity_zero_chain_owner_v40() {
         report.is_clean(),
         "block 0 should have no non-genesis-noise divergence"
     );
+    assert_arbos_slots_match(&rig, 0);
 }
 
 #[test]
@@ -392,6 +393,7 @@ fn block0_parity_with_custom_chain_owner_v40() {
         report.is_clean(),
         "block 0 should have no non-genesis-noise divergence with custom chain owner"
     );
+    assert_arbos_slots_match(&rig, 0);
 }
 
 const ARBOS_STATE_ADDRESS: Address = Address::new([
@@ -593,6 +595,116 @@ fn staged_upgrade_v40_to_v50_to_v60() {
         diff_arbos_state_at(&rig, latest);
     }
     assert!(report.is_clean(), "staged upgrade must produce no diffs");
+    // Hardening: filter_genesis_noise strips state_root, so block-level
+    // checks alone don't prove account/storage parity. Compare ArbOS state
+    // slots directly via eth_getStorageAt across all subspaces at the
+    // latest block. Any divergence here means execution paths drift even
+    // if receipts/logs match.
+    let latest = rig
+        .dual
+        .left
+        .block(BlockId::Latest)
+        .expect("left latest");
+    assert_arbos_slots_match(&rig, latest.number);
+}
+
+const ARBOS_SUBSPACES: &[(&str, &[u8])] = &[
+    ("root", &[]),
+    ("l1pricing", &[0]),
+    ("l2pricing", &[1]),
+    ("retryables", &[2]),
+    ("address_table", &[3]),
+    ("chain_owner", &[4]),
+    ("send_merkle", &[5]),
+    ("blockhashes", &[6]),
+    ("chain_config", &[7]),
+    ("programs", &[8]),
+    ("features", &[9]),
+    ("native_token_owner", &[10]),
+    ("tx_filtering", &[11]),
+];
+
+fn derive_sub_key_local(parent: B256, sub: &[u8]) -> B256 {
+    use alloy_primitives::keccak256;
+    let base: &[u8] = if parent == B256::ZERO {
+        &[]
+    } else {
+        parent.as_slice()
+    };
+    let mut buf = Vec::with_capacity(base.len() + sub.len());
+    buf.extend_from_slice(base);
+    buf.extend_from_slice(sub);
+    keccak256(&buf)
+}
+
+fn slot_for_offset(storage_key: &[u8], offset: u64) -> B256 {
+    use alloy_primitives::keccak256;
+    const BOUNDARY: usize = 31;
+    let mut key_bytes = [0u8; 32];
+    key_bytes[24..32].copy_from_slice(&offset.to_be_bytes());
+    let mut buf = Vec::with_capacity(storage_key.len() + BOUNDARY);
+    buf.extend_from_slice(storage_key);
+    buf.extend_from_slice(&key_bytes[..BOUNDARY]);
+    let h = keccak256(&buf);
+    let mut mapped = [0u8; 32];
+    mapped[..BOUNDARY].copy_from_slice(&h.0[..BOUNDARY]);
+    mapped[BOUNDARY] = key_bytes[BOUNDARY];
+    B256::from(mapped)
+}
+
+/// Compare ArbOS state slots between Nitro and arbreth at the given block.
+/// Panics with a detailed diff dump if any slot disagrees.
+fn assert_arbos_slots_match(rig: &StagedRig, block_number: u64) {
+    let at = BlockId::Number(block_number);
+    let mut diverged: Vec<(String, B256, B256, B256)> = Vec::new();
+    let mut total_probed = 0usize;
+    for (name, sub) in ARBOS_SUBSPACES {
+        let storage_key = if sub.is_empty() {
+            B256::ZERO
+        } else {
+            derive_sub_key_local(B256::ZERO, sub)
+        };
+        let sk_slice: &[u8] = if storage_key == B256::ZERO {
+            &[]
+        } else {
+            storage_key.as_slice()
+        };
+        for offset in 0u64..30 {
+            let slot = slot_for_offset(sk_slice, offset);
+            let l = rig
+                .dual
+                .left
+                .storage(ARBOS_STATE_ADDRESS, slot, at.clone())
+                .unwrap_or(B256::ZERO);
+            let r = rig
+                .dual
+                .right
+                .storage(ARBOS_STATE_ADDRESS, slot, at.clone())
+                .unwrap_or(B256::ZERO);
+            total_probed += 1;
+            if l != r {
+                diverged.push((format!("{name}[{offset}]"), slot, l, r));
+            }
+        }
+    }
+    if !diverged.is_empty() {
+        eprintln!(
+            "[ASSERT-FAIL] {}/{} ArbOS slots diverge at block#{block_number}",
+            diverged.len(),
+            total_probed
+        );
+        for (label, slot, l, r) in diverged.iter().take(32) {
+            eprintln!(
+                "  DIFF {label:30}  slot={slot:?}\n    nitro  ={l:?}\n    arbreth={r:?}"
+            );
+        }
+        panic!(
+            "ArbOS storage slots diverged: {}/{} at block#{block_number}",
+            diverged.len(),
+            total_probed
+        );
+    }
+    eprintln!("[OK] ArbOS storage: {total_probed} slots match at block#{block_number}");
 }
 
 fn diff_arbos_state_at(rig: &StagedRig, n: u64) {
@@ -829,8 +941,26 @@ fn fuzz_staged_upgrade_post_v60_traffic() {
             Ok(raw) => {
                 let report = filter_genesis_noise(raw);
                 if report.is_clean() {
-                    clean += 1;
-                    eprintln!("[fuzz_staged] iter {i}: clean");
+                    // Harden: verify ArbOS state slots match too (filter
+                    // strips state_root, so execution-field parity alone
+                    // could miss account/storage drift).
+                    let latest = rig
+                        .dual
+                        .left
+                        .block(BlockId::Latest)
+                        .expect("left latest")
+                        .number;
+                    let slot_ok = std::panic::catch_unwind(
+                        std::panic::AssertUnwindSafe(|| assert_arbos_slots_match(&rig, latest)),
+                    );
+                    if slot_ok.is_ok() {
+                        clean += 1;
+                        eprintln!("[fuzz_staged] iter {i}: clean (slots match)");
+                    } else {
+                        let summary = format!("iter {i}: ArbOS slot mismatch at block#{latest}");
+                        eprintln!("[fuzz_staged] DIVERGENCE {summary}");
+                        diverged.push(summary);
+                    }
                 } else {
                     let summary = format!(
                         "iter {i}: blocks={} txs={} state={} logs={}",

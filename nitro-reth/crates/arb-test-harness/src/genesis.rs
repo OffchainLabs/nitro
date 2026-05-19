@@ -94,6 +94,7 @@ impl GenesisBuilder {
         let config = json!({
             "chainId": self.l2_chain_id,
             "homesteadBlock": 0,
+            "daoForkSupport": true,
             "eip150Block": 0,
             "eip155Block": 0,
             "eip158Block": 0,
@@ -101,8 +102,11 @@ impl GenesisBuilder {
             "constantinopleBlock": 0,
             "petersburgBlock": 0,
             "istanbulBlock": 0,
+            "muirGlacierBlock": 0,
             "berlinBlock": 0,
             "londonBlock": 0,
+            "depositContractAddress": "0x0000000000000000000000000000000000000000",
+            "clique": { "period": 0, "epoch": 0 },
             "arbitrum": {
                 "EnableArbOS": true,
                 "AllowDebugPrecompiles": self.allow_debug_precompiles,
