@@ -227,6 +227,13 @@ func (r *ChainTipBlockRecorder) ServedTipRecordings() uint64 {
 	return r.servedTipRecordings.Load()
 }
 
+func (r *ChainTipBlockRecorder) Close() error {
+	if r.recordsDatabase == nil {
+		return nil
+	}
+	return r.recordsDatabase.Close()
+}
+
 func (r *ChainTipBlockRecorder) loadRecentHeaderPreimages(record *execution.RecordResult, blockNumber uint64, parentHash common.Hash, firstHeaderNumber uint64) error {
 	if blockNumber == 0 {
 		return nil

@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -166,6 +167,21 @@ func testHash(b byte) common.Hash {
 func newTestChainTipRecorderWithHeaderCache(size int) *ChainTipBlockRecorder {
 	return &ChainTipBlockRecorder{
 		headerPreimages: containers.NewLruCache[common.Hash, arbitrum.RecordedHeaderPreimage](size),
+	}
+}
+
+func testChainTipRecording(pos arbutil.MessageIndex) *chainTipRecording {
+	return &chainTipRecording{
+		record: &execution.RecordResult{
+			Pos:       pos,
+			BlockHash: testHash(byte(pos + 1)),
+			Preimages: map[common.Hash][]byte{
+				testHash(1): {byte(pos)},
+			},
+		},
+		blockNumber:       uint64(pos + 100),
+		parentHash:        testHash(byte(pos + 2)),
+		firstHeaderNumber: uint64(pos + 99),
 	}
 }
 
@@ -382,6 +398,163 @@ func TestBlockRecordsDatabaseReadMissing(t *testing.T) {
 	}
 	if ok || loaded != nil {
 		t.Fatalf("expected missing recording, got ok=%t loaded=%+v", ok, loaded)
+	}
+}
+
+func TestBlockRecordsDatabaseFreezesOldRecordings(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	freezer, err := rawdb.NewChainTipBlockRecordsFreezer("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newBlockRecordsDatabaseWithFreezer(db, freezer)
+	latestPos := arbutil.MessageIndex(chainTipBlockRecordHotRetention + 1)
+	for pos := arbutil.MessageIndex(0); pos <= latestPos; pos++ {
+		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	frozen, err := freezer.Ancients()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frozen != 2 {
+		t.Fatalf("expected 2 frozen recordings, got %d", frozen)
+	}
+	if exists, err := db.Has(blockRecordKey(0)); err != nil {
+		t.Fatal(err)
+	} else if exists {
+		t.Fatal("expected frozen recording to be removed from key-value database")
+	}
+	if exists, err := db.Has(blockRecordKey(latestPos)); err != nil {
+		t.Fatal(err)
+	} else if !exists {
+		t.Fatal("expected recent recording to remain in key-value database")
+	}
+	loaded, ok, err := store.readRecording(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected frozen recording")
+	}
+	if loaded.record.Pos != 0 || loaded.record.BlockHash != testChainTipRecording(0).record.BlockHash {
+		t.Fatalf("unexpected frozen recording: %+v", loaded.record)
+	}
+	loaded, ok, err = store.readRecording(latestPos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || loaded.record.Pos != latestPos {
+		t.Fatalf("expected recent key-value recording, got ok=%t loaded=%+v", ok, loaded)
+	}
+}
+
+func TestBlockRecordsDatabaseFreezerPersistsAcrossReopen(t *testing.T) {
+	dir := t.TempDir()
+	db, err := node.NewPebbleDBDatabase(filepath.Join(dir, "kv"), 0, 0, "", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freezer, err := rawdb.NewChainTipBlockRecordsFreezer(filepath.Join(dir, "ancient"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newBlockRecordsDatabaseWithFreezer(rawdb.NewDatabase(db), freezer)
+	latestPos := arbutil.MessageIndex(chainTipBlockRecordHotRetention + 1)
+	for pos := arbutil.MessageIndex(0); pos <= latestPos; pos++ {
+		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = node.NewPebbleDBDatabase(filepath.Join(dir, "kv"), 0, 0, "", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freezer, err = rawdb.NewChainTipBlockRecordsFreezer(filepath.Join(dir, "ancient"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer freezer.Close()
+	defer db.Close()
+	store = newBlockRecordsDatabaseWithFreezer(rawdb.NewDatabase(db), freezer)
+	loaded, ok, err := store.readRecording(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected frozen recording after reopening database")
+	}
+	if loaded.record.Pos != 0 || loaded.record.BlockHash != testChainTipRecording(0).record.BlockHash {
+		t.Fatalf("unexpected frozen recording after reopening database: %+v", loaded.record)
+	}
+}
+
+func TestBlockRecordsDatabaseFreezerSupportsNonZeroBase(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	freezer, err := rawdb.NewChainTipBlockRecordsFreezer("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newBlockRecordsDatabaseWithFreezer(db, freezer)
+	firstPos := arbutil.MessageIndex(1000)
+	latestPos := firstPos + chainTipBlockRecordHotRetention + 1
+	for pos := firstPos; pos <= latestPos; pos++ {
+		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	frozen, err := freezer.Ancients()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frozen != 2 {
+		t.Fatalf("expected 2 frozen recordings, got %d", frozen)
+	}
+	loaded, ok, err := store.readRecording(firstPos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || loaded.record.Pos != firstPos {
+		t.Fatalf("expected first non-zero-base frozen recording, got ok=%t loaded=%+v", ok, loaded)
+	}
+}
+
+func TestBlockRecordsDatabaseKeyValueRecordShadowsFrozenRecord(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	freezer, err := rawdb.NewChainTipBlockRecordsFreezer("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newBlockRecordsDatabaseWithFreezer(db, freezer)
+	latestPos := arbutil.MessageIndex(chainTipBlockRecordHotRetention + 1)
+	for pos := arbutil.MessageIndex(0); pos <= latestPos; pos++ {
+		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reorged := testChainTipRecording(0)
+	reorged.record.BlockHash = testHash(250)
+	if err := store.writeRecording(reorged); err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok, err := store.readRecording(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected shadowing key-value recording")
+	}
+	if loaded.record.BlockHash != reorged.record.BlockHash {
+		t.Fatalf("expected key-value recording to shadow frozen record, got %s", loaded.record.BlockHash)
 	}
 }
 

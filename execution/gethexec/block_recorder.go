@@ -90,6 +90,7 @@ type ExecutionBlockRecorder interface {
 	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 	MarkValid(pos arbutil.MessageIndex, blockHash common.Hash)
 	OrderlyShutdown()
+	Close() error
 }
 
 func NewBlockRecorder(config *BlockRecorderConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
@@ -401,6 +402,10 @@ func (r *BlockRecorder) WriteValidStateToDb() error {
 	err := r.recordingDatabase.WriteStateToDatabase(r.validHdr)
 	r.recordingDatabase.Dereference(r.validHdr)
 	return err
+}
+
+func (r *BlockRecorder) Close() error {
+	return nil
 }
 
 func (r *BlockRecorder) OrderlyShutdown() {
