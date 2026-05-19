@@ -23,7 +23,7 @@ use crate::{
     Result,
 };
 
-const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db";
+const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.1-d7f07be";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct NitroDocker {
