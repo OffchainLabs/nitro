@@ -23,9 +23,11 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
         &self,
         receipts: Vec<ConvertReceiptInput<'_, ArbPrimitives>>,
     ) -> Result<Vec<Self::RpcReceipt>, EthApiError> {
+        // Without the block we cannot read mix_hash[25] for CollectTips;
+        // assume false (matches arbreth's behaviour up to v60).
         let results = receipts
             .into_iter()
-            .map(|input| convert_single_receipt(input, None))
+            .map(|input| convert_single_receipt(input, None, false))
             .collect();
         Ok(results)
     }
@@ -37,10 +39,12 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
     ) -> Result<Vec<Self::RpcReceipt>, Self::Error> {
         let mix_hash = block.header().mix_hash;
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
+        // Nitro encodes CollectTips in bit 0 of mix_hash byte 25.
+        let collect_tips = (mix_hash.0[25] & 1) == 1;
 
         let results = receipts
             .into_iter()
-            .map(|input| convert_single_receipt(input, Some(l1_block_number)))
+            .map(|input| convert_single_receipt(input, Some(l1_block_number), collect_tips))
             .collect();
         Ok(results)
     }
@@ -49,6 +53,7 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
 fn convert_single_receipt(
     input: ConvertReceiptInput<'_, ArbPrimitives>,
     l1_block_number: Option<u64>,
+    collect_tips: bool,
 ) -> WithOtherFields<TransactionReceipt> {
     use alloy_consensus::{transaction::TxHashRef, Transaction};
 
@@ -110,8 +115,29 @@ fn convert_single_receipt(
         _ => ReceiptEnvelope::Legacy(receipt_with_bloom),
     };
 
-    // On Arbitrum, effective gas price is always the block base fee for all tx types.
-    let effective_gas_price = meta.base_fee.unwrap_or(0) as u128;
+    // effective_gas_price follows Nitro's `Receipts.DeriveFields` logic
+    // (`go-ethereum/core/types/receipt.go`): when the block header's
+    // CollectTips bit (mix_hash[25] & 1) is set, use the standard per-tx
+    // formula; otherwise return the block base fee. Pre-ArbOS-v60, Nitro's
+    // ArbosState forces CollectTips=false, so the bit is always 0 — but
+    // mirroring the full logic prepares us for v60 onward and matches what
+    // Nitro will return on the RPC.
+    let base_fee = meta.base_fee.unwrap_or(0) as u128;
+    let effective_gas_price = if collect_tips {
+        match tx_type {
+            // Legacy + EIP-2930: stored gas price.
+            0x00 | 0x01 => tx.gas_price().unwrap_or(base_fee),
+            // EIP-1559, EIP-4844, EIP-7702 and Arbitrum-internal kinds:
+            // min(maxFeePerGas, baseFee + tipCap).
+            _ => {
+                let tip = tx.max_priority_fee_per_gas().unwrap_or(0);
+                let cap = tx.max_fee_per_gas();
+                base_fee.saturating_add(tip).min(cap)
+            }
+        }
+    } else {
+        base_fee
+    };
 
     let base_receipt = TransactionReceipt {
         inner: envelope,
