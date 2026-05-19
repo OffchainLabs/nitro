@@ -204,12 +204,18 @@ impl SpawnedNode {
         let log_err = log_file
             .try_clone()
             .map_err(|e| SpecError::Action(format!("clone log fd: {e}")))?;
-        let child = Command::new(binary)
-            .env(
-                "RUST_LOG",
-                std::env::var("ARB_SPEC_RUST_LOG")
-                    .unwrap_or_else(|_| "info,block_producer=debug".to_string()),
-            )
+        let mut cmd = Command::new(binary);
+        cmd.env(
+            "RUST_LOG",
+            std::env::var("ARB_SPEC_RUST_LOG")
+                .unwrap_or_else(|_| "info,block_producer=debug".to_string()),
+        );
+        for var in ["STYLUS_HOSTIO_TRACE", "STYLUS_DEBUG"] {
+            if let Ok(v) = std::env::var(var) {
+                cmd.env(var, v);
+            }
+        }
+        let child = cmd
             .arg("node")
             .arg(format!("--chain={}", chain_path.display()))
             .arg(format!("--datadir={}", workdir.join("db").display()))
