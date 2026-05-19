@@ -6,6 +6,8 @@
 //! They are expected to follow implementations in:
 //! https://github.com/OffchainLabs/nitro/blob/d2dba175c037c47e68cf3038f0d4b06b54983644/arbitrator/jit/src/program.rs
 
+#![allow(clippy::too_many_arguments)]
+
 use arbutil::evm::{EvmData, api::Gas};
 use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use wasmer::{FunctionEnvMut, WasmPtr};

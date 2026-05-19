@@ -12,7 +12,7 @@ jobs:
     runs-on: arbitrator-ci
     env:
       RUST_BACKTRACE: 1
-      # RUSTFLAGS: -Dwarnings          # TODO: re-enable after wasmer upgrade
+      RUSTFLAGS: -Dwarnings
 
     steps:
       - name: Checkout

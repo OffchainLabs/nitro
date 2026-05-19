@@ -8,6 +8,7 @@ use crate::{
     state::{gp, sp1_env},
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn brotli_compress(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     in_buf_ptr: Ptr,

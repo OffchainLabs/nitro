@@ -3,21 +3,17 @@
 
 use std::{convert::TryInto, fs::File, io::Read, path::Path};
 
-use arbutil::PreimageType;
-#[cfg(feature = "kzg")]
-use c_kzg::Blob;
-use digest::Digest;
 use eyre::{Result, eyre};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
-use sha3::Keccak256;
 use wasmparser::{RefType, TableType};
+#[cfg(feature = "kzg")]
+use {crate::kzg::ETHEREUM_KZG_SETTINGS, c_kzg::Blob};
+#[cfg(feature = "native")]
+use {arbutil::PreimageType, digest::Digest, sha2::Sha256, sha3::Keccak256};
 
 pub use crate::cbytes::CBytes;
 #[cfg(feature = "libc")]
 pub use crate::cbytes::CBytesIntoIter;
-#[cfg(feature = "kzg")]
-use crate::kzg::ETHEREUM_KZG_SETTINGS;
 
 /// Unfortunately, [`wasmparser::RefType`] isn't serde and its contents aren't public.
 /// This type enables serde via a 1:1 transmute.

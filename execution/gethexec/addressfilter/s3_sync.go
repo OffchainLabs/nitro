@@ -27,12 +27,10 @@ func trimHexPrefix(s string) string {
 
 // hashListPayload represents the JSON structure of the hash list file used for unmarshalling.
 type hashListPayload struct {
-	Id            string `json:"id"`
-	Salt          string `json:"salt"`
-	HashingScheme string `json:"hashing_scheme,omitempty"`
-	AddressHashes []struct {
-		Hash string `json:"hash"`
-	} `json:"address_hashes"`
+	Id            string   `json:"id"`
+	Salt          string   `json:"salt"`
+	HashingScheme string   `json:"hashing_scheme,omitempty"`
+	Hashes        []string `json:"hashes"`
 }
 
 type parsedPayload struct {
@@ -76,16 +74,16 @@ func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
 }
 
 // parseHashListJSON parses the JSON hash list file.
-// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "address_hashes": [{"hash": "hex1"}, {"hash": "hex2"}, ...]}
+// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "sha256-stringinput", "hashes": ["0xhex1", "0xhex2", ...]}
 func parseHashListJSON(data []byte) (*parsedPayload, error) {
 	var payload hashListPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("JSON unmarshal failed: %w", err)
 	}
 
-	// Validate hashing scheme - warn if not Sha256 but continue for forward compatibility
-	if payload.HashingScheme != "" && payload.HashingScheme != "Sha256" {
-		log.Warn("unknown hashing scheme in address list, continuing with Sha256 assumption",
+	// Validate hashing scheme - warn if not sha256-stringinput but continue for forward compatibility
+	if payload.HashingScheme != "" && payload.HashingScheme != "sha256-stringinput" {
+		log.Warn("unknown hashing scheme in address list, continuing with sha256-stringinput assumption",
 			"scheme", payload.HashingScheme)
 	}
 
@@ -99,9 +97,9 @@ func parseHashListJSON(data []byte) (*parsedPayload, error) {
 		return nil, fmt.Errorf("invalid filter set ID UUID: %w", err)
 	}
 
-	hashes := make([]common.Hash, len(payload.AddressHashes))
-	for i, h := range payload.AddressHashes {
-		hashBytes, err := hex.DecodeString(trimHexPrefix(h.Hash))
+	hashes := make([]common.Hash, len(payload.Hashes))
+	for i, h := range payload.Hashes {
+		hashBytes, err := hex.DecodeString(trimHexPrefix(h))
 		if err != nil {
 			return nil, fmt.Errorf("invalid hash hex at index %d: %w", i, err)
 		}
