@@ -27,6 +27,7 @@ pub fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
 
 macro_rules! wrap {
     (fn $name:ident($($arg:ident: $ty:tt),* $(,)?)) => {
+        #[allow(clippy::too_many_arguments)]
         pub fn $name(mut src: FunctionEnvMut<CustomEnvData>, $($arg: $ty),*) -> u16 {
             let (mut mem, state) = sp1_env(&mut src);
             caller_env::wasip1_stub::$name(&mut mem, state, $(wrap!(@conv $arg $ty)),*).0
