@@ -551,6 +551,46 @@ where
         }
     };
 
+    // EIP-7702: if the callee carries a delegation designator
+    // `0xef 0x01 0x00 || delegate_address`, load the delegate's code and use
+    // that for dispatch. Without this the 23-byte stub is fed directly to the
+    // EVM interpreter; `0xef` has no defined opcode (EIP-3541 is disabled
+    // for Stylus) so the sub-call traps with all forwarded gas consumed.
+    let (bytecode, bytecode_addr) = if bytecode.len() == 23
+        && bytecode[0] == 0xef
+        && bytecode[1] == 0x01
+        && bytecode[2] == 0x00
+    {
+        let delegate = Address::from_slice(&bytecode[3..23]);
+        match context
+            .journaled_state
+            .inner
+            .load_code(&mut context.journaled_state.database, delegate)
+        {
+            Ok(acc) => {
+                let code = acc
+                    .data
+                    .info
+                    .code
+                    .as_ref()
+                    .map(|c| c.original_bytes())
+                    .unwrap_or_default();
+                (code, delegate)
+            }
+            Err(_) => {
+                context.journaled_state.inner.checkpoint_revert(checkpoint);
+                return SubCallResult {
+                    output: Vec::new(),
+                    gas_cost: 0,
+                    success: false,
+                    refund: 0,
+                };
+            }
+        }
+    } else {
+        (bytecode, code_address)
+    };
+
     if bytecode.is_empty() {
         context.journaled_state.inner.checkpoint_commit();
         return SubCallResult {
@@ -560,6 +600,11 @@ where
             refund: 0,
         };
     }
+
+    let sub_inputs = CallInputs {
+        bytecode_address: bytecode_addr,
+        ..sub_inputs
+    };
 
     // If the loaded bytecode carries the Stylus discriminant, dispatch it
     // through the WASM runtime instead of the EVM interpreter.
