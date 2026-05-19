@@ -2,7 +2,19 @@
 //! message kinds (Deposit, SubmitRetryable, SignedL2Tx, UnsignedUserTx,
 //! ContractTx) in a single iteration.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use alloy_primitives::{Address, Bytes, B256, U256};
+
+/// Per-process counter for `request_seq` on Arbitrum-internal txs
+/// (UnsignedUserTx / ContractTx) so each submission's derived tx hash is
+/// unique even when the user-facing fields collide across iterations.
+/// Distinct from `GLOBAL_MSG_IDX` (which tracks L1 message index and must
+/// match Nitro's expected sequence).
+static UNIQUE_REQUEST_SEQ: AtomicU64 = AtomicU64::new(1);
+fn next_request_seq() -> u64 {
+    UNIQUE_REQUEST_SEQ.fetch_add(1, Ordering::SeqCst)
+}
 use arb_test_harness::{
     messaging::{
         retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder},
@@ -608,6 +620,16 @@ impl DiffMultiMsgScenario {
                 if let Ok(msg) = pre.build() {
                     steps.push(message_step(pre_idx, msg, pre_idx));
                 }
+                // Use a unique request_seq per submission so the
+                // derived ArbitrumUnsignedTx hash is unique even when
+                // (from, nonce, gas, fee, to, value, data) collide
+                // across iterations. Otherwise the same hash gets
+                // sequenced into multiple different L2 blocks on each
+                // node, and `eth_getTransactionReceipt(hash)` returns
+                // whichever block each node disambiguated to — yielding
+                // a phantom `effective_gas_price` divergence even though
+                // both nodes are correct.
+                let unique_seq = next_request_seq();
                 let builder = UnsignedUserTxBuilder {
                     from: *from,
                     gas_limit: (*gas).clamp(50_000, FUZZ_GAS_CAP),
@@ -618,7 +640,7 @@ impl DiffMultiMsgScenario {
                     data: Bytes::from(data.0.clone()),
                     l1_block_number: 1,
                     timestamp: 1_700_000_001,
-                    request_seq: 0,
+                    request_seq: unique_seq,
                     base_fee_l1: FUZZ_L1_BASE_FEE,
                 };
                 if let Some(msg) = build_or_skip(&builder) {
@@ -634,6 +656,10 @@ impl DiffMultiMsgScenario {
                 max_fee,
                 data,
             } => {
+                // Unique request_seq so ArbitrumContractTx hash differs
+                // across iterations even when other fields collide (see
+                // the matching comment on UnsignedUserTxBuilder above).
+                let unique_seq = next_request_seq();
                 let builder = ContractTxBuilder {
                     from: *from,
                     gas_limit: (*gas).clamp(50_000, FUZZ_GAS_CAP),
@@ -643,7 +669,7 @@ impl DiffMultiMsgScenario {
                     data: Bytes::from(data.0.clone()),
                     l1_block_number: 1,
                     timestamp: 1_700_000_001,
-                    request_seq: 0,
+                    request_seq: unique_seq,
                     base_fee_l1: FUZZ_L1_BASE_FEE,
                 };
                 if let Some(msg) = build_or_skip(&builder) {

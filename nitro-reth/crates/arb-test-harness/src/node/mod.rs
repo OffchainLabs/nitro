@@ -84,6 +84,10 @@ pub struct Block {
     pub gas_limit: u64,
     pub timestamp: u64,
     #[serde(default)]
+    pub base_fee_per_gas: Option<u128>,
+    #[serde(default)]
+    pub mix_hash: Option<B256>,
+    #[serde(default)]
     pub tx_hashes: Vec<B256>,
 }
 
