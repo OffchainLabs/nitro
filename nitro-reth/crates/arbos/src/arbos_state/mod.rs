@@ -125,6 +125,16 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             return Err(());
         }
 
+        // Mirror Nitro's KVStorage(FilteredTransactionsStateAddress) which
+        // performs SetNonce(addr, 1) on every open so geth doesn't treat the
+        // storage container as empty. Only active when v60+ since filtered
+        // transactions storage isn't opened on older versions.
+        if arbos_version >= 60 {
+            unsafe {
+                set_account_nonce(&mut *state, FILTERED_TX_STATE_ADDRESS, 1);
+            }
+        }
+
         let chain_config_sto = backing_storage.open_sub_storage_with_key(chain_config_root_key());
         let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
 
