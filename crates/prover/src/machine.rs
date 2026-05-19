@@ -28,16 +28,16 @@ use sha3::Keccak256;
 use smallvec::SmallVec;
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
+#[cfg(feature = "kzg")]
+use {crate::kzg::prove_kzg_preimage, c_kzg::BYTES_PER_BLOB};
 #[cfg(feature = "native")]
 use {
     crate::{
-        kzg::prove_kzg_preimage,
         programs::meter::MeteredMachine,
         reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
         value::IntegerValType,
         wavm::{IBinOpType, IRelOpType, IUnOpType, unpack_cross_module_call},
     },
-    c_kzg::BYTES_PER_BLOB,
     num::{Zero, traits::PrimInt},
     std::{num::Wrapping, ops::Add},
 };
