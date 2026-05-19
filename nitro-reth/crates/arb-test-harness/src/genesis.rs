@@ -83,6 +83,11 @@ impl GenesisBuilder {
         self
     }
 
+    pub fn with_initial_chain_owner(mut self, owner: Address) -> Self {
+        self.initial_chain_owner = owner;
+        self
+    }
+
     pub fn build(&self) -> Result<Value> {
         let alloc = self.render_alloc();
 
