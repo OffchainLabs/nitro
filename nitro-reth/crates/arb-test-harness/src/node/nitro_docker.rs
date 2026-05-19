@@ -404,10 +404,42 @@ impl ExecutionNode for NitroDocker {
         crate::node::common::json_to_bytes(&v)
     }
 
-    fn debug_storage_range(&self, _addr: Address, _at: BlockId) -> Result<BTreeMap<B256, B256>> {
-        Err(HarnessError::NotImplemented {
-            what: "NitroDocker::debug_storage_range",
-        })
+    fn debug_storage_range(&self, addr: Address, at: BlockId) -> Result<BTreeMap<B256, B256>> {
+        let block = self.block(at.clone())?;
+        let mut out = BTreeMap::new();
+        let mut start = B256::ZERO;
+        loop {
+            let v = self.rpc.call(
+                "debug_storageRangeAt",
+                json!([
+                    format!("{:#x}", block.hash),
+                    0,
+                    format!("{addr:#x}"),
+                    format!("{:#x}", start),
+                    1024,
+                ]),
+            )?;
+            let storage = v.get("storage").and_then(|s| s.as_object());
+            if let Some(map) = storage {
+                for entry in map.values() {
+                    let key = entry.get("key").and_then(|x| x.as_str());
+                    let val = entry.get("value").and_then(|x| x.as_str());
+                    if let (Some(k), Some(vv)) = (key, val) {
+                        let k = crate::node::common::parse_b256(k)?;
+                        let vv = crate::node::common::parse_b256(vv)?;
+                        out.insert(k, vv);
+                    }
+                }
+            }
+            let next = v.get("nextKey").and_then(|x| x.as_str());
+            match next {
+                Some(s) if !s.is_empty() && s != "0x0" && s != "null" => {
+                    start = crate::node::common::parse_b256(s)?;
+                }
+                _ => break,
+            }
+        }
+        Ok(out)
     }
 
     fn shutdown(self: Box<Self>) -> Result<()> {
