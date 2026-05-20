@@ -72,6 +72,7 @@ fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -80,6 +81,7 @@ fn sload_filtered(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, P
         .internals_mut()
         .sload(FILTERED_TX_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -92,6 +94,8 @@ fn sstore_filtered(
         .internals_mut()
         .sstore(FILTERED_TX_STATE_ADDRESS, slot, value)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
+    let cost = if value.is_zero() { 5_000 } else { SSTORE_GAS };
+    crate::charge_precompile_gas(cost);
     Ok(())
 }
 
@@ -128,8 +132,10 @@ fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Prec
         U256::ZERO
     };
 
+    crate::charge_precompile_gas(COPY_GAS);
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        gas_used,
         is_filtered.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -140,9 +146,7 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Pre
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, caller)? {
-        return Err(PrecompileError::other(
-            "caller is not a transaction filterer",
-        ));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let slot = filtered_tx_slot(&tx_hash);
@@ -157,11 +161,8 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Pre
         Default::default(),
     ));
 
-    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
-        vec![].into(),
-    ))
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
+    Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }
 
 fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
@@ -170,9 +171,7 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> 
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, caller)? {
-        return Err(PrecompileError::other(
-            "caller is not a transaction filterer",
-        ));
+        return crate::burn_all_revert(gas_limit);
     }
 
     let slot = filtered_tx_slot(&tx_hash);
@@ -187,9 +186,6 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> 
         Default::default(),
     ));
 
-    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
-        vec![].into(),
-    ))
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
+    Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }
