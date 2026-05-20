@@ -413,6 +413,55 @@ fn matrix() {
             // from the inbox-state drift the first one caused. Stop here
             // unless the caller explicitly wants the full sweep.
             eprintln!("[matrix] {label}: DIVERGED — stopping (set ARB_MATRIX_FAIL_FAST=0 to continue)");
+            // Debug: dump basefee + receipt from each node for the divergent block.
+            for d in &report.block_diffs {
+                if d.field == "gas_used" {
+                    let bn = d.number;
+                    let lb = nodes.left.block(BlockId::Number(bn)).ok();
+                    let rb = nodes.right.block(BlockId::Number(bn)).ok();
+                    eprintln!(
+                        "[matrix] block#{bn} basefee LEFT(nitro)={:?} RIGHT(arbreth)={:?}",
+                        lb.as_ref().and_then(|b| b.base_fee_per_gas),
+                        rb.as_ref().and_then(|b| b.base_fee_per_gas),
+                    );
+                }
+            }
+            // Compare ArbGasInfo.getL1BaseFeeEstimate on both nodes at current block.
+            let call = TxRequest {
+                from: Some(signer),
+                to: Some(alloy_primitives::Address::from([
+                    0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x6c,
+                ])),
+                data: Some(Bytes::from(
+                    alloy_primitives::hex::decode("f5d6ded7").unwrap(),
+                )),
+                value: Some(U256::ZERO),
+                gas: Some(3_000_000),
+            };
+            let l = nodes.left.eth_call(call.clone(), BlockId::Latest).ok();
+            let r = nodes.right.eth_call(call.clone(), BlockId::Latest).ok();
+            eprintln!(
+                "[matrix] ArbGasInfo.getL1BaseFeeEstimate LEFT(nitro)={:?} RIGHT(arbreth)={:?}",
+                l, r
+            );
+            // ArbGasInfo.getPricesInWei (returns per-L2-gas, l1Calldata, ...)
+            let call2 = TxRequest {
+                from: Some(signer),
+                to: Some(alloy_primitives::Address::from([
+                    0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x6c,
+                ])),
+                data: Some(Bytes::from(
+                    alloy_primitives::hex::decode("41b247a8").unwrap(),
+                )),
+                value: Some(U256::ZERO),
+                gas: Some(3_000_000),
+            };
+            let l2 = nodes.left.eth_call(call2.clone(), BlockId::Latest).ok();
+            let r2 = nodes.right.eth_call(call2, BlockId::Latest).ok();
+            eprintln!(
+                "[matrix] ArbGasInfo.getPricesInWei LEFT(nitro)={:?} RIGHT(arbreth)={:?}",
+                l2, r2
+            );
             break;
         } else {
             eprintln!("[matrix] {label}: DIVERGED — collecting and continuing");
