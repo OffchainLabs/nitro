@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -87,16 +88,17 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 }
 
 func TestValidationInputsAtExecutesInValidationWorker(t *testing.T) {
-	for _, stateScheme := range []string{rawdb.HashScheme, rawdb.PathScheme} {
-		stateScheme := stateScheme
-		t.Run(stateScheme, func(t *testing.T) {
-			testValidationInputsAtExecutesInValidationWorker(t, stateScheme)
-		})
+	stateScheme := rawdb.PathScheme
+	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
+		stateScheme = *testflag.StateSchemeFlag
 	}
+	testValidationInputsAtExecutesInValidationWorker(t, stateScheme)
 }
 
 func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme string) {
-	builder, auth, cleanup := setupProgramTestWithScheme(t, false, stateScheme, enableChainTipBlockRecorder)
+	builder, auth, cleanup := setupProgramTestWithScheme(t, false, stateScheme, func(builder *NodeBuilder) {
+		builder.WithChainTipBlockRecorder()
+	})
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
@@ -138,7 +140,10 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme 
 	if len(preimages) == 0 {
 		t.Fatal("expected validation input to contain recorded keccak preimages")
 	}
-	assertRecentHeaderPreimages(t, builder, receipt.BlockNumber.Uint64(), preimages)
+	if receipt.BlockNumber.Uint64() < 1 {
+		t.Fatal("expected storage transaction after block 0")
+	}
+	assertHeaderPreimages(t, builder, receipt.BlockNumber.Uint64()-1, receipt.BlockNumber.Uint64(), preimages)
 	wasmMap, ok := validationInput.UserWasms[rawdb.TargetWavm]
 	if !ok {
 		t.Fatal("expected TargetWavm in user wasm map")
@@ -158,9 +163,6 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme 
 
 	arbSysABI, err := precompilesgen.ArbSysMetaData.GetAbi()
 	Require(t, err)
-	if receipt.BlockNumber.Uint64() < 1 {
-		t.Fatal("expected storage transaction after block 0")
-	}
 	requestedBlockNumber := receipt.BlockNumber.Uint64() - 1
 	arbBlockHashData, err := arbSysABI.Pack("arbBlockHash", new(big.Int).SetUint64(requestedBlockNumber))
 	Require(t, err)
@@ -185,10 +187,6 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme 
 	moduleRoot := builder.L2.ConsensusNode.StatelessBlockValidator.GetLatestWasmModuleRoot()
 	runValidationInput(t, ctx, valClient, storageValidationInput, moduleRoot, storageExpectedEndState)
 	runValidationInput(t, ctx, valClient, blockHashValidationInput, moduleRoot, blockHashInputJson.ExpectedEndState)
-}
-
-func enableChainTipBlockRecorder(builder *NodeBuilder) {
-	builder.execConfig.ChainTipBlockRecorder.Enable = true
 }
 
 func seedValidationRecordingTrieShape(t *testing.T, ctx context.Context, builder *NodeBuilder, programAddress common.Address) []string {
@@ -254,14 +252,10 @@ func runValidationInput(
 	}
 }
 
-func assertRecentHeaderPreimages(t *testing.T, builder *NodeBuilder, blockNumber uint64, preimages map[common.Hash][]byte) {
+func assertHeaderPreimages(t *testing.T, builder *NodeBuilder, firstHeaderNumber uint64, blockNumber uint64, preimages map[common.Hash][]byte) {
 	t.Helper()
-	if blockNumber == 0 {
+	if blockNumber == 0 || firstHeaderNumber >= blockNumber {
 		return
-	}
-	firstHeaderNumber := uint64(0)
-	if blockNumber > 256 {
-		firstHeaderNumber = blockNumber - 256
 	}
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	for headerNum := firstHeaderNumber; headerNum < blockNumber; headerNum++ {

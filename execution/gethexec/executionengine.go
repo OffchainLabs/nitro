@@ -700,10 +700,14 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 
 	var statedb *state.StateDB
 	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
+	var recordingChainContext *arbitrum.RecordingChainContext
+	chainContext := core.ChainContext(s.bc)
 	recordAtTip := s.tipRecorder != nil
 	runCtx := core.NewMessageSequencingContext(s.wasmTargets)
 	if recordAtTip {
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
+		recordingChainContext = arbitrum.NewRecordingChainContext(s.bc, lastBlockHeader)
+		chainContext = recordingChainContext
 		statedb, err = state.NewDeterministic(lastBlockHeader.Root, tipRecordingStateDatabase)
 		if err != nil {
 			return nil, err
@@ -747,7 +751,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
-		s.bc,
+		chainContext,
 		hooks,
 		false,
 		runCtx,
@@ -793,7 +797,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase); err != nil {
+	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase, recordingChainContext); err != nil {
 		return nil, err
 	}
 
@@ -943,9 +947,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 	var statedb *state.StateDB
 	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
+	var recordingChainContext *arbitrum.RecordingChainContext
+	chainContext := core.ChainContext(s.bc)
 	recordAtTip := s.tipRecorder != nil && !isMsgForPrefetch
 	if recordAtTip {
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
+		recordingChainContext = arbitrum.NewRecordingChainContext(s.bc, currentHeader)
+		chainContext = recordingChainContext
 		statedb, err = state.NewDeterministic(currentHeader.Root, tipRecordingStateDatabase)
 		if err != nil {
 			return nil, nil, nil, err
@@ -1000,7 +1008,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			msg.DelayedMessagesRead,
 			currentHeader,
 			statedb,
-			s.bc,
+			chainContext,
 			filteringHooks,
 			isMsgForPrefetch,
 			runCtx,
@@ -1028,7 +1036,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			}
 		}
 
-		if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase); err != nil {
+		if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase, recordingChainContext); err != nil {
 			return nil, nil, nil, err
 		}
 		return block, statedb, receipts, nil
@@ -1039,7 +1047,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		msg.DelayedMessagesRead,
 		currentHeader,
 		statedb,
-		s.bc,
+		chainContext,
 		isMsgForPrefetch,
 		runCtx,
 		s.exposeMultiGas,
@@ -1048,20 +1056,20 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 
-	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase); err != nil {
+	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase, recordingChainContext); err != nil {
 		return nil, nil, nil, err
 	}
 	return block, statedb, receipts, nil
 }
 
-func (s *ExecutionEngine) recordChainTipCandidate(block *types.Block, statedb *state.StateDB, tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase) error {
-	if block == nil || statedb == nil || tipRecordingStateDatabase == nil || s.tipRecorder == nil {
+func (s *ExecutionEngine) recordChainTipCandidate(block *types.Block, statedb *state.StateDB, tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase, recordingChainContext *arbitrum.RecordingChainContext) error {
+	if block == nil || statedb == nil || tipRecordingStateDatabase == nil || recordingChainContext == nil || s.tipRecorder == nil {
 		return nil
 	}
 	// Record before consensus/block side effects; canonical validation prevents
 	// serving this candidate if a later side effect fails.
 	tipRecordingStateDatabase.StopRecording()
-	return s.tipRecorder.RecordTip(block, tipRecordingStateDatabase.Preimages(), tipRecordingStateDatabase.CodeHashes(), statedb.UserWasms())
+	return s.tipRecorder.RecordTip(block, tipRecordingStateDatabase.Preimages(), recordingChainContext.GetMinBlockNumberAccessed(), tipRecordingStateDatabase.CodeHashes(), statedb.UserWasms())
 }
 
 func recordReplayInitialStatePreimages(statedb *state.StateDB) error {
