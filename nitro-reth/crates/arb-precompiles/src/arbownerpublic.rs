@@ -60,41 +60,125 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         Calls::getNetworkFeeAccount(_) => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         Calls::getInfraFeeAccount(_) => {
-            if crate::get_arbos_version() < 6 {
-                read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
-            } else {
-                read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_5,
+                0,
+            ) {
+                return r;
             }
+            read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
         }
         Calls::getBrotliCompressionLevel(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_20,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
-        Calls::getScheduledUpgrade(_) => handle_scheduled_upgrade(&mut input),
+        Calls::getScheduledUpgrade(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_20,
+                0,
+            ) {
+                return r;
+            }
+            handle_scheduled_upgrade(&mut input)
+        }
         Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, c.addr),
         Calls::getAllChainOwners(_) => handle_get_all_members(&mut input),
-        Calls::rectifyChainOwner(c) => handle_rectify_chain_owner(&mut input, c.ownerToRectify),
+        Calls::rectifyChainOwner(c) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_11,
+                0,
+            ) {
+                return r;
+            }
+            handle_rectify_chain_owner(&mut input, c.ownerToRectify)
+        }
         Calls::isNativeTokenOwner(c) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_41,
+                0,
+            ) {
+                return r;
+            }
             handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE, c.addr)
         }
         Calls::isTransactionFilterer(c) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE, c.filterer)
         }
         Calls::getAllNativeTokenOwners(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_41,
+                0,
+            ) {
+                return r;
+            }
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
         Calls::getAllTransactionFilterers(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         Calls::getNativeTokenManagementFrom(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_50,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
         Calls::getTransactionFilteringFrom(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
         Calls::getFilteredFundsRecipient(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
         Calls::isCalldataPriceIncreaseEnabled(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_40,
+                0,
+            ) {
+                return r;
+            }
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
             let features_slot = map_slot(features_key.as_slice(), 0);
@@ -106,6 +190,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         Calls::getParentGasFloorPerToken(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_50,
+                0,
+            ) {
+                return r;
+            }
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
             let value = sload_field(&mut input, field_slot)?;
@@ -114,8 +205,26 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        Calls::getMaxStylusContractFragments(_) => handle_max_stylus_fragments(&mut input),
-        Calls::getCollectTips(_) => handle_get_collect_tips(&mut input),
+        Calls::getMaxStylusContractFragments(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT,
+                0,
+            ) {
+                return r;
+            }
+            handle_max_stylus_fragments(&mut input)
+        }
+        Calls::getCollectTips(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_60,
+                0,
+            ) {
+                return r;
+            }
+            handle_get_collect_tips(&mut input)
+        }
     };
     crate::gas_check(gas_limit, result)
 }
