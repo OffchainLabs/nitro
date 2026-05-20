@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
@@ -80,7 +81,7 @@ func TestExternalSigner(t *testing.T) {
 		t.Fatalf("Error getting signer test config: %v", err)
 	}
 	ctx := context.Background()
-	signer, addr, err := externalSigner(ctx, signerCfg)
+	xsign, err := externalsigner.NewExternalSigner(ctx, signerCfg)
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
 	}
@@ -100,11 +101,11 @@ func TestExternalSigner(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			{
-				got, err := signer(ctx, addr, tc.tx)
+				got, err := xsign.Signer(ctx, xsign.Sender, tc.tx)
 				if err != nil {
 					t.Fatalf("Error signing transaction with external signer: %v", err)
 				}
-				want, err := srv.SignerFn(addr, tc.tx)
+				want, err := srv.SignerFn(xsign.Sender, tc.tx)
 				if err != nil {
 					t.Fatalf("Error signing transaction: %v", err)
 				}

@@ -27,8 +27,9 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
+	datapostermetrics "github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
@@ -54,7 +55,7 @@ type DataPoster struct {
 	headerReader      *headerreader.HeaderReader
 	client            *ethclient.Client
 	auth              *bind.TransactOpts
-	signer            signerFn
+	signer            externalsigner.SignerFn
 	config            config.ConfigFetcher
 	usingNoOpStorage  bool
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
@@ -144,17 +145,12 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		dp.extraBacklog = func() uint64 { return 0 }
 	}
 	if cfg.ExternalSigner.URL != "" {
-		signer, sender, err := externalSigner(ctx, &cfg.ExternalSigner)
+		xsign, err := externalsigner.NewExternalSigner(ctx, &cfg.ExternalSigner)
 		if err != nil {
 			return nil, err
 		}
-		dp.signer = signer
-		dp.auth = &bind.TransactOpts{
-			From: sender,
-			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-				return signer(context.TODO(), address, tx)
-			},
-		}
+		dp.signer = xsign.Signer
+		dp.auth = xsign.TxOpts()
 	}
 
 	return dp, nil
@@ -175,7 +171,7 @@ func (p *DataPoster) ExtraBacklog() uint64 {
 func (p *DataPoster) MaxFeeCapExpression() *govaluate.EvaluableExpression {
 	return p.maxFeeCapExpression
 }
- func (p *DataPoster) ParentChain() *parent.ParentChain {
+func (p *DataPoster) ParentChain() *parent.ParentChain {
 	return p.parentChain
 }
 
