@@ -344,6 +344,12 @@ fn load_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], Precomp
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     let slot = map_slot(params_key.as_slice(), 0);
     let value = sload_field(input, slot)?;
+    // Nitro's `Params().Load(...)` charges an additional warm-cache SLOAD
+    // beyond the raw storage read. Success paths (stylusVersion, inkPrice,
+    // …) already include this in their hardcoded total; the accumulator
+    // pattern used by activate / keepalive needs the explicit add so revert
+    // paths report matching gas.
+    crate::charge_precompile_gas(WARM_SLOAD_GAS);
     Ok(value.to_be_bytes::<32>())
 }
 
