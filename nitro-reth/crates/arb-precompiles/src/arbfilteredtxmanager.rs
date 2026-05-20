@@ -36,7 +36,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     }
 
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+
+    // Mimic the reference FreeAccessPrecompile wrapper: open ArbOS state and
+    // check `filterers.IsMember(caller)` (2 SLOAD = 1600 gas total), without
+    // charging argsCost. Then always run the inner method. The wrapper keeps
+    // the inner's output and error, but overrides gas — 1600 for non-filterer
+    // callers, 0 for filterers (free access).
+    crate::reset_precompile_gas();
+    crate::charge_precompile_gas(SLOAD_GAS);
+    let caller = input.caller;
+    load_accounts(&mut input)?;
+    let is_filterer = is_transaction_filterer(&mut input, caller)?;
+    let wrapper_gas = crate::get_precompile_gas();
+    crate::reset_precompile_gas();
 
     let call =
         match IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls::abi_decode(input.data) {
@@ -45,12 +57,27 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         };
 
     use IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls as Calls;
-    let result = match call {
+    let inner_result = match call {
         Calls::addFilteredTransaction(c) => handle_add_filtered_tx(&mut input, c.txHash),
         Calls::deleteFilteredTransaction(c) => handle_delete_filtered_tx(&mut input, c.txHash),
         Calls::isTransactionFiltered(c) => handle_is_tx_filtered(&mut input, c.txHash),
     };
-    crate::gas_check(gas_limit, result)
+    crate::reset_precompile_gas();
+
+    // Wrapper overrides the inner's gas accounting: 0 for filterer, 1600 for
+    // non-filterer. Inner's output and error are preserved.
+    let final_gas = if is_filterer { 0 } else { wrapper_gas.min(gas_limit) };
+    match inner_result {
+        Ok(mut output) => {
+            output.gas_used = final_gas;
+            Ok(output)
+        }
+        Err(PrecompileError::Other(_)) => Ok(PrecompileOutput::new_reverted(
+            final_gas,
+            Default::default(),
+        )),
+        Err(e) => Err(e),
+    }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
