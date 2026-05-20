@@ -112,14 +112,6 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(limit))
         }
         Calls::minInitGas(_) => {
-            if let Some(result) = crate::check_method_version(
-                input.gas,
-                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES,
-                0,
-            ) {
-                return result;
-            }
-            // Returns (uint64, uint64) → 2 result words → 2*COPY_GAS.
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + 2 * COPY_GAS;
             let params = load_params_word(&mut input)?;
             let min_init = params[15] as u64;

@@ -188,6 +188,7 @@ pub const ALL_METHODS: &[(u8, &str, &str)] = &[
     (0xff, "ArbDebug.events", "7b9963ef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
     (0xff, "ArbDebug.eventsView", "8e5f30ab"),
     (0xff, "ArbDebug.customRevert", "7ea89f8b0000000000000000000000000000000000000000000000000000000000000000"),
-    (0xff, "ArbDebug.panic", "4700d305"),
+    // ArbDebug.panic is intentionally skipped: it panics the Nitro container
+    // (no graceful revert), desynchronising the dual-exec message index.
     (0xff, "ArbDebug.legacyError", "1e48fe82"),
 ];
