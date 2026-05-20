@@ -114,6 +114,15 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::minInitGas(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + 2 * COPY_GAS;
             let params = load_params_word(&mut input)?;
+            if crate::get_arbos_version()
+                < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES
+            {
+                let pre_revert_gas = (SLOAD_GAS + WARM_SLOAD_GAS).min(input.gas);
+                return Ok(PrecompileOutput::new_reverted(
+                    pre_revert_gas,
+                    Default::default(),
+                ));
+            }
             let min_init = params[15] as u64;
             let min_cached = params[16] as u64;
             let init = min_init.saturating_mul(MIN_INIT_GAS_UNITS);
