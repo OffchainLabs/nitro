@@ -384,8 +384,19 @@ const CONSTRAINT_ADJ_WINDOW: u64 = 1;
 const CONSTRAINT_BACKLOG: u64 = 2;
 const MULTI_CONSTRAINT_WEIGHTED_BASE: u64 = 4;
 
-const NUM_RESOURCE_KIND: u64 = 8;
-/// Offset within MultiGasFees for current-block fees.
+/// Total number of multi-gas resource kinds, including the
+/// `ResourceKindUnknown` sentinel (= 0). Mirrors Nitro's
+/// `multigas.NumResourceKind` from go-ethereum/arbitrum/multigas/resources.go:
+/// Unknown, Computation, HistoryGrowth, StorageAccessRead,
+/// StorageAccessWrite, StorageGrowth, SingleDim, L2Calldata,
+/// WasmComputation = 9 total.
+const NUM_RESOURCE_KIND: u64 = 9;
+/// Index of `ResourceKindSingleDim` in the enum — special-cased to fall
+/// back to the global L2 base fee in `getMultiGasBaseFee`.
+const RESOURCE_KIND_SINGLE_DIM: u64 = 6;
+/// Offset within `MultiGasFees` storage for current-block fees.
+/// `currentBlockFeesOffset = 1 * NumResourceKind` per Nitro's
+/// `arbos/l2pricing/multi_gas_fees.go` iota layout.
 const CURRENT_BLOCK_FEES_OFFSET: u64 = NUM_RESOURCE_KIND;
 
 /// Returns `[][3]uint64` — (target, adjustmentWindow, backlog) per constraint.
@@ -523,11 +534,15 @@ fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Prec
     ))
 }
 
-/// Returns `uint256[]` — current-block base fee per resource kind.
+/// Returns `uint256[]` — current-block base fee per resource kind. Mirrors
+/// Nitro's `GetMultiGasBaseFeePerResource`: reads BaseFeeWei first, then
+/// iterates all 9 resource kinds; for `ResourceKindSingleDim` and any
+/// per-kind fee that is zero, falls back to the global BaseFeeWei.
 fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
+    let base_fee_wei = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
     let fees_key = multi_gas_base_fees_subspace();
 
     let mut out = Vec::with_capacity(64 + NUM_RESOURCE_KIND as usize * 32);
@@ -537,13 +552,18 @@ fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     for kind in 0..NUM_RESOURCE_KIND {
         let slot = map_slot(fees_key.as_slice(), CURRENT_BLOCK_FEES_OFFSET + kind);
-        let fee = sload_field(input, slot)?;
+        let raw = sload_field(input, slot)?;
+        let fee = if kind == RESOURCE_KIND_SINGLE_DIM || raw == U256::ZERO {
+            base_fee_wei
+        } else {
+            raw
+        };
         out.extend_from_slice(&fee.to_be_bytes::<32>());
     }
 
     let result_words = (out.len() as u64).div_ceil(32);
     Ok(PrecompileOutput::new(
-        ((1 + NUM_RESOURCE_KIND) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
+        ((2 + NUM_RESOURCE_KIND) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
