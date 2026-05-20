@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	datapostermetrics "github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
@@ -195,14 +196,26 @@ func (p *DataPoster) UsingNoOpStorage() bool {
 	return p.usingNoOpStorage
 }
 
+func (p *DataPoster) HeaderReader() *headerreader.HeaderReader {
+	return p.headerReader
+}
+
+func (p *DataPoster) InternalState() *state.InternalState {
+	return p.internalState
+}
+
+func (p *DataPoster) RetrieveMetadata(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+	return p.metadataRetriever(ctx, blockNum)
+}
+
 func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
 	lockedState := p.internalState.Lock()
 	defer p.internalState.Unlock()
-	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, lockedState, 1)
+	nonce, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, p, lockedState, 1)
 	if err != nil {
 		return nil, err
 	}
-	return p.postTransaction(ctx, lockedState, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+	return p.postTransaction(ctx, lockedState, time.Now(), nonce.Nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
@@ -220,15 +233,15 @@ func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInterna
 	if len(kzgBlobs) > 0 {
 		weight = uint64(len(kzgBlobs))
 	}
-	expectedNonce, _, _, lastCumulativeWeight, err := p.getNextNonceAndMaybeMeta(ctx, s, weight)
+	expectedNonce, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, p, s, weight)
 	if err != nil {
 		return nil, err
 	}
-	if nonce != expectedNonce {
-		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce, nonce)
+	if nonce != expectedNonce.Nonce {
+		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce.Nonce, nonce)
 	}
 
-	err = p.updateBalance(ctx, s)
+	err = lifecycle.UpdateBalance(ctx, p, s)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
@@ -302,7 +315,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInterna
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
-	cumulativeWeight := lastCumulativeWeight + weight
+	cumulativeWeight := expectedNonce.CumulativeWeight + weight
 	queuedTx := storage.QueuedTransaction{
 		DeprecatedData:         deprecatedData,
 		FullTx:                 fullTx,
@@ -495,12 +508,12 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		lockedState := p.internalState.Lock()
 		defer p.internalState.Unlock()
-		err := p.updateBalance(ctx, lockedState)
+		err := lifecycle.UpdateBalance(ctx, p, lockedState)
 		if err != nil {
 			log.Warn("failed to update tx poster balance", "err", err)
 			return minWait
 		}
-		err = p.updateNonce(ctx, lockedState)
+		err = lifecycle.UpdateNonce(ctx, p, lockedState)
 		if err != nil {
 			// This is non-fatal because it's only needed for clearing out old queue items.
 			log.Warn("failed to update tx poster nonce", "err", err)
@@ -556,10 +569,10 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				err := p.replaceTx(ctx, lockedState, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
-				p.maybeLogError(err, lockedState, tx, "failed to replace-by-fee transaction")
+				lifecycle.MaybeLogError(err, lockedState, tx, "failed to replace-by-fee transaction")
 			} else {
 				err := p.sendTx(ctx, lockedState, tx, tx)
-				p.maybeLogError(err, lockedState, tx, "failed to re-send transaction")
+				lifecycle.MaybeLogError(err, lockedState, tx, "failed to re-send transaction")
 			}
 			nonce := tx.FullTx.Nonce()
 			tx, err = lockedState.Queue.Get(ctx, nonce)

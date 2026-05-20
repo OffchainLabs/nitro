@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -547,7 +548,7 @@ func TestMaybeLogError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stub := defaultTestStub()
-			dp, is := newTestDataPoster(t, stub, nil)
+			_, is := newTestDataPoster(t, stub, nil)
 
 			s := is.Lock()
 			defer is.Unlock()
@@ -559,7 +560,7 @@ func TestMaybeLogError(t *testing.T) {
 				s.ErrorCount[nonce] = tt.initialCount
 			}
 
-			dp.maybeLogError(tt.err, s, tx, "test message")
+			lifecycle.MaybeLogError(tt.err, s, tx, "test message")
 
 			gotCount, exists := s.ErrorCount[nonce]
 			if tt.expectedCount == -1 {
@@ -593,7 +594,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(50) // same as header
 		s.Nonce = 5
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -626,7 +627,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.ErrorCount[4] = 5
 		s.ErrorCount[5] = 1
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -681,7 +682,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(100) // different from header
 		s.Nonce = 5                   // same as on-chain nonce
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -704,7 +705,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(100)
 		s.Nonce = 5
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -728,7 +729,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(100) // non-nil
 		s.Nonce = 5
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err != nil {
 			t.Errorf("expected nil error when NonceAt fails with LastBlock set, got: %v", err)
 		}
@@ -749,7 +750,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = nil
 		s.Nonce = 0
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err == nil {
 			t.Error("expected error when NonceAt fails with LastBlock nil")
 		}
@@ -763,7 +764,7 @@ func TestUpdateNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		err := dp.updateNonce(ctx, s)
+		err := lifecycle.UpdateNonce(ctx, dp, s)
 		if err == nil {
 			t.Error("expected error when HeaderByNumber fails")
 		}
@@ -779,7 +780,7 @@ func TestUpdateNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		_ = dp.updateNonce(ctx, s)
+		_ = lifecycle.UpdateNonce(ctx, dp, s)
 
 		// Verify that eth_getBlockByNumber was called with "finalized" tag
 		found := false
@@ -806,7 +807,7 @@ func TestUpdateNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		_ = dp.updateNonce(ctx, s)
+		_ = lifecycle.UpdateNonce(ctx, dp, s)
 
 		// Verify that eth_getBlockByNumber was called with "latest" tag
 		found := false
@@ -838,7 +839,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// Empty queue, nonce 0, well under limits
-		err := dp.canPostWithNonce(ctx, s, 0, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 0, 1)
 		if err != nil {
 			t.Errorf("expected nil, got: %v", err)
 		}
@@ -860,7 +861,7 @@ func TestCanPostWithNonce(t *testing.T) {
 			putTxInQueue(t, ctx, s, i, nil, tx)
 		}
 
-		err := dp.canPostWithNonce(ctx, s, 2, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 2, 1)
 		if err == nil {
 			t.Error("expected error when queue is at MaxQueuedTransactions")
 		}
@@ -884,7 +885,7 @@ func TestCanPostWithNonce(t *testing.T) {
 			putTxInQueue(t, ctx, s, i, nil, tx)
 		}
 
-		err := dp.canPostWithNonce(ctx, s, 50, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 50, 1)
 		if err != nil {
 			t.Errorf("expected nil with MaxQueuedTransactions=0 (unlimited), got: %v", err)
 		}
@@ -902,10 +903,10 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// nextNonce=5 >= MaxMempoolTransactions(5) + unconfirmedNonce(0) = 5
-		err := dp.canPostWithNonce(ctx, s, 5, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 5, 1)
 		if err == nil {
 			t.Error("expected ErrExceedsMaxMempoolSize")
-		} else if !errors.Is(err, ErrExceedsMaxMempoolSize) {
+		} else if !errors.Is(err, lifecycle.ErrExceedsMaxMempoolSize) {
 			t.Errorf("expected ErrExceedsMaxMempoolSize, got: %v", err)
 		}
 	})
@@ -922,7 +923,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// nextNonce=4 < MaxMempoolTransactions(5) + unconfirmedNonce(0) = 5
-		err := dp.canPostWithNonce(ctx, s, 4, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 4, 1)
 		if err != nil {
 			t.Errorf("expected nil (under limit), got: %v", err)
 		}
@@ -940,7 +941,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		err := dp.canPostWithNonce(ctx, s, 100, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 100, 1)
 		if err != nil {
 			t.Errorf("expected nil with all limits=0, got: %v", err)
 		}
@@ -958,7 +959,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		err := dp.canPostWithNonce(ctx, s, 5, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 5, 1)
 		if err == nil {
 			t.Error("expected error when unconfirmedNonce > nextNonce")
 		}
@@ -980,7 +981,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// Large weight, but Post4844Blobs=false so weight check is effectively disabled
-		err := dp.canPostWithNonce(ctx, s, 0, 999999)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 0, 999999)
 		if err != nil {
 			t.Errorf("expected nil (weight check is no-op when Post4844Blobs=false), got: %v", err)
 		}
@@ -1005,22 +1006,22 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		tx.Meta = meta
 		putTxInQueue(t, ctx, s, 5, nil, tx)
 
-		nonce, gotMeta, hasMeta, cumWeight, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
+		result, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if nonce != 6 {
-			t.Errorf("nonce = %d, want 6 (lastQueuedNonce + 1)", nonce)
+		if result.Nonce != 6 {
+			t.Errorf("nonce = %d, want 6 (lastQueuedNonce + 1)", result.Nonce)
 		}
-		if !hasMeta {
+		if !result.MetaPresent {
 			t.Error("hasMeta = false, want true")
 		}
-		if string(gotMeta) != string(meta) {
-			t.Errorf("meta = %q, want %q", gotMeta, meta)
+		if string(result.Meta) != string(meta) {
+			t.Errorf("meta = %q, want %q", result.Meta, meta)
 		}
 		// CumulativeWeight: StoredCumulativeWeight is nil, so it falls back to tx.FullTx.Nonce() = 5
-		if cumWeight != 5 {
-			t.Errorf("cumulativeWeight = %d, want 5 (falls back to nonce)", cumWeight)
+		if result.CumulativeWeight != 5 {
+			t.Errorf("cumulativeWeight = %d, want 5 (falls back to nonce)", result.CumulativeWeight)
 		}
 	})
 
@@ -1034,22 +1035,22 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		defer is.Unlock()
 		s.LastBlock = big.NewInt(0) // different from header, so updateNonce proceeds
 
-		nonce, meta, hasMeta, cumWeight, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
+		result, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if nonce != 3 {
-			t.Errorf("nonce = %d, want 3", nonce)
+		if result.Nonce != 3 {
+			t.Errorf("nonce = %d, want 3", result.Nonce)
 		}
-		if hasMeta {
+		if result.MetaPresent {
 			t.Error("hasMeta = true, want false (queue was empty)")
 		}
-		if meta != nil {
-			t.Errorf("meta = %v, want nil", meta)
+		if result.Meta != nil {
+			t.Errorf("meta = %v, want nil", result.Meta)
 		}
 		// When queue is empty, cumulativeWeight == s.Nonce
-		if cumWeight != 3 {
-			t.Errorf("cumulativeWeight = %d, want 3 (equals s.Nonce)", cumWeight)
+		if result.CumulativeWeight != 3 {
+			t.Errorf("cumulativeWeight = %d, want 3 (equals s.Nonce)", result.CumulativeWeight)
 		}
 	})
 
@@ -1064,7 +1065,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		defer is.Unlock()
 
 		// slice storage is non-persistent, waitForL1Finality=true → no fallback
-		_, _, _, _, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
+		_, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
 		if err == nil {
 			t.Error("expected error when updateNonce fails with non-persistent queue + waitForL1Finality")
 		}
@@ -1084,21 +1085,21 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		nonce, meta, hasMeta, cumWeight, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
+		result, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
 		if err != nil {
 			t.Fatalf("expected fallback to succeed, got: %v", err)
 		}
-		if nonce != 7 {
-			t.Errorf("nonce = %d, want 7 (from fallback NonceAt)", nonce)
+		if result.Nonce != 7 {
+			t.Errorf("nonce = %d, want 7 (from fallback NonceAt)", result.Nonce)
 		}
-		if hasMeta {
+		if result.MetaPresent {
 			t.Error("hasMeta = true, want false")
 		}
-		if meta != nil {
-			t.Errorf("meta = %v, want nil", meta)
+		if result.Meta != nil {
+			t.Errorf("meta = %v, want nil", result.Meta)
 		}
-		if cumWeight != 7 {
-			t.Errorf("cumulativeWeight = %d, want 7", cumWeight)
+		if result.CumulativeWeight != 7 {
+			t.Errorf("cumulativeWeight = %d, want 7", result.CumulativeWeight)
 		}
 		// Verify fallback updated state
 		if s.Nonce != 7 {
@@ -1125,10 +1126,10 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		putTxInQueue(t, ctx, s, 0, nil, tx)
 
 		// nextNonce=1 >= MaxMempoolTransactions(1) + unconfirmedNonce(0) = 1
-		_, _, _, _, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
+		_, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
 		if err == nil {
 			t.Error("expected error from canPostWithNonce")
-		} else if !errors.Is(err, ErrExceedsMaxMempoolSize) {
+		} else if !errors.Is(err, lifecycle.ErrExceedsMaxMempoolSize) {
 			t.Errorf("expected ErrExceedsMaxMempoolSize, got: %v", err)
 		}
 	})
@@ -1673,7 +1674,7 @@ func TestCanPostWithNonce_WeightPath(t *testing.T) {
 		defer is.Unlock()
 
 		// Weight of 1 (single blob), well under limit of 18
-		err := dp.canPostWithNonce(ctx, s, 0, 1)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 0, 1)
 		if err != nil {
 			t.Errorf("expected nil, got: %v", err)
 		}
@@ -1701,10 +1702,10 @@ func TestCanPostWithNonce_WeightPath(t *testing.T) {
 		}
 
 		// nextNonce=3, weight=6 (6 blobs) — should exceed MaxMempoolWeight=2
-		err := dp.canPostWithNonce(ctx, s, 3, 6)
+		err := lifecycle.CanPostWithNonce(ctx, dp, s, 3, 6)
 		if err == nil {
 			t.Error("expected ErrExceedsMaxMempoolSize")
-		} else if !errors.Is(err, ErrExceedsMaxMempoolSize) {
+		} else if !errors.Is(err, lifecycle.ErrExceedsMaxMempoolSize) {
 			t.Errorf("expected ErrExceedsMaxMempoolSize, got: %v", err)
 		}
 	})
@@ -1826,7 +1827,7 @@ func TestUpdateNonce_EmptyErrorCount(t *testing.T) {
 		putTxInQueue(t, ctx, s, i, nil, tx)
 	}
 
-	err := dp.updateNonce(ctx, s)
+	err := lifecycle.UpdateNonce(ctx, dp, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

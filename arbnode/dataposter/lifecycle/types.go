@@ -1,46 +1,39 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package fees
+package lifecycle
 
 import (
+	"context"
 	"math/big"
-
-	"github.com/Knetic/govaluate"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/parent"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-// Split between blob and non-blob for calculations
-type BlobSplit[T any] struct {
-	Blob    T
-	NonBlob T
+type NonceAndMeta struct {
+	Nonce uint64
+	Meta  []byte
 }
 
-func (s *BlobSplit[T]) SelectIfBlobs(hasBlobs bool) T {
-	if hasBlobs {
-		return s.Blob
-	} else {
-		return s.NonBlob
-	}
-}
-
-// Calculated fee and tip caps
-type Caps struct {
-	Fee BlobSplit[*big.Int]
-	Tip *big.Int
+type NonceAndMaybeMeta struct {
+	Nonce            uint64
+	Meta             []byte
+	MetaPresent      bool
+	CumulativeWeight uint64
 }
 
 type dataPoster interface {
 	Client() *ethclient.Client
 	Config() *config.DataPosterConfig
-	ExtraBacklog() uint64
-	MaxFeeCapExpression() *govaluate.EvaluableExpression
+	HeaderReader() *headerreader.HeaderReader
+	InternalState() *state.InternalState
 	ParentChain() *parent.ParentChain
+	RetrieveMetadata(context.Context, *big.Int) ([]byte, error)
 	Sender() common.Address
-	UsingNoOpStorage() bool
 }
