@@ -4,6 +4,7 @@ package anytrust
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -131,7 +132,12 @@ func (gcs *GoogleCloudStorageService) GetByHash(ctx context.Context, key common.
 	log.Trace("anytrust.GoogleCloudStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", gcs)
 	buf, err := gcs.operator.Download(ctx, gcs.bucket, gcs.objectPrefix, key)
 	if err != nil {
-		log.Error("anytrust.GoogleCloudStorageService.GetByHash", "err", err)
+		// context.Canceled is expected when RedundantStorageService cancels
+		// the shared sub-context after a faster inner service already returned
+		// successfully. Logging it at ERROR level would be misleading.
+		if !errors.Is(err, context.Canceled) {
+			log.Error("anytrust.GoogleCloudStorageService.GetByHash", "err", err)
+		}
 		return nil, err
 	}
 	return buf, nil
