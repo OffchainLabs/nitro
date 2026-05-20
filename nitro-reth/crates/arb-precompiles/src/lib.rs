@@ -95,6 +95,12 @@ fn create_p256verify_precompile() -> DynPrecompile {
     })
 }
 
+fn create_p256verify_osaka_precompile() -> DynPrecompile {
+    DynPrecompile::new(PrecompileId::P256Verify, |input: PrecompileInput<'_>| {
+        revm::precompile::secp256r1::p256_verify_osaka(input.data, input.gas)
+    })
+}
+
 fn create_modexp_osaka_precompile() -> DynPrecompile {
     DynPrecompile::new(PrecompileId::ModExp, |input: PrecompileInput<'_>| {
         revm::precompile::modexp::osaka_run(input.data, input.gas)
@@ -554,9 +560,11 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
         ),
     ]);
 
-    if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {
-        // P256VERIFY stays at 3450 gas on Arbitrum for all ArbOS >= 30,
-        // regardless of the underlying EVM spec's Osaka rules.
+    if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+        // P256VERIFY adopts the EIP-7951 Osaka schedule (6900 gas) at v50+.
+        map.extend_precompiles([(P256VERIFY_ADDRESS, create_p256verify_osaka_precompile())]);
+    } else if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_30 {
+        // RIP-7212 P256VERIFY at 3450 gas (ArbOS 30..49).
         map.extend_precompiles([(P256VERIFY_ADDRESS, create_p256verify_precompile())]);
     } else {
         map.apply_precompile(&KZG_POINT_EVALUATION_ADDRESS, |_| None);
@@ -620,5 +628,36 @@ mod recent_wasms_tests {
         // Note: current impl with cap=0 doesn't evict, but reset is the cure.
         reset_recent_wasms(0);
         assert!(!insert_recent_wasm(h));
+    }
+}
+
+#[cfg(test)]
+mod p256_gas_tests {
+    //! Mirror Nitro `p256Verify.RequiredGas`: 3450 for ArbOS 30..49, 6900 for
+    //! v50+ (EIP-7951 Osaka schedule). Direct unit assertion so a future
+    //! refactor can't quietly regress the gating.
+    use revm::precompile::secp256r1::{p256_verify, p256_verify_osaka};
+
+    // Valid p256 signature input from the upstream RIP-7212 test vectors.
+    const VALID_INPUT_HEX: &str = "4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e";
+
+    fn input_bytes() -> Vec<u8> {
+        (0..VALID_INPUT_HEX.len() / 2)
+            .map(|i| u8::from_str_radix(&VALID_INPUT_HEX[i * 2..i * 2 + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn rip7212_charges_3450() {
+        let input = input_bytes();
+        let out = p256_verify(&input, 10_000).expect("ok");
+        assert_eq!(out.gas_used, 3450);
+    }
+
+    #[test]
+    fn osaka_charges_6900() {
+        let input = input_bytes();
+        let out = p256_verify_osaka(&input, 10_000).expect("ok");
+        assert_eq!(out.gas_used, 6900);
     }
 }
