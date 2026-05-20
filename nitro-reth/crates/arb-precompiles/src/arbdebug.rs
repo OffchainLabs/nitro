@@ -1,6 +1,6 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, B256, U256};
-use alloy_sol_types::{SolEvent, SolInterface};
+use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::{
     precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
@@ -48,12 +48,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         ArbDebugCalls::becomeChainOwner(_) => handle_become_chain_owner(&mut input),
         ArbDebugCalls::events(c) => handle_events(&mut input, c.flag, c.value),
         ArbDebugCalls::eventsView(_) => handle_events_view(&mut input),
-        ArbDebugCalls::customRevert(c) => handle_custom_revert(c.number),
+        ArbDebugCalls::customRevert(c) => handle_custom_revert(c.number, gas_limit),
         ArbDebugCalls::legacyError(_) => Err(PrecompileError::other("example legacy error")),
         ArbDebugCalls::panic(_) => panic!("called ArbDebug's debug-only Panic method"),
-        ArbDebugCalls::overwriteContractCode(_) => Err(PrecompileError::other(
-            "overwriteContractCode not implemented",
-        )),
+        ArbDebugCalls::overwriteContractCode(c) => {
+            handle_overwrite_contract_code(&mut input, c.target, c.newCode)
+        }
     };
 
     crate::gas_check(gas_limit, result)
@@ -123,32 +123,20 @@ fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> Pr
     Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
 
-fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    if input.is_static {
-        return Err(PrecompileError::other(
-            "cannot emit logs in static call context",
-        ));
-    }
-    let zero_value = B256::ZERO;
-    emit_basic_event(input, false, zero_value);
-    emit_mixed_event(
-        input,
-        true,
-        false,
-        zero_value,
-        ARBDEBUG_ADDRESS,
-        input.caller,
-    );
-    Ok(PrecompileOutput::new(
-        input.gas.min(3000),
-        Vec::new().into(),
+fn handle_events_view(_input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    Err(PrecompileError::other(
+        "cannot emit logs in a view method",
     ))
 }
 
-fn handle_custom_revert(number: u64) -> PrecompileResult {
-    Err(PrecompileError::other(format!(
-        "custom error {number}: This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\"
-    )))
+fn handle_custom_revert(number: u64, gas_limit: u64) -> PrecompileResult {
+    let payload = IArbDebug::Custom {
+        _0: number,
+        _1: "This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\".to_string(),
+        _2: true,
+    }
+    .abi_encode();
+    crate::sol_error_revert(payload, gas_limit)
 }
 
 fn sload(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
@@ -181,6 +169,45 @@ fn emit_basic_event(input: &mut PrecompileInput<'_>, flag: bool, value: B256) {
         vec![topic0, topic1],
         Bytes::copy_from_slice(&data),
     ));
+}
+
+/// `ArbDebug.overwriteContractCode(address target, bytes newCode) -> bytes oldCode`.
+/// Replaces the target account's runtime code with `newCode` and returns the
+/// previous code, without any code-size or EIP-3541 checks (debug-only).
+fn handle_overwrite_contract_code(
+    input: &mut PrecompileInput<'_>,
+    target: Address,
+    new_code: Bytes,
+) -> PrecompileResult {
+    let gas_limit = input.gas;
+
+    let old_code: Vec<u8> = match input.internals_mut().load_account_code(target) {
+        Ok(state_load) => state_load
+            .data
+            .code()
+            .map(|bc| bc.original_byte_slice().to_vec())
+            .unwrap_or_default(),
+        Err(e) => return Err(PrecompileError::other(format!("load_account_code: {e:?}"))),
+    };
+
+    let bytecode = revm::bytecode::Bytecode::new_raw(new_code.clone());
+    if let Err(e) = input.internals_mut().set_code(target, bytecode) {
+        return Err(PrecompileError::other(format!("set_code: {e:?}")));
+    }
+
+    // ABI-encode `bytes memory oldCode`: offset(0x20) | length(N) | data padded.
+    let len = old_code.len();
+    let padded_len = (len + 31) / 32 * 32;
+    let mut out = Vec::with_capacity(64 + padded_len);
+    out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    out.extend_from_slice(&U256::from(len as u64).to_be_bytes::<32>());
+    out.extend_from_slice(&old_code);
+    out.resize(64 + padded_len, 0);
+
+    let result_words = (out.len() as u64).div_ceil(32);
+    crate::charge_precompile_gas(COPY_GAS.saturating_mul(result_words));
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
+    Ok(PrecompileOutput::new(gas_used, out.into()))
 }
 
 fn emit_mixed_event(
