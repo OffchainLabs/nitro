@@ -403,6 +403,31 @@ fn matrix() {
             }
         }
 
+        // Compare getGasBacklog on both nodes after every iteration. First
+        // iteration where it diverges identifies the tx that introduced backlog drift.
+        {
+            let c = TxRequest {
+                from: Some(signer),
+                to: Some(alloy_primitives::Address::from([
+                    0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x6c,
+                ])),
+                data: Some(Bytes::from(
+                    alloy_primitives::hex::decode("1d5b5c20").unwrap(),
+                )),
+                value: Some(U256::ZERO),
+                gas: Some(3_000_000),
+            };
+            let l = nodes.left.eth_call(c.clone(), BlockId::Latest).ok();
+            let r = nodes.right.eth_call(c, BlockId::Latest).ok();
+            if l != r {
+                eprintln!(
+                    "[matrix] BACKLOG DRIFT after {label}: L(nitro)={:?} R(arbreth)={:?}",
+                    l.as_ref().map(|b| alloy_primitives::hex::encode(b)),
+                    r.as_ref().map(|b| alloy_primitives::hex::encode(b)),
+                );
+            }
+        }
+
         if !diverged {
             eprintln!("[matrix] {label}: clean");
         } else if std::env::var("ARB_MATRIX_FAIL_FAST")
@@ -444,6 +469,64 @@ fn matrix() {
                 "[matrix] ArbGasInfo.getL1BaseFeeEstimate LEFT(nitro)={:?} RIGHT(arbreth)={:?}",
                 l, r
             );
+            // Dump tx receipts to see status, logs, etc on both nodes.
+            for d in &report.block_diffs {
+                if d.field == "gas_used" {
+                    let bn = d.number;
+                    let lb = nodes.left.block(BlockId::Number(bn)).ok();
+                    let rb = nodes.right.block(BlockId::Number(bn)).ok();
+                    let lh = lb.as_ref().and_then(|b| b.tx_hashes.last().copied());
+                    let rh = rb.as_ref().and_then(|b| b.tx_hashes.last().copied());
+                    if let (Some(lh), Some(rh)) = (lh, rh) {
+                        let lr = nodes.left.receipt(lh).ok();
+                        let rr = nodes.right.receipt(rh).ok();
+                        let la = nodes.left.arb_receipt(lh).ok();
+                        let ra = nodes.right.arb_receipt(rh).ok();
+                        eprintln!(
+                            "[matrix] block#{bn} L receipt status={:?} gas_used={:?} arb={:?}",
+                            lr.as_ref().map(|r| r.status),
+                            lr.as_ref().map(|r| r.gas_used),
+                            la,
+                        );
+                        eprintln!(
+                            "[matrix] block#{bn} R receipt status={:?} gas_used={:?} arb={:?}",
+                            rr.as_ref().map(|r| r.status),
+                            rr.as_ref().map(|r| r.gas_used),
+                            ra,
+                        );
+                    }
+                }
+            }
+            // Query ArbGasInfo.getMaxTxGasLimit / getMaxBlockGasLimit / getGasBacklog
+            // on both nodes at LATEST. If per_tx_gas_limit differs, that explains the
+            // compute-hold-gas math (Nitro caps EVM gas at small max, refunds rest).
+            for (label, sel) in [
+                ("getMaxTxGasLimit", "aae1cd4c"),
+                ("getMaxBlockGasLimit", "0371fdb4"),
+                ("getGasBacklog", "1d5b5c20"),
+                ("getMinimumGasPrice", "f918379a"),
+                ("getPricesInArbGas", "02199f5b"),
+            ] {
+                let c = TxRequest {
+                    from: Some(signer),
+                    to: Some(alloy_primitives::Address::from([
+                        0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x6c,
+                    ])),
+                    data: Some(Bytes::from(
+                        alloy_primitives::hex::decode(sel).unwrap(),
+                    )),
+                    value: Some(U256::ZERO),
+                    gas: Some(3_000_000),
+                };
+                let l = nodes.left.eth_call(c.clone(), BlockId::Latest).ok();
+                let r = nodes.right.eth_call(c, BlockId::Latest).ok();
+                eprintln!(
+                    "[matrix] {label} L(nitro)={:?} R(arbreth)={:?}{}",
+                    l.as_ref().map(|b| alloy_primitives::hex::encode(b)),
+                    r.as_ref().map(|b| alloy_primitives::hex::encode(b)),
+                    if l != r { " <-- DIVERGE" } else { "" },
+                );
+            }
             // ArbGasInfo.getPricesInWei (returns per-L2-gas, l1Calldata, ...)
             let call2 = TxRequest {
                 from: Some(signer),
