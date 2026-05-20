@@ -172,7 +172,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         },
         Calls::setL2BaseFee(_) => write_l2_field(&mut input, L2_BASE_FEE),
         Calls::setMinimumL2BaseFee(_) => write_l2_field(&mut input, L2_MIN_BASE_FEE),
-        Calls::setMaxBlockGasLimit(_) => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
+        Calls::setMaxBlockGasLimit(_) => {
+            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
+                return r;
+            }
+            write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
+        }
         Calls::setMaxTxGasLimit(_) => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
         Calls::setL2GasPricingInertia(_) => match data.get(4..36) {
             None => Err(PrecompileError::other("input too short")),
@@ -299,7 +304,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             write_stylus_param(&mut input, StylusField::MaxWasmSize, val as u64)
         }
         Calls::setWasmActivationGas(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_59,
+                0,
+            ) {
                 return r;
             }
             if data.len() < 36 {
