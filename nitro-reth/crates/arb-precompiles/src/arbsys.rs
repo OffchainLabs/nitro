@@ -302,15 +302,29 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let tx_origin = input.internals().tx_origin();
+    // Nitro: `address = 0` unless depth > 1, then `Contracts[depth-2].Caller()`.
+    // Apply L1 inverse-alias iff `wasMyCallersAddressAliased` (top-level frame
+    // entered by an aliasing tx type).
     let depth = crate::get_evm_depth();
-    let address = if depth <= 2 {
-        tx_origin
+    let address = if depth > 1 {
+        crate::caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
     } else {
-        crate::caller_at_depth(depth - 1).unwrap_or(tx_origin)
+        Address::ZERO
     };
 
-    let result_addr = if get_tx_is_aliased() && address == tx_origin {
+    let arbos_version = crate::get_arbos_version();
+    let is_top_level = if arbos_version < 6 {
+        depth == 2
+    } else if depth <= 2 {
+        true
+    } else {
+        let tx_origin = input.internals().tx_origin();
+        crate::caller_at_depth(depth - 1)
+            .map(|c| tx_origin == c)
+            .unwrap_or(false)
+    };
+    let aliased = is_top_level && get_tx_is_aliased();
+    let result_addr = if aliased {
         undo_l1_alias(address)
     } else {
         address
