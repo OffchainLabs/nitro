@@ -35,9 +35,13 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_burn_arb_gas(gas_limit: u64, amount: U256) -> PrecompileResult {
+    // Nitro's `BurnArbGas(c ctx, gasAmount huge)` is pure (no evm.StateDB
+    // access), so the framework skips OpenArbosState. Cost = argsCost (1
+    // word = 3 gas) + the gasAmount the method explicitly burns.
+    const ARGS_COST: u64 = 3;
     let to_burn: u64 = amount.try_into().unwrap_or(u64::MAX);
     Ok(PrecompileOutput::new(
-        to_burn.min(gas_limit),
+        ARGS_COST.saturating_add(to_burn).min(gas_limit),
         Vec::new().into(),
     ))
 }

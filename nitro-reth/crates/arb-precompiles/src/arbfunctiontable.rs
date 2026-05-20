@@ -28,14 +28,23 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbFunctionTable::ArbFunctionTableCalls;
     let result = match call {
+        // Upload is a no-op in Nitro. Cost = OpenArbosState + argsCost (already
+        // pre-charged by init_precompile_gas). No result data.
         ArbFunctionTableCalls::upload(_) => Ok(PrecompileOutput::new(
-            COPY_GAS.min(gas_limit),
+            crate::get_precompile_gas().min(gas_limit),
             vec![].into(),
         )),
-        ArbFunctionTableCalls::size(_) => Ok(PrecompileOutput::new(
-            COPY_GAS.min(gas_limit),
-            U256::ZERO.to_be_bytes::<32>().to_vec().into(),
-        )),
+        // Size is a no-op that returns 0. Cost = OpenArbosState + argsCost +
+        // 1-word resultCost.
+        ArbFunctionTableCalls::size(_) => {
+            crate::charge_precompile_gas(COPY_GAS);
+            Ok(PrecompileOutput::new(
+                crate::get_precompile_gas().min(gas_limit),
+                U256::ZERO.to_be_bytes::<32>().to_vec().into(),
+            ))
+        }
+        // Get unconditionally reverts (table is empty). gas_check will return
+        // accumulated_gas (OpenArbosState + argsCost) on the revert path.
         ArbFunctionTableCalls::get(_) => Err(PrecompileError::other("table is empty")),
     };
     crate::gas_check(gas_limit, result)
