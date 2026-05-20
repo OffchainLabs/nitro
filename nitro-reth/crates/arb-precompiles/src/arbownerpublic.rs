@@ -188,13 +188,20 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) ->
     let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = alloy_primitives::B256::left_padding_from(addr.as_slice());
-
-    // IsMember check
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+
+    // Nitro's RectifyMapping calls IsMember(addr) first (1 SLOAD on byAddress),
+    // and if the address IS a member then calls byAddress.GetUint64(addr) again
+    // (a 2nd SLOAD on the same slot). Both Get calls go through
+    // burner.Burn(StorageReadCost) independently. Match that pattern by doing
+    // two sload_field calls — the second one is gas-only since slot value
+    // can't change between back-to-back reads.
     let slot_val = sload_field(input, member_slot)?;
     if slot_val == U256::ZERO {
         return Err(PrecompileError::other("not an owner"));
     }
+    // Mirror Nitro's second byAddress.GetUint64 charge.
+    let _slot_val_again = sload_field(input, member_slot)?;
 
     // Check if mapping is already correct
     let slot_idx: u64 = slot_val
@@ -385,10 +392,17 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
 }
 
 fn handle_get_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    // Mirror Nitro: OpenArbosState always charges 1 SLOAD (version), then
+    // CollectTips() reads the slot iff arbos_version >= 60. Result is a
+    // 1-word bool. argsCost is 0 (no args) and is pre-charged by
+    // init_precompile_gas alongside OAS.
     let gas_limit = input.gas;
     if crate::get_arbos_version() < ARBOS_VERSION_COLLECT_TIPS {
+        // OAS(800) already accumulated by init_precompile_gas; just add
+        // resultCost for the 1-word false return.
+        crate::charge_precompile_gas(COPY_GAS);
         return Ok(PrecompileOutput::new(
-            COPY_GAS.min(gas_limit),
+            crate::get_precompile_gas().min(gas_limit),
             vec![0u8; 32].into(),
         ));
     }
@@ -398,8 +412,9 @@ fn handle_get_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     if !value.is_zero() {
         out[31] = 1;
     }
+    crate::charge_precompile_gas(COPY_GAS);
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        crate::get_precompile_gas().min(gas_limit),
         out.to_vec().into(),
     ))
 }
