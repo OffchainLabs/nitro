@@ -336,6 +336,13 @@ fn set_program_cached(
 }
 
 fn handle_cache_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
+    if let Some(r) = crate::check_method_version(
+        input.gas,
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+    ) {
+        return r;
+    }
     set_program_cached(input, codehash, true, 0)
 }
 
