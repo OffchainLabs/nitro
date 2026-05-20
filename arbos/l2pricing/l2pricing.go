@@ -78,7 +78,7 @@ func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingSta
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
 		multiGasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multiGasConstraintsKey)),
-		multiGasFees:        OpenMultiGasFees(sto.OpenSubStorage(multiGasBaseFeesKey)),
+		multiGasFees:        OpenMultiGasFees(sto.OpenCachedSubStorage(multiGasBaseFeesKey)),
 		ArbosVersion:        arbosVersion,
 	}
 }

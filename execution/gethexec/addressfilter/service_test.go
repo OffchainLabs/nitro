@@ -175,20 +175,17 @@ func TestParseHashListJSON(t *testing.T) {
 	hashed_addr1 := sha256.Sum256(common.BigToAddress(common.Big1).Bytes())
 	hashed_addr2 := sha256.Sum256(common.BigToAddress(common.Big2).Bytes())
 	// Test valid JSON
-	// should follow format: {"id": "uuid-format", "salt": "uuid-format", "address_hashes": [{"hash": "hex1", "max_risk_score_level":1}, {"hash": "hex2", "max_risk_score_level":3}, ...]}
+	// should follow format: {"id": "uuid-format", "salt": "uuid-format", "hashing_scheme": "sha256-stringinput", "hashes": ["hex1", "hex2", ...]}
+	// Unknown top-level fields (e.g. extract_uuid, issued_at) must be ignored.
 	id := uuid.New()
 	validPayload := map[string]interface{}{
-		"id":   id,
-		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
-		"address_hashes": []map[string]interface{}{
-			{
-				"hash":                 hex.EncodeToString(hashed_addr1[:]),
-				"max_risk_score_level": 2,
-			},
-			{
-				"hash":                 hex.EncodeToString(hashed_addr2[:]),
-				"max_risk_score_level": 3,
-			},
+		"id":           id,
+		"salt":         "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"extract_uuid": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"issued_at":    "2026-05-13T12:05:45Z",
+		"hashes": []string{
+			hex.EncodeToString(hashed_addr1[:]),
+			hex.EncodeToString(hashed_addr2[:]),
 		},
 	}
 	validJSON, _ := json.Marshal(validPayload)
@@ -218,9 +215,9 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test invalid salt hex
 	invalidSaltPayload := map[string]interface{}{
-		"salt":           "not-UUID-salt",
-		"id":             uuid.NewString(),
-		"address_hashes": []map[string]interface{}{{"hash": hex.EncodeToString(hashed_addr1[:])}},
+		"salt":   "not-UUID-salt",
+		"id":     uuid.NewString(),
+		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	invalidSaltJSON, _ := json.Marshal(invalidSaltPayload)
 	_, err = parseHashListJSON(invalidSaltJSON)
@@ -230,9 +227,9 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test invalid hash hex
 	invalidHashPayload := map[string]interface{}{
-		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
-		"id":             uuid.NewString(),
-		"address_hashes": []map[string]interface{}{{"hash": "not-hex"}},
+		"salt":   "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":     uuid.NewString(),
+		"hashes": []string{"not-hex"},
 	}
 	invalidHashJSON, _ := json.Marshal(invalidHashPayload)
 	_, err = parseHashListJSON(invalidHashJSON)
@@ -242,9 +239,9 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test wrong hash length
 	wrongLenPayload := map[string]interface{}{
-		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
-		"id":             uuid.NewString(),
-		"address_hashes": []map[string]interface{}{{"hash": "0123456789abcdef"}},
+		"salt":   "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":     uuid.NewString(),
+		"hashes": []string{"0123456789abcdef"},
 	}
 	wrongLenJSON, _ := json.Marshal(wrongLenPayload)
 	_, err = parseHashListJSON(wrongLenJSON)
@@ -252,19 +249,17 @@ func TestParseHashListJSON(t *testing.T) {
 		t.Error("expected error for wrong hash length")
 	}
 
-	// Test with hashing_scheme: Sha256 (should parse without error)
+	// Test with hashing_scheme: sha256-stringinput (should parse without error)
 	sha256Payload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"id":             uuid.NewString(),
-		"hashing_scheme": "Sha256",
-		"address_hashes": []map[string]interface{}{
-			{"hash": hex.EncodeToString(hashed_addr1[:])},
-		},
+		"hashing_scheme": "sha256-stringinput",
+		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	sha256JSON, _ := json.Marshal(sha256Payload)
 	parsedJson, err = parseHashListJSON(sha256JSON)
 	if err != nil {
-		t.Fatalf("failed to parse JSON with Sha256 hashing_scheme: %v", err)
+		t.Fatalf("failed to parse JSON with sha256-stringinput hashing_scheme: %v", err)
 	}
 	if len(parsedJson.Hashes) != 1 {
 		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
@@ -275,9 +270,7 @@ func TestParseHashListJSON(t *testing.T) {
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"id":             uuid.NewString(),
 		"hashing_scheme": "Unknown",
-		"address_hashes": []map[string]interface{}{
-			{"hash": hex.EncodeToString(hashed_addr1[:])},
-		},
+		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
 	parsedJson, err = parseHashListJSON(unknownSchemeJSON)
@@ -292,9 +285,9 @@ func TestParseHashListJSON(t *testing.T) {
 	prefixedPayload := map[string]interface{}{
 		"salt": "3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7",
 		"id":   uuid.NewString(),
-		"address_hashes": []map[string]interface{}{
-			{"hash": "0x" + hex.EncodeToString(hashed_addr1[:])},
-			{"hash": "0X" + hex.EncodeToString(hashed_addr2[:])},
+		"hashes": []string{
+			"0x" + hex.EncodeToString(hashed_addr1[:]),
+			"0X" + hex.EncodeToString(hashed_addr2[:]),
 		},
 	}
 	prefixedJSON, _ := json.Marshal(prefixedPayload)
@@ -310,11 +303,9 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 	// Test without hashing_scheme field (backward compatible)
 	noSchemePayload := map[string]interface{}{
-		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
-		"id":   uuid.NewString(),
-		"address_hashes": []map[string]interface{}{
-			{"hash": hex.EncodeToString(hashed_addr1[:])},
-		},
+		"salt":   "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":     uuid.NewString(),
+		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	noSchemeJSON, _ := json.Marshal(noSchemePayload)
 	parsedJson, err = parseHashListJSON(noSchemeJSON)
