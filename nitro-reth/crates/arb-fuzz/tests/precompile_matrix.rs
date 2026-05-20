@@ -125,13 +125,96 @@ fn cases() -> Vec<(&'static str, Address, Vec<u8>)> {
     blake[0..4].copy_from_slice(&[0, 0, 0, 12]); // rounds = 12
     out.push(("blake2f_12rounds", addr(0x09), blake));
 
-    // 0x0a KZG point evaluation — not invoked here (would need a valid
-    // commitment + proof). Skipped because the precompile is disabled on
-    // Arbitrum chains.
+    // 0x05 MODEXP edge cases — different sizes to exercise EIP-2565 / 7823
+    // / 7883 cost transitions. Each precompile dispatch picks gas based on
+    // the byte sizes of base/exp/mod, so a divergence in any of EIP-2565,
+    // 7823, 7883 implementations shows up as a gas mismatch here.
+    // medium: 32-byte base/exp/mod (typical RSA scratch path)
+    let mut me32 = vec![0u8; 96 + 96];
+    me32[31] = 32;
+    me32[63] = 32;
+    me32[95] = 32;
+    me32[96 + 31] = 0xab;
+    me32[96 + 63] = 0x03;
+    me32[96 + 95] = 0xfd;
+    out.push(("modexp_32b", addr(0x05), me32));
+    // larger: 64-byte sizes
+    let mut me64 = vec![0u8; 96 + 192];
+    me64[31] = 64;
+    me64[63] = 64;
+    me64[95] = 64;
+    me64[96 + 63] = 0xcd;
+    me64[96 + 127] = 0x05;
+    me64[96 + 191] = 0xfb;
+    out.push(("modexp_64b", addr(0x05), me64));
+
+    // 0x0a KZG point evaluation — disabled on Arbitrum pre-v30, but
+    // registered post-v30. Both nodes should agree that an invalid input
+    // reverts (no valid blob commitment available in our test alloc).
+    // We feed a 192-byte zero buffer which the precompile rejects.
+    out.push(("kzg_invalid", addr(0x0a), vec![0u8; 192]));
+
+    // 0x0b–0x11 BLS12-381 EIP-2537 precompiles. These were disabled
+    // pre-ArbOS v50; the matrix at v40 should observe the call failing
+    // (precompile not present → reverts or returns empty), while v50+ runs
+    // them with full Prague pricing. Inputs use the official EIP-2537
+    // test-vector identity-point shapes (all zeros where valid) so the
+    // implementation paths fire without succeeding cryptographically.
+    // 0x0b G1ADD (input = 256 bytes, two G1 points)
+    out.push(("bls_g1_add_zero", addr(0x0b), vec![0u8; 256]));
+    // 0x0c G1MULTIEXP (input = 160 bytes = 1 pair)
+    out.push(("bls_g1_msm_zero", addr(0x0c), vec![0u8; 160]));
+    // 0x0d G2ADD (512 bytes, two G2 points)
+    out.push(("bls_g2_add_zero", addr(0x0d), vec![0u8; 512]));
+    // 0x0e G2MULTIEXP (288 bytes = 1 pair)
+    out.push(("bls_g2_msm_zero", addr(0x0e), vec![0u8; 288]));
+    // 0x0f PAIRING (384 bytes = 1 pair)
+    out.push(("bls_pair_zero", addr(0x0f), vec![0u8; 384]));
+    // 0x10 MAP_TO_G1 (64 bytes)
+    out.push(("bls_map_g1_zero", addr(0x10), vec![0u8; 64]));
+    // 0x11 MAP_TO_G2 (128 bytes)
+    out.push(("bls_map_g2_zero", addr(0x11), vec![0u8; 128]));
 
     // 0x100 P256VERIFY — vector from RIP-7212.
     let p256 = hex_decode("4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e");
     out.push(("p256verify", P256_ADDR, p256));
+
+    // ── Arbitrum-specific precompiles (read-only methods only).
+    // Each method's gas is dictated by Nitro's per-precompile gating; a
+    // divergence in ArbOS-version gating or in argument decoding shows up
+    // here as a tx_receipt mismatch.
+
+    // ArbSys.arbBlockNumber() — selector 0xa3b1b31d
+    out.push(("arbsys_block_number", addr(0x64), hex_decode("a3b1b31d")));
+    // ArbSys.arbOSVersion() — 0x051038f2
+    out.push(("arbsys_arbos_version", addr(0x64), hex_decode("051038f2")));
+    // ArbSys.arbChainID() — 0x12f5fc5e (would be invalid pre-v32; both
+    // nodes should respond identically anyway).
+    out.push(("arbsys_chain_id", addr(0x64), hex_decode("12f5fc5e")));
+    // ArbInfo.getBalance(address) — selector 0xf8b2cb4f + 32-byte arg
+    let mut arbinfo_bal = hex_decode("f8b2cb4f");
+    arbinfo_bal.extend_from_slice(&[0u8; 32]);
+    out.push(("arbinfo_get_balance", addr(0x65), arbinfo_bal));
+    // ArbGasInfo.getPricesInWei() — 0x41b247a8 (returns 6 values)
+    out.push(("arbgasinfo_prices_wei", addr(0x6c), hex_decode("41b247a8")));
+    // ArbGasInfo.getPricesInArbGas() — 0x02199f34
+    out.push(("arbgasinfo_prices_gas", addr(0x6c), hex_decode("02199f34")));
+    // ArbGasInfo.getGasAccountingParams() — 0x612af178
+    out.push(("arbgasinfo_accounting", addr(0x6c), hex_decode("612af178")));
+    // ArbOwnerPublic.getNetworkFeeAccount() — 0x4d3508b6
+    out.push(("arbownerpub_fee_account", addr(0x6b), hex_decode("4d3508b6")));
+    // ArbOwnerPublic.isChainOwner(address) — 0xee6f1457 + arg
+    let mut isowner = hex_decode("ee6f1457");
+    isowner.extend_from_slice(&[0u8; 32]);
+    out.push(("arbownerpub_is_chain_owner", addr(0x6b), isowner));
+    // ArbWasm.stylusVersion() — 0xb2c2c6df (returns u16). v30+ method.
+    out.push(("arbwasm_stylus_version", addr(0x71), hex_decode("b2c2c6df")));
+    // ArbWasm.inkPrice() — 0x42a5e35a (v30+).
+    out.push(("arbwasm_ink_price", addr(0x71), hex_decode("42a5e35a")));
+    // ArbAggregator.getDefaultAggregator() — 0xc25f7e02 (deprecated v30+).
+    out.push(("arbagg_default", addr(0x6d), hex_decode("c25f7e02")));
+    // ArbRetryableTx.getLifetime() — 0xb29c8c4f
+    out.push(("arbretry_lifetime", addr(0x6e), hex_decode("b29c8c4f")));
 
     out
 }
