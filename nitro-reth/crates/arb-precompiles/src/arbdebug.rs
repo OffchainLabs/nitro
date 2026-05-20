@@ -57,7 +57,16 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             crate::init_precompile_gas_pure(input_len);
             Err(PrecompileError::other("example legacy error"))
         }
-        ArbDebugCalls::panic(_) => panic!("called ArbDebug's debug-only Panic method"),
+        ArbDebugCalls::panic(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+                0,
+            ) {
+                return r;
+            }
+            panic!("called ArbDebug's debug-only Panic method")
+        }
         ArbDebugCalls::overwriteContractCode(c) => {
             handle_overwrite_contract_code(&mut input, c.target, c.newCode)
         }
