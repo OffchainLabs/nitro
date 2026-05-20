@@ -156,13 +156,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(size))
         }
         Calls::activationGas(_) => {
-            // Nitro registers `ActivationGas` only at ArbOS >= 60 (see
-            // precompile.go: methodsByName["ActivationGas"].arbosVersion =
-            // ArbosVersion_StylusActivationGas). Calling it pre-v60 hits the
-            // unregistered-method path and burns the full gas budget.
             if let Some(r) = crate::check_method_version(
                 input.gas,
-                arb_chainspec::arbos_version::ARBOS_VERSION_60,
+                arb_chainspec::arbos_version::ARBOS_VERSION_59,
                 0,
             ) {
                 return r;
