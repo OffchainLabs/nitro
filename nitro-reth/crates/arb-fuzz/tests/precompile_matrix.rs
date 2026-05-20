@@ -216,7 +216,24 @@ fn cases() -> Vec<(&'static str, Address, Vec<u8>)> {
     // ArbRetryableTx.getLifetime() — 0xb29c8c4f
     out.push(("arbretry_lifetime", addr(0x6e), hex_decode("b29c8c4f")));
 
+    // ── Auto-generated full sweep — every external method on every
+    // Arbitrum precompile, defaults: zero scalars / empty bytes/arrays.
+    // Mutating methods will revert on auth, which is fine — both nodes
+    // should revert identically. Skipped: ArbBLS (deprecated, no methods),
+    // NodeInterface[Debug] (RPC-only, not callable from L2 tx).
+    for (addr_byte, label, calldata_hex) in generated::ALL_METHODS.iter() {
+        out.push((
+            Box::leak(label.to_string().into_boxed_str()),
+            addr(*addr_byte),
+            hex_decode(calldata_hex),
+        ));
+    }
+
     out
+}
+
+mod generated {
+    include!("precompile_matrix_data.rs");
 }
 
 fn hex_decode(s: &str) -> Vec<u8> {
@@ -364,6 +381,12 @@ fn matrix() {
 
         if !diverged {
             eprintln!("[matrix] {label}: clean");
+        } else if std::env::var("ARB_MATRIX_FAIL_FAST").is_ok() {
+            // First divergence isolates a real bug; later ones cascade
+            // from the inbox-state drift the first one caused. Stop here
+            // unless the caller explicitly wants the full sweep.
+            eprintln!("[matrix] {label}: DIVERGED — stopping (set ARB_MATRIX_FAIL_FAST=0 to continue)");
+            break;
         }
     }
 
