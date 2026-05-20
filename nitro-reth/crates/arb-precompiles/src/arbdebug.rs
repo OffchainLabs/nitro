@@ -44,12 +44,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     };
 
     use IArbDebug::ArbDebugCalls;
+    let input_len = input.data.len();
     let result = match call {
         ArbDebugCalls::becomeChainOwner(_) => handle_become_chain_owner(&mut input),
         ArbDebugCalls::events(c) => handle_events(&mut input, c.flag, c.value),
         ArbDebugCalls::eventsView(_) => handle_events_view(&mut input),
-        ArbDebugCalls::customRevert(c) => handle_custom_revert(c.number, gas_limit),
-        ArbDebugCalls::legacyError(_) => Err(PrecompileError::other("example legacy error")),
+        ArbDebugCalls::customRevert(c) => {
+            crate::init_precompile_gas_pure(input_len);
+            handle_custom_revert(c.number, gas_limit)
+        }
+        ArbDebugCalls::legacyError(_) => {
+            crate::init_precompile_gas_pure(input_len);
+            Err(PrecompileError::other("example legacy error"))
+        }
         ArbDebugCalls::panic(_) => panic!("called ArbDebug's debug-only Panic method"),
         ArbDebugCalls::overwriteContractCode(c) => {
             handle_overwrite_contract_code(&mut input, c.target, c.newCode)

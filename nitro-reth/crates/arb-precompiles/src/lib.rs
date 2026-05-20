@@ -295,6 +295,15 @@ pub fn init_precompile_gas(input_len: usize) {
     charge_precompile_gas(args_cost + 800);
 }
 
+/// Initialize gas tracking for a `pure` precompile method: like
+/// `init_precompile_gas` but skips the OpenArbosState SLOAD (800), matching the
+/// reference framework's pure-method path which does not open ArbOS state.
+pub fn init_precompile_gas_pure(input_len: usize) {
+    reset_precompile_gas();
+    let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
+    charge_precompile_gas(args_cost);
+}
+
 /// Set the current tx poster fee for ArbGasInfo.getCurrentTxL1GasFees.
 pub fn set_current_tx_poster_fee(fee_wei: u128) {
     CURRENT_TX_POSTER_FEE.with(|v| v.set(fee_wei));
