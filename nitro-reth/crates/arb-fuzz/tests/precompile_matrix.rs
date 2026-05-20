@@ -405,12 +405,17 @@ fn matrix() {
 
         if !diverged {
             eprintln!("[matrix] {label}: clean");
-        } else if std::env::var("ARB_MATRIX_FAIL_FAST").is_ok() {
+        } else if std::env::var("ARB_MATRIX_FAIL_FAST")
+            .map(|v| v != "0" && v != "false" && !v.is_empty())
+            .unwrap_or(false)
+        {
             // First divergence isolates a real bug; later ones cascade
             // from the inbox-state drift the first one caused. Stop here
             // unless the caller explicitly wants the full sweep.
             eprintln!("[matrix] {label}: DIVERGED — stopping (set ARB_MATRIX_FAIL_FAST=0 to continue)");
             break;
+        } else {
+            eprintln!("[matrix] {label}: DIVERGED — collecting and continuing");
         }
     }
 
