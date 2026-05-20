@@ -146,7 +146,9 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Pre
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, caller)? {
-        return crate::burn_all_revert(gas_limit);
+        return Err(PrecompileError::other(
+            "caller is not a transaction filterer",
+        ));
     }
 
     let slot = filtered_tx_slot(&tx_hash);
@@ -171,7 +173,9 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> 
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, caller)? {
-        return crate::burn_all_revert(gas_limit);
+        return Err(PrecompileError::other(
+            "caller is not a transaction filterer",
+        ));
     }
 
     let slot = filtered_tx_slot(&tx_hash);
