@@ -50,13 +50,16 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     use IArbAggregator::ArbAggregatorCalls as Calls;
     let result = match call {
         Calls::getPreferredAggregator(_) => {
+            // Nitro returns (BatchPosterAddress, true) — argsCost(3 for 1
+            // address word) + OAS(800) + resultCost(6 for 2 output words).
             let mut out = Vec::with_capacity(64);
             let mut addr_word = [0u8; 32];
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
             out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
+            crate::charge_precompile_gas(2 * COPY_GAS);
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + 6).min(gas_limit),
+                crate::get_precompile_gas().min(gas_limit),
                 out.into(),
             ))
         }
@@ -151,13 +154,27 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) ->
     let gas_limit = input.gas;
     load_arbos(input)?;
 
+    // Nitro's OpenPoster(poster, false) reverts with ErrNotExist when the
+    // address isn't a registered batch poster. Mirror that by checking
+    // posterAddrs.IsMember(poster) first.
+    let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
+    let poster_b256 = B256::left_padding_from(poster.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
+    let is_member = sload_field(input, member_slot)?;
+    if is_member == U256::ZERO {
+        return Err(PrecompileError::other(
+            "ArbAggregator: getFeeCollector: poster not exists",
+        ));
+    }
+
     let info_key = poster_info_key(poster);
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     let pay_to = sload_field(input, pay_to_slot)?;
 
-    // OAS(1) + OpenPoster IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
+    // OAS(1) + IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
+    crate::charge_precompile_gas(COPY_GAS);
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        crate::get_precompile_gas().min(gas_limit),
         pay_to.to_be_bytes::<32>().to_vec().into(),
     ))
 }
