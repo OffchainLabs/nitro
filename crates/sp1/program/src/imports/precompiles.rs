@@ -1,7 +1,7 @@
 use wasmer::FunctionEnvMut;
 
 use crate::{
-    Escape, MaybeEscape, Ptr, keccak, platform, read_slice,
+    Escape, MaybeEscape, Ptr, platform,
     replay::CustomEnvData,
     state::{gp, sp1_env},
 };
@@ -32,13 +32,8 @@ pub fn keccak256(
     input_length: u32,
     output: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
-
-    let input = read_slice(input, input_length as usize, &memory)?;
-    let hash = keccak(input);
-    memory.write(output.offset() as u64, &hash)?;
-
+    let (mut mem, state) = sp1_env(&mut ctx);
+    caller_env::arbcrypto::keccak256(&mut mem, state, gp(input), input_length, gp(output));
     Ok(())
 }
 
