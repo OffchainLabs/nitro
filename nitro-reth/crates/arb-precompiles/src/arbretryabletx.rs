@@ -6,10 +6,15 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 use crate::{
     interfaces::IArbRetryableTx,
     storage_slot::{
-        derive_subspace_key, map_slot, vector_length_slot, ARBOS_STATE_ADDRESS,
-        L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, gas_constraints_vec_key, map_slot, vector_element_field,
+        vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
+        ROOT_STORAGE_KEY,
     },
 };
+
+/// Backlog offset within a single gas-constraint sub-storage (must match
+/// `arbos::l2_pricing::gas_constraint::BACKLOG_OFFSET`).
+const GAS_CONSTRAINT_BACKLOG_OFFSET: u64 = 2;
 
 /// ArbRetryableTx precompile address (0x6e).
 pub const ARBRETRYABLETX_ADDRESS: Address = Address::new([
@@ -403,7 +408,16 @@ fn compute_actual_backlog_cost(
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
         let len = read_gas_constraints_length_free(input)?;
         if len > 0 {
-            return Ok(2 * SLOAD_GAS + len.saturating_mul(SLOAD_GAS + SSTORE_RESET_GAS));
+            // Per-constraint write cost depends on whether the post-shrink value
+            // is zero (matches Nitro's storage.WriteCost(value): 5000 if zero,
+            // 20000 otherwise — see arbos/storage/storage.go:128).
+            let vec_key = gas_constraints_vec_key();
+            let mut total = 2 * SLOAD_GAS; // GasModelToUse + vector length
+            for i in 0..len {
+                let backlog = read_constraint_backlog_free(input, &vec_key, i)?;
+                total += constraint_actual_backlog_cost(backlog, gas_to_donate);
+            }
+            return Ok(total);
         }
     }
     Ok(legacy_actual_backlog_cost(
@@ -420,6 +434,32 @@ fn legacy_actual_backlog_cost(current_backlog: u64, gas_to_donate: u64) -> u64 {
         SSTORE_GAS
     };
     SLOAD_GAS + write_cost
+}
+
+/// Per-constraint ShrinkBacklog cost: one SLOAD for the current backlog plus
+/// the EIP-2200 write cost determined by the post-shrink value.
+#[inline]
+fn constraint_actual_backlog_cost(current_backlog: u64, gas_to_donate: u64) -> u64 {
+    let new_backlog = current_backlog.saturating_sub(gas_to_donate);
+    let write_cost = if new_backlog == 0 {
+        SSTORE_RESET_GAS
+    } else {
+        SSTORE_GAS
+    };
+    SLOAD_GAS + write_cost
+}
+
+fn read_constraint_backlog_free(
+    input: &mut PrecompileInput<'_>,
+    vec_key: &B256,
+    index: u64,
+) -> Result<u64, PrecompileError> {
+    let slot = vector_element_field(vec_key, index, GAS_CONSTRAINT_BACKLOG_OFFSET);
+    let val = input
+        .internals_mut()
+        .sload(ARBOS_STATE_ADDRESS, slot)
+        .map_err(|_| PrecompileError::other("sload constraint backlog failed"))?;
+    Ok(val.data.try_into().unwrap_or(0))
 }
 
 fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
@@ -679,5 +719,75 @@ mod redeem_gas_tests {
         let buggy_static_cost = SLOAD_GAS + SSTORE_GAS;
         let fixed_drain_cost = legacy_actual_backlog_cost(100_000, 100_000);
         assert_eq!(buggy_static_cost - fixed_drain_cost, 15_000);
+    }
+
+    /// Per-constraint shrink cost follows the same EIP-2200 rule as legacy:
+    /// 5000 if the post-shrink value is zero, 20000 otherwise. The earlier
+    /// implementation hard-coded SSTORE_RESET for every constraint, so any
+    /// Redeem at v51..v60 with N non-draining constraints undercharged by
+    /// N * 15_000.
+    #[test]
+    fn constraint_with_remaining_backlog_charges_sstore_set() {
+        assert_eq!(
+            constraint_actual_backlog_cost(10_000_000, 1_100_000),
+            SLOAD_GAS + SSTORE_GAS,
+        );
+    }
+
+    #[test]
+    fn constraint_draining_to_zero_charges_sstore_reset() {
+        assert_eq!(
+            constraint_actual_backlog_cost(100_000, 100_000),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+    }
+
+    #[test]
+    fn six_non_draining_constraints_match_reservation() {
+        let len = 6u64;
+        let gas_to_donate = 1_100_000u64;
+        let per_constraint_backlog = 10_000_000u64; // none drain
+        let reservation = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_GAS);
+        let actual = 2 * SLOAD_GAS
+            + (0..len)
+                .map(|_| constraint_actual_backlog_cost(per_constraint_backlog, gas_to_donate))
+                .sum::<u64>();
+        assert_eq!(actual, reservation);
+    }
+
+    /// Mirrors the Sepolia block 235,386,091 divergence: redeem tx with a
+    /// 1,200,000 gas limit on a chain with 6 gas constraints, none of which
+    /// drain after the donation. The buggy formula short-changed by exactly
+    /// 90,000 gas.
+    #[test]
+    fn block_235_386_091_redeem_recovers_full_gas_limit() {
+        let gas_limit = 1_200_000u64;
+        let len = 6u64;
+        let backlog_per_constraint = 10_000_000u64;
+        // Pre-donate costs that survive into the total (everything other than
+        // the backlog reservation/actual pair).
+        let gas_used_so_far = 50_000u64; // representative, exact value cancels out
+        let reservation = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_GAS);
+        let future = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + reservation;
+        let gas_to_donate = gas_limit - gas_used_so_far - future;
+
+        let buggy_actual = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_RESET_GAS);
+        let buggy_total = gas_used_so_far
+            + REDEEM_SCHEDULED_EVENT_COST
+            + gas_to_donate
+            + buggy_actual
+            + COPY_GAS;
+        assert_eq!(gas_limit - buggy_total, 90_000);
+
+        let fixed_actual = 2 * SLOAD_GAS
+            + (0..len)
+                .map(|_| constraint_actual_backlog_cost(backlog_per_constraint, gas_to_donate))
+                .sum::<u64>();
+        let fixed_total = gas_used_so_far
+            + REDEEM_SCHEDULED_EVENT_COST
+            + gas_to_donate
+            + fixed_actual
+            + COPY_GAS;
+        assert_eq!(fixed_total, gas_limit);
     }
 }
