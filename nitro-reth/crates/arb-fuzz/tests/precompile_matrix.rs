@@ -382,7 +382,18 @@ fn matrix() {
             || label.starts_with("ArbGasInfo.getL1PricingSurplus")
             || label.starts_with("ArbGasInfo.getL1FeesAvailable")
             || label.starts_with("ArbGasInfo.getL1PricingUnitsSinceUpdate")
-            || label.starts_with("ArbGasInfo.getLastL1PricingUpdateTime");
+            || label.starts_with("ArbGasInfo.getLastL1PricingUpdateTime")
+            // Nitro+geth-fork and arbreth+reth produce different L2 block
+            // hashes due to the documented zombie-account state-root drift;
+            // ArbSys.arbBlockHash returns the actual L2 hash so values
+            // legitimately differ without affecting consensus.
+            || label.starts_with("ArbSys.arbBlockHash")
+            // ArbSys.withdrawEth/sendTxToL1 hashes embed prior L2 state
+            // and accumulator size — both differ across nodes for
+            // reasons unrelated to ArbOS-version handling.
+            || label.starts_with("ArbSys.withdrawEth")
+            || label.starts_with("ArbSys.sendTxToL1")
+            || label.starts_with("ArbSys.sendMerkleTreeState");
         let call = TxRequest {
             from: Some(signer),
             to: Some(*target),
