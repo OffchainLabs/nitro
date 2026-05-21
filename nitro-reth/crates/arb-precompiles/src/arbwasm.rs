@@ -476,12 +476,13 @@ fn revert_with_payload(payload: Vec<u8>, lookup_gas: u64, gas_limit: u64) -> Pre
     ))
 }
 
-fn revert_sol_error(payload: Vec<u8>) -> PrecompileResult {
+fn revert_sol_error(payload: Vec<u8>, input_gas: u64) -> PrecompileResult {
     crate::charge_precompile_gas(COPY_GAS * (payload.len() as u64).div_ceil(32));
-    Ok(PrecompileOutput::new_reverted(
-        crate::get_precompile_gas(),
-        payload.into(),
-    ))
+    let gas = crate::get_precompile_gas();
+    if gas > input_gas {
+        return Err(PrecompileError::OutOfGas);
+    }
+    Ok(PrecompileOutput::new_reverted(gas, payload.into()))
 }
 
 fn ok_u256(gas_cost: u64, value: U256) -> PrecompileResult {
@@ -600,7 +601,7 @@ fn handle_activate_program(
     // result-copy cost. See `arbos/programs/programs.go::getWasmFromContractCode`
     // line 420-421 ("Old arbOS behavior - this is not a solidity error").
     if code_bytes.is_empty() {
-        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
+        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode(), input.gas);
     }
     if !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version()) {
         let arbos_v = crate::get_arbos_version();
@@ -611,12 +612,12 @@ fn handle_activate_program(
                 Default::default(),
             ));
         }
-        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode());
+        return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode(), input.gas);
     }
 
     let wasm = match arb_stylus::decompress_wasm(&code_bytes) {
         Ok(w) => w,
-        Err(_) => return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode()),
+        Err(_) => return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode(), input.gas),
     };
 
     let time = block_timestamp();
@@ -631,7 +632,7 @@ fn handle_activate_program(
         let age = hours_to_age(time, activated_at);
         let expiry_days = u16::from_be_bytes([params_word[19], params_word[20]]);
         if age <= (expiry_days as u64) * 86400 {
-            return revert_sol_error(IArbWasm::ProgramUpToDate {}.abi_encode());
+            return revert_sol_error(IArbWasm::ProgramUpToDate {}.abi_encode(), input.gas);
         }
     }
 
@@ -772,6 +773,7 @@ fn handle_activate_program(
                 want: data_fee,
             }
             .abi_encode(),
+            input.gas,
         );
     }
 
@@ -833,6 +835,9 @@ fn handle_activate_program(
     tracing::warn!(target: "stylus",
         total = gas_used, args = args_cost, prover = prover_gas_used,
         event = event_gas, ret = return_gas, "activateProgram total gas");
+    if gas_used > input.gas {
+        return Err(PrecompileError::OutOfGas);
+    }
     Ok(PrecompileOutput::new(gas_used, return_data.into()))
 }
 
@@ -855,7 +860,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     let program = parse_program(&program_bytes, &params_word);
 
     if program.version == 0 {
-        return revert_sol_error(IArbWasm::ProgramNotActivated {}.abi_encode());
+        return revert_sol_error(IArbWasm::ProgramNotActivated {}.abi_encode(), input.gas);
     }
     let age = hours_to_age(
         time,
@@ -864,6 +869,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     if age > (expiry_days as u64) * 86400 {
         return revert_sol_error(
             IArbWasm::ProgramExpired { ageInSeconds: age }.abi_encode(),
+            input.gas,
         );
     }
     if program.version != params_version {
@@ -873,11 +879,13 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
                 stylusVersion: params_version,
             }
             .abi_encode(),
+            input.gas,
         );
     }
     if age < (keepalive_days as u64) * 86400 {
         return revert_sol_error(
             IArbWasm::ProgramKeepaliveTooSoon { ageInSeconds: age }.abi_encode(),
+            input.gas,
         );
     }
 
@@ -956,6 +964,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
                 want: data_fee,
             }
             .abi_encode(),
+            input.gas,
         );
     }
 
@@ -992,6 +1001,9 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
 
     // No return value for keepalive
     let gas_used = crate::get_precompile_gas();
+    if gas_used > input.gas {
+        return Err(PrecompileError::OutOfGas);
+    }
     Ok(PrecompileOutput::new(gas_used, Vec::new().into()))
 }
 
