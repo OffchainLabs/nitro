@@ -1339,6 +1339,7 @@ dependencies = [
  "alloy-rpc-types-trace",
  "alloy-serde",
  "arb-alloy-consensus",
+ "arb-chainspec",
  "arb-evm",
  "arb-payload",
  "arb-precompiles",

@@ -39,8 +39,16 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
     ) -> Result<Vec<Self::RpcReceipt>, Self::Error> {
         let mix_hash = block.header().mix_hash;
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
-        // Nitro encodes CollectTips in bit 0 of mix_hash byte 25.
-        let collect_tips = (mix_hash.0[25] & 1) == 1;
+        // mix_hash[16:24] = ArbOSFormatVersion (BE uint64);
+        // mix_hash[25] bit 0 = CollectTips (post-v9 encoding).
+        let arbos_version =
+            u64::from_be_bytes(mix_hash.0[16..24].try_into().unwrap_or_default());
+        // Pre-v10 header (ArbosVersionCollectTipsOld = v9) always means
+        // CollectTips=true regardless of mix_hash[25] — matches Nitro's
+        // DeserializeHeaderExtraInformation.
+        let collect_tips = arbos_version
+            == arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD
+            || (mix_hash.0[25] & 1) == 1;
 
         let results = receipts
             .into_iter()
@@ -116,19 +124,20 @@ fn convert_single_receipt(
     };
 
     // effective_gas_price follows Nitro's `Receipts.DeriveFields` logic
-    // (`go-ethereum/core/types/receipt.go`): when the block header's
-    // CollectTips bit (mix_hash[25] & 1) is set, use the standard per-tx
-    // formula; otherwise return the block base fee. Pre-ArbOS-v60, Nitro's
-    // ArbosState forces CollectTips=false, so the bit is always 0 — but
-    // mirroring the full logic prepares us for v60 onward and matches what
-    // Nitro will return on the RPC.
+    // (`go-ethereum/core/types/receipt.go`): when CollectTips is set, use
+    // the per-tx-type formula (Nitro's tx.effectiveGasPrice); otherwise
+    // return the block base fee.
     let base_fee = meta.base_fee.unwrap_or(0) as u128;
     let effective_gas_price = if collect_tips {
         match tx_type {
             // Legacy + EIP-2930: stored gas price.
             0x00 | 0x01 => tx.gas_price().unwrap_or(base_fee),
-            // EIP-1559, EIP-4844, EIP-7702 and Arbitrum-internal kinds:
-            // min(maxFeePerGas, baseFee + tipCap).
+            // ArbitrumDepositTx, ArbitrumInternalTx: always 0.
+            0x64 | 0x6A => 0,
+            // ArbitrumUnsignedTx, ArbitrumContractTx, ArbitrumRetryTx,
+            // ArbitrumSubmitRetryableTx: baseFee.
+            0x65 | 0x66 | 0x68 | 0x69 => base_fee,
+            // EIP-1559, EIP-4844, EIP-7702: min(maxFeePerGas, baseFee + tipCap).
             _ => {
                 let tip = tx.max_priority_fee_per_gas().unwrap_or(0);
                 let cap = tx.max_fee_per_gas();

@@ -20,6 +20,8 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_7: u64 = 7;
     pub const ARBOS_VERSION_8: u64 = 8;
     pub const ARBOS_VERSION_9: u64 = 9;
+    /// Legacy CollectTips encoding (pre-v10 mix_hash layout).
+    pub const ARBOS_VERSION_COLLECT_TIPS_OLD: u64 = ARBOS_VERSION_9;
     pub const ARBOS_VERSION_10: u64 = 10;
     /// ArbOS version 11 — Shanghai EVM rules (PUSH0, etc.).
     pub const ARBOS_VERSION_11: u64 = 11;
