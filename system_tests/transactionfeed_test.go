@@ -16,12 +16,20 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/transactionfeed"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -262,5 +270,326 @@ func TestTransactionFeedOrdering(t *testing.T) {
 			t.Fatalf("tx_index not increasing within block: tx %d idx=%d, tx %d idx=%d",
 				i-1, prev.Transaction.TxIndex, i, curr.Transaction.TxIndex)
 		}
+	}
+}
+
+func setupTransactionFeedTestWithL1(t *testing.T, ctx context.Context) (
+	*NodeBuilder,
+	*bridgegen.Inbox,
+	func(*types.Receipt) *types.Transaction,
+	func(),
+	<-chan *transactionfeed.TransactionFeedMessage,
+	<-chan error,
+) {
+	t.Helper()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder.nodeConfig.Feed.TransactionFeed = newTransactionFeedConfigTest()
+	cleanup := builder.Build(t)
+
+	rfs := builder.L2.ConsensusNode.TransactionFeedServer
+	if rfs == nil {
+		cleanup()
+		t.Fatal("TransactionFeedServer was not constructed")
+	}
+	port := testhelpers.AddrTCPPort(rfs.ListenerAddr(), t)
+
+	conn := dialTransactionFeed(ctx, t, port)
+	msgs, errs := startTransactionFeedReader(ctx, conn)
+	waitForTransactionFeedClients(t, rfs, 1, 3*time.Second)
+
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	Require(t, err)
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
+
+	tearDown := func() {
+		_ = conn.Close()
+		cleanup()
+	}
+	return builder, delayedInbox, lookupL2Tx, tearDown, msgs, errs
+}
+
+func assertNoFeedMessageFor(t *testing.T, msgs <-chan *transactionfeed.TransactionFeedMessage, errs <-chan error, txHash common.Hash, window time.Duration) {
+	t.Helper()
+	deadline := time.After(window)
+	for {
+		select {
+		case m, ok := <-msgs:
+			if !ok {
+				return
+			}
+			if strings.EqualFold(m.Transaction.TxHash, txHash.Hex()) {
+				t.Fatalf("unexpected feed message for tx %s", txHash.Hex())
+			}
+		case err := <-errs:
+			t.Fatalf("transaction feed reader error while draining for tx %s: %v", txHash.Hex(), err)
+		case <-deadline:
+			return
+		}
+	}
+}
+
+func parseRedeemScheduledRetryHash(t *testing.T, client *ethclient.Client, receipt *types.Receipt) common.Hash {
+	t.Helper()
+	arbRetryableFilterer, err := precompilesgen.NewArbRetryableTxFilterer(common.HexToAddress("6e"), client)
+	Require(t, err)
+	for _, l := range receipt.Logs {
+		event, err := arbRetryableFilterer.ParseRedeemScheduled(*l)
+		if err != nil {
+			continue
+		}
+		return common.Hash(event.RetryTxHash)
+	}
+	t.Fatalf("RedeemScheduled event not found on receipt for tx %s", receipt.TxHash.Hex())
+	return common.Hash{}
+}
+
+func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, delayedInbox, lookupL2Tx, cleanup, msgs, errs := setupTransactionFeedTestWithL1(t, ctx)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("RetryDest")
+	builder.L2Info.GenerateAccount("Beneficiary")
+	destAddr := builder.L2Info.GetAddress("RetryDest")
+	beneficiaryAddr := builder.L2Info.GetAddress("Beneficiary")
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e6)
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		destAddr,
+		callValue,
+		maxSubmissionCost,
+		beneficiaryAddr,
+		beneficiaryAddr,
+		big.NewInt(0),
+		maxFeePerGas,
+		nil,
+	)
+	Require(t, err)
+
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatal("l1Receipt indicated failure")
+	}
+	waitForL1DelayBlocks(t, builder)
+
+	submissionTx := lookupL2Tx(l1Receipt)
+	_, err = builder.L2.EnsureTxSucceeded(submissionTx)
+	Require(t, err)
+	ticketId := submissionTx.Hash()
+
+	// Trigger a manual redeem from L2
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+	redeemerOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	redeemTx, err := arbRetryableTx.Redeem(&redeemerOpts, ticketId)
+	Require(t, err)
+	redeemReceipt, err := builder.L2.EnsureTxSucceeded(redeemTx)
+	Require(t, err)
+	if redeemReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("redeem status: got %d, want %d",
+			redeemReceipt.Status, types.ReceiptStatusSuccessful)
+	}
+
+	retryTxHash := parseRedeemScheduledRetryHash(t, builder.L2.Client, redeemReceipt)
+	retryReceipt, err := WaitForTx(ctx, builder.L2.Client, retryTxHash, 10*time.Second)
+	Require(t, err)
+	if retryReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("inner retry status: got %d, want %d",
+			retryReceipt.Status, types.ReceiptStatusSuccessful)
+	}
+
+	m := awaitFeedMessageFor(t, msgs, errs, redeemTx.Hash(), 10*time.Second)
+	if m.Transaction.BlockNumber != redeemReceipt.BlockNumber.Uint64() {
+		t.Fatalf("redeem block mismatch: feed=%d receipt=%d",
+			m.Transaction.BlockNumber, redeemReceipt.BlockNumber.Uint64())
+	}
+	if uint64(m.Transaction.TxIndex) != uint64(redeemReceipt.TransactionIndex) {
+		t.Fatalf("redeem tx_index mismatch: feed=%d receipt=%d",
+			m.Transaction.TxIndex, redeemReceipt.TransactionIndex)
+	}
+	if m.Transaction.Receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("redeem feed status: got %d, want %d",
+			m.Transaction.Receipt.Status, types.ReceiptStatusSuccessful)
+	}
+
+	m = awaitFeedMessageFor(t, msgs, errs, retryTxHash, 10*time.Second)
+	if m.Transaction.BlockNumber != retryReceipt.BlockNumber.Uint64() {
+		t.Fatalf("redeem block mismatch: feed=%d receipt=%d",
+			m.Transaction.BlockNumber, retryReceipt.BlockNumber.Uint64())
+	}
+	if uint64(m.Transaction.TxIndex) != uint64(retryReceipt.TransactionIndex) {
+		t.Fatalf("redeem tx_index mismatch: feed=%d receipt=%d",
+			m.Transaction.TxIndex, retryReceipt.TransactionIndex)
+	}
+	if m.Transaction.Receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("redeem feed status: got %d, want %d",
+			m.Transaction.Receipt.Status, types.ReceiptStatusSuccessful)
+	}
+}
+
+func setupTransactionFeedFilterTest(t *testing.T, ctx context.Context) (
+	*NodeBuilder,
+	*bridgegen.Inbox,
+	func(*types.Receipt) *types.Transaction,
+	func(),
+	<-chan *transactionfeed.TransactionFeedMessage,
+	<-chan error,
+) {
+	t.Helper()
+
+	arbOSInit := &params.ArbOSInit{TransactionFilteringEnabled: true}
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithArbOSVersion(params.ArbosVersion_60).
+		WithArbOSInit(arbOSInit).
+		DontParalellise()
+	builder.isSequencer = true
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	builder.nodeConfig.Feed.TransactionFeed = newTransactionFeedConfigTest()
+
+	cleanup := builder.Build(t)
+
+	rfs := builder.L2.ConsensusNode.TransactionFeedServer
+	if rfs == nil {
+		cleanup()
+		t.Fatal("TransactionFeedServer was not constructed")
+	}
+	port := testhelpers.AddrTCPPort(rfs.ListenerAddr(), t)
+	conn := dialTransactionFeed(ctx, t, port)
+	msgs, errs := startTransactionFeedReader(ctx, conn)
+	waitForTransactionFeedClients(t, rfs, 1, 3*time.Second)
+
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	Require(t, err)
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
+
+	// Register a Filterer and a FundsRecipient on L2 so the precompile
+	// machinery is fully wired.
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2Info.GenerateAccount("FundsRecipient")
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	tx, err = arbOwner.SetFilteredFundsRecipient(&ownerTxOpts, builder.L2Info.GetAddress("FundsRecipient"))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	tearDown := func() {
+		_ = conn.Close()
+		cleanup()
+	}
+	return builder, delayedInbox, lookupL2Tx, tearDown, msgs, errs
+}
+
+func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, delayedInbox, lookupL2Tx, cleanup, msgs, errs := setupTransactionFeedFilterTest(t, ctx)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Caller contract that forwards a CALL to the target; the cascading filter
+	// trips when the retry executes the caller and the caller hits the target.
+	callerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	callerAddr, callerDeployTx, _, err := localgen.DeployAddressFilterTest(&callerAuth, builder.L2.Client)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(callerDeployTx)
+	Require(t, err)
+
+	targetAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	targetAddr, targetDeployTx, _, err := localgen.DeployAddressFilterTest(&targetAuth, builder.L2.Client)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(targetDeployTx)
+	Require(t, err)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	Require(t, err)
+	retryData, err := callerABI.Pack("callTarget", targetAddr)
+	Require(t, err)
+
+	// Submit the retryable with gasLimit=0 so no auto-redeem is scheduled and
+	// the ticket survives for the manual redeem below.
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		callerAddr,
+		common.Big0,
+		maxSubmissionCost,
+		cleanBeneficiary,
+		cleanBeneficiary,
+		common.Big0,
+		maxFeePerGas,
+		retryData,
+	)
+	Require(t, err)
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	waitForL1DelayBlocks(t, builder)
+	submissionTx := lookupL2Tx(l1Receipt)
+	ticketId := submissionTx.Hash()
+	_, err = builder.L2.EnsureTxSucceeded(submissionTx)
+	Require(t, err)
+
+	// Activate the address filter on the retryable's inner-call target.
+	filter := newHashedChecker([]common.Address{targetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	// Sign the Redeem call without sending so we can capture the hash even
+	// though the sequencer will reject the submission.
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	redeemOpts.NoSend = true
+	signedRedeemTx, err := arbRetryable.Redeem(&redeemOpts, ticketId)
+	Require(t, err)
+	redeemHash := signedRedeemTx.Hash()
+
+	// Submit; the sequencer rejects with the cascading-filter error and the
+	// tx never enters any block.
+	sendErr := builder.L2.Client.SendTransaction(ctx, signedRedeemTx)
+	if sendErr == nil {
+		t.Fatal("expected SendTransaction to fail with cascading-filter error")
+	}
+	if !strings.Contains(sendErr.Error(), "cascading redeem filtered") {
+		t.Fatalf("unexpected SendTransaction error: %v", sendErr)
+	}
+
+	// The Redeem tx must NEVER reach the feed. Drain briefly to confirm.
+	assertNoFeedMessageFor(t, msgs, errs, redeemHash, 2*time.Second)
+
+	// Sanity check the ticket still exists -- the rollback was real.
+	if _, err = arbRetryable.GetTimeout(&bind.CallOpts{Context: ctx}, ticketId); err != nil {
+		t.Fatalf("retryable ticket should survive the rolled-back redeem: %v", err)
 	}
 }

@@ -52,10 +52,6 @@ type Log struct {
 }
 
 func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) *TransactionFeedMessage {
-	switch tx.Type() {
-	case types.ArbitrumInternalTxType, types.ArbitrumRetryTxType:
-		return nil
-	}
 	if header == nil || header.BaseFee == nil || receipt == nil {
 		return nil
 	}
