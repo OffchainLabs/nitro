@@ -270,7 +270,11 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
         U256::ZERO.wrapping_sub(deficit)
     };
 
-    let gas_cost = (4 * SLOAD_GAS + COPY_GAS).min(gas_limit);
+    // Pre-v10 reads only 2 sloads (TotalFundsDue + FundsDueForRewards) plus
+    // a state balance read (free) — Nitro charges 3 SLOAD total including OAS.
+    // v10+ reads L1FeesAvailable as a 3rd slot, totaling 4 SLOAD.
+    let sloads = if arbos_version >= 10 { 4 } else { 3 };
+    let gas_cost = (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(
         gas_cost,
         surplus.to_be_bytes::<32>().to_vec().into(),
@@ -280,6 +284,7 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
 fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
+    let arbos_version = crate::get_arbos_version();
 
     // Reth zeros BlockEnv basefee for eth_call without a gas price;
     // fall back to the L2PricingState slot (written at StartBlock) so
@@ -288,7 +293,14 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+
+    // Pre-v4: no MinBaseFeeWei read; perArbGasBase = l2GasPrice, congestion = 0.
+    let read_min_base = arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_4;
+    let l2_min = if read_min_base {
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?
+    } else {
+        U256::ZERO
+    };
     let l2_gas_price = if block_basefee.is_zero() {
         sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?
     } else {
@@ -297,8 +309,12 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
-    let per_arbgas_base = l2_gas_price.min(l2_min);
-    let per_arbgas_congestion = l2_gas_price.saturating_sub(per_arbgas_base);
+    let (per_arbgas_base, per_arbgas_congestion) = if read_min_base {
+        let base = l2_gas_price.min(l2_min);
+        (base, l2_gas_price.saturating_sub(base))
+    } else {
+        (l2_gas_price, U256::ZERO)
+    };
     let per_arbgas_total = l2_gas_price;
     let wei_for_l2_storage = l2_gas_price.saturating_mul(U256::from(STORAGE_WRITE_COST));
 
@@ -310,10 +326,10 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    // OpenArbosState SLOAD + 2 body SLOADs (L1_PRICE_PER_UNIT, L2_MIN_BASE_FEE)
-    // + copy gas for args and 6-word return tuple. Total 2418 gas.
+    // OpenArbosState SLOAD + body SLOADs (1 pre-v4, 2 v4+) + copy gas.
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
+    let sloads = if read_min_base { 3 } else { 2 };
+    let gas_cost = (sloads * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
@@ -352,16 +368,25 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
         block_basefee
     };
 
+    let arbos_version = crate::get_arbos_version();
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
-    let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
 
-    let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_gas_price > U256::ZERO {
-        (
-            wei_for_l1_calldata / l2_gas_price,
-            wei_per_l2_tx / l2_gas_price,
-        )
+    let gas_for_l1_calldata = if l2_gas_price > U256::ZERO {
+        wei_for_l1_calldata / l2_gas_price
     } else {
-        (U256::ZERO, U256::ZERO)
+        U256::ZERO
+    };
+    // Pre-v4: gasPerL2Tx = AssumedSimpleTxSize (constant).
+    // v4+: gasPerL2Tx = wei_per_l2_tx / l2_gas_price.
+    let gas_per_l2_tx = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_4 {
+        let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
+        if l2_gas_price > U256::ZERO {
+            wei_per_l2_tx / l2_gas_price
+        } else {
+            U256::ZERO
+        }
+    } else {
+        U256::from(ASSUMED_SIMPLE_TX_SIZE)
     };
 
     let mut out = Vec::with_capacity(96);
