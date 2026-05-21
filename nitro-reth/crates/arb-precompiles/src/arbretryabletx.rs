@@ -145,6 +145,16 @@ fn ticket_storage_key(ticket_id: B256) -> B256 {
     derive_subspace_key(retryables_key.as_slice(), ticket_id.as_slice())
 }
 
+/// Revert encoding for "ticket not found": pre-v3 returns a plain error
+/// (framework BurnOut), v3+ emits the NoTicketWithIDError sol-error.
+fn not_found_revert(gas_limit: u64) -> PrecompileResult {
+    if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_3 {
+        return crate::burn_all_revert(gas_limit);
+    }
+    let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+    crate::sol_error_revert(data, gas_limit)
+}
+
 /// Open a retryable ticket by verifying it exists (timeout > 0) and hasn't expired.
 /// Returns the ticket's storage key.
 fn open_retryable(
@@ -244,10 +254,7 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> P
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => {
-            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
-        }
+        None => return not_found_revert(gas_limit),
     };
 
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
@@ -310,8 +317,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     let timeout_val2 = sload_field(input, timeout_slot)?;
     let timeout_u64_2: u64 = timeout_val2.try_into().unwrap_or(0);
     if timeout_u64_2 == 0 || timeout_u64_2 < current_timestamp {
-        let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-        return crate::sol_error_revert(data, gas_limit);
+        return not_found_revert(gas_limit);
     }
 
     let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
@@ -476,10 +482,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precomp
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => {
-            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
-        }
+        None => return not_found_revert(gas_limit),
     };
 
     // Read calldata size for updateCost computation (RetryableSizeBytes).
@@ -566,10 +569,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => {
-            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
-        }
+        None => return not_found_revert(gas_limit),
     };
 
     // Read beneficiary and verify caller is the beneficiary.
