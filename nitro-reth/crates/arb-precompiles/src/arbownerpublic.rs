@@ -67,7 +67,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ) {
                 return r;
             }
-            read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
+            // v5: returns NetworkFeeAccount (slot 3). v6+: returns InfraFeeAccount (slot 6).
+            let offset = if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
+                NETWORK_FEE_ACCOUNT_OFFSET
+            } else {
+                INFRA_FEE_ACCOUNT_OFFSET
+            };
+            read_state_field(&mut input, offset)
         }
         Calls::getBrotliCompressionLevel(_) => {
             if let Some(r) = crate::check_method_version(
