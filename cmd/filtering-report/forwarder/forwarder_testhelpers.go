@@ -8,28 +8,48 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 type MockExternalEndpoint struct {
-	server  *httptest.Server
-	reports chan *addressfilter.FilteredTxReport
+	server       *httptest.Server
+	reports      chan *addressfilter.FilteredTxReport
+	requestCount atomic.Int64
 }
 
-func NewMockExternalEndpoint(t *testing.T) *MockExternalEndpoint {
+func NewMockExternalEndpoint(t *testing.T) (pemPath string, endpoint *MockExternalEndpoint) {
 	t.Helper()
+	leaf := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
+	pemPath, caPath := signertest.SigningFixture(t, leaf)
+	verifier, err := signertest.NewVerifier(&signertest.VerifierConfig{
+		CARootPEMFile: caPath,
+		ExpectedSAN:   leaf.URI,
+		TimestampSkew: signertest.DefaultTimestampSkew,
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
 	m := &MockExternalEndpoint{
 		reports: make(chan *addressfilter.FilteredTxReport, 100),
 	}
 	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m.requestCount.Add(1)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if err := verifier.VerifyHTTPRequest(r, body); err != nil {
+			t.Errorf("verifier rejected signed request: %v", err)
+			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		var report addressfilter.FilteredTxReport
@@ -41,7 +61,7 @@ func NewMockExternalEndpoint(t *testing.T) *MockExternalEndpoint {
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(func() { m.server.Close() })
-	return m
+	return pemPath, m
 }
 
 func (m *MockExternalEndpoint) NextReport(t *testing.T) *addressfilter.FilteredTxReport {
@@ -59,6 +79,10 @@ func (m *MockExternalEndpoint) URL() string {
 	return m.server.URL
 }
 
+func (m *MockExternalEndpoint) ReceivedCount() int {
+	return int(m.requestCount.Load())
+}
+
 func (m *MockExternalEndpoint) AssertNoReport(t *testing.T, within time.Duration) {
 	t.Helper()
 	select {
@@ -68,8 +92,11 @@ func (m *MockExternalEndpoint) AssertNoReport(t *testing.T, within time.Duration
 	}
 }
 
-func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointURL string) *Forwarder {
+func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointURL, pemPath string) *Forwarder {
 	t.Helper()
+	signerCfg := signer.DefaultConfig
+	signerCfg.PEMFile = pemPath
+	signerCfg.ReloadInterval = time.Minute
 	config := &Config{
 		Workers:            1,
 		PollInterval:       10 * time.Millisecond,
@@ -78,6 +105,7 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointU
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
+		Signer: signerCfg,
 	}
 	fwd, err := New(config, queueClient)
 	if err != nil {

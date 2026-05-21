@@ -20,8 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // ErrCachedTimeSufficient is an error received from the challenge manager smart contract
@@ -300,7 +300,7 @@ type SpecChallengeManager interface {
 	// Duration of the challenge period in blocks.
 	ChallengePeriodBlocks() uint64
 	// Gets an edge by its id.
-	GetEdge(ctx context.Context, edgeId EdgeId) (option.Option[SpecEdge], error)
+	GetEdge(ctx context.Context, edgeId EdgeId) (containers.Option[SpecEdge], error)
 	MultiUpdateInheritedTimers(
 		ctx context.Context,
 		challengeBranch []ReadOnlyEdge,
@@ -399,15 +399,15 @@ type ReadOnlyEdge interface {
 	// The origin id of the edge.
 	OriginId() OriginId
 	// The claim id of the edge, if any
-	ClaimId() option.Option[ClaimId]
+	ClaimId() containers.Option[ClaimId]
 	// Checks if the edge has children.
 	HasChildren(ctx context.Context) (bool, error)
 	// The lower child of the edge, if any.
-	LowerChild(ctx context.Context) (option.Option[EdgeId], error)
+	LowerChild(ctx context.Context) (containers.Option[EdgeId], error)
 	// The upper child of the edge, if any.
-	UpperChild(ctx context.Context) (option.Option[EdgeId], error)
+	UpperChild(ctx context.Context) (containers.Option[EdgeId], error)
 	// The ministaker of an edge. Only existing for level zero edges.
-	MiniStaker() option.Option[common.Address]
+	MiniStaker() containers.Option[common.Address]
 	// The assertion hash of the parent assertion that originated the challenge
 	// at the top-level.
 	AssertionHash(ctx context.Context) (AssertionHash, error)

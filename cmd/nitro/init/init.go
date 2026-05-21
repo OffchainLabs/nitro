@@ -405,7 +405,7 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 	}
 	unexpectedFiles := []string{}
 	allowedFiles := map[string]bool{
-		"LOCK": true, "classic-msg": true, "l2chaindata": true,
+		"LOCK": true, "classic-msg": true, "l2chaindata": true, "wasm": true,
 	}
 	for _, entry := range entries {
 		if !allowedFiles[entry.Name()] {
@@ -474,7 +474,9 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 	for _, prefix := range prefixes {
 		if err := func() error {
 			it := db.NewIterator(prefix, nil)
-			defer it.Release()
+			// Closure-bound: the loop reassigns it after each batch flush;
+			// a method-value defer would leak the post-flush iterator.
+			defer func() { it.Release() }()
 			for it.Next() {
 				key := it.Key()
 				if checkKeyLength && len(key) != expectedKeyLength {
