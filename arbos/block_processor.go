@@ -677,7 +677,6 @@ func ProduceBlockAdvanced(
 			buildState.userTxsProcessed++
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
 			sequencingHooks.TxSucceeded()
-			// Redeem chain complete; emit deferred TxAccepted for the whole group.
 			emitGroupAccepted(buildState)
 			buildState.clearGroupCheckpoint()
 		}

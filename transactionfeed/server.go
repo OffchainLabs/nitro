@@ -43,9 +43,7 @@ type Server struct {
 
 func NewServer(config ServerConfig) *Server {
 	return &Server{
-		config: config,
-		// register is small-buffered so handshake goroutines do not stall
-		// during broadcast fan-out in run().
+		config:     config,
 		register:   make(chan net.Conn, 16),
 		unregister: make(chan net.Conn, 64),
 		broadcast:  make(chan []byte, config.BroadcastBuf),
@@ -98,7 +96,6 @@ func (s *Server) handleHandshake(ctx context.Context, conn net.Conn) {
 		conn.Close()
 		return
 	}
-	// Clear the handshake deadline; clientReader manages its own.
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		conn.Close()
 		return
@@ -117,8 +114,7 @@ func (s *Server) run(ctx context.Context) {
 			close(cc.out)
 			c.Close()
 		}
-		// All clients are gone on shutdown; reset the counter/gauge so
-		// post-stop reads don't observe stale non-zero values.
+
 		s.clientCount.Store(0)
 		clientsCurrentGauge.Update(0)
 	}()
@@ -234,7 +230,6 @@ func (s *Server) clientReader(ctx context.Context, cc *clientConn) {
 			}
 			continue
 		}
-		// Discard any data frames from clients
 		if err := reader.Discard(); err != nil {
 			s.sendUnregister(cc.conn)
 			return
