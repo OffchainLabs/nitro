@@ -139,10 +139,35 @@ fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> Pr
     Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
 
-fn handle_events_view(_input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    Err(PrecompileError::other(
-        "cannot emit logs in a view method",
-    ))
+fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    // v < 11: view-method log writes are permitted; emit and succeed.
+    // v >= 11: framework rejects with ErrWriteProtection.
+    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
+        return Err(PrecompileError::other(
+            "cannot emit logs in a view method",
+        ));
+    }
+
+    let gas_limit = input.gas;
+    let data_len = input.data.len();
+    let caller = input.caller;
+
+    input
+        .internals_mut()
+        .load_account(ARBOS_STATE_ADDRESS)
+        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+
+    let value = B256::ZERO;
+    let flag = true;
+    emit_basic_event(input, !flag, value);
+    emit_mixed_event(input, flag, !flag, value, ARBDEBUG_ADDRESS, caller);
+
+    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
+    let basic_log_gas = LOG_GAS + LOG_TOPIC_GAS * 2 + LOG_DATA_GAS * 32;
+    let mixed_log_gas = LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * 64;
+    let gas_cost = SLOAD_GAS + COPY_GAS * arg_words + basic_log_gas + mixed_log_gas;
+
+    Ok(PrecompileOutput::new(gas_cost.min(gas_limit), Vec::new().into()))
 }
 
 fn handle_custom_revert(number: u64, gas_limit: u64) -> PrecompileResult {
