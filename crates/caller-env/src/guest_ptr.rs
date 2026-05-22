@@ -12,7 +12,7 @@ impl Add<u32> for GuestPtr {
     type Output = Self;
 
     fn add(self, rhs: u32) -> Self::Output {
-        Self(self.0 + rhs)
+        Self(self.0.checked_add(rhs).expect("GuestPtr arithmetic overflow"))
     }
 }
 
