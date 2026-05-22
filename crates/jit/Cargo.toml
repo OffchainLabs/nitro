@@ -24,7 +24,6 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 stylus = { workspace = true }
 thiserror = { workspace = true }
-tiny-keccak = { workspace = true, features = ["keccak"] }
 validation = { workspace = true }
 wasmer = { workspace = true }
 wasmer-compiler-cranelift = { workspace = true }
