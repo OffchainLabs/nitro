@@ -18,8 +18,8 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type Database interface {
@@ -143,15 +143,15 @@ type AssertionQuery struct {
 	offset            int
 	orderBy           string
 	withChallenge     bool
-	fromCreationBlock option.Option[uint64]
-	toCreationBlock   option.Option[uint64]
+	fromCreationBlock containers.Option[uint64]
+	toCreationBlock   containers.Option[uint64]
 	forceUpdate       bool
 }
 
 func NewAssertionQuery(opts ...AssertionOption) *AssertionQuery {
 	query := &AssertionQuery{
-		fromCreationBlock: option.None[uint64](),
-		toCreationBlock:   option.None[uint64](),
+		fromCreationBlock: containers.None[uint64](),
+		toCreationBlock:   containers.None[uint64](),
 	}
 	for _, opt := range opts {
 		opt(query)
@@ -282,12 +282,12 @@ func WithAssertionStatus(status protocol.AssertionStatus) AssertionOption {
 }
 func FromAssertionCreationBlock(n uint64) AssertionOption {
 	return func(q *AssertionQuery) {
-		q.fromCreationBlock = option.Some(n)
+		q.fromCreationBlock = containers.Some(n)
 	}
 }
 func ToAssertionCreationBlock(n uint64) AssertionOption {
 	return func(q *AssertionQuery) {
-		q.toCreationBlock = option.Some(n)
+		q.toCreationBlock = containers.Some(n)
 	}
 }
 func WithAssertionLimit(limit int) AssertionOption {
@@ -377,8 +377,8 @@ type EdgeQuery struct {
 	limit             int
 	offset            int
 	orderBy           string
-	fromCreationBlock option.Option[uint64]
-	toCreationBlock   option.Option[uint64]
+	fromCreationBlock containers.Option[uint64]
+	toCreationBlock   containers.Option[uint64]
 	forceUpdate       bool
 	onlySubchallenged bool
 }
@@ -533,12 +533,12 @@ func WithInheritedTimerGreaterOrEq(n uint64) EdgeOption {
 }
 func FromEdgeCreationBlock(n uint64) EdgeOption {
 	return func(q *EdgeQuery) {
-		q.fromCreationBlock = option.Some(n)
+		q.fromCreationBlock = containers.Some(n)
 	}
 }
 func ToEdgeCreationBlock(n uint64) EdgeOption {
 	return func(q *EdgeQuery) {
-		q.toCreationBlock = option.Some(n)
+		q.toCreationBlock = containers.Some(n)
 	}
 }
 func WithLengthOneRival() EdgeOption {

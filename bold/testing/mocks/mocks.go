@@ -18,10 +18,10 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -34,7 +34,7 @@ var (
 type MockAssertion struct {
 	MockId                protocol.AssertionHash
 	MockPrevId            protocol.AssertionHash
-	Prev                  option.Option[*MockAssertion]
+	Prev                  containers.Option[*MockAssertion]
 	MockHeight            uint64
 	MockStateHash         common.Hash
 	MockInboxMsgCountSeen uint64
@@ -97,7 +97,7 @@ func (m *MockStateManager) HistoryCommitment(
 	return args.Get(0).(history.History), args.Error(1)
 }
 
-func (m *MockStateManager) UpdateAPIDatabase(apiDB db.Database) {
+func (m *MockStateManager) UpdateAPIDatabase(apiDB containers.Option[db.Database]) {
 	m.Called(apiDB)
 }
 
@@ -187,9 +187,9 @@ func (m *MockSpecChallengeManager) MultiUpdateInheritedTimers(ctx context.Contex
 func (m *MockSpecChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
-) (option.Option[protocol.SpecEdge], error) {
+) (containers.Option[protocol.SpecEdge], error) {
 	args := m.Called(ctx, edgeId)
-	return args.Get(0).(option.Option[protocol.SpecEdge]), args.Error(1)
+	return args.Get(0).(containers.Option[protocol.SpecEdge]), args.Error(1)
 }
 
 func (m *MockSpecChallengeManager) CalculateMutualId(
@@ -277,9 +277,9 @@ func (m *MockSpecEdge) GetTotalChallengeLevels(ctx context.Context) uint8 {
 	return args.Get(0).(uint8)
 }
 
-func (m *MockSpecEdge) MiniStaker() option.Option[common.Address] {
+func (m *MockSpecEdge) MiniStaker() containers.Option[common.Address] {
 	args := m.Called()
-	return args.Get(0).(option.Option[common.Address])
+	return args.Get(0).(containers.Option[common.Address])
 }
 
 func (m *MockSpecEdge) StartCommitment() (protocol.Height, common.Hash) {
@@ -342,19 +342,19 @@ func (m *MockSpecEdge) OriginId() protocol.OriginId {
 	return args.Get(0).(protocol.OriginId)
 }
 
-func (m *MockSpecEdge) ClaimId() option.Option[protocol.ClaimId] {
+func (m *MockSpecEdge) ClaimId() containers.Option[protocol.ClaimId] {
 	args := m.Called()
-	return args.Get(0).(option.Option[protocol.ClaimId])
+	return args.Get(0).(containers.Option[protocol.ClaimId])
 }
 
-func (m *MockSpecEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
+func (m *MockSpecEdge) LowerChild(ctx context.Context) (containers.Option[protocol.EdgeId], error) {
 	args := m.Called(ctx)
-	return args.Get(0).(option.Option[protocol.EdgeId]), args.Error(1)
+	return args.Get(0).(containers.Option[protocol.EdgeId]), args.Error(1)
 }
 
-func (m *MockSpecEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
+func (m *MockSpecEdge) UpperChild(ctx context.Context) (containers.Option[protocol.EdgeId], error) {
 	args := m.Called(ctx)
-	return args.Get(0).(option.Option[protocol.EdgeId]), args.Error(1)
+	return args.Get(0).(containers.Option[protocol.EdgeId]), args.Error(1)
 }
 
 func (m *MockSpecEdge) HasChildren(ctx context.Context) (bool, error) {
