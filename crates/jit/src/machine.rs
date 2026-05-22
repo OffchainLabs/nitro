@@ -329,7 +329,7 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
             .entry(PreimageType::Keccak256 as u8)
             .or_default();
         for preimage in preimages {
-            let hash = crypto::keccak(&preimage).into();
+            let hash = crypto::keccak(&preimage);
             keccak_preimages.insert(hash, preimage);
         }
     }
