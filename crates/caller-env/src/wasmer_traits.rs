@@ -9,7 +9,7 @@ unsafe impl FromToNativeWasmType for GuestPtr {
     type Native = i32;
 
     fn from_native(native: i32) -> Self {
-        Self(u32::from_native(native))
+        Self::new(u32::from_native(native))
     }
 
     fn to_native(self) -> i32 {

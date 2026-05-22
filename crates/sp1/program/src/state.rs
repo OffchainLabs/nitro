@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{ExecEnv, GuestPtr, wavmio::WavmIo};
+use caller_env::{ExecEnv, wavmio::WavmIo};
 use rand::Rng;
 use wasmer::FunctionEnvMut;
 
@@ -82,7 +82,3 @@ pub(crate) fn sp1_env<'a>(
     (Sp1MemAccess { memory, store }, data)
 }
 
-/// Converts a wasmer `Ptr` (WasmPtr<u32>) to a caller-env `GuestPtr`.
-pub(crate) fn gp(p: crate::Ptr) -> GuestPtr {
-    GuestPtr::new(p.offset())
-}

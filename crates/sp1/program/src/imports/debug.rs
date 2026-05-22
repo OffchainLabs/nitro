@@ -1,11 +1,13 @@
 use prover::value::Value;
 use wasmer::FunctionEnvMut;
 
-use crate::{Escape, MaybeEscape, Ptr, read_slice, stylus::StylusCustomEnvData};
+use caller_env::GuestPtr;
+
+use crate::{Escape, MaybeEscape, read_slice, stylus::StylusCustomEnvData};
 
 pub fn console_log_text(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    ptr: Ptr,
+    ptr: GuestPtr,
     len: u32,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
