@@ -20,8 +20,7 @@ use jsonrpsee::{
 use reth_provider::{BlockReaderIdExt, ReceiptProvider, StateProviderFactory};
 use serde::{Deserialize, Serialize};
 
-// Field offsets mirror Nitro's storage layout (arbos/l1_pricing,
-// arbos/l2_pricing, arbos/retryables).
+// Field offsets mirror the ArbOS storage layout (l1_pricing, l2_pricing, retryables).
 const L1_PAY_REWARDS_TO_OFFSET: u64 = 0;
 const L1_EQUILIBRATION_UNITS_OFFSET: u64 = 1;
 const L1_INERTIA_OFFSET: u64 = 2;
@@ -155,9 +154,8 @@ fn internal_err(msg: impl std::fmt::Display) -> ErrorObject<'static> {
     ErrorObject::owned(INTERNAL_ERROR_CODE, msg.to_string(), None::<()>)
 }
 
-/// Sample step-size: matches Nitro's `evenlySpaceBlocks` — if the range
-/// exceeds `bound` blocks, step > 1 so the total number of samples stays
-/// ≤ bound.
+/// Sample step-size: if the range exceeds `bound` blocks, step > 1 so the
+/// total number of samples stays ≤ bound.
 fn compute_step(start: u64, end: u64, bound: u64) -> (u64, u64, u64) {
     let span = end.saturating_sub(start).saturating_add(1);
     if span == 0 || bound == 0 {

@@ -5,7 +5,10 @@ use wasmer_types::{
     ExportIndex, FunctionIndex, FunctionType, GlobalIndex, GlobalInit, ImportIndex,
     LocalFunctionIndex, MiddlewareError, ModuleInfo, SignatureIndex, Type,
 };
-use wasmparser::{BlockType, Operator, ValType};
+// Use the wasmparser bundled with wasmer-compiler so the `Operator` type matches the
+// `MiddlewareReaderState` API. Other crates may pull a different wasmparser version
+// transitively; routing through wasmer's own export keeps the middleware sound.
+use wasmer_compiler::wasmparser::{BlockType, Operator, ValType};
 
 use crate::meter::{STYLUS_ENTRY_POINT, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT};
 
@@ -754,6 +757,12 @@ impl DepthCheckerFn {
                     I32x4RelaxedDotI8x16I7x16AddS
                 ) => {
                     return Err(mw_err(format!("SIMD extension not supported {unsupported:?}")));
+                }
+                // wasmparser >=0.245 made `Operator` non-exhaustive. Any future
+                // opcode the depth checker hasn't classified is rejected — same
+                // posture as the explicit unsupported-extension arms above.
+                unsupported => {
+                    return Err(mw_err(format!("unsupported opcode {unsupported:?}")));
                 }
             };
         }

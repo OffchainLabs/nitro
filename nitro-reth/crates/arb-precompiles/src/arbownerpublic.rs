@@ -20,7 +20,6 @@ pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x6b,
 ]);
 
-const INITIAL_MAX_FRAGMENT_COUNT: u8 = 2;
 // ArbOS version where MaxFragmentCount was introduced.
 const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 60;
 // ArbOS version where collectTips storage flag was introduced.
@@ -39,6 +38,7 @@ const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
 const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
 const SLOAD_GAS: u64 = 800;
+const WARM_SLOAD_GAS: u64 = 100;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
@@ -59,41 +59,132 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         Calls::getNetworkFeeAccount(_) => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         Calls::getInfraFeeAccount(_) => {
-            if crate::get_arbos_version() < 6 {
-                read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET)
-            } else {
-                read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_5,
+                0,
+            ) {
+                return r;
             }
+            // v5: returns NetworkFeeAccount (slot 3). v6+: returns InfraFeeAccount (slot 6).
+            let offset =
+                if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
+                    NETWORK_FEE_ACCOUNT_OFFSET
+                } else {
+                    INFRA_FEE_ACCOUNT_OFFSET
+                };
+            read_state_field(&mut input, offset)
         }
         Calls::getBrotliCompressionLevel(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_20,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
-        Calls::getScheduledUpgrade(_) => handle_scheduled_upgrade(&mut input),
+        Calls::getScheduledUpgrade(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_20,
+                0,
+            ) {
+                return r;
+            }
+            handle_scheduled_upgrade(&mut input)
+        }
         Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, c.addr),
         Calls::getAllChainOwners(_) => handle_get_all_members(&mut input),
-        Calls::rectifyChainOwner(c) => handle_rectify_chain_owner(&mut input, c.ownerToRectify),
+        Calls::rectifyChainOwner(c) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_11,
+                0,
+            ) {
+                return r;
+            }
+            handle_rectify_chain_owner(&mut input, c.ownerToRectify)
+        }
         Calls::isNativeTokenOwner(c) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_41,
+                0,
+            ) {
+                return r;
+            }
             handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE, c.addr)
         }
         Calls::isTransactionFilterer(c) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE, c.filterer)
         }
         Calls::getAllNativeTokenOwners(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_41,
+                0,
+            ) {
+                return r;
+            }
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
         Calls::getAllTransactionFilterers(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         Calls::getNativeTokenManagementFrom(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_50,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
         Calls::getTransactionFilteringFrom(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
         Calls::getFilteredFundsRecipient(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+                0,
+            ) {
+                return r;
+            }
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
         Calls::isCalldataPriceIncreaseEnabled(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_40,
+                0,
+            ) {
+                return r;
+            }
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
             let features_slot = map_slot(features_key.as_slice(), 0);
@@ -105,6 +196,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         Calls::getParentGasFloorPerToken(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_50,
+                0,
+            ) {
+                return r;
+            }
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
             let value = sload_field(&mut input, field_slot)?;
@@ -113,8 +211,26 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
-        Calls::getMaxStylusContractFragments(_) => handle_max_stylus_fragments(&mut input),
-        Calls::getCollectTips(_) => handle_get_collect_tips(&mut input),
+        Calls::getMaxStylusContractFragments(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT,
+                0,
+            ) {
+                return r;
+            }
+            handle_max_stylus_fragments(&mut input)
+        }
+        Calls::getCollectTips(_) => {
+            if let Some(r) = crate::check_method_version(
+                gas_limit,
+                arb_chainspec::arbos_version::ARBOS_VERSION_60,
+                0,
+            ) {
+                return r;
+            }
+            handle_get_collect_tips(&mut input)
+        }
     };
     crate::gas_check(gas_limit, result)
 }
@@ -187,13 +303,15 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) ->
     let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = alloy_primitives::B256::left_padding_from(addr.as_slice());
-
-    // IsMember check
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+
+    // IsMember + byAddress.GetUint64 charge as two SLOADs on the same slot.
+    // The second is gas-only — slot value cannot change between back-to-back reads.
     let slot_val = sload_field(input, member_slot)?;
     if slot_val == U256::ZERO {
         return Err(PrecompileError::other("not an owner"));
     }
+    let _slot_val_again = sload_field(input, member_slot)?;
 
     // Check if mapping is already correct
     let slot_idx: u64 = slot_val
@@ -356,9 +474,11 @@ fn handle_get_all_set_members(
 
 fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
+    // Open(800) + Params warm(100) + result(3) = 903.
+    const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
     if crate::get_arbos_version() < ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
         return Ok(PrecompileOutput::new(
-            (SLOAD_GAS + COPY_GAS).min(gas_limit),
+            METHOD_GAS.min(gas_limit),
             vec![0u8; 32].into(),
         ));
     }
@@ -370,21 +490,25 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
     let bytes = val.to_be_bytes::<32>();
     let mut count = bytes[29];
     if count == 0 {
-        count = INITIAL_MAX_FRAGMENT_COUNT;
+        count = arbos::programs::params::INITIAL_MAX_FRAGMENT_COUNT;
     }
     let mut out = [0u8; 32];
     out[31] = count;
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        METHOD_GAS.min(gas_limit),
         out.to_vec().into(),
     ))
 }
 
 fn handle_get_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    // OAS charges 1 SLOAD (version); CollectTips reads its slot only at v60+.
     let gas_limit = input.gas;
     if crate::get_arbos_version() < ARBOS_VERSION_COLLECT_TIPS {
+        // OAS(800) already accumulated by init_precompile_gas; just add
+        // resultCost for the 1-word false return.
+        crate::charge_precompile_gas(COPY_GAS);
         return Ok(PrecompileOutput::new(
-            COPY_GAS.min(gas_limit),
+            crate::get_precompile_gas().min(gas_limit),
             vec![0u8; 32].into(),
         ));
     }
@@ -394,8 +518,9 @@ fn handle_get_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     if !value.is_zero() {
         out[31] = 1;
     }
+    crate::charge_precompile_gas(COPY_GAS);
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        crate::get_precompile_gas().min(gas_limit),
         out.to_vec().into(),
     ))
 }

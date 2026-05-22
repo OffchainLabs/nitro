@@ -197,12 +197,13 @@ impl TxProcessor {
         pre_recorded_gas: Option<u64>,
         is_filtered: bool,
     ) -> RevertedTxAction {
-        let Some(_hash) = tx_hash else {
+        let Some(hash) = tx_hash else {
             return RevertedTxAction::None;
         };
 
-        if let Some(l2_gas_used) = pre_recorded_gas {
-            let adjusted_gas = l2_gas_used.saturating_sub(TX_GAS);
+        let l2_gas_used = pre_recorded_gas.or_else(|| crate::reverted_tx_gas::lookup(hash));
+        if let Some(g) = l2_gas_used {
+            let adjusted_gas = g.saturating_sub(TX_GAS);
             return RevertedTxAction::PreRecordedRevert {
                 gas_to_consume: adjusted_gas,
             };

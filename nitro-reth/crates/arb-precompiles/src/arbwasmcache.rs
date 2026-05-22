@@ -336,12 +336,27 @@ fn set_program_cached(
 }
 
 fn handle_cache_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
+    if let Some(r) = crate::check_method_version(
+        input.gas,
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+    ) {
+        return r;
+    }
     set_program_cached(input, codehash, true, 0)
 }
 
 /// `cacheProgram` reads the code hash from an account, which costs
 /// `ColdAccountAccessCostEIP2929` even when the slot is already warm.
 fn handle_cache_program(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+    // CacheProgram is gated at ArbOS v31 (StylusFixes). Pre-v31 burns all gas.
+    if let Some(r) = crate::check_method_version(
+        input.gas,
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES,
+        0,
+    ) {
+        return r;
+    }
     let codehash = {
         let acct = input
             .internals_mut()

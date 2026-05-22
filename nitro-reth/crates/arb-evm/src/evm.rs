@@ -427,10 +427,8 @@ where
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
 
-    // Create a journal checkpoint for the sub-call
     let checkpoint = context.journaled_state.inner.checkpoint();
 
-    // For CALL with value, transfer ETH
     if !is_delegate && !value.is_zero() {
         let transfer_result = context.journaled_state.inner.transfer(
             &mut context.journaled_state.database,
@@ -438,7 +436,7 @@ where
             contract,
             value,
         );
-        if transfer_result.is_err() {
+        if matches!(transfer_result, Err(_) | Ok(Some(_))) {
             context.journaled_state.inner.checkpoint_revert(checkpoint);
             return SubCallResult {
                 output: Vec::new(),
@@ -553,6 +551,46 @@ where
         }
     };
 
+    // EIP-7702: if the callee carries a delegation designator
+    // `0xef 0x01 0x00 || delegate_address`, load the delegate's code and use
+    // that for dispatch. Without this the 23-byte stub is fed directly to the
+    // EVM interpreter; `0xef` has no defined opcode (EIP-3541 is disabled
+    // for Stylus) so the sub-call traps with all forwarded gas consumed.
+    let (bytecode, bytecode_addr) = if bytecode.len() == 23
+        && bytecode[0] == 0xef
+        && bytecode[1] == 0x01
+        && bytecode[2] == 0x00
+    {
+        let delegate = Address::from_slice(&bytecode[3..23]);
+        match context
+            .journaled_state
+            .inner
+            .load_code(&mut context.journaled_state.database, delegate)
+        {
+            Ok(acc) => {
+                let code = acc
+                    .data
+                    .info
+                    .code
+                    .as_ref()
+                    .map(|c| c.original_bytes())
+                    .unwrap_or_default();
+                (code, delegate)
+            }
+            Err(_) => {
+                context.journaled_state.inner.checkpoint_revert(checkpoint);
+                return SubCallResult {
+                    output: Vec::new(),
+                    gas_cost: 0,
+                    success: false,
+                    refund: 0,
+                };
+            }
+        }
+    } else {
+        (bytecode, code_address)
+    };
+
     if bytecode.is_empty() {
         context.journaled_state.inner.checkpoint_commit();
         return SubCallResult {
@@ -562,6 +600,11 @@ where
             refund: 0,
         };
     }
+
+    let sub_inputs = CallInputs {
+        bytecode_address: bytecode_addr,
+        ..sub_inputs
+    };
 
     // If the loaded bytecode carries the Stylus discriminant, dispatch it
     // through the WASM runtime instead of the EVM interpreter.
@@ -589,7 +632,13 @@ where
     let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
-    let gas_used = gas.saturating_sub(result.gas.remaining());
+    // Match geth's evm.Call: only Revert refunds remaining gas; revm's
+    // halt() leaves it unspent, so non-Revert halts must charge `gas`.
+    let gas_used = if success || matches!(result.result, InstructionResult::Revert) {
+        gas.saturating_sub(result.gas.remaining())
+    } else {
+        gas
+    };
     let refund = result.gas.refunded();
     if success {
         context.journaled_state.inner.checkpoint_commit();
@@ -1241,7 +1290,14 @@ where
     DB: Database,
 {
     let basefee = U256::from(context.block.basefee());
-    let gas_price = U256::from(context.tx.gas_price());
+    // Pre-cap effective price stashed by ArbBlockExecutor; fall back to the
+    // capped tx_env when unset (e.g. direct dispatch in unit tests).
+    let stashed = arb_precompiles::get_current_tx_effective_gas_price();
+    let gas_price = if stashed != 0 {
+        U256::from(stashed)
+    } else {
+        U256::from(context.tx.gas_price())
+    };
     let value = inputs.value.get();
 
     // Stylus's block.number is the L1 block number, not the L2 block number.

@@ -22,6 +22,8 @@ ignore = [
     "RUSTSEC-2024-0375", # atty unmaintained - transitive via vendored wasmer
     "RUSTSEC-2020-0168", # mach unmaintained - transitive via vendored wasmer
     "RUSTSEC-2026-0105", # core2 unmaintained - transitive via reth/discv5/multihash
+    "RUSTSEC-2026-0118", # hickory-dns NSEC3 - transitive via reth/discv5
+    "RUSTSEC-2026-0119", # hickory-dns name compression - transitive via reth/discv5
 ]
 
 [licenses]
@@ -96,11 +98,35 @@ crate = "arb-reth"
 
 [[licenses.exceptions]]
 allow = ["BUSL-1.1"]
-crate = "gen-genesis"
+crate = "arb-bench"
 
 [[licenses.exceptions]]
 allow = ["BUSL-1.1"]
-crate = "arb-bench"
+crate = "arb-test"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test-harness"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test-utils"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-spec-tests"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-executor-tests"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-fuzz"
+
+[[licenses.exceptions]]
+allow = ["NCSA"]
+crate = "libfuzzer-sys"
 
 [[licenses.clarify]]
 crate = "arbutil"

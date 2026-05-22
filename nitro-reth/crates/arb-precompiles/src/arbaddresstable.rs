@@ -19,7 +19,16 @@ pub const ARBADDRESSTABLE_ADDRESS: Address = Address::new([
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
+const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
+
+fn storage_write_cost(value: U256) -> u64 {
+    if value.is_zero() {
+        SSTORE_ZERO_GAS
+    } else {
+        SSTORE_GAS
+    }
+}
 
 pub fn create_arbaddresstable_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbaddresstable"), handler)
@@ -62,6 +71,11 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    // Track gas in the accumulator so revert paths (which return
+    // `accumulated_gas` via `gas_check`) include each SLOAD this method
+    // performed. Success paths set their own `PrecompileOutput::new` total,
+    // so this is additive only for the revert case.
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -74,6 +88,7 @@ fn sstore_field(
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
+    crate::charge_precompile_gas(storage_write_cost(value));
     Ok(())
 }
 
@@ -213,8 +228,11 @@ fn handle_register(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     // Return 0-based index.
     let index = new_num_items - 1;
 
-    // OAS(1) + byAddress.Get(1) + numItems.Get(1) + 3 sstores + argsCost(3) + resultCost(3).
-    let gas_used = 3 * SLOAD_GAS + 3 * SSTORE_GAS + 2 * COPY_GAS;
+    // OAS + 2 SLOADs + 3 dynamic-cost SSTOREs + argsCost + resultCost. The
+    // accumulator captured everything via sload_field/sstore_field; add the
+    // resultCost the framework charges after this returns.
+    crate::charge_precompile_gas(COPY_GAS);
+    let gas_used = crate::get_precompile_gas();
 
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),

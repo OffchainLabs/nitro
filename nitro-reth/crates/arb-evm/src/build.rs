@@ -367,6 +367,19 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             self.arb_ctx.l1_block_number,
         );
 
+        // Recent-WASMs LRU is per-block. Reset at block start so cross-block hits
+        // don't falsely flag a program as cached and skip the init_gas charge.
+        if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+            let cap = arb_state
+                .programs
+                .params()
+                .map(|p| p.block_cache_size as usize)
+                .unwrap_or(0);
+            arb_precompiles::reset_recent_wasms(cap);
+        } else {
+            arb_precompiles::reset_recent_wasms(0);
+        }
+
         // Set gas backlog for Redeem precompile's ShrinkBacklog cost computation.
         if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog() {
             arb_precompiles::set_current_gas_backlog(backlog);
@@ -1614,7 +1627,7 @@ where
             if let Some(hooks) = self.arb_hooks.as_ref() {
                 let action = hooks.tx_proc.reverted_tx_hook(
                     Some(tx_hash),
-                    None, // pre_recorded_gas: sequencer-specific, not used in state machine
+                    None, // pre_recorded_gas: tx_proc looks up its hardcoded table
                     is_filtered,
                 );
 
@@ -1623,7 +1636,15 @@ where
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                         increment_nonce(db, sender);
                         self.touched_accounts.insert(sender);
-                        let gas_used = poster_gas + gas_to_consume;
+                        // RevertedTxHook fires after intrinsic deduction; the EVM never
+                        // runs on this path, so add intrinsic manually:
+                        // gasUsed = intrinsic + adjustedGas + posterGas.
+                        let spec =
+                            arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version);
+                        let intrinsic = estimate_intrinsic_gas(recovered.tx(), spec);
+                        let gas_used = intrinsic
+                            .saturating_add(gas_to_consume)
+                            .saturating_add(poster_gas);
                         let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
                             .saturating_add(MultiGas::computation_gas(gas_to_consume));
                         self.pending_tx = Some(PendingArbTx {
@@ -1702,6 +1723,17 @@ where
         // The balance check uses GasFeeCap (full gas price), not the
         // effective gas price after tip drop.
         let upfront_gas_price: u128 = revm::context_interface::Transaction::gas_price(&tx_env);
+
+        // Stash the pre-cap effective price for Stylus `tx.gasprice` before
+        // the tip-drop cap below rewrites `tx_env.gas_price` to base_fee.
+        {
+            let base_fee_u128: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
+            let max_priority: u128 =
+                revm::context_interface::Transaction::max_priority_fee_per_gas(&tx_env)
+                    .unwrap_or(0);
+            let effective: u128 = upfront_gas_price.min(base_fee_u128.saturating_add(max_priority));
+            arb_precompiles::set_current_tx_effective_gas_price(effective);
+        }
 
         // Effective tip per gas (per EIP-1559): min(max_priority_fee, max_fee - base_fee).
         // This is what revm mints to coinbase. Used by commit_transaction to
@@ -1806,6 +1838,24 @@ where
                 }
             }
 
+            // Base fee check. cfg.disable_base_fee is set chain-wide so revm
+            // skips London's preCheck for every tx. The Go preCheck (state_transition.go
+            // preCheck) only skips the basefee comparison when NoBaseFee is on AND
+            // both GasFeeCap and GasTipCap are zero — i.e. tx types with no fee
+            // intent (ArbitrumDepositTx, ArbitrumInternalTx). Every other user tx,
+            // including ArbitrumUnsignedTx (0x65), ArbitrumContractTx (0x66),
+            // ArbitrumRetryTx (0x68), and ArbitrumSubmitRetryableTx (0x69), has a
+            // non-zero GasFeeCap and gets the check applied. is_user_tx already
+            // excludes deposit and internal, and retry/submit-retryable are not
+            // user txs in this branch.
+            let base_fee = self.arb_ctx.basefee;
+            if U256::from(upfront_gas_price) < base_fee {
+                rollback_pre_exec_state(self, calldata_units);
+                return Err(BlockExecutionError::msg(format!(
+                    "max fee per gas less than block base fee: address {sender}, maxFeePerGas: {upfront_gas_price}, baseFee: {base_fee}"
+                )));
+            }
+
             let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
             let tx_value = revm::context_interface::Transaction::value(&tx_env);
             let total_cost = gas_cost.saturating_add(tx_value);
@@ -1831,16 +1881,18 @@ where
             tx_env.set_nonce(sender_nonce);
         }
 
-        // For payable ArbWasm calls (ActivateProgram, CodehashKeepalive),
-        // zero out value so revm doesn't transfer ETH to the precompile.
-        // We handle the data fee transfer from sender to network post-commit.
         {
             let to_addr = match recovered.tx().kind() {
                 TxKind::Call(a) => Some(a),
                 _ => None,
             };
-            if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) && tx_value > U256::ZERO {
-                tx_env.set_value(U256::ZERO);
+            if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) {
+                arb_precompiles::set_stylus_call_value(tx_value);
+                if tx_value > U256::ZERO {
+                    tx_env.set_value(U256::ZERO);
+                }
+            } else {
+                arb_precompiles::set_stylus_call_value(U256::ZERO);
             }
         }
 
@@ -1979,20 +2031,6 @@ where
         } else {
             U256::ZERO
         };
-
-        // Inject pending precompile logs into the execution result.
-        let pending_logs = arb_precompiles::take_pending_precompile_logs();
-        if !pending_logs.is_empty() {
-            if let ExecutionResult::Success { ref mut logs, .. } = output.result.result {
-                for (address, topics, data) in pending_logs {
-                    logs.push(Log {
-                        address,
-                        data: alloy_primitives::LogData::new(topics, data.into())
-                            .unwrap_or_default(),
-                    });
-                }
-            }
-        }
 
         let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
             .saturating_add(MultiGas::computation_gas(evm_gas_used));

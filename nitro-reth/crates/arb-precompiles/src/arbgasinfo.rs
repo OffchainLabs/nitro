@@ -270,7 +270,10 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
         U256::ZERO.wrapping_sub(deficit)
     };
 
-    let gas_cost = (4 * SLOAD_GAS + COPY_GAS).min(gas_limit);
+    // Pre-v10: 3 SLOAD (OAS + TotalFundsDue + FundsDueForRewards). v10+: 4 SLOAD (adds
+    // L1FeesAvailable).
+    let sloads = if arbos_version >= 10 { 4 } else { 3 };
+    let gas_cost = (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(
         gas_cost,
         surplus.to_be_bytes::<32>().to_vec().into(),
@@ -280,6 +283,7 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
 fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data_len = input.data.len();
     let gas_limit = input.gas;
+    let arbos_version = crate::get_arbos_version();
 
     // Reth zeros BlockEnv basefee for eth_call without a gas price;
     // fall back to the L2PricingState slot (written at StartBlock) so
@@ -288,7 +292,14 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     load_arbos(input)?;
 
     let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+
+    // Pre-v4: no MinBaseFeeWei read; perArbGasBase = l2GasPrice, congestion = 0.
+    let read_min_base = arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_4;
+    let l2_min = if read_min_base {
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?
+    } else {
+        U256::ZERO
+    };
     let l2_gas_price = if block_basefee.is_zero() {
         sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?
     } else {
@@ -297,8 +308,12 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
-    let per_arbgas_base = l2_gas_price.min(l2_min);
-    let per_arbgas_congestion = l2_gas_price.saturating_sub(per_arbgas_base);
+    let (per_arbgas_base, per_arbgas_congestion) = if read_min_base {
+        let base = l2_gas_price.min(l2_min);
+        (base, l2_gas_price.saturating_sub(base))
+    } else {
+        (l2_gas_price, U256::ZERO)
+    };
     let per_arbgas_total = l2_gas_price;
     let wei_for_l2_storage = l2_gas_price.saturating_mul(U256::from(STORAGE_WRITE_COST));
 
@@ -310,10 +325,10 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    // OpenArbosState SLOAD + 2 body SLOADs (L1_PRICE_PER_UNIT, L2_MIN_BASE_FEE)
-    // + copy gas for args and 6-word return tuple. Total 2418 gas.
+    // OpenArbosState SLOAD + body SLOADs (1 pre-v4, 2 v4+) + copy gas.
     let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
+    let sloads = if read_min_base { 3 } else { 2 };
+    let gas_cost = (sloads * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
@@ -352,16 +367,25 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
         block_basefee
     };
 
+    let arbos_version = crate::get_arbos_version();
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
-    let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
 
-    let (gas_for_l1_calldata, gas_per_l2_tx) = if l2_gas_price > U256::ZERO {
-        (
-            wei_for_l1_calldata / l2_gas_price,
-            wei_per_l2_tx / l2_gas_price,
-        )
+    let gas_for_l1_calldata = if l2_gas_price > U256::ZERO {
+        wei_for_l1_calldata / l2_gas_price
     } else {
-        (U256::ZERO, U256::ZERO)
+        U256::ZERO
+    };
+    // Pre-v4: gasPerL2Tx = AssumedSimpleTxSize (constant).
+    // v4+: gasPerL2Tx = wei_per_l2_tx / l2_gas_price.
+    let gas_per_l2_tx = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_4 {
+        let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
+        if l2_gas_price > U256::ZERO {
+            wei_per_l2_tx / l2_gas_price
+        } else {
+            U256::ZERO
+        }
+    } else {
+        U256::from(ASSUMED_SIMPLE_TX_SIZE)
     };
 
     let mut out = Vec::with_capacity(96);
@@ -384,8 +408,14 @@ const CONSTRAINT_ADJ_WINDOW: u64 = 1;
 const CONSTRAINT_BACKLOG: u64 = 2;
 const MULTI_CONSTRAINT_WEIGHTED_BASE: u64 = 4;
 
-const NUM_RESOURCE_KIND: u64 = 8;
-/// Offset within MultiGasFees for current-block fees.
+/// Total number of multi-gas resource kinds, including the
+/// `ResourceKindUnknown` sentinel (= 0): Unknown, Computation, HistoryGrowth,
+/// StorageAccessRead, StorageAccessWrite, StorageGrowth, SingleDim, L2Calldata,
+/// WasmComputation.
+const NUM_RESOURCE_KIND: u64 = 9;
+/// Index of `ResourceKindSingleDim` — special-cased to fall back to the
+/// global L2 base fee in `getMultiGasBaseFee`.
+const RESOURCE_KIND_SINGLE_DIM: u64 = 6;
 const CURRENT_BLOCK_FEES_OFFSET: u64 = NUM_RESOURCE_KIND;
 
 /// Returns `[][3]uint64` — (target, adjustmentWindow, backlog) per constraint.
@@ -523,11 +553,14 @@ fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Prec
     ))
 }
 
-/// Returns `uint256[]` — current-block base fee per resource kind.
+/// Returns `uint256[]` — current-block base fee per resource kind. Reads BaseFeeWei,
+/// then per-kind fees; for `ResourceKindSingleDim` and any zero per-kind fee, falls
+/// back to BaseFeeWei.
 fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
+    let base_fee_wei = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
     let fees_key = multi_gas_base_fees_subspace();
 
     let mut out = Vec::with_capacity(64 + NUM_RESOURCE_KIND as usize * 32);
@@ -537,13 +570,18 @@ fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     for kind in 0..NUM_RESOURCE_KIND {
         let slot = map_slot(fees_key.as_slice(), CURRENT_BLOCK_FEES_OFFSET + kind);
-        let fee = sload_field(input, slot)?;
+        let raw = sload_field(input, slot)?;
+        let fee = if kind == RESOURCE_KIND_SINGLE_DIM || raw == U256::ZERO {
+            base_fee_wei
+        } else {
+            raw
+        };
         out.extend_from_slice(&fee.to_be_bytes::<32>());
     }
 
     let result_words = (out.len() as u64).div_ceil(32);
     Ok(PrecompileOutput::new(
-        ((1 + NUM_RESOURCE_KIND) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
+        ((2 + NUM_RESOURCE_KIND) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }

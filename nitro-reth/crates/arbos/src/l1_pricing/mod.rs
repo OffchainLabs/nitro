@@ -80,10 +80,11 @@ pub fn initialize_l1_pricing_state<D: Database>(
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
+    // V0 defaults. Later upgrades may overwrite (e.g., V6 EquilibrationUnits firstTime).
     let _ =
         StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET).set(rewards_recipient);
     let _ = StorageBackedBigUint::new(state, base_key, EQUILIBRATION_UNITS_OFFSET)
-        .set(U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
+        .set(U256::from(INITIAL_EQUILIBRATION_UNITS_V0));
     let _ = StorageBackedUint64::new(state, base_key, INERTIA_OFFSET).set(INITIAL_INERTIA);
     let _ = StorageBackedUint64::new(state, base_key, PER_UNIT_REWARD_OFFSET)
         .set(INITIAL_PER_UNIT_REWARD);
@@ -92,12 +93,6 @@ pub fn initialize_l1_pricing_state<D: Database>(
     let _ = StorageBackedUint64::new(state, base_key, UNITS_SINCE_OFFSET).set(0);
     let _ =
         StorageBackedBigUint::new(state, base_key, PRICE_PER_UNIT_OFFSET).set(initial_l1_base_fee);
-    let _ = StorageBackedBigInt::new(state, base_key, LAST_SURPLUS_OFFSET).set(U256::ZERO);
-    let _ = StorageBackedInt64::new(state, base_key, PER_BATCH_GAS_COST_OFFSET)
-        .set(INITIAL_PER_BATCH_GAS_COST_V6);
-    let _ = StorageBackedUint64::new(state, base_key, AMORTIZED_COST_CAP_BIPS_OFFSET).set(0);
-    let _ = StorageBackedBigUint::new(state, base_key, L1_FEES_AVAILABLE_OFFSET).set(U256::ZERO);
-    let _ = StorageBackedUint64::new(state, base_key, GAS_FLOOR_PER_TOKEN_OFFSET).set(0);
 
     initialize_batch_posters_table(sto, BATCH_POSTER_ADDRESS);
 }

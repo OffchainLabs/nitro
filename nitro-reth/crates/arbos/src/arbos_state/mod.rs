@@ -117,12 +117,19 @@ pub struct ArbosState<D, B: Burner> {
 
 impl<D: Database, B: Burner> ArbosState<D, B> {
     /// Open existing ArbOS state from storage.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn open(state: *mut revm::database::State<D>, burner: B) -> Result<Self, ()> {
         let backing_storage = Storage::new(state, B256::ZERO);
 
         let arbos_version = backing_storage.get_uint64_by_uint64(VERSION_OFFSET)?;
         if arbos_version == 0 {
             return Err(());
+        }
+
+        if arbos_version >= 60 {
+            unsafe {
+                set_account_nonce(&mut *state, FILTERED_TX_STATE_ADDRESS, 1);
+            }
         }
 
         let chain_config_sto = backing_storage.open_sub_storage_with_key(chain_config_root_key());
@@ -461,8 +468,15 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 51 => {
                     // No state changes needed
                 }
-                // 52..=59: reserved for Orbit chains
-                52..=59 => {}
+                // 52..=58: reserved for Orbit chains
+                52..=58 => {}
+                59 => {
+                    let mut params = self.programs.params()?;
+                    params.upgrade_to_version(3).map_err(|_| ())?;
+                    params
+                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
+                        .map_err(|_| ())?;
+                }
                 60 => {
                     let mut params = self.programs.params()?;
                     params.upgrade_to_arbos_version(next).map_err(|_| ())?;

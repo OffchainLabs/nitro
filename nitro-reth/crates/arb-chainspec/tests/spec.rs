@@ -17,7 +17,9 @@ fn arbos_version_to_spec_id_thresholds() {
     assert_eq!(spec_id_by_arbos_version(11), SpecId::SHANGHAI);
     assert_eq!(spec_id_by_arbos_version(19), SpecId::SHANGHAI);
     assert_eq!(spec_id_by_arbos_version(20), SpecId::CANCUN);
-    assert_eq!(spec_id_by_arbos_version(40), SpecId::CANCUN);
+    assert_eq!(spec_id_by_arbos_version(39), SpecId::CANCUN);
+    assert_eq!(spec_id_by_arbos_version(40), SpecId::PRAGUE);
+    assert_eq!(spec_id_by_arbos_version(49), SpecId::PRAGUE);
     assert_eq!(spec_id_by_arbos_version(50), SpecId::OSAKA);
     assert_eq!(spec_id_by_arbos_version(60), SpecId::OSAKA);
 }

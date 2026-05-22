@@ -156,8 +156,7 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
 
 /// Parses an initialization message to extract chain ID and initial L1 base fee.
 ///
-/// Matches Nitro `L1IncomingMessage.ParseInitMessage`:
-///   - len == 32: chain_id only (32 bytes), default base fee, no chain config
+///   - len == 32: chain_id only, default base fee, no chain config
 ///   - len > 32: chain_id (32) || version (1 byte) || version-specific tail
 ///   - version 0: chain_config (rest), default base fee
 ///   - version 1: l1_base_fee (32) || chain_config (rest)

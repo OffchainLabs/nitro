@@ -57,11 +57,9 @@ pub fn uint64_to_writer<W: Write>(w: &mut W, val: u64) -> io::Result<()> {
 }
 
 /// Reads a length-prefixed byte string from a reader, rejecting lengths
-/// above `max_bytes_to_read`. Matches Nitro's `util.BytestringFromReader`
-/// 1:1 (`arbos/util/util.go:172`). Every caller must pass an explicit
-/// cap sized to the protocol context — typically `MAX_L2_MESSAGE_SIZE`
-/// (256 KiB) — so an attacker-controlled length prefix can never trigger
-/// a huge pre-allocation (DoS).
+/// above `max_bytes_to_read`. Every caller must pass an explicit cap
+/// sized to the protocol context (typically `MAX_L2_MESSAGE_SIZE`) so
+/// an attacker-controlled length prefix can't trigger a huge pre-allocation.
 pub fn bytestring_from_reader<R: Read>(r: &mut R, max_bytes_to_read: u64) -> io::Result<Vec<u8>> {
     let len_u64 = uint64_from_reader(r)?;
     if len_u64 > max_bytes_to_read {

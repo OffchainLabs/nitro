@@ -8,6 +8,7 @@ description = "JSON-fixture conformance tests for arbreth"
 
 [dependencies]
 arb-test-utils = { workspace = true }
+arb-test-harness = { workspace = true }
 arbos = { workspace = true }
 arb-storage = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "serde"] }

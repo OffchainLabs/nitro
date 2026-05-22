@@ -6,10 +6,17 @@
 
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use alloy_primitives::{Address, Bytes};
+
+/// `STYLUS_HOSTIO_TRACE=1` → dump every host-io call's name + ink-delta to
+/// stderr. Used to bisect Stylus gas drift. Cached at first read.
+fn stderr_trace_on() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("STYLUS_HOSTIO_TRACE").is_ok())
+}
 
 /// Single recorded host-I/O call.
 #[derive(Debug, Clone)]
@@ -91,6 +98,14 @@ pub fn record_with_steps(
     address: Option<Address>,
     steps: Vec<HostioRecord>,
 ) {
+    if stderr_trace_on() {
+        let delta = start_ink.saturating_sub(end_ink);
+        eprintln!(
+            "[hostio] {name} ink_delta={delta} start={start_ink} end={end_ink} args_len={} outs_len={}",
+            args.len(),
+            outs.len(),
+        );
+    }
     let rec = HostioRecord {
         name,
         args,
@@ -123,7 +138,7 @@ pub fn record_with_steps(
 /// Whether tracing is active on the current thread — cheap check the
 /// host functions can use to avoid building args/outs when disabled.
 pub fn is_active() -> bool {
-    ACTIVE.with(|slot| slot.borrow().is_some())
+    stderr_trace_on() || ACTIVE.with(|slot| slot.borrow().is_some())
 }
 
 /// Convenience wrapper for host functions that want to record the

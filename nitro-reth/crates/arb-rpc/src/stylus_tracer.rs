@@ -122,8 +122,8 @@ pub fn cache_trace(tx_hash: B256, records: Vec<HostioTraceInfo>) {
     }
 }
 
-/// Retrieve + remove the cached trace for a tx-hash. Matches Nitro's
-/// one-shot retrieval semantics: the buffer is drained on first read.
+/// Retrieve + remove the cached trace for a tx-hash. One-shot retrieval:
+/// the buffer is drained on first read.
 pub fn take_cached_trace(tx_hash: B256) -> Vec<HostioTraceInfo> {
     trace_cache()
         .lock()

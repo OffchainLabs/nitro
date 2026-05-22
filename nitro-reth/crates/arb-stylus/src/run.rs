@@ -57,6 +57,18 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
                         return Ok(UserOutcome::OutOfInk);
                     }
 
+                    let ink_left_now = match self.ink_left() {
+                        MachineMeter::Ready(i) => i.0,
+                        MachineMeter::Exhausted => 0,
+                    };
+                    if std::env::var("STYLUS_HOSTIO_TRACE").is_ok() {
+                        let consumed = ink.0.saturating_sub(ink_left_now);
+                        eprintln!(
+                            "[hostio] wasm_trap ink_start={} ink_left={ink_left_now} ink_consumed_total={consumed} stack_left={}",
+                            ink.0,
+                            self.stack_left(),
+                        );
+                    }
                     tracing::warn!(target: "stylus",
                         ink = ?self.ink_left(), stack = self.stack_left(),
                         "WASM trap");
@@ -79,6 +91,18 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
         };
 
         self.sync_meter_from_globals();
+
+        if std::env::var("STYLUS_HOSTIO_TRACE").is_ok() {
+            let ink_left = match self.ink_left() {
+                MachineMeter::Ready(i) => i.0,
+                MachineMeter::Exhausted => 0,
+            };
+            let consumed = ink.0.saturating_sub(ink_left);
+            eprintln!(
+                "[hostio] user_returned status={status} ink_start={} ink_left={ink_left} ink_consumed_total={consumed}",
+                ink.0,
+            );
+        }
 
         let env = self.env_mut();
         if env.evm_data.tracing {

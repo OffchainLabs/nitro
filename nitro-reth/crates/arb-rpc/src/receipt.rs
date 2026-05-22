@@ -23,9 +23,11 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
         &self,
         receipts: Vec<ConvertReceiptInput<'_, ArbPrimitives>>,
     ) -> Result<Vec<Self::RpcReceipt>, EthApiError> {
+        // Without the block we cannot read mix_hash[25] for CollectTips;
+        // assume false (matches arbreth's behaviour up to v60).
         let results = receipts
             .into_iter()
-            .map(|input| convert_single_receipt(input, None))
+            .map(|input| convert_single_receipt(input, None, false))
             .collect();
         Ok(results)
     }
@@ -37,10 +39,18 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
     ) -> Result<Vec<Self::RpcReceipt>, Self::Error> {
         let mix_hash = block.header().mix_hash;
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
+        // mix_hash[16:24] = ArbOSFormatVersion (BE uint64);
+        // mix_hash[25] bit 0 = CollectTips (post-v9 encoding).
+        let arbos_version = u64::from_be_bytes(mix_hash.0[16..24].try_into().unwrap_or_default());
+        // Pre-v10 header (ArbosVersionCollectTipsOld = v9) always means
+        // CollectTips=true regardless of mix_hash[25].
+        let collect_tips = arbos_version
+            == arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD
+            || (mix_hash.0[25] & 1) == 1;
 
         let results = receipts
             .into_iter()
-            .map(|input| convert_single_receipt(input, Some(l1_block_number)))
+            .map(|input| convert_single_receipt(input, Some(l1_block_number), collect_tips))
             .collect();
         Ok(results)
     }
@@ -49,6 +59,7 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
 fn convert_single_receipt(
     input: ConvertReceiptInput<'_, ArbPrimitives>,
     l1_block_number: Option<u64>,
+    collect_tips: bool,
 ) -> WithOtherFields<TransactionReceipt> {
     use alloy_consensus::{transaction::TxHashRef, Transaction};
 
@@ -110,8 +121,28 @@ fn convert_single_receipt(
         _ => ReceiptEnvelope::Legacy(receipt_with_bloom),
     };
 
-    // On Arbitrum, effective gas price is always the block base fee for all tx types.
-    let effective_gas_price = meta.base_fee.unwrap_or(0) as u128;
+    // effective_gas_price: when CollectTips is set, use the per-tx-type
+    // formula; otherwise return the block base fee.
+    let base_fee = meta.base_fee.unwrap_or(0) as u128;
+    let effective_gas_price = if collect_tips {
+        match tx_type {
+            // Legacy + EIP-2930: stored gas price.
+            0x00 | 0x01 => tx.gas_price().unwrap_or(base_fee),
+            // ArbitrumDepositTx, ArbitrumInternalTx: always 0.
+            0x64 | 0x6A => 0,
+            // ArbitrumUnsignedTx, ArbitrumContractTx, ArbitrumRetryTx,
+            // ArbitrumSubmitRetryableTx: baseFee.
+            0x65 | 0x66 | 0x68 | 0x69 => base_fee,
+            // EIP-1559, EIP-4844, EIP-7702: min(maxFeePerGas, baseFee + tipCap).
+            _ => {
+                let tip = tx.max_priority_fee_per_gas().unwrap_or(0);
+                let cap = tx.max_fee_per_gas();
+                base_fee.saturating_add(tip).min(cap)
+            }
+        }
+    } else {
+        base_fee
+    };
 
     let base_receipt = TransactionReceipt {
         inner: envelope,

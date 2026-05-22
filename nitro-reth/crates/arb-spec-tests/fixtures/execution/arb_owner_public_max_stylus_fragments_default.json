@@ -1,6 +1,6 @@
 {
   "name": "arb_owner_public_max_stylus_fragments_default",
-  "description": "ArbOwnerPublic.GetMaxStylusContractFragments default at v60 is 2.",
+  "description": "ArbOwnerPublic.GetMaxStylusContractFragments default at v60 is 4.",
   "genesis": {
     "alloc": {
       "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
@@ -121,7 +121,7 @@
         "to": "0x000000000000000000000000000000000000006b",
         "data": "0xe5a7f893",
         "at_block": "latest",
-        "result": "0x0000000000000000000000000000000000000000000000000000000000000002"
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000004"
       }
     ]
   }

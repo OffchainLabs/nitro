@@ -55,8 +55,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
             out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
+            crate::charge_precompile_gas(2 * COPY_GAS);
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + 6).min(gas_limit),
+                crate::get_precompile_gas().min(gas_limit),
                 out.into(),
             ))
         }
@@ -151,13 +152,23 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) ->
     let gas_limit = input.gas;
     load_arbos(input)?;
 
+    let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
+    let poster_b256 = B256::left_padding_from(poster.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
+    let is_member = sload_field(input, member_slot)?;
+    if is_member == U256::ZERO {
+        return Err(PrecompileError::other(
+            "ArbAggregator: getFeeCollector: poster not exists",
+        ));
+    }
+
     let info_key = poster_info_key(poster);
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     let pay_to = sload_field(input, pay_to_slot)?;
 
-    // OAS(1) + OpenPoster IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
+    crate::charge_precompile_gas(COPY_GAS);
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        crate::get_precompile_gas().min(gas_limit),
         pay_to.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -166,20 +177,31 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) ->
 fn handle_set_fee_collector(
     input: &mut PrecompileInput<'_>,
     poster: Address,
-    new_collector: Address,
+    _new_collector: Address,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
 
-    // Read the current fee collector.
+    let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
+    let poster_b256 = B256::left_padding_from(poster.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
+    let is_member = sload_field(input, member_slot)?;
+    if is_member == U256::ZERO {
+        return Err(PrecompileError::other(
+            "ArbAggregator: setFeeCollector: poster not exists",
+        ));
+    }
+
+    // Read the current fee collector for the auth check.
     let info_key = poster_info_key(poster);
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     let old_collector_u256 = sload_field(input, pay_to_slot)?;
     let old_collector_bytes = old_collector_u256.to_be_bytes::<32>();
     let old_collector = Address::from_slice(&old_collector_bytes[12..32]);
 
-    // Verify authorization: caller must be poster, old fee collector, or chain owner.
+    // Verify authorization: caller must be poster, current fee collector,
+    // or chain owner.
     if caller != poster && caller != old_collector {
         let is_owner = is_chain_owner(input, caller)?;
         if !is_owner {
@@ -190,17 +212,13 @@ fn handle_set_fee_collector(
     }
 
     // Write the new fee collector.
-    let new_val = U256::from_be_slice(new_collector.as_slice());
+    let new_val = U256::from_be_slice(_new_collector.as_slice());
     sstore_field(input, pay_to_slot, new_val)?;
 
-    // OAS(1) + OpenPoster IsMember(1) + PayTo.Get(1) + SetPayTo(1 SSTORE) + argsCost(6).
-    // Owner check adds IsMember(1 SLOAD) only when caller is neither poster nor collector.
-    let mut gas_used = 3 * SLOAD_GAS + SSTORE_GAS + 2 * COPY_GAS;
-    if caller != poster && caller != old_collector {
-        gas_used += SLOAD_GAS;
-    }
+    // Cost: OAS(1) + IsMember(1) + payTo.Get(1) + [maybe owner IsMember(1)]
+    // + SetPayTo(1 SSTORE) + argsCost(6) — accumulator captured everything.
     Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
+        crate::get_precompile_gas().min(gas_limit),
         vec![].into(),
     ))
 }

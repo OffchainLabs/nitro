@@ -9,16 +9,18 @@ members = [
     "crates/arb-payload",
     "crates/arb-rpc",
     "crates/arb-txpool",
-    "crates/arb-e2e-tests",
+    "crates/arb-executor-tests",
     "crates/arb-spec-tests",
     "crates/arb-stylus",
     "crates/arb-test-utils",
+    "crates/arb-test-harness",
+    "crates/arb-fuzz",
     "crates/arb-bench",
     "crates/arbos",
     "bin/arb-reth",
-    "bin/gen-genesis",
+    "bin/arb-test",
 ]
-exclude = ["brotli", "fuzz"]
+exclude = ["brotli"]
 resolver = "2"
 
 [workspace.package]
@@ -41,6 +43,9 @@ arb-txpool = { path = "crates/arb-txpool" }
 
 arb-stylus = { path = "crates/arb-stylus" }
 arb-test-utils = { path = "crates/arb-test-utils" }
+arb-test-harness = { path = "crates/arb-test-harness" }
+arb-fuzz = { path = "crates/arb-fuzz" }
+arb-spec-tests = { path = "crates/arb-spec-tests" }
 arb-bench = { path = "crates/arb-bench" }
 arbos = { path = "crates/arbos" }
 
@@ -158,6 +163,7 @@ rayon = "1.11"
 clap = { version = "4", features = ["derive"] }
 async-trait = "0.1.68"
 eyre = "0.6"
+anyhow = "1"
 derive_more = { version = "2", features = ["full"] }
 auto_impl = "1"
 bytes = "1"
@@ -172,11 +178,12 @@ jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"
 jsonrpsee-http-client = "0.26.0"
 dyn-clone = "1"
-wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "6b15433d83f951555c24f0c56dc05e4751b0cc76", default-features = false, features = ["sys", "cranelift"] }
+brotli = { version = "8", default-features = false, features = ["std"] }
+wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
 
-nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4", default-features = false }
-nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "d7fe12c77aaf06c279e79d0dac38d89e67c711a4" }
+nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
+nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
 
 # Transitive deps for Nitro crates
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }

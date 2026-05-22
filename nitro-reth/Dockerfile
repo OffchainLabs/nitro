@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 
 COPY Cargo.toml Cargo.lock ./
+COPY .cargo/ .cargo/
 COPY crates/ crates/
 COPY bin/ bin/
 COPY .gitmodules ./

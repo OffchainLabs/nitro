@@ -36,7 +36,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     }
 
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+
+    // Mimic the reference FreeAccessPrecompile wrapper: open ArbOS state and
+    // check `filterers.IsMember(caller)` (2 SLOAD = 1600 gas total), without
+    // charging argsCost. Then always run the inner method. The wrapper keeps
+    // the inner's output and error, but overrides gas — 1600 for non-filterer
+    // callers, 0 for filterers (free access).
+    crate::reset_precompile_gas();
+    crate::charge_precompile_gas(SLOAD_GAS);
+    let caller = input.caller;
+    load_accounts(&mut input)?;
+    let is_filterer = is_transaction_filterer(&mut input, caller)?;
+    let wrapper_gas = crate::get_precompile_gas();
+    crate::reset_precompile_gas();
 
     let call =
         match IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls::abi_decode(input.data) {
@@ -45,12 +57,31 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         };
 
     use IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls as Calls;
-    let result = match call {
+    let inner_result = match call {
         Calls::addFilteredTransaction(c) => handle_add_filtered_tx(&mut input, c.txHash),
         Calls::deleteFilteredTransaction(c) => handle_delete_filtered_tx(&mut input, c.txHash),
         Calls::isTransactionFiltered(c) => handle_is_tx_filtered(&mut input, c.txHash),
     };
-    crate::gas_check(gas_limit, result)
+    crate::reset_precompile_gas();
+
+    // Wrapper overrides the inner's gas accounting: 0 for filterer, 1600 for
+    // non-filterer. Inner's output and error are preserved.
+    let final_gas = if is_filterer {
+        0
+    } else {
+        wrapper_gas.min(gas_limit)
+    };
+    match inner_result {
+        Ok(mut output) => {
+            output.gas_used = final_gas;
+            Ok(output)
+        }
+        Err(PrecompileError::Other(_)) => Ok(PrecompileOutput::new_reverted(
+            final_gas,
+            Default::default(),
+        )),
+        Err(e) => Err(e),
+    }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -72,6 +103,7 @@ fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -80,6 +112,7 @@ fn sload_filtered(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, P
         .internals_mut()
         .sload(FILTERED_TX_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -92,6 +125,8 @@ fn sstore_filtered(
         .internals_mut()
         .sstore(FILTERED_TX_STATE_ADDRESS, slot, value)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
+    let cost = if value.is_zero() { 5_000 } else { SSTORE_GAS };
+    crate::charge_precompile_gas(cost);
     Ok(())
 }
 
@@ -128,8 +163,10 @@ fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Prec
         U256::ZERO
     };
 
+    crate::charge_precompile_gas(COPY_GAS);
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        gas_used,
         is_filtered.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -157,11 +194,8 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Pre
         Default::default(),
     ));
 
-    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
-        vec![].into(),
-    ))
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
+    Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }
 
 fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
@@ -187,9 +221,6 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> 
         Default::default(),
     ));
 
-    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
-        vec![].into(),
-    ))
+    let gas_used = crate::get_precompile_gas().min(gas_limit);
+    Ok(PrecompileOutput::new(gas_used, vec![].into()))
 }

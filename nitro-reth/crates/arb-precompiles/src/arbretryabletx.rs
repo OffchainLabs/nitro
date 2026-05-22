@@ -6,10 +6,15 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 use crate::{
     interfaces::IArbRetryableTx,
     storage_slot::{
-        derive_subspace_key, map_slot, vector_length_slot, ARBOS_STATE_ADDRESS,
-        L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, gas_constraints_vec_key, map_slot, vector_element_field,
+        vector_length_slot, ARBOS_STATE_ADDRESS, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
+        ROOT_STORAGE_KEY,
     },
 };
+
+/// Backlog offset within a single gas-constraint sub-storage (must match
+/// `arbos::l2_pricing::gas_constraint::BACKLOG_OFFSET`).
+const GAS_CONSTRAINT_BACKLOG_OFFSET: u64 = 2;
 
 /// ArbRetryableTx precompile address (0x6e).
 pub const ARBRETRYABLETX_ADDRESS: Address = Address::new([
@@ -145,6 +150,16 @@ fn ticket_storage_key(ticket_id: B256) -> B256 {
     derive_subspace_key(retryables_key.as_slice(), ticket_id.as_slice())
 }
 
+/// Revert encoding for "ticket not found": pre-v3 returns a plain error
+/// (framework BurnOut), v3+ emits the NoTicketWithIDError sol-error.
+fn not_found_revert(gas_limit: u64) -> PrecompileResult {
+    if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_3 {
+        return crate::burn_all_revert(gas_limit);
+    }
+    let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
+    crate::sol_error_revert(data, gas_limit)
+}
+
 /// Open a retryable ticket by verifying it exists (timeout > 0) and hasn't expired.
 /// Returns the ticket's storage key.
 fn open_retryable(
@@ -244,10 +259,7 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> P
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => {
-            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
-        }
+        None => return not_found_revert(gas_limit),
     };
 
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
@@ -310,8 +322,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     let timeout_val2 = sload_field(input, timeout_slot)?;
     let timeout_u64_2: u64 = timeout_val2.try_into().unwrap_or(0);
     if timeout_u64_2 == 0 || timeout_u64_2 < current_timestamp {
-        let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-        return crate::sol_error_revert(data, gas_limit);
+        return not_found_revert(gas_limit);
     }
 
     let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
@@ -346,7 +357,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
 
-    let actual_backlog_cost = compute_actual_backlog_cost(input)?;
+    let actual_backlog_cost = compute_actual_backlog_cost(input, gas_to_donate)?;
 
     let max_refund = U256::MAX;
     let submission_fee_refund = U256::ZERO;
@@ -385,7 +396,10 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     ))
 }
 
-fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+fn compute_actual_backlog_cost(
+    input: &mut PrecompileInput<'_>,
+    gas_to_donate: u64,
+) -> Result<u64, PrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
     let arbos_version = crate::get_arbos_version();
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
@@ -394,10 +408,56 @@ fn compute_actual_backlog_cost(input: &mut PrecompileInput<'_>) -> Result<u64, P
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
         let len = read_gas_constraints_length_free(input)?;
         if len > 0 {
-            return Ok(2 * SLOAD_GAS + len.saturating_mul(SLOAD_GAS + SSTORE_RESET_GAS));
+            // Per-constraint write cost: 5000 if post-shrink value is zero, 20000 otherwise.
+            let vec_key = gas_constraints_vec_key();
+            let mut total = 2 * SLOAD_GAS; // GasModelToUse + vector length
+            for i in 0..len {
+                let backlog = read_constraint_backlog_free(input, &vec_key, i)?;
+                total += constraint_actual_backlog_cost(backlog, gas_to_donate);
+            }
+            return Ok(total);
         }
     }
-    Ok(SLOAD_GAS + SSTORE_GAS)
+    Ok(legacy_actual_backlog_cost(
+        crate::get_current_gas_backlog(),
+        gas_to_donate,
+    ))
+}
+
+fn legacy_actual_backlog_cost(current_backlog: u64, gas_to_donate: u64) -> u64 {
+    let new_backlog = current_backlog.saturating_sub(gas_to_donate);
+    let write_cost = if new_backlog == 0 {
+        SSTORE_RESET_GAS
+    } else {
+        SSTORE_GAS
+    };
+    SLOAD_GAS + write_cost
+}
+
+/// Per-constraint ShrinkBacklog cost: one SLOAD for the current backlog plus
+/// the EIP-2200 write cost determined by the post-shrink value.
+#[inline]
+fn constraint_actual_backlog_cost(current_backlog: u64, gas_to_donate: u64) -> u64 {
+    let new_backlog = current_backlog.saturating_sub(gas_to_donate);
+    let write_cost = if new_backlog == 0 {
+        SSTORE_RESET_GAS
+    } else {
+        SSTORE_GAS
+    };
+    SLOAD_GAS + write_cost
+}
+
+fn read_constraint_backlog_free(
+    input: &mut PrecompileInput<'_>,
+    vec_key: &B256,
+    index: u64,
+) -> Result<u64, PrecompileError> {
+    let slot = vector_element_field(vec_key, index, GAS_CONSTRAINT_BACKLOG_OFFSET);
+    let val = input
+        .internals_mut()
+        .sload(ARBOS_STATE_ADDRESS, slot)
+        .map_err(|_| PrecompileError::other("sload constraint backlog failed"))?;
+    Ok(val.data.try_into().unwrap_or(0))
 }
 
 fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
@@ -460,10 +520,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precomp
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => {
-            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
-        }
+        None => return not_found_revert(gas_limit),
     };
 
     // Read calldata size for updateCost computation (RetryableSizeBytes).
@@ -550,10 +607,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
     let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => {
-            let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
-        }
+        None => return not_found_revert(gas_limit),
     };
 
     // Read beneficiary and verify caller is the beneficiary.
@@ -618,4 +672,114 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
         gas_used.min(gas_limit),
         Vec::new().into(),
     ))
+}
+
+#[cfg(test)]
+mod redeem_gas_tests {
+    use super::*;
+
+    #[test]
+    fn drains_backlog_to_zero_uses_sstore_reset() {
+        assert_eq!(
+            legacy_actual_backlog_cost(100_000, 100_000),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+        assert_eq!(legacy_actual_backlog_cost(100_000, 100_000), 5_800);
+    }
+
+    #[test]
+    fn drains_backlog_partially_uses_sstore_set() {
+        assert_eq!(
+            legacy_actual_backlog_cost(100_000, 99_000),
+            SLOAD_GAS + SSTORE_GAS,
+        );
+        assert_eq!(legacy_actual_backlog_cost(100_000, 99_000), 20_800);
+    }
+
+    #[test]
+    fn donate_exceeds_backlog_saturates_to_zero() {
+        assert_eq!(
+            legacy_actual_backlog_cost(50_000, 200_000),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+    }
+
+    #[test]
+    fn empty_backlog_zero_donate_still_writes_zero() {
+        assert_eq!(
+            legacy_actual_backlog_cost(0, 0),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+    }
+
+    #[test]
+    fn sepolia_block_100_435_687_diverges_by_15000_with_buggy_static_cost() {
+        let buggy_static_cost = SLOAD_GAS + SSTORE_GAS;
+        let fixed_drain_cost = legacy_actual_backlog_cost(100_000, 100_000);
+        assert_eq!(buggy_static_cost - fixed_drain_cost, 15_000);
+    }
+
+    /// Per-constraint shrink cost follows the same EIP-2200 rule as legacy:
+    /// 5000 if the post-shrink value is zero, 20000 otherwise. The earlier
+    /// implementation hard-coded SSTORE_RESET for every constraint, so any
+    /// Redeem at v51..v60 with N non-draining constraints undercharged by
+    /// N * 15_000.
+    #[test]
+    fn constraint_with_remaining_backlog_charges_sstore_set() {
+        assert_eq!(
+            constraint_actual_backlog_cost(10_000_000, 1_100_000),
+            SLOAD_GAS + SSTORE_GAS,
+        );
+    }
+
+    #[test]
+    fn constraint_draining_to_zero_charges_sstore_reset() {
+        assert_eq!(
+            constraint_actual_backlog_cost(100_000, 100_000),
+            SLOAD_GAS + SSTORE_RESET_GAS,
+        );
+    }
+
+    #[test]
+    fn six_non_draining_constraints_match_reservation() {
+        let len = 6u64;
+        let gas_to_donate = 1_100_000u64;
+        let per_constraint_backlog = 10_000_000u64; // none drain
+        let reservation = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_GAS);
+        let actual = 2 * SLOAD_GAS
+            + (0..len)
+                .map(|_| constraint_actual_backlog_cost(per_constraint_backlog, gas_to_donate))
+                .sum::<u64>();
+        assert_eq!(actual, reservation);
+    }
+
+    /// Mirrors the Sepolia block 235,386,091 divergence: redeem tx with a
+    /// 1,200,000 gas limit on a chain with 6 gas constraints, none of which
+    /// drain after the donation. The buggy formula short-changed by exactly
+    /// 90,000 gas.
+    #[test]
+    fn block_235_386_091_redeem_recovers_full_gas_limit() {
+        let gas_limit = 1_200_000u64;
+        let len = 6u64;
+        let backlog_per_constraint = 10_000_000u64;
+        // Pre-donate costs that survive into the total (everything other than
+        // the backlog reservation/actual pair).
+        let gas_used_so_far = 50_000u64; // representative, exact value cancels out
+        let reservation = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_GAS);
+        let future = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + reservation;
+        let gas_to_donate = gas_limit - gas_used_so_far - future;
+
+        let buggy_actual = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_RESET_GAS);
+        let buggy_total =
+            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + buggy_actual + COPY_GAS;
+        assert_eq!(gas_limit - buggy_total, 90_000);
+
+        let fixed_actual = 2 * SLOAD_GAS
+            + (0..len)
+                .map(|_| constraint_actual_backlog_cost(backlog_per_constraint, gas_to_donate))
+                .sum::<u64>();
+        let fixed_total =
+            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + fixed_actual + COPY_GAS;
+        assert_eq!(fixed_total, gas_limit);
+    }
 }

@@ -227,6 +227,11 @@ fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
+/// User-visible ArbOS version: stored format version + 55.
+fn arbos_version_from_format(format_version: U256) -> U256 {
+    format_version + U256::from(55)
+}
+
 fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let internals = input.internals_mut();
 
@@ -234,11 +239,10 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // User-visible version = 55 + raw stored value.
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
-    let version = raw_version.data + U256::from(55);
+    let version = arbos_version_from_format(raw_version.data);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -298,15 +302,29 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let tx_origin = input.internals().tx_origin();
+    // address = 0 unless depth > 1, then Contracts[depth-2].Caller().
+    // Apply L1 inverse-alias iff `wasMyCallersAddressAliased` (top-level frame
+    // entered by an aliasing tx type).
     let depth = crate::get_evm_depth();
-    let address = if depth <= 2 {
-        tx_origin
+    let address = if depth > 1 {
+        crate::caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
     } else {
-        crate::caller_at_depth(depth - 1).unwrap_or(tx_origin)
+        Address::ZERO
     };
 
-    let result_addr = if get_tx_is_aliased() && address == tx_origin {
+    let arbos_version = crate::get_arbos_version();
+    let is_top_level = if arbos_version < 6 {
+        depth == 2
+    } else if depth <= 2 {
+        true
+    } else {
+        let tx_origin = input.internals().tx_origin();
+        crate::caller_at_depth(depth - 1)
+            .map(|c| tx_origin == c)
+            .unwrap_or(false)
+    };
+    let aliased = is_top_level && get_tx_is_aliased();
+    let result_addr = if aliased {
         undo_l1_alias(address)
     } else {
         address
@@ -861,5 +879,20 @@ mod alias_tests {
             let restored = undo_l1_alias(aliased);
             assert_eq!(restored, addr, "round trip failed for {addr}");
         }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn arb_os_version_returns_format_plus_55() {
+        // formatVersion 51 → user-visible ArbOS version 106 (0x6a)
+        assert_eq!(arbos_version_from_format(U256::from(51)), U256::from(106),);
+        // formatVersion 1 → 56 (the lowest publicly used version)
+        assert_eq!(arbos_version_from_format(U256::from(1)), U256::from(56),);
+        // formatVersion 0 → 55
+        assert_eq!(arbos_version_from_format(U256::ZERO), U256::from(55),);
     }
 }

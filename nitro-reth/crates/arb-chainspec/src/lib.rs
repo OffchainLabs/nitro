@@ -20,6 +20,8 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_7: u64 = 7;
     pub const ARBOS_VERSION_8: u64 = 8;
     pub const ARBOS_VERSION_9: u64 = 9;
+    /// Legacy CollectTips encoding (pre-v10 mix_hash layout).
+    pub const ARBOS_VERSION_COLLECT_TIPS_OLD: u64 = ARBOS_VERSION_9;
     pub const ARBOS_VERSION_10: u64 = 10;
     /// ArbOS version 11 — Shanghai EVM rules (PUSH0, etc.).
     pub const ARBOS_VERSION_11: u64 = 11;
@@ -46,6 +48,8 @@ pub mod arbos_version {
     pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = ARBOS_VERSION_60;
     /// ArbOS version 51 — multi-constraint fix.
     pub const ARBOS_VERSION_MULTI_CONSTRAINT_FIX: u64 = 51;
+    pub const ARBOS_VERSION_51: u64 = 51;
+    pub const ARBOS_VERSION_59: u64 = 59;
     /// ArbOS version 60 — multi-gas constraints + Stylus contract limit + transaction filtering.
     pub const ARBOS_VERSION_MULTI_GAS_CONSTRAINTS: u64 = 60;
     pub const ARBOS_VERSION_60: u64 = 60;
@@ -72,6 +76,8 @@ pub trait ArbitrumChainSpec {
 pub fn spec_id_by_arbos_version(arbos_version: u64) -> SpecId {
     if arbos_version >= arbos_version::ARBOS_VERSION_50 {
         SpecId::OSAKA
+    } else if arbos_version >= arbos_version::ARBOS_VERSION_40 {
+        SpecId::PRAGUE
     } else if arbos_version >= arbos_version::ARBOS_VERSION_20 {
         SpecId::CANCUN
     } else if arbos_version >= arbos_version::ARBOS_VERSION_11 {

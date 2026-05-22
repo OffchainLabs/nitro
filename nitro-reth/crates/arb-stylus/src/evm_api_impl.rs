@@ -115,8 +115,18 @@ impl<DB: Database> JournalAccess for revm::Journal<DB> {
     }
 
     fn address_in_access_list(&self, addr: Address) -> bool {
-        // An address is "warm" if it's in the loaded state or warm_addresses
-        self.inner.state.contains_key(&addr) || self.inner.warm_addresses.is_warm(&addr)
+        // Pre-warmed: precompiles, coinbase, EIP-2930 access list.
+        if self.inner.warm_addresses.is_warm(&addr) {
+            return true;
+        }
+        // EIP-2929 access list lives on each account as a (transaction_id, Cold flag)
+        // pair. A reverted sub-call leaves the account in the state HashMap but
+        // re-marked Cold via JournalEntry::AccountWarmed::revert, so a plain
+        // contains_key check would miss the revert and report stale warmth.
+        if let Some(account) = self.inner.state.get(&addr) {
+            return !account.is_cold_transaction_id(self.inner.transaction_id);
+        }
+        false
     }
 
     fn add_address_to_access_list(&mut self, addr: Address) {

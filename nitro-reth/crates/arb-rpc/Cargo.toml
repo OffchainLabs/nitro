@@ -9,6 +9,7 @@ license.workspace = true
 async-trait = { workspace = true }
 base64 = { workspace = true }
 arb-alloy-consensus = { workspace = true }
+arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
 arb-precompiles = { workspace = true }
 arb-stylus = { workspace = true }

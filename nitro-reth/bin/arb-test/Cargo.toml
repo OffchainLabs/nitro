@@ -1,0 +1,26 @@
+[package]
+name = "arb-test"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Unified testing CLI for arbreth: fixture record/verify/compare/promote/triage, genesis-capture, sepolia-import."
+
+[[bin]]
+name = "arb-test"
+path = "src/main.rs"
+
+[dependencies]
+arb-test-harness = { workspace = true }
+arb-spec-tests = { workspace = true }
+
+alloy-primitives = { workspace = true, features = ["std", "serde"] }
+clap = { workspace = true, features = ["env"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+hex = { workspace = true }
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+
+[lints]
+workspace = true

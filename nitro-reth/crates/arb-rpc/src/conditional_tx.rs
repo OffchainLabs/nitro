@@ -3,13 +3,9 @@
 //!
 //! Lets a client attach predicates (block-number range, timestamp
 //! range, per-account storage roots / slot values) to a raw tx. The
-//! sequencer only accepts the tx if every predicate holds against the
-//! current chain state at submission time. Used by MEV-aware clients
-//! to fail fast when a trade opportunity has already been consumed.
-//!
-//! Matches Nitro's `arbitrum_types.ConditionalOptions` +
-//! `SubmitConditionalTransaction` in
-//! `/go-ethereum/arbitrum/conditionaltx.go`.
+//! sequencer only accepts the tx if every predicate holds against
+//! current chain state. Used by MEV-aware clients to fail fast when
+//! a trade opportunity has already been consumed.
 
 use std::collections::HashMap;
 
@@ -99,8 +95,7 @@ pub fn check_simple_predicates(
 }
 
 /// `eth_sendRawTransactionConditional` — registered on the `eth`
-/// namespace in Nitro (not `arb_`). We expose it here and let the
-/// node-level RPC module merger handle namespace binding.
+/// namespace (not `arb_`). Node-level RPC module merger handles binding.
 #[rpc(server, namespace = "eth")]
 pub trait ConditionalTxApi {
     /// Submit a signed raw tx with attached predicates. Returns the

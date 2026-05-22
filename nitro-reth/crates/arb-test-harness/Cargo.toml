@@ -1,0 +1,40 @@
+[package]
+name = "arb-test-harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared test orchestration for arbreth: spawn nodes, build L1 messages, capture state, diff dual-exec runs against Nitro reference."
+
+[dependencies]
+arb-chainspec = { workspace = true }
+arb-node = { workspace = true }
+arb-primitives = { workspace = true }
+arbos = { workspace = true }
+
+alloy-genesis = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "serde", "k256"] }
+alloy-consensus = { workspace = true, features = ["std", "k256"] }
+alloy-eips = { workspace = true, features = ["std"] }
+alloy-rlp = { workspace = true }
+
+revm = { workspace = true }
+revm-database = { workspace = true }
+
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+
+# Sync JSON-RPC client (no async dep here; mirrors arb-spec-tests choice)
+ureq = { version = "2", default-features = false, features = ["json"] }
+
+# Mock L1 server backend (kept lightweight; reused by spec tests)
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "sync", "time"] }
+base64 = "0.22"
+
+[lints]
+workspace = true
