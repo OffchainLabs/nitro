@@ -1,8 +1,6 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::mem::{self, MaybeUninit};
-
 use wasmer::{FromToNativeWasmType, Memory, MemoryView, StoreMut, WasmPtr};
 use alloc::vec::Vec;
 
@@ -61,15 +59,9 @@ impl MemAccess for WasmerMem<'_> {
     fn write_u64(&mut self, ptr: GuestPtr, x: u64) { self.write_slice(ptr, &x.to_le_bytes()) }
 
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
-        let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
-        // SAFETY: read_uninit fills all available space
-        unsafe {
-            data.set_len(len);
-            self.view()
-                .read_uninit(ptr.to_u64(), &mut data)
-                .expect("read slice");
-            mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(data)
-        }
+        let mut data = vec![0u8; len];
+        self.view().read(ptr.to_u64(), &mut data).expect("read slice");
+        data
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
