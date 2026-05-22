@@ -1,9 +1,11 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use wasmer::{FromToNativeWasmType, WasmPtr};
+use std::mem::{self, MaybeUninit};
 
-use crate::{Errno, GuestPtr};
+use wasmer::{FromToNativeWasmType, Memory, MemoryView, StoreMut, WasmPtr};
+
+use crate::{Errno, GuestPtr, MemAccess};
 
 unsafe impl FromToNativeWasmType for GuestPtr {
     type Native = i32;
@@ -32,5 +34,84 @@ unsafe impl FromToNativeWasmType for Errno {
 impl<T> From<GuestPtr> for WasmPtr<T> {
     fn from(value: GuestPtr) -> Self {
         WasmPtr::new(value.0)
+    }
+}
+
+pub struct WasmerMem<'s> {
+    pub memory: Memory,
+    pub store: StoreMut<'s>,
+}
+
+impl WasmerMem<'_> {
+    fn view(&self) -> MemoryView<'_> {
+        self.memory.view(&self.store)
+    }
+}
+
+impl MemAccess for WasmerMem<'_> {
+    fn read_u8(&self, ptr: GuestPtr) -> u8 {
+        let mut buf = [0u8; 1];
+        self.view().read(ptr.to_u64(), &mut buf).expect("read u8");
+        buf[0]
+    }
+
+    fn read_u16(&self, ptr: GuestPtr) -> u16 {
+        let mut buf = [0u8; 2];
+        self.view().read(ptr.to_u64(), &mut buf).expect("read u16");
+        u16::from_le_bytes(buf)
+    }
+
+    fn read_u32(&self, ptr: GuestPtr) -> u32 {
+        let mut buf = [0u8; 4];
+        self.view().read(ptr.to_u64(), &mut buf).expect("read u32");
+        u32::from_le_bytes(buf)
+    }
+
+    fn read_u64(&self, ptr: GuestPtr) -> u64 {
+        let mut buf = [0u8; 8];
+        self.view().read(ptr.to_u64(), &mut buf).expect("read u64");
+        u64::from_le_bytes(buf)
+    }
+
+    fn write_u8(&mut self, ptr: GuestPtr, x: u8) {
+        self.view().write(ptr.to_u64(), &[x]).expect("write u8");
+    }
+
+    fn write_u16(&mut self, ptr: GuestPtr, x: u16) {
+        self.view()
+            .write(ptr.to_u64(), &x.to_le_bytes())
+            .expect("write u16");
+    }
+
+    fn write_u32(&mut self, ptr: GuestPtr, x: u32) {
+        self.view()
+            .write(ptr.to_u64(), &x.to_le_bytes())
+            .expect("write u32");
+    }
+
+    fn write_u64(&mut self, ptr: GuestPtr, x: u64) {
+        self.view()
+            .write(ptr.to_u64(), &x.to_le_bytes())
+            .expect("write u64");
+    }
+
+    fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
+        let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
+        // SAFETY: read_uninit fills all available space
+        unsafe {
+            data.set_len(len);
+            self.view()
+                .read_uninit(ptr.to_u64(), &mut data)
+                .expect("read slice");
+            mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(data)
+        }
+    }
+
+    fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
+        self.read_slice(ptr, N).try_into().unwrap()
+    }
+
+    fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]) {
+        self.view().write(ptr.to_u64(), data).expect("write slice");
     }
 }
