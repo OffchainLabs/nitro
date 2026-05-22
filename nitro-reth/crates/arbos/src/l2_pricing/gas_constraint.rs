@@ -1,8 +1,6 @@
-use std::marker::PhantomData;
+use alloy_primitives::B256;
 
-use revm::Database;
-
-use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
+use arb_storage::{StorageBackedUint64, StorageBackend};
 
 use super::L2PricingError;
 
@@ -11,24 +9,22 @@ const ADJUSTMENT_WINDOW_OFFSET: u64 = 1;
 const BACKLOG_OFFSET: u64 = 2;
 
 /// A single-dimensional gas constraint with target, adjustment window, and backlog.
-pub struct GasConstraint<D> {
+#[derive(Clone, Copy, Debug)]
+pub struct GasConstraint {
     target: StorageBackedUint64,
     adjustment_window: StorageBackedUint64,
     backlog: StorageBackedUint64,
-    _phantom: PhantomData<D>,
 }
 
-pub fn open_gas_constraint<D: Database>(sto: Storage<D>) -> GasConstraint<D> {
-    let base_key = sto.base_key();
+pub fn open_gas_constraint(base_key: B256) -> GasConstraint {
     GasConstraint {
         target: StorageBackedUint64::new(base_key, TARGET_OFFSET),
         adjustment_window: StorageBackedUint64::new(base_key, ADJUSTMENT_WINDOW_OFFSET),
         backlog: StorageBackedUint64::new(base_key, BACKLOG_OFFSET),
-        _phantom: PhantomData,
     }
 }
 
-impl<D: Database> GasConstraint<D> {
+impl GasConstraint {
     pub fn target<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
         Ok(self.target.get(backend)?)
     }

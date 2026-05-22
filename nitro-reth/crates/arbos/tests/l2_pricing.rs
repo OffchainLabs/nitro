@@ -116,11 +116,12 @@ fn multi_gas_constraints_add_open_clear() {
         assert_eq!(c.adjustment_window(b).unwrap(), (100 * i + 2) as u32);
         assert_eq!(c.backlog(b).unwrap(), 100 * i + 3);
         assert_eq!(
-            c.resource_weight(ResourceKind::Computation).unwrap(),
+            c.resource_weight(b, ResourceKind::Computation).unwrap(),
             10 + i
         );
         assert_eq!(
-            c.resource_weight(ResourceKind::StorageAccessRead).unwrap(),
+            c.resource_weight(b, ResourceKind::StorageAccessRead)
+                .unwrap(),
             20 + i
         );
     }

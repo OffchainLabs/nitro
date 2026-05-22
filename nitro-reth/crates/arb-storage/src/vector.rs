@@ -1,36 +1,44 @@
+use alloy_primitives::B256;
 use arb_storage_errors::StorageError;
-use revm::Database;
 
-use crate::{backed_types::StorageBackedUint64, backend::StorageBackend, storage::Storage};
+use crate::{
+    backed_types::StorageBackedUint64, backend::StorageBackend, slot::derive_sub_key,
+    storage::Storage,
+};
 
 const LENGTH_OFFSET: u64 = 0;
 
 /// Vector of sub-storages backed by ArbOS storage.
 ///
 /// Layout: offset 0 = length; sub-storages live at indices `0..length`.
-pub struct SubStorageVector<D> {
-    storage: Storage<D>,
+#[derive(Clone, Copy, Debug)]
+pub struct SubStorageVector {
+    pub base_key: B256,
     length: StorageBackedUint64,
 }
 
-pub fn open_sub_storage_vector<D: Database>(storage: Storage<D>) -> SubStorageVector<D> {
-    let base_key = storage.base_key();
+pub fn open_sub_storage_vector<D: revm::Database>(storage: Storage<D>) -> SubStorageVector {
+    open_sub_storage_vector_at(storage.base_key())
+}
+
+pub fn open_sub_storage_vector_at(base_key: B256) -> SubStorageVector {
     SubStorageVector {
+        base_key,
         length: StorageBackedUint64::new(base_key, LENGTH_OFFSET),
-        storage,
     }
 }
 
-impl<D: Database> SubStorageVector<D> {
+impl SubStorageVector {
     pub fn length<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
         self.length.get(backend)
     }
 
-    pub fn at(&self, index: u64) -> Storage<D> {
-        self.storage.open_sub_storage(&index.to_be_bytes())
+    /// Returns the base key for the sub-storage at `index`.
+    pub fn at(&self, index: u64) -> B256 {
+        derive_sub_key(self.base_key, &index.to_be_bytes())
     }
 
-    pub fn push<B: StorageBackend>(&self, backend: &mut B) -> Result<Storage<D>, StorageError> {
+    pub fn push<B: StorageBackend>(&self, backend: &mut B) -> Result<B256, StorageError> {
         let len = self.length.get(backend)?;
         self.length.set(backend, len + 1)?;
         Ok(self.at(len))
