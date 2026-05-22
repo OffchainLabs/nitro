@@ -670,8 +670,6 @@ where
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
 
-    let checkpoint = context.journaled_state.inner.checkpoint();
-
     let (caller_nonce, caller_balance) = {
         let acc = context
             .journaled_state
@@ -682,7 +680,6 @@ where
     };
 
     if caller_balance < endowment {
-        context.journaled_state.inner.checkpoint_revert(checkpoint);
         return SubCreateResult {
             address: None,
             output: Vec::new(),
@@ -724,7 +721,6 @@ where
             Err(_) => false,
         };
         if !bumped {
-            context.journaled_state.inner.checkpoint_revert(checkpoint);
             return SubCreateResult {
                 address: None,
                 output: Vec::new(),
@@ -739,7 +735,6 @@ where
         .load_account(&mut context.journaled_state.database, created_address)
         .is_err()
     {
-        context.journaled_state.inner.checkpoint_revert(checkpoint);
         return SubCreateResult {
             address: None,
             output: Vec::new(),
@@ -748,19 +743,21 @@ where
     }
 
     let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
-    if context
-        .journaled_state
-        .inner
-        .create_account_checkpoint(caller, created_address, endowment, spec)
-        .is_err()
-    {
-        context.journaled_state.inner.checkpoint_revert(checkpoint);
-        return SubCreateResult {
-            address: None,
-            output: Vec::new(),
-            gas_cost: gas,
-        };
-    }
+    let checkpoint = match context.journaled_state.inner.create_account_checkpoint(
+        caller,
+        created_address,
+        endowment,
+        spec,
+    ) {
+        Ok(cp) => cp,
+        Err(_) => {
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+            };
+        }
+    };
 
     let init_inputs = CallInputs {
         input: CallInput::Bytes(Bytes::new()),
