@@ -19,9 +19,7 @@ fn read_slot<D: Database>(
     state: *mut revm::database::State<D>,
     slot: U256,
 ) -> Result<U256, StorageError> {
-    // SAFETY: callers of `StorageBacked*::new` must guarantee that the
-    // referenced `State<D>` outlives the descriptor and that no other
-    // mutable reference to it is live during this call.
+    // SAFETY: see the invariant on `Storage<D>`.
     let state = unsafe { &mut *state };
     read_arbos_storage(state, slot)
 }
@@ -31,7 +29,7 @@ fn write_slot<D: Database>(
     slot: U256,
     value: U256,
 ) -> Result<(), StorageError> {
-    // SAFETY: see `read_slot`.
+    // SAFETY: see the invariant on `Storage<D>`.
     let state = unsafe { &mut *state };
     write_arbos_storage(state, slot, value)
 }

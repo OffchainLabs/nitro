@@ -11,8 +11,12 @@ use crate::{
 ///
 /// State lives in a specific account. Storage uses keccak256-based
 /// subspace derivation to create a hierarchical key space.
+///
+/// Safety invariant: the `state` pointer must outlive every `Storage`
+/// holding it, and dereferences across handles pointing at the same
+/// `State<D>` must be sequential.
 pub struct Storage<D> {
-    pub state: *mut revm::database::State<D>,
+    pub(crate) state: *mut revm::database::State<D>,
     pub base_key: B256,
     pub account: Address,
 }
@@ -54,9 +58,7 @@ impl<D: Database> Storage<D> {
     /// Reads a 32-byte value by uint64 offset.
     pub fn get_by_uint64(&self, offset: u64) -> Result<B256, StorageError> {
         let slot = self.compute_slot(offset);
-        // SAFETY: the caller of Storage::new must guarantee that the
-        // referenced State<D> outlives this handle and that no other
-        // mutable reference to it is live during this call.
+        // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         read_storage_at(state, self.account, slot).map(B256::from)
     }
@@ -65,7 +67,7 @@ impl<D: Database> Storage<D> {
     pub fn set_by_uint64(&self, offset: u64, value: B256) -> Result<(), StorageError> {
         let slot = self.compute_slot(offset);
         let value_u256 = U256::from_be_bytes(value.0);
-        // SAFETY: see `get_by_uint64`.
+        // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         write_storage_at(state, self.account, slot, value_u256)
     }
@@ -73,7 +75,7 @@ impl<D: Database> Storage<D> {
     /// Reads a `u64` by uint64 offset, truncating values that exceed `u64::MAX`.
     pub fn get_uint64_by_uint64(&self, offset: u64) -> Result<u64, StorageError> {
         let slot = self.compute_slot(offset);
-        // SAFETY: see `get_by_uint64`.
+        // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         let value = read_storage_at(state, self.account, slot)?;
         Ok(value.try_into().unwrap_or(0))
@@ -82,7 +84,7 @@ impl<D: Database> Storage<D> {
     /// Writes a `u64` by uint64 offset.
     pub fn set_uint64_by_uint64(&self, offset: u64, value: u64) -> Result<(), StorageError> {
         let slot = self.compute_slot(offset);
-        // SAFETY: see `get_by_uint64`.
+        // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         write_storage_at(state, self.account, slot, U256::from(value))
     }
@@ -90,7 +92,7 @@ impl<D: Database> Storage<D> {
     /// Reads a 32-byte value by B256 key using mapAddress algorithm.
     pub fn get(&self, key: B256) -> Result<B256, StorageError> {
         let slot = self.compute_slot_for_key(key);
-        // SAFETY: see `get_by_uint64`.
+        // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         read_storage_at(state, self.account, slot).map(B256::from)
     }
@@ -99,7 +101,7 @@ impl<D: Database> Storage<D> {
     pub fn set(&self, key: B256, value: B256) -> Result<(), StorageError> {
         let slot = self.compute_slot_for_key(key);
         let value_u256 = U256::from_be_bytes(value.0);
-        // SAFETY: see `get_by_uint64`.
+        // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         write_storage_at(state, self.account, slot, value_u256)
     }
@@ -125,7 +127,7 @@ impl<D: Database> Storage<D> {
         self.compute_slot(offset)
     }
 
-    /// Returns the raw state pointer.
+    /// Returns the raw `*mut State<D>`. See the struct-level safety invariant.
     pub fn state_ptr(&self) -> *mut revm::database::State<D> {
         self.state
     }
@@ -146,7 +148,6 @@ impl<D> Clone for Storage<D> {
     }
 }
 
-// Safety: Storage is Send/Sync when D is, since state is only accessed
-// within a single execution context.
+// SAFETY: see struct-level invariant.
 unsafe impl<D: Send> Send for Storage<D> {}
 unsafe impl<D: Sync> Sync for Storage<D> {}
