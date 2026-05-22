@@ -7,7 +7,7 @@ use std::{
     ops::Add,
 };
 
-use arbutil::{Bytes32, Color};
+use arbutil::{Bytes32, Color, crypto};
 use eyre::{ErrReport, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_with::{TryFromInto, serde_as};
@@ -262,13 +262,11 @@ impl Value {
     }
 
     pub fn hash(self) -> Bytes32 {
-        let mut h = Keccak::v256();
-        h.update(b"Value:");
-        h.update(&[self.ty() as u8]);
-        h.update(self.contents_for_proof().as_ref());
-        let mut out = [0u8; 32];
-        h.finalize(&mut out);
-        out.into()
+        crypto::keccak_seq(&[
+            b"Value:",
+            &[self.ty() as u8],
+            self.contents_for_proof().as_ref(),
+        ])
     }
 
     pub fn default_of_type(ty: ArbValueType) -> Value {

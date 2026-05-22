@@ -10,10 +10,9 @@ use std::{
     time::Instant,
 };
 
-use arbutil::{Bytes32, PreimageType};
+use arbutil::{Bytes32, PreimageType, crypto};
 use caller_env::GoRuntimeState;
 use eyre::{ErrReport, Report, Result, bail};
-use tiny_keccak::{Hasher, Keccak};
 use thiserror::Error;
 use validation::local_target;
 use wasmer::{
@@ -330,11 +329,7 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
             .entry(PreimageType::Keccak256 as u8)
             .or_default();
         for preimage in preimages {
-            let mut hasher = Keccak::v256();
-            hasher.update(&preimage);
-            let mut hash_bytes = [0u8; 32];
-            hasher.finalize(&mut hash_bytes);
-            let hash = hash_bytes.into();
+            let hash = crypto::keccak(&preimage).into();
             keccak_preimages.insert(hash, preimage);
         }
     }

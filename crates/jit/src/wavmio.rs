@@ -118,10 +118,9 @@ pub fn resolve_preimage_impl(
 
     #[cfg(debug_assertions)]
     {
-        use arbutil::PreimageType;
+        use arbutil::{PreimageType, crypto};
         use caller_env::MemAccess;
-        use arbutil::crypto;
-        use sha2::{Digest, Sha256};
+        use sha2::{Digest as _, Sha256};
 
         let hash: [u8; 32] = mem.read_fixed(hash_ptr);
         let pt: PreimageType = preimage_type.try_into().unwrap();

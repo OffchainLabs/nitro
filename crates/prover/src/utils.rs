@@ -9,7 +9,10 @@ use wasmparser::{RefType, TableType};
 #[cfg(feature = "kzg")]
 use {crate::kzg::ETHEREUM_KZG_SETTINGS, c_kzg::Blob};
 #[cfg(feature = "native")]
-use {arbutil::{PreimageType, crypto}, digest::Digest, sha2::Sha256};
+use {
+    arbutil::{PreimageType, crypto},
+    sha2::{Digest as _, Sha256},
+};
 
 pub use crate::cbytes::CBytes;
 #[cfg(feature = "libc")]
