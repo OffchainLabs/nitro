@@ -17,7 +17,9 @@ pub fn keccak_seq(inputs: &[&[u8]]) -> Bytes32 {
     for input in inputs {
         h.update(input);
     }
-    // SAFETY: finalize() writes exactly 32 bytes
+    // SAFETY: `&mut *out.as_mut_ptr()` produces a `&mut [u8; 32]`, coercing to a
+    // `&mut [u8]` of length 32. `Keccak::v256().finalize()` writes `output.len()`
+    // bytes, so all 32 bytes are initialized before `assume_init` is called.
     unsafe {
         let mut out = MaybeUninit::<[u8; 32]>::uninit();
         h.finalize(&mut *out.as_mut_ptr());
