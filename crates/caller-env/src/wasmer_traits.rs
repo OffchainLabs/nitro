@@ -4,6 +4,7 @@
 use std::mem::{self, MaybeUninit};
 
 use wasmer::{FromToNativeWasmType, Memory, MemoryView, StoreMut, WasmPtr};
+use alloc::vec::Vec;
 
 use crate::{Errno, GuestPtr, MemAccess};
 
@@ -49,51 +50,15 @@ impl WasmerMem<'_> {
 }
 
 impl MemAccess for WasmerMem<'_> {
-    fn read_u8(&self, ptr: GuestPtr) -> u8 {
-        let mut buf = [0u8; 1];
-        self.view().read(ptr.to_u64(), &mut buf).expect("read u8");
-        buf[0]
-    }
+    fn read_u8(&self, ptr: GuestPtr) -> u8 { self.read_fixed::<1>(ptr)[0] }
+    fn read_u16(&self, ptr: GuestPtr) -> u16 { u16::from_le_bytes(self.read_fixed(ptr)) }
+    fn read_u32(&self, ptr: GuestPtr) -> u32 { u32::from_le_bytes(self.read_fixed(ptr)) }
+    fn read_u64(&self, ptr: GuestPtr) -> u64 { u64::from_le_bytes(self.read_fixed(ptr)) }
 
-    fn read_u16(&self, ptr: GuestPtr) -> u16 {
-        let mut buf = [0u8; 2];
-        self.view().read(ptr.to_u64(), &mut buf).expect("read u16");
-        u16::from_le_bytes(buf)
-    }
-
-    fn read_u32(&self, ptr: GuestPtr) -> u32 {
-        let mut buf = [0u8; 4];
-        self.view().read(ptr.to_u64(), &mut buf).expect("read u32");
-        u32::from_le_bytes(buf)
-    }
-
-    fn read_u64(&self, ptr: GuestPtr) -> u64 {
-        let mut buf = [0u8; 8];
-        self.view().read(ptr.to_u64(), &mut buf).expect("read u64");
-        u64::from_le_bytes(buf)
-    }
-
-    fn write_u8(&mut self, ptr: GuestPtr, x: u8) {
-        self.view().write(ptr.to_u64(), &[x]).expect("write u8");
-    }
-
-    fn write_u16(&mut self, ptr: GuestPtr, x: u16) {
-        self.view()
-            .write(ptr.to_u64(), &x.to_le_bytes())
-            .expect("write u16");
-    }
-
-    fn write_u32(&mut self, ptr: GuestPtr, x: u32) {
-        self.view()
-            .write(ptr.to_u64(), &x.to_le_bytes())
-            .expect("write u32");
-    }
-
-    fn write_u64(&mut self, ptr: GuestPtr, x: u64) {
-        self.view()
-            .write(ptr.to_u64(), &x.to_le_bytes())
-            .expect("write u64");
-    }
+    fn write_u8(&mut self, ptr: GuestPtr, x: u8) { self.write_slice(ptr, &[x]) }
+    fn write_u16(&mut self, ptr: GuestPtr, x: u16) { self.write_slice(ptr, &x.to_le_bytes()) }
+    fn write_u32(&mut self, ptr: GuestPtr, x: u32) { self.write_slice(ptr, &x.to_le_bytes()) }
+    fn write_u64(&mut self, ptr: GuestPtr, x: u64) { self.write_slice(ptr, &x.to_le_bytes()) }
 
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
         let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
