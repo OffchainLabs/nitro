@@ -81,7 +81,7 @@ pub fn fd_write<M: MemAccess, E: ExecEnv>(
     }
     let mut size = 0;
     for i in 0..iovecs_len {
-        let ptr = iovecs_ptr + i * 8;
+        let ptr = iovecs_ptr + i.checked_mul(8).expect("iovec offset overflow");
         let len = mem.read_u32(ptr + 4);
         let ptr = mem.read_u32(ptr); // TODO: string might be split across utf-8 character boundary
         let data = mem.read_slice(GuestPtr::new(ptr), len as usize);
