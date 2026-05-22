@@ -386,3 +386,114 @@ fn create_constructor_nested_create() {
     let steps = build_steps(calldata, stylus_addr());
     run_named("create_nested_create", steps);
 }
+
+// ── Stylus's own create/create2 hostios (parallel path to factory CREATE) ──
+
+fn do_create_calldata(endowment: U256, init_code: &[u8]) -> Bytes {
+    let mut out = Vec::with_capacity(4 + 96 + init_code.len());
+    out.extend_from_slice(&selector("doCreate(uint256,bytes)"));
+    out.extend_from_slice(&endowment.to_be_bytes::<32>());
+    let mut off32 = [0u8; 32];
+    off32[31] = 0x40;
+    out.extend_from_slice(&off32);
+    let mut len32 = [0u8; 32];
+    len32[24..32].copy_from_slice(&(init_code.len() as u64).to_be_bytes());
+    out.extend_from_slice(&len32);
+    out.extend_from_slice(init_code);
+    while out.len() % 32 != 0 {
+        out.push(0);
+    }
+    Bytes::from(out)
+}
+
+fn do_create2_calldata(endowment: U256, salt: B256, init_code: &[u8]) -> Bytes {
+    let mut out = Vec::with_capacity(4 + 128 + init_code.len());
+    out.extend_from_slice(&selector("doCreate2(uint256,bytes32,bytes)"));
+    out.extend_from_slice(&endowment.to_be_bytes::<32>());
+    out.extend_from_slice(salt.as_slice());
+    let mut off32 = [0u8; 32];
+    off32[31] = 0x60;
+    out.extend_from_slice(&off32);
+    let mut len32 = [0u8; 32];
+    len32[24..32].copy_from_slice(&(init_code.len() as u64).to_be_bytes());
+    out.extend_from_slice(&len32);
+    out.extend_from_slice(init_code);
+    while out.len() % 32 != 0 {
+        out.push(0);
+    }
+    Bytes::from(out)
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_sload() {
+    let calldata = do_create_calldata(U256::ZERO, &ctor_sload_only());
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_create_sload", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_sstore() {
+    let calldata = do_create_calldata(U256::ZERO, &ctor_sstore());
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_create_sstore", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_with_endowment() {
+    let calldata = do_create_calldata(U256::from(1000u64), &ctor_sload_only());
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_create_endowment", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create2_hostio_sload() {
+    let calldata = do_create2_calldata(U256::ZERO, B256::ZERO, &ctor_sload_only());
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_create2_sload", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create2_hostio_collision() {
+    let mut steps = build_steps(
+        do_create2_calldata(U256::ZERO, B256::ZERO, &ctor_sload_only()),
+        stylus_addr(),
+    );
+    let tx2 = signed(
+        4,
+        Some(stylus_addr()),
+        do_create2_calldata(U256::ZERO, B256::ZERO, &ctor_sload_only()),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("second tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx2, idx));
+    run_named("stylus_create2_collision", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_returns_ef_prefix() {
+    let runtime: &[u8] = &[0xef, 0x00, 0x00];
+    let init = wrap_init_code(runtime);
+    let calldata = do_create_calldata(U256::ZERO, &init);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_create_ef_prefix", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_oversize() {
+    let mut runtime = vec![0x00u8; 25_000];
+    runtime[0] = 0xfe;
+    let init = wrap_init_code(&runtime);
+    let calldata = do_create_calldata(U256::ZERO, &init);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_create_oversize", steps);
+}
