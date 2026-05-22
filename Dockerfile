@@ -141,6 +141,7 @@ RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
 
 FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -333,8 +334,21 @@ COPY --from=node-builder  /workspace/target/bin/el-proxy                 /usr/lo
 COPY --from=node-builder  /workspace/target/bin/filtering-report         /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/genesis-generator        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/transaction-filterer     /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/validator                /usr/local/bin/
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
+USER user
+
+# The nitro-node-rust-validator runs a single Rust validation server that handles all WASM module roots.
+FROM nitro-node AS nitro-node-rust-validator
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd curl netcat-traditional && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+COPY --from=prover-export /bin/validator /usr/local/bin/
+COPY scripts/rust-val-entry.sh /usr/local/bin/
+ENTRYPOINT [ "/usr/local/bin/rust-val-entry.sh" ]
 USER user
 
 # The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.

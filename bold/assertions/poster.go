@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/util"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -105,11 +105,11 @@ func (m *Manager) advanceChainPointer(ctx context.Context, assertionId protocol.
 // PostAssertion differs depending on whether or not the validator is currently staked.
 // It advances through any assertions that already exist onchain before attempting
 // to post a genuinely new one, ensuring the chain tracking stays up to date.
-func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Assertion], error) {
+func (m *Manager) PostAssertion(ctx context.Context) (util_containers.Option[protocol.Assertion], error) {
 	if !m.isReadyToPost {
 		m.awaitPostingSignal(ctx)
 	}
-	none := option.None[protocol.Assertion]()
+	none := util_containers.None[protocol.Assertion]()
 
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
@@ -132,7 +132,7 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 		}
 
 		// If the validator is already staked, we post an assertion and move existing stake to it.
-		var assertionOpt option.Option[protocol.Assertion]
+		var assertionOpt util_containers.Option[protocol.Assertion]
 		var postErr error
 		if staked {
 			assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -184,8 +184,8 @@ func (m *Manager) PostAssertionBasedOnParent(
 		parentCreationInfo *protocol.AssertionCreatedInfo,
 		newState *protocol.ExecutionState,
 	) (protocol.Assertion, error),
-) (option.Option[protocol.Assertion], error) {
-	none := option.None[protocol.Assertion]()
+) (util_containers.Option[protocol.Assertion], error) {
+	none := util_containers.None[protocol.Assertion]()
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return none, errors.New("inbox max count not a uint64")
 	}
@@ -234,7 +234,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 		if errors.Is(err, sol.ErrAlreadyExists) {
 			// The assertion already exists on-chain. Return it with the error
 			// so the caller can advance the chain pointer.
-			return option.Some(assertion), err
+			return util_containers.Some(assertion), err
 		}
 		return none, err
 	}
@@ -247,7 +247,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	)
 
 	m.sendToConfirmationQueue(assertion.Id(), "PostAssertionBasedOnParent")
-	return option.Some(assertion), nil
+	return util_containers.Some(assertion), nil
 }
 
 func (m *Manager) waitToPostIfNeeded(

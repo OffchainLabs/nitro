@@ -280,6 +280,23 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
     }
 }
 
+/// Sets the inclusive ending parent-chain block hash for the range of parent-chain blocks over
+/// which MEL message extraction will execute.
+///
+/// # Safety
+/// `mach` must point to a valid, non-null `Machine`. `block_hash` must point to a readable,
+/// 32-byte-aligned `Bytes32`; the callee dereferences and copies it. Passing a null or unaligned
+/// `block_hash` is undefined behavior.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_set_end_parent_chain_block_hash(
+    mach: *mut Machine,
+    block_hash: *const Bytes32,
+) {
+    unsafe {
+        (*mach).set_end_parent_chain_block_hash(*block_hash);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
     unsafe {

@@ -103,7 +103,11 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 	return validationClient, nil
 }
 
-func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
+func (c *ValidationClient) StartValidators(moduleRoots []common.Hash) error {
+	ctx, err := c.GetContextSafe()
+	if err != nil {
+		return fmt.Errorf("getting context: %w", err)
+	}
 	for _, mr := range moduleRoots {
 		if c.config.CreateStreams {
 			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), c.redisClient); err != nil {
@@ -111,17 +115,18 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 			}
 		}
 		if _, exists := c.producers[mr]; exists {
-			log.Warn("Producer already exists for module root", "hash", mr)
+			log.Info("Producer already exists for module root", "hash", mr)
 			continue
 		}
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
 			c.redisClient, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), &c.config.ProducerConfig)
 		if err != nil {
-			log.Warn("failed init redis for %v: %w", mr, err)
+			log.Warn("failed init redis", "mr", mr, "err", err)
 			continue
 		}
 		c.producers[mr] = p
 		c.moduleRoots = append(c.moduleRoots, mr)
+		c.StartAndTrackChild(p)
 	}
 	return nil
 }
@@ -146,9 +151,6 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
-	for _, p := range c.producers {
-		c.StartAndTrackChild(p)
-	}
 	return nil
 }
 

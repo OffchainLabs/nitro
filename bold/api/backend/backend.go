@@ -21,8 +21,8 @@ import (
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge/chain"
 	"github.com/offchainlabs/nitro/bold/challenge/tracker"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type BusinessLogicProvider interface {
@@ -34,7 +34,7 @@ type BusinessLogicProvider interface {
 }
 
 type EdgeTrackerFetcher interface {
-	GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*tracker.Tracker]
+	GetEdgeTracker(edgeId protocol.EdgeId) containers.Option[*tracker.Tracker]
 }
 
 type Backend struct {

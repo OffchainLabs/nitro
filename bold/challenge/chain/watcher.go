@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge/tree"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
@@ -34,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -79,7 +79,7 @@ type Watcher struct {
 	validatorName               string
 	numBigStepLevels            uint8
 	initialSyncCompleted        atomic.Bool
-	apiDB                       db.Database
+	apiDB                       containers.Option[db.Database]
 	assertionConfirmingInterval time.Duration
 	averageTimeForBlockCreation time.Duration
 	evilEdgesByLevel            *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]
@@ -95,7 +95,7 @@ func New(
 	chain protocol.AssertionChain,
 	histChecker state.HistoryChecker,
 	validatorName string,
-	apiDB db.Database,
+	apiDB containers.Option[db.Database],
 	assertionConfirmingInterval time.Duration,
 	averageTimeForBlockCreation time.Duration,
 	trackChallengeParentAssertionHashes []protocol.AssertionHash,
@@ -907,7 +907,7 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 				confirmableAtBlock,
 				w.chain,
 				w.averageTimeForBlockCreation,
-				option.Some(edge.Id()),
+				containers.Some(edge.Id()),
 			)
 			if err != nil {
 				logLevel := log.Error
@@ -979,7 +979,7 @@ func (w *Watcher) saveEdgeToDB(
 	edge protocol.SpecEdge,
 	isRoyal bool,
 ) error {
-	if api.IsNil(w.apiDB) {
+	if w.apiDB.IsNone() {
 		return nil
 	}
 	start, startCommit := edge.StartCommitment()
@@ -1046,7 +1046,7 @@ func (w *Watcher) saveEdgeToDB(
 	if cumulative == math.MaxUint64 {
 		cumulative = (1 << 63) - 1
 	}
-	return w.apiDB.InsertEdge(&api.JsonEdge{
+	return w.apiDB.Unwrap().InsertEdge(&api.JsonEdge{
 		Id:                  edge.Id().Hash,
 		ChallengeLevel:      uint8(edge.GetChallengeLevel()),
 		StartHistoryRoot:    startCommit,
