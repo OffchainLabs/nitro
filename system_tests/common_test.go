@@ -503,7 +503,12 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 }
 
 func (b *NodeBuilder) WithChainTipBlockRecorder() *NodeBuilder {
-	b.execConfig.ChainTipBlockRecorder.Enable = true
+	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeChainTip
+	return b
+}
+
+func (b *NodeBuilder) WithLegacyBlockRecorder() *NodeBuilder {
+	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
 	return b
 }
 

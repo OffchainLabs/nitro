@@ -186,48 +186,38 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
 }
 
-type ChainTipBlockRecorderConfig struct {
-	Enable bool `koanf:"enable"`
-}
-
-var DefaultChainTipBlockRecorderConfig = ChainTipBlockRecorderConfig{
-	Enable: false,
-}
-
-func ChainTipBlockRecorderConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultChainTipBlockRecorderConfig.Enable, "enable chain-tip block validation input recording")
-}
-
 type Config struct {
-	ParentChainReader           headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig             `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig         `koanf:"recording-database"`
-	ChainTipBlockRecorder       ChainTipBlockRecorderConfig `koanf:"chain-tip-block-recorder"`
-	TxPreChecker                TxPreCheckerConfig          `koanf:"tx-pre-checker" reload:"hot"`
-	TransactionFiltering        TransactionFilteringConfig  `koanf:"transaction-filtering" reload:"hot"`
-	Forwarder                   ForwarderConfig             `koanf:"forwarder"`
-	ForwardingTarget            string                      `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string                    `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig               `koanf:"caching"`
-	RPC                         arbitrum.Config             `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig             `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                        `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig           `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig          `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64                      `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64                      `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig           `koanf:"vmtrace"`
-	ExposeMultiGas              bool                        `koanf:"expose-multi-gas"`
-	RPCServer                   rpcserver.Config            `koanf:"rpc-server"`
-	ConsensusRPCClient          rpcclient.ClientConfig      `koanf:"consensus-rpc-client" reload:"hot"`
-	DisableArbOwnerEthCall      bool                        `koanf:"disable-arbowner-ethcall"`
-	LegacyZeroBaseFeeUntil      uint64                      `koanf:"legacy-zero-base-fee-until"`
+	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig        `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig         `koanf:"tx-pre-checker" reload:"hot"`
+	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
+	Forwarder                   ForwarderConfig            `koanf:"forwarder"`
+	ForwardingTarget            string                     `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                   `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig              `koanf:"caching"`
+	RPC                         arbitrum.Config            `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig            `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                       `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig          `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig         `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                     `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                     `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig          `koanf:"vmtrace"`
+	ExposeMultiGas              bool                       `koanf:"expose-multi-gas"`
+	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
+	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
+	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
+	LegacyZeroBaseFeeUntil      uint64                     `koanf:"legacy-zero-base-fee-until"`
 
 	forwardingTarget string
 }
 
 func (c *Config) Validate() error {
 	if err := c.Caching.Validate(); err != nil {
+		return err
+	}
+	if err := c.RecordingDatabase.Validate(); err != nil {
 		return err
 	}
 	if err := c.Sequencer.Validate(); err != nil {
@@ -265,7 +255,6 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	BlockRecorderConfigAddOptions(prefix+".recording-database", f)
-	ChainTipBlockRecorderConfigAddOptions(prefix+".chain-tip-block-recorder", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
@@ -306,7 +295,6 @@ var ConfigDefault = Config{
 	Sequencer:                 DefaultSequencerConfig,
 	ParentChainReader:         headerreader.DefaultConfig,
 	RecordingDatabase:         DefaultBlockRecorderConfig,
-	ChainTipBlockRecorder:     DefaultChainTipBlockRecorderConfig,
 	ForwardingTarget:          "",
 	SecondaryForwardingTarget: []string{},
 	TxPreChecker:              DefaultTxPreCheckerConfig,
@@ -407,10 +395,16 @@ func CreateExecutionNode(
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
 
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	var recorder *BlockRecorder
 	var chainTipRecorder *ChainTipBlockRecorder
-	if config.ChainTipBlockRecorder.Enable {
+	switch config.RecordingDatabase.Mode {
+	case BlockRecorderModeOff:
+	case BlockRecorderModeLegacy:
+		recorder = NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	case BlockRecorderModeChainTip:
 		chainTipRecorder = NewChainTipBlockRecorder(execEngine)
+	default:
+		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
 	}
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
@@ -675,7 +669,9 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.TxPublisher.Started() {
 		n.TxPublisher.StopAndWait()
 	}
-	n.Recorder.OrderlyShutdown()
+	if n.Recorder != nil {
+		n.Recorder.OrderlyShutdown()
+	}
 	if n.ParentChain != nil && n.ParentChain.Started() {
 		n.ParentChain.StopAndWait()
 	}
@@ -736,13 +732,18 @@ func (n *ExecutionNode) RecordBlockCreation(
 		if n.ChainTipRecorder != nil {
 			return n.ChainTipRecorder.Recording(pos)
 		}
-
-		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+		if n.Recorder != nil {
+			return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+		}
+		return nil, errors.New("block recorder unavailable")
 	})
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		if n.Recorder == nil {
+			return struct{}{}, nil
+		}
 		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
 	})
 }

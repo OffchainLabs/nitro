@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -88,15 +87,11 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 }
 
 func TestValidationInputsAtExecutesInValidationWorker(t *testing.T) {
-	stateScheme := rawdb.PathScheme
-	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
-		stateScheme = *testflag.StateSchemeFlag
-	}
-	testValidationInputsAtExecutesInValidationWorker(t, stateScheme)
+	testValidationInputsAtExecutesInValidationWorker(t)
 }
 
-func testValidationInputsAtExecutesInValidationWorker(t *testing.T, stateScheme string) {
-	builder, auth, cleanup := setupProgramTestWithScheme(t, false, stateScheme, func(builder *NodeBuilder) {
+func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
+	builder, auth, cleanup := setupProgramTestWithScheme(t, false, "", func(builder *NodeBuilder) {
 		builder.WithChainTipBlockRecorder()
 	})
 	ctx := builder.ctx

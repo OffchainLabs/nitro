@@ -2250,6 +2250,8 @@ func TestReturnDataCost_StylusFixes(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 
+// setupProgramTest is being called by tests that validate blocks.
+// For now validation only works with HashScheme set.
 func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
@@ -2267,7 +2269,12 @@ func setupProgramTestWithScheme(t *testing.T, jit bool, stateScheme string, buil
 		opt(builder)
 	}
 
-	builder.RequireScheme(t, stateScheme)
+	if stateScheme != "" {
+		if builder.execConfig.RecordingDatabase.Mode == gethexec.BlockRecorderModeOff {
+			builder.WithLegacyBlockRecorder()
+		}
+		builder.RequireScheme(t, stateScheme)
+	}
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true

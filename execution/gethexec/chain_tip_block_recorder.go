@@ -43,25 +43,18 @@ type ChainTipBlockRecorder struct {
 	lock sync.Mutex
 	// lastRecording is temporary in-memory storage until we implement a Key-Value backend for chain-tip recordings
 	lastRecording       *chainTipRecording
-	headerPreimages     *containers.LruCache[recentHeaderPreimageKey, arbitrum.RecordedHeaderPreimage]
+	headerPreimageLock  sync.Mutex
+	headerPreimages     *containers.LruCache[common.Hash, arbitrum.RecordedHeaderPreimage]
 	servedTipRecordings atomic.Uint64
 }
 
 func NewChainTipBlockRecorder(execEngine *ExecutionEngine) *ChainTipBlockRecorder {
 	recorder := &ChainTipBlockRecorder{
 		execEngine:      execEngine,
-		headerPreimages: containers.NewLruCache[recentHeaderPreimageKey, arbitrum.RecordedHeaderPreimage](recentHeaderPreimageCacheSlots),
+		headerPreimages: containers.NewLruCache[common.Hash, arbitrum.RecordedHeaderPreimage](recentHeaderPreimageCacheSlots),
 	}
 	execEngine.SetTipRecorder(recorder)
 	return recorder
-}
-
-func copyPreimageMap(preimages map[common.Hash][]byte) map[common.Hash][]byte {
-	copied := make(map[common.Hash][]byte, len(preimages))
-	for hash, preimage := range preimages {
-		copied[hash] = common.CopyBytes(preimage)
-	}
-	return copied
 }
 
 func userWasmKeys(userWasms state.UserWasms) []wasmKey {
@@ -76,33 +69,6 @@ func userWasmKeys(userWasms state.UserWasms) []wasmKey {
 	}
 	return keys
 }
-
-func copyRecordResult(record *execution.RecordResult) *execution.RecordResult {
-	if record == nil {
-		return nil
-	}
-	return &execution.RecordResult{
-		Pos:       record.Pos,
-		BlockHash: record.BlockHash,
-		Preimages: copyPreimageMap(record.Preimages),
-		UserWasms: nil,
-	}
-}
-
-func copyChainTipRecording(recording *chainTipRecording) *chainTipRecording {
-	if recording == nil {
-		return nil
-	}
-	return &chainTipRecording{
-		record:            copyRecordResult(recording.record),
-		blockNumber:       recording.blockNumber,
-		parentHash:        recording.parentHash,
-		firstHeaderNumber: recording.firstHeaderNumber,
-		codeHashes:        recording.codeHashes,
-		wasmKeys:          append([]wasmKey(nil), recording.wasmKeys...),
-	}
-}
-
 func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[common.Hash][]byte, firstHeaderNumber uint64, codeHashes []common.Hash, userWasms state.UserWasms) error {
 	if block == nil {
 		return nil
@@ -142,9 +108,6 @@ func (r *ChainTipBlockRecorder) loadCodePreimages(record *execution.RecordResult
 	}
 	disk := r.execEngine.bc.StateCache().TrieDB().Disk()
 	for _, codeHash := range codeHashes {
-		if _, exists := record.Preimages[codeHash]; exists {
-			continue
-		}
 		code := rawdb.ReadCode(disk, codeHash)
 		if len(code) == 0 {
 			return fmt.Errorf("chain-tip recording missing code preimage for hash %s", codeHash)
@@ -168,9 +131,6 @@ func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, ke
 			asmMap = make(state.ActivatedWasm)
 			record.UserWasms[key.moduleHash] = asmMap
 		}
-		if _, exists := asmMap[key.target]; exists {
-			continue
-		}
 		asm := stateCache.ActivatedAsm(key.target, key.moduleHash)
 		if len(asm) == 0 {
 			return fmt.Errorf("chain-tip recording missing user wasm for module %s target %s", key.moduleHash, key.target)
@@ -182,8 +142,8 @@ func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, ke
 
 func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.RecordResult, error) {
 	r.lock.Lock()
-	recording := copyChainTipRecording(r.lastRecording)
-	r.lock.Unlock()
+	defer r.lock.Unlock()
+	recording := r.lastRecording
 	if recording == nil || recording.record == nil || recording.record.Pos != pos {
 		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
 	}
@@ -229,28 +189,21 @@ func (r *ChainTipBlockRecorder) loadRecentHeaderPreimages(record *execution.Reco
 	return arbitrum.AddRecordedHeaderPreimagesWithCache(record.Preimages, r.execEngine.bc, parentHash, blockNumber-1, firstHeaderNumber, r)
 }
 
-type recentHeaderPreimageKey struct {
-	blockNumber uint64
-	hash        common.Hash
-}
-
-func (r *ChainTipBlockRecorder) GetRecordedHeaderPreimage(blockNumber uint64, hash common.Hash) (arbitrum.RecordedHeaderPreimage, bool) {
+func (r *ChainTipBlockRecorder) GetRecordedHeaderPreimage(hash common.Hash) (arbitrum.RecordedHeaderPreimage, bool) {
 	if r.headerPreimages == nil {
 		return arbitrum.RecordedHeaderPreimage{}, false
 	}
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	entry, ok := r.headerPreimages.Get(recentHeaderPreimageKey{blockNumber: blockNumber, hash: hash})
-	entry.Preimage = common.CopyBytes(entry.Preimage)
+	r.headerPreimageLock.Lock()
+	defer r.headerPreimageLock.Unlock()
+	entry, ok := r.headerPreimages.Get(hash)
 	return entry, ok
 }
 
-func (r *ChainTipBlockRecorder) AddRecordedHeaderPreimage(blockNumber uint64, hash common.Hash, entry arbitrum.RecordedHeaderPreimage) {
+func (r *ChainTipBlockRecorder) AddRecordedHeaderPreimage(hash common.Hash, entry arbitrum.RecordedHeaderPreimage) {
 	if r.headerPreimages == nil {
 		return
 	}
-	entry.Preimage = common.CopyBytes(entry.Preimage)
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	r.headerPreimages.Add(recentHeaderPreimageKey{blockNumber: blockNumber, hash: hash}, entry)
+	r.headerPreimageLock.Lock()
+	defer r.headerPreimageLock.Unlock()
+	r.headerPreimages.Add(hash, entry)
 }

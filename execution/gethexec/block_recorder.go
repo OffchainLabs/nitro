@@ -50,21 +50,39 @@ type BlockRecorder struct {
 }
 
 type BlockRecorderConfig struct {
-	TrieDirtyCache int `koanf:"trie-dirty-cache"`
-	TrieCleanCache int `koanf:"trie-clean-cache"`
-	MaxPrepared    int `koanf:"max-prepared"`
+	Mode           string `koanf:"mode"`
+	TrieDirtyCache int    `koanf:"trie-dirty-cache"`
+	TrieCleanCache int    `koanf:"trie-clean-cache"`
+	MaxPrepared    int    `koanf:"max-prepared"`
 }
 
+const (
+	BlockRecorderModeOff      = "off"
+	BlockRecorderModeLegacy   = "legacy"
+	BlockRecorderModeChainTip = "chain-tip"
+)
+
 var DefaultBlockRecorderConfig = BlockRecorderConfig{
+	Mode:           BlockRecorderModeOff,
 	TrieDirtyCache: 1024,
 	TrieCleanCache: 16,
 	MaxPrepared:    1000,
 }
 
 func BlockRecorderConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".mode", DefaultBlockRecorderConfig.Mode, "block recorder mode for validation inputs (off, legacy, or chain-tip)")
 	f.Int(prefix+".trie-dirty-cache", DefaultBlockRecorderConfig.TrieDirtyCache, "like trie-dirty-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".trie-clean-cache", DefaultBlockRecorderConfig.TrieCleanCache, "like trie-clean-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".max-prepared", DefaultBlockRecorderConfig.MaxPrepared, "max references to store in the recording database")
+}
+
+func (c *BlockRecorderConfig) Validate() error {
+	switch c.Mode {
+	case BlockRecorderModeOff, BlockRecorderModeLegacy, BlockRecorderModeChainTip:
+		return nil
+	default:
+		return fmt.Errorf("unknown block recorder mode %q", c.Mode)
+	}
 }
 
 func NewBlockRecorder(config *BlockRecorderConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
