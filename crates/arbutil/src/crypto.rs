@@ -25,10 +25,3 @@ pub fn keccak_seq(inputs: &[&[u8]]) -> Bytes32 {
         out.assume_init().into()
     }
 }
-
-pub fn siphash(preimage: &[u8], key: &[u8; 16]) -> u64 {
-    use std::hash::Hasher;
-    let mut hasher = SipHasher24::new_with_key(key);
-    hasher.write(preimage);
-    hasher.finish()
-}
