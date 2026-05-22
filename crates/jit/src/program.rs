@@ -22,7 +22,7 @@ use prover::{
 };
 
 use crate::{
-    caller_env::JitEnv,
+    caller_env::{JitEnv, WasmerMemExt},
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     stylus_backend::{MessageFromCothread, exec_wasm},
 };
