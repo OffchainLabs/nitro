@@ -672,13 +672,23 @@ where
 
     let checkpoint = context.journaled_state.inner.checkpoint();
 
-    let caller_nonce = {
+    let (caller_nonce, caller_balance) = {
         let acc = context
             .journaled_state
             .inner
             .load_account(&mut context.journaled_state.database, caller);
-        acc.map(|a| a.data.info.nonce).unwrap_or(0)
+        acc.map(|a| (a.data.info.nonce, a.data.info.balance))
+            .unwrap_or((0, U256::ZERO))
     };
+
+    if caller_balance < endowment {
+        context.journaled_state.inner.checkpoint_revert(checkpoint);
+        return SubCreateResult {
+            address: None,
+            output: Vec::new(),
+            gas_cost: 0,
+        };
+    }
 
     let created_address = if let Some(salt) = salt {
         // CREATE2: keccak256(0xff ++ sender ++ salt ++ keccak256(code))
@@ -770,6 +780,15 @@ where
 
     if success {
         let deployed_code = result.output.to_vec();
+        let max_code_size = context.cfg.max_code_size();
+        if deployed_code.len() > max_code_size {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+            };
+        }
         let is_stylus = deployed_code.len() >= 3
             && deployed_code[0] == 0xEF
             && deployed_code[1] == 0xF0

@@ -467,13 +467,11 @@ pub fn create1<E: EvmApi>(
         Vec::new()
     };
     let (response, ret_len, gas_cost) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    info.buy_gas(gas_cost.0)?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
-        crate::evm_api::CreateResponse::Fail(reason) => {
-            return Err(Escape::Internal(reason));
-        }
+        crate::evm_api::CreateResponse::Fail(_) => Address::ZERO,
     };
-    info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
@@ -528,13 +526,11 @@ pub fn create2<E: EvmApi>(
         Vec::new()
     };
     let (response, ret_len, gas_cost) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    info.buy_gas(gas_cost.0)?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
-        crate::evm_api::CreateResponse::Fail(reason) => {
-            return Err(Escape::Internal(reason));
-        }
+        crate::evm_api::CreateResponse::Fail(_) => Address::ZERO,
     };
-    info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
