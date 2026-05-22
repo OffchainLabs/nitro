@@ -114,7 +114,7 @@ pub struct Programs<D> {
     pub backing_storage: Storage<D>,
     programs: Storage<D>,
     module_hashes: Storage<D>,
-    pub data_pricer: DataPricer<D>,
+    pub data_pricer: DataPricer,
     pub cache_managers: AddressSet<D>,
 }
 

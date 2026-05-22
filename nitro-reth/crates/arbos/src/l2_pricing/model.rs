@@ -274,7 +274,7 @@ impl<D: Database> L2PricingState<D> {
                 continue;
             }
 
-            let window = c.adjustment_window()?;
+            let window = c.adjustment_window(backend)?;
             let max_weight = c.max_weight(backend)?;
 
             if target == 0 || window == 0 || max_weight == 0 {

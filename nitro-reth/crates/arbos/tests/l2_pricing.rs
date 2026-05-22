@@ -113,7 +113,7 @@ fn multi_gas_constraints_add_open_clear() {
     for i in 0..N {
         let c = p.open_multi_gas_constraint_at(i);
         assert_eq!(c.target(b).unwrap(), 100 * i + 1);
-        assert_eq!(c.adjustment_window().unwrap(), (100 * i + 2) as u32);
+        assert_eq!(c.adjustment_window(b).unwrap(), (100 * i + 2) as u32);
         assert_eq!(c.backlog(b).unwrap(), 100 * i + 3);
         assert_eq!(
             c.resource_weight(ResourceKind::Computation).unwrap(),

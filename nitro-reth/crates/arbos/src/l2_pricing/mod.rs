@@ -314,7 +314,7 @@ impl<D: Database> L2PricingState<D> {
         let sto = self.multi_gas_constraints.push(backend)?;
         let c = open_multi_gas_constraint::<D>(sto);
         c.set_target(backend, target)?;
-        c.set_adjustment_window(adjustment_window)?;
+        c.set_adjustment_window(backend, adjustment_window)?;
         c.set_backlog(backend, backlog)?;
         c.set_resource_weights(backend, weights)?;
         Ok(())
