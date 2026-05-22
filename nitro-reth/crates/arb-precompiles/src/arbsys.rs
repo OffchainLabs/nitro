@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use std::{cell::RefCell, collections::HashMap, sync::Mutex};
 
@@ -11,6 +11,7 @@ use crate::{
         derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
         ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE,
     },
+    ArbPrecompileError,
 };
 
 /// ArbSys precompile address (0x64).
@@ -202,7 +203,7 @@ fn handle_arb_block_hash(
                 revert_data.into(),
             ));
         }
-        return Err(PrecompileError::other("invalid block number"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     // L2 block hashes come from the header chain cache — the journal's
@@ -237,11 +238,11 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     let version = arbos_version_from_format(raw_version.data);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
@@ -273,10 +274,10 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let internals = input.internals_mut();
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-        .map_err(|_| PrecompileError::other("sload failed"))?
+        .map_err(ArbPrecompileError::fatal)?
         .data;
     let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
 
@@ -366,9 +367,7 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 fn handle_withdraw_eth(input: &mut PrecompileInput<'_>, destination: Address) -> PrecompileResult {
     if input.is_static {
-        return Err(PrecompileError::other(
-            "cannot call withdrawEth in static context",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     do_send_tx_to_l1(input, destination, &[])
 }
@@ -379,9 +378,7 @@ fn handle_send_tx_to_l1(
     calldata: &[u8],
 ) -> PrecompileResult {
     if input.is_static {
-        return Err(PrecompileError::other(
-            "cannot call sendTxToL1 in static context",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     do_send_tx_to_l1(input, destination, calldata)
 }
@@ -410,14 +407,14 @@ fn do_send_tx_to_l1(
     // Load the ArbOS state account.
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     // ArbOS v41+: prevent sending value when native token owners exist.
     if !value.is_zero() {
         // Version read gas already covered by OpenArbosState overhead above.
         let raw_version = internals
             .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-            .map_err(|_| PrecompileError::other("sload failed"))?
+            .map_err(ArbPrecompileError::fatal)?
             .data;
         let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
         if arbos_version >= 41 {
@@ -426,12 +423,10 @@ fn do_send_tx_to_l1(
             gas_used += STORAGE_READ_COST;
             let num_owners = internals
                 .sload(ARBOS_STATE_ADDRESS, nt_size_slot)
-                .map_err(|_| PrecompileError::other("sload failed"))?
+                .map_err(ArbPrecompileError::fatal)?
                 .data;
             if !num_owners.is_zero() {
-                return Err(PrecompileError::other(
-                    "not allowed to send value when native token owners exist",
-                ));
+                return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
             }
         }
     }
@@ -442,7 +437,7 @@ fn do_send_tx_to_l1(
     gas_used += STORAGE_READ_COST;
     let current_size = internals
         .sload(ARBOS_STATE_ADDRESS, size_slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?
+        .map_err(ArbPrecompileError::fatal)?
         .data;
     let old_size: u64 = current_size.try_into().unwrap_or(0);
 
@@ -473,7 +468,7 @@ fn do_send_tx_to_l1(
     gas_used += storage_write_cost(new_size_val);
     internals
         .sstore(ARBOS_STATE_ADDRESS, size_slot, new_size_val)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     // Emit SendMerkleUpdate events (one per intermediate node, all topics, empty data).
     let update_topic = send_merkle_update_topic();
@@ -551,7 +546,7 @@ fn do_send_tx_to_l1(
     // Read ArbOS version for return value versioning (no gas — uses cached value).
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-        .map_err(|_| PrecompileError::other("sload failed"))?
+        .map_err(ArbPrecompileError::fatal)?
         .data;
     let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
 
@@ -572,23 +567,21 @@ fn do_send_tx_to_l1(
 fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Only callable by address zero (for state export).
     if input.caller != Address::ZERO {
-        return Err(PrecompileError::other(
-            "method can only be called by address zero",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     let mut gas_used = 0u64;
     let internals = input.internals_mut();
 
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let merkle_key = derive_subspace_key(ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE);
     let size_slot = map_slot(merkle_key.as_slice(), 0);
     gas_used += STORAGE_READ_COST;
     let size = internals
         .sload(ARBOS_STATE_ADDRESS, size_slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?
+        .map_err(ArbPrecompileError::fatal)?
         .data;
 
     let size_u64: u64 = size.try_into().unwrap_or(0);
@@ -601,7 +594,7 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
         gas_used += STORAGE_READ_COST;
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
+            .map_err(ArbPrecompileError::fatal)?
             .data;
         partials.push(val);
     }
@@ -672,7 +665,7 @@ fn update_merkle_accumulator(
     item_hash: B256,
     old_size: u64,
     gas_used: &mut u64,
-) -> Result<(u64, Vec<MerkleTreeNodeEvent>, Vec<B256>), PrecompileError> {
+) -> Result<(u64, Vec<MerkleTreeNodeEvent>, Vec<B256>), ArbPrecompileError> {
     let new_size = old_size + 1;
     let mut events = Vec::new();
 
@@ -690,7 +683,7 @@ fn update_merkle_accumulator(
             *gas_used += storage_write_cost(h);
             internals
                 .sstore(ARBOS_STATE_ADDRESS, slot, h)
-                .map_err(|_| PrecompileError::other("sstore failed"))?;
+                .map_err(ArbPrecompileError::fatal)?;
             break;
         }
 
@@ -699,7 +692,7 @@ fn update_merkle_accumulator(
         *gas_used += STORAGE_READ_COST;
         let this_level = internals
             .sload(ARBOS_STATE_ADDRESS, slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
+            .map_err(ArbPrecompileError::fatal)?
             .data;
 
         if this_level.is_zero() {
@@ -708,7 +701,7 @@ fn update_merkle_accumulator(
             *gas_used += storage_write_cost(h);
             internals
                 .sstore(ARBOS_STATE_ADDRESS, slot, h)
-                .map_err(|_| PrecompileError::other("sstore failed"))?;
+                .map_err(ArbPrecompileError::fatal)?;
             break;
         }
 
@@ -724,7 +717,7 @@ fn update_merkle_accumulator(
         *gas_used += STORAGE_WRITE_ZERO_COST;
         internals
             .sstore(ARBOS_STATE_ADDRESS, slot, U256::ZERO)
-            .map_err(|_| PrecompileError::other("sstore failed"))?;
+            .map_err(ArbPrecompileError::fatal)?;
 
         level += 1;
 
@@ -745,7 +738,7 @@ fn update_merkle_accumulator(
         let pslot = map_slot(merkle_key.as_slice(), 2 + i);
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, pslot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
+            .map_err(ArbPrecompileError::fatal)?
             .data;
         partials.push(B256::from(val.to_be_bytes::<32>()));
     }

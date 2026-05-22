@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     interfaces::{IArbWasm, IArbWasmCache},
@@ -10,6 +10,7 @@ use crate::{
         CHAIN_OWNER_SUBSPACE, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
         ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 const ARBITRUM_START_TIME: u64 = 1_421_388_000;
@@ -77,19 +78,19 @@ fn words_for_bytes(n: u64) -> u64 {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
@@ -191,17 +192,17 @@ fn sstore_field(
     input: &mut PrecompileInput<'_>,
     slot: U256,
     value: U256,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
 /// Read `version` (bytes 0-1) and `expiry_days` (bytes 19-20) from slot 0
 /// of the Programs.Params storage word.
-fn read_program_params(input: &mut PrecompileInput<'_>) -> Result<(u16, u16), PrecompileError> {
+fn read_program_params(input: &mut PrecompileInput<'_>) -> Result<(u16, u16), ArbPrecompileError> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     let slot = map_slot(params_key.as_slice(), 0);
@@ -223,7 +224,7 @@ fn program_data_slot(codehash: B256) -> U256 {
 fn caller_has_cache_access(
     input: &mut PrecompileInput<'_>,
     caller: Address,
-) -> Result<(bool, u64), PrecompileError> {
+) -> Result<(bool, u64), ArbPrecompileError> {
     let cm_key = cache_managers_key();
     let cm_by_addr = derive_subspace_key(cm_key.as_slice(), BY_ADDRESS_KEY);
     let addr_hash = address_to_b256(caller);
@@ -361,7 +362,7 @@ fn handle_cache_program(input: &mut PrecompileInput<'_>, addr: Address) -> Preco
         let acct = input
             .internals_mut()
             .load_account(addr)
-            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+            .map_err(ArbPrecompileError::fatal)?;
         acct.data.info.code_hash
     };
     set_program_cached(input, codehash, true, COLD_ACCOUNT_ACCESS_GAS)

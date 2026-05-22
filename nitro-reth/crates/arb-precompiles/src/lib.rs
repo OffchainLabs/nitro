@@ -4,6 +4,7 @@
 //! on-chain access to ArbOS state, gas pricing, retryable tickets,
 //! Stylus WASM management, and node interface queries.
 
+mod error;
 mod interfaces;
 
 mod arbaddresstable;
@@ -57,6 +58,7 @@ pub use arbsys::{
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
+pub use error::ArbPrecompileError;
 pub use nodeinterface::{
     build_fake_tx_bytes, compute_l1_gas_for_estimate, create_nodeinterface_precompile,
     decode_estimate_args, NODE_INTERFACE_ADDRESS,

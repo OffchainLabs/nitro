@@ -1292,6 +1292,7 @@ dependencies = [
  "arb-alloy-predeploys",
  "arb-chainspec",
  "arb-primitives",
+ "arb-storage-errors",
  "arb-stylus",
  "arbos",
  "hex",

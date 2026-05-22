@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     interfaces::IArbAddressTable,
@@ -9,6 +9,7 @@ use crate::{
         derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ARBOS_STATE_ADDRESS,
         ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 /// ArbAddressTable precompile address (0x66).
@@ -58,19 +59,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     // Track gas in the accumulator so revert paths (which return
     // `accumulated_gas` via `gas_check`) include each SLOAD this method
     // performed. Success paths set their own `PrecompileOutput::new` total,
@@ -83,11 +84,11 @@ fn sstore_field(
     input: &mut PrecompileInput<'_>,
     slot: U256,
     value: U256,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(storage_write_cost(value));
     Ok(())
 }
@@ -144,9 +145,7 @@ fn handle_lookup(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileRe
 
     let value = sload_field(input, member_slot)?;
     if value == U256::ZERO {
-        return Err(PrecompileError::other(
-            "address does not exist in AddressTable",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     // Stored value is the 1-based index, so subtract 1.
@@ -163,7 +162,7 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>, index_u256: U256) -> Pre
     let gas_limit = input.gas;
     let index: u64 = index_u256
         .try_into()
-        .map_err(|_| PrecompileError::other("index too large"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
     load_arbos(input)?;
 
     let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
@@ -172,9 +171,7 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>, index_u256: U256) -> Pre
     let value = sload_field(input, entry_slot)?;
 
     if value == U256::ZERO {
-        return Err(PrecompileError::other(
-            "index does not exist in AddressTable",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     // OAS(1) + numItems(1) + backing(1) + argsCost(3) + resultCost(3).
@@ -214,7 +211,7 @@ fn handle_register(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     let num_items = sload_field(input, num_items_slot)?;
     let num_items_u64: u64 = num_items
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid numItems"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
     let new_num_items = num_items_u64 + 1;
     sstore_field(input, num_items_slot, U256::from(new_num_items))?;
 
@@ -287,26 +284,26 @@ fn handle_decompress(
     let data_len = input.data.len();
     let ioffset: usize = offset
         .try_into()
-        .map_err(|_| PrecompileError::other("offset too large"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     if ioffset >= buf.len() {
-        return Err(PrecompileError::other("offset out of bounds"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     let slice = &buf[ioffset..];
 
     load_arbos(input)?;
 
     // Try to RLP-decode as byte string first.
-    let (decoded, bytes_read) =
-        rlp_decode_bytes(slice).map_err(|_| PrecompileError::other("RLP decode failed"))?;
+    let (decoded, bytes_read) = rlp_decode_bytes(slice)
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     let (addr, final_bytes_read) = if decoded.len() == 20 {
         // Raw 20-byte address.
         (Address::from_slice(&decoded), bytes_read)
     } else {
         // Re-decode as u64 index.
-        let (index, idx_bytes_read) =
-            rlp_decode_u64(slice).map_err(|_| PrecompileError::other("RLP decode index failed"))?;
+        let (index, idx_bytes_read) = rlp_decode_u64(slice)
+            .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
         let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
 
@@ -314,9 +311,7 @@ fn handle_decompress(
         let num_items_slot = map_slot(table_key.as_slice(), 0);
         let num_items = sload_field(input, num_items_slot)?;
         if U256::from(index) >= num_items {
-            return Err(PrecompileError::other(
-                "index does not exist in AddressTable",
-            ));
+            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
         }
 
         let entry_slot = map_slot(table_key.as_slice(), index + 1);

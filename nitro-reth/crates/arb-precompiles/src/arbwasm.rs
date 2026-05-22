@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     interfaces::IArbWasm,
@@ -10,6 +10,7 @@ use crate::{
         NETWORK_FEE_ACCOUNT_OFFSET, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
         ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 /// ArbWasm precompile address (0x71).
@@ -309,25 +310,25 @@ fn params_expiry_days(params_word: &[u8; 32]) -> u16 {
     u16::from_be_bytes([params_word[19], params_word[20]])
 }
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
 /// Load the packed StylusParams word (slot 0) from storage.
-fn load_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], PrecompileError> {
+fn load_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], ArbPrecompileError> {
     load_arbos(input)?;
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
@@ -342,7 +343,7 @@ fn load_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], Precomp
 fn load_params_and_program(
     input: &mut PrecompileInput<'_>,
     codehash: B256,
-) -> Result<([u8; 32], [u8; 32]), PrecompileError> {
+) -> Result<([u8; 32], [u8; 32]), ArbPrecompileError> {
     load_arbos(input)?;
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
 
@@ -365,11 +366,11 @@ fn load_params_and_program(
 fn get_account_codehash(
     input: &mut PrecompileInput<'_>,
     address: Address,
-) -> Result<B256, PrecompileError> {
+) -> Result<B256, ArbPrecompileError> {
     let account = input
         .internals_mut()
         .load_account(address)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(account.data.info.code_hash)
 }
 
@@ -467,7 +468,7 @@ fn revert_sol_error(payload: Vec<u8>, input_gas: u64) -> PrecompileResult {
     crate::charge_precompile_gas(COPY_GAS * (payload.len() as u64).div_ceil(32));
     let gas = crate::get_precompile_gas();
     if gas > input_gas {
-        return Err(PrecompileError::OutOfGas);
+        return Err(ArbPrecompileError::OutOfGas.into());
     }
     Ok(PrecompileOutput::new_reverted(gas, payload.into()))
 }
@@ -532,7 +533,7 @@ fn handle_activate_program(
         let account = input
             .internals_mut()
             .load_account(program_address)
-            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+            .map_err(ArbPrecompileError::fatal)?;
         account.data.info.code_hash
     };
 
@@ -540,7 +541,7 @@ fn handle_activate_program(
         let code_account = input
             .internals_mut()
             .load_account_code(program_address)
-            .map_err(|e| PrecompileError::other(format!("load_account_code: {e:?}")))?;
+            .map_err(ArbPrecompileError::fatal)?;
         code_account
             .data
             .code()
@@ -560,7 +561,7 @@ fn handle_activate_program(
         let val = input
             .internals_mut()
             .sload(ARBOS_STATE_ADDRESS, slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
+            .map_err(ArbPrecompileError::fatal)?
             .data;
         val.to_be_bytes::<32>()
     };
@@ -626,9 +627,9 @@ fn handle_activate_program(
         &mut gas_for_prover,
     ) {
         Ok(info) => info,
-        Err(e) => {
+        Err(_) => {
             crate::charge_precompile_gas(gas_available);
-            return Err(PrecompileError::other(format!("{e}")));
+            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
         }
     };
 
@@ -650,7 +651,7 @@ fn handle_activate_program(
             module_hash_slot,
             U256::from_be_bytes(info.module_hash.0),
         )
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     let data_pricer_key = derive_subspace_key(programs_key.as_slice(), &[3]);
     let demand: u32 =
@@ -677,7 +678,7 @@ fn handle_activate_program(
             map_slot(data_pricer_key.as_slice(), 0),
             U256::from(new_demand),
         )
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     input
         .internals_mut()
@@ -686,7 +687,7 @@ fn handle_activate_program(
             map_slot(data_pricer_key.as_slice(), 2),
             U256::from(time),
         )
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
     let exponent = if inertia > 0 {
@@ -717,7 +718,7 @@ fn handle_activate_program(
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, program_slot, U256::from_be_bytes(pd))
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
     // Activation `value` depends on call site:
@@ -803,7 +804,7 @@ fn handle_activate_program(
         total = gas_used, args = args_cost, prover = prover_gas_used,
         event = event_gas, ret = return_gas, "activateProgram total gas");
     if gas_used > input.gas {
-        return Err(PrecompileError::OutOfGas);
+        return Err(ArbPrecompileError::OutOfGas.into());
     }
     Ok(PrecompileOutput::new(gas_used, return_data.into()))
 }
@@ -882,7 +883,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
             map_slot(data_pricer_key.as_slice(), 0),
             U256::from(new_demand),
         )
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     input
         .internals_mut()
@@ -891,7 +892,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
             map_slot(data_pricer_key.as_slice(), 2),
             U256::from(time),
         )
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
     let exponent = if inertia > 0 {
@@ -913,7 +914,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, program_slot, U256::from_be_bytes(pd))
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
     // See `handle_activate_program` for the call-frame-value rationale.
@@ -969,7 +970,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     // No return value for keepalive
     let gas_used = crate::get_precompile_gas();
     if gas_used > input.gas {
-        return Err(PrecompileError::OutOfGas);
+        return Err(ArbPrecompileError::OutOfGas.into());
     }
     Ok(PrecompileOutput::new(gas_used, Vec::new().into()))
 }

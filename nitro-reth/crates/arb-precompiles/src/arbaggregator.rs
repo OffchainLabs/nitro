@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::SolInterface;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     interfaces::IArbAggregator,
@@ -9,6 +9,7 @@ use crate::{
         derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
         L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 /// ArbAggregator precompile address (0x6d).
@@ -89,19 +90,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
@@ -110,11 +111,11 @@ fn sstore_field(
     input: &mut PrecompileInput<'_>,
     slot: U256,
     value: U256,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
@@ -139,7 +140,10 @@ fn poster_info_key(poster: Address) -> B256 {
 }
 
 /// Check if caller is a chain owner via the address set membership check.
-fn is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> Result<bool, PrecompileError> {
+fn is_chain_owner(
+    input: &mut PrecompileInput<'_>,
+    addr: Address,
+) -> Result<bool, ArbPrecompileError> {
     let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
     let by_address_key = derive_subspace_key(owner_key.as_slice(), &[0]);
     let addr_b256 = B256::left_padding_from(addr.as_slice());
@@ -157,9 +161,7 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) ->
     let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
     let is_member = sload_field(input, member_slot)?;
     if is_member == U256::ZERO {
-        return Err(PrecompileError::other(
-            "ArbAggregator: getFeeCollector: poster not exists",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     let info_key = poster_info_key(poster);
@@ -188,9 +190,7 @@ fn handle_set_fee_collector(
     let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
     let is_member = sload_field(input, member_slot)?;
     if is_member == U256::ZERO {
-        return Err(PrecompileError::other(
-            "ArbAggregator: setFeeCollector: poster not exists",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     // Read the current fee collector for the auth check.
@@ -205,9 +205,7 @@ fn handle_set_fee_collector(
     if caller != poster && caller != old_collector {
         let is_owner = is_chain_owner(input, caller)?;
         if !is_owner {
-            return Err(PrecompileError::other(
-                "only a batch poster, its fee collector, or chain owner may change the fee collector",
-            ));
+            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
         }
     }
 
@@ -234,7 +232,7 @@ fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let size = sload_field(input, size_slot)?;
     let count: u64 = size
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     const MAX_MEMBERS: u64 = 1024;
     let count = count.min(MAX_MEMBERS);
@@ -271,7 +269,7 @@ fn handle_add_batch_poster(
 
     // Verify caller is a chain owner.
     if !is_chain_owner(input, caller)? {
-        return Err(PrecompileError::other("must be called by chain owner"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     let addrs_key = poster_addrs_key();
@@ -295,7 +293,7 @@ fn handle_add_batch_poster(
     let size = sload_field(input, size_slot)?;
     let size_u64: u64 = size
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
     let new_size = size_u64 + 1;
 
     // Store the new poster at position (1 + size) in the backing storage.

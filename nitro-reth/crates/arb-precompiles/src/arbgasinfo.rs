@@ -3,7 +3,7 @@ use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use revm::{
     context_interface::block::Block,
-    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+    precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
 };
 
 use crate::{
@@ -14,6 +14,7 @@ use crate::{
         vector_length_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
         ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 /// ArbGasInfo precompile address (0x6c).
@@ -188,19 +189,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
@@ -257,7 +258,7 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
         let account = input
             .internals_mut()
             .load_account(L1_PRICER_FUNDS_POOL_ADDRESS)
-            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+            .map_err(ArbPrecompileError::fatal)?;
         account.data.info.balance
     };
 

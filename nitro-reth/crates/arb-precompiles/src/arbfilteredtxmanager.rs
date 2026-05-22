@@ -9,6 +9,7 @@ use crate::{
         derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
         ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
     },
+    ArbPrecompileError,
 };
 
 /// ArbFilteredTransactionsManager precompile address (0x74).
@@ -86,32 +87,32 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-fn load_accounts(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_accounts(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     input
         .internals_mut()
         .load_account(FILTERED_TX_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
 
-fn sload_filtered(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_filtered(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(FILTERED_TX_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
@@ -120,11 +121,11 @@ fn sstore_filtered(
     input: &mut PrecompileInput<'_>,
     slot: U256,
     value: U256,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(FILTERED_TX_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     let cost = if value.is_zero() { 5_000 } else { SSTORE_GAS };
     crate::charge_precompile_gas(cost);
     Ok(())
@@ -140,7 +141,7 @@ fn filtered_tx_slot(tx_hash: &B256) -> U256 {
 fn is_transaction_filterer(
     input: &mut PrecompileInput<'_>,
     addr: Address,
-) -> Result<bool, PrecompileError> {
+) -> Result<bool, ArbPrecompileError> {
     // TransactionFilterers is at subspace [11] in ArbOS state.
     // byAddress sub-storage is at [0] within the address set.
     let filterer_key = derive_subspace_key(ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE);
@@ -177,9 +178,7 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Pre
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, caller)? {
-        return Err(PrecompileError::other(
-            "caller is not a transaction filterer",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     let slot = filtered_tx_slot(&tx_hash);
@@ -204,9 +203,7 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> 
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, caller)? {
-        return Err(PrecompileError::other(
-            "caller is not a transaction filterer",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     let slot = filtered_tx_slot(&tx_hash);

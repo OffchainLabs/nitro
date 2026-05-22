@@ -1,6 +1,8 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::Address;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileResult};
+
+use crate::ArbPrecompileError;
 
 /// ArbosActs precompile address (0xa4b05).
 pub const ARBOSACTS_ADDRESS: Address = Address::new([
@@ -13,5 +15,5 @@ pub fn create_arbosacts_precompile() -> DynPrecompile {
 }
 
 fn handler(_input: PrecompileInput<'_>) -> PrecompileResult {
-    Err(PrecompileError::other("caller is not ArbOS"))
+    Err(ArbPrecompileError::empty_revert(0).into())
 }

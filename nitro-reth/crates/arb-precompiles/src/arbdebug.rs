@@ -2,7 +2,7 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::{
-    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+    precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
 
@@ -12,6 +12,7 @@ use crate::{
         derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
         ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 /// ArbDebug precompile address (0xff).
@@ -55,7 +56,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         ArbDebugCalls::legacyError(_) => {
             crate::init_precompile_gas_pure(input_len);
-            Err(PrecompileError::other("example legacy error"))
+            Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
         }
         ArbDebugCalls::panic(_) => {
             if let Some(r) = crate::check_method_version(
@@ -82,7 +83,7 @@ fn handle_become_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
@@ -120,7 +121,7 @@ fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> Pr
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     emit_basic_event(input, !flag, value);
     emit_mixed_event(input, flag, !flag, value, ARBDEBUG_ADDRESS, caller);
@@ -143,7 +144,7 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // v < 11: view-method log writes are permitted; emit and succeed.
     // v >= 11: framework rejects with ErrWriteProtection.
     if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
-        return Err(PrecompileError::other("cannot emit logs in a view method"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     let gas_limit = input.gas;
@@ -153,7 +154,7 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let value = B256::ZERO;
     let flag = true;
@@ -181,20 +182,24 @@ fn handle_custom_revert(number: u64, gas_limit: u64) -> PrecompileResult {
     crate::sol_error_revert(payload, gas_limit)
 }
 
-fn sload(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let v = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(v.data)
 }
 
-fn sstore(input: &mut PrecompileInput<'_>, slot: U256, value: U256) -> Result<(), PrecompileError> {
+fn sstore(
+    input: &mut PrecompileInput<'_>,
+    slot: U256,
+    value: U256,
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
@@ -229,12 +234,12 @@ fn handle_overwrite_contract_code(
             .code()
             .map(|bc| bc.original_byte_slice().to_vec())
             .unwrap_or_default(),
-        Err(e) => return Err(PrecompileError::other(format!("load_account_code: {e:?}"))),
+        Err(e) => return Err(ArbPrecompileError::fatal(e).into()),
     };
 
     let bytecode = revm::bytecode::Bytecode::new_raw(new_code.clone());
     if let Err(e) = input.internals_mut().set_code(target, bytecode) {
-        return Err(PrecompileError::other(format!("set_code: {e:?}")));
+        return Err(ArbPrecompileError::fatal(e).into());
     }
 
     // ABI-encode `bytes memory oldCode`: offset(0x20) | length(N) | data padded.
