@@ -15,9 +15,9 @@ use arbutil::{
     Bytes20, Bytes32,
     evm::api::{Gas, Ink},
 };
+use caller_env::GuestPtr;
 use prover::programs::config::{CompileConfig, StylusConfig};
 use thiserror::Error;
-use caller_env::GuestPtr;
 use wasmer::{MemoryAccessError, MemoryView};
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
@@ -26,7 +26,11 @@ pub use crate::replay::run;
 
 pub const STACK_SIZE: usize = 1024 * 1024;
 
-pub(crate) fn read_slice(ptr: GuestPtr, len: usize, memory: &MemoryView) -> Result<Vec<u8>, Escape> {
+pub(crate) fn read_slice(
+    ptr: GuestPtr,
+    len: usize,
+    memory: &MemoryView,
+) -> Result<Vec<u8>, Escape> {
     let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
     // SAFETY: read_uninit fills all available space
     Ok(unsafe {

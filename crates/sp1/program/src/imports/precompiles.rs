@@ -1,11 +1,7 @@
 use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    Escape, MaybeEscape, platform,
-    replay::CustomEnvData,
-    state::sp1_env,
-};
+use crate::{Escape, MaybeEscape, platform, replay::CustomEnvData, state::sp1_env};
 
 pub fn ecrecover(
     mut ctx: FunctionEnvMut<CustomEnvData>,
@@ -17,13 +13,7 @@ pub fn ecrecover(
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::arbcrypto::ecrecovery(
-        &mut mem,
-        state,
-        hash,
-        hash_len,
-        sig,
-        sig_len,
-        output,
+        &mut mem, state, hash, hash_len, sig, sig_len, output,
     ))
 }
 

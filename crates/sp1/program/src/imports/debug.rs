@@ -1,7 +1,6 @@
+use caller_env::GuestPtr;
 use prover::value::Value;
 use wasmer::FunctionEnvMut;
-
-use caller_env::GuestPtr;
 
 use crate::{Escape, MaybeEscape, read_slice, stylus::StylusCustomEnvData};
 

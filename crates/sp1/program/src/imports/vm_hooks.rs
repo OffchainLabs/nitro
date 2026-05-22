@@ -6,11 +6,10 @@ use arbutil::{
     },
     pricing::{EVM_API_INK, hostio},
 };
+use caller_env::GuestPtr;
 use eyre::eyre;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 use wasmer::{FunctionEnvMut, MemoryView};
-
-use caller_env::GuestPtr;
 
 use crate::{
     CallInputs, Escape, MaybeEscape, keccak, read_bytes20, read_bytes32, read_slice,
@@ -541,15 +540,15 @@ pub fn block_timestamp(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u
     Ok(data.evm_data.block_timestamp)
 }
 
-pub fn contract_address(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
+pub fn contract_address(
+    mut ctx: FunctionEnvMut<StylusCustomEnvData>,
+    ptr: GuestPtr,
+) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::ADDRESS_BASE_INK)?;
-    memory.write(
-        ptr.into(),
-        data.evm_data.contract_address.as_slice(),
-    )?;
+    memory.write(ptr.into(), data.evm_data.contract_address.as_slice())?;
 
     Ok(())
 }

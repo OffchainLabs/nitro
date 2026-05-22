@@ -3,11 +3,7 @@
 use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    platform,
-    replay::CustomEnvData,
-    state::sp1_env,
-};
+use crate::{platform, replay::CustomEnvData, state::sp1_env};
 
 pub fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
     let (data, _store) = ctx.data_and_store_mut();

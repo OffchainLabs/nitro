@@ -81,4 +81,3 @@ pub(crate) fn sp1_env<'a>(
     let (data, store) = ctx.data_and_store_mut();
     (Sp1MemAccess { memory, store }, data)
 }
-

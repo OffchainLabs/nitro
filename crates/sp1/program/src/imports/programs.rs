@@ -9,13 +9,13 @@
 #![allow(clippy::too_many_arguments)]
 
 use arbutil::evm::{EvmData, api::Gas};
-use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use caller_env::GuestPtr;
+use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use crate::{
-    Escape, JitConfig, MaybeEscape, read_bytes20, read_bytes32, read_slice,
-    replay::CustomEnvData, stylus::MessageToCothread,
+    Escape, JitConfig, MaybeEscape, read_bytes20, read_bytes32, read_slice, replay::CustomEnvData,
+    stylus::MessageToCothread,
 };
 
 /// Hardcoded message ID used by the Arbitrator protocol for program communication.

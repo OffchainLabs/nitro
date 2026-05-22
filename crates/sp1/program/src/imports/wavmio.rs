@@ -5,11 +5,7 @@ use core::ops::Deref;
 use ::caller_env::{GuestPtr, wavmio as caller_env};
 use wasmer::{FunctionEnvMut, MemoryView};
 
-use crate::{
-    Escape, MaybeEscape, read_bytes32,
-    replay::CustomEnvData,
-    state::sp1_env,
-};
+use crate::{Escape, MaybeEscape, read_bytes32, replay::CustomEnvData, state::sp1_env};
 
 pub fn get_global_state_bytes32(
     mut ctx: FunctionEnvMut<CustomEnvData>,

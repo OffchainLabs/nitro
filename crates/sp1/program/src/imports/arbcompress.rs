@@ -3,11 +3,7 @@
 use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    Escape,
-    replay::CustomEnvData,
-    state::sp1_env,
-};
+use crate::{Escape, replay::CustomEnvData, state::sp1_env};
 
 #[allow(clippy::too_many_arguments)]
 pub fn brotli_compress(

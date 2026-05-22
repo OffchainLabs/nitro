@@ -8,7 +8,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use caller_env::GuestPtr;
 use arbutil::{
     Bytes20, Bytes32,
     evm::{
@@ -19,6 +18,7 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
+use caller_env::GuestPtr;
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
 use prover::programs::{
