@@ -606,8 +606,6 @@ where
         ..sub_inputs
     };
 
-    // If the loaded bytecode carries the Stylus discriminant, dispatch it
-    // through the WASM runtime instead of the EVM interpreter.
     if arb_precompiles::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
         && arb_stylus::is_stylus_program(&bytecode)
     {
@@ -674,7 +672,6 @@ where
 
     let checkpoint = context.journaled_state.inner.checkpoint();
 
-    // Compute CREATE/CREATE2 address
     let caller_nonce = {
         let acc = context
             .journaled_state
@@ -706,31 +703,31 @@ where
         Address::from_slice(&alloy_primitives::keccak256(&rlp_buf)[12..])
     };
 
-    // Increment caller nonce
-    let _ = context
-        .journaled_state
-        .inner
-        .load_account(&mut context.journaled_state.database, caller);
-    if let Some(acc) = context.journaled_state.inner.state.get_mut(&caller) {
-        acc.info.nonce += 1;
-        context
+    {
+        use revm::context_interface::journaled_state::account::JournaledAccountTr;
+        let bumped = match context
             .journaled_state
             .inner
-            .nonce_bump_journal_entry(caller);
+            .load_account_mut(&mut context.journaled_state.database, caller)
+        {
+            Ok(mut caller_acc) => caller_acc.data.bump_nonce(),
+            Err(_) => false,
+        };
+        if !bumped {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+            };
+        }
     }
 
-    // Transfer endowment
-    if !endowment.is_zero()
-        && context
-            .journaled_state
-            .inner
-            .transfer(
-                &mut context.journaled_state.database,
-                caller,
-                created_address,
-                endowment,
-            )
-            .is_err()
+    if context
+        .journaled_state
+        .inner
+        .load_account(&mut context.journaled_state.database, created_address)
+        .is_err()
     {
         context.journaled_state.inner.checkpoint_revert(checkpoint);
         return SubCreateResult {
@@ -740,9 +737,23 @@ where
         };
     }
 
-    // Run init code as EVM
+    let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
+    if context
+        .journaled_state
+        .inner
+        .create_account_checkpoint(caller, created_address, endowment, spec)
+        .is_err()
+    {
+        context.journaled_state.inner.checkpoint_revert(checkpoint);
+        return SubCreateResult {
+            address: None,
+            output: Vec::new(),
+            gas_cost: gas,
+        };
+    }
+
     let init_inputs = CallInputs {
-        input: CallInput::Bytes(code.to_vec().into()),
+        input: CallInput::Bytes(Bytes::new()),
         gas_limit: gas,
         target_address: created_address,
         bytecode_address: created_address,
@@ -756,14 +767,34 @@ where
 
     let result = run_evm_bytecode(context, &init_inputs, code, gas);
     let success = result.result.is_ok();
-    let gas_used = gas.saturating_sub(result.gas.remaining());
 
     if success {
-        // Store the returned bytecode as the contract's code
         let deployed_code = result.output.to_vec();
+        let is_stylus = deployed_code.len() >= 3
+            && deployed_code[0] == 0xEF
+            && deployed_code[1] == 0xF0
+            && deployed_code[2] == 0x00;
+        if !deployed_code.is_empty() && deployed_code[0] == 0xEF && !is_stylus {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+            };
+        }
+        let deposit_cost = context.cfg.gas_params().code_deposit_cost(deployed_code.len());
+        let after_deposit_remaining = result.gas.remaining().saturating_sub(deposit_cost);
+        if result.gas.remaining() < deposit_cost {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+            };
+        }
+        let gas_used = gas.saturating_sub(after_deposit_remaining);
         let code_hash = alloy_primitives::keccak256(&deployed_code);
         let bytecode = revm::bytecode::Bytecode::new_raw(deployed_code.into());
-        // Ensure the account is loaded into state
         let _ = context
             .journaled_state
             .inner
@@ -775,15 +806,16 @@ where
         context.journaled_state.inner.checkpoint_commit();
         SubCreateResult {
             address: Some(created_address),
-            output: Vec::new(), // success doesn't return data
+            output: Vec::new(),
             gas_cost: gas_used,
         }
     } else {
         let output = result.output.to_vec();
+        let gas_used = gas.saturating_sub(result.gas.remaining());
         context.journaled_state.inner.checkpoint_revert(checkpoint);
         SubCreateResult {
             address: None,
-            output, // revert returns data
+            output,
             gas_cost: gas_used,
         }
     }
@@ -871,7 +903,6 @@ where
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
 
-    // Run the interpreter in a loop, handling nested calls/creates
     loop {
         let action = interpreter.run_plain(&instructions.instruction_table, context);
 
@@ -1046,7 +1077,6 @@ where
     let arbos_version = arb_precompiles::get_arbos_version();
     let block_timestamp = arb_precompiles::get_block_timestamp();
 
-    // ── Read and validate program metadata ──────────────────────────
     let params_word = match read_params_word(&mut context.journaled_state) {
         Some(w) => w,
         None => {
@@ -1065,7 +1095,6 @@ where
     };
     let program = Program::from_storage(program_word, block_timestamp);
 
-    // Validate: program must be activated, correct version, not expired.
     if program.version == 0 || program.version != params.version {
         tracing::warn!(target: "stylus", codehash = %code_hash, program_ver = program.version, params_ver = params.version, "program version mismatch");
         return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
@@ -1476,6 +1505,11 @@ type InnerRevmEvm<DB, I> = RevmEvm<
     EthFrame,
 >;
 
+struct CreateFrameCtx {
+    caller: Address,
+    checkpoint: revm::context_interface::journaled_state::JournalCheckpoint,
+}
+
 /// Arbitrum EVM with frame-level Stylus dispatch and custom opcodes.
 ///
 /// Implements [`EvmTr`] directly to intercept Stylus WASM calls in
@@ -1483,6 +1517,7 @@ type InnerRevmEvm<DB, I> = RevmEvm<
 pub struct ArbEvm<DB: Database, I> {
     inner: InnerRevmEvm<DB, I>,
     inspect: bool,
+    create_ctx_stack: Vec<CreateFrameCtx>,
 }
 
 impl<DB, I> ArbEvm<DB, I>
@@ -1490,7 +1525,11 @@ where
     DB: Database,
 {
     pub fn new(inner: InnerRevmEvm<DB, I>, inspect: bool) -> Self {
-        Self { inner, inspect }
+        Self {
+            inner,
+            inspect,
+            create_ctx_stack: Vec::new(),
+        }
     }
 
     pub fn into_inner(self) -> InnerRevmEvm<DB, I> {
@@ -1580,6 +1619,17 @@ where
             _ => false,
         };
 
+        // For Create frames: capture a checkpoint so we can revert if EIP-3541
+        // rejects the deployed bytecode (we keep revm's check disabled because
+        // legitimate Stylus contracts start with 0xEF).
+        if let FrameInput::Create(inputs) = &frame_input.frame_input {
+            let cp = self.inner.ctx.journal_mut().checkpoint();
+            self.create_ctx_stack.push(CreateFrameCtx {
+                caller: inputs.caller(),
+                checkpoint: cp,
+            });
+        }
+
         // Intercept Stylus WASM calls before they reach EthFrame/precompiles.
         if let Some(bytecode) = is_stylus_call(&frame_input) {
             if let FrameInput::Call(ref inputs) = frame_input.frame_input {
@@ -1630,10 +1680,50 @@ where
     #[inline]
     fn frame_return_result(
         &mut self,
-        result: FrameResult,
+        mut result: FrameResult,
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
         // Pop the caller pushed by frame_init for this frame.
         arb_precompiles::pop_caller_frame();
+
+        // EIP-3541: reject runtime starting with 0xEF unless it's the Stylus
+        // marker (0xEF 0xF0 0x00). revm's global check is disabled so Stylus
+        // can deploy; we re-apply it here with the Stylus exception.
+        if let FrameResult::Create(ref mut outcome) = result {
+            let ctx = self.create_ctx_stack.pop();
+            if outcome.instruction_result().is_ok() {
+                if let Some(addr) = outcome.address {
+                    let code_bytes: Vec<u8> = self
+                        .inner
+                        .ctx
+                        .journal_mut()
+                        .code(addr)
+                        .map(|c| c.data.to_vec())
+                        .unwrap_or_default();
+                    let starts_with_ef = code_bytes.first() == Some(&0xEF);
+                    let is_stylus = code_bytes.len() >= 3
+                        && code_bytes[0] == 0xEF
+                        && code_bytes[1] == 0xF0
+                        && code_bytes[2] == 0x00;
+                    if starts_with_ef && !is_stylus {
+                        if let Some(ctx) = ctx {
+                            self.inner.ctx.journal_mut().checkpoint_revert(ctx.checkpoint);
+                            use revm::context_interface::journaled_state::account::JournaledAccountTr;
+                            if let Ok(mut caller_acc) =
+                                self.inner.ctx.journal_mut().load_account_mut(ctx.caller)
+                            {
+                                let _ = caller_acc.data.bump_nonce();
+                            }
+                        }
+                        outcome.address = None;
+                        outcome.result.result =
+                            InstructionResult::CreateContractStartingWithEF;
+                        outcome.result.output = Bytes::new();
+                        outcome.result.gas.spend_all();
+                    }
+                }
+            }
+        }
+
         self.inner.frame_return_result(result)
     }
 }

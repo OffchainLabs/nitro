@@ -340,6 +340,7 @@ fn arb_cfg_env(chain_id: u64, spec: SpecId, arbos_version: u64) -> CfgEnv {
     // code on L2. skipTransactionChecks() skips this for those types.
     cfg.disable_eip3607 = true;
     // Stylus programs start with 0xEF; allow deployment once Stylus is live.
+    // Non-Stylus 0xEF prefixes are re-rejected in ArbEvm::frame_return_result.
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
         cfg.disable_eip3541 = true;
     }
