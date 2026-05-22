@@ -9,13 +9,12 @@ use std::{
 
 use arbutil::Bytes32;
 use bitvec::prelude::*;
-use digest::Digest;
 use enum_iterator::Sequence;
 use parking_lot::Mutex;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
+use tiny_keccak::{Hasher, Keccak};
 
 mod zerohashes;
 #[cfg(feature = "counters")]
@@ -133,11 +132,13 @@ pub struct Merkle {
 }
 
 fn hash_node(ty: MerkleType, a: impl AsRef<[u8]>, b: impl AsRef<[u8]>) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update(ty.get_prefix());
-    h.update(a);
-    h.update(b);
-    h.finalize().into()
+    let mut h = Keccak::v256();
+    h.update(ty.get_prefix().as_bytes());
+    h.update(a.as_ref());
+    h.update(b.as_ref());
+    let mut out = [0u8; 32];
+    h.finalize(&mut out);
+    out.into()
 }
 
 const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> &'static Bytes32 {

@@ -6,13 +6,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{borrow::Cow, collections::HashSet};
 
 use arbutil::Bytes32;
-use digest::Digest;
 use eyre::{Result, bail};
 use parking_lot::Mutex;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
+use tiny_keccak::{Hasher, Keccak};
 
 use crate::{
     merkle::{Merkle, MerkleType},
@@ -46,10 +45,12 @@ pub struct Memory {
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update("Memory leaf:");
-    h.update(bytes);
-    h.finalize().into()
+    let mut h = Keccak::v256();
+    h.update(b"Memory leaf:");
+    h.update(&bytes);
+    let mut out = [0u8; 32];
+    h.finalize(&mut out);
+    out.into()
 }
 
 fn round_up_to_power_of_two(mut input: usize) -> usize {
@@ -154,12 +155,14 @@ impl Memory {
     pub fn hash(&self) -> Bytes32 {
         #[cfg(feature = "counters")]
         MEM_HASH_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut h = Keccak256::new();
-        h.update("Memory:");
-        h.update((self.buffer.len() as u64).to_be_bytes());
-        h.update(self.max_size.to_be_bytes());
-        h.update(self.merkelize().root());
-        h.finalize().into()
+        let mut h = Keccak::v256();
+        h.update(b"Memory:");
+        h.update(&(self.buffer.len() as u64).to_be_bytes());
+        h.update(&self.max_size.to_be_bytes());
+        h.update(self.merkelize().root().as_ref());
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     pub fn get_u8(&self, idx: u64) -> Option<u8> {
