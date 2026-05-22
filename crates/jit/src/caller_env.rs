@@ -18,7 +18,7 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     fn jit_env(&mut self) -> (WasmerMem<'_>, &mut WasmEnv) {
         let memory = self.data().memory.clone().unwrap();
         let (wenv, store) = self.data_and_store_mut();
-        (WasmerMem { memory, store }, wenv)
+        (WasmerMem::new(memory, store), wenv)
     }
 }
 

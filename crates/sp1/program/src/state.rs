@@ -79,7 +79,7 @@ pub(crate) fn sp1_env<'a>(
 ) -> (WasmerMem<'a>, &'a mut CustomEnvData) {
     let memory = ctx.data().memory.clone().unwrap();
     let (data, store) = ctx.data_and_store_mut();
-    (WasmerMem { memory, store }, data)
+    (WasmerMem::new(memory, store), data)
 }
 
 /// Converts a wasmer `Ptr` (WasmPtr<u32>) to a caller-env `GuestPtr`.

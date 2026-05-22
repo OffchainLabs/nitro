@@ -39,11 +39,15 @@ impl<T> From<GuestPtr> for WasmPtr<T> {
 }
 
 pub struct WasmerMem<'s> {
-    pub memory: Memory,
-    pub store: StoreMut<'s>,
+    memory: Memory,
+    store: StoreMut<'s>,
 }
 
-impl WasmerMem<'_> {
+impl<'s> WasmerMem<'s> {
+    pub fn new(memory: Memory, store: StoreMut<'s>) -> Self {
+        Self { memory, store }
+    }
+
     fn view(&self) -> MemoryView<'_> {
         self.memory.view(&self.store)
     }
