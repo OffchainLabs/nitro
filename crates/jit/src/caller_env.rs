@@ -22,7 +22,6 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     }
 }
 
-
 impl ExecEnv for JitExecEnv<'_> {
     fn advance_time(&mut self, ns: u64) {
         self.wenv.go_state.time += ns;

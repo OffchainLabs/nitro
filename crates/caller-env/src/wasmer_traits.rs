@@ -1,9 +1,10 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use alloc::vec::Vec;
+
 use arbutil::{Bytes20, Bytes32};
 use wasmer::{FromToNativeWasmType, Memory, MemoryView, StoreMut, WasmPtr};
-use alloc::vec::Vec;
 
 use crate::{Errno, GuestPtr, MemAccess};
 
@@ -61,24 +62,44 @@ impl WasmerMem<'_> {
 }
 
 impl MemAccess for WasmerMem<'_> {
-    fn read_u8(&self, ptr: GuestPtr) -> u8 { self.read_fixed::<1>(ptr)[0] }
-    fn read_u16(&self, ptr: GuestPtr) -> u16 { u16::from_le_bytes(self.read_fixed(ptr)) }
-    fn read_u32(&self, ptr: GuestPtr) -> u32 { u32::from_le_bytes(self.read_fixed(ptr)) }
-    fn read_u64(&self, ptr: GuestPtr) -> u64 { u64::from_le_bytes(self.read_fixed(ptr)) }
+    fn read_u8(&self, ptr: GuestPtr) -> u8 {
+        self.read_fixed::<1>(ptr)[0]
+    }
+    fn read_u16(&self, ptr: GuestPtr) -> u16 {
+        u16::from_le_bytes(self.read_fixed(ptr))
+    }
+    fn read_u32(&self, ptr: GuestPtr) -> u32 {
+        u32::from_le_bytes(self.read_fixed(ptr))
+    }
+    fn read_u64(&self, ptr: GuestPtr) -> u64 {
+        u64::from_le_bytes(self.read_fixed(ptr))
+    }
 
-    fn write_u8(&mut self, ptr: GuestPtr, x: u8) { self.write_slice(ptr, &[x]) }
-    fn write_u16(&mut self, ptr: GuestPtr, x: u16) { self.write_slice(ptr, &x.to_le_bytes()) }
-    fn write_u32(&mut self, ptr: GuestPtr, x: u32) { self.write_slice(ptr, &x.to_le_bytes()) }
-    fn write_u64(&mut self, ptr: GuestPtr, x: u64) { self.write_slice(ptr, &x.to_le_bytes()) }
+    fn write_u8(&mut self, ptr: GuestPtr, x: u8) {
+        self.write_slice(ptr, &[x])
+    }
+    fn write_u16(&mut self, ptr: GuestPtr, x: u16) {
+        self.write_slice(ptr, &x.to_le_bytes())
+    }
+    fn write_u32(&mut self, ptr: GuestPtr, x: u32) {
+        self.write_slice(ptr, &x.to_le_bytes())
+    }
+    fn write_u64(&mut self, ptr: GuestPtr, x: u64) {
+        self.write_slice(ptr, &x.to_le_bytes())
+    }
 
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
         let mut data = vec![0u8; len];
-        self.view().read(ptr.to_u64(), &mut data).expect("read slice");
+        self.view()
+            .read(ptr.to_u64(), &mut data)
+            .expect("read slice");
         data
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
-        self.read_slice(ptr, N).try_into().expect("read fixed bytes")
+        self.read_slice(ptr, N)
+            .try_into()
+            .expect("read fixed bytes")
     }
 
     fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]) {
