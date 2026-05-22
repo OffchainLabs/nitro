@@ -3,7 +3,6 @@
 
 use std::mem::MaybeUninit;
 
-use siphasher::sip::SipHasher24;
 use tiny_keccak::{Hasher, Keccak};
 
 use crate::Bytes32;
