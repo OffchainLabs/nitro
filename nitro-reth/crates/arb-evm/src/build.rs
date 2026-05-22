@@ -353,11 +353,11 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     /// and create/update the hooks.
     fn load_state_params<D: Database>(
         &mut self,
+        state: &mut revm::database::State<D>,
         arb_state: &ArbosState<D, impl arbos::burn::Burner>,
     ) {
         let arbos_version = arb_state.arbos_version();
         self.arb_ctx.arbos_version = arbos_version;
-        // Set thread-locals for precompile access.
         arb_precompiles::set_arbos_version(arbos_version);
         arb_precompiles::set_block_timestamp(self.arb_ctx.block_timestamp);
         arb_precompiles::set_current_l2_block(self.arb_ctx.l2_block_number);
@@ -367,8 +367,6 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             self.arb_ctx.l1_block_number,
         );
 
-        // Recent-WASMs LRU is per-block. Reset at block start so cross-block hits
-        // don't falsely flag a program as cached and skip the init_gas charge.
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
             let cap = arb_state
                 .programs
@@ -380,8 +378,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             arb_precompiles::reset_recent_wasms(0);
         }
 
-        // Set gas backlog for Redeem precompile's ShrinkBacklog cost computation.
-        if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog() {
+        if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog(state) {
             arb_precompiles::set_current_gas_backlog(backlog);
         }
 
@@ -391,7 +388,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         if let Ok(addr) = arb_state.infra_fee_account() {
             self.arb_ctx.infra_fee_account = addr;
         }
-        if let Ok(level) = arb_state.brotli_compression_level() {
+        if let Ok(level) = arb_state.brotli_compression_level(state) {
             self.arb_ctx.brotli_compression_level = level;
         }
         if let Ok(price) = arb_state.l1_pricing_state.price_per_unit() {
@@ -403,11 +400,13 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
 
         let per_block_gas_limit = arb_state
             .l2_pricing_state
-            .per_block_gas_limit()
+            .per_block_gas_limit(state)
             .unwrap_or(0);
-        let per_tx_gas_limit = arb_state.l2_pricing_state.per_tx_gas_limit().unwrap_or(0);
+        let per_tx_gas_limit = arb_state
+            .l2_pricing_state
+            .per_tx_gas_limit(state)
+            .unwrap_or(0);
 
-        // Read calldata pricing increase feature flag (ArbOS >= 40).
         let calldata_pricing_increase_enabled = arbos_version
             >= arb_chainspec::arbos_version::ARBOS_VERSION_40
             && arb_state
@@ -415,8 +414,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
                 .is_increased_calldata_price_enabled()
                 .unwrap_or(false);
 
-        // Tip-collection flag (ArbOS >= 60).
-        let collect_tips_enabled = arb_state.collect_tips().unwrap_or(false);
+        let collect_tips_enabled = arb_state.collect_tips(state).unwrap_or(false);
 
         let hooks = DefaultArbOsHooks::new(
             self.arb_ctx.coinbase,
@@ -652,6 +650,7 @@ where
         let state_ptr: *mut State<DB> = db as *mut State<DB>;
         if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
             let _ = arb_state.retryable_state.create_retryable(
+                unsafe { &mut *state_ptr },
                 ticket_id,
                 fees.timeout,
                 sender,
@@ -707,10 +706,12 @@ where
                 match ArbosState::open(state_ptr2, SystemBurner::new(None, false)) {
                     Ok(arb_state) => {
                         match arb_state.retryable_state.open_retryable(
-                            ticket_id, 0, // pass 0 so any non-zero timeout is valid
+                            unsafe { &mut *state_ptr2 },
+                            ticket_id,
+                            0,
                         ) {
                             Ok(Some(retryable)) => {
-                                let _ = retryable.increment_num_tries();
+                                let _ = retryable.increment_num_tries(unsafe { &mut *state_ptr2 });
 
                                 match retryable.make_tx(
                                     U256::from(self.arb_ctx.chain_id),
@@ -931,35 +932,32 @@ where
         let state_ptr: *mut State<DB> = db as *mut State<DB>;
 
         if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
-            // Rotate multi-gas fees: copy next-block fees to current-block.
-            let _ = arb_state.l2_pricing_state.commit_multi_gas_fees();
+            // SAFETY: state_ptr is the only mutable reference for the lifetime of this block.
+            let state_ref = unsafe { &mut *state_ptr };
+            let _ = arb_state.l2_pricing_state.commit_multi_gas_fees(state_ref);
 
-            // Read baseFee from L2PricingState BEFORE StartBlock runs.
-            // This value was written by the previous block's StartBlock.
             if let Ok(base_fee) = arb_state.l2_pricing_state.base_fee_wei() {
                 self.arb_ctx.basefee = base_fee;
             }
 
-            // Read state parameters for the execution context and hooks.
-            self.load_state_params(&arb_state);
+            self.load_state_params(unsafe { &mut *state_ptr }, &arb_state);
 
-            // Initialize block gas rate limiting.
             self.block_gas_left = arb_state
                 .l2_pricing_state
-                .per_block_gas_limit()
+                .per_block_gas_limit(unsafe { &mut *state_ptr })
                 .unwrap_or(0);
 
-            // Pre-populate the State's block_hashes cache with L1 block hashes
-            // from ArbOS state. Arbitrum overrides the BLOCKHASH opcode to return
-            // L1 block hashes (not L2). Since block_env.number is already set to
-            // the L1 block number, revm's range check uses L1 numbers — we just
-            // need to ensure the hash lookup returns L1 hashes.
-            if let Ok(l1_block_number) = arb_state.blockhashes.l1_block_number() {
+            if let Ok(l1_block_number) = arb_state
+                .blockhashes
+                .l1_block_number(unsafe { &mut *state_ptr })
+            {
                 let lower = l1_block_number.saturating_sub(256);
-                // SAFETY: state_ptr is valid for the lifetime of this block.
                 let state_ref = unsafe { &mut *state_ptr };
                 for n in lower..l1_block_number {
-                    if let Ok(Some(hash)) = arb_state.blockhashes.block_hash(n) {
+                    if let Ok(Some(hash)) = arb_state
+                        .blockhashes
+                        .block_hash(unsafe { &mut *state_ptr }, n)
+                    {
                         state_ref.block_hashes.insert(n, hash);
                     }
                 }
@@ -1116,21 +1114,21 @@ where
                     let finalise_ptr =
                         &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
                     let arbos_ver = self.arb_ctx.arbos_version;
-                    let mut do_transfer = |from: Address, to: Address, amount: U256| {
-                        // SAFETY: state_ptr is valid for the lifetime of this block.
+                    let closure_state_ptr = state_ptr;
+                    let mut do_transfer = move |from: Address, to: Address, amount: U256| {
                         unsafe {
                             if amount.is_zero()
                                 && arbos_ver < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
                             {
                                 create_zombie_if_deleted(
-                                    &mut *state_ptr,
+                                    &mut *closure_state_ptr,
                                     from,
                                     &*finalise_ptr,
                                     &mut *zombie_ptr,
                                     &mut *touched_ptr,
                                 );
                             }
-                            transfer_balance(&mut *state_ptr, from, to, amount);
+                            transfer_balance(&mut *closure_state_ptr, from, to, amount);
                             if !amount.is_zero() {
                                 (*zombie_ptr).remove(&from);
                             }
@@ -1140,11 +1138,11 @@ where
                         }
                         Ok(())
                     };
-                    let mut do_balance = |addr: Address| -> U256 {
-                        // SAFETY: state_ptr is valid for the lifetime of this block.
-                        unsafe { get_balance(&mut *state_ptr, addr) }
+                    let mut do_balance = move |addr: Address| -> U256 {
+                        unsafe { get_balance(&mut *closure_state_ptr, addr) }
                     };
                     if let Err(e) = internal_tx::apply_internal_tx_update(
+                        unsafe { &mut *state_ptr },
                         &tx_data,
                         &mut arb_state,
                         &ctx,
@@ -1160,12 +1158,12 @@ where
                     }
 
                     if is_start_block {
-                        self.load_state_params(&arb_state);
+                        self.load_state_params(unsafe { &mut *state_ptr }, &arb_state);
 
-                        // Update L1 block number from ArbOS state (canonical
-                        // source for the NUMBER opcode). mixHash value can
-                        // differ from the StartBlock data's value.
-                        if let Ok(l1_block_number) = arb_state.blockhashes.l1_block_number() {
+                        if let Ok(l1_block_number) = arb_state
+                            .blockhashes
+                            .l1_block_number(unsafe { &mut *state_ptr })
+                        {
                             self.arb_ctx.l1_block_number = l1_block_number;
                             arb_precompiles::set_l1_block_number_for_evm(l1_block_number);
                             arb_precompiles::set_cached_l1_block_number(
@@ -1173,12 +1171,13 @@ where
                                 l1_block_number,
                             );
 
-                            // Refresh L1 block hashes cache after StartBlock.
                             let lower = l1_block_number.saturating_sub(256);
-                            // SAFETY: state_ptr is valid for the lifetime of this block.
                             let state_ref = unsafe { &mut *state_ptr };
                             for n in lower..l1_block_number {
-                                if let Ok(Some(hash)) = arb_state.blockhashes.block_hash(n) {
+                                if let Ok(Some(hash)) = arb_state
+                                    .blockhashes
+                                    .block_hash(unsafe { &mut *state_ptr }, n)
+                                {
                                     state_ref.block_hashes.insert(n, hash);
                                 }
                             }
@@ -1335,9 +1334,11 @@ where
 
                 // Open the retryable ticket.
                 if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
-                    let retryable = arb_state
-                        .retryable_state
-                        .open_retryable(info.ticket_id, current_time);
+                    let retryable = arb_state.retryable_state.open_retryable(
+                        unsafe { &mut *state_ptr },
+                        info.ticket_id,
+                        current_time,
+                    );
 
                     match retryable {
                         Ok(Some(_)) => {
@@ -1582,7 +1583,7 @@ where
                     if calldata_units > 0 {
                         let _ = arb_state
                             .l1_pricing_state
-                            .add_to_units_since_update(calldata_units);
+                            .add_to_units_since_update(unsafe { &mut *state_ptr }, calldata_units);
                     }
                     arb_state
                         .filtered_transactions
@@ -1804,7 +1805,7 @@ where
                 if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
                     let _ = arb_state
                         .l1_pricing_state
-                        .subtract_from_units_since_update(units);
+                        .subtract_from_units_since_update(unsafe { &mut *state_ptr }, units);
                 }
             }
             if let Some((retry_sender, prepaid, escrow, escrow_value)) = retry_undo {
@@ -1965,11 +1966,12 @@ where
                     revm::context::Block::timestamp(block).to::<u64>()
                 };
                 if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
-                    if let Ok(Some(retryable)) = arb_state
-                        .retryable_state
-                        .open_retryable(ticket_id, current_time)
-                    {
-                        let _ = retryable.increment_num_tries();
+                    if let Ok(Some(retryable)) = arb_state.retryable_state.open_retryable(
+                        unsafe { &mut *state_ptr },
+                        ticket_id,
+                        current_time,
+                    ) {
+                        let _ = retryable.increment_num_tries(unsafe { &mut *state_ptr });
 
                         if let Ok(retry_tx) = retryable.make_tx(
                             U256::from(self.arb_ctx.chain_id),
@@ -1981,7 +1983,6 @@ where
                             max_refund,
                             submission_fee_refund,
                         ) {
-                            // Compute the actual EIP-2718 retry tx hash.
                             let mut encoded = Vec::new();
                             encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
                             alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
@@ -1994,11 +1995,15 @@ where
                         }
                     }
 
-                    // Shrink the backlog by the donated gas amount.
-                    let _ = arb_state
+                    let _ = arb_state.l2_pricing_state.shrink_backlog(
+                        unsafe { &mut *state_ptr },
+                        donated_gas,
+                        MultiGas::default(),
+                    );
+                    if let Ok(b) = arb_state
                         .l2_pricing_state
-                        .shrink_backlog(donated_gas, MultiGas::default());
-                    if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                        .gas_backlog(unsafe { &mut *state_ptr })
+                    {
                         arb_precompiles::set_current_gas_backlog(b);
                     }
                 }
@@ -2329,14 +2334,16 @@ where
                         }
                     }
 
-                    // Grow gas backlog unconditionally for retryable txs.
-                    // Unlike normal txs, backlog growth is unconditional here.
                     if let Some(arb_state) = arb_state_retry.as_ref() {
                         let _ = arb_state.l2_pricing_state.grow_backlog(
+                            unsafe { &mut *state_ptr },
                             result.compute_gas_for_backlog,
                             pending.charged_multi_gas,
                         );
-                        if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                        if let Ok(b) = arb_state
+                            .l2_pricing_state
+                            .gas_backlog(unsafe { &mut *state_ptr })
+                        {
                             arb_precompiles::set_current_gas_backlog(b);
                         }
                     }
@@ -2426,12 +2433,16 @@ where
                         .saturating_sub(MultiGas::single_dim_gas(pending.poster_gas));
 
                     if let Some(arb_state) = arb_state_post.as_ref() {
-                        // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
-                            let _ = arb_state
+                            let _ = arb_state.l2_pricing_state.grow_backlog(
+                                unsafe { &mut *state_ptr },
+                                dist.compute_gas_for_backlog,
+                                used_multi_gas,
+                            );
+                            if let Ok(b) = arb_state
                                 .l2_pricing_state
-                                .grow_backlog(dist.compute_gas_for_backlog, used_multi_gas);
-                            if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                                .gas_backlog(unsafe { &mut *state_ptr })
+                            {
                                 arb_precompiles::set_current_gas_backlog(b);
                             }
                         }

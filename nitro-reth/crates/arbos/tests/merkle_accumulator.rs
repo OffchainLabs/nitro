@@ -53,17 +53,19 @@ fn in_memory_root_changes_on_append() {
 #[test]
 fn in_memory_and_persistent_match_for_same_inputs() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let root = h.root_storage();
     let persistent = open_merkle_accumulator(root.open_sub_storage(&[0xD0]));
+    let b = unsafe { &mut *state_ptr };
 
     let mut in_mem = InMemoryMerkleAccumulator::new();
     for i in 1..=12u64 {
         let it = item(i);
-        persistent.append(it).unwrap();
+        persistent.append(b, it).unwrap();
         in_mem.append(it);
     }
-    assert_eq!(persistent.size().unwrap(), in_mem.size());
-    assert_eq!(persistent.root().unwrap(), in_mem.root());
+    assert_eq!(persistent.size(b).unwrap(), in_mem.size());
+    assert_eq!(persistent.root(b).unwrap(), in_mem.root());
 }
 
 #[test]
@@ -72,7 +74,7 @@ fn in_memory_from_partials_reconstructs_size() {
     for i in 1..=11u64 {
         m1.append(item(i));
     }
-    let partials = m1.partials().to_vec();
+    let partials = m1.get_partials();
     let m2 = InMemoryMerkleAccumulator::from_partials(partials);
     assert_eq!(m2.size(), m1.size());
     assert_eq!(m2.root(), m1.root());

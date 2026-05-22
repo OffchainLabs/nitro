@@ -1,14 +1,14 @@
 use alloy_primitives::{keccak256, B256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
 
 mod error;
 pub use error::BlockhashesError;
 
 pub struct Blockhashes<D> {
     backing_storage: Storage<D>,
-    l1_block_number: StorageBackedUint64<D>,
+    l1_block_number: StorageBackedUint64,
 }
 
 pub fn initialize_blockhashes<D: Database>(_backing_storage: &Storage<D>) {
@@ -16,8 +16,7 @@ pub fn initialize_blockhashes<D: Database>(_backing_storage: &Storage<D>) {
 }
 
 pub fn open_blockhashes<D: Database>(backing_storage: Storage<D>) -> Blockhashes<D> {
-    let l1_block_number =
-        StorageBackedUint64::new(backing_storage.state_ptr(), backing_storage.base_key(), 0);
+    let l1_block_number = StorageBackedUint64::new(backing_storage.base_key(), 0);
     Blockhashes {
         backing_storage,
         l1_block_number,
@@ -25,12 +24,19 @@ pub fn open_blockhashes<D: Database>(backing_storage: Storage<D>) -> Blockhashes
 }
 
 impl<D: Database> Blockhashes<D> {
-    pub fn l1_block_number(&self) -> Result<u64, BlockhashesError> {
-        Ok(self.l1_block_number.get()?)
+    pub fn l1_block_number<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, BlockhashesError> {
+        Ok(self.l1_block_number.get(backend)?)
     }
 
-    pub fn block_hash(&self, number: u64) -> Result<Option<B256>, BlockhashesError> {
-        let current_number = self.l1_block_number.get()?;
+    pub fn block_hash<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        number: u64,
+    ) -> Result<Option<B256>, BlockhashesError> {
+        let current_number = self.l1_block_number.get(backend)?;
         if number >= current_number || number + 256 < current_number {
             return Ok(None);
         }
@@ -38,13 +44,14 @@ impl<D: Database> Blockhashes<D> {
         Ok(Some(hash))
     }
 
-    pub fn record_new_l1_block(
+    pub fn record_new_l1_block<B: StorageBackend>(
         &self,
+        backend: &mut B,
         number: u64,
         block_hash: B256,
         arbos_version: u64,
     ) -> Result<(), BlockhashesError> {
-        let mut next_number = self.l1_block_number.get()?;
+        let mut next_number = self.l1_block_number.get(backend)?;
 
         if number < next_number {
             return Ok(());
@@ -73,6 +80,6 @@ impl<D: Database> Blockhashes<D> {
 
         self.backing_storage
             .set_by_uint64(1 + (number % 256), block_hash)?;
-        Ok(self.l1_block_number.set(number + 1)?)
+        Ok(self.l1_block_number.set(backend, number + 1)?)
     }
 }

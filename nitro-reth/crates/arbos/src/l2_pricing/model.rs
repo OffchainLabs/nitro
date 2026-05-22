@@ -1,5 +1,6 @@
 use alloy_primitives::U256;
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
+use arb_storage::StorageBackend;
 use revm::Database;
 
 use arb_chainspec::arbos_version as version;
@@ -28,15 +29,18 @@ pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 20_800;
 
 impl<D: Database> L2PricingState<D> {
     /// Determine which gas model to use based on ArbOS version and stored constraints.
-    pub fn gas_model_to_use(&self) -> Result<GasModel, L2PricingError> {
+    pub fn gas_model_to_use<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<GasModel, L2PricingError> {
         if self.arbos_version >= version::ARBOS_VERSION_60 {
-            let mgc_len = self.multi_gas_constraints_length()?;
+            let mgc_len = self.multi_gas_constraints_length(backend)?;
             if mgc_len > 0 {
                 return Ok(GasModel::MultiGasConstraints);
             }
         }
         if self.arbos_version >= version::ARBOS_VERSION_50 {
-            let gc_len = self.gas_constraints_length()?;
+            let gc_len = self.gas_constraints_length(backend)?;
             if gc_len > 0 {
                 return Ok(GasModel::SingleGasConstraints);
             }
@@ -45,124 +49,132 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Grow the gas backlog for the active pricing model.
-    pub fn grow_backlog(
+    pub fn grow_backlog<B: StorageBackend>(
         &self,
+        backend: &mut B,
         used_gas: u64,
         used_multi_gas: MultiGas,
     ) -> Result<(), L2PricingError> {
-        self.update_backlog(BacklogOperation::Grow, used_gas, used_multi_gas)
+        self.update_backlog(backend, BacklogOperation::Grow, used_gas, used_multi_gas)
     }
 
     /// Shrink the gas backlog for the active pricing model.
-    pub fn shrink_backlog(
+    pub fn shrink_backlog<B: StorageBackend>(
         &self,
+        backend: &mut B,
         used_gas: u64,
         used_multi_gas: MultiGas,
     ) -> Result<(), L2PricingError> {
-        self.update_backlog(BacklogOperation::Shrink, used_gas, used_multi_gas)
+        self.update_backlog(backend, BacklogOperation::Shrink, used_gas, used_multi_gas)
     }
 
     /// Dispatch backlog update to the active pricing model.
-    fn update_backlog(
+    fn update_backlog<B: StorageBackend>(
         &self,
+        backend: &mut B,
         op: BacklogOperation,
         used_gas: u64,
         used_multi_gas: MultiGas,
     ) -> Result<(), L2PricingError> {
-        match self.gas_model_to_use()? {
-            GasModel::Legacy | GasModel::Unknown => self.update_legacy_backlog_op(op, used_gas),
+        match self.gas_model_to_use(backend)? {
+            GasModel::Legacy | GasModel::Unknown => {
+                self.update_legacy_backlog_op(backend, op, used_gas)
+            }
             GasModel::SingleGasConstraints => {
-                self.update_single_gas_constraints_backlogs_op(op, used_gas)
+                self.update_single_gas_constraints_backlogs_op(backend, op, used_gas)
             }
             GasModel::MultiGasConstraints => {
-                self.update_multi_gas_constraints_backlogs_op(op, used_multi_gas)
+                self.update_multi_gas_constraints_backlogs_op(backend, op, used_multi_gas)
             }
         }
     }
 
-    fn update_legacy_backlog_op(
+    fn update_legacy_backlog_op<B: StorageBackend>(
         &self,
+        backend: &mut B,
         op: BacklogOperation,
         gas: u64,
     ) -> Result<(), L2PricingError> {
-        let backlog = self.gas_backlog()?;
+        let backlog = self.gas_backlog(backend)?;
         let new_backlog = apply_gas_delta_op(op, backlog, gas);
-        self.set_gas_backlog(new_backlog)
+        self.set_gas_backlog(backend, new_backlog)
     }
 
-    fn update_single_gas_constraints_backlogs_op(
+    fn update_single_gas_constraints_backlogs_op<B: StorageBackend>(
         &self,
+        backend: &mut B,
         op: BacklogOperation,
         gas: u64,
     ) -> Result<(), L2PricingError> {
-        let len = self.gas_constraints_length()?;
+        let len = self.gas_constraints_length(backend)?;
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
-            let backlog = c.backlog()?;
-            c.set_backlog(apply_gas_delta_op(op, backlog, gas))?;
+            let backlog = c.backlog(backend)?;
+            c.set_backlog(backend, apply_gas_delta_op(op, backlog, gas))?;
         }
         Ok(())
     }
 
-    fn update_multi_gas_constraints_backlogs_op(
+    fn update_multi_gas_constraints_backlogs_op<B: StorageBackend>(
         &self,
+        backend: &mut B,
         op: BacklogOperation,
         multi_gas: MultiGas,
     ) -> Result<(), L2PricingError> {
-        let len = self.multi_gas_constraints_length()?;
+        let len = self.multi_gas_constraints_length(backend)?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
             match op {
-                BacklogOperation::Grow => c.grow_backlog(multi_gas)?,
-                BacklogOperation::Shrink => c.shrink_backlog(multi_gas)?,
+                BacklogOperation::Grow => c.grow_backlog(backend, multi_gas)?,
+                BacklogOperation::Shrink => c.shrink_backlog(backend, multi_gas)?,
             }
         }
         Ok(())
     }
 
     /// Update the pricing model for a new block.
-    pub fn update_pricing_model(
+    pub fn update_pricing_model<B: StorageBackend>(
         &self,
+        backend: &mut B,
         time_passed: u64,
         arbos_version: u64,
     ) -> Result<(), L2PricingError> {
-        let _ = arbos_version; // version gating handled by gas_model_to_use via self.arbos_version
-        match self.gas_model_to_use()? {
-            GasModel::Legacy | GasModel::Unknown => self.update_pricing_model_legacy(time_passed),
+        let _ = arbos_version;
+        match self.gas_model_to_use(backend)? {
+            GasModel::Legacy | GasModel::Unknown => {
+                self.update_pricing_model_legacy(backend, time_passed)
+            }
             GasModel::SingleGasConstraints => {
-                self.update_pricing_model_single_constraints(time_passed)
+                self.update_pricing_model_single_constraints(backend, time_passed)
             }
             GasModel::MultiGasConstraints => {
-                self.update_pricing_model_multi_constraints(time_passed)
+                self.update_pricing_model_multi_constraints(backend, time_passed)
             }
         }
     }
 
-    fn update_pricing_model_legacy(&self, time_passed: u64) -> Result<(), L2PricingError> {
-        let speed_limit = self.speed_limit_per_second()?;
+    fn update_pricing_model_legacy<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        time_passed: u64,
+    ) -> Result<(), L2PricingError> {
+        let speed_limit = self.speed_limit_per_second(backend)?;
         let drain = time_passed.saturating_mul(speed_limit);
-        self.update_legacy_backlog_op(BacklogOperation::Shrink, drain)?;
+        self.update_legacy_backlog_op(backend, BacklogOperation::Shrink, drain)?;
 
-        let inertia = self.pricing_inertia()?;
-        let tolerance = self.backlog_tolerance()?;
-        let backlog = self.gas_backlog()?;
+        let inertia = self.pricing_inertia(backend)?;
+        let tolerance = self.backlog_tolerance(backend)?;
+        let backlog = self.gas_backlog(backend)?;
         let min_base_fee = self.min_base_fee_wei()?;
 
-        // Plain `tolerance * speedLimit` (wrapping on overflow).
         let tolerance_limit = tolerance.wrapping_mul(speed_limit);
         let base_fee = if backlog > tolerance_limit {
-            // Divisor: SaturatingUMul(inertia, speedLimit).
-            // Guard against division by zero (speed_limit/inertia are validated nonzero by
-            // ArbOwner).
             let divisor = saturating_cast_to_i64(inertia.saturating_mul(speed_limit));
             if divisor == 0 {
                 return self.set_base_fee_wei(min_base_fee);
             }
-            // SaturatingCast]int64\](backlog - tolerance*speedLimit)
             let excess = saturating_cast_to_i64(backlog.wrapping_sub(tolerance_limit));
-            // NaturalToBips(excess) / SaturatingCastToBips(SaturatingUMul(inertia, speedLimit))
             let exponent_bips = natural_to_bips(excess) / divisor;
-            // BigMulByBips(minBaseFee, ApproxExpBasisPoints(exponentBips, 4))
             self.calc_base_fee_from_exponent(exponent_bips.max(0) as u64)?
         } else {
             min_base_fee
@@ -171,32 +183,27 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(base_fee)
     }
 
-    fn update_pricing_model_single_constraints(
+    fn update_pricing_model_single_constraints<B: StorageBackend>(
         &self,
+        backend: &mut B,
         time_passed: u64,
     ) -> Result<(), L2PricingError> {
-        // Drain backlogs and compute total exponent (sum across all constraints).
-        // Uses signed Bips (int64) arithmetic matching Go.
         let mut total_exponent: i64 = 0;
-        let len = self.gas_constraints_length()?;
+        let len = self.gas_constraints_length(backend)?;
 
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
-            let target = c.target()?;
+            let target = c.target(backend)?;
 
-            // Pay off backlog: gas = SaturatingUMul(timePassed, target)
-            let backlog = c.backlog()?;
+            let backlog = c.backlog(backend)?;
             let gas = time_passed.saturating_mul(target);
             let new_backlog = backlog.saturating_sub(gas);
-            c.set_backlog(new_backlog)?;
+            c.set_backlog(backend, new_backlog)?;
 
-            // Calculate exponent with the formula backlog/divisor
             if new_backlog > 0 {
-                let window = c.adjustment_window()?;
-                // divisor = SaturatingCastToBips(SaturatingUMul(inertia, target))
+                let window = c.adjustment_window(backend)?;
                 let divisor = saturating_cast_to_i64(window.saturating_mul(target));
                 if divisor != 0 {
-                    // NaturalToBips(SaturatingCast]int64\](backlog))
                     let exponent = natural_to_bips(saturating_cast_to_i64(new_backlog)) / divisor;
                     total_exponent = total_exponent.saturating_add(exponent);
                 }
@@ -207,16 +214,15 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(base_fee)
     }
 
-    fn update_pricing_model_multi_constraints(
+    fn update_pricing_model_multi_constraints<B: StorageBackend>(
         &self,
+        backend: &mut B,
         time_passed: u64,
     ) -> Result<(), L2PricingError> {
-        self.update_multi_gas_constraints_backlogs(time_passed)?;
+        self.update_multi_gas_constraints_backlogs(backend, time_passed)?;
 
-        let exponent_per_kind = self.calc_multi_gas_constraints_exponents()?;
+        let exponent_per_kind = self.calc_multi_gas_constraints_exponents(backend)?;
 
-        // Compute base fee per resource kind, store as next-block fee,
-        // and track the maximum for the overall base fee.
         let mut max_base_fee = self.min_base_fee_wei()?;
         let fees = &self.multi_gas_base_fees;
 
@@ -234,55 +240,47 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(max_base_fee)
     }
 
-    fn update_multi_gas_constraints_backlogs(
+    fn update_multi_gas_constraints_backlogs<B: StorageBackend>(
         &self,
+        backend: &mut B,
         time_passed: u64,
     ) -> Result<(), L2PricingError> {
-        let len = self.multi_gas_constraints_length()?;
+        let len = self.multi_gas_constraints_length(backend)?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
-            let target = c.target()?;
-            let backlog = c.backlog()?;
+            let target = c.target(backend)?;
+            let backlog = c.backlog(backend)?;
             let gas = time_passed.saturating_mul(target);
             let new_backlog = backlog.saturating_sub(gas);
-            c.set_backlog(new_backlog)?;
+            c.set_backlog(backend, new_backlog)?;
         }
         Ok(())
     }
 
     /// Calculate exponent (in basis points) per resource kind across all constraints.
-    ///
-    /// Aggregates weighted backlog contributions from each constraint into
-    /// a per-resource-kind exponent array.
-    ///
-    /// Uses signed saturation arithmetic with Bips (int64) computation:
-    /// dividend = NaturalToBips(SaturatingCast]int64\](SaturatingUMul(backlog, weight)))
-    /// divisor  = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target, maxWeight)))
-    /// exp      = dividend / divisor  (signed int64 division)
-    pub fn calc_multi_gas_constraints_exponents(
+    pub fn calc_multi_gas_constraints_exponents<B: StorageBackend>(
         &self,
+        backend: &mut B,
     ) -> Result<[u64; NUM_RESOURCE_KIND], L2PricingError> {
-        let len = self.multi_gas_constraints_length()?;
+        let len = self.multi_gas_constraints_length(backend)?;
         let mut exponent_per_kind = [0i64; NUM_RESOURCE_KIND];
 
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
-            let target = c.target()?;
-            let backlog = c.backlog()?;
+            let target = c.target(backend)?;
+            let backlog = c.backlog(backend)?;
 
             if backlog == 0 {
                 continue;
             }
 
             let window = c.adjustment_window()?;
-            let max_weight = c.max_weight()?;
+            let max_weight = c.max_weight(backend)?;
 
             if target == 0 || window == 0 || max_weight == 0 {
                 continue;
             }
 
-            // divisor = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target,
-            // maxWeight)))
             let divisor_u64 = (window as u64).saturating_mul(target.saturating_mul(max_weight));
             let divisor = saturating_cast_to_i64(divisor_u64);
             if divisor == 0 {
@@ -295,8 +293,6 @@ impl<D: Database> L2PricingState<D> {
                     continue;
                 }
 
-                // dividend = NaturalToBips(SaturatingCast]int64\](SaturatingUMul(backlog,
-                // weight)))
                 let product = backlog.saturating_mul(weight);
                 let cast = saturating_cast_to_i64(product);
                 let dividend = natural_to_bips(cast);
@@ -307,7 +303,6 @@ impl<D: Database> L2PricingState<D> {
             }
         }
 
-        // Convert back to u64 for the caller (exponents are always non-negative).
         let mut result = [0u64; NUM_RESOURCE_KIND];
         for i in 0..NUM_RESOURCE_KIND {
             result[i] = exponent_per_kind[i].max(0) as u64;
@@ -368,10 +363,11 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Rotate next-block multi-gas fees into current-block fees.
-    ///
-    /// Called at block start before executing transactions.
-    pub fn commit_multi_gas_fees(&self) -> Result<(), L2PricingError> {
-        if self.gas_model_to_use()? != GasModel::MultiGasConstraints {
+    pub fn commit_multi_gas_fees<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(), L2PricingError> {
+        if self.gas_model_to_use(backend)? != GasModel::MultiGasConstraints {
             return Ok(());
         }
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
@@ -379,88 +375,76 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Calculate the cost for a backlog update operation.
-    ///
-    /// Version-gated cost accounting:
-    /// - v60+: static cost (StorageReadCost + StorageWriteCost)
-    /// - v51+: overhead for single-gas constraint traversal
-    /// - v50+: base overhead for GasModelToUse() read
-    /// - legacy: read + write for backlog
-    pub fn backlog_update_cost(&self) -> Result<u64, L2PricingError> {
+    pub fn backlog_update_cost<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
         use super::{STORAGE_READ_COST, STORAGE_WRITE_COST};
 
-        // v60+: charge a flat static price regardless of gas model
         if self.arbos_version >= version::ARBOS_VERSION_60 {
             return Ok(MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
         }
 
         let mut result = 0u64;
 
-        // v50+: overhead for reading gas constraints length in GasModelToUse()
         if self.arbos_version >= version::ARBOS_VERSION_50 {
             result += STORAGE_READ_COST;
         }
 
-        // v51+ (multi-constraint fix): per-constraint read+write costs
         if self.arbos_version >= version::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
-            let constraints_length = self.gas_constraints_length()?;
+            let constraints_length = self.gas_constraints_length(backend)?;
             if constraints_length > 0 {
-                // Read length to traverse
                 result += STORAGE_READ_COST;
-                // Read + write backlog for each constraint
                 result += constraints_length * (STORAGE_READ_COST + STORAGE_WRITE_COST);
                 return Ok(result);
             }
-            // No return here -- fallthrough to legacy costs
         }
 
-        // Legacy pricer: single read + write
         result += STORAGE_READ_COST + STORAGE_WRITE_COST;
 
         Ok(result)
     }
 
     /// Set gas constraints from legacy parameters (for upgrades).
-    pub fn set_gas_constraints_from_legacy(&self) -> Result<(), L2PricingError> {
-        self.clear_gas_constraints()?;
-        let target = self.speed_limit_per_second()?;
-        let adjustment_window = self.pricing_inertia()?;
-        let old_backlog = self.gas_backlog()?;
-        let backlog_tolerance = self.backlog_tolerance()?;
+    pub fn set_gas_constraints_from_legacy<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(), L2PricingError> {
+        self.clear_gas_constraints(backend)?;
+        let target = self.speed_limit_per_second(backend)?;
+        let adjustment_window = self.pricing_inertia(backend)?;
+        let old_backlog = self.gas_backlog(backend)?;
+        let backlog_tolerance = self.backlog_tolerance(backend)?;
 
         let backlog = old_backlog.saturating_sub(backlog_tolerance.saturating_mul(target));
-        self.add_gas_constraint(target, adjustment_window, backlog)
+        self.add_gas_constraint(backend, target, adjustment_window, backlog)
     }
 
     /// Convert single-gas constraints to multi-gas constraints (for upgrades).
-    ///
-    /// Iterates existing single-gas constraints, reads their target/window/backlog,
-    /// and creates corresponding multi-gas constraints with equal weights across
-    /// all resource dimensions.
-    pub fn set_multi_gas_constraints_from_single_gas_constraints(
+    pub fn set_multi_gas_constraints_from_single_gas_constraints<B: StorageBackend>(
         &self,
+        backend: &mut B,
     ) -> Result<(), L2PricingError> {
-        self.clear_multi_gas_constraints()?;
+        self.clear_multi_gas_constraints(backend)?;
 
-        let length = self.gas_constraints_length()?;
+        let length = self.gas_constraints_length(backend)?;
 
         for i in 0..length {
             let c = self.open_gas_constraint_at(i);
 
-            let target = c.target()?;
-            let window = c.adjustment_window()?;
-            let backlog = c.backlog()?;
+            let target = c.target(backend)?;
+            let window = c.adjustment_window(backend)?;
+            let backlog = c.backlog(backend)?;
 
-            // Equal weights for all resource kinds.
             let weights = [1u64; NUM_RESOURCE_KIND];
 
-            // Cap adjustment_window to u32::MAX.
             let adjustment_window: u32 = if window > u32::MAX as u64 {
                 u32::MAX
             } else {
                 window as u32
             };
 
-            self.add_multi_gas_constraint(target, adjustment_window, backlog, &weights)?;
+            self.add_multi_gas_constraint(backend, target, adjustment_window, backlog, &weights)?;
         }
         Ok(())
     }
@@ -641,42 +625,45 @@ mod tests {
         let l2_sto = backing.open_sub_storage(&[1]);
 
         // Initialize L2 pricing state
-        super::super::initialize_l2_pricing_state(&l2_sto);
+        super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
         // Verify gasBacklog starts at 0
         let l2_pricing = super::super::open_l2_pricing_state(
             backing.open_sub_storage(&[1]),
             10, // ArbOS v10
         );
-        let initial_backlog = l2_pricing.gas_backlog().unwrap();
+        let initial_backlog = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
         assert_eq!(initial_backlog, 0, "Initial gasBacklog should be 0");
 
         // Grow backlog by 100000 gas
-        let result = l2_pricing.grow_backlog(100_000, MultiGas::default());
+        let result =
+            l2_pricing.grow_backlog(unsafe { &mut *state_ptr }, 100_000, MultiGas::default());
         assert!(result.is_ok(), "grow_backlog should succeed");
 
         // Verify gasBacklog is now 100000
-        let after_grow = l2_pricing.gas_backlog().unwrap();
+        let after_grow = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
         assert_eq!(
             after_grow, 100_000,
             "gasBacklog should be 100000 after grow"
         );
 
         // Grow again by 50000
-        let result = l2_pricing.grow_backlog(50_000, MultiGas::default());
+        let result =
+            l2_pricing.grow_backlog(unsafe { &mut *state_ptr }, 50_000, MultiGas::default());
         assert!(result.is_ok(), "second grow_backlog should succeed");
 
-        let after_second_grow = l2_pricing.gas_backlog().unwrap();
+        let after_second_grow = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
         assert_eq!(
             after_second_grow, 150_000,
             "gasBacklog should be 150000 after second grow"
         );
 
         // Shrink by 30000
-        let result = l2_pricing.shrink_backlog(30_000, MultiGas::default());
+        let result =
+            l2_pricing.shrink_backlog(unsafe { &mut *state_ptr }, 30_000, MultiGas::default());
         assert!(result.is_ok(), "shrink_backlog should succeed");
 
-        let after_shrink = l2_pricing.gas_backlog().unwrap();
+        let after_shrink = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
         assert_eq!(
             after_shrink, 120_000,
             "gasBacklog should be 120000 after shrink"
@@ -810,11 +797,11 @@ mod tests {
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
             // This should read gasBacklog=552756, drain 0, try to write 552756 → no-op
-            let result = l2_pricing.update_pricing_model(0, 20);
+            let result = l2_pricing.update_pricing_model(unsafe { &mut *state_ptr }, 0, 20);
             assert!(result.is_ok(), "update_pricing_model should succeed");
 
             // Verify gasBacklog is still readable as 552756
-            let backlog = l2_pricing.gas_backlog().unwrap();
+            let backlog = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(
                 backlog, 552_756,
                 "gasBacklog should be 552756 after no-op drain"
@@ -1009,16 +996,17 @@ mod tests {
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
-            let backlog_before = l2_pricing.gas_backlog().unwrap();
+            let backlog_before = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(
                 backlog_before, 552_756,
                 "gasBacklog should still be 552756 before grow"
             );
 
-            let result = l2_pricing.grow_backlog(357_751, MultiGas::default());
+            let result =
+                l2_pricing.grow_backlog(unsafe { &mut *state_ptr }, 357_751, MultiGas::default());
             assert!(result.is_ok(), "grow_backlog should succeed");
 
-            let backlog_after = l2_pricing.gas_backlog().unwrap();
+            let backlog_after = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(
                 backlog_after, 910_507,
                 "gasBacklog should be 910507 after grow"
@@ -1176,7 +1164,7 @@ mod tests {
             let backing = Storage::new(state_ptr, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
-            let _ = l2_pricing.update_pricing_model(0, 20);
+            let _ = l2_pricing.update_pricing_model(unsafe { &mut *state_ptr }, 0, 20);
         }
         state.commit(HashMap::default());
 
@@ -1290,15 +1278,16 @@ mod tests {
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
-            let backlog_before = l2_pricing.gas_backlog().unwrap();
+            let backlog_before = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(
                 backlog_before, 552_756,
                 "gasBacklog should be 552756 before grow"
             );
 
-            let _ = l2_pricing.grow_backlog(357_751, MultiGas::default());
+            let _ =
+                l2_pricing.grow_backlog(unsafe { &mut *state_ptr }, 357_751, MultiGas::default());
 
-            let backlog_after = l2_pricing.gas_backlog().unwrap();
+            let backlog_after = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(backlog_after, 910_507, "gasBacklog should be 910507");
         }
 
@@ -1415,7 +1404,7 @@ mod tests {
             let backing = Storage::new(state_ptr, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
-            let _ = l2_pricing.update_pricing_model(0, 20);
+            let _ = l2_pricing.update_pricing_model(unsafe { &mut *state_ptr }, 0, 20);
         }
         state.commit(HashMap::default());
 
@@ -1435,11 +1424,12 @@ mod tests {
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
-            let _backlog_before = l2_pricing.gas_backlog().unwrap();
+            let _backlog_before = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
-            let _ = l2_pricing.grow_backlog(357_751, MultiGas::default());
+            let _ =
+                l2_pricing.grow_backlog(unsafe { &mut *state_ptr }, 357_751, MultiGas::default());
 
-            let _backlog_after = l2_pricing.gas_backlog().unwrap();
+            let _backlog_after = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
         }
 
         // End of block: merge_transitions again
@@ -1582,18 +1572,22 @@ mod tests {
             // Step 2: Initialize L2 pricing state
             let backing = Storage::new(state_ptr, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
-            super::super::initialize_l2_pricing_state(&l2_sto);
+            super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
             // Step 3: Set gas_backlog to 552756 (simulate pre-existing backlog)
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            l2_pricing.set_gas_backlog(552756).unwrap();
-            let pre_start = l2_pricing.gas_backlog().unwrap();
+            l2_pricing
+                .set_gas_backlog(unsafe { &mut *state_ptr }, 552756)
+                .unwrap();
+            let pre_start = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(pre_start, 552756, "Pre-existing backlog should be 552756");
 
             // Step 4: Simulate StartBlock: update_pricing_model(time_passed=0)
-            l2_pricing.update_pricing_model(0, 10).unwrap();
-            let after_start = l2_pricing.gas_backlog().unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 0, 10)
+                .unwrap();
+            let after_start = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(
                 after_start, 552756,
                 "time_passed=0 should not change backlog"
@@ -1616,9 +1610,9 @@ mod tests {
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             l2_pricing2
-                .grow_backlog(357751, MultiGas::default())
+                .grow_backlog(unsafe { &mut *state_ptr }, 357751, MultiGas::default())
                 .unwrap();
-            let after_grow = l2_pricing2.gas_backlog().unwrap();
+            let after_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(after_grow, 552756 + 357751, "backlog should be sum");
 
             // Check cache after grow
@@ -1750,13 +1744,17 @@ mod tests {
 
             let backing = Storage::new(state_ptr, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
-            super::super::initialize_l2_pricing_state(&l2_sto);
+            super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            l2_pricing.set_gas_backlog(552756).unwrap();
-            l2_pricing.update_pricing_model(0, 10).unwrap();
-            let _before_commit = l2_pricing.gas_backlog().unwrap();
+            l2_pricing
+                .set_gas_backlog(unsafe { &mut *state_ptr }, 552756)
+                .unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 0, 10)
+                .unwrap();
+            let _before_commit = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // EVM commit with ArbOS account TOUCHED but no storage changes
             // This simulates what happens when EVM executes a precompile that
@@ -1783,12 +1781,12 @@ mod tests {
             // Now grow_backlog AFTER the EVM commit
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let _read_before_grow = l2_pricing2.gas_backlog().unwrap();
+            let _read_before_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             l2_pricing2
-                .grow_backlog(357751, MultiGas::default())
+                .grow_backlog(unsafe { &mut *state_ptr }, 357751, MultiGas::default())
                 .unwrap();
-            let _after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // Check cache after grow
             let _cache_val2 = state
@@ -1885,12 +1883,16 @@ mod tests {
 
             let backing = Storage::new(state_ptr, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
-            super::super::initialize_l2_pricing_state(&l2_sto);
+            super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            l2_pricing.set_gas_backlog(552756).unwrap();
-            l2_pricing.update_pricing_model(0, 10).unwrap();
+            l2_pricing
+                .set_gas_backlog(unsafe { &mut *state_ptr }, 552756)
+                .unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 0, 10)
+                .unwrap();
 
             // EVM commit with ArbOS account touched AND a storage slot that was
             // read but not written (EvmStorageSlot with original_value == present_value).
@@ -1923,12 +1925,12 @@ mod tests {
             // grow_backlog after commit
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let _read_before_grow = l2_pricing2.gas_backlog().unwrap();
+            let _read_before_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             l2_pricing2
-                .grow_backlog(357751, MultiGas::default())
+                .grow_backlog(unsafe { &mut *state_ptr }, 357751, MultiGas::default())
                 .unwrap();
-            let _after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
@@ -2015,15 +2017,19 @@ mod tests {
 
             let backing = Storage::new(state_ptr, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
-            super::super::initialize_l2_pricing_state(&l2_sto);
+            super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
             // Set initial backlog
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            l2_pricing.set_gas_backlog(552756).unwrap();
+            l2_pricing
+                .set_gas_backlog(unsafe { &mut *state_ptr }, 552756)
+                .unwrap();
 
             // Simulate StartBlock: update_pricing_model writes base_fee
-            l2_pricing.update_pricing_model(0, 10).unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 0, 10)
+                .unwrap();
 
             // First EVM commit (StartBlock internal tx - empty output)
             state.commit(Default::default());
@@ -2061,11 +2067,11 @@ mod tests {
             // commit_transaction)
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let _read_val = l2_pricing2.gas_backlog().unwrap();
+            let _read_val = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             l2_pricing2
-                .grow_backlog(357751, MultiGas::default())
+                .grow_backlog(unsafe { &mut *state_ptr }, 357751, MultiGas::default())
                 .unwrap();
-            let after_grow = l2_pricing2.gas_backlog().unwrap();
+            let after_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(after_grow, 552756 + 357751, "backlog should be sum");
 
             // merge + take_bundle
@@ -2235,12 +2241,14 @@ mod tests {
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
             // Read current backlog — should come from DB
-            let current = l2_pricing.gas_backlog().unwrap();
+            let current = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(current, 552756, "Should read from DB");
 
             // Simulate StartBlock: update_pricing_model(time_passed=0)
-            l2_pricing.update_pricing_model(0, 10).unwrap();
-            let _after_start = l2_pricing.gas_backlog().unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 0, 10)
+                .unwrap();
+            let _after_start = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // EVM commit: empty (StartBlock internal tx)
             {
@@ -2270,12 +2278,12 @@ mod tests {
             // Post-commit: grow_backlog
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
-            let _read_before = l2_pricing2.gas_backlog().unwrap();
+            let _read_before = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             l2_pricing2
-                .grow_backlog(357751, MultiGas::default())
+                .grow_backlog(unsafe { &mut *state_ptr }, 357751, MultiGas::default())
                 .unwrap();
-            let _after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // Check cache
             let _cache_val = state
@@ -2470,12 +2478,14 @@ mod tests {
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
-            let _initial = l2_pricing.gas_backlog().unwrap();
+            let _initial = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // StartBlock with time_passed=1 → drain = 1 * 7_000_000 = 7M
             // 552756 - 7M = 0 (saturating sub)
-            l2_pricing.update_pricing_model(1, 10).unwrap();
-            let _after_drain = l2_pricing.gas_backlog().unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 1, 10)
+                .unwrap();
+            let _after_drain = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // EVM commit
             {
@@ -2487,9 +2497,9 @@ mod tests {
             let l2_pricing2 =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
             l2_pricing2
-                .grow_backlog(357751, MultiGas::default())
+                .grow_backlog(unsafe { &mut *state_ptr }, 357751, MultiGas::default())
                 .unwrap();
-            let _after_grow = l2_pricing2.gas_backlog().unwrap();
+            let _after_grow = l2_pricing2.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // merge + take_bundle
             state.merge_transitions(BundleRetention::Reverts);
@@ -2597,11 +2607,13 @@ mod tests {
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
-            let _initial = l2_pricing.gas_backlog().unwrap();
+            let _initial = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
 
             // Drain with time_passed=1 → 552756 - 7M = 0
-            l2_pricing.update_pricing_model(1, 10).unwrap();
-            let after_drain = l2_pricing.gas_backlog().unwrap();
+            l2_pricing
+                .update_pricing_model(unsafe { &mut *state_ptr }, 1, 10)
+                .unwrap();
+            let after_drain = l2_pricing.gas_backlog(unsafe { &mut *state_ptr }).unwrap();
             assert_eq!(after_drain, 0);
 
             // merge + take_bundle

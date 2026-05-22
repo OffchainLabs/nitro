@@ -66,6 +66,7 @@ fn apply_action(
     action: &Action,
     transfers: &TransferLog,
 ) -> Result<(), SpecError> {
+    let state_ptr = harness.state_ptr();
     match action {
         Action::L1PricingSetPricePerUnit { value } => harness
             .l1_pricing_state()
@@ -73,11 +74,11 @@ fn apply_action(
             .map_err(|_| SpecError::Action("set_price_per_unit".into()))?,
         Action::L1PricingSetUnitsSinceUpdate { value } => harness
             .l1_pricing_state()
-            .set_units_since_update(*value)
+            .set_units_since_update(unsafe { &mut *state_ptr }, *value)
             .map_err(|_| SpecError::Action("set_units_since_update".into()))?,
         Action::L1PricingSetInertia { value } => harness
             .l1_pricing_state()
-            .set_inertia(*value)
+            .set_inertia(unsafe { &mut *state_ptr }, *value)
             .map_err(|_| SpecError::Action("set_inertia".into()))?,
         Action::L1PricingAddToFeesAvailable { amount } => harness
             .l1_pricing_state()
@@ -86,21 +87,21 @@ fn apply_action(
         Action::L1PricingAddPoster { poster, pay_to } => {
             let l1 = harness.l1_pricing_state();
             l1.batch_poster_table()
-                .add_poster(*poster, *pay_to)
+                .add_poster(unsafe { &mut *state_ptr }, *poster, *pay_to)
                 .map_err(|_| SpecError::Action("add_poster".into()))?;
         }
         Action::L1PricingSetPosterFundsDue { poster, amount } => {
             let l1 = harness.l1_pricing_state();
             let bpt = l1.batch_poster_table();
             let bp = bpt
-                .open_poster(*poster, true)
+                .open_poster(unsafe { &mut *state_ptr }, *poster, true)
                 .map_err(|_| SpecError::Action("open_poster".into()))?;
             bp.set_funds_due(*amount, &bpt.total_funds_due)
                 .map_err(|_| SpecError::Action("set_funds_due".into()))?;
         }
         Action::L2PricingSetGasBacklog { value } => harness
             .l2_pricing_state()
-            .set_gas_backlog(*value)
+            .set_gas_backlog(unsafe { &mut *state_ptr }, *value)
             .map_err(|_| SpecError::Action("set_gas_backlog".into()))?,
         Action::L2PricingSetMinBaseFee { value } => harness
             .l2_pricing_state()
@@ -110,7 +111,7 @@ fn apply_action(
             let v = harness.arbos_version();
             harness
                 .l2_pricing_state()
-                .update_pricing_model(*time_passed, v)
+                .update_pricing_model(unsafe { &mut *state_ptr }, *time_passed, v)
                 .map_err(|_| SpecError::Action("update_pricing_model".into()))?;
         }
         Action::L2PricingAddGasConstraint {
@@ -119,42 +120,47 @@ fn apply_action(
             backlog,
         } => harness
             .l2_pricing_state()
-            .add_gas_constraint(*target, *adjustment_window, *backlog)
+            .add_gas_constraint(
+                unsafe { &mut *state_ptr },
+                *target,
+                *adjustment_window,
+                *backlog,
+            )
             .map_err(|_| SpecError::Action("add_gas_constraint".into()))?,
         Action::L2PricingClearGasConstraints => harness
             .l2_pricing_state()
-            .clear_gas_constraints()
+            .clear_gas_constraints(unsafe { &mut *state_ptr })
             .map_err(|_| SpecError::Action("clear_gas_constraints".into()))?,
         Action::BlockhashRecord { number, hash } => {
             let v = harness.arbos_version();
             let root = harness.root_storage();
             let bh = open_blockhashes(root.open_sub_storage(&[BLOCKHASH_SUBSPACE]));
-            bh.record_new_l1_block(*number, *hash, v)
+            bh.record_new_l1_block(unsafe { &mut *state_ptr }, *number, *hash, v)
                 .map_err(|_| SpecError::Action("record_new_l1_block".into()))?;
         }
         Action::AddressTableRegister { address } => {
             let root = harness.root_storage();
             let t = open_address_table(root.open_sub_storage(&[ADDRESS_TABLE_SUBSPACE]));
-            t.register(*address)
+            t.register(unsafe { &mut *state_ptr }, *address)
                 .map_err(|_| SpecError::Action("address_table register".into()))?;
         }
         Action::MerkleAppend { item } => {
             let root = harness.root_storage();
             let m = open_merkle_accumulator(root.open_sub_storage(&[SEND_MERKLE_SUBSPACE]));
-            m.append(*item)
+            m.append(unsafe { &mut *state_ptr }, *item)
                 .map_err(|_| SpecError::Action("merkle append".into()))?;
         }
         Action::ChainOwnerAdd { owner } => {
             let root = harness.root_storage();
             let s = open_address_set(root.open_sub_storage(&[CHAIN_OWNER_SUBSPACE]));
-            s.add(*owner)
+            s.add(unsafe { &mut *state_ptr }, *owner)
                 .map_err(|_| SpecError::Action("chain_owners.add".into()))?;
         }
         Action::ChainOwnerRemove { owner } => {
             let v = harness.arbos_version();
             let root = harness.root_storage();
             let s = open_address_set(root.open_sub_storage(&[CHAIN_OWNER_SUBSPACE]));
-            s.remove(*owner, v)
+            s.remove(unsafe { &mut *state_ptr }, *owner, v)
                 .map_err(|_| SpecError::Action("chain_owners.remove".into()))?;
         }
         Action::RetryableCreate {
@@ -174,6 +180,7 @@ fn apply_action(
             harness
                 .retryable_state()
                 .create_retryable(
+                    unsafe { &mut *state_ptr },
                     *id,
                     *timeout,
                     *from,
@@ -187,10 +194,10 @@ fn apply_action(
         Action::RetryableIncrementNumTries { id, at_time } => {
             let rs = harness.retryable_state();
             let r = rs
-                .open_retryable(*id, *at_time)
+                .open_retryable(unsafe { &mut *state_ptr }, *id, *at_time)
                 .map_err(|_| SpecError::Action("open_retryable".into()))?
                 .ok_or_else(|| SpecError::Action("retryable not found".into()))?;
-            r.increment_num_tries()
+            r.increment_num_tries(unsafe { &mut *state_ptr })
                 .map_err(|_| SpecError::Action("increment_num_tries".into()))?;
         }
         Action::RetryableSetTimeout {
@@ -200,10 +207,10 @@ fn apply_action(
         } => {
             let rs = harness.retryable_state();
             let r = rs
-                .open_retryable(*id, *at_time)
+                .open_retryable(unsafe { &mut *state_ptr }, *id, *at_time)
                 .map_err(|_| SpecError::Action("open_retryable".into()))?
                 .ok_or_else(|| SpecError::Action("retryable not found".into()))?;
-            r.set_timeout(*new_timeout)
+            r.set_timeout(unsafe { &mut *state_ptr }, *new_timeout)
                 .map_err(|_| SpecError::Action("set_timeout".into()))?;
         }
         Action::RetryableDelete { id, escrow_balance } => {
@@ -231,6 +238,7 @@ fn check_assertions(
     a: &Assertions,
     transfers: &TransferLog,
 ) -> Result<(), SpecError> {
+    let state_ptr = harness.state_ptr();
     if let Some(s) = &a.arbos_state {
         let st = harness.arbos_state();
         if let Some(v) = s.arbos_version {
@@ -242,7 +250,8 @@ fn check_assertions(
         if let Some(v) = s.brotli_compression_level {
             ensure_eq(
                 "arbos_state.brotli_compression_level",
-                st.brotli_compression_level().map_err(map_err)?,
+                st.brotli_compression_level(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -252,7 +261,8 @@ fn check_assertions(
         if let Some(v) = s.last_update_time {
             ensure_eq(
                 "l1.last_update_time",
-                l1.last_update_time().map_err(map_err)?,
+                l1.last_update_time(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -266,7 +276,8 @@ fn check_assertions(
         if let Some(v) = s.units_since_update {
             ensure_eq(
                 "l1.units_since_update",
-                l1.units_since_update().map_err(map_err)?,
+                l1.units_since_update(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -278,12 +289,17 @@ fn check_assertions(
             )?;
         }
         if let Some(v) = s.inertia {
-            ensure_eq("l1.inertia", l1.inertia().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l1.inertia",
+                l1.inertia(unsafe { &mut *state_ptr }).map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.per_unit_reward {
             ensure_eq(
                 "l1.per_unit_reward",
-                l1.per_unit_reward().map_err(map_err)?,
+                l1.per_unit_reward(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -337,45 +353,56 @@ fn check_assertions(
         if let Some(v) = s.speed_limit_per_second {
             ensure_eq(
                 "l2.speed_limit_per_second",
-                l2.speed_limit_per_second().map_err(map_err)?,
+                l2.speed_limit_per_second(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(v) = s.gas_backlog {
-            ensure_eq("l2.gas_backlog", l2.gas_backlog().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.gas_backlog",
+                l2.gas_backlog(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.pricing_inertia {
             ensure_eq(
                 "l2.pricing_inertia",
-                l2.pricing_inertia().map_err(map_err)?,
+                l2.pricing_inertia(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(v) = s.backlog_tolerance {
             ensure_eq(
                 "l2.backlog_tolerance",
-                l2.backlog_tolerance().map_err(map_err)?,
+                l2.backlog_tolerance(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(v) = s.per_block_gas_limit {
             ensure_eq(
                 "l2.per_block_gas_limit",
-                l2.per_block_gas_limit().map_err(map_err)?,
+                l2.per_block_gas_limit(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(v) = s.per_tx_gas_limit {
             ensure_eq(
                 "l2.per_tx_gas_limit",
-                l2.per_tx_gas_limit().map_err(map_err)?,
+                l2.per_tx_gas_limit(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(v) = s.gas_constraints_length {
             ensure_eq(
                 "l2.gas_constraints_length",
-                l2.gas_constraints_length().map_err(map_err)?,
+                l2.gas_constraints_length(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -402,26 +429,37 @@ fn check_assertions(
         if let Some(v) = s.l1_block_number {
             ensure_eq(
                 "blockhash.l1_block_number",
-                bh.l1_block_number().map_err(map_err)?,
+                bh.l1_block_number(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(num) = s.has_hash_for {
-            if bh.block_hash(num).map_err(map_err)?.is_none() {
+            if bh
+                .block_hash(unsafe { &mut *state_ptr }, num)
+                .map_err(map_err)?
+                .is_none()
+            {
                 return Err(SpecError::Assertion(format!(
                     "blockhash.has_hash_for {num}: missing"
                 )));
             }
         }
         if let Some(num) = s.no_hash_for {
-            if bh.block_hash(num).map_err(map_err)?.is_some() {
+            if bh
+                .block_hash(unsafe { &mut *state_ptr }, num)
+                .map_err(map_err)?
+                .is_some()
+            {
                 return Err(SpecError::Assertion(format!(
                     "blockhash.no_hash_for {num}: present"
                 )));
             }
         }
         if let Some(check) = &s.hash_for_block_equals {
-            let actual = bh.block_hash(check.block_number).map_err(map_err)?;
+            let actual = bh
+                .block_hash(unsafe { &mut *state_ptr }, check.block_number)
+                .map_err(map_err)?;
             ensure_eq(
                 "blockhash.hash_for_block_equals",
                 actual,
@@ -433,19 +471,21 @@ fn check_assertions(
         if let Some(check) = &s.exists {
             let rs = harness.retryable_state();
             let opened = rs
-                .open_retryable(check.id, check.at_time)
+                .open_retryable(unsafe { &mut *state_ptr }, check.id, check.at_time)
                 .map_err(map_err)?;
             ensure_eq("retryable.exists", opened.is_some(), check.expected)?;
         }
         if let Some(check) = &s.num_tries {
             let rs = harness.retryable_state();
             let opened = rs
-                .open_retryable(check.id, check.at_time)
+                .open_retryable(unsafe { &mut *state_ptr }, check.id, check.at_time)
                 .map_err(map_err)?
                 .ok_or_else(|| SpecError::Assertion("retryable.num_tries: missing".into()))?;
             ensure_eq(
                 "retryable.num_tries",
-                opened.num_tries().map_err(map_err)?,
+                opened
+                    .num_tries(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 check.expected,
             )?;
         }
@@ -454,13 +494,21 @@ fn check_assertions(
         let root = harness.root_storage();
         let m = open_merkle_accumulator(root.open_sub_storage(&[SEND_MERKLE_SUBSPACE]));
         if let Some(v) = s.size {
-            ensure_eq("merkle.size", m.size().map_err(map_err)?, v)?;
+            ensure_eq(
+                "merkle.size",
+                m.size(unsafe { &mut *state_ptr }).map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.root {
-            ensure_eq::<B256>("merkle.root", m.root().map_err(map_err)?, v)?;
+            ensure_eq::<B256>(
+                "merkle.root",
+                m.root(unsafe { &mut *state_ptr }).map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.root_not {
-            let actual = m.root().map_err(map_err)?;
+            let actual = m.root(unsafe { &mut *state_ptr }).map_err(map_err)?;
             if actual == v {
                 return Err(SpecError::Assertion(format!(
                     "merkle.root_not: matched forbidden value {v:?}"
@@ -472,10 +520,16 @@ fn check_assertions(
         let root = harness.root_storage();
         let t = open_address_table(root.open_sub_storage(&[ADDRESS_TABLE_SUBSPACE]));
         if let Some(v) = s.size {
-            ensure_eq("address_table.size", t.size().map_err(map_err)?, v)?;
+            ensure_eq(
+                "address_table.size",
+                t.size(unsafe { &mut *state_ptr }).map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(c) = &s.address_at_index {
-            let actual = t.lookup_index(c.index).map_err(map_err)?;
+            let actual = t
+                .lookup_index(unsafe { &mut *state_ptr }, c.index)
+                .map_err(map_err)?;
             ensure_eq("address_table.address_at_index", actual, Some(c.expected))?;
         }
         if let Some(c) = &s.index_for_address {
@@ -500,7 +554,11 @@ fn check_assertions(
         let root = harness.root_storage();
         let owners = open_address_set(root.open_sub_storage(&[CHAIN_OWNER_SUBSPACE]));
         if let Some(v) = s.size {
-            ensure_eq("chain_owners.size", owners.size().map_err(map_err)?, v)?;
+            ensure_eq(
+                "chain_owners.size",
+                owners.size(unsafe { &mut *state_ptr }).map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(c) = &s.contains {
             ensure_eq(

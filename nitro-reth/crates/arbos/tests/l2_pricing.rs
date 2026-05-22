@@ -18,26 +18,29 @@ fn legacy_pricing_model_steady_state_and_escalation() {
     let mut h = ArbosHarness::new()
         .with_arbos_version(ARBOS_V30)
         .initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
+    let b = unsafe { &mut *state_ptr };
 
     let min_price = p.min_base_fee_wei().unwrap();
-    let limit = p.speed_limit_per_second().unwrap();
+    let limit = p.speed_limit_per_second(b).unwrap();
     assert_eq!(p.base_fee_wei().unwrap(), min_price);
 
     for seconds in 0u64..4 {
-        let prev = p.gas_backlog().unwrap();
-        p.set_gas_backlog(prev.saturating_add(seconds.saturating_mul(limit)))
+        let prev = p.gas_backlog(b).unwrap();
+        p.set_gas_backlog(b, prev.saturating_add(seconds.saturating_mul(limit)))
             .unwrap();
-        p.update_pricing_model(seconds, ARBOS_V30).unwrap();
+        p.update_pricing_model(b, seconds, ARBOS_V30).unwrap();
         assert_eq!(p.base_fee_wei().unwrap(), min_price);
     }
 
     let mut last = p.base_fee_wei().unwrap();
     let mut escalated = false;
     for _ in 0..200 {
-        let prev = p.gas_backlog().unwrap();
-        p.set_gas_backlog(prev.saturating_add(8 * limit)).unwrap();
-        p.update_pricing_model(1, ARBOS_V30).unwrap();
+        let prev = p.gas_backlog(b).unwrap();
+        p.set_gas_backlog(b, prev.saturating_add(8 * limit))
+            .unwrap();
+        p.update_pricing_model(b, 1, ARBOS_V30).unwrap();
         let new_price = p.base_fee_wei().unwrap();
         assert!(new_price >= last);
         if new_price > last {
@@ -49,9 +52,9 @@ fn legacy_pricing_model_steady_state_and_escalation() {
     assert!(escalated);
 
     let baseline = p.base_fee_wei().unwrap();
-    p.set_gas_backlog(limit.saturating_mul(1000)).unwrap();
-    p.update_pricing_model(0, ARBOS_V30).unwrap();
-    p.update_pricing_model(1, ARBOS_V30).unwrap();
+    p.set_gas_backlog(b, limit.saturating_mul(1000)).unwrap();
+    p.update_pricing_model(b, 0, ARBOS_V30).unwrap();
+    p.update_pricing_model(b, 1, ARBOS_V30).unwrap();
     assert!(p.base_fee_wei().unwrap() > baseline);
 }
 
@@ -60,26 +63,28 @@ fn gas_constraints_add_open_clear() {
     let mut h = ArbosHarness::new()
         .with_arbos_version(ARBOS_V60)
         .initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
+    let b = unsafe { &mut *state_ptr };
 
-    assert_eq!(p.gas_constraints_length().unwrap(), 0);
+    assert_eq!(p.gas_constraints_length(b).unwrap(), 0);
 
     const N: u64 = 10;
     for i in 0..N {
-        p.add_gas_constraint(100 * i + 1, 100 * i + 2, 100 * i + 3)
+        p.add_gas_constraint(b, 100 * i + 1, 100 * i + 2, 100 * i + 3)
             .unwrap();
     }
-    assert_eq!(p.gas_constraints_length().unwrap(), N);
+    assert_eq!(p.gas_constraints_length(b).unwrap(), N);
 
     for i in 0..N {
         let c = p.open_gas_constraint_at(i);
-        assert_eq!(c.target().unwrap(), 100 * i + 1);
-        assert_eq!(c.adjustment_window().unwrap(), 100 * i + 2);
-        assert_eq!(c.backlog().unwrap(), 100 * i + 3);
+        assert_eq!(c.target(b).unwrap(), 100 * i + 1);
+        assert_eq!(c.adjustment_window(b).unwrap(), 100 * i + 2);
+        assert_eq!(c.backlog(b).unwrap(), 100 * i + 3);
     }
 
-    p.clear_gas_constraints().unwrap();
-    assert_eq!(p.gas_constraints_length().unwrap(), 0);
+    p.clear_gas_constraints(b).unwrap();
+    assert_eq!(p.gas_constraints_length(b).unwrap(), 0);
 }
 
 #[test]
@@ -87,9 +92,11 @@ fn multi_gas_constraints_add_open_clear() {
     let mut h = ArbosHarness::new()
         .with_arbos_version(ARBOS_V60)
         .initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
+    let b = unsafe { &mut *state_ptr };
 
-    assert_eq!(p.multi_gas_constraints_length().unwrap(), 0);
+    assert_eq!(p.multi_gas_constraints_length(b).unwrap(), 0);
 
     const N: u64 = 5;
     for i in 0..N {
@@ -97,17 +104,17 @@ fn multi_gas_constraints_add_open_clear() {
             (ResourceKind::Computation, 10 + i),
             (ResourceKind::StorageAccessRead, 20 + i),
         ]);
-        p.add_multi_gas_constraint(100 * i + 1, (100 * i + 2) as u32, 100 * i + 3, &w)
+        p.add_multi_gas_constraint(b, 100 * i + 1, (100 * i + 2) as u32, 100 * i + 3, &w)
             .unwrap();
     }
 
-    assert_eq!(p.multi_gas_constraints_length().unwrap(), N);
+    assert_eq!(p.multi_gas_constraints_length(b).unwrap(), N);
 
     for i in 0..N {
         let c = p.open_multi_gas_constraint_at(i);
-        assert_eq!(c.target().unwrap(), 100 * i + 1);
+        assert_eq!(c.target(b).unwrap(), 100 * i + 1);
         assert_eq!(c.adjustment_window().unwrap(), (100 * i + 2) as u32);
-        assert_eq!(c.backlog().unwrap(), 100 * i + 3);
+        assert_eq!(c.backlog(b).unwrap(), 100 * i + 3);
         assert_eq!(
             c.resource_weight(ResourceKind::Computation).unwrap(),
             10 + i
@@ -118,8 +125,8 @@ fn multi_gas_constraints_add_open_clear() {
         );
     }
 
-    p.clear_multi_gas_constraints().unwrap();
-    assert_eq!(p.multi_gas_constraints_length().unwrap(), 0);
+    p.clear_multi_gas_constraints(b).unwrap();
+    assert_eq!(p.multi_gas_constraints_length(b).unwrap(), 0);
 }
 
 #[test]
@@ -127,11 +134,14 @@ fn multi_gas_constraints_exponents() {
     let mut h = ArbosHarness::new()
         .with_arbos_version(ARBOS_V60)
         .initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
+    let b = unsafe { &mut *state_ptr };
 
-    p.add_multi_gas_constraint(100, 10, 100, &weights(&[(ResourceKind::Computation, 1)]))
+    p.add_multi_gas_constraint(b, 100, 10, 100, &weights(&[(ResourceKind::Computation, 1)]))
         .unwrap();
     p.add_multi_gas_constraint(
+        b,
         40,
         20,
         200,
@@ -139,7 +149,7 @@ fn multi_gas_constraints_exponents() {
     )
     .unwrap();
 
-    let exps = p.calc_multi_gas_constraints_exponents().unwrap();
+    let exps = p.calc_multi_gas_constraints_exponents(b).unwrap();
     assert_eq!(exps[ResourceKind::Computation as usize], 1000);
     assert_eq!(exps[ResourceKind::StorageAccessRead as usize], 2500);
 }

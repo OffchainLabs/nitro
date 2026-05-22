@@ -1,7 +1,7 @@
 use revm::Database;
 
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
-use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64, StorageBackend};
 
 use super::L2PricingError;
 
@@ -14,31 +14,35 @@ const WEIGHTED_RESOURCES_BASE_OFFSET: u64 = 4;
 /// A multi-dimensional gas constraint with per-resource-kind weights.
 pub struct MultiGasConstraint<D> {
     storage: Storage<D>,
-    target: StorageBackedUint64<D>,
+    target: StorageBackedUint64,
     adjustment_window: StorageBackedUint32<D>,
-    backlog: StorageBackedUint64<D>,
-    max_weight: StorageBackedUint64<D>,
+    backlog: StorageBackedUint64,
+    max_weight: StorageBackedUint64,
 }
 
 pub fn open_multi_gas_constraint<D: Database>(sto: Storage<D>) -> MultiGasConstraint<D> {
     let state = sto.state_ptr();
     let base_key = sto.base_key();
     MultiGasConstraint {
-        target: StorageBackedUint64::new(state, base_key, TARGET_OFFSET),
+        target: StorageBackedUint64::new(base_key, TARGET_OFFSET),
         adjustment_window: StorageBackedUint32::new(state, base_key, ADJUSTMENT_WINDOW_OFFSET),
-        backlog: StorageBackedUint64::new(state, base_key, BACKLOG_OFFSET),
-        max_weight: StorageBackedUint64::new(state, base_key, MAX_WEIGHT_OFFSET),
+        backlog: StorageBackedUint64::new(base_key, BACKLOG_OFFSET),
+        max_weight: StorageBackedUint64::new(base_key, MAX_WEIGHT_OFFSET),
         storage: sto,
     }
 }
 
 impl<D: Database> MultiGasConstraint<D> {
-    pub fn target(&self) -> Result<u64, L2PricingError> {
-        Ok(self.target.get()?)
+    pub fn target<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+        Ok(self.target.get(backend)?)
     }
 
-    pub fn set_target(&self, val: u64) -> Result<(), L2PricingError> {
-        Ok(self.target.set(val)?)
+    pub fn set_target<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.target.set(backend, val)?)
     }
 
     pub fn adjustment_window(&self) -> Result<u32, L2PricingError> {
@@ -49,16 +53,20 @@ impl<D: Database> MultiGasConstraint<D> {
         Ok(self.adjustment_window.set(val)?)
     }
 
-    pub fn backlog(&self) -> Result<u64, L2PricingError> {
-        Ok(self.backlog.get()?)
+    pub fn backlog<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+        Ok(self.backlog.get(backend)?)
     }
 
-    pub fn set_backlog(&self, val: u64) -> Result<(), L2PricingError> {
-        Ok(self.backlog.set(val)?)
+    pub fn set_backlog<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.backlog.set(backend, val)?)
     }
 
-    pub fn max_weight(&self) -> Result<u64, L2PricingError> {
-        Ok(self.max_weight.get()?)
+    pub fn max_weight<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+        Ok(self.max_weight.get(backend)?)
     }
 
     pub fn resource_weight(&self, kind: ResourceKind) -> Result<u64, L2PricingError> {
@@ -67,8 +75,9 @@ impl<D: Database> MultiGasConstraint<D> {
             .get_uint64_by_uint64(WEIGHTED_RESOURCES_BASE_OFFSET + kind as u64)?)
     }
 
-    pub fn set_resource_weights(
+    pub fn set_resource_weights<B: StorageBackend>(
         &self,
+        backend: &mut B,
         weights: &[u64; NUM_RESOURCE_KIND],
     ) -> Result<(), L2PricingError> {
         let mut max = 0u64;
@@ -79,7 +88,7 @@ impl<D: Database> MultiGasConstraint<D> {
                 max = w;
             }
         }
-        Ok(self.max_weight.set(max)?)
+        Ok(self.max_weight.set(backend, max)?)
     }
 
     /// Returns pairs of (ResourceKind, weight) for all resources with non-zero weight.
@@ -95,8 +104,12 @@ impl<D: Database> MultiGasConstraint<D> {
     }
 
     /// Compute the weighted total of used resources.
-    pub fn used_resources(&self, gas: MultiGas) -> Result<u64, L2PricingError> {
-        let max_w = self.max_weight.get()?;
+    pub fn used_resources<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        gas: MultiGas,
+    ) -> Result<u64, L2PricingError> {
+        let max_w = self.max_weight.get(backend)?;
         if max_w == 0 {
             return Ok(0);
         }
@@ -112,21 +125,30 @@ impl<D: Database> MultiGasConstraint<D> {
     }
 
     /// Grow the backlog by the weighted resource usage.
-    pub fn grow_backlog(&self, gas: MultiGas) -> Result<(), L2PricingError> {
-        self.update_backlog(super::model::BacklogOperation::Grow, gas)
+    pub fn grow_backlog<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        gas: MultiGas,
+    ) -> Result<(), L2PricingError> {
+        self.update_backlog(backend, super::model::BacklogOperation::Grow, gas)
     }
 
     /// Shrink the backlog by the weighted resource usage.
-    pub fn shrink_backlog(&self, gas: MultiGas) -> Result<(), L2PricingError> {
-        self.update_backlog(super::model::BacklogOperation::Shrink, gas)
+    pub fn shrink_backlog<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        gas: MultiGas,
+    ) -> Result<(), L2PricingError> {
+        self.update_backlog(backend, super::model::BacklogOperation::Shrink, gas)
     }
 
-    fn update_backlog(
+    fn update_backlog<B: StorageBackend>(
         &self,
+        backend: &mut B,
         op: super::model::BacklogOperation,
         gas: MultiGas,
     ) -> Result<(), L2PricingError> {
-        let mut backlog = self.backlog.get()?;
+        let mut backlog = self.backlog.get(backend)?;
         for kind in ResourceKind::ALL {
             let weight = self.resource_weight(kind)?;
             if weight == 0 {
@@ -139,14 +161,14 @@ impl<D: Database> MultiGasConstraint<D> {
                 super::model::BacklogOperation::Shrink => backlog.saturating_sub(weighted),
             };
         }
-        Ok(self.backlog.set(backlog)?)
+        Ok(self.backlog.set(backend, backlog)?)
     }
 
-    pub fn clear(&self) -> Result<(), L2PricingError> {
-        self.target.set(0)?;
+    pub fn clear<B: StorageBackend>(&self, backend: &mut B) -> Result<(), L2PricingError> {
+        self.target.set(backend, 0)?;
         self.adjustment_window.set(0)?;
-        self.backlog.set(0)?;
-        self.max_weight.set(0)?;
+        self.backlog.set(backend, 0)?;
+        self.max_weight.set(backend, 0)?;
         for i in 0..NUM_RESOURCE_KIND {
             self.storage
                 .set_uint64_by_uint64(WEIGHTED_RESOURCES_BASE_OFFSET + i as u64, 0)?;

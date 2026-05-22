@@ -2,7 +2,7 @@ use alloy_primitives::{Address, U256};
 use revm::Database;
 
 use crate::address_set::AddressSet;
-use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt};
+use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackend};
 
 use super::L1PricingError;
 
@@ -30,35 +30,37 @@ pub struct FundsDueItem {
     pub funds_due: U256,
 }
 
-pub fn initialize_batch_posters_table<D: Database>(
+pub fn initialize_batch_posters_table<D: Database, B: StorageBackend>(
     l1_pricing_storage: &Storage<D>,
+    backend: &mut B,
     initial_poster: Address,
-) {
+) -> Result<(), L1PricingError> {
     let bpt_storage = l1_pricing_storage.open_sub_storage(BATCH_POSTER_TABLE_KEY);
     let poster_addrs_storage = bpt_storage.open_sub_storage(POSTER_ADDRS_KEY);
     let poster_info = bpt_storage.open_sub_storage(POSTER_INFO_KEY);
 
     let addrs = crate::address_set::open_address_set(poster_addrs_storage);
-    let _ = addrs.add(initial_poster);
+    addrs.add(backend, initial_poster)?;
 
     let bp_storage = poster_info.open_sub_storage(initial_poster.as_slice());
     let pay_to =
         StorageBackedAddress::new(bp_storage.state_ptr(), bp_storage.base_key(), PAY_TO_OFFSET);
-    let _ = pay_to.set(initial_poster);
+    pay_to.set(initial_poster)?;
 
     let funds_due = StorageBackedBigInt::new(
         bp_storage.state_ptr(),
         bp_storage.base_key(),
         FUNDS_DUE_OFFSET,
     );
-    let _ = funds_due.set(U256::ZERO);
+    funds_due.set(U256::ZERO)?;
 
     let total_funds_due = StorageBackedBigInt::new(
         bpt_storage.state_ptr(),
         bpt_storage.base_key(),
         TOTAL_FUNDS_DUE_OFFSET,
     );
-    let _ = total_funds_due.set(U256::ZERO);
+    total_funds_due.set(U256::ZERO)?;
+    Ok(())
 }
 
 pub fn open_batch_posters_table<D: Database>(
@@ -91,8 +93,9 @@ impl<D: Database> BatchPostersTable<D> {
         Ok(self.poster_addrs.is_member(poster)?)
     }
 
-    pub fn open_poster(
+    pub fn open_poster<B: StorageBackend>(
         &self,
+        backend: &mut B,
         poster: Address,
         create_if_not_exist: bool,
     ) -> Result<BatchPosterState<D>, L1PricingError> {
@@ -101,13 +104,14 @@ impl<D: Database> BatchPostersTable<D> {
             if !create_if_not_exist {
                 return Err(L1PricingError::BatchPosterNotFound);
             }
-            return self.add_poster(poster, poster);
+            return self.add_poster(backend, poster, poster);
         }
         Ok(self.internal_open(poster))
     }
 
-    pub fn add_poster(
+    pub fn add_poster<B: StorageBackend>(
         &self,
+        backend: &mut B,
         poster_address: Address,
         pay_to: Address,
     ) -> Result<BatchPosterState<D>, L1PricingError> {
@@ -119,7 +123,7 @@ impl<D: Database> BatchPostersTable<D> {
         let bp_state = self.internal_open(poster_address);
         bp_state.funds_due.set(U256::ZERO)?;
         bp_state.pay_to.set(pay_to)?;
-        self.poster_addrs.add(poster_address)?;
+        self.poster_addrs.add(backend, poster_address)?;
         Ok(bp_state)
     }
 
@@ -139,16 +143,22 @@ impl<D: Database> BatchPostersTable<D> {
         }
     }
 
-    pub fn all_posters(&self) -> Result<Vec<Address>, L1PricingError> {
-        Ok(self.poster_addrs.all_members(u64::MAX)?)
+    pub fn all_posters<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Vec<Address>, L1PricingError> {
+        Ok(self.poster_addrs.all_members(backend, u64::MAX)?)
     }
 
     pub fn total_funds_due(&self) -> Result<U256, L1PricingError> {
         Ok(self.total_funds_due.get_raw()?)
     }
 
-    pub fn get_funds_due_list(&self) -> Result<Vec<FundsDueItem>, L1PricingError> {
-        let posters = self.all_posters()?;
+    pub fn get_funds_due_list<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Vec<FundsDueItem>, L1PricingError> {
+        let posters = self.all_posters(backend)?;
         let mut result = Vec::new();
         for poster in posters {
             let state = self.internal_open(poster);

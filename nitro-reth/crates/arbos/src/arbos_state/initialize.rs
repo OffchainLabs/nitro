@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
+use arb_storage::StorageBackend;
 use revm::Database;
 
 use crate::{
@@ -91,7 +92,8 @@ pub fn make_genesis_block(
 /// Returns `(balance_credits, escrow_credits)` where:
 /// - `balance_credits`: expired retryable beneficiaries to credit
 /// - `escrow_credits`: (escrow_address, callvalue) for active retryable escrow funding
-pub fn initialize_retryables<D: Database>(
+pub fn initialize_retryables<D: Database, C: StorageBackend>(
+    backend: &mut C,
     rs: &RetryableState<D>,
     mut retryables_data: Vec<InitRetryableData>,
     current_timestamp: u64,
@@ -99,7 +101,6 @@ pub fn initialize_retryables<D: Database>(
     let mut balance_credits = Vec::new();
     let mut active_retryables = Vec::new();
 
-    // Separate expired from active retryables.
     for r in retryables_data.drain(..) {
         if r.timeout <= current_timestamp {
             balance_credits.push((r.beneficiary, r.callvalue));
@@ -108,7 +109,6 @@ pub fn initialize_retryables<D: Database>(
         active_retryables.push(r);
     }
 
-    // Sort by timeout, then by id for determinism.
     active_retryables.sort_by(|a, b| a.timeout.cmp(&b.timeout).then_with(|| a.id.cmp(&b.id)));
 
     let mut escrow_credits = Vec::new();
@@ -117,6 +117,7 @@ pub fn initialize_retryables<D: Database>(
         let escrow_addr = retryables::retryable_escrow_address(r.id);
         escrow_credits.push((escrow_addr, r.callvalue));
         rs.create_retryable(
+            backend,
             r.id,
             r.timeout,
             r.from,
@@ -134,7 +135,8 @@ pub fn initialize_retryables<D: Database>(
 ///
 /// If the account has aggregator info and is a known batch poster,
 /// sets the batch poster's pay-to (fee collector) address.
-pub fn initialize_arbos_account<D: Database, B: Burner>(
+pub fn initialize_arbos_account<D: Database, B: Burner, C: StorageBackend>(
+    backend: &mut C,
     arbos_state: &ArbosState<D, B>,
     account: &AccountInitInfo,
 ) -> Result<(), ArbosStateError> {
@@ -142,7 +144,7 @@ pub fn initialize_arbos_account<D: Database, B: Burner>(
         let poster_table = arbos_state.l1_pricing_state.batch_poster_table();
         let is_poster = poster_table.contains_poster(account.addr)?;
         if is_poster {
-            let poster = poster_table.open_poster(account.addr, false)?;
+            let poster = poster_table.open_poster(backend, account.addr, false)?;
             poster.set_pay_to(aggregator.fee_collector)?;
         }
     }
@@ -176,7 +178,8 @@ pub struct GenesisInitResult {
 /// Creates the ArbOS state, adds the chain owner, imports address table
 /// entries, retryable tickets, and accounts. Returns a `GenesisInitResult`
 /// containing all balance operations the caller needs to execute.
-pub fn initialize_arbos_in_database<D: Database, B: Burner>(
+pub fn initialize_arbos_in_database<D: Database, B: Burner, C: StorageBackend>(
+    backend: &mut C,
     arbos_state: &ArbosState<D, B>,
     chain_owner: Address,
     address_table_entries: Vec<Address>,
@@ -184,32 +187,30 @@ pub fn initialize_arbos_in_database<D: Database, B: Burner>(
     accounts: Vec<AccountInitInfo>,
     current_timestamp: u64,
 ) -> Result<GenesisInitResult, ArbosStateError> {
-    // Add chain owner.
     if chain_owner != Address::ZERO {
-        arbos_state.chain_owners.add(chain_owner)?;
+        arbos_state.chain_owners.add(backend, chain_owner)?;
     }
 
-    let table_size = arbos_state.address_table.size()?;
+    let table_size = arbos_state.address_table.size(backend)?;
     if table_size != 0 {
         return Err(ArbosStateError::AddressTableNotEmpty);
     }
     for (i, addr) in address_table_entries.iter().enumerate() {
-        let slot = arbos_state.address_table.register(*addr)?;
+        let slot = arbos_state.address_table.register(backend, *addr)?;
         if slot != i as u64 {
             return Err(ArbosStateError::AddressTableSlotMismatch);
         }
     }
 
-    // Import retryable tickets.
     let (balance_credits, escrow_credits) = initialize_retryables(
+        backend,
         &arbos_state.retryable_state,
         retryable_data,
         current_timestamp,
     )?;
 
-    // Initialize per-account ArbOS state (batch poster config).
     for account in &accounts {
-        initialize_arbos_account(arbos_state, account)?;
+        initialize_arbos_account(backend, arbos_state, account)?;
     }
 
     Ok(GenesisInitResult {

@@ -64,13 +64,25 @@ fn equilibration_units_after_v30_init_is_v6() {
 #[test]
 fn brotli_level_is_1_at_v30() {
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
-    assert_eq!(h.arbos_state().brotli_compression_level().unwrap(), 1);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.arbos_state()
+            .brotli_compression_level(unsafe { &mut *state_ptr })
+            .unwrap(),
+        1
+    );
 }
 
 #[test]
 fn brotli_level_is_0_at_v10() {
     let mut h = ArbosHarness::new().with_arbos_version(10).initialize();
-    assert_eq!(h.arbos_state().brotli_compression_level().unwrap(), 0);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.arbos_state()
+            .brotli_compression_level(unsafe { &mut *state_ptr })
+            .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -88,37 +100,73 @@ fn per_batch_gas_cost_at_v10_is_v6() {
 #[test]
 fn per_tx_gas_limit_at_v50_is_32m() {
     let mut h = ArbosHarness::new().with_arbos_version(50).initialize();
-    assert_eq!(h.l2_pricing_state().per_tx_gas_limit().unwrap(), 32_000_000);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l2_pricing_state()
+            .per_tx_gas_limit(unsafe { &mut *state_ptr })
+            .unwrap(),
+        32_000_000
+    );
 }
 
 #[test]
 fn per_tx_gas_limit_below_v50_is_zero() {
     let mut h = ArbosHarness::new().with_arbos_version(40).initialize();
-    assert_eq!(h.l2_pricing_state().per_tx_gas_limit().unwrap(), 0);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l2_pricing_state()
+            .per_tx_gas_limit(unsafe { &mut *state_ptr })
+            .unwrap(),
+        0
+    );
 }
 
 #[test]
 fn l1_inertia_initial_value_is_10() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l1_pricing_state().inertia().unwrap(), 10);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l1_pricing_state()
+            .inertia(unsafe { &mut *state_ptr })
+            .unwrap(),
+        10
+    );
 }
 
 #[test]
 fn l1_per_unit_reward_initial_value_is_10() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l1_pricing_state().per_unit_reward().unwrap(), 10);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l1_pricing_state()
+            .per_unit_reward(unsafe { &mut *state_ptr })
+            .unwrap(),
+        10
+    );
 }
 
 #[test]
 fn l2_pricing_inertia_is_102() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l2_pricing_state().pricing_inertia().unwrap(), 102);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l2_pricing_state()
+            .pricing_inertia(unsafe { &mut *state_ptr })
+            .unwrap(),
+        102
+    );
 }
 
 #[test]
 fn l2_backlog_tolerance_is_10() {
     let mut h = ArbosHarness::new().initialize();
-    assert_eq!(h.l2_pricing_state().backlog_tolerance().unwrap(), 10);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l2_pricing_state()
+            .backlog_tolerance(unsafe { &mut *state_ptr })
+            .unwrap(),
+        10
+    );
 }
 
 #[test]
@@ -133,8 +181,11 @@ fn l2_min_base_fee_is_0_1_gwei() {
 #[test]
 fn l2_speed_limit_v6_plus_is_7m() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     assert_eq!(
-        h.l2_pricing_state().speed_limit_per_second().unwrap(),
+        h.l2_pricing_state()
+            .speed_limit_per_second(unsafe { &mut *state_ptr })
+            .unwrap(),
         7_000_000
     );
 }
@@ -142,8 +193,11 @@ fn l2_speed_limit_v6_plus_is_7m() {
 #[test]
 fn l2_per_block_gas_limit_v6_plus_is_32m() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     assert_eq!(
-        h.l2_pricing_state().per_block_gas_limit().unwrap(),
+        h.l2_pricing_state()
+            .per_block_gas_limit(unsafe { &mut *state_ptr })
+            .unwrap(),
         32_000_000
     );
 }
@@ -155,23 +209,27 @@ fn l2_per_block_gas_limit_v6_plus_is_32m() {
 #[test]
 fn approx_exp_basis_points_10000_yields_27083() {
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
-    let speed = p.speed_limit_per_second().unwrap();
-    let inertia = p.pricing_inertia().unwrap();
-    let tolerance = p.backlog_tolerance().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    let speed = p.speed_limit_per_second(b).unwrap();
+    let inertia = p.pricing_inertia(b).unwrap();
+    let tolerance = p.backlog_tolerance(b).unwrap();
     let backlog = tolerance * speed + inertia * speed;
-    p.set_gas_backlog(backlog).unwrap();
-    p.update_pricing_model(0, 30).unwrap();
+    p.set_gas_backlog(b, backlog).unwrap();
+    p.update_pricing_model(b, 0, 30).unwrap();
     assert_eq!(p.base_fee_wei().unwrap(), U256::from(270_830_000u64));
 }
 
 #[test]
 fn approx_exp_basis_points_zero_returns_one_in_bips() {
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
+    let b = unsafe { &mut *state_ptr };
     let min = p.min_base_fee_wei().unwrap();
-    p.set_gas_backlog(0).unwrap();
-    p.update_pricing_model(0, 30).unwrap();
+    p.set_gas_backlog(b, 0).unwrap();
+    p.update_pricing_model(b, 0, 30).unwrap();
     assert_eq!(p.base_fee_wei().unwrap(), min);
 }
 
@@ -423,12 +481,14 @@ mod batch_poster_funds_due {
     #[test]
     fn set_funds_due_updates_total_correctly() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let l1 = h.l1_pricing_state();
         let bpt = l1.batch_poster_table();
+        let backend = unsafe { &mut *state_ptr };
         let a = address!("AAAA000000000000000000000000000000000000");
         let b = address!("BBBB000000000000000000000000000000000000");
-        let bp_a = bpt.add_poster(a, a).unwrap();
-        let bp_b = bpt.add_poster(b, b).unwrap();
+        let bp_a = bpt.add_poster(backend, a, a).unwrap();
+        let bp_b = bpt.add_poster(backend, b, b).unwrap();
 
         bp_a.set_funds_due(U256::from(100u64), &bpt.total_funds_due)
             .unwrap();
@@ -445,10 +505,12 @@ mod batch_poster_funds_due {
     #[test]
     fn set_funds_due_to_zero_decreases_total() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let l1 = h.l1_pricing_state();
         let bpt = l1.batch_poster_table();
+        let backend = unsafe { &mut *state_ptr };
         let a = address!("AAAA000000000000000000000000000000000000");
-        let bp = bpt.add_poster(a, a).unwrap();
+        let bp = bpt.add_poster(backend, a, a).unwrap();
         bp.set_funds_due(U256::from(500u64), &bpt.total_funds_due)
             .unwrap();
         assert_eq!(bpt.total_funds_due().unwrap(), U256::from(500u64));
@@ -565,9 +627,12 @@ mod retryable_lifecycle_edge_cases {
     #[test]
     fn open_retryable_at_u64_max_timestamp_does_not_panic() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let rs = h.retryable_state();
+        let b = unsafe { &mut *state_ptr };
         let id = B256::repeat_byte(0xCC);
         rs.create_retryable(
+            b,
             id,
             u64::MAX,
             address!("AAAA000000000000000000000000000000000000"),
@@ -577,16 +642,19 @@ mod retryable_lifecycle_edge_cases {
             &[],
         )
         .unwrap();
-        let _ = rs.open_retryable(id, u64::MAX);
+        let _ = rs.open_retryable(b, id, u64::MAX);
     }
 
     #[test]
     fn create_retryable_with_max_calldata_size() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let rs = h.retryable_state();
+        let b = unsafe { &mut *state_ptr };
         let id = B256::repeat_byte(0xDD);
         let big_data = vec![0xAB; 100_000];
         let result = rs.create_retryable(
+            b,
             id,
             10_000,
             address!("AAAA000000000000000000000000000000000000"),

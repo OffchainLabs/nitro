@@ -113,10 +113,16 @@ impl ArbosHarness {
 
         l1_pricing::initialize_l1_pricing_state(
             &backing.open_sub_storage(L1_PRICING_SUBSPACE),
+            &mut *self.state,
             self.network_fee_account,
             self.l1_initial_base_fee,
-        );
-        l2_pricing::initialize_l2_pricing_state(&backing.open_sub_storage(L2_PRICING_SUBSPACE));
+        )
+        .expect("init l1 pricing");
+        l2_pricing::initialize_l2_pricing_state(
+            &backing.open_sub_storage(L2_PRICING_SUBSPACE),
+            &mut *self.state,
+        )
+        .expect("init l2 pricing");
         retryables::initialize_retryable_state(&backing.open_sub_storage(RETRYABLES_SUBSPACE))
             .expect("init retryables");
 
@@ -124,7 +130,7 @@ impl ArbosHarness {
             ArbosState::<EmptyDb, SystemBurner>::open(state_ptr, SystemBurner::new(None, false))
                 .expect("open arbos state at v1");
         state
-            .upgrade_arbos_version(self.arbos_version, true)
+            .upgrade_arbos_version(&mut *self.state, self.arbos_version, true)
             .expect("upgrade to target arbos version");
 
         self.initialized = true;
@@ -207,8 +213,9 @@ mod tests {
     #[test]
     fn l1_pricing_state_starts_at_zero_last_update_time() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let l1 = h.l1_pricing_state();
-        assert_eq!(l1.last_update_time().unwrap(), 0);
+        assert_eq!(l1.last_update_time(unsafe { &mut *state_ptr }).unwrap(), 0);
     }
 
     #[test]

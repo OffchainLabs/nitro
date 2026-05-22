@@ -3,8 +3,9 @@ use arb_storage_errors::StorageError;
 use revm::Database;
 
 use crate::{
+    backend::StorageBackend,
     slot::storage_key_map,
-    state_ops::{read_arbos_storage, write_arbos_storage},
+    state_ops::{read_arbos_storage, write_arbos_storage, ARBOS_STATE_ADDRESS},
 };
 
 fn compute_slot(base_key: B256, offset: u64) -> U256 {
@@ -47,41 +48,34 @@ fn decode_address(slot: U256, value: U256) -> Result<Address, StorageError> {
 }
 
 /// Storage-backed 64-bit unsigned integer.
-pub struct StorageBackedUint64<D> {
-    pub state: *mut revm::database::State<D>,
+///
+/// Holds only the storage slot; the caller passes a [`StorageBackend`] at
+/// access time.
+#[derive(Clone, Copy, Debug)]
+pub struct StorageBackedUint64 {
     pub slot: U256,
 }
 
-impl<D: Database> StorageBackedUint64<D> {
-    pub fn new(state: *mut revm::database::State<D>, base_key: B256, offset: u64) -> Self {
+impl StorageBackedUint64 {
+    pub fn new(base_key: B256, offset: u64) -> Self {
         Self {
-            state,
             slot: compute_slot(base_key, offset),
         }
     }
 
-    pub fn get(&self) -> Result<u64, StorageError> {
-        let value = read_slot(self.state, self.slot)?;
+    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
+        let value = backend
+            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .map_err(Into::into)?;
         Ok(value.try_into().unwrap_or(0))
     }
 
-    pub fn set(&self, value: u64) -> Result<(), StorageError> {
-        write_slot(self.state, self.slot, U256::from(value))
+    pub fn set<B: StorageBackend>(&self, backend: &mut B, value: u64) -> Result<(), StorageError> {
+        backend
+            .sstore(ARBOS_STATE_ADDRESS, self.slot, U256::from(value))
+            .map_err(Into::into)
     }
 }
-
-impl<D> Clone for StorageBackedUint64<D> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            slot: self.slot,
-        }
-    }
-}
-
-unsafe impl<D: Send> Send for StorageBackedUint64<D> {}
-unsafe impl<D: Sync> Sync for StorageBackedUint64<D> {}
-
 /// Storage-backed 256-bit unsigned integer.
 pub struct StorageBackedBigUint<D> {
     state: *mut revm::database::State<D>,

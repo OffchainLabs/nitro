@@ -12,7 +12,8 @@ use arb_primitives::arbos_versions::{
 };
 use arb_storage::{
     get_account_balance, set_account_code, set_account_nonce, Storage, StorageBackedAddress,
-    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, FILTERED_TX_STATE_ADDRESS,
+    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
+    FILTERED_TX_STATE_ADDRESS,
 };
 
 use crate::{
@@ -90,8 +91,8 @@ pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 60;
 pub struct ArbosState<D, B: Burner> {
     pub arbos_version: u64,
     pub max_arbos_version_supported: u64,
-    pub upgrade_version: StorageBackedUint64<D>,
-    pub upgrade_timestamp: StorageBackedUint64<D>,
+    pub upgrade_version: StorageBackedUint64,
+    pub upgrade_timestamp: StorageBackedUint64,
     pub network_fee_account: StorageBackedAddress<D>,
     pub l1_pricing_state: L1PricingState<D>,
     pub l2_pricing_state: L2PricingState<D>,
@@ -103,19 +104,19 @@ pub struct ArbosState<D, B: Burner> {
     pub blockhashes: Blockhashes<D>,
     pub chain_id: StorageBackedBigUint<D>,
     pub chain_config: StorageBackedBytes<D>,
-    pub genesis_block_num: StorageBackedUint64<D>,
+    pub genesis_block_num: StorageBackedUint64,
     pub infra_fee_account: StorageBackedAddress<D>,
-    pub brotli_compression_level: StorageBackedUint64<D>,
+    pub brotli_compression_level: StorageBackedUint64,
     pub backing_storage: Storage<D>,
     pub burner: B,
-    pub native_token_enabled_from_time: StorageBackedUint64<D>,
+    pub native_token_enabled_from_time: StorageBackedUint64,
     pub native_token_owners: AddressSet<D>,
-    pub transaction_filtering_enabled_from_time: StorageBackedUint64<D>,
+    pub transaction_filtering_enabled_from_time: StorageBackedUint64,
     pub transaction_filterers: AddressSet<D>,
     pub features: Features<D>,
     pub filtered_funds_recipient: StorageBackedAddress<D>,
     pub filtered_transactions: FilteredTransactionsState<D>,
-    pub collect_tips: StorageBackedUint64<D>,
+    pub collect_tips: StorageBackedUint64,
 }
 
 impl<D: Database, B: Burner> ArbosState<D, B> {
@@ -141,12 +142,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(Self {
             arbos_version,
             max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
-            upgrade_version: StorageBackedUint64::new(state, B256::ZERO, UPGRADE_VERSION_OFFSET),
-            upgrade_timestamp: StorageBackedUint64::new(
-                state,
-                B256::ZERO,
-                UPGRADE_TIMESTAMP_OFFSET,
-            ),
+            upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
+            upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
             network_fee_account: StorageBackedAddress::new(
                 state,
                 B256::ZERO,
@@ -181,23 +178,17 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             ),
             chain_id: StorageBackedBigUint::new(state, B256::ZERO, CHAIN_ID_OFFSET),
             chain_config: StorageBackedBytes::new(chain_config_sto),
-            genesis_block_num: StorageBackedUint64::new(
-                state,
-                B256::ZERO,
-                GENESIS_BLOCK_NUM_OFFSET,
-            ),
+            genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
             infra_fee_account: StorageBackedAddress::new(
                 state,
                 B256::ZERO,
                 INFRA_FEE_ACCOUNT_OFFSET,
             ),
             brotli_compression_level: StorageBackedUint64::new(
-                state,
                 B256::ZERO,
                 BROTLI_COMPRESSION_LEVEL_OFFSET,
             ),
             native_token_enabled_from_time: StorageBackedUint64::new(
-                state,
                 B256::ZERO,
                 NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
             ),
@@ -205,7 +196,6 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
             ),
             transaction_filtering_enabled_from_time: StorageBackedUint64::new(
-                state,
                 B256::ZERO,
                 TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
             ),
@@ -223,7 +213,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 B256::ZERO,
                 FILTERED_TX_STATE_ADDRESS,
             )),
-            collect_tips: StorageBackedUint64::new(state, B256::ZERO, COLLECT_TIPS_OFFSET),
+            collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
             backing_storage,
             burner,
         })
@@ -246,20 +236,30 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(version)))?)
     }
 
-    pub fn brotli_compression_level(&self) -> Result<u64, ArbosStateError> {
-        Ok(self.brotli_compression_level.get()?)
+    pub fn brotli_compression_level<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.brotli_compression_level.get(backend)?)
     }
 
-    pub fn set_brotli_compression_level(&self, level: u64) -> Result<(), ArbosStateError> {
-        Ok(self.brotli_compression_level.set(level)?)
+    pub fn set_brotli_compression_level<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        level: u64,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.brotli_compression_level.set(backend, level)?)
     }
 
     /// Whether tip collection is enabled. Always false before ArbOS 60.
-    pub fn collect_tips(&self) -> Result<bool, ArbosStateError> {
+    pub fn collect_tips<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<bool, ArbosStateError> {
         if self.arbos_version < 60 {
             return Ok(false);
         }
-        Ok(self.collect_tips.get()? != 0)
+        Ok(self.collect_tips.get(backend)? != 0)
     }
 
     pub fn chain_id(&self) -> Result<U256, ArbosStateError> {
@@ -274,8 +274,11 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(self.chain_config.set(config)?)
     }
 
-    pub fn genesis_block_num(&self) -> Result<u64, ArbosStateError> {
-        Ok(self.genesis_block_num.get()?)
+    pub fn genesis_block_num<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.genesis_block_num.get(backend)?)
     }
 
     pub fn network_fee_account(&self) -> Result<Address, ArbosStateError> {
@@ -311,46 +314,66 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(self.filtered_funds_recipient.set(addr)?)
     }
 
-    pub fn native_token_management_from_time(&self) -> Result<u64, ArbosStateError> {
-        Ok(self.native_token_enabled_from_time.get()?)
+    pub fn native_token_management_from_time<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.native_token_enabled_from_time.get(backend)?)
     }
 
-    pub fn set_native_token_management_from_time(&self, time: u64) -> Result<(), ArbosStateError> {
-        Ok(self.native_token_enabled_from_time.set(time)?)
+    pub fn set_native_token_management_from_time<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        time: u64,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.native_token_enabled_from_time.set(backend, time)?)
     }
 
-    pub fn transaction_filtering_from_time(&self) -> Result<u64, ArbosStateError> {
-        Ok(self.transaction_filtering_enabled_from_time.get()?)
+    pub fn transaction_filtering_from_time<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.transaction_filtering_enabled_from_time.get(backend)?)
     }
 
-    pub fn set_transaction_filtering_from_time(&self, time: u64) -> Result<(), ArbosStateError> {
-        Ok(self.transaction_filtering_enabled_from_time.set(time)?)
+    pub fn set_transaction_filtering_from_time<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        time: u64,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self
+            .transaction_filtering_enabled_from_time
+            .set(backend, time)?)
     }
 
-    pub fn get_scheduled_upgrade(&self) -> Result<(u64, u64), ArbosStateError> {
-        let version = self.upgrade_version.get()?;
-        let timestamp = self.upgrade_timestamp.get()?;
+    pub fn get_scheduled_upgrade<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<(u64, u64), ArbosStateError> {
+        let version = self.upgrade_version.get(backend)?;
+        let timestamp = self.upgrade_timestamp.get(backend)?;
         Ok((version, timestamp))
     }
 
-    pub fn schedule_arbos_upgrade(
+    pub fn schedule_arbos_upgrade<C: StorageBackend>(
         &self,
+        backend: &mut C,
         version: u64,
         timestamp: u64,
     ) -> Result<(), ArbosStateError> {
-        self.upgrade_version.set(version)?;
-        Ok(self.upgrade_timestamp.set(timestamp)?)
+        self.upgrade_version.set(backend, version)?;
+        Ok(self.upgrade_timestamp.set(backend, timestamp)?)
     }
 
     /// Checks and performs a scheduled ArbOS version upgrade if due.
-    pub fn upgrade_arbos_version_if_necessary(
+    pub fn upgrade_arbos_version_if_necessary<C: StorageBackend>(
         &mut self,
+        backend: &mut C,
         current_timestamp: u64,
     ) -> Result<(), ArbosStateError> {
-        let scheduled_version = self.upgrade_version.get()?;
-        let scheduled_timestamp = self.upgrade_timestamp.get()?;
+        let scheduled_version = self.upgrade_version.get(backend)?;
+        let scheduled_timestamp = self.upgrade_timestamp.get(backend)?;
 
-        // Check: arbosVersion < upgradeTo && currentTimestamp >= flagday
         if scheduled_version == 0
             || self.arbos_version >= scheduled_version
             || current_timestamp < scheduled_timestamp
@@ -366,11 +389,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         }
 
         let old_version = self.arbos_version;
-        self.upgrade_arbos_version(scheduled_version, false)?;
-
-        // The scheduled upgrade fields are NOT cleared after upgrade.
-        // They remain in storage and are simply ignored because the
-        // arbos_version >= scheduled_version check prevents re-upgrade.
+        self.upgrade_arbos_version(backend, scheduled_version, false)?;
 
         if old_version != self.arbos_version {
             tracing::info!(
@@ -384,11 +403,9 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     }
 
     /// Performs version upgrade steps from current version up to `upgrade_to`.
-    ///
-    /// `first_time` is true during genesis initialization, which affects
-    /// some initial parameter values.
-    pub fn upgrade_arbos_version(
+    pub fn upgrade_arbos_version<C: StorageBackend>(
         &mut self,
+        backend: &mut C,
         upgrade_to: u64,
         first_time: bool,
     ) -> Result<(), ArbosStateError> {
@@ -402,11 +419,9 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 3 => {
                     self.l1_pricing_state.set_per_batch_gas_cost(0)?;
                     self.l1_pricing_state
-                        .set_amortized_cost_cap_bips(u64::MAX)?;
+                        .set_amortized_cost_cap_bips(backend, u64::MAX)?;
                 }
-                4..=9 => {
-                    // No state changes needed
-                }
+                4..=9 => {}
                 10 => {
                     let state = unsafe { &mut *self.backing_storage.state_ptr() };
                     let pool_balance =
@@ -417,42 +432,36 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                     self.l1_pricing_state
                         .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V12)?;
 
-                    // Fix: math.MaxUint64 was incorrectly used for "disabled";
-                    // the correct disable value is 0.
-                    let old_cap = self.l1_pricing_state.amortized_cost_cap_bips()?;
+                    let old_cap = self.l1_pricing_state.amortized_cost_cap_bips(backend)?;
                     if old_cap == u64::MAX {
-                        self.l1_pricing_state.set_amortized_cost_cap_bips(0)?;
+                        self.l1_pricing_state
+                            .set_amortized_cost_cap_bips(backend, 0)?;
                     }
 
                     if !first_time {
-                        self.chain_owners.clear_list()?;
+                        self.chain_owners.clear_list(backend)?;
                     }
                 }
-                // 12..=19: reserved for Orbit chains
                 12..=19 => {}
                 20 => {
-                    self.set_brotli_compression_level(1)?;
+                    self.set_brotli_compression_level(backend, 1)?;
                 }
-                // 21..=29: reserved for Orbit chains
                 21..=29 => {}
                 30 => {
                     Programs::initialize(
                         next,
                         &self.backing_storage.open_sub_storage(PROGRAMS_SUBSPACE),
-                    );
+                        backend,
+                    )?;
                 }
                 31 => {
                     let mut params = self.programs.params()?;
                     params.upgrade_to_version(2)?;
                     params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
                 }
-                32 => {
-                    // No state changes needed
-                }
-                // 33..=39: reserved for Orbit chains
+                32 => {}
                 33..=39 => {}
                 40 => {
-                    // EIP-2935: historical block hashes
                     let state = unsafe { &mut *self.backing_storage.state_ptr() };
                     set_account_nonce(state, HISTORY_STORAGE_ADDRESS, 1);
                     set_account_code(
@@ -460,27 +469,22 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                         HISTORY_STORAGE_ADDRESS,
                         HISTORY_STORAGE_CODE_ARBITRUM.clone(),
                     );
-                    // Upgrade Stylus params for version 40
                     let mut params = self.programs.params()?;
                     params.upgrade_to_arbos_version(next)?;
                     params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
                 }
-                41 => {
-                    // No state changes needed
-                }
-                // 42..=49: reserved for Orbit chains
+                41 => {}
                 42..=49 => {}
                 50 => {
                     let mut params = self.programs.params()?;
                     params.upgrade_to_arbos_version(next)?;
                     params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
-                    self.l2_pricing_state
-                        .set_max_per_tx_gas_limit(l2_pricing::INITIAL_PER_TX_GAS_LIMIT_V50)?;
+                    self.l2_pricing_state.set_max_per_tx_gas_limit(
+                        backend,
+                        l2_pricing::INITIAL_PER_TX_GAS_LIMIT_V50,
+                    )?;
                 }
-                51 => {
-                    // No state changes needed
-                }
-                // 52..=58: reserved for Orbit chains
+                51 => {}
                 52..=58 => {}
                 59 => {
                     let mut params = self.programs.params()?;
@@ -491,7 +495,6 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                     let mut params = self.programs.params()?;
                     params.upgrade_to_arbos_version(next)?;
                     params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
-                    // Initialize transaction filtering address set
                     crate::address_set::initialize_address_set(
                         &self
                             .backing_storage
@@ -504,11 +507,10 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 }
             }
 
-            // Install precompile code for newly introduced precompiles
             for &(addr, version) in PRECOMPILE_MIN_ARBOS_VERSIONS {
                 if version == next {
                     let state = unsafe { &mut *self.backing_storage.state_ptr() };
-                    set_account_code(state, addr, Bytes::from_static(&[0xFE])); // INVALID opcode
+                    set_account_code(state, addr, Bytes::from_static(&[0xFE]));
                 }
             }
 
@@ -518,7 +520,6 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             self.l2_pricing_state.arbos_version = next;
         }
 
-        // First-time initialization overrides
         if first_time && upgrade_to >= 6 {
             if upgrade_to < 11 {
                 self.l1_pricing_state
@@ -526,13 +527,14 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             }
             self.l1_pricing_state
                 .set_equilibration_units(U256::from(l1_pricing::INITIAL_EQUILIBRATION_UNITS_V6))?;
+            self.l2_pricing_state.set_speed_limit_per_second(
+                backend,
+                l2_pricing::INITIAL_SPEED_LIMIT_PER_SECOND_V6,
+            )?;
             self.l2_pricing_state
-                .set_speed_limit_per_second(l2_pricing::INITIAL_SPEED_LIMIT_PER_SECOND_V6)?;
-            self.l2_pricing_state
-                .set_max_per_block_gas_limit(l2_pricing::INITIAL_PER_BLOCK_GAS_LIMIT_V6)?;
+                .set_max_per_block_gas_limit(backend, l2_pricing::INITIAL_PER_BLOCK_GAS_LIMIT_V6)?;
         }
 
-        // Persist the final version
         self.set_format_version(self.arbos_version)?;
 
         Ok(())

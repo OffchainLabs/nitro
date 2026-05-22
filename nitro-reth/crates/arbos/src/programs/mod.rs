@@ -12,7 +12,7 @@ use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES;
 use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::Database;
 
-use arb_storage::Storage;
+use arb_storage::{Storage, StorageBackend};
 
 pub use self::types::{
     evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, RequestType, UserOutcome,
@@ -119,11 +119,16 @@ pub struct Programs<D> {
 }
 
 impl<D: Database> Programs<D> {
-    pub fn initialize(arbos_version: u64, sto: &Storage<D>) {
+    pub fn initialize<B: StorageBackend>(
+        arbos_version: u64,
+        sto: &Storage<D>,
+        backend: &mut B,
+    ) -> Result<(), ProgramsError> {
         let params_sto = sto.open_sub_storage(PARAMS_KEY);
         init_stylus_params(arbos_version, &params_sto);
         let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
-        init_data_pricer(&data_pricer_sto);
+        init_data_pricer(&data_pricer_sto, backend)?;
+        Ok(())
     }
 
     pub fn open(arbos_version: u64, sto: Storage<D>) -> Self {
@@ -219,8 +224,9 @@ impl<D: Database> Programs<D> {
     /// Activate a Stylus program. Records metadata and charges data fees.
     ///
     /// Returns `(version, code_hash, module_hash, data_fee)` on success.
-    pub fn activate_program(
+    pub fn activate_program<B: StorageBackend>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         wasm: &[u8],
         time: u64,
@@ -241,9 +247,8 @@ impl<D: Database> Programs<D> {
 
         let info = activate_fn(wasm, stylus_version, self.arbos_version, page_limit, debug)?;
 
-        // If previously cached, remove old module.
         if cached {
-            // Old module eviction would happen at the runtime layer.
+            // Old module eviction happens at the runtime layer.
         }
 
         self.set_module_hash(code_hash, info.module_hash)
@@ -253,7 +258,7 @@ impl<D: Database> Programs<D> {
 
         let data_fee = self
             .data_pricer
-            .update_model(info.asm_estimate, time)
+            .update_model(backend, info.asm_estimate, time)
             .map_err(|_| "failed to update data pricer")?;
 
         let program = Program {
@@ -261,7 +266,7 @@ impl<D: Database> Programs<D> {
             init_cost: info.init_gas,
             cached_cost: info.cached_init_gas,
             footprint: info.footprint,
-            asm_estimate_kb: estimate_kb.min(0xFF_FFFF), // uint24 max
+            asm_estimate_kb: estimate_kb.min(0xFF_FFFF),
             activated_at: hours_since_arbitrum(time),
             age_seconds: 0,
             cached,
@@ -301,10 +306,9 @@ impl<D: Database> Programs<D> {
     }
 
     /// Extend a program's expiry by resetting its activation time.
-    ///
-    /// Returns the data fee charged.
-    pub fn program_keepalive(
+    pub fn program_keepalive<B: StorageBackend>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         time: u64,
     ) -> Result<alloy_primitives::U256, String> {
@@ -322,7 +326,7 @@ impl<D: Database> Programs<D> {
 
         let data_fee = self
             .data_pricer
-            .update_model(program.asm_size(), time)
+            .update_model(backend, program.asm_size(), time)
             .map_err(|_| "failed to update data pricer")?;
 
         program.activated_at = hours_since_arbitrum(time);

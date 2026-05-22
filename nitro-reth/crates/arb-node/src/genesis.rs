@@ -91,11 +91,6 @@ pub fn initialize_arbos_state<D: Database>(
     // 0. Set ArbOS state account nonce to 1.
     set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
 
-    // Filtered-tx state account is not touched at genesis: OpenArbosState
-    // only opens this storage at ArbOS v60+, and the init path persists
-    // version=1 first. The upgrade to v60+ runs after init without
-    // re-opening the account, so it never appears in the genesis trie.
-
     // 1. Set version to 1 (base version before upgrades).
     backing
         .set_by_uint64(0, B256::from(U256::from(1u64)))
@@ -150,13 +145,23 @@ pub fn initialize_arbos_state<D: Database>(
     };
     l1_pricing::L1PricingState::initialize(
         &l1_sto,
+        unsafe { &mut *state_ptr },
         rewards_recipient,
         init_msg.initial_l1_base_fee,
-    );
+    )
+    .map_err(|e| GenesisError::InitSubsystem {
+        subsystem: "L1 pricing",
+        source: e.into(),
+    })?;
 
     // 5. Initialize L2 pricing state.
     let l2_sto = backing.open_sub_storage(&[1]); // L2_PRICING_SUBSPACE
-    l2_pricing::L2PricingState::initialize(&l2_sto);
+    l2_pricing::L2PricingState::initialize(&l2_sto, unsafe { &mut *state_ptr }).map_err(|e| {
+        GenesisError::InitSubsystem {
+            subsystem: "L2 pricing",
+            source: e.into(),
+        }
+    })?;
 
     // 6. Initialize retryable state.
     let ret_sto = backing.open_sub_storage(&[2]); // RETRYABLES_SUBSPACE
@@ -198,7 +203,7 @@ pub fn initialize_arbos_state<D: Database>(
 
     arb_state
         .chain_owners
-        .add(chain_owner)
+        .add(unsafe { &mut *state_ptr }, chain_owner)
         .map_err(|e| GenesisError::InitSubsystem {
             subsystem: "chain owner",
             source: e.into(),
@@ -206,25 +211,24 @@ pub fn initialize_arbos_state<D: Database>(
 
     if arbos_init.native_token_supply_management_enabled {
         arb_state
-            .set_native_token_management_from_time(1)
-            .map_err(|e| GenesisError::InitSubsystem {
+            .set_native_token_management_from_time(unsafe { &mut *state_ptr }, 1)
+            .map_err(|source| GenesisError::InitSubsystem {
                 subsystem: "native token management",
-                source: e,
+                source,
             })?;
     }
     if arbos_init.transaction_filtering_enabled {
         arb_state
-            .set_transaction_filtering_from_time(1)
-            .map_err(|e| GenesisError::InitSubsystem {
+            .set_transaction_filtering_from_time(unsafe { &mut *state_ptr }, 1)
+            .map_err(|source| GenesisError::InitSubsystem {
                 subsystem: "transaction filtering",
-                source: e,
+                source,
             })?;
     }
 
-    // Run version upgrade from 1 to target (first_time=true).
     if target_arbos_version > 1 {
         arb_state
-            .upgrade_arbos_version(target_arbos_version, true)
+            .upgrade_arbos_version(unsafe { &mut *state_ptr }, target_arbos_version, true)
             .map_err(|source| GenesisError::Upgrade {
                 target: target_arbos_version,
                 source,

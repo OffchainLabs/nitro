@@ -1410,6 +1410,7 @@ dependencies = [
 name = "arb-storage"
 version = "0.1.0"
 dependencies = [
+ "alloy-evm",
  "alloy-primitives",
  "arb-primitives",
  "arb-storage-errors",

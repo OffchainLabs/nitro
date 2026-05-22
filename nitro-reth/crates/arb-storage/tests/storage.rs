@@ -59,14 +59,16 @@ fn sub_storage_keys_match_keccak_of_parent_and_sub_id() {
 #[test]
 fn uint64_round_trip() {
     let mut h = ArbosHarness::new().initialize();
-    let storage = h.root_storage();
-    let v = StorageBackedUint64::new(storage.state_ptr(), B256::repeat_byte(1), TEST_OFFSET);
+    let state_ptr = h.state_ptr();
+    let _storage = h.root_storage();
+    let v = StorageBackedUint64::new(B256::repeat_byte(1), TEST_OFFSET);
+    let b = unsafe { &mut *state_ptr };
 
-    assert_eq!(v.get().unwrap(), 0);
-    v.set(0xDEAD_BEEFu64).unwrap();
-    assert_eq!(v.get().unwrap(), 0xDEAD_BEEFu64);
-    v.set(u64::MAX).unwrap();
-    assert_eq!(v.get().unwrap(), u64::MAX);
+    assert_eq!(v.get(b).unwrap(), 0);
+    v.set(b, 0xDEAD_BEEFu64).unwrap();
+    assert_eq!(v.get(b).unwrap(), 0xDEAD_BEEFu64);
+    v.set(b, u64::MAX).unwrap();
+    assert_eq!(v.get(b).unwrap(), u64::MAX);
 }
 
 #[test]
@@ -148,15 +150,17 @@ fn address_round_trip() {
 #[test]
 fn distinct_offsets_produce_distinct_slots() {
     let mut h = ArbosHarness::new().initialize();
-    let storage = h.root_storage();
+    let state_ptr = h.state_ptr();
+    let _storage = h.root_storage();
     let key = B256::repeat_byte(7);
 
-    let a = StorageBackedUint64::new(storage.state_ptr(), key, 1);
-    let b = StorageBackedUint64::new(storage.state_ptr(), key, 2);
-    a.set(111).unwrap();
-    b.set(222).unwrap();
-    assert_eq!(a.get().unwrap(), 111);
-    assert_eq!(b.get().unwrap(), 222);
+    let a = StorageBackedUint64::new(key, 1);
+    let b_slot = StorageBackedUint64::new(key, 2);
+    let backend = unsafe { &mut *state_ptr };
+    a.set(backend, 111).unwrap();
+    b_slot.set(backend, 222).unwrap();
+    assert_eq!(a.get(backend).unwrap(), 111);
+    assert_eq!(b_slot.get(backend).unwrap(), 222);
 }
 
 #[test]

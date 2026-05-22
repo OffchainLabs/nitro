@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 arb-primitives = { workspace = true }
 arb-storage-errors = { workspace = true }
+alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 reth-storage-api = { workspace = true }
 reth-provider = { workspace = true }

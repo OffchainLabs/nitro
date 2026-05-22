@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
+use arb_storage::StorageBackend;
 
 use arb_chainspec::arbos_version;
 
@@ -281,7 +282,8 @@ pub struct InternalTxContext {
 /// - StartBlock: records L1 block hashes, reaps expired retryables, updates L2 pricing, and checks
 ///   for ArbOS upgrades.
 /// - BatchPostingReport (v1 and v2): updates L1 pricing based on batch poster spending.
-pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G>(
+pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G, C>(
+    backend: &mut C,
     data: &[u8],
     state: &mut ArbosState<D, B>,
     ctx: &InternalTxContext,
@@ -291,6 +293,7 @@ pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G>(
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
     G: FnMut(Address) -> U256,
+    C: StorageBackend,
 {
     if data.len() < 4 {
         return Err(format!(
@@ -304,15 +307,22 @@ where
     match selector {
         INTERNAL_TX_START_BLOCK_METHOD_ID => {
             let inputs = decode_start_block_data(data)?;
-            apply_start_block(inputs, state, ctx, &mut transfer_fn, &mut balance_of)
+            apply_start_block(
+                backend,
+                inputs,
+                state,
+                ctx,
+                &mut transfer_fn,
+                &mut balance_of,
+            )
         }
         INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID => {
             let inputs = decode_batch_posting_report(data)?;
-            apply_batch_posting_report(inputs, state, ctx, &mut transfer_fn)
+            apply_batch_posting_report(backend, inputs, state, ctx, &mut transfer_fn)
         }
         INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID => {
             let inputs = decode_batch_posting_report_v2(data)?;
-            apply_batch_posting_report_v2(inputs, state, ctx, &mut transfer_fn)
+            apply_batch_posting_report_v2(backend, inputs, state, ctx, &mut transfer_fn)
         }
         _ => Err(format!(
             "unknown internal tx selector: {:02x}{:02x}{:02x}{:02x}",
@@ -321,7 +331,8 @@ where
     }
 }
 
-fn apply_start_block<D: revm::Database, B: Burner, F, G>(
+fn apply_start_block<D: revm::Database, B: Burner, F, G, C>(
+    backend: &mut C,
     inputs: StartBlockData,
     state: &mut ArbosState<D, B>,
     ctx: &InternalTxContext,
@@ -331,61 +342,59 @@ fn apply_start_block<D: revm::Database, B: Burner, F, G>(
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
     G: FnMut(Address) -> U256,
+    C: StorageBackend,
 {
     let arbos_version = state.arbos_version();
 
     let mut l1_block_number = inputs.l1_block_number;
     let mut time_passed = inputs.time_passed;
 
-    // Before ArbOS v3, incorrectly used the L2 block number as time_passed.
     if arbos_version < arbos_version::ARBOS_VERSION_3 {
         time_passed = inputs.l2_block_number;
     }
 
-    // Before ArbOS v8, incorrectly used L1 block number one too high.
     if arbos_version < arbos_version::ARBOS_VERSION_8 {
         l1_block_number = l1_block_number.saturating_add(1);
     }
 
-    // Record L1 block hashes if L1 block number advanced.
     let old_l1_block_number = state
         .blockhashes
-        .l1_block_number()
+        .l1_block_number(backend)
         .map_err(|_| "failed to read l1 block number")?;
 
     if l1_block_number > old_l1_block_number {
         state
             .blockhashes
-            .record_new_l1_block(l1_block_number - 1, ctx.prev_hash, arbos_version)
+            .record_new_l1_block(backend, l1_block_number - 1, ctx.prev_hash, arbos_version)
             .map_err(|_| "failed to record L1 block")?;
     }
 
-    // Try to reap 2 expired retryables.
     let _ = state.retryable_state.try_to_reap_one_retryable(
+        backend,
         ctx.current_time,
         &mut *transfer_fn,
         &mut *balance_of,
     );
     let _ = state.retryable_state.try_to_reap_one_retryable(
+        backend,
         ctx.current_time,
         &mut *transfer_fn,
         &mut *balance_of,
     );
 
-    // Update L2 pricing model.
     let _ = state
         .l2_pricing_state
-        .update_pricing_model(time_passed, arbos_version);
+        .update_pricing_model(backend, time_passed, arbos_version);
 
-    // Check for scheduled ArbOS upgrade.
     state
-        .upgrade_arbos_version_if_necessary(ctx.current_time)
+        .upgrade_arbos_version_if_necessary(backend, ctx.current_time)
         .map_err(|_| "ArbOS upgrade failed (node may be out of date)")?;
 
     Ok(())
 }
 
-fn apply_batch_posting_report<D: revm::Database, B: Burner, F>(
+fn apply_batch_posting_report<D: revm::Database, B: Burner, F, C>(
+    backend: &mut C,
     inputs: BatchPostingReportData,
     state: &mut ArbosState<D, B>,
     ctx: &InternalTxContext,
@@ -393,17 +402,17 @@ fn apply_batch_posting_report<D: revm::Database, B: Burner, F>(
 ) -> Result<(), String>
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    C: StorageBackend,
 {
     let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
 
-    // gasSpent = SaturatingAdd(perBatchGas, SaturatingCast[int64](batchDataGas))
-    // Then SaturatingUCast[uint64](gasSpent) — clamps negative result to 0.
     let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas).unwrap_or(i64::MAX);
     let gas_spent_signed = per_batch_gas.saturating_add(batch_data_gas_i64);
     let gas_spent = gas_spent_signed.max(0) as u64;
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
+        backend,
         inputs.batch_timestamp,
         ctx.current_time,
         inputs.batch_poster,
@@ -417,7 +426,8 @@ where
     Ok(())
 }
 
-fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F>(
+fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F, C>(
+    backend: &mut C,
     inputs: BatchPostingReportV2Data,
     state: &mut ArbosState<D, B>,
     ctx: &InternalTxContext,
@@ -425,10 +435,10 @@ fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F>(
 ) -> Result<(), String>
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    C: StorageBackend,
 {
     let arbos_version = state.arbos_version();
 
-    // Compute gas from calldata stats (legacy cost model).
     let mut gas_spent = legacy_cost_for_stats(&BatchDataStats {
         length: inputs.batch_calldata_length,
         non_zeros: inputs.batch_calldata_non_zeros,
@@ -436,16 +446,14 @@ where
 
     gas_spent = gas_spent.saturating_add(inputs.batch_extra_gas);
 
-    // Add per-batch gas overhead.
     let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
 
     gas_spent = gas_spent.saturating_add(per_batch_gas.max(0) as u64);
 
-    // Floor gas computation (ArbOS v50+).
     if arbos_version >= arbos_version::ARBOS_VERSION_50 {
         let gas_floor_per_token = state
             .l1_pricing_state
-            .parent_gas_floor_per_token()
+            .parent_gas_floor_per_token(backend)
             .unwrap_or(0);
 
         let total_tokens = inputs
@@ -465,6 +473,7 @@ where
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
+        backend,
         inputs.batch_timestamp,
         ctx.current_time,
         inputs.batch_poster,
