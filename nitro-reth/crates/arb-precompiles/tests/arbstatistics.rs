@@ -9,6 +9,9 @@ fn arbstatistics() -> DynPrecompile {
     create_arbstatistics_precompile()
 }
 
+const SLOAD_GAS: u64 = 800;
+const COPY_GAS: u64 = 3;
+
 #[test]
 fn get_stats_returns_block_number_and_zeros() {
     let run = PrecompileTest::new()
@@ -21,4 +24,13 @@ fn get_stats_returns_block_number_and_zeros() {
     for i in 1..6 {
         assert_eq!(decode_word(out, i), common::word_u256(U256::ZERO));
     }
+}
+
+#[test]
+fn get_stats_charges_one_sload_and_six_copy_words() {
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .call(&arbstatistics(), &calldata("getStats()", &[]));
+    assert_eq!(run.gas_used(), SLOAD_GAS + 6 * COPY_GAS);
 }
