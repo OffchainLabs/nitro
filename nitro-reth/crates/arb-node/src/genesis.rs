@@ -17,6 +17,8 @@ use arbos::{
     l2_pricing,
 };
 
+use crate::error::GenesisError;
+
 /// Precompile addresses that exist at genesis (version 0).
 /// Only these get the `[0xFE]` invalid code marker at init time.
 /// Later precompiles (ArbWasm, ArbWasmCache, etc.) get code when their
@@ -69,13 +71,13 @@ pub fn initialize_arbos_state<D: Database>(
     target_arbos_version: u64,
     chain_owner: Address,
     arbos_init: ArbOSInit,
-) -> Result<(), String> {
+) -> Result<(), GenesisError> {
     let state_ptr: *mut State<D> = state as *mut State<D>;
 
     // Check if already initialized (version != 0 means state exists).
     let backing = Storage::new(state_ptr, B256::ZERO);
     if backing.get_uint64_by_uint64(0).unwrap_or(0) != 0 {
-        return Err("ArbOS state already initialized".into());
+        return Err(GenesisError::AlreadyInitialized);
     }
 
     info!(
@@ -97,12 +99,18 @@ pub fn initialize_arbos_state<D: Database>(
     // 1. Set version to 1 (base version before upgrades).
     backing
         .set_by_uint64(0, B256::from(U256::from(1u64)))
-        .map_err(|_| "failed to set initial version")?;
+        .map_err(|source| GenesisError::StorageWrite {
+            what: "initial version",
+            source,
+        })?;
 
     // 2. Set chain ID.
     StorageBackedBigUint::new(state_ptr, B256::ZERO, 4)
         .set(U256::from(chain_id))
-        .map_err(|_| "failed to set chain ID")?;
+        .map_err(|source| GenesisError::StorageWrite {
+            what: "chain id",
+            source,
+        })?;
 
     // 3. Install precompile code markers for version-0 precompiles only.
     for addr in &GENESIS_PRECOMPILE_ADDRESSES {
@@ -115,7 +123,10 @@ pub fn initialize_arbos_state<D: Database>(
         hash[12..32].copy_from_slice(chain_owner.as_slice());
         backing
             .set_by_uint64(3, hash)
-            .map_err(|_| "failed to set network fee account")?;
+            .map_err(|source| GenesisError::StorageWrite {
+                what: "network fee account",
+                source,
+            })?;
     }
 
     // 3c. Store serialized chain config.
@@ -124,7 +135,10 @@ pub fn initialize_arbos_state<D: Database>(
         let cc_bytes = StorageBackedBytes::new(cc_sto);
         cc_bytes
             .set(&init_msg.serialized_chain_config)
-            .map_err(|_| "failed to store chain config")?;
+            .map_err(|source| GenesisError::StorageWrite {
+                what: "chain config",
+                source,
+            })?;
     }
 
     // 4. Initialize L1 pricing state.
@@ -146,8 +160,12 @@ pub fn initialize_arbos_state<D: Database>(
 
     // 6. Initialize retryable state.
     let ret_sto = backing.open_sub_storage(&[2]); // RETRYABLES_SUBSPACE
-    arbos::retryables::RetryableState::initialize(&ret_sto)
-        .map_err(|_| "failed to initialize retryable state")?;
+    arbos::retryables::RetryableState::initialize(&ret_sto).map_err(|e| {
+        GenesisError::InitSubsystem {
+            subsystem: "retryables",
+            source: e.into(),
+        }
+    })?;
 
     // 7. Initialize address table (no-op but call for consistency).
     let at_sto = backing.open_sub_storage(&[3]); // ADDRESS_TABLE_SUBSPACE
@@ -155,8 +173,12 @@ pub fn initialize_arbos_state<D: Database>(
 
     // 8. Initialize chain owners.
     let co_sto = backing.open_sub_storage(&[4]); // CHAIN_OWNER_SUBSPACE
-    arbos::address_set::initialize_address_set(&co_sto)
-        .map_err(|_| "failed to initialize chain owners")?;
+    arbos::address_set::initialize_address_set(&co_sto).map_err(|e| {
+        GenesisError::InitSubsystem {
+            subsystem: "chain owners",
+            source: e.into(),
+        }
+    })?;
 
     // 9. Initialize merkle accumulator.
     let ma_sto = backing.open_sub_storage(&[5]); // SEND_MERKLE_SUBSPACE
@@ -172,29 +194,41 @@ pub fn initialize_arbos_state<D: Database>(
     // Now open ArbOS state and run the upgrade path from v1 to target version.
     // The open() method reads version from storage (we set it to 1 above).
     let mut arb_state = ArbosState::open(state_ptr, SystemBurner::new(None, false))
-        .map_err(|_| "failed to open ArbOS state after initial setup")?;
+        .map_err(GenesisError::OpenArbosState)?;
 
     arb_state
         .chain_owners
         .add(chain_owner)
-        .map_err(|_| "failed to add chain owner")?;
+        .map_err(|e| GenesisError::InitSubsystem {
+            subsystem: "chain owner",
+            source: e.into(),
+        })?;
 
     if arbos_init.native_token_supply_management_enabled {
         arb_state
             .set_native_token_management_from_time(1)
-            .map_err(|_| "failed to set native token enabled from time")?;
+            .map_err(|e| GenesisError::InitSubsystem {
+                subsystem: "native token management",
+                source: e,
+            })?;
     }
     if arbos_init.transaction_filtering_enabled {
         arb_state
             .set_transaction_filtering_from_time(1)
-            .map_err(|_| "failed to set transaction filtering from time")?;
+            .map_err(|e| GenesisError::InitSubsystem {
+                subsystem: "transaction filtering",
+                source: e,
+            })?;
     }
 
     // Run version upgrade from 1 to target (first_time=true).
     if target_arbos_version > 1 {
         arb_state
             .upgrade_arbos_version(target_arbos_version, true)
-            .map_err(|_| format!("failed to upgrade ArbOS to version {target_arbos_version}"))?;
+            .map_err(|source| GenesisError::Upgrade {
+                target: target_arbos_version,
+                source,
+            })?;
     }
 
     info!(

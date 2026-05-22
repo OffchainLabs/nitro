@@ -62,6 +62,10 @@ crate = "arb-storage"
 
 [[licenses.exceptions]]
 allow = ["BUSL-1.1"]
+crate = "arb-errors"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
 crate = "arb-evm"
 
 [[licenses.exceptions]]

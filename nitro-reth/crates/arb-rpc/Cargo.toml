@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 arb-alloy-consensus = { workspace = true }
 arb-chainspec = { workspace = true }
+arb-errors = { workspace = true }
 arb-primitives = { workspace = true }
 arb-precompiles = { workspace = true }
 arb-stylus = { workspace = true }
@@ -37,6 +38,7 @@ reth-rpc-eth-types = { workspace = true }
 reth-rpc-server-types = { workspace = true }
 reth-tasks = { workspace = true }
 reth-storage-api = { workspace = true }
+reth-storage-errors = { workspace = true }
 reth-transaction-pool = { workspace = true }
 jsonrpsee = { workspace = true }
 jsonrpsee-http-client = { workspace = true }

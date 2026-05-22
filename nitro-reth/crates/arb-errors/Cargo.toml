@@ -1,0 +1,17 @@
+[package]
+name = "arb-errors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-storage-errors = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["arb-storage-errors/std", "thiserror/std"]
+
+[lints]
+workspace = true

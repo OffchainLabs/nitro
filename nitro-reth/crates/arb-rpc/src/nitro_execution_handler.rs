@@ -20,6 +20,7 @@ use tracing::{debug, info};
 
 use crate::{
     block_producer::{BlockProducer, BlockProductionInput},
+    error::{RpcError, RpcResult as ArbRpcResult},
     nitro_execution::{
         NitroExecutionApiServer, RpcConsensusSyncData, RpcFinalityData, RpcMaintenanceStatus,
         RpcMessageResult, RpcMessageWithMetadata, RpcMessageWithMetadataAndBlockInfo,
@@ -80,13 +81,12 @@ where
     fn get_header(
         &self,
         block_num: u64,
-    ) -> Result<
+    ) -> ArbRpcResult<
         Option<reth_primitives_traits::SealedHeader<<Provider as HeaderProvider>::Header>>,
-        String,
     > {
-        self.provider
-            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(block_num))
-            .map_err(|e| e.to_string())
+        Ok(self
+            .provider
+            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(block_num))?)
     }
 
     /// Extract send root from a header's extra_data.
@@ -100,21 +100,13 @@ where
     }
 }
 
-fn internal_error(msg: impl Into<String>) -> jsonrpsee::types::ErrorObjectOwned {
-    jsonrpsee::types::ErrorObject::owned(
-        jsonrpsee::types::error::INTERNAL_ERROR_CODE,
-        msg.into(),
-        None::<()>,
-    )
-}
-
 /// Decode the l2_msg field from the RPC message.
 ///
 /// JSON encoding always base64-encodes byte fields. The base64 output
 /// can start with "0x" as valid base64 characters, so always decode as base64.
-fn decode_l2_msg(l2_msg: &Option<String>) -> Result<Vec<u8>, String> {
+fn decode_l2_msg(l2_msg: &Option<String>) -> ArbRpcResult<Vec<u8>> {
     match l2_msg {
-        Some(s) if !s.is_empty() => base64_decode(s).map_err(|e| format!("base64 decode: {e}")),
+        Some(s) if !s.is_empty() => base64_decode(s),
         _ => Ok(vec![]),
     }
 }
@@ -132,7 +124,7 @@ fn base64_engine() -> &'static GeneralPurpose {
     })
 }
 
-fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+fn base64_decode(input: &str) -> ArbRpcResult<Vec<u8>> {
     let stripped = input.trim_end_matches('=');
     // A length-1 mod 4 tail carries no meaningful bits; the orphan symbol
     // is still alphabet-validated, then discarded.
@@ -141,7 +133,10 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     let body = if tail.len() == 1 {
         let b = tail[0];
         if !STANDARD_ALPHABET.contains(&b) {
-            return Err(format!("invalid base64 character: {}", b as char));
+            return Err(RpcError::base64_decode(format!(
+                "invalid base64 character: {}",
+                b as char
+            )));
         }
         &stripped[..body_len]
     } else {
@@ -149,7 +144,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     };
     base64_engine()
         .decode(body)
-        .map_err(|e| format!("invalid base64: {e}"))
+        .map_err(|e| RpcError::base64_decode(format!("invalid base64: {e}")))
 }
 
 #[async_trait::async_trait]
@@ -172,16 +167,14 @@ where
         // The Init message does NOT produce a block. Its params are applied
         // during the first real block's execution.
         if kind == 11 {
-            let l2_msg = decode_l2_msg(&message.message.l2_msg).map_err(internal_error)?;
+            let l2_msg = decode_l2_msg(&message.message.l2_msg)?;
             self.block_producer
                 .cache_init_message(&l2_msg)
-                .map_err(|e| internal_error(e.to_string()))?;
+                .map_err(RpcError::from)?;
 
-            // Return the genesis block info.
             let genesis_header = self
-                .get_header(self.genesis_block_num)
-                .map_err(internal_error)?
-                .ok_or_else(|| internal_error("Genesis block not found for Init message"))?;
+                .get_header(self.genesis_block_num)?
+                .ok_or_else(|| RpcError::not_found("Genesis block not found for Init message"))?;
             let send_root = Self::send_root_from_header(genesis_header.header());
             info!(target: "nitroexecution", "Init message cached, returning genesis block");
             return Ok(RpcMessageResult {
@@ -191,7 +184,7 @@ where
         }
 
         // Check if we already have this block (idempotent).
-        if let Some(header) = self.get_header(block_num).map_err(internal_error)? {
+        if let Some(header) = self.get_header(block_num)? {
             let send_root = Self::send_root_from_header(header.header());
             debug!(target: "nitroexecution", block_num, ?send_root, "Block already exists");
             return Ok(RpcMessageResult {
@@ -200,8 +193,7 @@ where
             });
         }
 
-        // Decode the L2 message bytes
-        let l2_msg = decode_l2_msg(&message.message.l2_msg).map_err(internal_error)?;
+        let l2_msg = decode_l2_msg(&message.message.l2_msg)?;
 
         // Build batch data stats if present
         let batch_data_stats = message
@@ -224,12 +216,11 @@ where
             batch_data_stats,
         };
 
-        // Delegate to the block producer
         let result = self
             .block_producer
             .produce_block(msg_idx, input)
             .await
-            .map_err(|e| internal_error(e.to_string()))?;
+            .map_err(RpcError::from)?;
 
         Ok(RpcMessageResult {
             block_hash: result.block_hash,
@@ -261,14 +252,14 @@ where
         self.block_producer
             .reset_to_block(target_block)
             .await
-            .map_err(|e| internal_error(format!("reset_to_block: {e}")))?;
+            .map_err(RpcError::from)?;
 
         // Replay new messages on top of the rolled-back head.
         let mut results = Vec::with_capacity(new_messages.len());
         for (i, wrapped) in new_messages.into_iter().enumerate() {
             let msg_idx = msg_idx_of_first_msg_to_add + i as u64;
             let meta = wrapped.message;
-            let l2_msg = decode_l2_msg(&meta.message.l2_msg).map_err(internal_error)?;
+            let l2_msg = decode_l2_msg(&meta.message.l2_msg)?;
             let batch_data_stats = meta
                 .message
                 .batch_data_tokens
@@ -290,7 +281,7 @@ where
                 .block_producer
                 .produce_block(msg_idx, input)
                 .await
-                .map_err(|e| internal_error(format!("reorg replay msg {msg_idx}: {e}")))?;
+                .map_err(RpcError::from)?;
             results.push(RpcMessageResult {
                 block_hash: produced.block_hash,
                 send_root: produced.send_root,
@@ -300,10 +291,7 @@ where
     }
 
     async fn head_message_index(&self) -> RpcResult<u64> {
-        let best = self
-            .provider
-            .best_block_number()
-            .map_err(|e| internal_error(e.to_string()))?;
+        let best = self.provider.best_block_number().map_err(RpcError::from)?;
 
         let msg_idx = self.block_number_to_message_index(best).unwrap_or(0);
         debug!(target: "nitroexecution", best, msg_idx, "headMessageIndex");
@@ -314,9 +302,8 @@ where
         let block_num = self.message_index_to_block_number(msg_idx);
 
         let header = self
-            .get_header(block_num)
-            .map_err(internal_error)?
-            .ok_or_else(|| internal_error(format!("Block {block_num} not found")))?;
+            .get_header(block_num)?
+            .ok_or_else(|| RpcError::not_found(format!("Block {block_num} not found")))?;
 
         let send_root = Self::send_root_from_header(header.header());
 
@@ -339,7 +326,7 @@ where
                 finalized.map(|f| f.block_hash),
                 validated.map(|f| f.block_hash),
             )
-            .map_err(|e| internal_error(format!("set_finality: {e}")))?;
+            .map_err(RpcError::from)?;
         Ok(())
     }
 
@@ -372,9 +359,8 @@ where
         let block_num = self.message_index_to_block_number(msg_idx);
 
         let header = self
-            .get_header(block_num)
-            .map_err(internal_error)?
-            .ok_or_else(|| internal_error(format!("Block {block_num} not found")))?;
+            .get_header(block_num)?
+            .ok_or_else(|| RpcError::not_found(format!("Block {block_num} not found")))?;
 
         let mix = header.header().mix_hash().unwrap_or_default();
         let arbos_version = u64::from_be_bytes(mix.0[16..24].try_into().unwrap_or_default());

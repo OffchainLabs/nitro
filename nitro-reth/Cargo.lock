@@ -1083,6 +1083,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-errors"
+version = "0.1.0"
+dependencies = [
+ "arb-storage-errors",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-evm"
 version = "0.1.0"
 dependencies = [
@@ -1182,12 +1190,14 @@ dependencies = [
  "alloy-rpc-types-engine",
  "alloy-rpc-types-eth",
  "arb-chainspec",
+ "arb-errors",
  "arb-evm",
  "arb-payload",
  "arb-precompiles",
  "arb-primitives",
  "arb-rpc",
  "arb-storage",
+ "arb-storage-errors",
  "arb-stylus",
  "arb-txpool",
  "arbos",
@@ -1231,6 +1241,7 @@ dependencies = [
  "reth-rpc-eth-api",
  "reth-stages-api",
  "reth-storage-api",
+ "reth-storage-errors",
  "reth-tasks",
  "reth-tokio-util",
  "reth-tracing",
@@ -1243,6 +1254,7 @@ dependencies = [
  "revm-database",
  "rustc-hash",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -1340,6 +1352,7 @@ dependencies = [
  "alloy-serde",
  "arb-alloy-consensus",
  "arb-chainspec",
+ "arb-errors",
  "arb-evm",
  "arb-payload",
  "arb-precompiles",
@@ -1365,6 +1378,7 @@ dependencies = [
  "reth-rpc-eth-types",
  "reth-rpc-server-types",
  "reth-storage-api",
+ "reth-storage-errors",
  "reth-tasks",
  "reth-transaction-pool",
  "revm",
