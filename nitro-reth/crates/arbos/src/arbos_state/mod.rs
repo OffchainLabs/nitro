@@ -429,10 +429,11 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
 
             match next {
                 2 => {
-                    self.l1_pricing_state.set_last_surplus(U256::ZERO, false)?;
+                    self.l1_pricing_state
+                        .set_last_surplus(backend, U256::ZERO, false)?;
                 }
                 3 => {
-                    self.l1_pricing_state.set_per_batch_gas_cost(0)?;
+                    self.l1_pricing_state.set_per_batch_gas_cost(backend, 0)?;
                     self.l1_pricing_state
                         .set_amortized_cost_cap_bips(backend, u64::MAX)?;
                 }
@@ -445,8 +446,10 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                         .set_l1_fees_available(backend, pool_balance)?;
                 }
                 11 => {
-                    self.l1_pricing_state
-                        .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V12)?;
+                    self.l1_pricing_state.set_per_batch_gas_cost(
+                        backend,
+                        l1_pricing::INITIAL_PER_BATCH_GAS_COST_V12,
+                    )?;
 
                     let old_cap = self.l1_pricing_state.amortized_cost_cap_bips(backend)?;
                     if old_cap == u64::MAX {
@@ -539,7 +542,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         if first_time && upgrade_to >= 6 {
             if upgrade_to < 11 {
                 self.l1_pricing_state
-                    .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V6)?;
+                    .set_per_batch_gas_cost(backend, l1_pricing::INITIAL_PER_BATCH_GAS_COST_V6)?;
             }
             self.l1_pricing_state.set_equilibration_units(
                 backend,

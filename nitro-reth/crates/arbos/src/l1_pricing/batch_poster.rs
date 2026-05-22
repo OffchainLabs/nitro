@@ -17,11 +17,11 @@ const PAY_TO_OFFSET: u64 = 1;
 pub struct BatchPostersTable<D> {
     poster_addrs: AddressSet<D>,
     poster_info: Storage<D>,
-    pub total_funds_due: StorageBackedBigInt<D>,
+    pub total_funds_due: StorageBackedBigInt,
 }
 
-pub struct BatchPosterState<D> {
-    funds_due: StorageBackedBigInt<D>,
+pub struct BatchPosterState {
+    funds_due: StorageBackedBigInt,
     pay_to: StorageBackedAddress,
 }
 
@@ -46,19 +46,11 @@ pub fn initialize_batch_posters_table<D: Database, B: StorageBackend>(
     let pay_to = StorageBackedAddress::new(bp_storage.base_key(), PAY_TO_OFFSET);
     pay_to.set(backend, initial_poster)?;
 
-    let funds_due = StorageBackedBigInt::new(
-        bp_storage.state_ptr(),
-        bp_storage.base_key(),
-        FUNDS_DUE_OFFSET,
-    );
-    funds_due.set(U256::ZERO)?;
+    let funds_due = StorageBackedBigInt::new(bp_storage.base_key(), FUNDS_DUE_OFFSET);
+    funds_due.set(backend, U256::ZERO)?;
 
-    let total_funds_due = StorageBackedBigInt::new(
-        bpt_storage.state_ptr(),
-        bpt_storage.base_key(),
-        TOTAL_FUNDS_DUE_OFFSET,
-    );
-    total_funds_due.set(U256::ZERO)?;
+    let total_funds_due = StorageBackedBigInt::new(bpt_storage.base_key(), TOTAL_FUNDS_DUE_OFFSET);
+    total_funds_due.set(backend, U256::ZERO)?;
     Ok(())
 }
 
@@ -70,11 +62,7 @@ pub fn open_batch_posters_table<D: Database>(
     let poster_info = bpt_storage.open_sub_storage(POSTER_INFO_KEY);
 
     let poster_addrs = crate::address_set::open_address_set(poster_addrs_storage);
-    let total_funds_due = StorageBackedBigInt::new(
-        bpt_storage.state_ptr(),
-        bpt_storage.base_key(),
-        TOTAL_FUNDS_DUE_OFFSET,
-    );
+    let total_funds_due = StorageBackedBigInt::new(bpt_storage.base_key(), TOTAL_FUNDS_DUE_OFFSET);
 
     BatchPostersTable {
         poster_addrs,
@@ -97,7 +85,7 @@ impl<D: Database> BatchPostersTable<D> {
         backend: &mut B,
         poster: Address,
         create_if_not_exist: bool,
-    ) -> Result<BatchPosterState<D>, L1PricingError> {
+    ) -> Result<BatchPosterState, L1PricingError> {
         let is_poster = self.poster_addrs.is_member(poster)?;
         if !is_poster {
             if !create_if_not_exist {
@@ -113,27 +101,23 @@ impl<D: Database> BatchPostersTable<D> {
         backend: &mut B,
         poster_address: Address,
         pay_to: Address,
-    ) -> Result<BatchPosterState<D>, L1PricingError> {
+    ) -> Result<BatchPosterState, L1PricingError> {
         let is_poster = self.poster_addrs.is_member(poster_address)?;
         if is_poster {
             return Err(L1PricingError::BatchPosterAlreadyExists);
         }
 
         let bp_state = self.internal_open(poster_address);
-        bp_state.funds_due.set(U256::ZERO)?;
+        bp_state.funds_due.set(backend, U256::ZERO)?;
         bp_state.pay_to.set(backend, pay_to)?;
         self.poster_addrs.add(backend, poster_address)?;
         Ok(bp_state)
     }
 
-    fn internal_open(&self, poster: Address) -> BatchPosterState<D> {
+    fn internal_open(&self, poster: Address) -> BatchPosterState {
         let bp_storage = self.poster_info.open_sub_storage(poster.as_slice());
         BatchPosterState {
-            funds_due: StorageBackedBigInt::new(
-                bp_storage.state_ptr(),
-                bp_storage.base_key(),
-                FUNDS_DUE_OFFSET,
-            ),
+            funds_due: StorageBackedBigInt::new(bp_storage.base_key(), FUNDS_DUE_OFFSET),
             pay_to: StorageBackedAddress::new(bp_storage.base_key(), PAY_TO_OFFSET),
         }
     }
@@ -145,8 +129,11 @@ impl<D: Database> BatchPostersTable<D> {
         Ok(self.poster_addrs.all_members(backend, u64::MAX)?)
     }
 
-    pub fn total_funds_due(&self) -> Result<U256, L1PricingError> {
-        Ok(self.total_funds_due.get_raw()?)
+    pub fn total_funds_due<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
+        Ok(self.total_funds_due.get_raw(backend)?)
     }
 
     pub fn get_funds_due_list<B: StorageBackend>(
@@ -157,7 +144,7 @@ impl<D: Database> BatchPostersTable<D> {
         let mut result = Vec::new();
         for poster in posters {
             let state = self.internal_open(poster);
-            let due = state.funds_due()?;
+            let due = state.funds_due(backend)?;
             if due > U256::ZERO {
                 result.push(FundsDueItem {
                     address: poster,
@@ -169,21 +156,22 @@ impl<D: Database> BatchPostersTable<D> {
     }
 }
 
-impl<D: Database> BatchPosterState<D> {
-    pub fn funds_due(&self) -> Result<U256, L1PricingError> {
-        Ok(self.funds_due.get_raw()?)
+impl BatchPosterState {
+    pub fn funds_due<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, L1PricingError> {
+        Ok(self.funds_due.get_raw(backend)?)
     }
 
-    pub fn set_funds_due(
+    pub fn set_funds_due<B: StorageBackend>(
         &self,
+        backend: &mut B,
         value: U256,
-        total_funds_due: &StorageBackedBigInt<D>,
+        total_funds_due: &StorageBackedBigInt,
     ) -> Result<(), L1PricingError> {
-        let prev = self.funds_due.get_raw().unwrap_or(U256::ZERO);
-        let prev_total = total_funds_due.get_raw().unwrap_or(U256::ZERO);
+        let prev = self.funds_due.get_raw(backend).unwrap_or(U256::ZERO);
+        let prev_total = total_funds_due.get_raw(backend).unwrap_or(U256::ZERO);
         let new_total = prev_total.saturating_add(value).saturating_sub(prev);
-        total_funds_due.set(new_total)?;
-        Ok(self.funds_due.set(value)?)
+        total_funds_due.set(backend, new_total)?;
+        Ok(self.funds_due.set(backend, value)?)
     }
 
     pub fn pay_to<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, L1PricingError> {

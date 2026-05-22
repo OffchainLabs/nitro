@@ -38,12 +38,12 @@ fn batch_poster_table_lifecycle() {
 
     let bp1 = bpt.add_poster(b, addr1, pay1).unwrap();
     assert_eq!(bp1.pay_to(b).unwrap(), pay1);
-    assert_eq!(bp1.funds_due().unwrap(), U256::ZERO);
+    assert_eq!(bp1.funds_due(b).unwrap(), U256::ZERO);
     assert!(bpt.contains_poster(addr1).unwrap());
 
     let bp2 = bpt.add_poster(b, addr2, pay2).unwrap();
     assert_eq!(bp2.pay_to(b).unwrap(), pay2);
-    assert_eq!(bp2.funds_due().unwrap(), U256::ZERO);
+    assert_eq!(bp2.funds_due(b).unwrap(), U256::ZERO);
     assert!(bpt.contains_poster(addr2).unwrap());
 
     assert_eq!(bpt.all_posters(b).unwrap().len(), 3);
@@ -52,15 +52,15 @@ fn batch_poster_table_lifecycle() {
     bp1.set_pay_to(b, addr2).unwrap();
     assert_eq!(bp1.pay_to(b).unwrap(), addr2);
 
-    bp1.set_funds_due(U256::from(13u64), &bpt.total_funds_due)
+    bp1.set_funds_due(b, U256::from(13u64), &bpt.total_funds_due)
         .unwrap();
-    assert_eq!(bp1.funds_due().unwrap(), U256::from(13u64));
+    assert_eq!(bp1.funds_due(b).unwrap(), U256::from(13u64));
 
-    bp2.set_funds_due(U256::from(42u64), &bpt.total_funds_due)
+    bp2.set_funds_due(b, U256::from(42u64), &bpt.total_funds_due)
         .unwrap();
-    assert_eq!(bp2.funds_due().unwrap(), U256::from(42u64));
+    assert_eq!(bp2.funds_due(b).unwrap(), U256::from(42u64));
 
-    assert_eq!(bpt.total_funds_due().unwrap(), U256::from(55u64));
+    assert_eq!(bpt.total_funds_due(b).unwrap(), U256::from(55u64));
 }
 
 #[test]

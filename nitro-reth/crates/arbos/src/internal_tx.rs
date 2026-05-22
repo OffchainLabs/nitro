@@ -404,7 +404,10 @@ where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
     C: StorageBackend,
 {
-    let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
+    let per_batch_gas = state
+        .l1_pricing_state
+        .per_batch_gas_cost(backend)
+        .unwrap_or(0);
 
     let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas).unwrap_or(i64::MAX);
     let gas_spent_signed = per_batch_gas.saturating_add(batch_data_gas_i64);
@@ -446,7 +449,10 @@ where
 
     gas_spent = gas_spent.saturating_add(inputs.batch_extra_gas);
 
-    let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
+    let per_batch_gas = state
+        .l1_pricing_state
+        .per_batch_gas_cost(backend)
+        .unwrap_or(0);
 
     gas_spent = gas_spent.saturating_add(per_batch_gas.max(0) as u64);
 

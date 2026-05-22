@@ -96,7 +96,7 @@ fn apply_action(
             let bp = bpt
                 .open_poster(unsafe { &mut *state_ptr }, *poster, true)
                 .map_err(|_| SpecError::Action("open_poster".into()))?;
-            bp.set_funds_due(*amount, &bpt.total_funds_due)
+            bp.set_funds_due(unsafe { &mut *state_ptr }, *amount, &bpt.total_funds_due)
                 .map_err(|_| SpecError::Action("set_funds_due".into()))?;
         }
         Action::L2PricingSetGasBacklog { value } => harness
@@ -312,7 +312,8 @@ fn check_assertions(
         if let Some(v) = s.per_batch_gas_cost {
             ensure_eq(
                 "l1.per_batch_gas_cost",
-                l1.per_batch_gas_cost().map_err(map_err)?,
+                l1.per_batch_gas_cost(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -344,7 +345,8 @@ fn check_assertions(
             let bpt = l1.batch_poster_table();
             ensure_eq(
                 "l1.total_funds_due",
-                bpt.total_funds_due().map_err(map_err)?,
+                bpt.total_funds_due(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
