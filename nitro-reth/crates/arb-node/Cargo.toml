@@ -9,8 +9,10 @@ license.workspace = true
 arb-primitives = { workspace = true }
 arb-precompiles = { workspace = true }
 arb-chainspec = { workspace = true }
+arb-errors = { workspace = true }
 arb-evm = { workspace = true }
 arb-storage = { workspace = true }
+arb-storage-errors = { workspace = true }
 arb-payload = { workspace = true }
 arb-rpc = { workspace = true }
 arb-stylus = { workspace = true }
@@ -54,6 +56,7 @@ reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
 reth-revm = { workspace = true }
 reth-storage-api = { workspace = true }
+reth-storage-errors = { workspace = true }
 reth-tokio-util = { workspace = true }
 reth-tracing = { workspace = true }
 reth-trie = { workspace = true }
@@ -76,6 +79,7 @@ rayon = { workspace = true }
 rustc-hash = { workspace = true }
 revm = { workspace = true }
 revm-database = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = "0.1"
 tracing = { workspace = true }

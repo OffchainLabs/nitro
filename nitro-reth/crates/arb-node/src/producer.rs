@@ -503,7 +503,7 @@ where
                     genesis::DEFAULT_CHAIN_OWNER,
                     genesis::ArbOSInit::default(),
                 )
-                .map_err(BlockProducerError::Execution)?;
+                .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
             } else {
                 use arbos::{arbos_state::ArbosState, burn::SystemBurner};
                 info!(

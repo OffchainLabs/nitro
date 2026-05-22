@@ -9,6 +9,7 @@ pub mod chainspec;
 pub mod coalesced_state;
 pub mod consensus;
 pub mod engine;
+pub mod error;
 pub mod genesis;
 pub mod launcher;
 pub mod network;
@@ -16,6 +17,8 @@ pub mod payload;
 pub mod pool;
 pub mod producer;
 pub mod validator;
+
+pub use error::{GenesisError, LauncherError};
 
 use std::sync::Arc;
 
