@@ -1,8 +1,11 @@
 pub mod api;
 pub mod data_pricer;
+mod error;
 pub mod memory;
 pub mod params;
 pub mod types;
+
+pub use error::ProgramsError;
 
 use alloy_primitives::B256;
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES;
@@ -141,13 +144,13 @@ impl<D: Database> Programs<D> {
     }
 
     /// Load the current Stylus parameters.
-    pub fn params(&self) -> Result<StylusParams, ()> {
+    pub fn params(&self) -> Result<StylusParams, ProgramsError> {
         let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
         StylusParams::load(self.arbos_version, &sto)
     }
 
     /// Retrieve a program entry (may be expired or unactivated).
-    pub fn get_program(&self, code_hash: B256, time: u64) -> Result<Program, ()> {
+    pub fn get_program(&self, code_hash: B256, time: u64) -> Result<Program, ProgramsError> {
         let data = self.programs.get(code_hash)?;
         Ok(Program::from_storage(data, time))
     }
@@ -158,23 +161,26 @@ impl<D: Database> Programs<D> {
         code_hash: B256,
         time: u64,
         params: &StylusParams,
-    ) -> Result<Program, ()> {
+    ) -> Result<Program, ProgramsError> {
         let program = self.get_program(code_hash, time)?;
         if program.version == 0 {
-            return Err(());
+            return Err(ProgramsError::NotActivated);
         }
         if program.version != params.version {
-            return Err(());
+            return Err(ProgramsError::VersionMismatch {
+                program: program.version as u64,
+                params: params.version as u64,
+            });
         }
         if program.age_seconds > days_to_seconds(params.expiry_days) {
-            return Err(());
+            return Err(ProgramsError::Expired);
         }
         Ok(program)
     }
 
     /// Store a program entry.
-    pub fn set_program(&self, code_hash: B256, program: Program) -> Result<(), ()> {
-        self.programs.set(code_hash, program.to_storage())
+    pub fn set_program(&self, code_hash: B256, program: Program) -> Result<(), ProgramsError> {
+        Ok(self.programs.set(code_hash, program.to_storage())?)
     }
 
     /// Check if a program exists and its status.
@@ -183,7 +189,7 @@ impl<D: Database> Programs<D> {
         code_hash: B256,
         time: u64,
         params: &StylusParams,
-    ) -> Result<(u16, bool, bool), ()> {
+    ) -> Result<(u16, bool, bool), ProgramsError> {
         let program = self.get_program(code_hash, time)?;
         let expired = program.activated_at == 0
             || hours_to_age(time, program.activated_at) > days_to_seconds(params.expiry_days);
@@ -191,13 +197,13 @@ impl<D: Database> Programs<D> {
     }
 
     /// Get the module hash for a code hash.
-    pub fn get_module_hash(&self, code_hash: B256) -> Result<B256, ()> {
-        self.module_hashes.get(code_hash)
+    pub fn get_module_hash(&self, code_hash: B256) -> Result<B256, ProgramsError> {
+        Ok(self.module_hashes.get(code_hash)?)
     }
 
     /// Set the module hash for a code hash.
-    pub fn set_module_hash(&self, code_hash: B256, module_hash: B256) -> Result<(), ()> {
-        self.module_hashes.set(code_hash, module_hash)
+    pub fn set_module_hash(&self, code_hash: B256, module_hash: B256) -> Result<(), ProgramsError> {
+        Ok(self.module_hashes.set(code_hash, module_hash)?)
     }
 
     /// Build runtime parameters for a program invocation.
@@ -276,7 +282,7 @@ impl<D: Database> Programs<D> {
         time: u64,
         pages_open: u16,
         recent_cache_hit: bool,
-    ) -> Result<(u64, Program, MemoryModel), ()> {
+    ) -> Result<(u64, Program, MemoryModel), ProgramsError> {
         let params = self.params()?;
         let program = self.get_active_program(code_hash, time, &params)?;
         let model = MemoryModel::new(params.free_pages, params.page_gas);

@@ -4,6 +4,9 @@ use revm::Database;
 
 use arb_storage::{Storage, StorageBackedUint64};
 
+mod error;
+pub use error::AddressTableError;
+
 /// A mapping between addresses and compact integer indices.
 ///
 /// Allows compressing addresses to small integers for more efficient on-chain encoding.
@@ -30,7 +33,7 @@ pub fn open_address_table<D: Database>(sto: Storage<D>) -> AddressTable<D> {
 }
 
 impl<D: Database> AddressTable<D> {
-    pub fn register(&self, addr: Address) -> Result<u64, ()> {
+    pub fn register(&self, addr: Address) -> Result<u64, AddressTableError> {
         let addr_hash = address_to_hash(addr);
         let rev = self.by_address.get(addr_hash)?;
 
@@ -51,7 +54,7 @@ impl<D: Database> AddressTable<D> {
         Ok(new_num_items - 1)
     }
 
-    pub fn lookup(&self, addr: Address) -> Result<(u64, bool), ()> {
+    pub fn lookup(&self, addr: Address) -> Result<(u64, bool), AddressTableError> {
         let addr_hash = address_to_hash(addr);
         let res_hash = self.by_address.get(addr_hash)?;
         let res = U256::from_be_bytes(res_hash.0).to::<u64>();
@@ -63,16 +66,16 @@ impl<D: Database> AddressTable<D> {
         }
     }
 
-    pub fn address_exists(&self, addr: Address) -> Result<bool, ()> {
+    pub fn address_exists(&self, addr: Address) -> Result<bool, AddressTableError> {
         let (_, exists) = self.lookup(addr)?;
         Ok(exists)
     }
 
-    pub fn size(&self) -> Result<u64, ()> {
-        self.num_items.get()
+    pub fn size(&self) -> Result<u64, AddressTableError> {
+        Ok(self.num_items.get()?)
     }
 
-    pub fn lookup_index(&self, index: u64) -> Result<Option<Address>, ()> {
+    pub fn lookup_index(&self, index: u64) -> Result<Option<Address>, AddressTableError> {
         let items = self.num_items.get()?;
         if index >= items {
             return Ok(None);
@@ -84,7 +87,7 @@ impl<D: Database> AddressTable<D> {
     }
 
     /// Compress an address into an RLP-encoded index or raw address bytes.
-    pub fn compress(&self, addr: Address) -> Result<Vec<u8>, ()> {
+    pub fn compress(&self, addr: Address) -> Result<Vec<u8>, AddressTableError> {
         let (index, exists) = self.lookup(addr)?;
         if exists {
             let mut buf = Vec::new();
@@ -97,12 +100,12 @@ impl<D: Database> AddressTable<D> {
         }
     }
 
-    /// Decompress RLP-encoded data back to an address.
-    /// Returns (address, number_of_bytes_read).
-    pub fn decompress(&self, buf: &[u8]) -> Result<(Address, u64), ()> {
-        // Try decoding as bytes first
+    /// Decompress RLP-encoded data back to an address. Returns
+    /// `(address, number_of_bytes_read)`.
+    pub fn decompress(&self, buf: &[u8]) -> Result<(Address, u64), AddressTableError> {
         let mut cursor = buf;
-        let input = <Vec<u8> as Decodable>::decode(&mut cursor).map_err(|_| ())?;
+        let input = <Vec<u8> as Decodable>::decode(&mut cursor)
+            .map_err(|_| AddressTableError::InvalidEncoding)?;
         let bytes_read = (buf.len() - cursor.len()) as u64;
 
         if input.len() == 20 {
@@ -110,11 +113,12 @@ impl<D: Database> AddressTable<D> {
             addr_bytes.copy_from_slice(&input);
             Ok((Address::from(addr_bytes), bytes_read))
         } else {
-            // Re-decode as u64 index
             let mut cursor = buf;
-            let index = u64::decode(&mut cursor).map_err(|_| ())?;
+            let index = u64::decode(&mut cursor).map_err(|_| AddressTableError::InvalidEncoding)?;
             let bytes_read = (buf.len() - cursor.len()) as u64;
-            let addr = self.lookup_index(index)?.ok_or(())?;
+            let addr = self
+                .lookup_index(index)?
+                .ok_or(AddressTableError::IndexOutOfRange(index))?;
             Ok((addr, bytes_read))
         }
     }

@@ -4,6 +4,8 @@ use revm::Database;
 use crate::address_set::AddressSet;
 use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt};
 
+use super::L1PricingError;
+
 const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
 const POSTER_ADDRS_KEY: &[u8] = &[0];
 const POSTER_INFO_KEY: &[u8] = &[1];
@@ -85,19 +87,19 @@ impl<D: Database> BatchPostersTable<D> {
         open_batch_posters_table(l1_pricing_storage)
     }
 
-    pub fn contains_poster(&self, poster: Address) -> Result<bool, ()> {
-        self.poster_addrs.is_member(poster)
+    pub fn contains_poster(&self, poster: Address) -> Result<bool, L1PricingError> {
+        Ok(self.poster_addrs.is_member(poster)?)
     }
 
     pub fn open_poster(
         &self,
         poster: Address,
         create_if_not_exist: bool,
-    ) -> Result<BatchPosterState<D>, ()> {
+    ) -> Result<BatchPosterState<D>, L1PricingError> {
         let is_poster = self.poster_addrs.is_member(poster)?;
         if !is_poster {
             if !create_if_not_exist {
-                return Err(());
+                return Err(L1PricingError::BatchPosterNotFound);
             }
             return self.add_poster(poster, poster);
         }
@@ -108,10 +110,10 @@ impl<D: Database> BatchPostersTable<D> {
         &self,
         poster_address: Address,
         pay_to: Address,
-    ) -> Result<BatchPosterState<D>, ()> {
+    ) -> Result<BatchPosterState<D>, L1PricingError> {
         let is_poster = self.poster_addrs.is_member(poster_address)?;
         if is_poster {
-            return Err(());
+            return Err(L1PricingError::BatchPosterAlreadyExists);
         }
 
         let bp_state = self.internal_open(poster_address);
@@ -137,15 +139,15 @@ impl<D: Database> BatchPostersTable<D> {
         }
     }
 
-    pub fn all_posters(&self) -> Result<Vec<Address>, ()> {
-        self.poster_addrs.all_members(u64::MAX)
+    pub fn all_posters(&self) -> Result<Vec<Address>, L1PricingError> {
+        Ok(self.poster_addrs.all_members(u64::MAX)?)
     }
 
-    pub fn total_funds_due(&self) -> Result<U256, ()> {
-        self.total_funds_due.get_raw()
+    pub fn total_funds_due(&self) -> Result<U256, L1PricingError> {
+        Ok(self.total_funds_due.get_raw()?)
     }
 
-    pub fn get_funds_due_list(&self) -> Result<Vec<FundsDueItem>, ()> {
+    pub fn get_funds_due_list(&self) -> Result<Vec<FundsDueItem>, L1PricingError> {
         let posters = self.all_posters()?;
         let mut result = Vec::new();
         for poster in posters {
@@ -163,27 +165,27 @@ impl<D: Database> BatchPostersTable<D> {
 }
 
 impl<D: Database> BatchPosterState<D> {
-    pub fn funds_due(&self) -> Result<U256, ()> {
-        self.funds_due.get_raw()
+    pub fn funds_due(&self) -> Result<U256, L1PricingError> {
+        Ok(self.funds_due.get_raw()?)
     }
 
     pub fn set_funds_due(
         &self,
         value: U256,
         total_funds_due: &StorageBackedBigInt<D>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L1PricingError> {
         let prev = self.funds_due.get_raw().unwrap_or(U256::ZERO);
         let prev_total = total_funds_due.get_raw().unwrap_or(U256::ZERO);
         let new_total = prev_total.saturating_add(value).saturating_sub(prev);
         total_funds_due.set(new_total)?;
-        self.funds_due.set(value)
+        Ok(self.funds_due.set(value)?)
     }
 
-    pub fn pay_to(&self) -> Result<Address, ()> {
-        self.pay_to.get()
+    pub fn pay_to(&self) -> Result<Address, L1PricingError> {
+        Ok(self.pay_to.get()?)
     }
 
-    pub fn set_pay_to(&self, addr: Address) -> Result<(), ()> {
-        self.pay_to.set(addr)
+    pub fn set_pay_to(&self, addr: Address) -> Result<(), L1PricingError> {
+        Ok(self.pay_to.set(addr)?)
     }
 }

@@ -1398,15 +1398,25 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "arb-primitives",
+ "arb-storage-errors",
  "arb-test-utils",
  "reth-db-api",
  "reth-provider",
  "reth-storage-api",
  "revm",
  "revm-database",
+ "revm-database-interface",
  "revm-state",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "arb-storage-errors"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

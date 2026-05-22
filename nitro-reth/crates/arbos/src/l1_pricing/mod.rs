@@ -1,6 +1,8 @@
 mod batch_poster;
+mod error;
 
 pub use batch_poster::*;
+pub use error::L1PricingError;
 
 use alloy_primitives::{Address, U256};
 use revm::Database;
@@ -146,126 +148,126 @@ impl<D: Database> L1PricingState<D> {
 
     // --- Getters/Setters ---
 
-    pub fn pay_rewards_to(&self) -> Result<Address, ()> {
-        self.pay_rewards_to.get()
+    pub fn pay_rewards_to(&self) -> Result<Address, L1PricingError> {
+        Ok(self.pay_rewards_to.get()?)
     }
 
-    pub fn set_pay_rewards_to(&self, addr: Address) -> Result<(), ()> {
-        self.pay_rewards_to.set(addr)
+    pub fn set_pay_rewards_to(&self, addr: Address) -> Result<(), L1PricingError> {
+        Ok(self.pay_rewards_to.set(addr)?)
     }
 
-    pub fn equilibration_units(&self) -> Result<U256, ()> {
-        self.equilibration_units.get()
+    pub fn equilibration_units(&self) -> Result<U256, L1PricingError> {
+        Ok(self.equilibration_units.get()?)
     }
 
-    pub fn set_equilibration_units(&self, units: U256) -> Result<(), ()> {
-        self.equilibration_units.set(units)
+    pub fn set_equilibration_units(&self, units: U256) -> Result<(), L1PricingError> {
+        Ok(self.equilibration_units.set(units)?)
     }
 
-    pub fn inertia(&self) -> Result<u64, ()> {
-        self.inertia.get()
+    pub fn inertia(&self) -> Result<u64, L1PricingError> {
+        Ok(self.inertia.get()?)
     }
 
-    pub fn set_inertia(&self, val: u64) -> Result<(), ()> {
-        self.inertia.set(val)
+    pub fn set_inertia(&self, val: u64) -> Result<(), L1PricingError> {
+        Ok(self.inertia.set(val)?)
     }
 
-    pub fn per_unit_reward(&self) -> Result<u64, ()> {
-        self.per_unit_reward.get()
+    pub fn per_unit_reward(&self) -> Result<u64, L1PricingError> {
+        Ok(self.per_unit_reward.get()?)
     }
 
-    pub fn set_per_unit_reward(&self, val: u64) -> Result<(), ()> {
-        self.per_unit_reward.set(val)
+    pub fn set_per_unit_reward(&self, val: u64) -> Result<(), L1PricingError> {
+        Ok(self.per_unit_reward.set(val)?)
     }
 
-    pub fn last_update_time(&self) -> Result<u64, ()> {
-        self.last_update_time.get()
+    pub fn last_update_time(&self) -> Result<u64, L1PricingError> {
+        Ok(self.last_update_time.get()?)
     }
 
-    pub fn set_last_update_time(&self, time: u64) -> Result<(), ()> {
-        self.last_update_time.set(time)
+    pub fn set_last_update_time(&self, time: u64) -> Result<(), L1PricingError> {
+        Ok(self.last_update_time.set(time)?)
     }
 
-    pub fn funds_due_for_rewards(&self) -> Result<U256, ()> {
-        self.funds_due_for_rewards.get_raw()
+    pub fn funds_due_for_rewards(&self) -> Result<U256, L1PricingError> {
+        Ok(self.funds_due_for_rewards.get_raw()?)
     }
 
-    pub fn set_funds_due_for_rewards(&self, val: U256) -> Result<(), ()> {
-        self.funds_due_for_rewards.set(val)
+    pub fn set_funds_due_for_rewards(&self, val: U256) -> Result<(), L1PricingError> {
+        Ok(self.funds_due_for_rewards.set(val)?)
     }
 
-    pub fn units_since_update(&self) -> Result<u64, ()> {
-        self.units_since_update.get()
+    pub fn units_since_update(&self) -> Result<u64, L1PricingError> {
+        Ok(self.units_since_update.get()?)
     }
 
-    pub fn set_units_since_update(&self, val: u64) -> Result<(), ()> {
-        self.units_since_update.set(val)
+    pub fn set_units_since_update(&self, val: u64) -> Result<(), L1PricingError> {
+        Ok(self.units_since_update.set(val)?)
     }
 
-    pub fn add_to_units_since_update(&self, units: u64) -> Result<(), ()> {
+    pub fn add_to_units_since_update(&self, units: u64) -> Result<(), L1PricingError> {
         let current = self.units_since_update.get().unwrap_or(0);
-        self.units_since_update.set(current.saturating_add(units))
+        Ok(self.units_since_update.set(current.saturating_add(units))?)
     }
 
-    pub fn subtract_from_units_since_update(&self, units: u64) -> Result<(), ()> {
+    pub fn subtract_from_units_since_update(&self, units: u64) -> Result<(), L1PricingError> {
         let current = self.units_since_update.get().unwrap_or(0);
-        self.units_since_update.set(current.saturating_sub(units))
+        Ok(self.units_since_update.set(current.saturating_sub(units))?)
     }
 
-    pub fn price_per_unit(&self) -> Result<U256, ()> {
-        self.price_per_unit.get()
+    pub fn price_per_unit(&self) -> Result<U256, L1PricingError> {
+        Ok(self.price_per_unit.get()?)
     }
 
-    pub fn set_price_per_unit(&self, val: U256) -> Result<(), ()> {
-        self.price_per_unit.set(val)
+    pub fn set_price_per_unit(&self, val: U256) -> Result<(), L1PricingError> {
+        Ok(self.price_per_unit.set(val)?)
     }
 
-    pub fn last_surplus(&self) -> Result<(U256, bool), ()> {
-        self.last_surplus.get_signed()
+    pub fn last_surplus(&self) -> Result<(U256, bool), L1PricingError> {
+        Ok(self.last_surplus.get_signed()?)
     }
 
-    pub fn set_last_surplus(&self, magnitude: U256, negative: bool) -> Result<(), ()> {
+    pub fn set_last_surplus(&self, magnitude: U256, negative: bool) -> Result<(), L1PricingError> {
         // Pre-v7 doesn't store surplus.
         if self.arbos_version < 7 {
             return Ok(());
         }
         if negative {
-            self.last_surplus.set_negative(magnitude)
+            Ok(self.last_surplus.set_negative(magnitude)?)
         } else {
-            self.last_surplus.set(magnitude)
+            Ok(self.last_surplus.set(magnitude)?)
         }
     }
 
-    pub fn per_batch_gas_cost(&self) -> Result<i64, ()> {
-        self.per_batch_gas_cost.get()
+    pub fn per_batch_gas_cost(&self) -> Result<i64, L1PricingError> {
+        Ok(self.per_batch_gas_cost.get()?)
     }
 
-    pub fn set_per_batch_gas_cost(&self, val: i64) -> Result<(), ()> {
-        self.per_batch_gas_cost.set(val)
+    pub fn set_per_batch_gas_cost(&self, val: i64) -> Result<(), L1PricingError> {
+        Ok(self.per_batch_gas_cost.set(val)?)
     }
 
-    pub fn amortized_cost_cap_bips(&self) -> Result<u64, ()> {
-        self.amortized_cost_cap_bips.get()
+    pub fn amortized_cost_cap_bips(&self) -> Result<u64, L1PricingError> {
+        Ok(self.amortized_cost_cap_bips.get()?)
     }
 
-    pub fn set_amortized_cost_cap_bips(&self, val: u64) -> Result<(), ()> {
-        self.amortized_cost_cap_bips.set(val)
+    pub fn set_amortized_cost_cap_bips(&self, val: u64) -> Result<(), L1PricingError> {
+        Ok(self.amortized_cost_cap_bips.set(val)?)
     }
 
-    pub fn l1_fees_available(&self) -> Result<U256, ()> {
-        self.l1_fees_available.get()
+    pub fn l1_fees_available(&self) -> Result<U256, L1PricingError> {
+        Ok(self.l1_fees_available.get()?)
     }
 
-    pub fn set_l1_fees_available(&self, val: U256) -> Result<(), ()> {
-        self.l1_fees_available.set(val)
+    pub fn set_l1_fees_available(&self, val: U256) -> Result<(), L1PricingError> {
+        Ok(self.l1_fees_available.set(val)?)
     }
 
-    pub fn add_to_l1_fees_available(&self, amount: U256) -> Result<(), ()> {
+    pub fn add_to_l1_fees_available(&self, amount: U256) -> Result<(), L1PricingError> {
         let current = self.l1_fees_available.get().unwrap_or(U256::ZERO);
-        self.l1_fees_available.set(current.saturating_add(amount))
+        Ok(self.l1_fees_available.set(current.saturating_add(amount))?)
     }
 
-    pub fn transfer_from_l1_fees_available(&self, amount: U256) -> Result<U256, ()> {
+    pub fn transfer_from_l1_fees_available(&self, amount: U256) -> Result<U256, L1PricingError> {
         let available = self.l1_fees_available.get().unwrap_or(U256::ZERO);
         let transfer = amount.min(available);
         self.l1_fees_available
@@ -273,23 +275,23 @@ impl<D: Database> L1PricingState<D> {
         Ok(transfer)
     }
 
-    pub fn parent_gas_floor_per_token(&self) -> Result<u64, ()> {
+    pub fn parent_gas_floor_per_token(&self) -> Result<u64, L1PricingError> {
         if self.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
             return Ok(0);
         }
-        self.gas_floor_per_token.get()
+        Ok(self.gas_floor_per_token.get()?)
     }
 
-    pub fn set_parent_gas_floor_per_token(&self, val: u64) -> Result<(), ()> {
+    pub fn set_parent_gas_floor_per_token(&self, val: u64) -> Result<(), L1PricingError> {
         if self.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
-            return Err(());
+            return Err(L1PricingError::ParentGasFloorUnsupportedVersion);
         }
-        self.gas_floor_per_token.set(val)
+        Ok(self.gas_floor_per_token.set(val)?)
     }
 
     // --- Pricing logic ---
 
-    pub fn get_l1_pricing_surplus(&self) -> Result<(U256, bool), ()> {
+    pub fn get_l1_pricing_surplus(&self) -> Result<(U256, bool), L1PricingError> {
         let l1_fees_available = self.l1_fees_available.get().unwrap_or(U256::ZERO);
         let bpt = self.batch_poster_table();
         let total_funds_due = bpt.total_funds_due().unwrap_or(U256::ZERO);
@@ -303,7 +305,7 @@ impl<D: Database> L1PricingState<D> {
         }
     }
 
-    pub fn get_poster_info(&self, poster: Address) -> Result<(U256, Address), ()> {
+    pub fn get_poster_info(&self, poster: Address) -> Result<(U256, Address), L1PricingError> {
         let bpt = self.batch_poster_table();
         let state = bpt.open_poster(poster, false)?;
         let due = state.funds_due()?;
@@ -311,7 +313,7 @@ impl<D: Database> L1PricingState<D> {
         Ok((due, pay_to))
     }
 
-    pub fn poster_data_cost(&self, calldata_units: u64) -> Result<U256, ()> {
+    pub fn poster_data_cost(&self, calldata_units: u64) -> Result<U256, L1PricingError> {
         let price = self.price_per_unit()?;
         let batch_cost = self.per_batch_gas_cost()?;
 
@@ -331,7 +333,7 @@ impl<D: Database> L1PricingState<D> {
         poster: Address,
         tx_bytes: &[u8],
         brotli_compression_level: u64,
-    ) -> Result<(U256, u64), ()> {
+    ) -> Result<(U256, u64), L1PricingError> {
         if poster != BATCH_POSTER_ADDRESS {
             return Ok((U256::ZERO, 0));
         }
@@ -348,7 +350,7 @@ impl<D: Database> L1PricingState<D> {
         &self,
         tx_bytes: &[u8],
         brotli_compression_level: u64,
-    ) -> Result<(U256, u64), ()> {
+    ) -> Result<(U256, u64), L1PricingError> {
         let raw_units = self.get_poster_units_without_cache(tx_bytes, brotli_compression_level);
         let padded = (raw_units.saturating_add(ESTIMATION_PADDING_UNITS))
             .saturating_mul(ONE_IN_BIPS + ESTIMATION_PADDING_BASIS_POINTS)
@@ -379,7 +381,7 @@ impl<D: Database> L1PricingState<D> {
         wei_spent: U256,
         l1_basefee: U256,
         mut transfer_fn: F,
-    ) -> Result<(), ()>
+    ) -> Result<(), L1PricingError>
     where
         F: FnMut(Address, Address, U256) -> Result<(), ()>,
     {
@@ -399,7 +401,7 @@ impl<D: Database> L1PricingState<D> {
         }
 
         if update_time > current_time || update_time < last_update_time {
-            return Err(());
+            return Err(L1PricingError::InvalidUpdateTime);
         }
 
         let alloc_num = update_time.saturating_sub(last_update_time);
@@ -548,7 +550,7 @@ impl<D: Database> L1PricingState<D> {
         _current_time: u64,
         _wei_spent: U256,
         _l1_basefee: U256,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L1PricingError> {
         // Simplified legacy pricing update for ArbOS < 10
         Ok(())
     }
@@ -559,7 +561,7 @@ impl<D: Database> L1PricingState<D> {
         _current_time: u64,
         _wei_spent: U256,
         _l1_basefee: U256,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L1PricingError> {
         // Simplified legacy pricing update for ArbOS < 2
         Ok(())
     }

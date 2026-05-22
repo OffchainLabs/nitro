@@ -543,8 +543,8 @@ fn ensure_eq<T: std::fmt::Debug + PartialEq>(
     Ok(())
 }
 
-fn map_err(_: ()) -> SpecError {
-    SpecError::Assertion("storage read failed".into())
+fn map_err<E: std::fmt::Display>(e: E) -> SpecError {
+    SpecError::Assertion(format!("storage read failed: {e}"))
 }
 
 #[allow(dead_code)]

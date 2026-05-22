@@ -6,6 +6,9 @@ use arb_storage::{
     StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
 };
 
+mod error;
+pub use error::RetryableError;
+
 pub const RETRYABLE_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60; // one week
 pub const RETRYABLE_REAP_PRICE: u64 = 58000;
 
@@ -42,8 +45,8 @@ pub struct Retryable<D> {
     timeout_windows_left: StorageBackedUint64<D>,
 }
 
-pub fn initialize_retryable_state<D: Database>(sto: &Storage<D>) -> Result<(), ()> {
-    initialize_queue(&sto.open_sub_storage(TIMEOUT_QUEUE_KEY))
+pub fn initialize_retryable_state<D: Database>(sto: &Storage<D>) -> Result<(), RetryableError> {
+    Ok(initialize_queue(&sto.open_sub_storage(TIMEOUT_QUEUE_KEY))?)
 }
 
 pub fn open_retryable_state<D: Database>(sto: Storage<D>) -> RetryableState<D> {
@@ -55,7 +58,7 @@ pub fn open_retryable_state<D: Database>(sto: Storage<D>) -> RetryableState<D> {
 }
 
 impl<D: Database> RetryableState<D> {
-    pub fn initialize(sto: &Storage<D>) -> Result<(), ()> {
+    pub fn initialize(sto: &Storage<D>) -> Result<(), RetryableError> {
         initialize_retryable_state(sto)
     }
 
@@ -73,7 +76,7 @@ impl<D: Database> RetryableState<D> {
         callvalue: U256,
         beneficiary: Address,
         calldata: &[u8],
-    ) -> Result<Retryable<D>, ()> {
+    ) -> Result<Retryable<D>, RetryableError> {
         let ret = self.internal_open(id);
         ret.num_tries.set(0)?;
         ret.from.set(from)?;
@@ -92,7 +95,7 @@ impl<D: Database> RetryableState<D> {
         &self,
         id: B256,
         current_timestamp: u64,
-    ) -> Result<Option<Retryable<D>>, ()> {
+    ) -> Result<Option<Retryable<D>>, RetryableError> {
         let sto = self.retryables.open_sub_storage(id.as_slice());
         let timeout_storage =
             StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), TIMEOUT_OFFSET);
@@ -104,7 +107,7 @@ impl<D: Database> RetryableState<D> {
     }
 
     /// Gets the size in bytes a retryable occupies in storage.
-    pub fn retryable_size_bytes(&self, id: B256, current_time: u64) -> Result<u64, ()> {
+    pub fn retryable_size_bytes(&self, id: B256, current_time: u64) -> Result<u64, RetryableError> {
         let retryable = self.open_retryable(id, current_time)?;
         match retryable {
             None => Ok(0),
@@ -123,7 +126,7 @@ impl<D: Database> RetryableState<D> {
         id: B256,
         mut transfer_fn: F,
         mut balance_of: G,
-    ) -> Result<bool, ()>
+    ) -> Result<bool, RetryableError>
     where
         F: FnMut(Address, Address, U256) -> Result<(), ()>,
         G: FnMut(Address) -> U256,
@@ -139,7 +142,8 @@ impl<D: Database> RetryableState<D> {
         let escrow_address = retryable_escrow_address(id);
         let beneficiary_address = Address::from_slice(&beneficiary_val[12..]);
         let amount = balance_of(escrow_address);
-        transfer_fn(escrow_address, beneficiary_address, amount)?;
+        transfer_fn(escrow_address, beneficiary_address, amount)
+            .map_err(|()| RetryableError::TransferFailed)?;
 
         // Clear all storage slots.
         let _ = ret_storage.set_by_uint64(NUM_TRIES_OFFSET, B256::ZERO);
@@ -161,12 +165,13 @@ impl<D: Database> RetryableState<D> {
         current_timestamp: u64,
         limit_before_add: u64,
         _time_to_add: u64,
-    ) -> Result<u64, ()> {
-        let retryable = self.open_retryable(ticket_id, current_timestamp)?;
-        let retryable = retryable.ok_or(())?;
+    ) -> Result<u64, RetryableError> {
+        let retryable = self
+            .open_retryable(ticket_id, current_timestamp)?
+            .ok_or(RetryableError::NoTicketWithId)?;
         let timeout = retryable.calculate_timeout()?;
         if timeout > limit_before_add {
-            return Err(());
+            return Err(RetryableError::TimeoutTooFarFuture);
         }
         self.timeout_queue.put(retryable.id)?;
         retryable.increment_timeout_windows()?;
@@ -181,7 +186,7 @@ impl<D: Database> RetryableState<D> {
         current_timestamp: u64,
         mut transfer_fn: F,
         mut balance_of: G,
-    ) -> Result<(), ()>
+    ) -> Result<(), RetryableError>
     where
         F: FnMut(Address, Address, U256) -> Result<(), ()>,
         G: FnMut(Address) -> U256,
@@ -233,8 +238,8 @@ impl<D: Database> RetryableState<D> {
     }
 
     /// Total number of pending retryables in the timeout queue.
-    pub fn queue_size(&self) -> Result<u64, ()> {
-        self.timeout_queue.size()
+    pub fn queue_size(&self) -> Result<u64, RetryableError> {
+        Ok(self.timeout_queue.size()?)
     }
 
     /// Walk the timeout queue and yield `(ticket_id, timeout_seconds)`
@@ -246,23 +251,19 @@ impl<D: Database> RetryableState<D> {
         &self,
         current_time: u64,
         max_entries: usize,
-    ) -> Result<Vec<(B256, u64)>, ()> {
+    ) -> Result<Vec<(B256, u64)>, RetryableError> {
         let mut out = Vec::new();
-        self.timeout_queue.for_each(|id| {
-            if out.len() >= max_entries {
-                return Ok(());
-            }
-            match self.open_retryable(id, current_time)? {
-                Some(retryable) => {
+        self.timeout_queue
+            .for_each(|id| -> Result<(), RetryableError> {
+                if out.len() >= max_entries {
+                    return Ok(());
+                }
+                if let Some(retryable) = self.open_retryable(id, current_time)? {
                     let timeout = retryable.calculate_timeout()?;
                     out.push((id, timeout));
                 }
-                None => {
-                    // Expired/deleted — skip.
-                }
-            }
-            Ok(())
-        })?;
+                Ok(())
+            })?;
         Ok(out)
     }
 
@@ -290,60 +291,60 @@ impl<D: Database> RetryableState<D> {
 }
 
 impl<D: Database> Retryable<D> {
-    pub fn num_tries(&self) -> Result<u64, ()> {
-        self.num_tries.get()
+    pub fn num_tries(&self) -> Result<u64, RetryableError> {
+        Ok(self.num_tries.get()?)
     }
 
-    pub fn increment_num_tries(&self) -> Result<u64, ()> {
+    pub fn increment_num_tries(&self) -> Result<u64, RetryableError> {
         let current = self.num_tries.get()?;
         let new_val = current + 1;
         self.num_tries.set(new_val)?;
         Ok(new_val)
     }
 
-    pub fn beneficiary(&self) -> Result<Address, ()> {
-        self.beneficiary.get()
+    pub fn beneficiary(&self) -> Result<Address, RetryableError> {
+        Ok(self.beneficiary.get()?)
     }
 
-    pub fn calculate_timeout(&self) -> Result<u64, ()> {
+    pub fn calculate_timeout(&self) -> Result<u64, RetryableError> {
         let timeout = self.timeout.get()?;
         let windows = self.timeout_windows_left.get()?;
         Ok(timeout + windows * RETRYABLE_LIFETIME_SECONDS)
     }
 
-    pub fn set_timeout(&self, val: u64) -> Result<(), ()> {
-        self.timeout.set(val)
+    pub fn set_timeout(&self, val: u64) -> Result<(), RetryableError> {
+        Ok(self.timeout.set(val)?)
     }
 
-    pub fn timeout_windows_left(&self) -> Result<u64, ()> {
-        self.timeout_windows_left.get()
+    pub fn timeout_windows_left(&self) -> Result<u64, RetryableError> {
+        Ok(self.timeout_windows_left.get()?)
     }
 
-    fn increment_timeout_windows(&self) -> Result<u64, ()> {
+    fn increment_timeout_windows(&self) -> Result<u64, RetryableError> {
         let current = self.timeout_windows_left.get()?;
         let new_val = current + 1;
         self.timeout_windows_left.set(new_val)?;
         Ok(new_val)
     }
 
-    pub fn from(&self) -> Result<Address, ()> {
-        self.from.get()
+    pub fn from(&self) -> Result<Address, RetryableError> {
+        Ok(self.from.get()?)
     }
 
-    pub fn to(&self) -> Result<Option<Address>, ()> {
-        self.to.get()
+    pub fn to(&self) -> Result<Option<Address>, RetryableError> {
+        Ok(self.to.get()?)
     }
 
-    pub fn callvalue(&self) -> Result<U256, ()> {
-        self.callvalue.get()
+    pub fn callvalue(&self) -> Result<U256, RetryableError> {
+        Ok(self.callvalue.get()?)
     }
 
-    pub fn calldata(&self) -> Result<Vec<u8>, ()> {
-        self.calldata.get()
+    pub fn calldata(&self) -> Result<Vec<u8>, RetryableError> {
+        Ok(self.calldata.get()?)
     }
 
-    pub fn calldata_size(&self) -> Result<u64, ()> {
-        self.calldata.size()
+    pub fn calldata_size(&self) -> Result<u64, RetryableError> {
+        Ok(self.calldata.size()?)
     }
 
     /// Constructs a retry transaction from this retryable's stored fields
@@ -358,7 +359,7 @@ impl<D: Database> Retryable<D> {
         refund_to: Address,
         max_refund: U256,
         submission_fee_refund: U256,
-    ) -> Result<arb_alloy_consensus::tx::ArbRetryTx, ()> {
+    ) -> Result<arb_alloy_consensus::tx::ArbRetryTx, RetryableError> {
         Ok(arb_alloy_consensus::tx::ArbRetryTx {
             chain_id,
             nonce,

@@ -3,6 +3,9 @@ use revm::Database;
 
 use arb_storage::Storage;
 
+mod error;
+pub use error::FilteredTxError;
+
 const PRESENT_HASH: B256 = {
     let mut bytes = [0u8; 32];
     bytes[31] = 1;
@@ -19,15 +22,15 @@ impl<D: Database> FilteredTransactionsState<D> {
         Self { store: sto }
     }
 
-    pub fn add(&self, tx_hash: B256) -> Result<(), ()> {
-        self.store.set(tx_hash, PRESENT_HASH)
+    pub fn add(&self, tx_hash: B256) -> Result<(), FilteredTxError> {
+        Ok(self.store.set(tx_hash, PRESENT_HASH)?)
     }
 
-    pub fn delete(&self, tx_hash: B256) -> Result<(), ()> {
-        self.store.set(tx_hash, B256::ZERO)
+    pub fn delete(&self, tx_hash: B256) -> Result<(), FilteredTxError> {
+        Ok(self.store.set(tx_hash, B256::ZERO)?)
     }
 
-    pub fn is_filtered(&self, tx_hash: B256) -> Result<bool, ()> {
+    pub fn is_filtered(&self, tx_hash: B256) -> Result<bool, FilteredTxError> {
         let value = self.store.get(tx_hash)?;
         Ok(value == PRESENT_HASH)
     }

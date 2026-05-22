@@ -3,6 +3,9 @@ use revm::Database;
 
 use arb_storage::{Storage, StorageBackedUint64};
 
+mod error;
+pub use error::MerkleAccumulatorError;
+
 /// Event emitted when a Merkle tree node is updated during append.
 #[derive(Debug, Clone)]
 pub struct MerkleTreeNodeEvent {
@@ -39,15 +42,18 @@ pub fn calc_num_partials(size: u64) -> u64 {
 }
 
 impl<D: Database> MerkleAccumulator<D> {
-    fn get_partial(&self, level: u64) -> Result<B256, ()> {
-        self.backing_storage.get_by_uint64(2 + level)
+    fn get_partial(&self, level: u64) -> Result<B256, MerkleAccumulatorError> {
+        Ok(self.backing_storage.get_by_uint64(2 + level)?)
     }
 
-    fn set_partial(&self, level: u64, val: B256) -> Result<(), ()> {
-        self.backing_storage.set_by_uint64(2 + level, val)
+    fn set_partial(&self, level: u64, val: B256) -> Result<(), MerkleAccumulatorError> {
+        Ok(self.backing_storage.set_by_uint64(2 + level, val)?)
     }
 
-    pub fn append(&self, item_hash: B256) -> Result<Vec<MerkleTreeNodeEvent>, ()> {
+    pub fn append(
+        &self,
+        item_hash: B256,
+    ) -> Result<Vec<MerkleTreeNodeEvent>, MerkleAccumulatorError> {
         let current_size = self.size.get()?;
         let new_size = current_size + 1;
         self.size.set(new_size)?;
@@ -84,11 +90,11 @@ impl<D: Database> MerkleAccumulator<D> {
         }
     }
 
-    pub fn size(&self) -> Result<u64, ()> {
-        self.size.get()
+    pub fn size(&self) -> Result<u64, MerkleAccumulatorError> {
+        Ok(self.size.get()?)
     }
 
-    pub fn root(&self) -> Result<B256, ()> {
+    pub fn root(&self) -> Result<B256, MerkleAccumulatorError> {
         let size = self.size.get()?;
         if size == 0 {
             return Ok(B256::ZERO);
@@ -126,7 +132,7 @@ impl<D: Database> MerkleAccumulator<D> {
         Ok(hash_so_far.unwrap_or(B256::ZERO))
     }
 
-    pub fn get_partials(&self) -> Result<Vec<B256>, ()> {
+    pub fn get_partials(&self) -> Result<Vec<B256>, MerkleAccumulatorError> {
         let size = self.size.get()?;
         let num = calc_num_partials(size);
         let mut partials = Vec::with_capacity(num as usize);
@@ -136,7 +142,7 @@ impl<D: Database> MerkleAccumulator<D> {
         Ok(partials)
     }
 
-    pub fn state_for_export(&self) -> Result<(u64, B256, Vec<B256>), ()> {
+    pub fn state_for_export(&self) -> Result<(u64, B256, Vec<B256>), MerkleAccumulatorError> {
         let root = self.root()?;
         let size = self.size.get()?;
         let partials = self.get_partials()?;

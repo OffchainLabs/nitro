@@ -3,6 +3,9 @@ use revm::Database;
 
 use arb_storage::{Storage, StorageBackedAddress, StorageBackedUint64};
 
+mod error;
+pub use error::AddressSetError;
+
 /// A set of addresses backed by ArbOS storage.
 ///
 /// Layout: slot 0 = size, slots 1..size = addresses (as StorageBackedAddress).
@@ -13,8 +16,8 @@ pub struct AddressSet<D> {
     by_address: Storage<D>,
 }
 
-pub fn initialize_address_set<D: Database>(sto: &Storage<D>) -> Result<(), ()> {
-    sto.set_by_uint64(0, B256::ZERO)
+pub fn initialize_address_set<D: Database>(sto: &Storage<D>) -> Result<(), AddressSetError> {
+    Ok(sto.set_by_uint64(0, B256::ZERO)?)
 }
 
 pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
@@ -28,17 +31,17 @@ pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
 }
 
 impl<D: Database> AddressSet<D> {
-    pub fn size(&self) -> Result<u64, ()> {
-        self.size.get()
+    pub fn size(&self) -> Result<u64, AddressSetError> {
+        Ok(self.size.get()?)
     }
 
-    pub fn is_member(&self, addr: Address) -> Result<bool, ()> {
+    pub fn is_member(&self, addr: Address) -> Result<bool, AddressSetError> {
         let addr_hash = address_to_hash(addr);
         let value = self.by_address.get(addr_hash)?;
         Ok(value != B256::ZERO)
     }
 
-    pub fn get_any_member(&self) -> Result<Option<Address>, ()> {
+    pub fn get_any_member(&self) -> Result<Option<Address>, AddressSetError> {
         let size = self.size.get()?;
         if size == 0 {
             return Ok(None);
@@ -48,10 +51,10 @@ impl<D: Database> AddressSet<D> {
             self.backing_storage.base_key(),
             1,
         );
-        sba.get().map(Some)
+        Ok(sba.get().map(Some)?)
     }
 
-    pub fn clear(&self) -> Result<(), ()> {
+    pub fn clear(&self) -> Result<(), AddressSetError> {
         let size = self.size.get()?;
         if size == 0 {
             return Ok(());
@@ -61,10 +64,10 @@ impl<D: Database> AddressSet<D> {
             self.backing_storage.set_by_uint64(i, B256::ZERO)?;
             self.by_address.set(contents, B256::ZERO)?;
         }
-        self.size.set(0)
+        Ok(self.size.set(0)?)
     }
 
-    pub fn all_members(&self, max_num: u64) -> Result<Vec<Address>, ()> {
+    pub fn all_members(&self, max_num: u64) -> Result<Vec<Address>, AddressSetError> {
         let mut size = self.size.get()?;
         if size > max_num {
             size = max_num;
@@ -81,7 +84,7 @@ impl<D: Database> AddressSet<D> {
         Ok(ret)
     }
 
-    pub fn clear_list(&self) -> Result<(), ()> {
+    pub fn clear_list(&self) -> Result<(), AddressSetError> {
         let size = self.size.get()?;
         if size == 0 {
             return Ok(());
@@ -89,13 +92,12 @@ impl<D: Database> AddressSet<D> {
         for i in 1..=size {
             self.backing_storage.set_by_uint64(i, B256::ZERO)?;
         }
-        self.size.set(0)
+        Ok(self.size.set(0)?)
     }
 
-    pub fn rectify_mapping(&self, addr: Address) -> Result<(), ()> {
-        let is_owner = self.is_member(addr)?;
-        if !is_owner {
-            return Err(());
+    pub fn rectify_mapping(&self, addr: Address) -> Result<(), AddressSetError> {
+        if !self.is_member(addr)? {
+            return Err(AddressSetError::NotMember);
         }
 
         let addr_as_hash = address_to_hash(addr);
@@ -104,14 +106,14 @@ impl<D: Database> AddressSet<D> {
         let size = self.size.get()?;
 
         if at_slot == addr_as_hash && slot <= size {
-            return Err(());
+            return Err(AddressSetError::MappingAlreadyConsistent);
         }
 
         self.by_address.set(addr_as_hash, B256::ZERO)?;
         self.add(addr)
     }
 
-    pub fn add(&self, addr: Address) -> Result<(), ()> {
+    pub fn add(&self, addr: Address) -> Result<(), AddressSetError> {
         let present = self.is_member(addr)?;
         if present {
             return Ok(());
@@ -130,10 +132,10 @@ impl<D: Database> AddressSet<D> {
         );
         sba.set(addr)?;
 
-        self.size.set(size + 1)
+        Ok(self.size.set(size + 1)?)
     }
 
-    pub fn remove(&self, addr: Address, arbos_version: u64) -> Result<(), ()> {
+    pub fn remove(&self, addr: Address, arbos_version: u64) -> Result<(), AddressSetError> {
         let addr_as_hash = address_to_hash(addr);
         let slot_hash = self.by_address.get(addr_as_hash)?;
         let slot = hash_to_uint64(slot_hash);
@@ -155,7 +157,7 @@ impl<D: Database> AddressSet<D> {
         }
 
         self.backing_storage.set_by_uint64(size, B256::ZERO)?;
-        self.size.set(size - 1)
+        Ok(self.size.set(size - 1)?)
     }
 }
 
