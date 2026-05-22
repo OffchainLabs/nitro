@@ -2,7 +2,7 @@ use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use alloy_sol_types::SolInterface;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     arbsys::get_cached_l1_block_number,
@@ -11,6 +11,7 @@ use crate::{
         root_slot, subspace_slot, ARBOS_STATE_ADDRESS, GENESIS_BLOCK_NUM_OFFSET,
         L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     },
+    ArbPrecompileError,
 };
 
 /// NodeInterface virtual contract address (0xc8).
@@ -58,7 +59,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::l2BlockRangeForL1(_)
         | Calls::estimateRetryableTicket(_)
         | Calls::constructOutboxProof(_) => {
-            Err(PrecompileError::other("method only available via RPC"))
+            Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
         }
     };
     crate::gas_check(gas_limit, result)
@@ -360,19 +361,19 @@ pub fn build_fake_tx_bytes(
     envelope.encoded_2718()
 }
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }

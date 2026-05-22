@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     interfaces::IArbOwnerPublic,
@@ -12,6 +12,7 @@ use crate::{
         NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
         ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
     },
+    ArbPrecompileError,
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -237,19 +238,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
@@ -258,11 +259,11 @@ fn sstore_field(
     input: &mut PrecompileInput<'_>,
     slot: U256,
     value: U256,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
@@ -309,25 +310,25 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) ->
     // The second is gas-only — slot value cannot change between back-to-back reads.
     let slot_val = sload_field(input, member_slot)?;
     if slot_val == U256::ZERO {
-        return Err(PrecompileError::other("not an owner"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     let _slot_val_again = sload_field(input, member_slot)?;
 
     // Check if mapping is already correct
     let slot_idx: u64 = slot_val
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid slot"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
     let at_slot_key = map_slot(set_key.as_slice(), slot_idx);
     let at_slot_val = sload_field(input, at_slot_key)?;
     let size_slot = map_slot(set_key.as_slice(), 0);
     let size: u64 = sload_field(input, size_slot)?
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid size"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     // Compare: backingStorage[slot] should store the address as U256
     let addr_as_u256 = U256::from_be_slice(addr.as_slice());
     if at_slot_val == addr_as_u256 && slot_idx <= size {
-        return Err(PrecompileError::other("already correctly mapped"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     // Clear byAddress mapping, then re-add

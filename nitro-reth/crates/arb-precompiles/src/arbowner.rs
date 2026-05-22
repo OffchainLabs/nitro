@@ -2,7 +2,7 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use revm::{
-    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+    precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
 
@@ -16,6 +16,7 @@ use crate::{
         PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
         TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
     },
+    ArbPrecompileError,
 };
 
 /// ArbOwner precompile address (0x70).
@@ -164,9 +165,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // ── L2 pricing setters ───────────────────────────────────
         Calls::setSpeedLimit(_) => match data.get(4..36) {
-            None => Err(PrecompileError::other("input too short")),
+            None => Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into()),
             Some(bytes) if U256::from_be_slice(bytes).is_zero() => {
-                Err(PrecompileError::other("speed limit must be nonzero"))
+                Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
             }
             Some(_) => write_l2_field(&mut input, L2_SPEED_LIMIT),
         },
@@ -180,9 +181,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::setMaxTxGasLimit(_) => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
         Calls::setL2GasPricingInertia(_) => match data.get(4..36) {
-            None => Err(PrecompileError::other("input too short")),
+            None => Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into()),
             Some(bytes) if U256::from_be_slice(bytes).is_zero() => {
-                Err(PrecompileError::other("price inertia must be nonzero"))
+                Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
             }
             Some(_) => write_l2_field(&mut input, L2_PRICING_INERTIA),
         },
@@ -224,10 +225,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             match read_u32_param(data) {
-                Err(e) => Err(e),
-                Ok(val) if val == 0 || val > 0xFF_FFFF => Err(PrecompileError::other(
-                    "ink price must be a positive uint24",
-                )),
+                Err(e) => Err(e.into()),
+                Ok(val) if val == 0 || val > 0xFF_FFFF => {
+                    Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
+                }
                 Ok(val) => write_stylus_param(&mut input, StylusField::InkPrice, val as u64),
             }
         }
@@ -456,7 +457,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── Owner verification ───────────────────────────────────────────────
 
-fn verify_owner(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn verify_owner(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     let caller = input.caller;
     load_arbos(input)?;
 
@@ -471,28 +472,26 @@ fn verify_owner(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> 
     let value = sload_field(input, member_slot)?;
     crate::charge_precompile_gas(800); // IsMember sload
     if value == U256::ZERO {
-        return Err(PrecompileError::other(
-            "ArbOwner: caller is not a chain owner",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()));
     }
     Ok(())
 }
 
 // ── Storage helpers ──────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SLOAD_GAS);
     Ok(val.data)
 }
@@ -501,11 +500,11 @@ fn sstore_field(
     input: &mut PrecompileInput<'_>,
     slot: U256,
     value: U256,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(SSTORE_GAS);
     Ok(())
 }
@@ -680,7 +679,7 @@ fn handle_remove_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     let set_key = address_set_key(CHAIN_OWNER_SUBSPACE);
     if !is_member_of(input, set_key, addr)? {
-        return Err(PrecompileError::other("tried to remove non-owner"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     address_set_remove(input, set_key, addr)?;
 
@@ -718,7 +717,7 @@ fn handle_release_l1_pricer_surplus_funds(input: &mut PrecompileInput<'_>) -> Pr
         let acct = input
             .internals_mut()
             .load_account(L1_PRICER_FUNDS_POOL_ADDRESS)
-            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+            .map_err(ArbPrecompileError::fatal)?;
         acct.data.info.balance
     };
 
@@ -761,7 +760,7 @@ fn is_member_of(
     input: &mut PrecompileInput<'_>,
     set_key: B256,
     addr: Address,
-) -> Result<bool, PrecompileError> {
+) -> Result<bool, ArbPrecompileError> {
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
@@ -797,7 +796,7 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> P
     let size = sload_field(input, size_slot)?;
     let count: u64 = size
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
     const MAX_MEMBERS: u64 = 65536;
     let count = count.min(MAX_MEMBERS);
 
@@ -824,7 +823,7 @@ fn address_set_add(
     input: &mut PrecompileInput<'_>,
     set_key: B256,
     addr: Address,
-) -> Result<bool, PrecompileError> {
+) -> Result<bool, ArbPrecompileError> {
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
@@ -839,7 +838,7 @@ fn address_set_add(
     let size = sload_field(input, size_slot)?;
     let size_u64: u64 = size
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
     let new_size = size_u64 + 1;
 
     // Store address at position (1 + old_size).
@@ -861,7 +860,7 @@ fn address_set_remove(
     input: &mut PrecompileInput<'_>,
     set_key: B256,
     addr: Address,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
@@ -869,11 +868,11 @@ fn address_set_remove(
     // Get the 1-based position of the address.
     let position = sload_field(input, member_slot)?;
     if position == U256::ZERO {
-        return Err(PrecompileError::other("address not in set"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()));
     }
     let pos_u64: u64 = position
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid position"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     // Clear the byAddress entry.
     sstore_field(input, member_slot, U256::ZERO)?;
@@ -883,7 +882,7 @@ fn address_set_remove(
     let size = sload_field(input, size_slot)?;
     let size_u64: u64 = size
         .try_into()
-        .map_err(|_| PrecompileError::other("invalid size"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     // If not the last element, swap with last.
     if pos_u64 < size_u64 {
@@ -981,7 +980,9 @@ fn programs_activation_gas_slot() -> U256 {
 }
 
 /// Read the packed programs params word from storage.
-fn read_stylus_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], PrecompileError> {
+fn read_stylus_params_word(
+    input: &mut PrecompileInput<'_>,
+) -> Result<[u8; 32], ArbPrecompileError> {
     let slot = programs_params_slot();
     let val = sload_field(input, slot)?;
     Ok(val.to_be_bytes::<32>())
@@ -1011,13 +1012,13 @@ fn write_stylus_param(
 }
 
 /// Parse a u32 parameter from ABI calldata (first arg after selector).
-fn read_u32_param(data: &[u8]) -> Result<u32, PrecompileError> {
+fn read_u32_param(data: &[u8]) -> Result<u32, ArbPrecompileError> {
     if data.len() < 36 {
-        return Err(PrecompileError::other("input too short"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()));
     }
     let val = U256::from_be_slice(&data[4..36]);
     val.try_into()
-        .map_err(|_| PrecompileError::other("value overflow"))
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))
 }
 
 // ── Cache manager helpers ────────────────────────────────────────────
@@ -1052,7 +1053,7 @@ fn handle_remove_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileRes
     let addr = Address::from_slice(&data[16..36]);
     let set_key = cache_managers_set_key();
     if !is_member_of(input, set_key, addr)? {
-        return Err(PrecompileError::other("address is not a cache manager"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     address_set_remove(input, set_key, addr)?;
     let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
@@ -1074,7 +1075,7 @@ fn handle_set_feature_time(input: &mut PrecompileInput<'_>, time_offset: u64) ->
     let gas_limit = input.gas;
     let timestamp: u64 = U256::from_be_slice(&data[4..36])
         .try_into()
-        .map_err(|_| PrecompileError::other("timestamp too large"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     if timestamp == 0 {
         // Disable the feature.
@@ -1097,14 +1098,10 @@ fn handle_set_feature_time(input: &mut PrecompileInput<'_>, time_offset: u64) ->
     if (stored > now + FEATURE_ENABLE_DELAY || stored == 0)
         && timestamp < now + FEATURE_ENABLE_DELAY
     {
-        return Err(PrecompileError::other(
-            "feature must be enabled at least 7 days in the future",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
     if stored > now && stored <= now + FEATURE_ENABLE_DELAY && timestamp < stored {
-        return Err(PrecompileError::other(
-            "feature cannot be updated to a time earlier than the current scheduled enable time",
-        ));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     sstore_field(input, root_slot(time_offset), U256::from(timestamp))?;
@@ -1146,7 +1143,7 @@ fn handle_add_to_set_with_feature_check(
         .unwrap_or(0u64);
 
     if enabled_time == 0 || enabled_time > now {
-        return Err(PrecompileError::other("feature is not enabled yet"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     address_set_add(input, address_set_key(subspace), addr)?;
@@ -1176,7 +1173,7 @@ fn handle_remove_from_set(
 
     let set_key = address_set_key(subspace);
     if !is_member_of(input, set_key, addr)? {
-        return Err(PrecompileError::other("address is not a member"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     address_set_remove(input, set_key, addr)?;
@@ -1237,10 +1234,10 @@ fn constraint_field_slot(element_key: B256, field_offset: u64) -> U256 {
 }
 
 /// Read ArbOS version from root state.
-fn read_arbos_version(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+fn read_arbos_version(input: &mut PrecompileInput<'_>) -> Result<u64, ArbPrecompileError> {
     let val = sload_field(input, root_slot(0))?; // VERSION_OFFSET = 0
     val.try_into()
-        .map_err(|_| PrecompileError::other("invalid ArbOS version"))
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))
 }
 
 /// Clear all constraints in a SubStorageVector of gas constraints.
@@ -1248,7 +1245,7 @@ fn clear_gas_constraints_vector(
     input: &mut PrecompileInput<'_>,
     vector_key: B256,
     fields_per_element: u64,
-) -> Result<u64, PrecompileError> {
+) -> Result<u64, ArbPrecompileError> {
     let len_slot = vector_length_slot(vector_key);
     let len: u64 = sload_field(input, len_slot)?.try_into().unwrap_or(0);
 
@@ -1267,7 +1264,7 @@ fn clear_gas_constraints_vector(
 }
 
 /// Clear all multi-gas constraints, including resource weights.
-fn clear_multi_gas_constraints(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+fn clear_multi_gas_constraints(input: &mut PrecompileInput<'_>) -> Result<u64, ArbPrecompileError> {
     let vector_key = mgc_vector_key();
     let len_slot = vector_length_slot(vector_key);
     let len: u64 = sload_field(input, len_slot)?.try_into().unwrap_or(0);
@@ -1309,7 +1306,7 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
     // Parse array length.
     let count: u64 = U256::from_be_slice(&data[36..68])
         .try_into()
-        .map_err(|_| PrecompileError::other("array length overflow"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     // Each element is 3 × 32 bytes = 96 bytes.
     let expected_len = 68 + (count as usize) * 96;
@@ -1328,7 +1325,7 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
         .contains(&arbos_version)
         && (count as usize) > GAS_CONSTRAINTS_MAX_NUM
     {
-        return Err(PrecompileError::other("too many constraints"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     // Add each constraint.
@@ -1346,7 +1343,7 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
             .unwrap_or(0);
 
         if target == 0 || window == 0 {
-            return Err(PrecompileError::other("invalid constraint parameters"));
+            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
         }
 
         // Write constraint fields.
@@ -1400,7 +1397,7 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
     // Array length.
     let count: u64 = U256::from_be_slice(&data[36..68])
         .try_into()
-        .map_err(|_| PrecompileError::other("array length overflow"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     // Parse each constraint. ABI encodes dynamic structs with offsets.
     let array_data_start = 68; // after selector + offset + length
@@ -1442,7 +1439,7 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
             .unwrap_or(0);
 
         if target == 0 || window == 0 {
-            return Err(PrecompileError::other("invalid constraint parameters"));
+            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
         }
         let resources_start = struct_start + resources_offset;
 
@@ -1529,7 +1526,7 @@ fn validate_multi_gas_exponents(
     input: &mut PrecompileInput<'_>,
     vector_key: B256,
     count: u64,
-) -> Result<(), PrecompileError> {
+) -> Result<(), ArbPrecompileError> {
     let mut exponents = [0u64; 8];
 
     for i in 0..count {
@@ -1591,7 +1588,7 @@ fn validate_multi_gas_exponents(
 
     for &exp in &exponents {
         if exp > MAX_PRICING_EXPONENT_BIPS {
-            return Err(PrecompileError::other("pricing exponent exceeds maximum"));
+            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()));
         }
     }
 
@@ -1613,7 +1610,7 @@ fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     // ABI: offset(32) + length(32) + data.
     let bytes_len: usize = U256::from_be_slice(&data[36..68])
         .try_into()
-        .map_err(|_| PrecompileError::other("bytes length overflow"))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
 
     if data.len() < 68 + bytes_len {
         return crate::burn_all_revert(gas_limit);

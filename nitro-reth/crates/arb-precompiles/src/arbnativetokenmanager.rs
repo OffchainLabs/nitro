@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{
     interfaces::IArbNativeTokenManager,
@@ -9,6 +9,7 @@ use crate::{
         derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
         ROOT_STORAGE_KEY,
     },
+    ArbPrecompileError,
 };
 
 /// ArbNativeTokenManager precompile address (0x73).
@@ -55,19 +56,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
 }
 
-fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
+fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(val.data)
 }
 
@@ -75,7 +76,7 @@ fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
 fn is_native_token_owner(
     input: &mut PrecompileInput<'_>,
     addr: Address,
-) -> Result<bool, PrecompileError> {
+) -> Result<bool, ArbPrecompileError> {
     // NativeTokenOwners is at subspace [10] in ArbOS state.
     // byAddress sub-storage is at [0] within the address set.
     let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, NATIVE_TOKEN_SUBSPACE);
@@ -99,7 +100,7 @@ fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     input
         .internals_mut()
         .balance_incr(caller, amount)
-        .map_err(|e| PrecompileError::other(format!("balance_incr: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let topic1 = B256::left_padding_from(caller.as_slice());
     let event_data = amount.to_be_bytes::<32>().to_vec();
@@ -129,18 +130,18 @@ fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     let acct = input
         .internals_mut()
         .load_account(caller)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     let current_balance = acct.data.info.balance;
 
     if current_balance < amount {
-        return Err(PrecompileError::other("burn amount exceeds balance"));
+        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
     }
 
     let new_balance = current_balance - amount;
     input
         .internals_mut()
         .set_balance(caller, new_balance)
-        .map_err(|e| PrecompileError::other(format!("set_balance: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let topic1 = B256::left_padding_from(caller.as_slice());
     let event_data = amount.to_be_bytes::<32>().to_vec();

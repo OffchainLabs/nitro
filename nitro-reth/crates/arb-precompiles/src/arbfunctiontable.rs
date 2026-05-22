@@ -1,9 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::interfaces::IArbFunctionTable;
+use crate::{interfaces::IArbFunctionTable, ArbPrecompileError};
 
 /// ArbFunctionTable precompile address (0x68).
 pub const ARBFUNCTIONTABLE_ADDRESS: Address = Address::new([
@@ -43,7 +43,9 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // Get unconditionally reverts (table is empty). gas_check will return
         // accumulated_gas (OpenArbosState + argsCost) on the revert path.
-        ArbFunctionTableCalls::get(_) => Err(PrecompileError::other("table is empty")),
+        ArbFunctionTableCalls::get(_) => {
+            Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
+        }
     };
     crate::gas_check(gas_limit, result)
 }
