@@ -392,7 +392,10 @@ pub fn poll_oneoff<M: MemAccess, E: ExecEnv>(
 
     const SUBSCRIPTION_SIZE: u32 = 48; // user data + 40-byte union
     for index in 0..num_subscriptions {
-        let subs_base = in_subs + (SUBSCRIPTION_SIZE * index);
+        let subs_base = in_subs
+            + SUBSCRIPTION_SIZE
+                .checked_mul(index)
+                .expect("subscription offset overflow");
         let subs_type = mem.read_u32(subs_base + 8);
         if subs_type != 0 {
             // not a clock subscription type
