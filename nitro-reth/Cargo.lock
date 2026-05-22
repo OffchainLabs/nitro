@@ -1524,6 +1524,7 @@ dependencies = [
  "derive_more 2.1.1",
  "reth-primitives-traits",
  "reth-transaction-pool",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
