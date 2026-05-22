@@ -40,7 +40,7 @@ fn create_open_round_trip() {
     assert_eq!(opened.to(b).unwrap(), Some(DEST));
     assert_eq!(opened.callvalue(b).unwrap(), U256::from(1_000_000u64));
     assert_eq!(opened.beneficiary(b).unwrap(), BENEFICIARY);
-    assert_eq!(opened.calldata().unwrap(), b"hello world".to_vec());
+    assert_eq!(opened.calldata(b).unwrap(), b"hello world".to_vec());
     assert_eq!(opened.num_tries(b).unwrap(), 0);
 }
 
@@ -61,11 +61,13 @@ fn open_returns_none_after_timeout() {
 #[test]
 fn delete_returns_false_for_unknown_id() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let rs = h.retryable_state();
 
     let mut transfers = Vec::new();
     let did = rs
         .delete_retryable(
+            unsafe { &mut *state_ptr },
             b256!("0000000000000000000000000000000000000000000000000000000000000099"),
             |from, to, amount| {
                 transfers.push((from, to, amount));
@@ -86,10 +88,12 @@ fn delete_clears_storage_and_transfers_escrow() {
     let escrow = retryable_escrow_address(TICKET_ID);
     let escrow_balance = U256::from(7_777_777u64);
 
+    let state_ptr = h.state_ptr();
     let mut transfers = Vec::new();
     let did = {
         let rs = h.retryable_state();
         rs.delete_retryable(
+            unsafe { &mut *state_ptr },
             TICKET_ID,
             |from, to, amount| {
                 transfers.push((from, to, amount));

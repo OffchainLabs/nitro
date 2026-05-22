@@ -2282,6 +2282,7 @@ where
                     if result.should_delete_retryable {
                         if let Some(arb_state) = arb_state_retry.as_ref() {
                             let _ = arb_state.retryable_state.delete_retryable(
+                                unsafe { &mut *state_ptr },
                                 retry_ctx.ticket_id,
                                 |from, to, amount| {
                                     unsafe {

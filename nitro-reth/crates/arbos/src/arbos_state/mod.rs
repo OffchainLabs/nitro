@@ -103,7 +103,7 @@ pub struct ArbosState<D, B: Burner> {
     pub programs: Programs<D>,
     pub blockhashes: Blockhashes<D>,
     pub chain_id: StorageBackedBigUint,
-    pub chain_config: StorageBackedBytes<D>,
+    pub chain_config: StorageBackedBytes,
     pub genesis_block_num: StorageBackedUint64,
     pub infra_fee_account: StorageBackedAddress,
     pub brotli_compression_level: StorageBackedUint64,
@@ -136,7 +136,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             }
         }
 
-        let chain_config_sto = backing_storage.open_sub_storage_with_key(chain_config_root_key());
+        let chain_config_key = chain_config_root_key();
         let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
 
         Ok(Self {
@@ -173,7 +173,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
             ),
             chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
-            chain_config: StorageBackedBytes::new(chain_config_sto),
+            chain_config: StorageBackedBytes::new(chain_config_key),
             genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
             infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
             brotli_compression_level: StorageBackedUint64::new(
@@ -257,12 +257,19 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(self.chain_id.get(backend)?)
     }
 
-    pub fn chain_config(&self) -> Result<Vec<u8>, ArbosStateError> {
-        Ok(self.chain_config.get()?)
+    pub fn chain_config<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Vec<u8>, ArbosStateError> {
+        Ok(self.chain_config.get(backend)?)
     }
 
-    pub fn set_chain_config(&self, config: &[u8]) -> Result<(), ArbosStateError> {
-        Ok(self.chain_config.set(config)?)
+    pub fn set_chain_config<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        config: &[u8],
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.chain_config.set(backend, config)?)
     }
 
     pub fn genesis_block_num<C: StorageBackend>(

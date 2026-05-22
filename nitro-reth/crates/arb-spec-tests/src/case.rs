@@ -218,6 +218,7 @@ fn apply_action(
             let bal = *escrow_balance;
             let rs = harness.retryable_state();
             rs.delete_retryable(
+                unsafe { &mut *state_ptr },
                 *id,
                 |from, to, amount| {
                     transfers

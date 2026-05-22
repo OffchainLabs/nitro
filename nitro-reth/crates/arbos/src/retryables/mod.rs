@@ -40,7 +40,7 @@ pub struct Retryable<D> {
     to: StorageBackedAddressOrNil,
     callvalue: StorageBackedBigUint,
     beneficiary: StorageBackedAddress,
-    calldata: StorageBackedBytes<D>,
+    calldata: StorageBackedBytes,
     timeout: StorageBackedUint64,
     timeout_windows_left: StorageBackedUint64,
 }
@@ -84,7 +84,7 @@ impl<D: Database> RetryableState<D> {
         ret.to.set(backend, to)?;
         ret.callvalue.set(backend, callvalue)?;
         ret.beneficiary.set(backend, beneficiary)?;
-        ret.calldata.set(calldata)?;
+        ret.calldata.set(backend, calldata)?;
         ret.timeout.set(backend, timeout)?;
         ret.timeout_windows_left.set(backend, 0)?;
         self.timeout_queue.put(backend, id)?;
@@ -118,7 +118,7 @@ impl<D: Database> RetryableState<D> {
         match retryable {
             None => Ok(0),
             Some(ret) => {
-                let size = ret.calldata_size()?;
+                let size = ret.calldata_size(backend)?;
                 let calldata_slots = 32 + 32 * words_for_bytes(size);
                 Ok(6 * 32 + calldata_slots)
             }
@@ -127,8 +127,9 @@ impl<D: Database> RetryableState<D> {
 
     /// Deletes a retryable and returns whether it existed.
     /// Moves the escrow's entire balance to the beneficiary via the provided closures.
-    pub fn delete_retryable<F, G>(
+    pub fn delete_retryable<F, G, B>(
         &self,
+        backend: &mut B,
         id: B256,
         mut transfer_fn: F,
         mut balance_of: G,
@@ -136,6 +137,7 @@ impl<D: Database> RetryableState<D> {
     where
         F: FnMut(Address, Address, U256) -> Result<(), ()>,
         G: FnMut(Address) -> U256,
+        B: StorageBackend,
     {
         let ret_storage = self.retryables.open_sub_storage(id.as_slice());
         let timeout_val = ret_storage.get_by_uint64(TIMEOUT_OFFSET)?;
@@ -157,8 +159,9 @@ impl<D: Database> RetryableState<D> {
         ret_storage.set_by_uint64(BENEFICIARY_OFFSET, B256::ZERO)?;
         ret_storage.set_by_uint64(TIMEOUT_OFFSET, B256::ZERO)?;
         ret_storage.set_by_uint64(TIMEOUT_WINDOWS_LEFT_OFFSET, B256::ZERO)?;
-        let bytes_storage = StorageBackedBytes::new(ret_storage.open_sub_storage(CALLDATA_KEY));
-        bytes_storage.clear()?;
+        let bytes_storage =
+            StorageBackedBytes::new(ret_storage.open_sub_storage(CALLDATA_KEY).base_key());
+        bytes_storage.clear(backend)?;
         Ok(true)
     }
 
@@ -223,7 +226,7 @@ impl<D: Database> RetryableState<D> {
         self.timeout_queue.get(backend)?;
 
         if windows_left == 0 {
-            self.delete_retryable(id, &mut transfer_fn, &mut balance_of)?;
+            self.delete_retryable(backend, id, &mut transfer_fn, &mut balance_of)?;
             return Ok(());
         }
 
@@ -270,6 +273,7 @@ impl<D: Database> RetryableState<D> {
     fn internal_open(&self, id: B256) -> Retryable<D> {
         let sto = self.retryables.open_sub_storage(id.as_slice());
         let base_key = sto.base_key();
+        let calldata_key = sto.open_sub_storage(CALLDATA_KEY).base_key();
         Retryable {
             id,
             num_tries: StorageBackedUint64::new(base_key, NUM_TRIES_OFFSET),
@@ -277,7 +281,7 @@ impl<D: Database> RetryableState<D> {
             to: StorageBackedAddressOrNil::new(base_key, TO_OFFSET),
             callvalue: StorageBackedBigUint::new(base_key, CALLVALUE_OFFSET),
             beneficiary: StorageBackedAddress::new(base_key, BENEFICIARY_OFFSET),
-            calldata: StorageBackedBytes::new(sto.open_sub_storage(CALLDATA_KEY)),
+            calldata: StorageBackedBytes::new(calldata_key),
             timeout: StorageBackedUint64::new(base_key, TIMEOUT_OFFSET),
             timeout_windows_left: StorageBackedUint64::new(base_key, TIMEOUT_WINDOWS_LEFT_OFFSET),
             backing_storage: sto,
@@ -356,12 +360,12 @@ impl<D: Database> Retryable<D> {
         Ok(self.callvalue.get(backend)?)
     }
 
-    pub fn calldata(&self) -> Result<Vec<u8>, RetryableError> {
-        Ok(self.calldata.get()?)
+    pub fn calldata<B: StorageBackend>(&self, backend: &mut B) -> Result<Vec<u8>, RetryableError> {
+        Ok(self.calldata.get(backend)?)
     }
 
-    pub fn calldata_size(&self) -> Result<u64, RetryableError> {
-        Ok(self.calldata.size()?)
+    pub fn calldata_size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
+        Ok(self.calldata.size(backend)?)
     }
 
     /// Constructs a retry transaction from this retryable's stored fields
@@ -386,7 +390,7 @@ impl<D: Database> Retryable<D> {
             gas,
             to: self.to(backend)?,
             value: self.callvalue(backend)?,
-            data: self.calldata()?.into(),
+            data: self.calldata(backend)?.into(),
             ticket_id,
             refund_to,
             max_refund,
