@@ -143,22 +143,6 @@ func TestChainTipRecorderRejectsStaleRecording(t *testing.T) {
 		t.Fatalf("expected served count 0, got %d", recorder.ServedTipRecordings())
 	}
 
-	if err := store.writeRecording(&chainTipRecording{
-		record: &execution.RecordResult{
-			Pos:       pos,
-			BlockHash: engine.bc.GetBlockByNumber(2).Hash(),
-		},
-		blockNumber: 3,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := recorder.Recording(pos, nil); err == nil || !strings.Contains(err.Error(), "mismatch") {
-		t.Fatalf("expected block number mismatch to be rejected, got err=%v", err)
-	}
-	if recorder.ServedTipRecordings() != 0 {
-		t.Fatalf("expected served count 0, got %d", recorder.ServedTipRecordings())
-	}
-
 	canonical := engine.bc.GetBlockByNumber(2)
 	if err := recorder.RecordTip(canonical, nil, canonical.NumberU64(), nil, nil); err != nil {
 		t.Fatal(err)
@@ -312,8 +296,8 @@ func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
 	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
 		t.Fatalf("unexpected preimage: %v", loaded.record.Preimages[preimageHash])
 	}
-	if loaded.blockNumber != recording.blockNumber || loaded.parentHash != recording.parentHash || loaded.firstHeaderNumber != recording.firstHeaderNumber {
-		t.Fatalf("unexpected block metadata: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
+	if loaded.blockNumber != 0 || loaded.parentHash != (common.Hash{}) || loaded.firstHeaderNumber != recording.firstHeaderNumber {
+		t.Fatalf("unexpected persisted metadata: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
 	}
 	if len(loaded.codeHashes) != 1 || loaded.codeHashes[0] != recording.codeHashes[0] {
 		t.Fatalf("unexpected code hashes: %v", loaded.codeHashes)
@@ -382,8 +366,8 @@ func TestBlockRecordsDatabasePersistsAcrossReopen(t *testing.T) {
 	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
 		t.Fatalf("unexpected preimage after reopening database: %v", loaded.record.Preimages[preimageHash])
 	}
-	if loaded.blockNumber != 100 || loaded.parentHash != testHash(3) || loaded.firstHeaderNumber != 99 {
-		t.Fatalf("unexpected block metadata after reopening database: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
+	if loaded.blockNumber != 0 || loaded.parentHash != (common.Hash{}) || loaded.firstHeaderNumber != 99 {
+		t.Fatalf("unexpected persisted metadata after reopening database: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
 	}
 	if len(loaded.codeHashes) != 1 || loaded.codeHashes[0] != testHash(4) {
 		t.Fatalf("unexpected code hashes after reopening database: %v", loaded.codeHashes)

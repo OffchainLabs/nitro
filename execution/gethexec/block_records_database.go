@@ -15,9 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 )
 
-const chainTipBlockRecordsDatabaseName = "chain-tip-block-records"
-
-var blockRecordKeyPrefix = []byte("chain-tip-block-record-v1:")
+var blockRecordKeyPrefix = []byte("ctbr:")
 
 type blockRecordsDatabase interface {
 	writeRecording(recording *chainTipRecording) error
@@ -43,11 +41,8 @@ func blockRecordKey(pos arbutil.MessageIndex) []byte {
 }
 
 type persistedChainTipRecording struct {
-	Pos               uint64
 	BlockHash         common.Hash
 	Preimages         []persistedPreimage
-	BlockNumber       uint64
-	ParentHash        common.Hash
 	FirstHeaderNumber uint64
 	CodeHashes        []common.Hash
 	WasmKeys          []persistedWasmKey
@@ -68,19 +63,16 @@ func persistableChainTipRecording(recording *chainTipRecording) (*persistedChain
 		return nil, fmt.Errorf("cannot persist nil chain-tip recording")
 	}
 	persisted := &persistedChainTipRecording{
-		Pos:               uint64(recording.record.Pos),
 		BlockHash:         recording.record.BlockHash,
 		Preimages:         make([]persistedPreimage, 0, len(recording.record.Preimages)),
-		BlockNumber:       recording.blockNumber,
-		ParentHash:        recording.parentHash,
 		FirstHeaderNumber: recording.firstHeaderNumber,
-		CodeHashes:        copyCodeHashes(recording.codeHashes),
+		CodeHashes:        recording.codeHashes,
 		WasmKeys:          make([]persistedWasmKey, 0, len(recording.wasmKeys)),
 	}
 	for hash, preimage := range recording.record.Preimages {
 		persisted.Preimages = append(persisted.Preimages, persistedPreimage{
 			Hash:     hash,
-			Preimage: common.CopyBytes(preimage),
+			Preimage: preimage,
 		})
 	}
 	for _, key := range recording.wasmKeys {
@@ -92,7 +84,7 @@ func persistableChainTipRecording(recording *chainTipRecording) (*persistedChain
 	return persisted, nil
 }
 
-func chainTipRecordingFromPersisted(persisted *persistedChainTipRecording) *chainTipRecording {
+func chainTipRecordingFromPersisted(pos arbutil.MessageIndex, persisted *persistedChainTipRecording) *chainTipRecording {
 	preimages := make(map[common.Hash][]byte, len(persisted.Preimages))
 	for _, preimage := range persisted.Preimages {
 		preimages[preimage.Hash] = common.CopyBytes(preimage.Preimage)
@@ -106,20 +98,14 @@ func chainTipRecordingFromPersisted(persisted *persistedChainTipRecording) *chai
 	}
 	return &chainTipRecording{
 		record: &execution.RecordResult{
-			Pos:       arbutil.MessageIndex(persisted.Pos),
+			Pos:       pos,
 			BlockHash: persisted.BlockHash,
 			Preimages: preimages,
 		},
-		blockNumber:       persisted.BlockNumber,
-		parentHash:        persisted.ParentHash,
 		firstHeaderNumber: persisted.FirstHeaderNumber,
-		codeHashes:        copyCodeHashes(persisted.CodeHashes),
+		codeHashes:        persisted.CodeHashes,
 		wasmKeys:          wasmKeys,
 	}
-}
-
-func copyCodeHashes(codeHashes []common.Hash) []common.Hash {
-	return append([]common.Hash(nil), codeHashes...)
 }
 
 func (d *keyValueBlockRecordsDatabase) writeRecording(recording *chainTipRecording) error {
@@ -154,8 +140,5 @@ func (d *keyValueBlockRecordsDatabase) readRecording(pos arbutil.MessageIndex) (
 	if err := rlp.DecodeBytes(encoded, &persisted); err != nil {
 		return nil, false, fmt.Errorf("failed to decode chain-tip block record: %w", err)
 	}
-	if persisted.Pos != uint64(pos) {
-		return nil, false, fmt.Errorf("chain-tip block record key pos %d does not match payload pos %d", pos, persisted.Pos)
-	}
-	return chainTipRecordingFromPersisted(&persisted), true, nil
+	return chainTipRecordingFromPersisted(pos, &persisted), true, nil
 }
