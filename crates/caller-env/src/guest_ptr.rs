@@ -39,7 +39,7 @@ impl From<GuestPtr> for u64 {
 }
 
 impl GuestPtr {
-    pub fn new(ptr: u32) -> Self {
+    pub const fn new(ptr: u32) -> Self {
         Self(ptr)
     }
 }
