@@ -1,8 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::{Bytes20, Bytes32};
-use caller_env::{ExecEnv, GuestPtr, MemAccess, wasmer_traits::WasmerMem, wavmio::WavmIo};
+use caller_env::{ExecEnv, wasmer_traits::WasmerMem, wavmio::WavmIo};
 use rand::Rng;
 
 use crate::machine::{WasmEnv, WasmEnvMut};
@@ -23,25 +22,6 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     }
 }
 
-pub trait WasmerMemExt {
-    fn read_bytes20(&mut self, ptr: GuestPtr) -> Bytes20;
-    fn read_bytes32(&mut self, ptr: GuestPtr) -> Bytes32;
-    fn write_bytes32(&mut self, ptr: GuestPtr, val: Bytes32);
-}
-
-impl WasmerMemExt for WasmerMem<'_> {
-    fn read_bytes20(&mut self, ptr: GuestPtr) -> Bytes20 {
-        self.read_fixed(ptr).into()
-    }
-
-    fn read_bytes32(&mut self, ptr: GuestPtr) -> Bytes32 {
-        self.read_fixed(ptr).into()
-    }
-
-    fn write_bytes32(&mut self, ptr: GuestPtr, val: Bytes32) {
-        self.write_slice(ptr, val.as_slice())
-    }
-}
 
 impl ExecEnv for JitExecEnv<'_> {
     fn advance_time(&mut self, ns: u64) {

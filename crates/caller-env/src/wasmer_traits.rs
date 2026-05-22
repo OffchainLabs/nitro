@@ -1,6 +1,7 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use arbutil::{Bytes20, Bytes32};
 use wasmer::{FromToNativeWasmType, Memory, MemoryView, StoreMut, WasmPtr};
 use alloc::vec::Vec;
 
@@ -44,6 +45,18 @@ pub struct WasmerMem<'s> {
 impl WasmerMem<'_> {
     fn view(&self) -> MemoryView<'_> {
         self.memory.view(&self.store)
+    }
+
+    pub fn read_bytes20(&self, ptr: GuestPtr) -> Bytes20 {
+        self.read_fixed(ptr).into()
+    }
+
+    pub fn read_bytes32(&self, ptr: GuestPtr) -> Bytes32 {
+        self.read_fixed(ptr).into()
+    }
+
+    pub fn write_bytes32(&mut self, ptr: GuestPtr, val: Bytes32) {
+        self.write_slice(ptr, val.as_slice())
     }
 }
 

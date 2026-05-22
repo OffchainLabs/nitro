@@ -1124,6 +1124,7 @@ dependencies = [
 name = "caller-env"
 version = "0.1.0"
 dependencies = [
+ "arbutil",
  "brotli",
  "hex",
  "k256",
