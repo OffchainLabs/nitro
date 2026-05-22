@@ -25,9 +25,7 @@ use std::{
 
 use arb_fuzz::{
     arbitrary_impls::{
-        interop::{
-            counter_calldata, erc20_calldata, sol_caller_calldata, storage_stress_calldata,
-        },
+        interop::{counter_calldata, erc20_calldata, sol_caller_calldata, storage_stress_calldata},
         ArbosVersion, DiffStylusInteropScenario, WhichProgram,
     },
     shared_nodes::shared_dual_exec,
@@ -87,12 +85,7 @@ fn stylus_real_programs_diff_matrix() {
                 let Some(s) = scen.clone().into_scenario() else {
                     continue;
                 };
-                let case_name = format!(
-                    "{}_v{}_seed_{}",
-                    program.name(),
-                    arbos_version,
-                    seed
-                );
+                let case_name = format!("{}_v{}_seed_{}", program.name(), arbos_version, seed);
                 eprintln!("[stylus_real_programs] running {case_name}");
 
                 let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
@@ -138,8 +131,7 @@ fn stylus_real_programs_diff_matrix() {
                                 "log_diffs": format!("{:#?}", report.log_diffs),
                             });
                             let path = div_dir.join(format!("{case_name}.json"));
-                            let _ =
-                                fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
+                            let _ = fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
                             eprintln!("[stylus_real_programs] DIVERGE {case_name}");
                         }
                     }

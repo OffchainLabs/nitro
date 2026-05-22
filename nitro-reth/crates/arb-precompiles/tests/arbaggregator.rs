@@ -50,9 +50,8 @@ fn get_tx_base_fee_returns_zero() {
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
-// ── Nitro TestFeeCollector / TestTxBaseFee ports ─────────────────────
-
 const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
+const POSTER_ADDRS_KEY: &[u8] = &[0];
 const POSTER_INFO_KEY: &[u8] = &[1];
 const PAY_TO_OFFSET: u64 = 1;
 
@@ -62,6 +61,15 @@ fn poster_info_pay_to_slot(poster: Address) -> U256 {
     let poster_info = derive_subspace_key(bpt_key.as_slice(), POSTER_INFO_KEY);
     let info_key = derive_subspace_key(poster_info.as_slice(), poster.as_slice());
     map_slot(info_key.as_slice(), PAY_TO_OFFSET)
+}
+
+fn poster_addrs_member_slot(poster: Address) -> U256 {
+    let l1_pricing_key = derive_subspace_key(ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
+    let bpt_key = derive_subspace_key(l1_pricing_key.as_slice(), BATCH_POSTER_TABLE_KEY);
+    let addrs_key = derive_subspace_key(bpt_key.as_slice(), POSTER_ADDRS_KEY);
+    let by_addr_key = derive_subspace_key(addrs_key.as_slice(), &[0]);
+    let poster_b256 = B256::left_padding_from(poster.as_slice());
+    map_slot_b256(by_addr_key.as_slice(), &poster_b256)
 }
 
 fn chain_owner_member_slot(addr: Address) -> U256 {
@@ -78,6 +86,11 @@ fn get_fee_collector_returns_stored_pay_to() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            poster_addrs_member_slot(BATCH_POSTER),
+            U256::from(1),
+        )
         .storage(
             ARBOS_STATE_ADDRESS,
             poster_info_pay_to_slot(BATCH_POSTER),
@@ -97,6 +110,11 @@ fn set_fee_collector_succeeds_when_caller_is_batch_poster() {
         .arbos_version(30)
         .caller(BATCH_POSTER)
         .arbos_state()
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            poster_addrs_member_slot(BATCH_POSTER),
+            U256::from(1),
+        )
         .storage(
             ARBOS_STATE_ADDRESS,
             poster_info_pay_to_slot(BATCH_POSTER),
@@ -128,6 +146,11 @@ fn set_fee_collector_succeeds_when_caller_is_current_collector() {
         .arbos_state()
         .storage(
             ARBOS_STATE_ADDRESS,
+            poster_addrs_member_slot(BATCH_POSTER),
+            U256::from(1),
+        )
+        .storage(
+            ARBOS_STATE_ADDRESS,
             poster_info_pay_to_slot(BATCH_POSTER),
             U256::from_be_slice(current.as_slice()),
         )
@@ -153,6 +176,11 @@ fn set_fee_collector_succeeds_when_caller_is_chain_owner() {
         .arbos_version(30)
         .caller(owner)
         .arbos_state()
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            poster_addrs_member_slot(BATCH_POSTER),
+            U256::from(1),
+        )
         .storage(
             ARBOS_STATE_ADDRESS,
             poster_info_pay_to_slot(BATCH_POSTER),

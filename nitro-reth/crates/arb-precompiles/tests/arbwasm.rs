@@ -182,7 +182,8 @@ fn min_init_gas_reverts_pre_charging_fixes() {
         .call(&arbwasm(), &calldata("minInitGas()", &[]));
     let out = run.assert_ok();
     assert!(out.reverted);
-    assert_eq!(out.gas_used, gas);
+    // OpenArbosState SLOAD (800) + warm Params SLOAD (100) = 900.
+    assert_eq!(out.gas_used, 900);
 }
 
 #[test]
@@ -655,8 +656,7 @@ fn keepalive_inner_call_with_value_passes() {
     let now = 1_700_000_000_u64;
     // input.value = 1 ETH, far above the ~0.0004 ETH data_fee for a 5KB
     // program. Simulates revm's value-transfer-into-0x71 for an inner CALL.
-    let test =
-        keepalive_test_setup(codehash, now).value(U256::from(10u128).pow(U256::from(18u64)));
+    let test = keepalive_test_setup(codehash, now).value(U256::from(10u128).pow(U256::from(18u64)));
 
     let run = test.call(
         &arbwasm(),
@@ -715,8 +715,8 @@ fn keepalive_inner_call_value_passes_at_arbos_v40() {
 
     let codehash = B256::from_slice(&[0xe0u8; 32]);
     let now = 1_700_000_000_u64;
-    let test = keepalive_test_setup_at(codehash, now, 40)
-        .value(U256::from(10u128).pow(U256::from(18u64)));
+    let test =
+        keepalive_test_setup_at(codehash, now, 40).value(U256::from(10u128).pow(U256::from(18u64)));
 
     let run = test.call(
         &arbwasm(),
@@ -746,8 +746,8 @@ fn keepalive_inner_call_value_passes_at_arbos_v50() {
 
     let codehash = B256::from_slice(&[0xe1u8; 32]);
     let now = 1_700_000_000_u64;
-    let test = keepalive_test_setup_at(codehash, now, 50)
-        .value(U256::from(10u128).pow(U256::from(18u64)));
+    let test =
+        keepalive_test_setup_at(codehash, now, 50).value(U256::from(10u128).pow(U256::from(18u64)));
 
     let run = test.call(
         &arbwasm(),

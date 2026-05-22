@@ -8,15 +8,14 @@
 //! their own earlier code paths and the fix doesn't directly cover them.
 //!
 //! This test exercises both:
-//!   1. Submit a retryable with `max_fee_per_gas = 1 wei` (far below the
-//!      L2 basefee, ~0.1 gwei). The user-funded `deposit_value` is enough
-//!      to auto-redeem if pricing allowed.
+//!   1. Submit a retryable with `max_fee_per_gas = 1 wei` (far below the L2 basefee, ~0.1 gwei).
+//!      The user-funded `deposit_value` is enough to auto-redeem if pricing allowed.
 //!   2. Nitro should:
 //!        - mint the deposit to the alias (the ArbitrumDepositTx half)
-//!        - reject auto-redeem because of ErrFeeCapTooLow → no RetryTx,
-//!          the retryable just stays queued or fails validation
-//!   3. arbreth must match — same final balances, same tx count in the block
-//!      that ingests the SubmitRetryable, same retryable lifecycle state.
+//!        - reject auto-redeem because of ErrFeeCapTooLow → no RetryTx, the retryable just stays
+//!          queued or fails validation
+//!   3. arbreth must match — same final balances, same tx count in the block that ingests the
+//!      SubmitRetryable, same retryable lifecycle state.
 //!
 //! If arbreth EXECUTES the underpriced auto-redeem, the diff will surface
 //! a tx-count / gas_used / balance mismatch and this test fails — exactly

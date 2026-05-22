@@ -157,7 +157,7 @@ fn cache_codehash_succeeds_for_chain_owner_and_sets_cached_byte() {
     let program_word = pack_program(2, activated_hours, false);
 
     let test = PrecompileTest::new()
-        .arbos_version(32)
+        .arbos_version(30)
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
@@ -194,7 +194,7 @@ fn cache_codehash_no_op_when_already_cached() {
     let program_word = pack_program(2, activated_hours, true);
 
     let run = PrecompileTest::new()
-        .arbos_version(32)
+        .arbos_version(30)
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
@@ -229,7 +229,7 @@ fn cache_codehash_reverts_program_needs_upgrade_for_stale_version() {
     let program_word = pack_program(2, activated_hours, false);
 
     let run = PrecompileTest::new()
-        .arbos_version(32)
+        .arbos_version(30)
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
@@ -263,7 +263,7 @@ fn cache_codehash_reverts_program_expired() {
     let program_word = pack_program(2, 0, false);
 
     let run = PrecompileTest::new()
-        .arbos_version(32)
+        .arbos_version(30)
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()
@@ -298,7 +298,7 @@ fn evict_codehash_clears_cached_byte() {
     let program_word = pack_program(2, activated_hours, true);
 
     let run = PrecompileTest::new()
-        .arbos_version(32)
+        .arbos_version(30)
         .block_timestamp(now)
         .caller(owner)
         .arbos_state()

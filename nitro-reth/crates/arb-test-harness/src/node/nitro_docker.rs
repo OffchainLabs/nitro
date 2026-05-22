@@ -291,9 +291,8 @@ fn write_nitro_genesis_file(
         .unwrap_or_else(|| json!({}));
 
     // Pull through any geth fields the fixture supplied; default the rest.
-    let take = |key: &str, default: Value| -> Value {
-        ctx.genesis.get(key).cloned().unwrap_or(default)
-    };
+    let take =
+        |key: &str, default: Value| -> Value { ctx.genesis.get(key).cloned().unwrap_or(default) };
 
     let serialized_chain_config = serde_json::to_string(chain_config).unwrap_or_default();
 
@@ -314,8 +313,11 @@ fn write_nitro_genesis_file(
     });
 
     let path = dir.join("genesis.json");
-    std::fs::write(&path, serde_json::to_vec_pretty(&genesis).unwrap_or_default())
-        .map_err(HarnessError::Io)?;
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&genesis).unwrap_or_default(),
+    )
+    .map_err(HarnessError::Io)?;
     Ok(dir)
 }
 

@@ -9,18 +9,17 @@
 //!   1. Fund caller EOA.
 //!   2. Fund victim EOA.
 //!   3. Deploy log-emitter (EVM bytecode that emits LOG1 on any call).
-//!   4. SetCodeTx from victim authorising log-emitter as its delegate.
-//!      => victim's code becomes `0xef 0x01 0x00 || log_emitter_addr`.
+//!   4. SetCodeTx from victim authorising log-emitter as its delegate. => victim's code becomes
+//!      `0xef 0x01 0x00 || log_emitter_addr`.
 //!   5. Deploy SolCaller (Stylus contract with `forward(addr, bytes)`).
 //!   6. activateProgram(SolCaller).
-//!   7. caller -> SolCaller.forward(victim, "")
-//!      Stylus call_contract hostio targets victim (the 7702 EOA).
-//!      stylus_call_trampoline must:
+//!   7. caller -> SolCaller.forward(victim, "") Stylus call_contract hostio targets victim (the
+//!      7702 EOA). stylus_call_trampoline must:
 //!         - detect the 7702 designator
 //!         - load log-emitter's code
 //!         - execute it -> emit LOG1
-//!      Pre-fix arbreth: traps with all gas consumed (`0xef` invalid opcode).
-//!      Post-fix arbreth: matches Nitro byte-for-byte.
+//!         - Pre-fix arbreth: traps with all gas consumed (`0xef` invalid opcode).
+//!         - Post-fix arbreth: matches Nitro byte-for-byte.
 //!
 //! Run command:
 //!   ARB_SPEC_BINARY=$(pwd)/target/release/arb-reth \
@@ -111,7 +110,9 @@ fn log_emitter_runtime() -> Vec<u8> {
     // PUSH1 0x00  (size)
     // PUSH1 0x00  (offset)
     // RETURN
-    vec![0x60, 0xaa, 0x60, 0x00, 0x60, 0x00, 0xa1, 0x60, 0x00, 0x60, 0x00, 0xf3]
+    vec![
+        0x60, 0xaa, 0x60, 0x00, 0x60, 0x00, 0xa1, 0x60, 0x00, 0x60, 0x00, 0xf3,
+    ]
 }
 
 fn signed_with_key(
@@ -207,10 +208,9 @@ fn stylus_calls_7702_delegated_eoa_matches_canon() {
     let idx = next_msg_idx();
     steps.push(message_step(idx, deploy_emitter, idx));
 
-    // 4. SetCodeTx from victim authorising log-emitter as delegate.
-    //    EIP-7702 requires `to` to be set; we send it to log_emitter_addr
-    //    with empty calldata (a no-op call). The interesting part is the
-    //    authorization list, which installs the delegation on `victim`.
+    // 4. SetCodeTx from victim authorising log-emitter as delegate. EIP-7702 requires `to` to be
+    //    set; we send it to log_emitter_addr with empty calldata (a no-op call). The interesting
+    //    part is the authorization list, which installs the delegation on `victim`.
     let auth = AuthorizationItem {
         chain_id: FUZZ_L2_CHAIN_ID,
         address: log_emitter_addr,
@@ -273,11 +273,9 @@ fn stylus_calls_7702_delegated_eoa_matches_canon() {
     let idx = next_msg_idx();
     steps.push(message_step(idx, activate, idx));
 
-    // 7. caller -> SolCaller.forward(victim, "")
-    //    SolCaller's `forward(address target, bytes data) -> bytes`
-    //    sub-CALLs `target` from inside Stylus. With `target = victim` (a
-    //    7702-delegated EOA), the trampoline must follow the delegation
-    //    and execute log-emitter's code.
+    // 7. caller -> SolCaller.forward(victim, "") SolCaller's `forward(address target, bytes data)
+    //    -> bytes` sub-CALLs `target` from inside Stylus. With `target = victim` (a 7702-delegated
+    //    EOA), the trampoline must follow the delegation and execute log-emitter's code.
     let mut forward_data = Vec::with_capacity(4 + 32 + 32 + 32);
     forward_data.extend_from_slice(&selector("forward(address,bytes)"));
     let mut pad = [0u8; 32];
@@ -316,9 +314,7 @@ fn stylus_calls_7702_delegated_eoa_matches_canon() {
 
     let nodes = shared_dual_exec();
     let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
-    let report = nodes
-        .run(&scen)
-        .expect("run stylus_calls_7702 scenario");
+    let report = nodes.run(&scen).expect("run stylus_calls_7702 scenario");
 
     if !report.is_clean() {
         let payload = serde_json::json!({

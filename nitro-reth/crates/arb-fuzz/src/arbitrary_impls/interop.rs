@@ -192,10 +192,15 @@ impl DiffStylusInteropScenario {
             let initcode = wrap_init_code(&runtime);
             let companion = create_address(eoa, next_nonce);
             companion_addr = Some(companion);
-            let deploy_companion =
-                signed_eip1559(next_nonce, None, Bytes::from(initcode), U256::ZERO, DEPLOY_GAS_CAP)
-                    .build()
-                    .ok()?;
+            let deploy_companion = signed_eip1559(
+                next_nonce,
+                None,
+                Bytes::from(initcode),
+                U256::ZERO,
+                DEPLOY_GAS_CAP,
+            )
+            .build()
+            .ok()?;
             let idx = next_msg_idx();
             steps.push(message_step(idx, deploy_companion, idx));
             next_nonce += 1;
@@ -203,10 +208,15 @@ impl DiffStylusInteropScenario {
 
         // 5. Action-seeded invoke.
         let calldata = self.build_calldata(companion_addr);
-        let invoke =
-            signed_eip1559(next_nonce, Some(stylus_addr), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-                .build()
-                .ok()?;
+        let invoke = signed_eip1559(
+            next_nonce,
+            Some(stylus_addr),
+            Bytes::from(calldata),
+            U256::ZERO,
+            INVOKE_GAS_CAP,
+        )
+        .build()
+        .ok()?;
         let idx = next_msg_idx();
         steps.push(message_step(idx, invoke, idx));
 
@@ -359,7 +369,7 @@ fn with_addr_bytes(sig: &str, a: Address, data: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&len.to_be_bytes::<32>());
     out.extend_from_slice(data);
     let pad_len = (32 - (data.len() % 32)) % 32;
-    out.extend(std::iter::repeat(0u8).take(pad_len));
+    out.extend(std::iter::repeat_n(0u8, pad_len));
     out
 }
 
@@ -380,15 +390,15 @@ pub fn stylus_callback_runtime() -> Vec<u8> {
     // Load 4-byte selector into stack as uint32 (high bytes).
     out.extend_from_slice(&[
         0x60, 0x00, // PUSH1 0
-        0x35,       // CALLDATALOAD
+        0x35, // CALLDATALOAD
         0x60, 0xe0, // PUSH1 0xe0
-        0x1c,       // SHR  -> selector
+        0x1c, // SHR  -> selector
     ]);
     // dup selector; compare against pingCount() selector
     out.extend_from_slice(&[0x80]); // DUP1
     out.extend_from_slice(&[0x63, 0x87, 0x70, 0x45, 0x69]); // PUSH4 pingCount()
     out.extend_from_slice(&[0x14]); // EQ
-    // jumpi to 0x46 (ping_count_handler — patched below)
+                                    // jumpi to 0x46 (ping_count_handler — patched below)
     let ping_count_jumpi_pos = out.len();
     out.extend_from_slice(&[0x60, 0x00, 0x57]); // PUSH1 dest PUSH1?  fix below
 
@@ -405,17 +415,17 @@ pub fn stylus_callback_runtime() -> Vec<u8> {
     // ping(uint256) handler
     let ping_dest = out.len();
     out.push(0x5b); // JUMPDEST
-    // Load calldata[4..36] (the argument)
+                    // Load calldata[4..36] (the argument)
     out.extend_from_slice(&[0x60, 0x04]); // PUSH1 4
     out.push(0x35); // CALLDATALOAD -> stack: [selector, arg]
-    // increment slot 0
+                    // increment slot 0
     out.extend_from_slice(&[0x60, 0x00]); // PUSH1 0
     out.push(0x54); // SLOAD -> [sel, arg, count]
     out.extend_from_slice(&[0x60, 0x01]); // PUSH1 1
     out.push(0x01); // ADD -> [sel, arg, count+1]
     out.extend_from_slice(&[0x60, 0x00]); // PUSH1 0
     out.push(0x55); // SSTORE -> [sel, arg]
-    // ret = arg + 1
+                    // ret = arg + 1
     out.extend_from_slice(&[0x60, 0x01]); // PUSH1 1
     out.push(0x01); // ADD -> [sel, arg+1]
     out.extend_from_slice(&[0x60, 0x00]); // PUSH1 0
@@ -480,7 +490,9 @@ pub fn reentrant_runtime() -> Vec<u8> {
 
     // mem[0x04..0x24] = address(this)
     out.push(0x30); // ADDRESS
-    out.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4 MSTORE — overlapping with selector but stylus padding ok... Actually MSTORE writes 32 bytes starting at offset 4 so it overwrites bytes 4..36. The address is right-aligned (12 zero bytes + 20 addr bytes).
+    out.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4 MSTORE — overlapping with selector but stylus padding ok... Actually MSTORE writes 32
+                                                // bytes starting at offset 4 so it overwrites bytes 4..36. The address is right-aligned (12
+                                                // zero bytes + 20 addr bytes).
 
     // mem[0x24..0x44] = 0x40 (offset)
     out.extend_from_slice(&[0x60, 0x40]); // PUSH1 0x40
@@ -499,7 +511,7 @@ pub fn reentrant_runtime() -> Vec<u8> {
     out.extend_from_slice(&[0x60, 0x04, 0x35]); // PUSH1 4 CALLDATALOAD -> address (right-aligned in 32 bytes; CALL pops it as uint160)
     out.push(0x5a); // GAS
     out.push(0xf1); // CALL
-    // ignore return; return uint256(1)
+                    // ignore return; return uint256(1)
     out.push(0x50); // POP
     out.extend_from_slice(&[0x60, 0x01, 0x60, 0x00, 0x52]); // PUSH1 1 PUSH1 0 MSTORE
     out.extend_from_slice(&[0x60, 0x20, 0x60, 0x00, 0xf3]); // RETURN 32

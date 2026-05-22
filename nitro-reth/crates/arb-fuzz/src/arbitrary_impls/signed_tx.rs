@@ -130,9 +130,7 @@ impl DiffSignedTxScenario {
             SignedTxKind::Eip1559 => L2TxKind::Eip1559,
             SignedTxKind::Eip7702 => {
                 // 7702 cannot be CREATE per spec — TxEip7702.to is non-optional.
-                if self.to.is_none() {
-                    return None;
-                }
+                self.to?;
                 L2TxKind::Eip7702
             }
         };

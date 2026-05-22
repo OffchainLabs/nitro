@@ -117,6 +117,7 @@ pub struct ArbosState<D, B: Burner> {
 
 impl<D: Database, B: Burner> ArbosState<D, B> {
     /// Open existing ArbOS state from storage.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn open(state: *mut revm::database::State<D>, burner: B) -> Result<Self, ()> {
         let backing_storage = Storage::new(state, B256::ZERO);
 
@@ -125,10 +126,6 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             return Err(());
         }
 
-        // Mirror Nitro's KVStorage(FilteredTransactionsStateAddress) which
-        // performs SetNonce(addr, 1) on every open so geth doesn't treat the
-        // storage container as empty. Only active when v60+ since filtered
-        // transactions storage isn't opened on older versions.
         if arbos_version >= 60 {
             unsafe {
                 set_account_nonce(&mut *state, FILTERED_TX_STATE_ADDRESS, 1);

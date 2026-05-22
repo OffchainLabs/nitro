@@ -158,9 +158,8 @@ fn filter_genesis_noise(report: DiffReport) -> DiffReport {
             // verify equivalence via the execution fields that DO match
             // (receipts_root, transactions_root, gas_used, timestamp, plus
             // per-tx receipt diffs).
-            let trie_noise = d.field == "parent_hash"
-                || d.field == "block_hash"
-                || d.field == "state_root";
+            let trie_noise =
+                d.field == "parent_hash" || d.field == "block_hash" || d.field == "state_root";
             !trie_noise
         })
         .collect();
@@ -537,9 +536,7 @@ fn dump_arbos_state_diff(rig: &StagedRig) {
                 "  ACCT-DIFF {label:30}  ({a:?}): bal nitro={lb} arbreth={rb} | nonce {ln}/{rn} | codelen {lc}/{rc}"
             );
         } else if lb != U256::ZERO || ln != 0 || lc != 0 {
-            eprintln!(
-                "  match     {label:30}  ({a:?}): bal={lb} nonce={ln} codelen={lc}"
-            );
+            eprintln!("  match     {label:30}  ({a:?}): bal={lb} nonce={ln} codelen={lc}");
         }
     }
 }
@@ -600,11 +597,7 @@ fn staged_upgrade_v40_to_v50_to_v60() {
     // slots directly via eth_getStorageAt across all subspaces at the
     // latest block. Any divergence here means execution paths drift even
     // if receipts/logs match.
-    let latest = rig
-        .dual
-        .left
-        .block(BlockId::Latest)
-        .expect("left latest");
+    let latest = rig.dual.left.block(BlockId::Latest).expect("left latest");
     assert_arbos_slots_match(&rig, latest.number);
 }
 
@@ -694,9 +687,7 @@ fn assert_arbos_slots_match(rig: &StagedRig, block_number: u64) {
             total_probed
         );
         for (label, slot, l, r) in diverged.iter().take(32) {
-            eprintln!(
-                "  DIFF {label:30}  slot={slot:?}\n    nitro  ={l:?}\n    arbreth={r:?}"
-            );
+            eprintln!("  DIFF {label:30}  slot={slot:?}\n    nitro  ={l:?}\n    arbreth={r:?}");
         }
         panic!(
             "ArbOS storage slots diverged: {}/{} at block#{block_number}",
@@ -751,8 +742,7 @@ fn build_staged_upgrade_scenario(owner_sk: B256, owner: Address) -> Scenario {
     let mut t = 1_700_000_000u64;
     let l1_block: u64 = 1;
 
-    // 1) Deposit ~1 ETH to the chain owner so they can pay for the
-    //    scheduleArbOSUpgrade tx.
+    // 1) Deposit ~1 ETH to the chain owner so they can pay for the scheduleArbOSUpgrade tx.
     steps.push(deposit_step(
         &msg_idx,
         owner,
@@ -772,8 +762,8 @@ fn build_staged_upgrade_scenario(owner_sk: B256, owner: Address) -> Scenario {
     steps.push(ScenarioStep::AdvanceTime { seconds: 10 });
     t += 10;
 
-    // 4) Deposit to force a new block past the upgrade timestamp — v50
-    //    fires at the start of this block (since now > ts_v50).
+    // 4) Deposit to force a new block past the upgrade timestamp — v50 fires at the start of this
+    //    block (since now > ts_v50).
     steps.push(deposit_step(
         &msg_idx,
         owner,
@@ -782,8 +772,8 @@ fn build_staged_upgrade_scenario(owner_sk: B256, owner: Address) -> Scenario {
         l1_block,
     ));
 
-    // 5) SignedL2Tx from owner → scheduleArbOSUpgrade(60, t+12). nonce=1
-    //    because the owner already submitted one signed tx (step 2).
+    // 5) SignedL2Tx from owner → scheduleArbOSUpgrade(60, t+12). nonce=1 because the owner already
+    //    submitted one signed tx (step 2).
     let ts_v60 = t + 12;
     let cd_v60 = schedule_upgrade_calldata(60, ts_v60);
     steps.push(signed_owner_call_step(
@@ -803,8 +793,8 @@ fn build_staged_upgrade_scenario(owner_sk: B256, owner: Address) -> Scenario {
         l1_block,
     ));
 
-    // 8) v60-relevant traffic. Fund three signers, then send legacy / 1559
-    //    / 7702 transfers and one SubmitRetryable.
+    // 8) v60-relevant traffic. Fund three signers, then send legacy / 1559 / 7702 transfers and one
+    //    SubmitRetryable.
     let signer_a_sk = B256::repeat_byte(0x11);
     let signer_b_sk = B256::repeat_byte(0x22);
     let signer_c_sk = B256::repeat_byte(0x33);
@@ -950,9 +940,9 @@ fn fuzz_staged_upgrade_post_v60_traffic() {
                         .block(BlockId::Latest)
                         .expect("left latest")
                         .number;
-                    let slot_ok = std::panic::catch_unwind(
-                        std::panic::AssertUnwindSafe(|| assert_arbos_slots_match(&rig, latest)),
-                    );
+                    let slot_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        assert_arbos_slots_match(&rig, latest)
+                    }));
                     if slot_ok.is_ok() {
                         clean += 1;
                         eprintln!("[fuzz_staged] iter {i}: clean (slots match)");
@@ -1086,20 +1076,19 @@ fn emit_step_post_v60(
                     L2TxKind::Eip7702
                 }
             };
-            let auth_list: Vec<AuthorizationItem> = if *auth_count > 0
-                && matches!(kind, SignedKind::Eip7702)
-            {
-                (0..*auth_count)
-                    .map(|i| AuthorizationItem {
-                        chain_id: UPGRADE_L2_CHAIN_ID,
-                        address: Address::repeat_byte(0xb0 + i),
-                        nonce: 0,
-                        signing_key: sk,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            let auth_list: Vec<AuthorizationItem> =
+                if *auth_count > 0 && matches!(kind, SignedKind::Eip7702) {
+                    (0..*auth_count)
+                        .map(|i| AuthorizationItem {
+                            chain_id: UPGRADE_L2_CHAIN_ID,
+                            address: Address::repeat_byte(0xb0 + i),
+                            nonce: 0,
+                            signing_key: sk,
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             let to_addr = to.unwrap_or(Address::repeat_byte(0xee));
             out.push(signed_transfer_step(
                 msg_idx,
@@ -1149,7 +1138,7 @@ fn emit_step_post_v60(
 }
 
 fn seed_bytes(i: usize) -> Vec<u8> {
-    let mut state: u64 = 0xC0FFEE_BAD_BABE_u64.wrapping_add(i as u64);
+    let mut state: u64 = 0x000C_0FFE_EBAD_BABE_u64.wrapping_add(i as u64);
     let mut out = Vec::with_capacity(512);
     while out.len() < 512 {
         state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);

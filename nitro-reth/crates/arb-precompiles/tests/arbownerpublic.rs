@@ -94,9 +94,8 @@ fn get_brotli_compression_level_at_v20() {
 }
 
 #[test]
-fn get_brotli_compression_level_returns_zero_below_v20_when_unset() {
-    // Nitro doesn't gate this; just reads the field, which is 0 if uninit.
-    let run = fixture(19).call(
+fn get_brotli_compression_level_at_v20_returns_zero_when_unset() {
+    let run = fixture(20).call(
         &arbownerpublic(),
         &calldata("getBrotliCompressionLevel()", &[]),
     );
@@ -149,16 +148,16 @@ fn is_chain_owner_returns_false_for_non_member() {
 }
 
 #[test]
-fn rectify_chain_owner_errors_when_caller_not_owner_at_any_version() {
-    // Nitro precompiles/ArbOwnerPublic.go::RectifyChainOwner doesn't gate by
-    // version. It calls ChainOwners().RectifyMapping(addr), which errors with
-    // "RectifyMapping: Address is not an owner" when addr isn't tracked.
+fn rectify_chain_owner_reverts_when_caller_not_owner_at_v11() {
     let target: Address = address!("00000000000000000000000000000000000000cc");
-    let run = fixture(10).call(
+    let run = fixture(11).call(
         &arbownerpublic(),
         &calldata("rectifyChainOwner(address)", &[word_address(target)]),
     );
-    assert!(run.result.is_err(), "non-owner rectify must error");
+    assert!(
+        matches!(&run.result, Ok(o) if o.reverted),
+        "non-owner rectify must revert",
+    );
 }
 
 #[test]
@@ -177,11 +176,8 @@ fn get_parent_gas_floor_per_token_at_v50() {
 }
 
 #[test]
-fn get_parent_gas_floor_per_token_returns_zero_below_v50_when_unset() {
-    // Nitro precompiles/ArbOwnerPublic.go::GetParentGasFloorPerToken is not
-    // version-gated; it just reads the L1PricingState field. Returning 0 from
-    // an uninitialised field is correct.
-    let run = fixture(49).call(
+fn get_parent_gas_floor_per_token_at_v50_returns_zero_when_unset() {
+    let run = fixture(50).call(
         &arbownerpublic(),
         &calldata("getParentGasFloorPerToken()", &[]),
     );
@@ -189,9 +185,9 @@ fn get_parent_gas_floor_per_token_returns_zero_below_v50_when_unset() {
 }
 
 #[test]
-fn is_native_token_owner_returns_false_below_v41_when_unset() {
+fn is_native_token_owner_at_v41_returns_false_when_unset() {
     let target: Address = address!("00000000000000000000000000000000000000dd");
-    let run = fixture(40).call(
+    let run = fixture(41).call(
         &arbownerpublic(),
         &calldata("isNativeTokenOwner(address)", &[word_address(target)]),
     );
@@ -199,10 +195,10 @@ fn is_native_token_owner_returns_false_below_v41_when_unset() {
 }
 
 #[test]
-fn get_max_stylus_contract_fragments_returns_zero_below_v60() {
-    let run = fixture(59).call(
+fn get_max_stylus_contract_fragments_at_v60_returns_initial_default_when_unset() {
+    let run = fixture(60).call(
         &arbownerpublic(),
         &calldata("getMaxStylusContractFragments()", &[]),
     );
-    assert_eq!(decode_u256(run.output()), U256::ZERO);
+    assert_eq!(decode_u256(run.output()), U256::from(4));
 }

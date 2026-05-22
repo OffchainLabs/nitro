@@ -2,9 +2,7 @@
 
 use alloy_primitives::{Address, Bytes, U256};
 use arb_test_harness::{
-    messaging::{
-        retryable::RetryableSubmitBuilder, DepositBuilder, MessageBuilder,
-    },
+    messaging::{retryable::RetryableSubmitBuilder, DepositBuilder, MessageBuilder},
     scenario::{Scenario, ScenarioSetup},
 };
 use arbitrary::{Arbitrary, Unstructured};

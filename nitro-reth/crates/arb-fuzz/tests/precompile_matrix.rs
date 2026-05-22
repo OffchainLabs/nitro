@@ -63,11 +63,9 @@ fn cases() -> Vec<(&'static str, Address, Vec<u8>)> {
     // 0x01 ECRECOVER — valid signature from go-ethereum test vector.
     // hash | v | r | s
     let mut ec = vec![0u8; 128];
-    ec[..32].copy_from_slice(
-        &hex_decode(
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        ),
-    );
+    ec[..32].copy_from_slice(&hex_decode(
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    ));
     ec[63] = 28;
     ec[64..96].copy_from_slice(&hex_decode(
         "00b940f9d24c0fcd0c5d6d62f3d4c75e87a4a3c5e7e3d8a2c1234567890abcdef",
@@ -202,7 +200,11 @@ fn cases() -> Vec<(&'static str, Address, Vec<u8>)> {
     // ArbGasInfo.getGasAccountingParams() — 0x612af178
     out.push(("arbgasinfo_accounting", addr(0x6c), hex_decode("612af178")));
     // ArbOwnerPublic.getNetworkFeeAccount() — 0x4d3508b6
-    out.push(("arbownerpub_fee_account", addr(0x6b), hex_decode("4d3508b6")));
+    out.push((
+        "arbownerpub_fee_account",
+        addr(0x6b),
+        hex_decode("4d3508b6"),
+    ));
     // ArbOwnerPublic.isChainOwner(address) — 0xee6f1457 + arg
     let mut isowner = hex_decode("ee6f1457");
     isowner.extend_from_slice(&[0u8; 32]);
@@ -344,9 +346,7 @@ fn matrix() {
         for d in &report.block_diffs {
             // Skip pure-noise fields when both nodes use the same chain config.
             // We want gas + receipts to match.
-            if d.field == "gas_used"
-                || d.field == "receipts_root"
-                || d.field == "transactions_root"
+            if d.field == "gas_used" || d.field == "receipts_root" || d.field == "transactions_root"
             {
                 failures.push(format!(
                     "{label}: block#{} field={} left={} right={}",
@@ -409,7 +409,9 @@ fn matrix() {
                     "[matrix] {label}: eth_call dynamic-state divergence (non-consensus, follow-up) — {lout:?} vs {rout:?}"
                 );
             } else {
-                failures.push(format!("{label}: eth_call return mismatch {lout:?} vs {rout:?}"));
+                failures.push(format!(
+                    "{label}: eth_call return mismatch {lout:?} vs {rout:?}"
+                ));
                 diverged = true;
             }
         }
@@ -433,8 +435,8 @@ fn matrix() {
             if l != r {
                 eprintln!(
                     "[matrix] BACKLOG DRIFT after {label}: L(nitro)={:?} R(arbreth)={:?}",
-                    l.as_ref().map(|b| alloy_primitives::hex::encode(b)),
-                    r.as_ref().map(|b| alloy_primitives::hex::encode(b)),
+                    l.as_ref().map(alloy_primitives::hex::encode),
+                    r.as_ref().map(alloy_primitives::hex::encode),
                 );
             }
         }
@@ -448,7 +450,9 @@ fn matrix() {
             // First divergence isolates a real bug; later ones cascade
             // from the inbox-state drift the first one caused. Stop here
             // unless the caller explicitly wants the full sweep.
-            eprintln!("[matrix] {label}: DIVERGED — stopping (set ARB_MATRIX_FAIL_FAST=0 to continue)");
+            eprintln!(
+                "[matrix] {label}: DIVERGED — stopping (set ARB_MATRIX_FAIL_FAST=0 to continue)"
+            );
             // Debug: dump basefee + receipt from each node for the divergent block.
             for d in &report.block_diffs {
                 if d.field == "gas_used" {
@@ -523,9 +527,7 @@ fn matrix() {
                     to: Some(alloy_primitives::Address::from([
                         0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x6c,
                     ])),
-                    data: Some(Bytes::from(
-                        alloy_primitives::hex::decode(sel).unwrap(),
-                    )),
+                    data: Some(Bytes::from(alloy_primitives::hex::decode(sel).unwrap())),
                     value: Some(U256::ZERO),
                     gas: Some(3_000_000),
                 };
@@ -533,8 +535,8 @@ fn matrix() {
                 let r = nodes.right.eth_call(c, BlockId::Latest).ok();
                 eprintln!(
                     "[matrix] {label} L(nitro)={:?} R(arbreth)={:?}{}",
-                    l.as_ref().map(|b| alloy_primitives::hex::encode(b)),
-                    r.as_ref().map(|b| alloy_primitives::hex::encode(b)),
+                    l.as_ref().map(alloy_primitives::hex::encode),
+                    r.as_ref().map(alloy_primitives::hex::encode),
                     if l != r { " <-- DIVERGE" } else { "" },
                 );
             }

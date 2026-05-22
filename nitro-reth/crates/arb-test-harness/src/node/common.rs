@@ -74,7 +74,10 @@ pub(crate) fn block_from_json(v: &Value) -> Result<Block> {
             .get("baseFeePerGas")
             .and_then(|x| x.as_str())
             .and_then(|s| u128::from_str_radix(s.trim_start_matches("0x"), 16).ok()),
-        mix_hash: v.get("mixHash").and_then(|x| x.as_str()).and_then(|s| s.parse::<B256>().ok()),
+        mix_hash: v
+            .get("mixHash")
+            .and_then(|x| x.as_str())
+            .and_then(|s| s.parse::<B256>().ok()),
         tx_hashes: extract_tx_hashes(v),
     })
 }

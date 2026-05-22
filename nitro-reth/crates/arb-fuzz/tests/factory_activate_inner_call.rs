@@ -9,13 +9,11 @@
 //!
 //! Scenario:
 //!   1. Fund EOA (deposit).
-//!   2. Deploy a real Stylus program: a brotli-compressed program
-//!      captured from Sepolia block 115,184,744's alloc (already
-//!      committed). Decompresses cleanly in the prover.
-//!   3. Deploy a 34-byte raw-bytecode trampoline that forwards its
-//!      calldata + `msg.value` to 0x71 via a nested CALL.
-//!   4. EOA → trampoline with `value = 0.001 ETH`, calldata =
-//!      `activateProgram(stylus_addr)`.
+//!   2. Deploy a real Stylus program: a brotli-compressed program captured from Sepolia block
+//!      115,184,744's alloc (already committed). Decompresses cleanly in the prover.
+//!   3. Deploy a 34-byte raw-bytecode trampoline that forwards its calldata + `msg.value` to 0x71
+//!      via a nested CALL.
+//!   4. EOA → trampoline with `value = 0.001 ETH`, calldata = `activateProgram(stylus_addr)`.
 //!
 //! Pre-fix run shows tx-level divergence (status/gasUsed/logs); post-fix
 //! run is clean.
@@ -25,8 +23,10 @@
 //!     cargo test -p arb-fuzz --test factory_activate_inner_call --release \
 //!     -- --ignored --nocapture
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    OnceLock,
+};
 
 use alloy_primitives::{b256, keccak256, Address, Bytes, B256, U256};
 use arb_fuzz::{

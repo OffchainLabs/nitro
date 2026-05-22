@@ -430,7 +430,7 @@ fn fresh_boot_v10_state_root_matches_nitro() {
     // FilteredTransactionsState account must not be present at v10.
     let filtered_tx_state: Address = address!("a4b0500000000000000000000000000000000001");
     assert!(
-        spec.genesis().alloc.get(&filtered_tx_state).is_none(),
+        !spec.genesis().alloc.contains_key(&filtered_tx_state),
         "filtered tx state account must not be present at arbos < v60",
     );
 }

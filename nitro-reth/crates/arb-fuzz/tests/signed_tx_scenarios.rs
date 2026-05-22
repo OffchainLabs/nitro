@@ -4,15 +4,13 @@
 //! libfuzzer or Docker.
 
 use alloy_primitives::Address;
-use arb_fuzz::arbitrary_impls::{
-    AuthInput, BoundedBytes, DiffSignedTxScenario, SignedTxKind,
-};
+use arb_fuzz::arbitrary_impls::{AuthInput, BoundedBytes, DiffSignedTxScenario, SignedTxKind};
 use arb_test_harness::scenario::ScenarioStep;
 
 fn arbos_v40() -> arb_fuzz::arbitrary_impls::ArbosVersion {
     use arbitrary::{Arbitrary, Unstructured};
-    let mut data = vec![40u8; 32];
-    let mut u = Unstructured::new(&mut data);
+    let data = vec![40u8; 32];
+    let mut u = Unstructured::new(&data);
     arb_fuzz::arbitrary_impls::ArbosVersion::arbitrary(&mut u).unwrap()
 }
 

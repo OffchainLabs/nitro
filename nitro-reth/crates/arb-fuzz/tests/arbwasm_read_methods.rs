@@ -13,7 +13,7 @@
 
 use alloy_primitives::{b256, Address, Bytes, B256, U256};
 use arb_fuzz::{
-    arbitrary_impls::{ArbWasmReadMethod, message_step, ArbWasmArgKind},
+    arbitrary_impls::{message_step, ArbWasmArgKind, ArbWasmReadMethod},
     shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
 };
 use arb_test_harness::{
@@ -25,7 +25,6 @@ use arb_test_harness::{
 };
 
 const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
-const FUZZ_GAS_CAP: u64 = 4_000_000;
 const SEQUENCER_ALIAS: Address = Address::new([
     0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
     0x6e, 0x63, 0x65, 0x72,
@@ -109,7 +108,7 @@ fn build_calldata(method: ArbWasmReadMethod) -> Vec<u8> {
 #[ignore]
 fn differential_against_nitro() {
     let nodes = shared_dual_exec();
-    let mut nonce: u64 = 0;
+    let nonce: u64 = 0;
 
     // Fund the EOA once.
     {
@@ -139,7 +138,7 @@ fn differential_against_nitro() {
     }
 
     let mut divergences: Vec<(String, String)> = Vec::new();
-    for &method in all_methods() {
+    for (nonce, &method) in (nonce..).zip(all_methods().iter()) {
         let data = build_calldata(method);
         let builder = SignedL2TxBuilder {
             chain_id: FUZZ_L2_CHAIN_ID,
@@ -162,7 +161,6 @@ fn differential_against_nitro() {
             base_fee_l1: FUZZ_L1_BASE_FEE,
         };
         let msg = builder.build().expect("signed tx builds");
-        nonce += 1;
         let idx = next_msg_idx();
         let scen = Scenario {
             name: format!("arbwasm_{}", method_name(method)),

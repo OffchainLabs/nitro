@@ -147,9 +147,7 @@ fn v60_block1_slot_diff() {
             .storage(ARBOS_STATE_ADDRESS, *slot, at.clone())
             .unwrap_or(B256::ZERO);
         if l != r {
-            eprintln!(
-                "  DIFF {label:30}  slot={slot:?}\n    nitro  = {l:?}\n    arbreth= {r:?}"
-            );
+            eprintln!("  DIFF {label:30}  slot={slot:?}\n    nitro  = {l:?}\n    arbreth= {r:?}");
             diffs += 1;
         }
     }
@@ -192,14 +190,8 @@ fn v60_block1_slot_diff() {
     eprintln!("\n--- account-level diff ---");
     let mut acct_diffs = 0usize;
     for a in suspects {
-        let lb = nodes
-            .left
-            .balance(*a, at.clone())
-            .unwrap_or(U256::ZERO);
-        let rb = nodes
-            .right
-            .balance(*a, at.clone())
-            .unwrap_or(U256::ZERO);
+        let lb = nodes.left.balance(*a, at.clone()).unwrap_or(U256::ZERO);
+        let rb = nodes.right.balance(*a, at.clone()).unwrap_or(U256::ZERO);
         let ln = nodes.left.nonce(*a, at.clone()).unwrap_or(0);
         let rn = nodes.right.nonce(*a, at.clone()).unwrap_or(0);
         let lc = nodes

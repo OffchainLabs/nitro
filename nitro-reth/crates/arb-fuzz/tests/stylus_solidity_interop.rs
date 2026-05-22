@@ -5,10 +5,9 @@
 //!   2. Deploy SolCaller (real stylus-sdk contract).
 //!   3. activateProgram(SolCaller).
 //!   4. Deploy Reentrant Solidity companion.
-//!   5. EOA -> Reentrant.attack(sol_caller_addr) — Solidity calls back into
-//!      Stylus's `forward(reentrant, "")`, which in turn re-enters
-//!      Reentrant (no fallback). Tests cross-language gas / return-data /
-//!      state plumbing.
+//!   5. EOA -> Reentrant.attack(sol_caller_addr) — Solidity calls back into Stylus's
+//!      `forward(reentrant, "")`, which in turn re-enters Reentrant (no fallback). Tests
+//!      cross-language gas / return-data / state plumbing.
 //!
 //! Run with:
 //!   ARB_SPEC_BINARY=$(pwd)/target/release/arb-reth \

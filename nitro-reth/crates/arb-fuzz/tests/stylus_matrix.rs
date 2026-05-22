@@ -213,8 +213,8 @@ fn storage_store_variants() -> Vec<(String, Vec<u8>)> {
     fn pair(key_byte: u8, val_pat: u8) -> Vec<u8> {
         let mut out = vec![0u8; 64];
         out[31] = key_byte;
-        for i in 32..64 {
-            out[i] = val_pat;
+        for byte in out.iter_mut().take(64).skip(32) {
+            *byte = val_pat;
         }
         out
     }
@@ -563,8 +563,7 @@ fn build_invoke_scenario(
 #[ignore]
 fn stylus_diff_matrix() {
     let out_dir = PathBuf::from(
-        std::env::var("ARB_STYLUS_MATRIX_OUT")
-            .unwrap_or_else(|_| "/tmp/stylus_matrix".to_string()),
+        std::env::var("ARB_STYLUS_MATRIX_OUT").unwrap_or_else(|_| "/tmp/stylus_matrix".to_string()),
     );
     let _ = fs::remove_dir_all(&out_dir);
     let div_dir = out_dir.join("divergences");
@@ -614,7 +613,10 @@ fn stylus_diff_matrix() {
         let wasm = match wat::parse_bytes(primitive.wat.as_bytes()) {
             Ok(b) => b.into_owned(),
             Err(e) => {
-                eprintln!("[stylus_matrix] WAT compile failed for {}: {e}", primitive.name);
+                eprintln!(
+                    "[stylus_matrix] WAT compile failed for {}: {e}",
+                    primitive.name
+                );
                 harness_errs.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
@@ -647,9 +649,7 @@ fn stylus_diff_matrix() {
                     let new_tx_diffs: Vec<_> = report
                         .tx_diffs
                         .iter()
-                        .filter(|d| {
-                            st.insert((format!("{:?}", d.tx_hash), d.field.clone()))
-                        })
+                        .filter(|d| st.insert((format!("{:?}", d.tx_hash), d.field.clone())))
                         .collect();
                     drop(st);
                     let real = !new_block_diffs.is_empty()
@@ -690,7 +690,8 @@ fn stylus_diff_matrix() {
             .take(limit_per_primitive)
         {
             let case_name = format!("{}_{}", primitive.name, variant_label);
-            let Some(scen) = build_invoke_scenario(case_name.clone(), deploy_addr, calldata.clone())
+            let Some(scen) =
+                build_invoke_scenario(case_name.clone(), deploy_addr, calldata.clone())
             else {
                 continue;
             };
@@ -709,9 +710,7 @@ fn stylus_diff_matrix() {
                     let new_tx_diffs: Vec<_> = report
                         .tx_diffs
                         .iter()
-                        .filter(|d| {
-                            st.insert((format!("{:?}", d.tx_hash), d.field.clone()))
-                        })
+                        .filter(|d| st.insert((format!("{:?}", d.tx_hash), d.field.clone())))
                         .collect();
                     drop(st);
                     let real = !new_block_diffs.is_empty()

@@ -19,8 +19,8 @@ use arb_spec_tests::runner::{fixtures_root, run_execution_fixture};
 /// table to keep consensus on sync.
 #[test]
 fn sepolia_block_204_060_502_stylus_gas_drift() {
-    let path = fixtures_root()
-        .join("stylus/regression/sepolia_block_204_060_502_stylus_gas_drift.json");
+    let path =
+        fixtures_root().join("stylus/regression/sepolia_block_204_060_502_stylus_gas_drift.json");
     if std::env::var("ARB_SPEC_BINARY").is_err() {
         eprintln!("skipping: set ARB_SPEC_BINARY=path/to/arb-reth");
         return;

@@ -27,7 +27,9 @@ use arbitrary::{Arbitrary, Unstructured};
 use serde::Serialize;
 
 use crate::{
-    arbitrary_impls::{build_or_skip, message_step, ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE},
+    arbitrary_impls::{
+        build_or_skip, message_step, ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE,
+    },
     shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
 };
 
@@ -381,7 +383,11 @@ impl DiffMultiMsgScenario {
         })
     }
 
-    fn emit_step(&self, step: &MessageStep, steps: &mut Vec<arb_test_harness::scenario::ScenarioStep>) {
+    fn emit_step(
+        &self,
+        step: &MessageStep,
+        steps: &mut Vec<arb_test_harness::scenario::ScenarioStep>,
+    ) {
         match step {
             MessageStep::ArbWasmRead {
                 method,

@@ -1,8 +1,7 @@
 #![no_main]
 
 use arb_fuzz::{
-    arbitrary_impls::DiffStylusInteropScenario,
-    corpus_helpers::dump_crash_as_fixture,
+    arbitrary_impls::DiffStylusInteropScenario, corpus_helpers::dump_crash_as_fixture,
     shared_nodes::shared_dual_exec,
 };
 use libfuzzer_sys::fuzz_target;

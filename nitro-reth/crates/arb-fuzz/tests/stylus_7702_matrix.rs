@@ -92,7 +92,9 @@ fn create_address(sender: Address, nonce: u64) -> Address {
 
 /// LOG1 (topic=0xaa, no data) then RETURN. Always succeeds.
 fn delegate_log_emitter() -> Vec<u8> {
-    vec![0x60, 0xaa, 0x60, 0x00, 0x60, 0x00, 0xa1, 0x60, 0x00, 0x60, 0x00, 0xf3]
+    vec![
+        0x60, 0xaa, 0x60, 0x00, 0x60, 0x00, 0xa1, 0x60, 0x00, 0x60, 0x00, 0xf3,
+    ]
 }
 
 /// REVERT with empty data.
@@ -398,10 +400,7 @@ fn run_variant(variant: &Variant, seed: u8) {
 
     let scen = Scenario {
         name: format!("matrix_{}_seed{}", variant.label, seed),
-        description: format!(
-            "Stylus 7702 matrix: variant={}",
-            variant.label
-        ),
+        description: format!("Stylus 7702 matrix: variant={}", variant.label),
         setup: ScenarioSetup {
             l2_chain_id: FUZZ_L2_CHAIN_ID,
             arbos_version: fuzz_arbos_version(),
@@ -457,11 +456,7 @@ fn deep_stylus_7702_matrix_matches_canon() {
     let matrix = build_matrix();
     let mut seed: u8 = 1;
     for variant in &matrix {
-        eprintln!(
-            "==== {} (v{}) ====",
-            variant.label,
-            fuzz_arbos_version()
-        );
+        eprintln!("==== {} (v{}) ====", variant.label, fuzz_arbos_version());
         run_variant(variant, seed);
         seed = seed.wrapping_add(1);
     }

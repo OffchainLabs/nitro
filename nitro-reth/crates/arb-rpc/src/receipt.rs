@@ -41,8 +41,7 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
         // mix_hash[16:24] = ArbOSFormatVersion (BE uint64);
         // mix_hash[25] bit 0 = CollectTips (post-v9 encoding).
-        let arbos_version =
-            u64::from_be_bytes(mix_hash.0[16..24].try_into().unwrap_or_default());
+        let arbos_version = u64::from_be_bytes(mix_hash.0[16..24].try_into().unwrap_or_default());
         // Pre-v10 header (ArbosVersionCollectTipsOld = v9) always means
         // CollectTips=true regardless of mix_hash[25] — matches Nitro's
         // DeserializeHeaderExtraInformation.

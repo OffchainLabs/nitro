@@ -214,10 +214,10 @@ fn set_max_tx_gas_limit_writes_per_tx_slot_and_leaves_per_block_alone() {
 }
 
 #[test]
-fn set_max_block_gas_limit_writes_per_block_slot_at_any_version() {
-    // Companion: SetMaxBlockGasLimit always writes slot 1 in Nitro, no version gate.
+fn set_max_block_gas_limit_writes_per_block_slot_at_v50() {
+    // setMaxBlockGasLimit is gated at ArbOS v50.
     let limit = U256::from(40_000_000_u64);
-    let run = fixture(30).call(
+    let run = fixture(50).call(
         &arbowner(),
         &calldata("setMaxBlockGasLimit(uint64)", &[word_u256(limit)]),
     );

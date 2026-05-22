@@ -53,10 +53,12 @@ fn live_against_nitro() {
                 continue;
             }
         };
-        let kinds = scenario
-            .messages
-            .iter()
-            .map(|m| match m {
+        let kinds =
+            scenario
+                .messages
+                .iter()
+                .map(|m| {
+                    match m {
                 arb_fuzz::arbitrary_impls::MessageStep::Deposit { .. } => "Dep",
                 arb_fuzz::arbitrary_impls::MessageStep::SubmitRetryable { .. } => "Sub",
                 arb_fuzz::arbitrary_impls::MessageStep::SignedTx { kind, .. } => match kind {
@@ -88,9 +90,10 @@ fn live_against_nitro() {
                     arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramMemoryFootprint => "AWm",
                     arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramTimeLeft => "AWt",
                 },
-            })
-            .collect::<Vec<_>>()
-            .join("/");
+            }
+                })
+                .collect::<Vec<_>>()
+                .join("/");
         let scen = match scenario.clone().into_scenario() {
             Some(s) if !s.steps.is_empty() => s,
             _ => {
@@ -140,7 +143,10 @@ fn live_against_nitro() {
         for d in &diverged {
             eprintln!("--- {d}");
         }
-        panic!("{} divergences across {iterations} iterations", diverged.len());
+        panic!(
+            "{} divergences across {iterations} iterations",
+            diverged.len()
+        );
     }
     assert!(clean > 0, "expected at least one clean iteration");
 }

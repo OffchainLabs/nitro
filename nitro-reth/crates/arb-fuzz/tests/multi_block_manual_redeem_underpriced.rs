@@ -77,8 +77,7 @@ fn multi_block_manual_redeem_underpriced_matches_canon() {
 
     // Deterministic ticket id so the retryable can be referenced by the
     // later redeem tx without scanning logs.
-    let ticket_id: B256 =
-        b256!("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
+    let ticket_id: B256 = b256!("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
 
     let l1_poster = Address::repeat_byte(0xa1);
 
