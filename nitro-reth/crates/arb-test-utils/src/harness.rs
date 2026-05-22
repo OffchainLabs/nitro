@@ -224,14 +224,22 @@ mod tests {
         let mut h = ArbosHarness::new()
             .with_l1_initial_base_fee(initial)
             .initialize();
+        let state_ptr = h.state_ptr();
         let l1 = h.l1_pricing_state();
-        assert_eq!(l1.price_per_unit().unwrap(), initial);
+        assert_eq!(
+            l1.price_per_unit(unsafe { &mut *state_ptr }).unwrap(),
+            initial
+        );
     }
 
     #[test]
     fn chain_id_round_trips() {
         let mut h = ArbosHarness::new().with_chain_id(421614).initialize();
+        let state_ptr = h.state_ptr();
         let s = h.arbos_state();
-        assert_eq!(s.chain_id().unwrap(), U256::from(421614u64));
+        assert_eq!(
+            s.chain_id(unsafe { &mut *state_ptr }).unwrap(),
+            U256::from(421614u64)
+        );
     }
 }

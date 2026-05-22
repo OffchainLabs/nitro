@@ -60,8 +60,8 @@ pub struct L2PricingState<D> {
     pub arbos_version: u64,
     speed_limit_per_second: StorageBackedUint64,
     per_block_gas_limit: StorageBackedUint64,
-    base_fee_wei: StorageBackedBigUint<D>,
-    min_base_fee_wei: StorageBackedBigUint<D>,
+    base_fee_wei: StorageBackedBigUint,
+    min_base_fee_wei: StorageBackedBigUint,
     gas_backlog: StorageBackedUint64,
     pricing_inertia: StorageBackedUint64,
     backlog_tolerance: StorageBackedUint64,
@@ -75,7 +75,6 @@ pub fn initialize_l2_pricing_state<D: Database, B: StorageBackend>(
     sto: &Storage<D>,
     backend: &mut B,
 ) -> Result<(), L2PricingError> {
-    let state = sto.state_ptr();
     let base_key = sto.base_key();
 
     StorageBackedUint64::new(base_key, SPEED_LIMIT_PER_SECOND_OFFSET)
@@ -83,8 +82,8 @@ pub fn initialize_l2_pricing_state<D: Database, B: StorageBackend>(
     StorageBackedUint64::new(base_key, PER_BLOCK_GAS_LIMIT_OFFSET)
         .set(backend, INITIAL_PER_BLOCK_GAS_LIMIT_V0)?;
     StorageBackedUint64::new(base_key, BASE_FEE_WEI_OFFSET).set(backend, INITIAL_BASE_FEE_WEI)?;
-    StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET)
-        .set(U256::from(INITIAL_MINIMUM_BASE_FEE_WEI))?;
+    StorageBackedBigUint::new(base_key, MIN_BASE_FEE_WEI_OFFSET)
+        .set(backend, U256::from(INITIAL_MINIMUM_BASE_FEE_WEI))?;
     StorageBackedUint64::new(base_key, GAS_BACKLOG_OFFSET).set(backend, 0)?;
     StorageBackedUint64::new(base_key, PRICING_INERTIA_OFFSET)
         .set(backend, INITIAL_PRICING_INERTIA)?;
@@ -97,7 +96,6 @@ pub fn open_l2_pricing_state<D: Database>(
     sto: Storage<D>,
     arbos_version: u64,
 ) -> L2PricingState<D> {
-    let state = sto.state_ptr();
     let base_key = sto.base_key();
 
     let gc_sto = sto.open_sub_storage(GAS_CONSTRAINTS_KEY);
@@ -108,8 +106,8 @@ pub fn open_l2_pricing_state<D: Database>(
         arbos_version,
         speed_limit_per_second: StorageBackedUint64::new(base_key, SPEED_LIMIT_PER_SECOND_OFFSET),
         per_block_gas_limit: StorageBackedUint64::new(base_key, PER_BLOCK_GAS_LIMIT_OFFSET),
-        base_fee_wei: StorageBackedBigUint::new(state, base_key, BASE_FEE_WEI_OFFSET),
-        min_base_fee_wei: StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET),
+        base_fee_wei: StorageBackedBigUint::new(base_key, BASE_FEE_WEI_OFFSET),
+        min_base_fee_wei: StorageBackedBigUint::new(base_key, MIN_BASE_FEE_WEI_OFFSET),
         gas_backlog: StorageBackedUint64::new(base_key, GAS_BACKLOG_OFFSET),
         pricing_inertia: StorageBackedUint64::new(base_key, PRICING_INERTIA_OFFSET),
         backlog_tolerance: StorageBackedUint64::new(base_key, BACKLOG_TOLERANCE_OFFSET),
@@ -135,20 +133,31 @@ impl<D: Database> L2PricingState<D> {
 
     // --- Getters/Setters ---
 
-    pub fn base_fee_wei(&self) -> Result<U256, L2PricingError> {
-        Ok(self.base_fee_wei.get()?)
+    pub fn base_fee_wei<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, L2PricingError> {
+        Ok(self.base_fee_wei.get(backend)?)
     }
 
-    pub fn set_base_fee_wei(&self, val: U256) -> Result<(), L2PricingError> {
-        Ok(self.base_fee_wei.set(val)?)
+    pub fn set_base_fee_wei<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.base_fee_wei.set(backend, val)?)
     }
 
-    pub fn min_base_fee_wei(&self) -> Result<U256, L2PricingError> {
-        Ok(self.min_base_fee_wei.get()?)
+    pub fn min_base_fee_wei<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L2PricingError> {
+        Ok(self.min_base_fee_wei.get(backend)?)
     }
 
-    pub fn set_min_base_fee_wei(&self, val: U256) -> Result<(), L2PricingError> {
-        Ok(self.min_base_fee_wei.set(val)?)
+    pub fn set_min_base_fee_wei<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.min_base_fee_wei.set(backend, val)?)
     }
 
     pub fn speed_limit_per_second<B: StorageBackend>(

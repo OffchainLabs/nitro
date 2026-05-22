@@ -57,7 +57,8 @@ fn l1_pricing_state_is_isolated_per_harness() {
         let l1 = h.l1_pricing_state();
         let b = unsafe { &mut *sp };
         l1.set_units_since_update(b, 99_999).unwrap();
-        l1.set_price_per_unit(U256::from(987_654_321u64)).unwrap();
+        l1.set_price_per_unit(b, U256::from(987_654_321u64))
+            .unwrap();
     }
 
     let mut h = ArbosHarness::new().initialize();
@@ -65,7 +66,7 @@ fn l1_pricing_state_is_isolated_per_harness() {
     let l1 = h.l1_pricing_state();
     let b = unsafe { &mut *sp };
     assert_eq!(l1.units_since_update(b).unwrap(), 0);
-    assert!(l1.price_per_unit().unwrap() < U256::from(987_654_321u64));
+    assert!(l1.price_per_unit(b).unwrap() < U256::from(987_654_321u64));
 }
 
 #[test]
@@ -81,9 +82,9 @@ fn repeated_initialize_yields_deterministic_state() {
         let l2 = h.l2_pricing_state();
         let b = unsafe { &mut *sp };
         (
-            l1.price_per_unit().unwrap(),
+            l1.price_per_unit(b).unwrap(),
             l1.inertia(b).unwrap(),
-            l2.min_base_fee_wei().unwrap(),
+            l2.min_base_fee_wei(b).unwrap(),
             l2.speed_limit_per_second(b).unwrap(),
         )
     };

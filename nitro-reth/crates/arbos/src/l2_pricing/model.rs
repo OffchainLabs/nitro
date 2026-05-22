@@ -165,22 +165,22 @@ impl<D: Database> L2PricingState<D> {
         let inertia = self.pricing_inertia(backend)?;
         let tolerance = self.backlog_tolerance(backend)?;
         let backlog = self.gas_backlog(backend)?;
-        let min_base_fee = self.min_base_fee_wei()?;
+        let min_base_fee = self.min_base_fee_wei(backend)?;
 
         let tolerance_limit = tolerance.wrapping_mul(speed_limit);
         let base_fee = if backlog > tolerance_limit {
             let divisor = saturating_cast_to_i64(inertia.saturating_mul(speed_limit));
             if divisor == 0 {
-                return self.set_base_fee_wei(min_base_fee);
+                return self.set_base_fee_wei(backend, min_base_fee);
             }
             let excess = saturating_cast_to_i64(backlog.wrapping_sub(tolerance_limit));
             let exponent_bips = natural_to_bips(excess) / divisor;
-            self.calc_base_fee_from_exponent(exponent_bips.max(0) as u64)?
+            self.calc_base_fee_from_exponent(backend, exponent_bips.max(0) as u64)?
         } else {
             min_base_fee
         };
 
-        self.set_base_fee_wei(base_fee)
+        self.set_base_fee_wei(backend, base_fee)
     }
 
     fn update_pricing_model_single_constraints<B: StorageBackend>(
@@ -210,8 +210,8 @@ impl<D: Database> L2PricingState<D> {
             }
         }
 
-        let base_fee = self.calc_base_fee_from_exponent(total_exponent.max(0) as u64)?;
-        self.set_base_fee_wei(base_fee)
+        let base_fee = self.calc_base_fee_from_exponent(backend, total_exponent.max(0) as u64)?;
+        self.set_base_fee_wei(backend, base_fee)
     }
 
     fn update_pricing_model_multi_constraints<B: StorageBackend>(
@@ -223,21 +223,21 @@ impl<D: Database> L2PricingState<D> {
 
         let exponent_per_kind = self.calc_multi_gas_constraints_exponents(backend)?;
 
-        let mut max_base_fee = self.min_base_fee_wei()?;
+        let mut max_base_fee = self.min_base_fee_wei(backend)?;
         let fees = &self.multi_gas_base_fees;
 
         for (i, &exp) in exponent_per_kind.iter().enumerate() {
-            let base_fee = self.calc_base_fee_from_exponent(exp)?;
+            let base_fee = self.calc_base_fee_from_exponent(backend, exp)?;
             if let Some(kind) = ResourceKind::from_u8(i as u8) {
                 let mgf = super::multi_gas_fees::open_multi_gas_fees(fees.clone());
-                mgf.set_next_block_fee(kind, base_fee)?;
+                mgf.set_next_block_fee(backend, kind, base_fee)?;
             }
             if base_fee > max_base_fee {
                 max_base_fee = base_fee;
             }
         }
 
-        self.set_base_fee_wei(max_base_fee)
+        self.set_base_fee_wei(backend, max_base_fee)
     }
 
     fn update_multi_gas_constraints_backlogs<B: StorageBackend>(
@@ -312,8 +312,12 @@ impl<D: Database> L2PricingState<D> {
 
     /// Calculate base fee from an exponent in basis points.
     /// base_fee = min_base_fee * exp(exponent_bips / 10000)
-    pub fn calc_base_fee_from_exponent(&self, exponent_bips: u64) -> Result<U256, L2PricingError> {
-        let min_base_fee = self.min_base_fee_wei()?;
+    pub fn calc_base_fee_from_exponent<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        exponent_bips: u64,
+    ) -> Result<U256, L2PricingError> {
+        let min_base_fee = self.min_base_fee_wei(backend)?;
         if exponent_bips == 0 {
             return Ok(min_base_fee);
         }
@@ -328,10 +332,11 @@ impl<D: Database> L2PricingState<D> {
         }
     }
 
-    pub fn get_multi_gas_base_fee_per_resource(
+    pub fn get_multi_gas_base_fee_per_resource<B: StorageBackend>(
         &self,
+        backend: &mut B,
     ) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
-        let base_fee = self.base_fee_wei()?;
+        let base_fee = self.base_fee_wei(backend)?;
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
         let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
         for kind in ResourceKind::ALL {
@@ -339,7 +344,7 @@ impl<D: Database> L2PricingState<D> {
                 fees[kind as usize] = base_fee;
                 continue;
             }
-            let fee = mgf.get_current_block_fee(kind)?;
+            let fee = mgf.get_current_block_fee(backend, kind)?;
             fees[kind as usize] = if fee.is_zero() { base_fee } else { fee };
         }
         Ok(fees)
@@ -350,14 +355,17 @@ impl<D: Database> L2PricingState<D> {
     /// `commit_next_to_current`, which runs before any tx in the block.
     /// Zero is kept (not substituted to base_fee_wei) so the caller can do the
     /// substitution with a fresh base_fee read on every use.
-    pub fn get_current_multi_gas_fees(&self) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
+    pub fn get_current_multi_gas_fees<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
         let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
         for kind in ResourceKind::ALL {
             if kind == ResourceKind::SingleDim {
                 continue;
             }
-            fees[kind as usize] = mgf.get_current_block_fee(kind)?;
+            fees[kind as usize] = mgf.get_current_block_fee(backend, kind)?;
         }
         Ok(fees)
     }
@@ -371,7 +379,7 @@ impl<D: Database> L2PricingState<D> {
             return Ok(());
         }
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
-        mgf.commit_next_to_current()
+        mgf.commit_next_to_current(backend)
     }
 
     /// Calculate the cost for a backlog update operation.
@@ -452,11 +460,12 @@ impl<D: Database> L2PricingState<D> {
     /// Compute total cost for a multi-gas usage, for refund calculations.
     ///
     /// Returns `sum(gas_used[kind] * base_fee[kind])` across all resource kinds.
-    pub fn multi_dimensional_price_for_refund(
+    pub fn multi_dimensional_price_for_refund<B: StorageBackend>(
         &self,
+        backend: &mut B,
         gas_used: MultiGas,
     ) -> Result<U256, L2PricingError> {
-        let fees = self.get_multi_gas_base_fee_per_resource()?;
+        let fees = self.get_multi_gas_base_fee_per_resource(backend)?;
         let mut total = U256::ZERO;
         for kind in ResourceKind::ALL {
             let amount = gas_used.get(kind);
@@ -473,12 +482,13 @@ impl<D: Database> L2PricingState<D> {
     /// `base_fee_wei` is still read from state to handle rare mid-block
     /// `setL2BaseFee` owner writes. Zero cached values are substituted with the
     /// live base_fee, matching `get_multi_gas_base_fee_per_resource` exactly.
-    pub fn multi_dimensional_price_for_refund_with_fees(
+    pub fn multi_dimensional_price_for_refund_with_fees<B: StorageBackend>(
         &self,
+        backend: &mut B,
         gas_used: MultiGas,
         cached_fees: &[U256; NUM_RESOURCE_KIND],
     ) -> Result<U256, L2PricingError> {
-        let base_fee = self.base_fee_wei()?;
+        let base_fee = self.base_fee_wei(backend)?;
         let mut total = U256::ZERO;
         for kind in ResourceKind::ALL {
             let amount = gas_used.get(kind);

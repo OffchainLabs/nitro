@@ -100,8 +100,8 @@ pub fn initialize_arbos_state<D: Database>(
         })?;
 
     // 2. Set chain ID.
-    StorageBackedBigUint::new(state_ptr, B256::ZERO, 4)
-        .set(U256::from(chain_id))
+    StorageBackedBigUint::new(B256::ZERO, 4)
+        .set(state, U256::from(chain_id))
         .map_err(|source| GenesisError::StorageWrite {
             what: "chain id",
             source,

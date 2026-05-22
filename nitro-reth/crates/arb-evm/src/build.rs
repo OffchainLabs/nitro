@@ -391,10 +391,10 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         if let Ok(level) = arb_state.brotli_compression_level(state) {
             self.arb_ctx.brotli_compression_level = level;
         }
-        if let Ok(price) = arb_state.l1_pricing_state.price_per_unit() {
+        if let Ok(price) = arb_state.l1_pricing_state.price_per_unit(state) {
             self.arb_ctx.l1_price_per_unit = price;
         }
-        if let Ok(min_fee) = arb_state.l2_pricing_state.min_base_fee_wei() {
+        if let Ok(min_fee) = arb_state.l2_pricing_state.min_base_fee_wei(state) {
             self.arb_ctx.min_base_fee = min_fee;
         }
 
@@ -411,7 +411,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             >= arb_chainspec::arbos_version::ARBOS_VERSION_40
             && arb_state
                 .features
-                .is_increased_calldata_price_enabled()
+                .is_increased_calldata_price_enabled(state)
                 .unwrap_or(false);
 
         let collect_tips_enabled = arb_state.collect_tips(state).unwrap_or(false);
@@ -714,6 +714,7 @@ where
                                 let _ = retryable.increment_num_tries(unsafe { &mut *state_ptr2 });
 
                                 match retryable.make_tx(
+                                    unsafe { &mut *state_ptr2 },
                                     U256::from(self.arb_ctx.chain_id),
                                     0, // nonce = 0 for first auto-redeem
                                     effective_base_fee,
@@ -936,7 +937,7 @@ where
             let state_ref = unsafe { &mut *state_ptr };
             let _ = arb_state.l2_pricing_state.commit_multi_gas_fees(state_ref);
 
-            if let Ok(base_fee) = arb_state.l2_pricing_state.base_fee_wei() {
+            if let Ok(base_fee) = arb_state.l2_pricing_state.base_fee_wei(state_ref) {
                 self.arb_ctx.basefee = base_fee;
             }
 
@@ -1974,6 +1975,7 @@ where
                         let _ = retryable.increment_num_tries(unsafe { &mut *state_ptr });
 
                         if let Ok(retry_tx) = retryable.make_tx(
+                            unsafe { &mut *state_ptr },
                             U256::from(self.arb_ctx.chain_id),
                             nonce,
                             self.arb_ctx.basefee,
@@ -2203,11 +2205,12 @@ where
                     arb_state_retry.as_ref().and_then(|s| {
                         let cached = self.multi_gas_current_fees.get_or_init(|| {
                             s.l2_pricing_state
-                                .get_current_multi_gas_fees()
+                                .get_current_multi_gas_fees(unsafe { &mut *state_ptr })
                                 .unwrap_or([U256::ZERO; NUM_RESOURCE_KIND])
                         });
                         s.l2_pricing_state
                             .multi_dimensional_price_for_refund_with_fees(
+                                unsafe { &mut *state_ptr },
                                 pending.charged_multi_gas,
                                 cached,
                             )
@@ -2400,12 +2403,13 @@ where
                             let cached = self.multi_gas_current_fees.get_or_init(|| {
                                 arb_state
                                     .l2_pricing_state
-                                    .get_current_multi_gas_fees()
+                                    .get_current_multi_gas_fees(unsafe { &mut *state_ptr })
                                     .unwrap_or([U256::ZERO; NUM_RESOURCE_KIND])
                             });
                             if let Ok(multi_cost) = arb_state
                                 .l2_pricing_state
                                 .multi_dimensional_price_for_refund_with_fees(
+                                    unsafe { &mut *state_ptr },
                                     pending.charged_multi_gas,
                                     cached,
                                 )
@@ -2447,9 +2451,10 @@ where
                             }
                         }
                         if !dist.l1_fees_to_add.is_zero() {
-                            let _ = arb_state
-                                .l1_pricing_state
-                                .add_to_l1_fees_available(dist.l1_fees_to_add);
+                            let _ = arb_state.l1_pricing_state.add_to_l1_fees_available(
+                                unsafe { &mut *state_ptr },
+                                dist.l1_fees_to_add,
+                            );
                         }
                     } else {
                         tracing::error!(
@@ -2771,7 +2776,7 @@ fn apply_fee_distribution<DB: Database>(
 
     if !dist.l1_fees_to_add.is_zero() {
         if let Some(l1_state) = l1_pricing {
-            let _ = l1_state.add_to_l1_fees_available(dist.l1_fees_to_add);
+            let _ = l1_state.add_to_l1_fees_available(state, dist.l1_fees_to_add);
         }
     }
 
