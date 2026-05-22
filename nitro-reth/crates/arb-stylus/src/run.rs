@@ -1,9 +1,8 @@
 use arbos::programs::types::UserOutcome;
-use eyre::Result;
 
 use crate::{
     config::StylusConfig,
-    error::Escape,
+    error::StylusError,
     evm_api::EvmApi,
     ink::Ink,
     meter::{DepthCheckedMachine, MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT},
@@ -12,11 +11,21 @@ use crate::{
 
 /// Trait for running Stylus WASM programs.
 pub trait RunProgram {
-    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
+    fn run_main(
+        &mut self,
+        args: &[u8],
+        config: StylusConfig,
+        ink: Ink,
+    ) -> Result<UserOutcome, StylusError>;
 }
 
 impl<E: EvmApi> RunProgram for NativeInstance<E> {
-    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome> {
+    fn run_main(
+        &mut self,
+        args: &[u8],
+        config: StylusConfig,
+        ink: Ink,
+    ) -> Result<UserOutcome, StylusError> {
         self.set_ink(ink);
         self.set_stack(config.max_depth);
 
@@ -44,7 +53,9 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
         let status = {
             let store = &mut self.store;
             let exports = &self.instance.exports;
-            let main = exports.get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)?;
+            let main = exports
+                .get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)
+                .map_err(|e| StylusError::MissingGlobal(e.to_string()))?;
             match main.call(store, args.len() as u32) {
                 Ok(status) => status,
                 Err(outcome) => {
@@ -72,7 +83,7 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
                     tracing::warn!(target: "stylus",
                         ink = ?self.ink_left(), stack = self.stack_left(),
                         "WASM trap");
-                    let escape: Escape = match outcome.downcast() {
+                    let escape: StylusError = match outcome.downcast() {
                         Ok(escape) => escape,
                         Err(error) => {
                             tracing::warn!(target: "stylus", err = %error, "WASM trap detail");
@@ -80,11 +91,9 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
                         }
                     };
                     match escape {
-                        Escape::OutOfInk => return Ok(UserOutcome::OutOfInk),
-                        Escape::Memory(_) | Escape::Internal(_) | Escape::Logical(_) => {
-                            return Ok(UserOutcome::Failure);
-                        }
-                        Escape::Exit(status) => status,
+                        StylusError::OutOfInk => return Ok(UserOutcome::OutOfInk),
+                        StylusError::Exit(status) => status,
+                        _ => return Ok(UserOutcome::Failure),
                     }
                 }
             }
