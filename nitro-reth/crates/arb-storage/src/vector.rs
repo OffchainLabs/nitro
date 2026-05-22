@@ -1,12 +1,13 @@
+use arb_storage_errors::StorageError;
 use revm::Database;
 
 use crate::{backed_types::StorageBackedUint64, storage::Storage};
 
 const LENGTH_OFFSET: u64 = 0;
 
-/// A vector of sub-storages backed by ArbOS storage.
+/// Vector of sub-storages backed by ArbOS storage.
 ///
-/// Layout: offset 0 = length, sub-storages at indices 0..length.
+/// Layout: offset 0 = length; sub-storages live at indices `0..length`.
 pub struct SubStorageVector<D> {
     storage: Storage<D>,
     length: StorageBackedUint64<D>,
@@ -22,24 +23,21 @@ pub fn open_sub_storage_vector<D: Database>(storage: Storage<D>) -> SubStorageVe
 }
 
 impl<D: Database> SubStorageVector<D> {
-    pub fn length(&self) -> Result<u64, ()> {
+    pub fn length(&self) -> Result<u64, StorageError> {
         self.length.get()
     }
 
-    /// Returns the sub-storage at the given index.
     pub fn at(&self, index: u64) -> Storage<D> {
         self.storage.open_sub_storage(&index.to_be_bytes())
     }
 
-    /// Appends a new sub-storage and returns it.
-    pub fn push(&self) -> Result<Storage<D>, ()> {
+    pub fn push(&self) -> Result<Storage<D>, StorageError> {
         let len = self.length.get()?;
         self.length.set(len + 1)?;
         Ok(self.at(len))
     }
 
-    /// Removes the last sub-storage and returns its index.
-    pub fn pop(&self) -> Result<Option<u64>, ()> {
+    pub fn pop(&self) -> Result<Option<u64>, StorageError> {
         let len = self.length.get()?;
         if len == 0 {
             return Ok(None);

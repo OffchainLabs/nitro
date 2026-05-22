@@ -3,6 +3,7 @@ members = [
     "crates/arb-primitives",
     "crates/arb-chainspec",
     "crates/arb-storage",
+    "crates/arb-storage-errors",
     "crates/arb-evm",
     "crates/arb-precompiles",
     "crates/arb-node",
@@ -34,6 +35,7 @@ license = "BUSL-1.1"
 arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-storage = { path = "crates/arb-storage" }
+arb-storage-errors = { path = "crates/arb-storage-errors" }
 arb-evm = { path = "crates/arb-evm" }
 arb-precompiles = { path = "crates/arb-precompiles" }
 arb-node = { path = "crates/arb-node" }

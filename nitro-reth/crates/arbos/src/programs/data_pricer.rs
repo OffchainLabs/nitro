@@ -3,6 +3,8 @@ use revm::Database;
 
 use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64};
 
+use super::ProgramsError;
+
 const DEMAND_OFFSET: u64 = 0;
 const BYTES_PER_SECOND_OFFSET: u64 = 1;
 const LAST_UPDATE_TIME_OFFSET: u64 = 2;
@@ -58,7 +60,7 @@ pub fn open_data_pricer<D: Database>(sto: &Storage<D>) -> DataPricer<D> {
 
 impl<D: Database> DataPricer<D> {
     /// Update the pricing model with new data usage and return cost in wei.
-    pub fn update_model(&self, temp_bytes: u32, time: u64) -> Result<U256, ()> {
+    pub fn update_model(&self, temp_bytes: u32, time: u64) -> Result<U256, ProgramsError> {
         let demand = self.demand.get().unwrap_or(0);
         let bytes_per_second = self.bytes_per_second.get().unwrap_or(0);
         let last_update_time = self.last_update_time.get().unwrap_or(0);

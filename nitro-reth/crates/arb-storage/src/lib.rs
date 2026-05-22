@@ -1,7 +1,12 @@
 //! Storage-backed types for ArbOS state.
 //!
-//! Provides typed wrappers over raw storage slots: integers, addresses,
-//! byte arrays, queues, and vectors that persist in the state trie.
+//! Provides typed wrappers over raw storage slots — integers, addresses,
+//! byte arrays, queues, and vectors that persist in the state trie — and
+//! re-exports the [`StorageError`] surface from [`arb_storage_errors`].
+//!
+//! All read and write paths propagate database failures as typed
+//! [`StorageError::Database`] so callers can distinguish a genuine
+//! storage-level fault from a logical condition such as "slot is zero".
 
 mod backed_types;
 mod bytes_storage;
@@ -12,6 +17,7 @@ mod state_ops;
 mod storage;
 pub mod vector;
 
+pub use arb_storage_errors::{AnyError, DatabaseError, DatabaseErrorInfo, StorageError};
 pub use backed_types::{
     StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigInt, StorageBackedBigUint,
     StorageBackedInt64, StorageBackedUint64,

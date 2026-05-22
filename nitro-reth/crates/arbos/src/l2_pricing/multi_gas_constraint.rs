@@ -3,6 +3,8 @@ use revm::Database;
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
 use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64};
 
+use super::L2PricingError;
+
 const TARGET_OFFSET: u64 = 0;
 const ADJUSTMENT_WINDOW_OFFSET: u64 = 1;
 const BACKLOG_OFFSET: u64 = 2;
@@ -31,40 +33,44 @@ pub fn open_multi_gas_constraint<D: Database>(sto: Storage<D>) -> MultiGasConstr
 }
 
 impl<D: Database> MultiGasConstraint<D> {
-    pub fn target(&self) -> Result<u64, ()> {
-        self.target.get()
+    pub fn target(&self) -> Result<u64, L2PricingError> {
+        Ok(self.target.get()?)
     }
 
-    pub fn set_target(&self, val: u64) -> Result<(), ()> {
-        self.target.set(val)
+    pub fn set_target(&self, val: u64) -> Result<(), L2PricingError> {
+        Ok(self.target.set(val)?)
     }
 
-    pub fn adjustment_window(&self) -> Result<u32, ()> {
-        self.adjustment_window.get()
+    pub fn adjustment_window(&self) -> Result<u32, L2PricingError> {
+        Ok(self.adjustment_window.get()?)
     }
 
-    pub fn set_adjustment_window(&self, val: u32) -> Result<(), ()> {
-        self.adjustment_window.set(val)
+    pub fn set_adjustment_window(&self, val: u32) -> Result<(), L2PricingError> {
+        Ok(self.adjustment_window.set(val)?)
     }
 
-    pub fn backlog(&self) -> Result<u64, ()> {
-        self.backlog.get()
+    pub fn backlog(&self) -> Result<u64, L2PricingError> {
+        Ok(self.backlog.get()?)
     }
 
-    pub fn set_backlog(&self, val: u64) -> Result<(), ()> {
-        self.backlog.set(val)
+    pub fn set_backlog(&self, val: u64) -> Result<(), L2PricingError> {
+        Ok(self.backlog.set(val)?)
     }
 
-    pub fn max_weight(&self) -> Result<u64, ()> {
-        self.max_weight.get()
+    pub fn max_weight(&self) -> Result<u64, L2PricingError> {
+        Ok(self.max_weight.get()?)
     }
 
-    pub fn resource_weight(&self, kind: ResourceKind) -> Result<u64, ()> {
-        self.storage
-            .get_uint64_by_uint64(WEIGHTED_RESOURCES_BASE_OFFSET + kind as u64)
+    pub fn resource_weight(&self, kind: ResourceKind) -> Result<u64, L2PricingError> {
+        Ok(self
+            .storage
+            .get_uint64_by_uint64(WEIGHTED_RESOURCES_BASE_OFFSET + kind as u64)?)
     }
 
-    pub fn set_resource_weights(&self, weights: &[u64; NUM_RESOURCE_KIND]) -> Result<(), ()> {
+    pub fn set_resource_weights(
+        &self,
+        weights: &[u64; NUM_RESOURCE_KIND],
+    ) -> Result<(), L2PricingError> {
         let mut max = 0u64;
         for (i, &w) in weights.iter().enumerate() {
             self.storage
@@ -73,11 +79,11 @@ impl<D: Database> MultiGasConstraint<D> {
                 max = w;
             }
         }
-        self.max_weight.set(max)
+        Ok(self.max_weight.set(max)?)
     }
 
     /// Returns pairs of (ResourceKind, weight) for all resources with non-zero weight.
-    pub fn resources_with_weights(&self) -> Result<Vec<(ResourceKind, u64)>, ()> {
+    pub fn resources_with_weights(&self) -> Result<Vec<(ResourceKind, u64)>, L2PricingError> {
         let mut result = Vec::new();
         for kind in ResourceKind::ALL {
             let w = self.resource_weight(kind)?;
@@ -89,7 +95,7 @@ impl<D: Database> MultiGasConstraint<D> {
     }
 
     /// Compute the weighted total of used resources.
-    pub fn used_resources(&self, gas: MultiGas) -> Result<u64, ()> {
+    pub fn used_resources(&self, gas: MultiGas) -> Result<u64, L2PricingError> {
         let max_w = self.max_weight.get()?;
         if max_w == 0 {
             return Ok(0);
@@ -106,16 +112,20 @@ impl<D: Database> MultiGasConstraint<D> {
     }
 
     /// Grow the backlog by the weighted resource usage.
-    pub fn grow_backlog(&self, gas: MultiGas) -> Result<(), ()> {
+    pub fn grow_backlog(&self, gas: MultiGas) -> Result<(), L2PricingError> {
         self.update_backlog(super::model::BacklogOperation::Grow, gas)
     }
 
     /// Shrink the backlog by the weighted resource usage.
-    pub fn shrink_backlog(&self, gas: MultiGas) -> Result<(), ()> {
+    pub fn shrink_backlog(&self, gas: MultiGas) -> Result<(), L2PricingError> {
         self.update_backlog(super::model::BacklogOperation::Shrink, gas)
     }
 
-    fn update_backlog(&self, op: super::model::BacklogOperation, gas: MultiGas) -> Result<(), ()> {
+    fn update_backlog(
+        &self,
+        op: super::model::BacklogOperation,
+        gas: MultiGas,
+    ) -> Result<(), L2PricingError> {
         let mut backlog = self.backlog.get()?;
         for kind in ResourceKind::ALL {
             let weight = self.resource_weight(kind)?;
@@ -129,10 +139,10 @@ impl<D: Database> MultiGasConstraint<D> {
                 super::model::BacklogOperation::Shrink => backlog.saturating_sub(weighted),
             };
         }
-        self.backlog.set(backlog)
+        Ok(self.backlog.set(backlog)?)
     }
 
-    pub fn clear(&self) -> Result<(), ()> {
+    pub fn clear(&self) -> Result<(), L2PricingError> {
         self.target.set(0)?;
         self.adjustment_window.set(0)?;
         self.backlog.set(0)?;

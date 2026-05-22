@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 arb-primitives = { workspace = true }
+arb-storage-errors = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 reth-storage-api = { workspace = true }
 reth-provider = { workspace = true }
@@ -19,6 +20,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 arb-test-utils = { workspace = true }
+revm-database-interface = { workspace = true }
 
 [lints]
 workspace = true

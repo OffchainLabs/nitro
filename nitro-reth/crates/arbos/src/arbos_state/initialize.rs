@@ -6,7 +6,7 @@ use crate::{
     retryables::{self, RetryableState},
 };
 
-use super::ArbosState;
+use super::{ArbosState, ArbosStateError};
 
 /// Genesis data for a retryable ticket.
 #[derive(Debug, Clone)]
@@ -95,7 +95,7 @@ pub fn initialize_retryables<D: Database>(
     rs: &RetryableState<D>,
     mut retryables_data: Vec<InitRetryableData>,
     current_timestamp: u64,
-) -> Result<(Vec<(Address, U256)>, Vec<(Address, U256)>), ()> {
+) -> Result<(Vec<(Address, U256)>, Vec<(Address, U256)>), ArbosStateError> {
     let mut balance_credits = Vec::new();
     let mut active_retryables = Vec::new();
 
@@ -137,7 +137,7 @@ pub fn initialize_retryables<D: Database>(
 pub fn initialize_arbos_account<D: Database, B: Burner>(
     arbos_state: &ArbosState<D, B>,
     account: &AccountInitInfo,
-) -> Result<(), ()> {
+) -> Result<(), ArbosStateError> {
     if let Some(ref aggregator) = account.aggregator_info {
         let poster_table = arbos_state.l1_pricing_state.batch_poster_table();
         let is_poster = poster_table.contains_poster(account.addr)?;
@@ -183,21 +183,20 @@ pub fn initialize_arbos_in_database<D: Database, B: Burner>(
     retryable_data: Vec<InitRetryableData>,
     accounts: Vec<AccountInitInfo>,
     current_timestamp: u64,
-) -> Result<GenesisInitResult, ()> {
+) -> Result<GenesisInitResult, ArbosStateError> {
     // Add chain owner.
     if chain_owner != Address::ZERO {
         arbos_state.chain_owners.add(chain_owner)?;
     }
 
-    // Import address table entries.
     let table_size = arbos_state.address_table.size()?;
     if table_size != 0 {
-        return Err(());
+        return Err(ArbosStateError::AddressTableNotEmpty);
     }
     for (i, addr) in address_table_entries.iter().enumerate() {
         let slot = arbos_state.address_table.register(*addr)?;
         if slot != i as u64 {
-            return Err(());
+            return Err(ArbosStateError::AddressTableSlotMismatch);
         }
     }
 

@@ -1,5 +1,8 @@
 use alloy_primitives::B256;
-use arb_storage::queue::{initialize_queue, open_queue};
+use arb_storage::{
+    queue::{initialize_queue, open_queue},
+    StorageError,
+};
 use arb_test_utils::ArbosHarness;
 
 fn h_n(n: u8) -> B256 {
@@ -71,7 +74,7 @@ fn for_each_visits_all_in_order() {
         q.put(h_n(i)).unwrap();
     }
     let mut seen = Vec::new();
-    q.for_each(|v| {
+    q.for_each(|v| -> Result<(), StorageError> {
         seen.push(v);
         Ok(())
     })

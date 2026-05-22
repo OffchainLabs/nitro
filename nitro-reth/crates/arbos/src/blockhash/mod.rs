@@ -3,6 +3,9 @@ use revm::Database;
 
 use arb_storage::{Storage, StorageBackedUint64};
 
+mod error;
+pub use error::BlockhashesError;
+
 pub struct Blockhashes<D> {
     backing_storage: Storage<D>,
     l1_block_number: StorageBackedUint64<D>,
@@ -22,11 +25,11 @@ pub fn open_blockhashes<D: Database>(backing_storage: Storage<D>) -> Blockhashes
 }
 
 impl<D: Database> Blockhashes<D> {
-    pub fn l1_block_number(&self) -> Result<u64, ()> {
-        self.l1_block_number.get()
+    pub fn l1_block_number(&self) -> Result<u64, BlockhashesError> {
+        Ok(self.l1_block_number.get()?)
     }
 
-    pub fn block_hash(&self, number: u64) -> Result<Option<B256>, ()> {
+    pub fn block_hash(&self, number: u64) -> Result<Option<B256>, BlockhashesError> {
         let current_number = self.l1_block_number.get()?;
         if number >= current_number || number + 256 < current_number {
             return Ok(None);
@@ -40,7 +43,7 @@ impl<D: Database> Blockhashes<D> {
         number: u64,
         block_hash: B256,
         arbos_version: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), BlockhashesError> {
         let mut next_number = self.l1_block_number.get()?;
 
         if number < next_number {
@@ -70,6 +73,6 @@ impl<D: Database> Blockhashes<D> {
 
         self.backing_storage
             .set_by_uint64(1 + (number % 256), block_hash)?;
-        self.l1_block_number.set(number + 1)
+        Ok(self.l1_block_number.set(number + 1)?)
     }
 }

@@ -1,11 +1,13 @@
 use alloy_primitives::B256;
+use arb_storage_errors::StorageError;
 use revm::Database;
 
 use crate::storage::Storage;
 
 /// Variable-length byte storage.
 ///
-/// Layout: slot 0 = length, slots 1..N = data (32 bytes per slot, left-aligned for last chunk).
+/// Layout: slot 0 = length; slots 1..N hold the data (32 bytes per slot, right-aligned in the last
+/// chunk).
 pub struct StorageBackedBytes<D> {
     storage: Storage<D>,
 }
@@ -15,7 +17,7 @@ impl<D: Database> StorageBackedBytes<D> {
         Self { storage }
     }
 
-    pub fn get(&self) -> Result<Vec<u8>, ()> {
+    pub fn get(&self) -> Result<Vec<u8>, StorageError> {
         let mut bytes_left = self.storage.get_uint64_by_uint64(0)? as usize;
         if bytes_left == 0 {
             return Ok(Vec::new());
@@ -35,7 +37,7 @@ impl<D: Database> StorageBackedBytes<D> {
         Ok(ret)
     }
 
-    pub fn set(&self, b: &[u8]) -> Result<(), ()> {
+    pub fn set(&self, b: &[u8]) -> Result<(), StorageError> {
         self.clear()?;
         self.storage.set_uint64_by_uint64(0, b.len() as u64)?;
         let mut remaining = b;
@@ -48,7 +50,6 @@ impl<D: Database> StorageBackedBytes<D> {
             offset += 1;
         }
         if !remaining.is_empty() {
-            // Right-align remaining bytes.
             let mut slot = [0u8; 32];
             slot[32 - remaining.len()..].copy_from_slice(remaining);
             self.storage.set_by_uint64(offset, B256::from(slot))?;
@@ -56,7 +57,7 @@ impl<D: Database> StorageBackedBytes<D> {
         Ok(())
     }
 
-    pub fn clear(&self) -> Result<(), ()> {
+    pub fn clear(&self) -> Result<(), StorageError> {
         let bytes_left = self.storage.get_uint64_by_uint64(0)?;
         let mut offset = 1u64;
         let mut remaining = bytes_left;
@@ -69,7 +70,7 @@ impl<D: Database> StorageBackedBytes<D> {
         Ok(())
     }
 
-    pub fn size(&self) -> Result<u64, ()> {
+    pub fn size(&self) -> Result<u64, StorageError> {
         self.storage.get_uint64_by_uint64(0)
     }
 }

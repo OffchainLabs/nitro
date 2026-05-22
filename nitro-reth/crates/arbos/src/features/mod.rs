@@ -3,6 +3,9 @@ use revm::Database;
 
 use arb_storage::StorageBackedBigUint;
 
+mod error;
+pub use error::FeaturesError;
+
 const INCREASED_CALLDATA: usize = 0;
 
 /// Feature flags backed by a storage BigUint used as a bitmask.
@@ -21,25 +24,25 @@ pub fn open_features<D: Database>(
 }
 
 impl<D: Database> Features<D> {
-    pub fn set_calldata_price_increase(&self, enabled: bool) -> Result<(), ()> {
+    pub fn set_calldata_price_increase(&self, enabled: bool) -> Result<(), FeaturesError> {
         self.set_bit(INCREASED_CALLDATA, enabled)
     }
 
-    pub fn is_increased_calldata_price_enabled(&self) -> Result<bool, ()> {
+    pub fn is_increased_calldata_price_enabled(&self) -> Result<bool, FeaturesError> {
         self.is_set(INCREASED_CALLDATA)
     }
 
-    fn set_bit(&self, index: usize, enabled: bool) -> Result<(), ()> {
+    fn set_bit(&self, index: usize, enabled: bool) -> Result<(), FeaturesError> {
         let mut val = self.features.get()?;
         if enabled {
             val |= U256::from(1) << index;
         } else {
             val &= !(U256::from(1) << index);
         }
-        self.features.set(val)
+        Ok(self.features.set(val)?)
     }
 
-    fn is_set(&self, index: usize) -> Result<bool, ()> {
+    fn is_set(&self, index: usize) -> Result<bool, FeaturesError> {
         let val = self.features.get()?;
         Ok((val >> index) & U256::from(1) != U256::ZERO)
     }

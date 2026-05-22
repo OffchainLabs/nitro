@@ -2873,7 +2873,8 @@ fn process_parent_block_hash<DB: Database>(
     let slot = U256::from((l2_block_number - 1) % HISTORY_SERVE_WINDOW);
     let value = U256::from_be_slice(prev_hash.as_slice());
 
-    arb_storage::write_storage_at(state, HISTORY_STORAGE_ADDRESS, slot, value);
+    arb_storage::write_storage_at(state, HISTORY_STORAGE_ADDRESS, slot, value)
+        .expect("HISTORY_STORAGE write must succeed: in-memory state writes are infallible");
 }
 
 /// Extract the gas field from a scheduled retry tx's encoded bytes.

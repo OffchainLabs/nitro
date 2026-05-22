@@ -1,8 +1,10 @@
+mod error;
 mod gas_constraint;
 mod model;
 mod multi_gas_constraint;
 mod multi_gas_fees;
 
+pub use error::L2PricingError;
 pub use gas_constraint::{open_gas_constraint, GasConstraint};
 pub use model::*;
 pub use multi_gas_constraint::{open_multi_gas_constraint, MultiGasConstraint};
@@ -130,74 +132,74 @@ impl<D: Database> L2PricingState<D> {
 
     // --- Getters/Setters ---
 
-    pub fn base_fee_wei(&self) -> Result<U256, ()> {
-        self.base_fee_wei.get()
+    pub fn base_fee_wei(&self) -> Result<U256, L2PricingError> {
+        Ok(self.base_fee_wei.get()?)
     }
 
-    pub fn set_base_fee_wei(&self, val: U256) -> Result<(), ()> {
-        self.base_fee_wei.set(val)
+    pub fn set_base_fee_wei(&self, val: U256) -> Result<(), L2PricingError> {
+        Ok(self.base_fee_wei.set(val)?)
     }
 
-    pub fn min_base_fee_wei(&self) -> Result<U256, ()> {
-        self.min_base_fee_wei.get()
+    pub fn min_base_fee_wei(&self) -> Result<U256, L2PricingError> {
+        Ok(self.min_base_fee_wei.get()?)
     }
 
-    pub fn set_min_base_fee_wei(&self, val: U256) -> Result<(), ()> {
-        self.min_base_fee_wei.set(val)
+    pub fn set_min_base_fee_wei(&self, val: U256) -> Result<(), L2PricingError> {
+        Ok(self.min_base_fee_wei.set(val)?)
     }
 
-    pub fn speed_limit_per_second(&self) -> Result<u64, ()> {
-        self.speed_limit_per_second.get()
+    pub fn speed_limit_per_second(&self) -> Result<u64, L2PricingError> {
+        Ok(self.speed_limit_per_second.get()?)
     }
 
-    pub fn set_speed_limit_per_second(&self, limit: u64) -> Result<(), ()> {
-        self.speed_limit_per_second.set(limit)
+    pub fn set_speed_limit_per_second(&self, limit: u64) -> Result<(), L2PricingError> {
+        Ok(self.speed_limit_per_second.set(limit)?)
     }
 
-    pub fn per_block_gas_limit(&self) -> Result<u64, ()> {
-        self.per_block_gas_limit.get()
+    pub fn per_block_gas_limit(&self) -> Result<u64, L2PricingError> {
+        Ok(self.per_block_gas_limit.get()?)
     }
 
-    pub fn set_max_per_block_gas_limit(&self, limit: u64) -> Result<(), ()> {
-        self.per_block_gas_limit.set(limit)
+    pub fn set_max_per_block_gas_limit(&self, limit: u64) -> Result<(), L2PricingError> {
+        Ok(self.per_block_gas_limit.set(limit)?)
     }
 
-    pub fn per_tx_gas_limit(&self) -> Result<u64, ()> {
-        self.per_tx_gas_limit.get()
+    pub fn per_tx_gas_limit(&self) -> Result<u64, L2PricingError> {
+        Ok(self.per_tx_gas_limit.get()?)
     }
 
-    pub fn set_max_per_tx_gas_limit(&self, limit: u64) -> Result<(), ()> {
-        self.per_tx_gas_limit.set(limit)
+    pub fn set_max_per_tx_gas_limit(&self, limit: u64) -> Result<(), L2PricingError> {
+        Ok(self.per_tx_gas_limit.set(limit)?)
     }
 
-    pub fn gas_backlog(&self) -> Result<u64, ()> {
-        self.gas_backlog.get()
+    pub fn gas_backlog(&self) -> Result<u64, L2PricingError> {
+        Ok(self.gas_backlog.get()?)
     }
 
-    pub fn set_gas_backlog(&self, backlog: u64) -> Result<(), ()> {
-        self.gas_backlog.set(backlog)
+    pub fn set_gas_backlog(&self, backlog: u64) -> Result<(), L2PricingError> {
+        Ok(self.gas_backlog.set(backlog)?)
     }
 
-    pub fn pricing_inertia(&self) -> Result<u64, ()> {
-        self.pricing_inertia.get()
+    pub fn pricing_inertia(&self) -> Result<u64, L2PricingError> {
+        Ok(self.pricing_inertia.get()?)
     }
 
-    pub fn set_pricing_inertia(&self, val: u64) -> Result<(), ()> {
-        self.pricing_inertia.set(val)
+    pub fn set_pricing_inertia(&self, val: u64) -> Result<(), L2PricingError> {
+        Ok(self.pricing_inertia.set(val)?)
     }
 
-    pub fn backlog_tolerance(&self) -> Result<u64, ()> {
-        self.backlog_tolerance.get()
+    pub fn backlog_tolerance(&self) -> Result<u64, L2PricingError> {
+        Ok(self.backlog_tolerance.get()?)
     }
 
-    pub fn set_backlog_tolerance(&self, val: u64) -> Result<(), ()> {
-        self.backlog_tolerance.set(val)
+    pub fn set_backlog_tolerance(&self, val: u64) -> Result<(), L2PricingError> {
+        Ok(self.backlog_tolerance.set(val)?)
     }
 
     // --- Gas Constraints ---
 
-    pub fn gas_constraints_length(&self) -> Result<u64, ()> {
-        self.gas_constraints.length()
+    pub fn gas_constraints_length(&self) -> Result<u64, L2PricingError> {
+        Ok(self.gas_constraints.length()?)
     }
 
     pub fn open_gas_constraint_at(&self, index: u64) -> GasConstraint<D> {
@@ -209,7 +211,7 @@ impl<D: Database> L2PricingState<D> {
         target: u64,
         adjustment_window: u64,
         backlog: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L2PricingError> {
         let sto = self.gas_constraints.push()?;
         let c = open_gas_constraint(sto);
         c.set_target(target)?;
@@ -218,7 +220,7 @@ impl<D: Database> L2PricingState<D> {
         Ok(())
     }
 
-    pub fn clear_gas_constraints(&self) -> Result<(), ()> {
+    pub fn clear_gas_constraints(&self) -> Result<(), L2PricingError> {
         let len = self.gas_constraints.length()?;
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
@@ -233,8 +235,8 @@ impl<D: Database> L2PricingState<D> {
 
     // --- Multi-Gas Constraints ---
 
-    pub fn multi_gas_constraints_length(&self) -> Result<u64, ()> {
-        self.multi_gas_constraints.length()
+    pub fn multi_gas_constraints_length(&self) -> Result<u64, L2PricingError> {
+        Ok(self.multi_gas_constraints.length()?)
     }
 
     pub fn open_multi_gas_constraint_at(&self, index: u64) -> MultiGasConstraint<D> {
@@ -247,7 +249,7 @@ impl<D: Database> L2PricingState<D> {
         adjustment_window: u32,
         backlog: u64,
         weights: &[u64; NUM_RESOURCE_KIND],
-    ) -> Result<(), ()> {
+    ) -> Result<(), L2PricingError> {
         let sto = self.multi_gas_constraints.push()?;
         let c = open_multi_gas_constraint(sto);
         c.set_target(target)?;
@@ -257,7 +259,7 @@ impl<D: Database> L2PricingState<D> {
         Ok(())
     }
 
-    pub fn clear_multi_gas_constraints(&self) -> Result<(), ()> {
+    pub fn clear_multi_gas_constraints(&self) -> Result<(), L2PricingError> {
         let len = self.multi_gas_constraints.length()?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);

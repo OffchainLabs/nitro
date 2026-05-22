@@ -1,0 +1,32 @@
+use arb_storage::StorageError;
+
+/// Errors raised by the retryable ticket subsystem.
+#[derive(thiserror::Error, Debug)]
+pub enum RetryableError {
+    /// Underlying storage failure.
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+
+    /// `keepalive` was asked to push a ticket's expiry past the maximum
+    /// permitted window.
+    #[error("timeout too far into the future")]
+    TimeoutTooFarFuture,
+
+    /// No retryable ticket exists with the given id.
+    #[error("ticket not found")]
+    NoTicketWithId,
+
+    /// `cancel` was called by someone other than the ticket's beneficiary.
+    #[error("only the beneficiary may cancel a retryable")]
+    NotBeneficiary,
+
+    /// A retryable attempted to operate on itself (e.g. redeem from its own
+    /// execution context).
+    #[error("retryable cannot modify itself")]
+    SelfModifyingRetryable,
+
+    /// The caller-supplied transfer callback returned an error while moving
+    /// escrowed funds.
+    #[error("transfer callback failed during retryable processing")]
+    TransferFailed,
+}

@@ -4,7 +4,7 @@ use revm::Database;
 
 use arb_chainspec::arbos_version as version;
 
-use super::L2PricingState;
+use super::{L2PricingError, L2PricingState};
 
 /// Which gas pricing model to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 20_800;
 
 impl<D: Database> L2PricingState<D> {
     /// Determine which gas model to use based on ArbOS version and stored constraints.
-    pub fn gas_model_to_use(&self) -> Result<GasModel, ()> {
+    pub fn gas_model_to_use(&self) -> Result<GasModel, L2PricingError> {
         if self.arbos_version >= version::ARBOS_VERSION_60 {
             let mgc_len = self.multi_gas_constraints_length()?;
             if mgc_len > 0 {
@@ -45,12 +45,20 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Grow the gas backlog for the active pricing model.
-    pub fn grow_backlog(&self, used_gas: u64, used_multi_gas: MultiGas) -> Result<(), ()> {
+    pub fn grow_backlog(
+        &self,
+        used_gas: u64,
+        used_multi_gas: MultiGas,
+    ) -> Result<(), L2PricingError> {
         self.update_backlog(BacklogOperation::Grow, used_gas, used_multi_gas)
     }
 
     /// Shrink the gas backlog for the active pricing model.
-    pub fn shrink_backlog(&self, used_gas: u64, used_multi_gas: MultiGas) -> Result<(), ()> {
+    pub fn shrink_backlog(
+        &self,
+        used_gas: u64,
+        used_multi_gas: MultiGas,
+    ) -> Result<(), L2PricingError> {
         self.update_backlog(BacklogOperation::Shrink, used_gas, used_multi_gas)
     }
 
@@ -60,7 +68,7 @@ impl<D: Database> L2PricingState<D> {
         op: BacklogOperation,
         used_gas: u64,
         used_multi_gas: MultiGas,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L2PricingError> {
         match self.gas_model_to_use()? {
             GasModel::Legacy | GasModel::Unknown => self.update_legacy_backlog_op(op, used_gas),
             GasModel::SingleGasConstraints => {
@@ -72,7 +80,11 @@ impl<D: Database> L2PricingState<D> {
         }
     }
 
-    fn update_legacy_backlog_op(&self, op: BacklogOperation, gas: u64) -> Result<(), ()> {
+    fn update_legacy_backlog_op(
+        &self,
+        op: BacklogOperation,
+        gas: u64,
+    ) -> Result<(), L2PricingError> {
         let backlog = self.gas_backlog()?;
         let new_backlog = apply_gas_delta_op(op, backlog, gas);
         self.set_gas_backlog(new_backlog)
@@ -82,7 +94,7 @@ impl<D: Database> L2PricingState<D> {
         &self,
         op: BacklogOperation,
         gas: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L2PricingError> {
         let len = self.gas_constraints_length()?;
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
@@ -96,7 +108,7 @@ impl<D: Database> L2PricingState<D> {
         &self,
         op: BacklogOperation,
         multi_gas: MultiGas,
-    ) -> Result<(), ()> {
+    ) -> Result<(), L2PricingError> {
         let len = self.multi_gas_constraints_length()?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
@@ -109,7 +121,11 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Update the pricing model for a new block.
-    pub fn update_pricing_model(&self, time_passed: u64, arbos_version: u64) -> Result<(), ()> {
+    pub fn update_pricing_model(
+        &self,
+        time_passed: u64,
+        arbos_version: u64,
+    ) -> Result<(), L2PricingError> {
         let _ = arbos_version; // version gating handled by gas_model_to_use via self.arbos_version
         match self.gas_model_to_use()? {
             GasModel::Legacy | GasModel::Unknown => self.update_pricing_model_legacy(time_passed),
@@ -122,7 +138,7 @@ impl<D: Database> L2PricingState<D> {
         }
     }
 
-    fn update_pricing_model_legacy(&self, time_passed: u64) -> Result<(), ()> {
+    fn update_pricing_model_legacy(&self, time_passed: u64) -> Result<(), L2PricingError> {
         let speed_limit = self.speed_limit_per_second()?;
         let drain = time_passed.saturating_mul(speed_limit);
         self.update_legacy_backlog_op(BacklogOperation::Shrink, drain)?;
@@ -155,7 +171,10 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(base_fee)
     }
 
-    fn update_pricing_model_single_constraints(&self, time_passed: u64) -> Result<(), ()> {
+    fn update_pricing_model_single_constraints(
+        &self,
+        time_passed: u64,
+    ) -> Result<(), L2PricingError> {
         // Drain backlogs and compute total exponent (sum across all constraints).
         // Uses signed Bips (int64) arithmetic matching Go.
         let mut total_exponent: i64 = 0;
@@ -188,7 +207,10 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(base_fee)
     }
 
-    fn update_pricing_model_multi_constraints(&self, time_passed: u64) -> Result<(), ()> {
+    fn update_pricing_model_multi_constraints(
+        &self,
+        time_passed: u64,
+    ) -> Result<(), L2PricingError> {
         self.update_multi_gas_constraints_backlogs(time_passed)?;
 
         let exponent_per_kind = self.calc_multi_gas_constraints_exponents()?;
@@ -212,7 +234,10 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(max_base_fee)
     }
 
-    fn update_multi_gas_constraints_backlogs(&self, time_passed: u64) -> Result<(), ()> {
+    fn update_multi_gas_constraints_backlogs(
+        &self,
+        time_passed: u64,
+    ) -> Result<(), L2PricingError> {
         let len = self.multi_gas_constraints_length()?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
@@ -234,7 +259,9 @@ impl<D: Database> L2PricingState<D> {
     /// dividend = NaturalToBips(SaturatingCast]int64\](SaturatingUMul(backlog, weight)))
     /// divisor  = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target, maxWeight)))
     /// exp      = dividend / divisor  (signed int64 division)
-    pub fn calc_multi_gas_constraints_exponents(&self) -> Result<[u64; NUM_RESOURCE_KIND], ()> {
+    pub fn calc_multi_gas_constraints_exponents(
+        &self,
+    ) -> Result<[u64; NUM_RESOURCE_KIND], L2PricingError> {
         let len = self.multi_gas_constraints_length()?;
         let mut exponent_per_kind = [0i64; NUM_RESOURCE_KIND];
 
@@ -290,7 +317,7 @@ impl<D: Database> L2PricingState<D> {
 
     /// Calculate base fee from an exponent in basis points.
     /// base_fee = min_base_fee * exp(exponent_bips / 10000)
-    pub fn calc_base_fee_from_exponent(&self, exponent_bips: u64) -> Result<U256, ()> {
+    pub fn calc_base_fee_from_exponent(&self, exponent_bips: u64) -> Result<U256, L2PricingError> {
         let min_base_fee = self.min_base_fee_wei()?;
         if exponent_bips == 0 {
             return Ok(min_base_fee);
@@ -306,7 +333,9 @@ impl<D: Database> L2PricingState<D> {
         }
     }
 
-    pub fn get_multi_gas_base_fee_per_resource(&self) -> Result<[U256; NUM_RESOURCE_KIND], ()> {
+    pub fn get_multi_gas_base_fee_per_resource(
+        &self,
+    ) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
         let base_fee = self.base_fee_wei()?;
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
         let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
@@ -326,7 +355,7 @@ impl<D: Database> L2PricingState<D> {
     /// `commit_next_to_current`, which runs before any tx in the block.
     /// Zero is kept (not substituted to base_fee_wei) so the caller can do the
     /// substitution with a fresh base_fee read on every use.
-    pub fn get_current_multi_gas_fees(&self) -> Result<[U256; NUM_RESOURCE_KIND], ()> {
+    pub fn get_current_multi_gas_fees(&self) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
         let mgf = super::multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone());
         let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
         for kind in ResourceKind::ALL {
@@ -341,7 +370,7 @@ impl<D: Database> L2PricingState<D> {
     /// Rotate next-block multi-gas fees into current-block fees.
     ///
     /// Called at block start before executing transactions.
-    pub fn commit_multi_gas_fees(&self) -> Result<(), ()> {
+    pub fn commit_multi_gas_fees(&self) -> Result<(), L2PricingError> {
         if self.gas_model_to_use()? != GasModel::MultiGasConstraints {
             return Ok(());
         }
@@ -356,7 +385,7 @@ impl<D: Database> L2PricingState<D> {
     /// - v51+: overhead for single-gas constraint traversal
     /// - v50+: base overhead for GasModelToUse() read
     /// - legacy: read + write for backlog
-    pub fn backlog_update_cost(&self) -> Result<u64, ()> {
+    pub fn backlog_update_cost(&self) -> Result<u64, L2PricingError> {
         use super::{STORAGE_READ_COST, STORAGE_WRITE_COST};
 
         // v60+: charge a flat static price regardless of gas model
@@ -391,7 +420,7 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Set gas constraints from legacy parameters (for upgrades).
-    pub fn set_gas_constraints_from_legacy(&self) -> Result<(), ()> {
+    pub fn set_gas_constraints_from_legacy(&self) -> Result<(), L2PricingError> {
         self.clear_gas_constraints()?;
         let target = self.speed_limit_per_second()?;
         let adjustment_window = self.pricing_inertia()?;
@@ -407,7 +436,9 @@ impl<D: Database> L2PricingState<D> {
     /// Iterates existing single-gas constraints, reads their target/window/backlog,
     /// and creates corresponding multi-gas constraints with equal weights across
     /// all resource dimensions.
-    pub fn set_multi_gas_constraints_from_single_gas_constraints(&self) -> Result<(), ()> {
+    pub fn set_multi_gas_constraints_from_single_gas_constraints(
+        &self,
+    ) -> Result<(), L2PricingError> {
         self.clear_multi_gas_constraints()?;
 
         let length = self.gas_constraints_length()?;
@@ -437,7 +468,10 @@ impl<D: Database> L2PricingState<D> {
     /// Compute total cost for a multi-gas usage, for refund calculations.
     ///
     /// Returns `sum(gas_used[kind] * base_fee[kind])` across all resource kinds.
-    pub fn multi_dimensional_price_for_refund(&self, gas_used: MultiGas) -> Result<U256, ()> {
+    pub fn multi_dimensional_price_for_refund(
+        &self,
+        gas_used: MultiGas,
+    ) -> Result<U256, L2PricingError> {
         let fees = self.get_multi_gas_base_fee_per_resource()?;
         let mut total = U256::ZERO;
         for kind in ResourceKind::ALL {
@@ -459,7 +493,7 @@ impl<D: Database> L2PricingState<D> {
         &self,
         gas_used: MultiGas,
         cached_fees: &[U256; NUM_RESOURCE_KIND],
-    ) -> Result<U256, ()> {
+    ) -> Result<U256, L2PricingError> {
         let base_fee = self.base_fee_wei()?;
         let mut total = U256::ZERO;
         for kind in ResourceKind::ALL {
@@ -800,7 +834,7 @@ mod tests {
             let retryable_base = keccak256([2u8]); // retryable subspace
             for i in 0u64..10 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
-                arb_storage::write_storage_at(
+                let _ = arb_storage::write_storage_at(
                     unsafe { &mut *state_ptr },
                     arbos,
                     slot,
@@ -812,19 +846,19 @@ mod tests {
             let scratch_slot_1 = arb_storage::storage_key_map(&[], 5); // approximate
             let scratch_slot_2 = arb_storage::storage_key_map(&[], 6);
             let scratch_slot_3 = arb_storage::storage_key_map(&[], 7);
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_slot_1,
                 U256::from(42),
             );
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_slot_2,
                 U256::from(43),
             );
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_slot_3,
@@ -841,17 +875,17 @@ mod tests {
             let scratch_slot_1 = arb_storage::storage_key_map(&[], 5);
             let scratch_slot_2 = arb_storage::storage_key_map(&[], 6);
             let scratch_slot_3 = arb_storage::storage_key_map(&[], 7);
-            arb_storage::write_arbos_storage(
+            let _ = arb_storage::write_arbos_storage(
                 unsafe { &mut *state_ptr },
                 scratch_slot_1,
                 U256::ZERO,
             );
-            arb_storage::write_arbos_storage(
+            let _ = arb_storage::write_arbos_storage(
                 unsafe { &mut *state_ptr },
                 scratch_slot_2,
                 U256::ZERO,
             );
-            arb_storage::write_arbos_storage(
+            let _ = arb_storage::write_arbos_storage(
                 unsafe { &mut *state_ptr },
                 scratch_slot_3,
                 U256::ZERO,
@@ -867,19 +901,19 @@ mod tests {
             let scratch_slot_1 = arb_storage::storage_key_map(&[], 5);
             let scratch_slot_2 = arb_storage::storage_key_map(&[], 6);
             let scratch_slot_3 = arb_storage::storage_key_map(&[], 7);
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_slot_1,
                 U256::from(99),
             );
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_slot_2,
                 U256::from(100),
             );
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_slot_3,
@@ -938,17 +972,17 @@ mod tests {
             let scratch_slot_1 = arb_storage::storage_key_map(&[], 5);
             let scratch_slot_2 = arb_storage::storage_key_map(&[], 6);
             let scratch_slot_3 = arb_storage::storage_key_map(&[], 7);
-            arb_storage::write_arbos_storage(
+            let _ = arb_storage::write_arbos_storage(
                 unsafe { &mut *state_ptr },
                 scratch_slot_1,
                 U256::ZERO,
             );
-            arb_storage::write_arbos_storage(
+            let _ = arb_storage::write_arbos_storage(
                 unsafe { &mut *state_ptr },
                 scratch_slot_2,
                 U256::ZERO,
             );
-            arb_storage::write_arbos_storage(
+            let _ = arb_storage::write_arbos_storage(
                 unsafe { &mut *state_ptr },
                 scratch_slot_3,
                 U256::ZERO,
@@ -960,7 +994,12 @@ mod tests {
             let retryable_base = keccak256([2u8]);
             for i in 0u64..10 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
-                arb_storage::write_storage_at(unsafe { &mut *state_ptr }, arbos, slot, U256::ZERO);
+                let _ = arb_storage::write_storage_at(
+                    unsafe { &mut *state_ptr },
+                    arbos,
+                    slot,
+                    U256::ZERO,
+                );
             }
         }
 
@@ -1143,13 +1182,13 @@ mod tests {
 
         // TX1: SubmitRetryable — write scratch slots + retryable storage
         {
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_1,
                 U256::from(42),
             );
-            arb_storage::write_storage_at(
+            let _ = arb_storage::write_storage_at(
                 unsafe { &mut *state_ptr },
                 arbos,
                 scratch_2,
@@ -1158,7 +1197,7 @@ mod tests {
             let retryable_base = keccak256([2u8]);
             for i in 0u64..5 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
-                arb_storage::write_storage_at(
+                let _ = arb_storage::write_storage_at(
                     unsafe { &mut *state_ptr },
                     arbos,
                     slot,
@@ -1168,12 +1207,17 @@ mod tests {
         }
         state.commit(HashMap::default());
         // Clear scratch
-        arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_1, U256::ZERO);
-        arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_2, U256::ZERO);
+        let _ = arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_1, U256::ZERO);
+        let _ = arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_2, U256::ZERO);
 
         // TX2: RetryTx — write scratch, then EVM commit WITH ArbOS account
-        arb_storage::write_storage_at(unsafe { &mut *state_ptr }, arbos, scratch_1, U256::from(99));
-        arb_storage::write_storage_at(
+        let _ = arb_storage::write_storage_at(
+            unsafe { &mut *state_ptr },
+            arbos,
+            scratch_1,
+            U256::from(99),
+        );
+        let _ = arb_storage::write_storage_at(
             unsafe { &mut *state_ptr },
             arbos,
             scratch_2,
@@ -1223,15 +1267,20 @@ mod tests {
             arb_storage::read_storage_at(unsafe { &mut *state_ptr }, arbos, gas_backlog_slot);
 
         // Clear scratch
-        arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_1, U256::ZERO);
-        arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_2, U256::ZERO);
+        let _ = arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_1, U256::ZERO);
+        let _ = arb_storage::write_arbos_storage(unsafe { &mut *state_ptr }, scratch_2, U256::ZERO);
 
         // Delete retryable
         {
             let retryable_base = keccak256([2u8]);
             for i in 0u64..5 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
-                arb_storage::write_storage_at(unsafe { &mut *state_ptr }, arbos, slot, U256::ZERO);
+                let _ = arb_storage::write_storage_at(
+                    unsafe { &mut *state_ptr },
+                    arbos,
+                    slot,
+                    U256::ZERO,
+                );
             }
         }
 

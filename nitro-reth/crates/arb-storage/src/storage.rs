@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
+use arb_storage_errors::StorageError;
 use revm::Database;
 
 use crate::{
@@ -51,63 +52,56 @@ impl<D: Database> Storage<D> {
     }
 
     /// Reads a 32-byte value by uint64 offset.
-    pub fn get_by_uint64(&self, offset: u64) -> Result<B256, ()> {
+    pub fn get_by_uint64(&self, offset: u64) -> Result<B256, StorageError> {
         let slot = self.compute_slot(offset);
-        unsafe {
-            let state = &mut *self.state;
-            Ok(B256::from(read_storage_at(state, self.account, slot)))
-        }
+        // SAFETY: the caller of Storage::new must guarantee that the
+        // referenced State<D> outlives this handle and that no other
+        // mutable reference to it is live during this call.
+        let state = unsafe { &mut *self.state };
+        read_storage_at(state, self.account, slot).map(B256::from)
     }
 
     /// Writes a 32-byte value by uint64 offset.
-    pub fn set_by_uint64(&self, offset: u64, value: B256) -> Result<(), ()> {
+    pub fn set_by_uint64(&self, offset: u64, value: B256) -> Result<(), StorageError> {
         let slot = self.compute_slot(offset);
         let value_u256 = U256::from_be_bytes(value.0);
-        unsafe {
-            let state = &mut *self.state;
-            write_storage_at(state, self.account, slot, value_u256);
-            Ok(())
-        }
+        // SAFETY: see `get_by_uint64`.
+        let state = unsafe { &mut *self.state };
+        write_storage_at(state, self.account, slot, value_u256)
     }
 
-    /// Reads a U256 by uint64 offset.
-    pub fn get_uint64_by_uint64(&self, offset: u64) -> Result<u64, ()> {
+    /// Reads a `u64` by uint64 offset, truncating values that exceed `u64::MAX`.
+    pub fn get_uint64_by_uint64(&self, offset: u64) -> Result<u64, StorageError> {
         let slot = self.compute_slot(offset);
-        unsafe {
-            let state = &mut *self.state;
-            let value = read_storage_at(state, self.account, slot);
-            Ok(value.try_into().unwrap_or(0))
-        }
+        // SAFETY: see `get_by_uint64`.
+        let state = unsafe { &mut *self.state };
+        let value = read_storage_at(state, self.account, slot)?;
+        Ok(value.try_into().unwrap_or(0))
     }
 
-    /// Writes a U256 by uint64 offset.
-    pub fn set_uint64_by_uint64(&self, offset: u64, value: u64) -> Result<(), ()> {
+    /// Writes a `u64` by uint64 offset.
+    pub fn set_uint64_by_uint64(&self, offset: u64, value: u64) -> Result<(), StorageError> {
         let slot = self.compute_slot(offset);
-        unsafe {
-            let state = &mut *self.state;
-            write_storage_at(state, self.account, slot, U256::from(value));
-            Ok(())
-        }
+        // SAFETY: see `get_by_uint64`.
+        let state = unsafe { &mut *self.state };
+        write_storage_at(state, self.account, slot, U256::from(value))
     }
 
     /// Reads a 32-byte value by B256 key using mapAddress algorithm.
-    pub fn get(&self, key: B256) -> Result<B256, ()> {
+    pub fn get(&self, key: B256) -> Result<B256, StorageError> {
         let slot = self.compute_slot_for_key(key);
-        unsafe {
-            let state = &mut *self.state;
-            Ok(B256::from(read_storage_at(state, self.account, slot)))
-        }
+        // SAFETY: see `get_by_uint64`.
+        let state = unsafe { &mut *self.state };
+        read_storage_at(state, self.account, slot).map(B256::from)
     }
 
     /// Writes a 32-byte value by B256 key using mapAddress algorithm.
-    pub fn set(&self, key: B256, value: B256) -> Result<(), ()> {
+    pub fn set(&self, key: B256, value: B256) -> Result<(), StorageError> {
         let slot = self.compute_slot_for_key(key);
         let value_u256 = U256::from_be_bytes(value.0);
-        unsafe {
-            let state = &mut *self.state;
-            write_storage_at(state, self.account, slot, value_u256);
-            Ok(())
-        }
+        // SAFETY: see `get_by_uint64`.
+        let state = unsafe { &mut *self.state };
+        write_storage_at(state, self.account, slot, value_u256)
     }
 
     fn storage_key(&self) -> &[u8] {

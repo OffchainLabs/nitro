@@ -1,6 +1,11 @@
 use alloy_primitives::{address, keccak256, Address, Bytes, U256};
+use arb_storage_errors::{DatabaseError, DatabaseErrorInfo, StorageError};
 use revm::Database;
 use std::collections::HashMap;
+
+fn db_read_error<E: core::fmt::Display>(err: E) -> StorageError {
+    DatabaseError::Read(DatabaseErrorInfo::new(err.to_string())).into()
+}
 
 /// ArbOS state address — the fictional account that stores all ArbOS state.
 pub const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
@@ -70,7 +75,10 @@ fn ensure_cache_account<D: Database>(state: &mut revm::database::State<D>, addr:
 }
 
 /// Reads a storage slot from the ArbOS account, checking cache -> bundle -> database.
-pub fn read_arbos_storage<D: Database>(state: &mut revm::database::State<D>, slot: U256) -> U256 {
+pub fn read_arbos_storage<D: Database>(
+    state: &mut revm::database::State<D>,
+    slot: U256,
+) -> Result<U256, StorageError> {
     read_storage_at(state, ARBOS_STATE_ADDRESS, slot)
 }
 
@@ -79,25 +87,22 @@ pub fn read_storage_at<D: Database>(
     state: &mut revm::database::State<D>,
     account: Address,
     slot: U256,
-) -> U256 {
-    // Check cache first
+) -> Result<U256, StorageError> {
     if let Some(cached_acc) = state.cache.accounts.get(&account) {
         if let Some(ref account) = cached_acc.account {
             if let Some(&value) = account.storage.get(&slot) {
-                return value;
+                return Ok(value);
             }
         }
     }
 
-    // Check bundle_state
     if let Some(acc) = state.bundle_state.state.get(&account) {
         if let Some(slot_entry) = acc.storage.get(&slot) {
-            return slot_entry.present_value;
+            return Ok(slot_entry.present_value);
         }
     }
 
-    // Fall back to database
-    state.database.storage(account, slot).unwrap_or(U256::ZERO)
+    state.database.storage(account, slot).map_err(db_read_error)
 }
 
 /// Writes a storage slot to the ArbOS account using the transition mechanism.
@@ -108,8 +113,8 @@ pub fn write_arbos_storage<D: Database>(
     state: &mut revm::database::State<D>,
     slot: U256,
     value: U256,
-) {
-    write_storage_at(state, ARBOS_STATE_ADDRESS, slot, value);
+) -> Result<(), StorageError> {
+    write_storage_at(state, ARBOS_STATE_ADDRESS, slot, value)
 }
 
 /// Writes a storage slot to an arbitrary account using the transition mechanism.
@@ -118,13 +123,11 @@ pub fn write_storage_at<D: Database>(
     account: Address,
     slot: U256,
     value: U256,
-) {
+) -> Result<(), StorageError> {
     use revm_database::states::StorageSlot;
 
-    // Ensure account exists in cache (creates it if database returns None).
     ensure_cache_account(state, account);
 
-    // Get current value from cache/bundle, and original from DB
     let current_value = {
         state
             .cache
@@ -142,20 +145,22 @@ pub fn write_storage_at<D: Database>(
             .map(|s| s.present_value)
     });
 
-    let original_value = state.database.storage(account, slot).unwrap_or(U256::ZERO);
+    let original_value = state
+        .database
+        .storage(account, slot)
+        .map_err(db_read_error)?;
 
-    // Skip no-op writes
     let prev_value = current_value.unwrap_or(original_value);
 
     if value == prev_value {
-        return;
+        return Ok(());
     }
 
     // Storage-only write: AccountInfo is unchanged, so one clone suffices.
     let (info, previous_info, previous_status, current_status) = {
         let cached_acc = match state.cache.accounts.get_mut(&account) {
             Some(acc) => acc,
-            None => return,
+            None => return Ok(()),
         };
 
         let previous_status = cached_acc.status;
@@ -200,6 +205,7 @@ pub fn write_storage_at<D: Database>(
     };
 
     state.apply_transition([(account, transition)]);
+    Ok(())
 }
 
 /// Reads the balance of an account from the state.
@@ -355,7 +361,7 @@ mod tests {
         let slot = U256::from(42);
         let value = U256::from(12345);
 
-        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value);
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value).unwrap();
 
         // Verify value is in cache.
         let cached = state.cache.accounts.get(&ARBOS_STATE_ADDRESS).unwrap();
@@ -394,7 +400,7 @@ mod tests {
         let slot = U256::from(42);
 
         // Writing 0 to a slot that doesn't exist (DB returns 0) should be a no-op.
-        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, U256::ZERO);
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, U256::ZERO).expect("write zero");
 
         // After merge, the slot should NOT be in the bundle.
         state.merge_transitions(BundleRetention::Reverts);
@@ -415,11 +421,10 @@ mod tests {
         let slot_a = U256::from(10);
         let slot_b = U256::from(20);
 
-        // First transition: write slot A (simulates baseFee write during StartBlock).
-        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot_a, U256::from(100));
-
-        // Second transition: write slot B (simulates gasBacklog write during user tx).
-        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot_b, U256::from(200));
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot_a, U256::from(100))
+            .expect("write A");
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot_b, U256::from(200))
+            .expect("write B");
 
         // Merge and check both survive.
         state.merge_transitions(BundleRetention::Reverts);
@@ -447,10 +452,9 @@ mod tests {
         let slot = U256::from(42);
         let value = U256::from(99999);
 
-        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value);
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value).expect("write");
 
-        // Read should return the written value from cache.
-        let read_val = read_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot);
+        let read_val = read_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot).expect("read");
         assert_eq!(read_val, value, "Read should return written value");
     }
 
@@ -466,13 +470,13 @@ mod tests {
         let slot_basefee = U256::from(10);
         let slot_backlog = U256::from(20);
 
-        // Step 1: StartBlock writes baseFee.
         write_storage_at(
             &mut state,
             ARBOS_STATE_ADDRESS,
             slot_basefee,
             U256::from(100_000_000),
-        );
+        )
+        .expect("baseFee write");
 
         // Step 2: EVM commit for internal tx (empty state).
         use revm_database::DatabaseCommit;
@@ -493,13 +497,13 @@ mod tests {
         user_changes.insert(sender, sender_acct);
         state.commit(user_changes);
 
-        // Step 4: Post-commit hook writes gasBacklog.
         write_storage_at(
             &mut state,
             ARBOS_STATE_ADDRESS,
             slot_backlog,
             U256::from(540_000),
-        );
+        )
+        .expect("gasBacklog write");
 
         // Step 5: Merge transitions.
         state.merge_transitions(BundleRetention::Reverts);

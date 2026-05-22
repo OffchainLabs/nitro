@@ -1,4 +1,5 @@
 use alloy_primitives::{B256, U256};
+use arb_storage_errors::StorageError;
 use revm::Database;
 
 use crate::{
@@ -14,26 +15,28 @@ fn compute_slot(base_key: B256, offset: u64) -> U256 {
     }
 }
 
-fn read_slot<D: Database>(state: *mut revm::database::State<D>, slot: U256) -> Result<U256, ()> {
-    unsafe {
-        let state = &mut *state;
-        Ok(read_arbos_storage(state, slot))
-    }
+fn read_slot<D: Database>(
+    state: *mut revm::database::State<D>,
+    slot: U256,
+) -> Result<U256, StorageError> {
+    // SAFETY: callers of `StorageBacked*::new` must guarantee that the
+    // referenced `State<D>` outlives the descriptor and that no other
+    // mutable reference to it is live during this call.
+    let state = unsafe { &mut *state };
+    read_arbos_storage(state, slot)
 }
 
 fn write_slot<D: Database>(
     state: *mut revm::database::State<D>,
     slot: U256,
     value: U256,
-) -> Result<(), ()> {
-    unsafe {
-        let state = &mut *state;
-        write_arbos_storage(state, slot, value);
-        Ok(())
-    }
+) -> Result<(), StorageError> {
+    // SAFETY: see `read_slot`.
+    let state = unsafe { &mut *state };
+    write_arbos_storage(state, slot, value)
 }
 
-/// Basis points stored as signed i64. 10000 bips = 100%.
+/// Basis points stored as signed `i64`. 10000 bips = 100%.
 pub struct StorageBackedBips<D> {
     state: *mut revm::database::State<D>,
     slot: U256,
@@ -47,13 +50,13 @@ impl<D: Database> StorageBackedBips<D> {
         }
     }
 
-    pub fn get(&self) -> Result<i64, ()> {
+    pub fn get(&self) -> Result<i64, StorageError> {
         let value = read_slot(self.state, self.slot)?;
         let value_u64: u64 = value.try_into().unwrap_or(0);
         Ok(value_u64 as i64)
     }
 
-    pub fn set(&self, value: i64) -> Result<(), ()> {
+    pub fn set(&self, value: i64) -> Result<(), StorageError> {
         write_slot(self.state, self.slot, U256::from(value as u64))
     }
 }
@@ -70,7 +73,7 @@ impl<D> Clone for StorageBackedBips<D> {
 unsafe impl<D: Send> Send for StorageBackedBips<D> {}
 unsafe impl<D: Sync> Sync for StorageBackedBips<D> {}
 
-/// Unsigned basis points stored as u64. 10000 ubips = 100%.
+/// Unsigned basis points stored as `u64`. 10000 ubips = 100%.
 pub struct StorageBackedUBips<D> {
     state: *mut revm::database::State<D>,
     slot: U256,
@@ -84,12 +87,12 @@ impl<D: Database> StorageBackedUBips<D> {
         }
     }
 
-    pub fn get(&self) -> Result<u64, ()> {
+    pub fn get(&self) -> Result<u64, StorageError> {
         let value = read_slot(self.state, self.slot)?;
         Ok(value.try_into().unwrap_or(0))
     }
 
-    pub fn set(&self, value: u64) -> Result<(), ()> {
+    pub fn set(&self, value: u64) -> Result<(), StorageError> {
         write_slot(self.state, self.slot, U256::from(value))
     }
 }
@@ -120,12 +123,12 @@ impl<D: Database> StorageBackedUint16<D> {
         }
     }
 
-    pub fn get(&self) -> Result<u16, ()> {
+    pub fn get(&self) -> Result<u16, StorageError> {
         let value = read_slot(self.state, self.slot)?;
         Ok(value.try_into().unwrap_or(0))
     }
 
-    pub fn set(&self, value: u16) -> Result<(), ()> {
+    pub fn set(&self, value: u16) -> Result<(), StorageError> {
         write_slot(self.state, self.slot, U256::from(value))
     }
 }
@@ -156,13 +159,13 @@ impl<D: Database> StorageBackedUint24<D> {
         }
     }
 
-    pub fn get(&self) -> Result<u32, ()> {
+    pub fn get(&self) -> Result<u32, StorageError> {
         let value = read_slot(self.state, self.slot)?;
         let raw: u32 = value.try_into().unwrap_or(0);
         Ok(raw & 0xFF_FFFF)
     }
 
-    pub fn set(&self, value: u32) -> Result<(), ()> {
+    pub fn set(&self, value: u32) -> Result<(), StorageError> {
         write_slot(self.state, self.slot, U256::from(value & 0xFF_FFFF))
     }
 }
@@ -193,16 +196,16 @@ impl<D: Database> StorageBackedUint32<D> {
         }
     }
 
-    pub fn get(&self) -> Result<u32, ()> {
+    pub fn get(&self) -> Result<u32, StorageError> {
         let value = read_slot(self.state, self.slot)?;
         Ok(value.try_into().unwrap_or(0))
     }
 
-    pub fn set(&self, value: u32) -> Result<(), ()> {
+    pub fn set(&self, value: u32) -> Result<(), StorageError> {
         write_slot(self.state, self.slot, U256::from(value))
     }
 
-    pub fn clear(&self) -> Result<(), ()> {
+    pub fn clear(&self) -> Result<(), StorageError> {
         self.set(0)
     }
 }

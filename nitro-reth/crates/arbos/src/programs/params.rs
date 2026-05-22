@@ -3,6 +3,8 @@ use revm::Database;
 
 use arb_storage::Storage;
 
+use super::ProgramsError;
+
 /// ArbOS version constants for feature gating.
 pub const ARBOS_VERSION_40: u64 = 40;
 pub const ARBOS_VERSION_50: u64 = 50;
@@ -58,7 +60,7 @@ pub struct StylusParams {
 
 impl StylusParams {
     /// Deserialize params from a storage substorage.
-    pub fn load<D: Database>(arbos_version: u64, sto: &Storage<D>) -> Result<Self, ()> {
+    pub fn load<D: Database>(arbos_version: u64, sto: &Storage<D>) -> Result<Self, ProgramsError> {
         let mut reader = PackedReader::new(sto);
 
         let mut params = StylusParams {
@@ -94,7 +96,7 @@ impl StylusParams {
     }
 
     /// Serialize and persist params to storage.
-    pub fn save<D: Database>(&self, sto: &Storage<D>) -> Result<(), ()> {
+    pub fn save<D: Database>(&self, sto: &Storage<D>) -> Result<(), ProgramsError> {
         let mut data = Vec::with_capacity(32);
 
         data.extend_from_slice(&self.version.to_be_bytes());
@@ -138,11 +140,13 @@ impl StylusParams {
     }
 
     /// Upgrade the params version (e.g. 1 -> 2 -> 3).
-    pub fn upgrade_to_version(&mut self, version: u16) -> Result<(), &'static str> {
+    pub fn upgrade_to_version(&mut self, version: u16) -> Result<(), ProgramsError> {
         match version {
             2 => {
                 if self.version != 1 {
-                    return Err("unexpected version for upgrade to 2");
+                    return Err(ProgramsError::InvalidParamsUpgrade(
+                        "unexpected version for upgrade to 2",
+                    ));
                 }
                 self.version = 2;
                 self.min_init_gas = V2_MIN_INIT_GAS;
@@ -150,19 +154,28 @@ impl StylusParams {
             }
             3 => {
                 if self.version != 2 {
-                    return Err("unexpected version for upgrade to 3");
+                    return Err(ProgramsError::InvalidParamsUpgrade(
+                        "unexpected version for upgrade to 3",
+                    ));
                 }
                 self.version = 3;
                 Ok(())
             }
-            _ => Err("unsupported version upgrade"),
+            _ => Err(ProgramsError::InvalidParamsUpgrade(
+                "unsupported version upgrade",
+            )),
         }
     }
 
     /// Handle ArbOS version upgrades that affect stylus params.
-    pub fn upgrade_to_arbos_version(&mut self, new_arbos_version: u64) -> Result<(), &'static str> {
+    pub fn upgrade_to_arbos_version(
+        &mut self,
+        new_arbos_version: u64,
+    ) -> Result<(), ProgramsError> {
         if self.arbos_version >= new_arbos_version {
-            return Err("unexpected arbos version downgrade");
+            return Err(ProgramsError::InvalidParamsUpgrade(
+                "unexpected arbos version downgrade",
+            ));
         }
 
         match new_arbos_version {
@@ -173,7 +186,9 @@ impl StylusParams {
             }
             ARBOS_VERSION_40 => {
                 if self.version != 2 {
-                    return Err("unexpected stylus version for arbos 40 upgrade");
+                    return Err(ProgramsError::InvalidParamsUpgrade(
+                        "unexpected stylus version for arbos 40 upgrade",
+                    ));
                 }
                 self.max_wasm_size = INITIAL_MAX_WASM_SIZE;
             }
@@ -239,7 +254,7 @@ impl<'a, D: Database> PackedReader<'a, D> {
         }
     }
 
-    fn ensure(&mut self, count: usize) -> Result<(), ()> {
+    fn ensure(&mut self, count: usize) -> Result<(), ProgramsError> {
         if self.pos + count > 32 {
             let word = self.sto.get_by_uint64(self.slot)?;
             self.buf = word.0;
@@ -249,29 +264,29 @@ impl<'a, D: Database> PackedReader<'a, D> {
         Ok(())
     }
 
-    fn take_bytes(&mut self, count: usize) -> Result<&[u8], ()> {
+    fn take_bytes(&mut self, count: usize) -> Result<&[u8], ProgramsError> {
         self.ensure(count)?;
         let start = self.pos;
         self.pos += count;
         Ok(&self.buf[start..self.pos])
     }
 
-    fn take_u8(&mut self) -> Result<u8, ()> {
+    fn take_u8(&mut self) -> Result<u8, ProgramsError> {
         let bytes = self.take_bytes(1)?;
         Ok(bytes[0])
     }
 
-    fn take_u16(&mut self) -> Result<u16, ()> {
+    fn take_u16(&mut self) -> Result<u16, ProgramsError> {
         let bytes = self.take_bytes(2)?;
         Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
     }
 
-    fn take_u24(&mut self) -> Result<u32, ()> {
+    fn take_u24(&mut self) -> Result<u32, ProgramsError> {
         let bytes = self.take_bytes(3)?;
         Ok((bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | bytes[2] as u32)
     }
 
-    fn take_u32(&mut self) -> Result<u32, ()> {
+    fn take_u32(&mut self) -> Result<u32, ProgramsError> {
         let bytes = self.take_bytes(4)?;
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }

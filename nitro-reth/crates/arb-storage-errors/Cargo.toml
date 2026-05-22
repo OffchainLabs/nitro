@@ -1,0 +1,17 @@
+[package]
+name = "arb-storage-errors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["alloy-primitives/std", "thiserror/std"]
+
+[lints]
+workspace = true
