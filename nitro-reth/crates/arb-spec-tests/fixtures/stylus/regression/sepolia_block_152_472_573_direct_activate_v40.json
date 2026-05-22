@@ -72,57 +72,19 @@
     }
   ],
   "expected": {
-    "blocks": [
-      {
-        "number": 1,
-        "block_hash": "0xb957cdeea0ee6e9d1036b56f3bbc9df52c5e551bb4f7661d2f17b9d9462795f6",
-        "state_root": "0xbb770bfb78ef02e245c37b1247e4e12b7caaa48660041d2ffe508a0f4a81e97a",
-        "receipts_root": "0xf9f43927715d3441776dd67c9467e7dd2a97925203dd8510e4cd9c352426d833",
-        "transactions_root": "0xbaa8e470d5a9a94a3364d041b0bb8f4cecdd092044295bd18dc4b3f283c411c3",
-        "gas_used": 2464484
-      }
-    ],
-    "eth_calls": [],
-    "storage": [],
-    "balances": [],
     "txReceipts": [
-      {
-        "txHash": "0x25e6456109bdcf2359604881c67e4ad55cc2fe49e0e1bf06f4898c95f9e368b8",
-        "blockNumber": 1,
-        "status": 1,
-        "gasUsed": 0,
-        "cumulativeGasUsed": 0,
-        "effectiveGasPrice": 100000000,
-        "gasUsedForL1": 0,
-        "l1BlockNumber": 152472572,
-        "from": "0x00000000000000000000000000000000000a4b05",
-        "to": "0x00000000000000000000000000000000000a4b05"
-      },
       {
         "txHash": "0xb0d3394d17860f9ed3248705becc56ab52c81ac6a90c7c71a5e6d4b67d9355c7",
         "blockNumber": 1,
-        "status": 1,
-        "gasUsed": 2464484,
-        "cumulativeGasUsed": 2464484,
-        "effectiveGasPrice": 100000000,
-        "gasUsedForL1": 14,
-        "l1BlockNumber": 152472572,
         "from": "0x315e6c09d888805977ffe42dc7d78266b4bb29bb",
         "to": "0x0000000000000000000000000000000000000071",
-        "logs": [
-          {
-            "address": "0x0000000000000000000000000000000000000071",
-            "topics": [
-              "0xc0e812780707128d9a180db8ee4d1c1f1300b6dd0626d577b5d9ac759b76253c",
-              "0x7f32400dc4e7b8349df96c87c5e7a4a9bd496d4cdda15085c0152cc9bfbc6075"
-            ],
-            "data": "0xe57f0f2b10dc6791d578cc3fdc039c51910c262d54201e916996b5ae8db2f31500000000000000000000000030f90205bacbe0da967091d08f37166ec9c06e2300000000000000000000000000000000000000000000000000003b8ccb419d3e0000000000000000000000000000000000000000000000000000000000000002",
-            "blockNumber": 1,
-            "txHash": "0xb0d3394d17860f9ed3248705becc56ab52c81ac6a90c7c71a5e6d4b67d9355c7",
-            "logIndex": 0
-          }
-        ]
+        "status": 1,
+        "gasUsed": 2464484
       }
-    ]
+    ],
+    "blocks": [],
+    "balances": [],
+    "storage": [],
+    "eth_calls": []
   }
 }

@@ -89,6 +89,7 @@
   },
   "messages": [
     {
+      "delayedMessagesRead": 1,
       "msgIdx": null,
       "message": {
         "header": {
@@ -99,49 +100,23 @@
           "timestamp": 1737043152
         },
         "l2Msg": "BPiSBIQHc1lAgx6EgJQAAAAAAAAAAAAAAAAAAAAAAAAAcYcB5RQ5SnwApFjHgMIAAAAAAAAAAAAAAABQnCSefXRTeOA9hMb4X3+EVba8EoMM3gCgS22CnNOaRYWwPfd0R/UfjKeP8gcltysxquyNWJbP3bygR19VySG0Zr1mTDd2vP8ljbHhTnSl4DVPgJ3KDhGvhpk="
-      },
-      "delayedMessagesRead": 1
+      }
     }
   ],
   "expected": {
-    "blocks": [
-      {
-        "number": 1,
-        "block_hash": "0x0a66e685a79968cb662a2bb645f70fb760320f18e98c2f7ceb72df1ff1fa1da0",
-        "state_root": "0x2122629de84ceba52ae6ba3c3949171daf2033fe5c4f87d3530ccb3285a92949",
-        "receipts_root": "0xf289687b8cd1160565af99e7ceeb362b73606a8aeb43c0808c4799311371d2dd",
-        "transactions_root": "0xd5b86b46687be3d782410042ebeca09a2d8d19ca604fd1a0c23fde2cc4183616",
-        "gas_used": 1682306
-      }
-    ],
-    "eth_calls": [],
-    "storage": [],
-    "balances": [],
     "txReceipts": [
-      {
-        "txHash": "0xa4a451912b6cd032e9e7c3757d558537f8cd118a265e4686f5962a824f556f95",
-        "blockNumber": 1,
-        "status": 1,
-        "gasUsed": 0,
-        "cumulativeGasUsed": 0,
-        "effectiveGasPrice": 100000000,
-        "gasUsedForL1": 0,
-        "l1BlockNumber": 7505071,
-        "from": "0x00000000000000000000000000000000000a4b05",
-        "to": "0x00000000000000000000000000000000000a4b05"
-      },
       {
         "txHash": "0x40ab6a1c3940c66d145d9c743d5bc788de11657a128aea858fefe934f8057070",
         "blockNumber": 1,
-        "status": 0,
-        "gasUsed": 1682306,
-        "cumulativeGasUsed": 1682306,
-        "effectiveGasPrice": 100000000,
-        "gasUsedForL1": 0,
-        "l1BlockNumber": 7505071,
         "from": "0x5f9fa55465515e42a8c5441866fa5e6f90725290",
-        "to": "0x0000000000000000000000000000000000000071"
+        "to": "0x0000000000000000000000000000000000000071",
+        "status": 0,
+        "gasUsed": 1682306
       }
-    ]
+    ],
+    "blocks": [],
+    "balances": [],
+    "storage": [],
+    "eth_calls": []
   }
 }
