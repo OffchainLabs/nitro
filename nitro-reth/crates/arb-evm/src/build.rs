@@ -1175,6 +1175,7 @@ where
 
                             // Refresh L1 block hashes cache after StartBlock.
                             let lower = l1_block_number.saturating_sub(256);
+                            // SAFETY: state_ptr is valid for the lifetime of this block.
                             let state_ref = unsafe { &mut *state_ptr };
                             for n in lower..l1_block_number {
                                 if let Ok(Some(hash)) = arb_state.blockhashes.block_hash(n) {

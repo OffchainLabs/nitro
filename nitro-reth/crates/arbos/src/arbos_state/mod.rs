@@ -408,7 +408,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                     // No state changes needed
                 }
                 10 => {
-                    let state = unsafe { &mut *self.backing_storage.state };
+                    let state = unsafe { &mut *self.backing_storage.state_ptr() };
                     let pool_balance =
                         get_account_balance(state, l1_pricing::L1_PRICER_FUNDS_POOL_ADDRESS);
                     self.l1_pricing_state.set_l1_fees_available(pool_balance)?;
@@ -453,7 +453,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 33..=39 => {}
                 40 => {
                     // EIP-2935: historical block hashes
-                    let state = unsafe { &mut *self.backing_storage.state };
+                    let state = unsafe { &mut *self.backing_storage.state_ptr() };
                     set_account_nonce(state, HISTORY_STORAGE_ADDRESS, 1);
                     set_account_code(
                         state,
@@ -507,7 +507,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             // Install precompile code for newly introduced precompiles
             for &(addr, version) in PRECOMPILE_MIN_ARBOS_VERSIONS {
                 if version == next {
-                    let state = unsafe { &mut *self.backing_storage.state };
+                    let state = unsafe { &mut *self.backing_storage.state_ptr() };
                     set_account_code(state, addr, Bytes::from_static(&[0xFE])); // INVALID opcode
                 }
             }
