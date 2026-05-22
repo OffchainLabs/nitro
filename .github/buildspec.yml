@@ -91,12 +91,14 @@ phases:
         DOCKER_BUILDKIT=1 docker build . --tag nitro-node --target nitro-node ${BUILD_ARGS:-} $build_secret_arg
         DOCKER_BUILDKIT=1 docker build . --tag nitro-node-dev --target nitro-node-dev ${BUILD_ARGS:-} $build_secret_arg
         DOCKER_BUILDKIT=1 docker build . --tag nitro-node-validator --target nitro-node-validator ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-rust-validator --target nitro-node-rust-validator ${BUILD_ARGS:-} $build_secret_arg
         DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim-stripped --target nitro-node-slim-stripped ${BUILD_ARGS:-} $build_secret_arg
         DOCKER_BUILDKIT=1 docker build . --tag nitro-node-stripped --target nitro-node-stripped ${BUILD_ARGS:-} $build_secret_arg
       - docker tag nitro-node:latest $REPOSITORY_URI:$IMAGE_TAG-$ARCH_TAG
       - docker tag nitro-node-slim:latest $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
       - docker tag nitro-node-dev:latest $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG
       - docker tag nitro-node-validator:latest $REPOSITORY_URI:$IMAGE_TAG-validator-$ARCH_TAG
+      - docker tag nitro-node-rust-validator:latest $REPOSITORY_URI:$IMAGE_TAG-rust-validator-$ARCH_TAG
       - docker tag nitro-node-slim-stripped:latest $REPOSITORY_URI:$IMAGE_TAG-slim-stripped-$ARCH_TAG
       - docker tag nitro-node-stripped:latest $REPOSITORY_URI:$IMAGE_TAG-stripped-$ARCH_TAG
   post_build:
@@ -142,5 +144,6 @@ phases:
         push_or_skip_existing "$REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG"
         push_or_skip_existing "$REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG"
         push_or_skip_existing "$REPOSITORY_URI:$IMAGE_TAG-validator-$ARCH_TAG"
+        push_or_skip_existing "$REPOSITORY_URI:$IMAGE_TAG-rust-validator-$ARCH_TAG"
         push_or_skip_existing "$REPOSITORY_URI:$IMAGE_TAG-slim-stripped-$ARCH_TAG"
         push_or_skip_existing "$REPOSITORY_URI:$IMAGE_TAG-stripped-$ARCH_TAG"

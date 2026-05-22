@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -80,7 +81,7 @@ type Manager struct {
 	assertionsProcessedCount    uint64
 	submittedRivalsCount        uint64
 	submittedAssertions         *threadsafe.LruSet[protocol.AssertionHash]
-	apiDB                       db.Database
+	apiDB                       containers.Option[db.Database]
 	assertionChainData          *assertionChainData
 	observedCanonicalAssertions chan protocol.AssertionHash
 	isReadyToPost               bool
@@ -144,7 +145,7 @@ func WithoutAutoAllowanceApproval() Opt {
 // WithAPIDB sets the database to use for the assertion manager.
 func WithAPIDB(db db.Database) Opt {
 	return func(m *Manager) {
-		m.apiDB = db
+		m.apiDB = containers.Some(db)
 	}
 }
 
@@ -228,7 +229,7 @@ func NewManager(
 	}
 	m := &Manager{
 		chain:                    chain,
-		apiDB:                    nil,
+		apiDB:                    containers.None[db.Database](),
 		backend:                  chain.Backend(),
 		execProvider:             execProvider,
 		rollupAddr:               chain.RollupAddress(),
