@@ -11,7 +11,8 @@ pub fn keccak<T: AsRef<[u8]>>(preimage: T) -> [u8; 32] {
     *keccak_seq(&[preimage.as_ref()])
 }
 
-/// Hashes the concatenation of all `inputs` with Keccak-256.
+/// Hashes the sequential concatenation of all `inputs` with Keccak-256,
+/// equivalent to pre-concatenating the slices and hashing the result.
 pub fn keccak_seq(inputs: &[&[u8]]) -> Bytes32 {
     let mut h = Keccak::v256();
     for input in inputs {
