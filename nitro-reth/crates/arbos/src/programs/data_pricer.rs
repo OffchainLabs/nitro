@@ -1,6 +1,7 @@
 use alloy_primitives::U256;
 use revm::Database;
 
+use arb_math::ONE_IN_BIPS;
 use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64, StorageBackend};
 
 use super::ProgramsError;
@@ -21,9 +22,6 @@ const INITIAL_BYTES_PER_SECOND: u32 = (INITIAL_HOURLY_BYTES / (60 * 60)) as u32;
 const INITIAL_LAST_UPDATE_TIME: u64 = ARBITRUM_START_TIME;
 const INITIAL_MIN_PRICE: u32 = 82928201; // 5Mb = $1
 const INITIAL_INERTIA: u32 = 21360419; // expensive at 1Tb
-
-/// One in basis points (10000).
-const ONE_IN_BIPS: u64 = 10000;
 
 /// Stylus data pricing model using exponential demand curve.
 pub struct DataPricer<D> {
@@ -88,30 +86,11 @@ impl<D: Database> DataPricer<D> {
         self.last_update_time.set(backend, time)?;
 
         let exponent = ONE_IN_BIPS * (demand as u64) / (inertia as u64);
-        let multiplier = approx_exp_basis_points(exponent, 12);
+        let multiplier = arb_math::approx_exp_basis_points(exponent, 12);
         let cost_per_byte = saturating_mul_by_bips(min_price as u64, multiplier);
         let cost_in_wei = cost_per_byte.saturating_mul(temp_bytes as u64);
         Ok(U256::from(cost_in_wei))
     }
-}
-
-/// Approximate e^(x/10000) * 10000 using a Taylor series with `terms` terms.
-fn approx_exp_basis_points(x: u64, terms: u32) -> u64 {
-    if x == 0 {
-        return ONE_IN_BIPS;
-    }
-
-    let mut result = ONE_IN_BIPS;
-    let mut term = ONE_IN_BIPS;
-
-    for k in 1..=terms {
-        term = term * x / (ONE_IN_BIPS * k as u64);
-        result = result.saturating_add(term);
-        if term == 0 {
-            break;
-        }
-    }
-    result
 }
 
 /// Multiply a u64 by a bips value, saturating on overflow.

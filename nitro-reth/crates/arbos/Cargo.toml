@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 arb-alloy-consensus = { workspace = true }
 arb-chainspec = { workspace = true }
+arb-math = { workspace = true }
 arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 alloy-eips = { workspace = true }
