@@ -143,9 +143,7 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // v < 11: view-method log writes are permitted; emit and succeed.
     // v >= 11: framework rejects with ErrWriteProtection.
     if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
-        return Err(PrecompileError::other(
-            "cannot emit logs in a view method",
-        ));
+        return Err(PrecompileError::other("cannot emit logs in a view method"));
     }
 
     let gas_limit = input.gas;
@@ -167,7 +165,10 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let mixed_log_gas = LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * 64;
     let gas_cost = SLOAD_GAS + COPY_GAS * arg_words + basic_log_gas + mixed_log_gas;
 
-    Ok(PrecompileOutput::new(gas_cost.min(gas_limit), Vec::new().into()))
+    Ok(PrecompileOutput::new(
+        gas_cost.min(gas_limit),
+        Vec::new().into(),
+    ))
 }
 
 fn handle_custom_revert(number: u64, gas_limit: u64) -> PrecompileResult {
@@ -238,7 +239,7 @@ fn handle_overwrite_contract_code(
 
     // ABI-encode `bytes memory oldCode`: offset(0x20) | length(N) | data padded.
     let len = old_code.len();
-    let padded_len = (len + 31) / 32 * 32;
+    let padded_len = len.div_ceil(32) * 32;
     let mut out = Vec::with_capacity(64 + padded_len);
     out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(len as u64).to_be_bytes::<32>());

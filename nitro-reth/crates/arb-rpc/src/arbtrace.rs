@@ -1,5 +1,5 @@
-//! `arbtrace_*` namespace — forwards pre-Nitro trace requests to a
-//! configured classic-node RPC endpoint.
+//! `arbtrace_*` namespace — forwards pre-Arbitrum-One classic trace
+//! requests to a configured classic-node RPC endpoint.
 
 use std::sync::Arc;
 
@@ -39,11 +39,11 @@ fn http_error(e: impl std::fmt::Display) -> ErrorObject<'static> {
 
 #[derive(Debug, Clone, Default)]
 pub struct ArbTraceConfig {
-    /// URL of the pre-Nitro classic node to forward requests to.
+    /// URL of the pre-Arbitrum-One classic node to forward requests to.
     pub fallback_client_url: Option<String>,
     /// Timeout for forwarded RPC calls.
     pub fallback_client_timeout: Option<Duration>,
-    /// Nitro genesis block number; requests past this are rejected
+    /// Arbitrum-One genesis block number; requests past this are rejected
     /// without hitting the classic node.
     pub genesis_block_num: u64,
 }

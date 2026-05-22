@@ -1,11 +1,9 @@
 //! RPC-layer handlers for NodeInterface (0xc8) methods that require
 //! chain-history or call-stack access beyond what a precompile can do.
 //!
-//! In Nitro these are handled by `InterceptRPCMessage` before the EVM
-//! dispatches — we implement the same pattern as an `eth_call` override
-//! on `ArbEthApi`. Precompile-level fallbacks for these methods return
-//! zero / empty (see `arb_precompiles::nodeinterface`) so callers that
-//! don't go through `eth_call` still get a valid response.
+//! Implemented as an `eth_call` override on `ArbEthApi`. Precompile-level
+//! fallbacks return zero / empty (see `arb_precompiles::nodeinterface`)
+//! so callers that don't go through `eth_call` still get a valid response.
 
 use alloy_primitives::{address, Address, Bytes, B256, U256};
 

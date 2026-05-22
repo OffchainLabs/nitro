@@ -28,14 +28,12 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbFunctionTable::ArbFunctionTableCalls;
     let result = match call {
-        // Upload is a no-op in Nitro. Cost = OpenArbosState + argsCost (already
-        // pre-charged by init_precompile_gas). No result data.
+        // Upload: no-op. Cost = OpenArbosState + argsCost (pre-charged).
         ArbFunctionTableCalls::upload(_) => Ok(PrecompileOutput::new(
             crate::get_precompile_gas().min(gas_limit),
             vec![].into(),
         )),
-        // Size is a no-op that returns 0. Cost = OpenArbosState + argsCost +
-        // 1-word resultCost.
+        // Size: no-op returning 0. Cost = OpenArbosState + argsCost + 1-word resultCost.
         ArbFunctionTableCalls::size(_) => {
             crate::charge_precompile_gas(COPY_GAS);
             Ok(PrecompileOutput::new(

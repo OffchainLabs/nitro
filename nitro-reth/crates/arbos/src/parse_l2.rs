@@ -150,7 +150,7 @@ pub fn parse_l2_transactions(
     }
 }
 
-/// Batch-nesting limit matching Nitro (`depth >= 16` → error).
+/// Batch-nesting limit: `depth >= 16` → error.
 const MAX_L2_MESSAGE_BATCH_DEPTH: u32 = 16;
 
 #[allow(clippy::only_used_in_recursion)]

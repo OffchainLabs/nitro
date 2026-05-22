@@ -92,8 +92,7 @@ fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     load_arbos(input)?;
 
     if !is_native_token_owner(input, caller)? {
-        // Nitro: `return c.BurnOut()` — burn ALL remaining gas, not a soft
-        // revert. Mirror via burn_all_revert.
+        // Burn-out on unauthorized: consume all gas, not a soft revert.
         return crate::burn_all_revert(gas_limit);
     }
 
@@ -123,7 +122,7 @@ fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     load_arbos(input)?;
 
     if !is_native_token_owner(input, caller)? {
-        // Nitro: `return c.BurnOut()` on unauthorized — burn ALL gas.
+        // Burn-out on unauthorized: consume all gas.
         return crate::burn_all_revert(gas_limit);
     }
 

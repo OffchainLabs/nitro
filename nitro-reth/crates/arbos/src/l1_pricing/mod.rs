@@ -80,8 +80,7 @@ pub fn initialize_l1_pricing_state<D: Database>(
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
-    // Initial values match Nitro's InitializeL1PricingState (V0 defaults).
-    // Later upgrades may overwrite (e.g., V6 EquilibrationUnits on firstTime).
+    // V0 defaults. Later upgrades may overwrite (e.g., V6 EquilibrationUnits firstTime).
     let _ =
         StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET).set(rewards_recipient);
     let _ = StorageBackedBigUint::new(state, base_key, EQUILIBRATION_UNITS_OFFSET)

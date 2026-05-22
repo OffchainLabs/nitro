@@ -270,9 +270,8 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
         U256::ZERO.wrapping_sub(deficit)
     };
 
-    // Pre-v10 reads only 2 sloads (TotalFundsDue + FundsDueForRewards) plus
-    // a state balance read (free) — Nitro charges 3 SLOAD total including OAS.
-    // v10+ reads L1FeesAvailable as a 3rd slot, totaling 4 SLOAD.
+    // Pre-v10: 3 SLOAD (OAS + TotalFundsDue + FundsDueForRewards). v10+: 4 SLOAD (adds
+    // L1FeesAvailable).
     let sloads = if arbos_version >= 10 { 4 } else { 3 };
     let gas_cost = (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(
@@ -410,18 +409,13 @@ const CONSTRAINT_BACKLOG: u64 = 2;
 const MULTI_CONSTRAINT_WEIGHTED_BASE: u64 = 4;
 
 /// Total number of multi-gas resource kinds, including the
-/// `ResourceKindUnknown` sentinel (= 0). Mirrors Nitro's
-/// `multigas.NumResourceKind` from go-ethereum/arbitrum/multigas/resources.go:
-/// Unknown, Computation, HistoryGrowth, StorageAccessRead,
-/// StorageAccessWrite, StorageGrowth, SingleDim, L2Calldata,
-/// WasmComputation = 9 total.
+/// `ResourceKindUnknown` sentinel (= 0): Unknown, Computation, HistoryGrowth,
+/// StorageAccessRead, StorageAccessWrite, StorageGrowth, SingleDim, L2Calldata,
+/// WasmComputation.
 const NUM_RESOURCE_KIND: u64 = 9;
-/// Index of `ResourceKindSingleDim` in the enum — special-cased to fall
-/// back to the global L2 base fee in `getMultiGasBaseFee`.
+/// Index of `ResourceKindSingleDim` — special-cased to fall back to the
+/// global L2 base fee in `getMultiGasBaseFee`.
 const RESOURCE_KIND_SINGLE_DIM: u64 = 6;
-/// Offset within `MultiGasFees` storage for current-block fees.
-/// `currentBlockFeesOffset = 1 * NumResourceKind` per Nitro's
-/// `arbos/l2pricing/multi_gas_fees.go` iota layout.
 const CURRENT_BLOCK_FEES_OFFSET: u64 = NUM_RESOURCE_KIND;
 
 /// Returns `[][3]uint64` — (target, adjustmentWindow, backlog) per constraint.
@@ -559,10 +553,9 @@ fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Prec
     ))
 }
 
-/// Returns `uint256[]` — current-block base fee per resource kind. Mirrors
-/// Nitro's `GetMultiGasBaseFeePerResource`: reads BaseFeeWei first, then
-/// iterates all 9 resource kinds; for `ResourceKindSingleDim` and any
-/// per-kind fee that is zero, falls back to the global BaseFeeWei.
+/// Returns `uint256[]` — current-block base fee per resource kind. Reads BaseFeeWei,
+/// then per-kind fees; for `ResourceKindSingleDim` and any zero per-kind fee, falls
+/// back to BaseFeeWei.
 fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;

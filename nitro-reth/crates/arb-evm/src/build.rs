@@ -367,9 +367,8 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             self.arb_ctx.l1_block_number,
         );
 
-        // Recent-WASMs LRU is per-block (matches Nitro's RecentWasms). Reset
-        // at block start so cross-block hits don't falsely flag a program
-        // as cached, which would skip the init_gas charge on first call.
+        // Recent-WASMs LRU is per-block. Reset at block start so cross-block hits
+        // don't falsely flag a program as cached and skip the init_gas charge.
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
             let cap = arb_state
                 .programs
@@ -1637,9 +1636,9 @@ where
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                         increment_nonce(db, sender);
                         self.touched_accounts.insert(sender);
-                        // Nitro's RevertedTxHook fires after intrinsic deduction, so
-                        // final gasUsed = intrinsic + adjustedGas + posterGas. The
-                        // EVM never runs on this path, so add intrinsic manually.
+                        // RevertedTxHook fires after intrinsic deduction; the EVM never
+                        // runs on this path, so add intrinsic manually:
+                        // gasUsed = intrinsic + adjustedGas + posterGas.
                         let spec =
                             arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version);
                         let intrinsic = estimate_intrinsic_gas(recovered.tx(), spec);

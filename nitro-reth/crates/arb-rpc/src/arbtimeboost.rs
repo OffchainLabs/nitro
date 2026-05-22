@@ -6,8 +6,7 @@
 //! sequence metadata. The feature is off by default.
 //!
 //! When timeboost isn't configured on the node, both namespaces
-//! return "not enabled" errors (matching Nitro's behavior when the
-//! `txPublisher` has no timeboost backend set).
+//! return "not enabled" errors.
 
 use alloy_primitives::{Address, Bytes, B256, U256};
 use jsonrpsee::{
@@ -25,11 +24,9 @@ fn not_enabled(feature: &str) -> ErrorObject<'static> {
     )
 }
 
-/// Wire format of an express-lane submission. Matches Nitro's
-/// `timeboost.JsonExpressLaneSubmission` (see
-/// `timeboost/express_lane_service.go`). Fields are accepted as-is
-/// and passed through to the transaction publisher — we don't
-/// validate the signature ourselves.
+/// Wire format of an express-lane submission. Fields are accepted as-is
+/// and passed through to the transaction publisher — we don't validate
+/// the signature ourselves.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpressLaneSubmission {

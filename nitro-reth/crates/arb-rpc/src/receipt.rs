@@ -43,8 +43,7 @@ impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
         // mix_hash[25] bit 0 = CollectTips (post-v9 encoding).
         let arbos_version = u64::from_be_bytes(mix_hash.0[16..24].try_into().unwrap_or_default());
         // Pre-v10 header (ArbosVersionCollectTipsOld = v9) always means
-        // CollectTips=true regardless of mix_hash[25] — matches Nitro's
-        // DeserializeHeaderExtraInformation.
+        // CollectTips=true regardless of mix_hash[25].
         let collect_tips = arbos_version
             == arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD
             || (mix_hash.0[25] & 1) == 1;
@@ -122,10 +121,8 @@ fn convert_single_receipt(
         _ => ReceiptEnvelope::Legacy(receipt_with_bloom),
     };
 
-    // effective_gas_price follows Nitro's `Receipts.DeriveFields` logic
-    // (`go-ethereum/core/types/receipt.go`): when CollectTips is set, use
-    // the per-tx-type formula (Nitro's tx.effectiveGasPrice); otherwise
-    // return the block base fee.
+    // effective_gas_price: when CollectTips is set, use the per-tx-type
+    // formula; otherwise return the block base fee.
     let base_fee = meta.base_fee.unwrap_or(0) as u128;
     let effective_gas_price = if collect_tips {
         match tx_type {

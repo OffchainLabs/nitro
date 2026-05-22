@@ -12,7 +12,7 @@ use std::{
 use alloy_primitives::{Address, Bytes};
 
 /// `STYLUS_HOSTIO_TRACE=1` → dump every host-io call's name + ink-delta to
-/// stderr. Used to bisect Stylus gas drift vs Nitro. Cached at first read.
+/// stderr. Used to bisect Stylus gas drift. Cached at first read.
 fn stderr_trace_on() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| std::env::var("STYLUS_HOSTIO_TRACE").is_ok())

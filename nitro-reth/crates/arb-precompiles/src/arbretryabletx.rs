@@ -408,9 +408,7 @@ fn compute_actual_backlog_cost(
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
         let len = read_gas_constraints_length_free(input)?;
         if len > 0 {
-            // Per-constraint write cost depends on whether the post-shrink value
-            // is zero (matches Nitro's storage.WriteCost(value): 5000 if zero,
-            // 20000 otherwise — see arbos/storage/storage.go:128).
+            // Per-constraint write cost: 5000 if post-shrink value is zero, 20000 otherwise.
             let vec_key = gas_constraints_vec_key();
             let mut total = 2 * SLOAD_GAS; // GasModelToUse + vector length
             for i in 0..len {
@@ -772,22 +770,16 @@ mod redeem_gas_tests {
         let gas_to_donate = gas_limit - gas_used_so_far - future;
 
         let buggy_actual = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_RESET_GAS);
-        let buggy_total = gas_used_so_far
-            + REDEEM_SCHEDULED_EVENT_COST
-            + gas_to_donate
-            + buggy_actual
-            + COPY_GAS;
+        let buggy_total =
+            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + buggy_actual + COPY_GAS;
         assert_eq!(gas_limit - buggy_total, 90_000);
 
         let fixed_actual = 2 * SLOAD_GAS
             + (0..len)
                 .map(|_| constraint_actual_backlog_cost(backlog_per_constraint, gas_to_donate))
                 .sum::<u64>();
-        let fixed_total = gas_used_so_far
-            + REDEEM_SCHEDULED_EVENT_COST
-            + gas_to_donate
-            + fixed_actual
-            + COPY_GAS;
+        let fixed_total =
+            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + fixed_actual + COPY_GAS;
         assert_eq!(fixed_total, gas_limit);
     }
 }

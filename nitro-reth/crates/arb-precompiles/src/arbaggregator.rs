@@ -50,8 +50,6 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     use IArbAggregator::ArbAggregatorCalls as Calls;
     let result = match call {
         Calls::getPreferredAggregator(_) => {
-            // Nitro returns (BatchPosterAddress, true) — argsCost(3 for 1
-            // address word) + OAS(800) + resultCost(6 for 2 output words).
             let mut out = Vec::with_capacity(64);
             let mut addr_word = [0u8; 32];
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
@@ -154,9 +152,6 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) ->
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    // Nitro's OpenPoster(poster, false) reverts with ErrNotExist when the
-    // address isn't a registered batch poster. Mirror that by checking
-    // posterAddrs.IsMember(poster) first.
     let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
     let poster_b256 = B256::left_padding_from(poster.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
@@ -171,7 +166,6 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>, poster: Address) ->
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     let pay_to = sload_field(input, pay_to_slot)?;
 
-    // OAS(1) + IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
     crate::charge_precompile_gas(COPY_GAS);
     Ok(PrecompileOutput::new(
         crate::get_precompile_gas().min(gas_limit),
@@ -189,8 +183,6 @@ fn handle_set_fee_collector(
     let caller = input.caller;
     load_arbos(input)?;
 
-    // Nitro's OpenPoster(poster, false) reverts ErrNotExist when poster isn't
-    // in posterAddrs. Charge the IsMember SLOAD first, exactly like Nitro.
     let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
     let poster_b256 = B256::left_padding_from(poster.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);

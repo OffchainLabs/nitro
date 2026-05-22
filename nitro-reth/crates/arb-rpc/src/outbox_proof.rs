@@ -1,17 +1,10 @@
 //! Merkle proof construction for L2→L1 send messages.
 //!
-//! Implements the `NodeInterface.constructOutboxProof(size, leaf)`
-//! algorithm from Nitro's `execution/nodeinterface/node_interface.go`.
-//!
-//! The algorithm walks the Merkle accumulator tree from `leaf` toward
-//! the root, collecting sibling positions at each level. Nodes that
-//! fall inside the committed range (`< size`) come from L2ToL1Tx /
-//! SendMerkleUpdate event logs; nodes past the balanced-tree boundary
-//! are filled from "partial" accumulator state.
-//!
-//! The tree structure, level numbering, and partial-reconstruction
-//! logic mirror Nitro exactly so a client holding a proof generated
-//! here verifies against the same `sendRoot` that Nitro produces.
+//! Implements `NodeInterface.constructOutboxProof(size, leaf)`. Walks the
+//! Merkle accumulator from `leaf` toward the root, collecting sibling
+//! positions at each level. Nodes within the committed range (`< size`)
+//! come from L2ToL1Tx / SendMerkleUpdate event logs; nodes past the
+//! balanced-tree boundary come from partial accumulator state.
 
 use alloy_primitives::{keccak256, B256};
 
@@ -28,8 +21,7 @@ impl LevelAndLeaf {
         Self { level, leaf }
     }
 
-    /// Encode as a 32-byte log topic (matches Nitro's `ToBigInt()`
-    /// representation: level in high 64 bits, leaf in low 64 bits).
+    /// Encode as a 32-byte log topic: level in high 64 bits, leaf in low 64 bits.
     pub fn as_topic(&self) -> B256 {
         let mut out = [0u8; 32];
         out[16..24].copy_from_slice(&self.level.to_be_bytes());
@@ -38,9 +30,8 @@ impl LevelAndLeaf {
     }
 }
 
-/// Matches Nitro's `arbmath.Log2ceil(x)`: the bit-length of `x`
-/// (`64 - leading_zeros(x)`), which for values ≥ 1 equals
-/// `1 + floor(log2(x))`. Used by Nitro's tree geometry, not the
+/// Bit-length of `x` (`64 - leading_zeros(x)`): for values ≥ 1 equals
+/// `1 + floor(log2(x))`. Used by the outbox tree geometry, not the
 /// standard mathematical ceil-log2.
 fn log2_ceil(x: u64) -> u64 {
     if x == 0 {
@@ -49,10 +40,9 @@ fn log2_ceil(x: u64) -> u64 {
     64 - x.leading_zeros() as u64
 }
 
-/// Matches Nitro's `arbmath.NextPowerOf2(x)` = `1 << log2_ceil(x)`.
-/// For exact powers of two this returns `2x` (e.g. `NextPow2(4) = 8`)
-/// which is the convention used by `constructOutboxProof`'s balanced
-/// check: `balanced := size == NextPow2(size)/2`.
+/// `1 << log2_ceil(x)`. For exact powers of two this returns `2x`
+/// (e.g. `NextPow2(4) = 8`), the convention used by `constructOutboxProof`'s
+/// balanced check: `balanced := size == NextPow2(size)/2`.
 fn next_power_of_2(x: u64) -> u64 {
     1u64 << log2_ceil(x)
 }
@@ -228,9 +218,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn next_pow2_matches_nitro_bit_length() {
-        // Nitro's NextPowerOf2 = 1 << log2_ceil(x) where log2_ceil is
-        // bit-length, so for exact pow2 inputs it returns 2x.
+    fn next_pow2_matches_bit_length() {
         assert_eq!(next_power_of_2(1), 2);
         assert_eq!(next_power_of_2(2), 4);
         assert_eq!(next_power_of_2(3), 4);
@@ -240,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn log2_ceil_matches_nitro_bit_length() {
+    fn log2_ceil_matches_bit_length() {
         assert_eq!(log2_ceil(1), 1);
         assert_eq!(log2_ceil(2), 2);
         assert_eq!(log2_ceil(3), 2);
@@ -267,8 +255,7 @@ mod tests {
     fn plan_proof_balanced_tree_2_leaves() {
         let plan = plan_proof(2, 0).unwrap();
         assert!(plan.balanced, "size=2 is a power of two → balanced");
-        // Nitro's tree_levels = log2_ceil(size) = bit_length(size).
-        // For size=2, bit_length=2.
+        // tree_levels = log2_ceil(size) = bit_length(size). For size=2, bit_length=2.
         assert_eq!(plan.tree_levels, 2);
     }
 
@@ -277,9 +264,8 @@ mod tests {
         let plan = plan_proof(4, 1).unwrap();
         assert!(plan.balanced);
         // tree_levels = bit_length(4) = 3. walk_levels = 2.
-        // Nitro stores LevelAndLeaf.leaf in flat-coord (original leaf
-        // index with the level bits preserved), so sibling at level 1
-        // is place ^ 2 = 3, not 1.
+        // LevelAndLeaf.leaf is in flat-coord (leaf index with level bits
+        // preserved), so sibling at level 1 is place ^ 2 = 3, not 1.
         assert_eq!(plan.tree_levels, 3);
         assert_eq!(plan.nodes.len(), 2);
         assert_eq!(plan.nodes[0], LevelAndLeaf::new(0, 0));

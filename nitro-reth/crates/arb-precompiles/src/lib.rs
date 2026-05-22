@@ -642,9 +642,7 @@ mod recent_wasms_tests {
 
 #[cfg(test)]
 mod p256_gas_tests {
-    //! Mirror Nitro `p256Verify.RequiredGas`: 3450 for ArbOS 30..49, 6900 for
-    //! v50+ (EIP-7951 Osaka schedule). Direct unit assertion so a future
-    //! refactor can't quietly regress the gating.
+    //! P256VERIFY gas: 3450 for ArbOS 30..49, 6900 for v50+ (EIP-7951 Osaka).
     use revm::precompile::secp256r1::{p256_verify, p256_verify_osaka};
 
     // Valid p256 signature input from the upstream RIP-7212 test vectors.

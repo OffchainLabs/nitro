@@ -89,11 +89,10 @@ pub fn initialize_arbos_state<D: Database>(
     // 0. Set ArbOS state account nonce to 1.
     set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
 
-    // The filtered-tx state account is not touched at genesis: Nitro's
-    // `OpenArbosState` only opens this storage when the persisted ArbOS
-    // version is >= 60, and the init path persists version=1 before that
-    // call (the upgrade to v60+ happens after, without re-opening the
-    // account). The account therefore does not appear in the genesis trie.
+    // Filtered-tx state account is not touched at genesis: OpenArbosState
+    // only opens this storage at ArbOS v60+, and the init path persists
+    // version=1 first. The upgrade to v60+ runs after init without
+    // re-opening the account, so it never appears in the genesis trie.
 
     // 1. Set version to 1 (base version before upgrades).
     backing

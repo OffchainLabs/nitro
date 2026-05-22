@@ -18,15 +18,14 @@ use arbos::arbos_types::ParsedInitMessage;
 
 use crate::genesis;
 
-/// Block gas limit used by Nitro at genesis (`l2pricing.GethBlockGasLimit = 1 << 50`).
+/// Block gas limit at genesis (`l2pricing.GethBlockGasLimit = 1 << 50`).
 const NITRO_GENESIS_GAS_LIMIT: u64 = 1 << 50;
-/// Initial L2 base fee in wei used by Nitro at genesis (`l2pricing.InitialBaseFeeWei = 0.1 gwei`).
+/// Initial L2 base fee in wei at genesis (0.1 gwei).
 const NITRO_GENESIS_BASE_FEE: u64 = 100_000_000;
 /// JSON pointer for the flag that suppresses ArbOS alloc injection (used when the genesis already
 /// carries a complete pre-seeded alloc).
 const SKIP_GENESIS_INJECTION_POINTER: &str = "/config/arbitrum/SkipGenesisInjection";
-/// Default initial L1 base fee Nitro uses when no override is provided.
-/// Mirrors `arbostypes.DefaultInitialL1BaseFee = 50 * params.GWei`.
+/// Default initial L1 base fee when no override is provided (50 gwei).
 const DEFAULT_INITIAL_L1_BASE_FEE_WEI: u64 = 50_000_000_000;
 
 #[derive(Debug, Clone, Default)]
@@ -79,12 +78,11 @@ impl ChainSpecParser for ArbChainSpecParser {
             .unwrap_or(false);
 
         if initial_arbos > 0 && chain_id > 0 {
-            // SkipGenesisInjection used to gate the call entirely, but the
-            // captured cache files miss accounts (FilteredTransactionsState)
-            // and never carry storage for the ArbOS state account. The
-            // injection helper merges per-account: user-supplied fields and
-            // explicit slots win on conflict, so it is safe to run
-            // unconditionally and always produces the trie Nitro would.
+            // SkipGenesisInjection used to gate this call, but captured cache
+            // files miss accounts (FilteredTransactionsState) and never carry
+            // ArbOS-state-account storage. The injection helper merges per-
+            // account (user-supplied fields and explicit slots win), so it is
+            // safe to run unconditionally.
             let _ = skip_injection;
             inject_arbos_alloc(
                 &mut value,
@@ -101,9 +99,8 @@ impl ChainSpecParser for ArbChainSpecParser {
     }
 }
 
-/// Force the genesis header fields that Nitro hardcodes in `MakeGenesisBlock`.
-/// reth's `make_genesis_header` reads these directly from the JSON, so the
-/// only way to keep arbreth and Nitro in sync without forking reth is to
+/// Force the genesis header fields that the ArbOS init path hardcodes.
+/// reth's `make_genesis_header` reads these directly from JSON, so we
 /// rewrite them here before parsing.
 fn override_arbos_genesis_header(value: &mut Value, arbos_version: u64) -> eyre::Result<()> {
     let obj = value
@@ -170,8 +167,8 @@ fn inject_arbos_alloc(
     arbos_init: genesis::ArbOSInit,
 ) -> eyre::Result<()> {
     // Pre-compute the Go-canonical chain config bytes so the resulting
-    // `chain_config` subspace slots match what Nitro writes when it parses
-    // the same chain spec via `json.Unmarshal` + `json.Marshal`.
+    // `chain_config` subspace slot layout matches a Go-style
+    // `json.Unmarshal` + `json.Marshal` of the same chain spec.
     let serialized_chain_config = value
         .get("config")
         .map(serialize_chain_config_go_style)
@@ -281,8 +278,8 @@ pub fn compute_arbos_alloc(
 /// Run [`genesis::initialize_arbos_state`] in a scratch in-memory state
 /// using a caller-supplied serialized chain config and initial L1 base fee.
 ///
-/// Use this overload when reproducing the slot set Nitro writes for a
-/// given chain spec; pass `serialize_chain_config_go_style(value["config"])`
+/// Use this overload when reproducing the slot set written for a given
+/// chain spec; pass `serialize_chain_config_go_style(value["config"])`
 /// for the bytes and `DEFAULT_INITIAL_L1_BASE_FEE_WEI` for the base fee.
 pub fn compute_arbos_alloc_with_config(
     chain_id: u64,
@@ -358,9 +355,9 @@ pub fn compute_arbos_alloc_with_config(
 
 /// Serialize a chain-config JSON object the way Go's `json.Marshal` of
 /// `params.ChainConfig` would. Field order, address casing, and which
-/// fields are emitted (vs. dropped via `omitempty`) all match the Go
-/// encoder so the resulting bytes are byte-identical to what Nitro stores
-/// in the `chain_config` subspace at genesis.
+/// fields are emitted (vs. dropped via `omitempty`) match Go's encoder so
+/// the resulting bytes are byte-identical to what ArbOS init stores in the
+/// `chain_config` subspace at genesis.
 pub fn serialize_chain_config_go_style(config: &Value) -> Vec<u8> {
     let mut out = Vec::with_capacity(512);
     out.push(b'{');
@@ -410,8 +407,7 @@ pub fn serialize_chain_config_go_style(config: &Value) -> Vec<u8> {
 
     // Ethash and Clique are pointer types in Go, so their slots only appear
     // when present in the input. Clique always has period+epoch (no
-    // omitempty); BlobScheduleConfig is omitted from arbreth output for
-    // ArbOS chains since Nitro never sets it.
+    // omitempty); BlobScheduleConfig is omitted for ArbOS chains.
     if let Some(eth) = cfg.and_then(|m| m.get("ethash")).filter(|v| v.is_object()) {
         writer.write_raw_object("ethash", eth);
     }
@@ -703,10 +699,9 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn serialize_chain_config_matches_nitro_v10_default_layout() {
-        // Mirrors what `build_chain_config` in the Docker harness emits;
-        // the byte sequence here is exactly what the Nitro container
-        // writes to slots 0x...7700+ at genesis.
+    fn serialize_chain_config_matches_v10_default_layout() {
+        // The byte sequence here is what gets written to chain_config
+        // slots (0x...7700+) at genesis for the v10 default spec.
         let cfg = json!({
             "chainId": 421614,
             "homesteadBlock": 0,
@@ -736,7 +731,7 @@ mod tests {
         let s = std::str::from_utf8(&bytes).unwrap();
 
         let expected = "{\"chainId\":421614,\"homesteadBlock\":0,\"daoForkSupport\":true,\"eip150Block\":0,\"eip155Block\":0,\"eip158Block\":0,\"byzantiumBlock\":0,\"constantinopleBlock\":0,\"petersburgBlock\":0,\"istanbulBlock\":0,\"muirGlacierBlock\":0,\"berlinBlock\":0,\"londonBlock\":0,\"depositContractAddress\":\"0x0000000000000000000000000000000000000000\",\"clique\":{\"period\":0,\"epoch\":0},\"arbitrum\":{\"EnableArbOS\":true,\"AllowDebugPrecompiles\":false,\"DataAvailabilityCommittee\":false,\"InitialArbOSVersion\":10,\"InitialChainOwner\":\"0x71b61c2e250afa05dfc36304d6c91501be0965d8\",\"GenesisBlockNum\":0}}";
-        assert_eq!(s, expected, "Nitro-canonical chain config bytes mismatch");
+        assert_eq!(s, expected, "canonical chain config bytes mismatch");
         assert_eq!(bytes.len(), 549, "expected 549-byte serialization");
     }
 

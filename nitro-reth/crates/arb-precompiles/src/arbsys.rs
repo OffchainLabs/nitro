@@ -302,7 +302,7 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Nitro: `address = 0` unless depth > 1, then `Contracts[depth-2].Caller()`.
+    // address = 0 unless depth > 1, then Contracts[depth-2].Caller().
     // Apply L1 inverse-alias iff `wasMyCallersAddressAliased` (top-level frame
     // entered by an aliasing tx type).
     let depth = crate::get_evm_depth();
@@ -890,7 +890,7 @@ mod version_tests {
     fn arb_os_version_returns_format_plus_55() {
         // formatVersion 51 → user-visible ArbOS version 106 (0x6a)
         assert_eq!(arbos_version_from_format(U256::from(51)), U256::from(106),);
-        // formatVersion 1 → 56 (the lowest publicly used Nitro version)
+        // formatVersion 1 → 56 (the lowest publicly used version)
         assert_eq!(arbos_version_from_format(U256::from(1)), U256::from(56),);
         // formatVersion 0 → 55
         assert_eq!(arbos_version_from_format(U256::ZERO), U256::from(55),);

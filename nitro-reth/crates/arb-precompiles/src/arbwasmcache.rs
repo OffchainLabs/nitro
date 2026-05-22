@@ -349,8 +349,7 @@ fn handle_cache_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> Pre
 /// `cacheProgram` reads the code hash from an account, which costs
 /// `ColdAccountAccessCostEIP2929` even when the slot is already warm.
 fn handle_cache_program(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
-    // Nitro gates ArbWasmCache.CacheProgram to ArbosVersion_StylusFixes (v31).
-    // Pre-v31 hits the unregistered-method path → burn all gas.
+    // CacheProgram is gated at ArbOS v31 (StylusFixes). Pre-v31 burns all gas.
     if let Some(r) = crate::check_method_version(
         input.gas,
         arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES,

@@ -68,11 +68,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 return r;
             }
             // v5: returns NetworkFeeAccount (slot 3). v6+: returns InfraFeeAccount (slot 6).
-            let offset = if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
-                NETWORK_FEE_ACCOUNT_OFFSET
-            } else {
-                INFRA_FEE_ACCOUNT_OFFSET
-            };
+            let offset =
+                if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
+                    NETWORK_FEE_ACCOUNT_OFFSET
+                } else {
+                    INFRA_FEE_ACCOUNT_OFFSET
+                };
             read_state_field(&mut input, offset)
         }
         Calls::getBrotliCompressionLevel(_) => {
@@ -305,17 +306,12 @@ fn handle_rectify_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) ->
     let addr_hash = alloy_primitives::B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
 
-    // Nitro's RectifyMapping calls IsMember(addr) first (1 SLOAD on byAddress),
-    // and if the address IS a member then calls byAddress.GetUint64(addr) again
-    // (a 2nd SLOAD on the same slot). Both Get calls go through
-    // burner.Burn(StorageReadCost) independently. Match that pattern by doing
-    // two sload_field calls — the second one is gas-only since slot value
-    // can't change between back-to-back reads.
+    // IsMember + byAddress.GetUint64 charge as two SLOADs on the same slot.
+    // The second is gas-only — slot value cannot change between back-to-back reads.
     let slot_val = sload_field(input, member_slot)?;
     if slot_val == U256::ZERO {
         return Err(PrecompileError::other("not an owner"));
     }
-    // Mirror Nitro's second byAddress.GetUint64 charge.
     let _slot_val_again = sload_field(input, member_slot)?;
 
     // Check if mapping is already correct
@@ -479,8 +475,7 @@ fn handle_get_all_set_members(
 
 fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
-    // Nitro's GetMaxStylusContractFragments always calls programs.Params(),
-    // which charges Open(800) + Params warm(100). Result (32 bytes) adds 3.
+    // Open(800) + Params warm(100) + result(3) = 903.
     const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
     if crate::get_arbos_version() < ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
         return Ok(PrecompileOutput::new(
@@ -507,10 +502,7 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
 }
 
 fn handle_get_collect_tips(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Mirror Nitro: OpenArbosState always charges 1 SLOAD (version), then
-    // CollectTips() reads the slot iff arbos_version >= 60. Result is a
-    // 1-word bool. argsCost is 0 (no args) and is pre-charged by
-    // init_precompile_gas alongside OAS.
+    // OAS charges 1 SLOAD (version); CollectTips reads its slot only at v60+.
     let gas_limit = input.gas;
     if crate::get_arbos_version() < ARBOS_VERSION_COLLECT_TIPS {
         // OAS(800) already accumulated by init_precompile_gas; just add

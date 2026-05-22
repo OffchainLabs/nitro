@@ -23,11 +23,7 @@ const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 const WARM_SLOAD_GAS: u64 = 100;
 const STORAGE_CODE_HASH_COST: u64 = 2_600;
-/// Framework cost: argsCost (CopyGas * 1 word for 32-byte address) + OpenArbosState (800).
 const FRAMEWORK_GAS_PROGRAM_ADDR: u64 = COPY_GAS + 800;
-/// Total gas for ArbWasm methods that look up program metadata by address: framework
-/// + Params (warm) + GetCodeHash (cold account access) + getProgram SLOAD. Mirrors
-/// Nitro's `con.getCodeHash` + `c.State.Programs().Params/Get` charge sequence.
 const PROGRAM_LOOKUP_GAS: u64 =
     FRAMEWORK_GAS_PROGRAM_ADDR + WARM_SLOAD_GAS + STORAGE_CODE_HASH_COST + SLOAD_GAS;
 
@@ -68,14 +64,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match call {
         Calls::stylusVersion(_) => {
-            // Open(800) + Params warm(100) + result(3) = 903 — matches Nitro's
-            // `c.State.Programs().Params()` charge sequence.
             let params = load_params_word(&mut input)?;
             let version = u16::from_be_bytes([params[0], params[1]]);
             ok_u256(SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS, U256::from(version))
         }
         Calls::inkPrice(_) => {
-            // Open(800) + Params warm(100) + result(3) = 903.
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             let params = load_params_word(&mut input)?;
             let ink_price = (params[2] as u32) << 16 | (params[3] as u32) << 8 | params[4] as u32;
@@ -100,7 +93,6 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(METHOD_GAS, U256::from(gas))
         }
         Calls::pageRamp(_) => {
-            // Nitro reads Params() — same Open(800) + warm(100) + result(3).
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
             load_arbos(&mut input)?;
             ok_u256(METHOD_GAS, U256::from(INITIAL_PAGE_RAMP))
@@ -341,11 +333,8 @@ fn load_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], Precomp
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     let slot = map_slot(params_key.as_slice(), 0);
     let value = sload_field(input, slot)?;
-    // Nitro's `Params().Load(...)` charges an additional warm-cache SLOAD
-    // beyond the raw storage read. Success paths (stylusVersion, inkPrice,
-    // …) already include this in their hardcoded total; the accumulator
-    // pattern used by activate / keepalive needs the explicit add so revert
-    // paths report matching gas.
+    // Warm-cache SLOAD beyond the raw storage read; the success-path totals
+    // bake it in, but accumulator-driven revert paths need an explicit add.
     crate::charge_precompile_gas(WARM_SLOAD_GAS);
     Ok(value.to_be_bytes::<32>())
 }
@@ -433,9 +422,7 @@ fn hours_to_age(time: u64, hours: u32) -> u64 {
 /// or ProgramExpired(ageSeconds), in that order. `lookup_gas` is the
 /// method's argsCost + state-access charges (everything except the
 /// result-copy cost). The revert charges `lookup_gas + COPY_GAS * words`
-/// where `words` is rounded up from the actual error payload length —
-/// matching Nitro's precompile framework which sizes resultCost from
-/// `len(solErr.data)` rather than the success-path output.
+/// where `words` is rounded up from the actual error payload length.
 fn validate_active_program(
     program: &ProgramInfo,
     params_version: u16,
@@ -531,12 +518,7 @@ fn handle_activate_program(
     crate::charge_precompile_gas(args_cost);
     crate::charge_precompile_gas(SLOAD_GAS); // OpenArbosState version read
 
-    // Nitro's `programs.ActivationGas()` SLOADs the activationGas slot (800) at
-    // ArbOS >= 60; pre-v60 it short-circuits with no SLOAD. Mirror that exactly
-    // so live Sepolia activations at v60+ match canon. The Nitro Docker
-    // reference image (v3.10.0-rc.2) predates this feature, so the matrix
-    // differential test will report a baseline -800 against that older image
-    // at v60 — an artifact of the Docker, not an arbreth bug.
+    // ArbOS >= 60 reads activationGas (800 SLOAD); pre-v60 short-circuits.
     if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
         let programs_key_for_act = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
         let activation_gas_key = derive_subspace_key(programs_key_for_act.as_slice(), &[5]);
@@ -567,11 +549,8 @@ fn handle_activate_program(
             .to_vec()
     };
 
-    // Charge Params warm read (100) and existing-program SLOAD (800) *before*
+    // Charge Params warm read (100) and existing-program SLOAD (800) before
     // the prefix check so revert and success paths both account for them.
-    // Mirrors the order in Nitro's `programs.ActivateProgram`: `Params()` then
-    // `programExists()` (SLOAD of `programs[codeHash]`) run before `getWasm`,
-    // which is where a non-Stylus prefix is rejected.
     load_arbos(&mut input)?;
     crate::charge_precompile_gas(100); // WarmStorageReadCostEIP2929 (Params)
     let params_word = {
@@ -593,13 +572,9 @@ fn handle_activate_program(
     let program_slot = map_slot_b256(data_key.as_slice(), &code_hash);
     let existing = sload_field(&mut input, program_slot)?;
 
-    // Nitro distinguishes two failure modes for invalid Stylus bytecode at v40
-    // and below. Empty bytecode returns the `ProgramNotWasm()` Solidity error
-    // (3 gas result-copy cost). A non-empty but non-classic-prefix bytecode
-    // returns a non-Solidity error (`errors.New("specified bytecode is not a
-    // Stylus program")`) which the framework reverts WITHOUT charging
-    // result-copy cost. See `arbos/programs/programs.go::getWasmFromContractCode`
-    // line 420-421 ("Old arbOS behavior - this is not a solidity error").
+    // Two invalid-Stylus-bytecode failure modes at v40 and below: empty bytecode
+    // reverts with the `ProgramNotWasm()` Solidity error (3 gas result-copy);
+    // non-empty/non-classic-prefix bytecode reverts with no result-copy charge.
     if code_bytes.is_empty() {
         return revert_sol_error(IArbWasm::ProgramNotWasm {}.abi_encode(), input.gas);
     }
@@ -745,20 +720,12 @@ fn handle_activate_program(
         .map_err(|_| PrecompileError::other("sstore failed"))?;
     crate::charge_precompile_gas(SSTORE_GAS);
 
-    // The activation `value` is the value of the call frame entering 0x71,
-    // which differs by call site:
-    //   * Outer EOA → 0x71: `build.rs` zeros `tx_env.value` (so revm won't
-    //     transfer ETH to the precompile) and stashes the original tx value
-    //     in `STYLUS_CALL_VALUE`. `input.value` is therefore 0 here; the
-    //     stashed value drives the check, and the post-commit hook burns
-    //     the data fee from the sender.
-    //   * Inner CONTRACT → 0x71 (e.g. a Solidity factory calling
-    //     `ArbWasm.activateProgram{value: budget}(...)`): revm has already
-    //     transferred `budget` from the caller to 0x71 by the time the
-    //     precompile runs. `input.value == budget`; the stashed value is 0.
-    //     We mirror Nitro's `payActivationDataFee` here by forwarding the
-    //     data fee to NetworkFeeAccount and refunding the rest to the
-    //     immediate caller, so the post-commit hook is skipped.
+    // Activation `value` depends on call site:
+    //   * Outer EOA → 0x71: build.rs zeros tx.value and stashes it in STYLUS_CALL_VALUE. The
+    //     stashed value drives the check; post-commit hook burns the data fee.
+    //   * Inner CONTRACT → 0x71: revm already transferred `budget` to 0x71 (input.value == budget).
+    //     We forward the data fee to NetworkFeeAccount and refund the caller inline; post-commit
+    //     hook is skipped.
     let stashed_outer_value = crate::get_stylus_call_value();
     let inner_call_value = input.value;
     let effective_value = if inner_call_value > U256::ZERO {

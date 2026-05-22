@@ -104,11 +104,10 @@ pub trait BlockProducer: Send + Sync + 'static {
     /// Mark finality metadata (safe / finalized / validated block hashes)
     /// on the canonical chain.
     ///
-    /// Nitro's consensus layer calls `setFinalityData` periodically to
-    /// propagate finality information derived from L1 confirmations.
-    /// The execution client should store these markers so that RPC
-    /// queries like `eth_getBlockByNumber("finalized")` return the
-    /// correct block.
+    /// The consensus layer calls `setFinalityData` periodically to
+    /// propagate finality info derived from L1 confirmations. The
+    /// execution client stores these markers so RPC queries like
+    /// `eth_getBlockByNumber("finalized")` return the correct block.
     ///
     /// Default impl is a no-op; node implementations override if they
     /// support finality tracking.

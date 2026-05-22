@@ -66,7 +66,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     // Wrapper overrides the inner's gas accounting: 0 for filterer, 1600 for
     // non-filterer. Inner's output and error are preserved.
-    let final_gas = if is_filterer { 0 } else { wrapper_gas.min(gas_limit) };
+    let final_gas = if is_filterer {
+        0
+    } else {
+        wrapper_gas.min(gas_limit)
+    };
     match inner_result {
         Ok(mut output) => {
             output.gas_used = final_gas;
