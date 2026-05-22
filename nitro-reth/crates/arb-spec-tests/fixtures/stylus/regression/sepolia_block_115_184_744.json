@@ -87,7 +87,6 @@
   },
   "messages": [
     {
-      "delayedMessagesRead": 1,
       "msgIdx": null,
       "message": {
         "header": {
@@ -98,23 +97,49 @@
           "timestamp": 1737042400
         },
         "l2Msg": "BPiLAYQF9eEAg0xLQJQAAAAAAAAAAAAAAAAAAAAAAAAAcYCkWMeAwgAAAAAAAAAAAAAAAAhRFivJ3IPKOqRl508yxuliffpGgwzd/6AD1vjj1coxRc87byk194KCKofqplxr7i2iyYqdr2hNOqBGQMKKDUW+0qdenZcpPUrTxcUJmaLjHSzxEzj7niDGKg=="
-      }
+      },
+      "delayedMessagesRead": 1
     }
   ],
   "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0x9d5d6a87e9880b82c5ddfde3faea471aee207ba79751919a976fb529cc3f5eaa",
+        "state_root": "0xe78acdd680e44426c529bfed7b74d0e050f547b38e34fe69b5ab50bdc547582f",
+        "receipts_root": "0x53a41453266048611788941d9076552ef5757747d907d9850c9d22487cb8c282",
+        "transactions_root": "0x2b073aa88088f0186f06f8d5dabf6a92014f074a5e4587b45f07797039c8056b",
+        "gas_used": 2366268
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
     "txReceipts": [
+      {
+        "txHash": "0xc5ade6f520ad2dbf033452b73c3860d01673962563f9c07bf91dd55e0cd937f8",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 7505006,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
       {
         "txHash": "0x8856f533edf82fe399bd835b2f3d8f45cbeb69a31f7dfa9ae2162c7ff814679e",
         "blockNumber": 1,
-        "from": "0x5f9fa55465515e42a8c5441866fa5e6f90725290",
-        "to": "0x0000000000000000000000000000000000000071",
         "status": 0,
-        "gasUsed": 2366268
+        "gasUsed": 2366268,
+        "cumulativeGasUsed": 2366268,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 7505006,
+        "from": "0x5f9fa55465515e42a8c5441866fa5e6f90725290",
+        "to": "0x0000000000000000000000000000000000000071"
       }
-    ],
-    "blocks": [],
-    "balances": [],
-    "storage": [],
-    "eth_calls": []
+    ]
   }
 }

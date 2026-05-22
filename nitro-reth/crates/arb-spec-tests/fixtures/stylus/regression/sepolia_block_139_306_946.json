@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_139_306_946",
-  "description": "Sepolia tx 0xdb77b3b2... at block 139,306,946 (idx 1). Direct Stylus call (no proxy) on 0x344f40ca; the Stylus contract makes a CALL into Solidity 0x101f443b, which CALLs Solidity 0x66eeab70, which halts on the SSTORE reentrancy sentry (remaining \u2264 2300). Pre-fix arbreth refunded the leftover ~836 gas back to the caller (revm's halt(ReentrancySentryOOG) doesn't spend gas, while geth consumes all forwarded gas on non-Revert errors), producing gasUsed=189,960 vs canon 190,818 (\u0394 -858). The fix in stylus_call_trampoline's run_evm_bytecode path matches geth's evm.Call: only Revert preserves remaining gas; every other failure consumes the full forwarded amount. Locks gasUsed=190,818 = canon byte-for-byte.",
+  "description": "Sepolia tx 0xdb77b3b2... at block 139,306,946 (idx 1). Direct Stylus call (no proxy) on 0x344f40ca; the Stylus contract makes a CALL into Solidity 0x101f443b, which CALLs Solidity 0x66eeab70, which halts on the SSTORE reentrancy sentry (remaining ≤ 2300). Pre-fix arbreth refunded the leftover ~836 gas back to the caller (revm's halt(ReentrancySentryOOG) doesn't spend gas, while geth consumes all forwarded gas on non-Revert errors), producing gasUsed=189,960 vs canon 190,818 (Δ -858). The fix in stylus_call_trampoline's run_evm_bytecode path matches geth's evm.Call: only Revert preserves remaining gas; every other failure consumes the full forwarded amount. Locks gasUsed=190,818 = canon byte-for-byte.",
   "genesis": {
     "config": {
       "chainId": 421614,
@@ -126,7 +126,6 @@
   "messages": [
     {
       "msgIdx": 1,
-      "delayedMessagesRead": 1,
       "message": {
         "header": {
           "kind": 3,
@@ -136,23 +135,75 @@
           "baseFeeL1": 0
         },
         "l2Msg": "BAL5AfKDBm7uggEtgIQHJw4AgwNfsZQ0T0DKXM0TZCr37qir51ZtGuXKT4C5AYSWtsUIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAACYC2Lag+/z1FdsZHmTsMHX+vF8cwAAAAAAAAAAAAAAAP7dSx/+De74TyLkKslJBBQrqZgHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE9k+CegAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASwAGgXTrA4LQoEMRbOFs9FC7lVNZU9YTm24Y024F1y26hdm6gLIYEAFght8iDUQUrR+ayM+F9zGX1+SYRwOwdXQCwNYs="
-      }
+      },
+      "delayedMessagesRead": 1
     }
   ],
   "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0x81900dd2f9e1ab4ee14fc33acd28c61abf07ae5306210c2fd4c40e31a374ea68",
+        "state_root": "0xc7e3a5298bc4ed60e3382e4ef3b72bd3e841960ea49f430082ceb01218ba76ce",
+        "receipts_root": "0x05c5a247c143ff8b635a2d96a45faaaf70db04d3ad660ce350205eea0c2db33b",
+        "transactions_root": "0xbd582505b66d5468a599eab0e2980f3502a3e10a552f1796eae617ec73ffdfd1",
+        "gas_used": 190818
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
     "txReceipts": [
+      {
+        "txHash": "0x88592ebcc190521937a08d47c7bdb1f492ea121bfe00b9cdd05de1dd099c810b",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 139306945,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
       {
         "txHash": "0xdb77b3b2a8912f3f7a974a566b4c0a5f04c51a0fff0f619e2649756afda6b404",
         "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 190818,
+        "cumulativeGasUsed": 190818,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 139306945,
         "from": "0xa8a7da49bf284f2e00fc8857464c1652095ca338",
         "to": "0x344f40ca5ccd13642af7eea8abe7566d1ae5ca4f",
-        "status": 1,
-        "gasUsed": 190818
+        "logs": [
+          {
+            "address": "0x980b62da83eff3d4576c647993b0c1d7faf17c73",
+            "topics": [
+              "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+              "0x000000000000000000000000344f40ca5ccd13642af7eea8abe7566d1ae5ca4f",
+              "0x000000000000000000000000101f443b4d1b059569d643917553c771e1b9663e"
+            ],
+            "data": "0x00000000000000000000000000000000000000000000000000000004f64f827a",
+            "blockNumber": 1,
+            "txHash": "0xdb77b3b2a8912f3f7a974a566b4c0a5f04c51a0fff0f619e2649756afda6b404",
+            "logIndex": 0
+          },
+          {
+            "address": "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+            "topics": [
+              "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+              "0x000000000000000000000000344f40ca5ccd13642af7eea8abe7566d1ae5ca4f",
+              "0x000000000000000000000000101f443b4d1b059569d643917553c771e1b9663e"
+            ],
+            "data": "0x0000000000000000000000000000000000000000000000000000000000000012",
+            "blockNumber": 1,
+            "txHash": "0xdb77b3b2a8912f3f7a974a566b4c0a5f04c51a0fff0f619e2649756afda6b404",
+            "logIndex": 1
+          }
+        ]
       }
-    ],
-    "blocks": [],
-    "balances": [],
-    "storage": [],
-    "eth_calls": []
+    ]
   }
 }
