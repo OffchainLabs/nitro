@@ -497,3 +497,207 @@ fn stylus_create_hostio_oversize() {
     let steps = build_steps(calldata, stylus_addr());
     run_named("stylus_create_oversize", steps);
 }
+
+// ── Stylus DELEGATECALL/STATICCALL into Solidity (sub-call variants) ───────
+
+fn forward_delegate_calldata(target: Address, inner: &[u8]) -> Bytes {
+    let mut out = Vec::with_capacity(4 + 96 + inner.len());
+    out.extend_from_slice(&selector("forwardDelegate(address,bytes)"));
+    let mut pad = [0u8; 32];
+    pad[12..].copy_from_slice(target.as_slice());
+    out.extend_from_slice(&pad);
+    let mut off32 = [0u8; 32];
+    off32[31] = 0x40;
+    out.extend_from_slice(&off32);
+    let mut len32 = [0u8; 32];
+    len32[24..32].copy_from_slice(&(inner.len() as u64).to_be_bytes());
+    out.extend_from_slice(&len32);
+    out.extend_from_slice(inner);
+    while out.len() % 32 != 0 {
+        out.push(0);
+    }
+    Bytes::from(out)
+}
+
+fn forward_static_calldata(target: Address, inner: &[u8]) -> Bytes {
+    let mut out = Vec::with_capacity(4 + 96 + inner.len());
+    out.extend_from_slice(&selector("forwardStatic(address,bytes)"));
+    let mut pad = [0u8; 32];
+    pad[12..].copy_from_slice(target.as_slice());
+    out.extend_from_slice(&pad);
+    let mut off32 = [0u8; 32];
+    off32[31] = 0x40;
+    out.extend_from_slice(&off32);
+    let mut len32 = [0u8; 32];
+    len32[24..32].copy_from_slice(&(inner.len() as u64).to_be_bytes());
+    out.extend_from_slice(&len32);
+    out.extend_from_slice(inner);
+    while out.len() % 32 != 0 {
+        out.push(0);
+    }
+    Bytes::from(out)
+}
+
+#[test]
+#[ignore]
+fn stylus_delegate_to_factory_create() {
+    let inner = encode_create_calldata(&ctor_sload_only());
+    let calldata = forward_delegate_calldata(factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_delegate_create", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_static_call_to_factory_create_should_fail() {
+    let inner = encode_create_calldata(&ctor_sload_only());
+    let calldata = forward_static_calldata(factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_static_create_fail", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_static_call_view_only() {
+    // factory call but with a no-side-effect inner — must succeed under STATICCALL
+    let inner: &[u8] = &[0xfe];
+    let calldata = forward_static_calldata(factory_address(), inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_static_view", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_delegate_preserves_storage_context() {
+    // delegate to a Solidity helper that does SSTORE; storage should land
+    // on stylus_addr (delegate caller), not the target
+    let target = factory_address();
+    let ss_runtime: &[u8] = &[
+        0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3,
+    ];
+    let _ = ss_runtime;
+    let inner: &[u8] = &[0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3];
+    let calldata = forward_delegate_calldata(target, inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_delegate_sstore", steps);
+}
+
+// ── Adversarial constructor patterns ───────────────────────────────────────
+
+fn ctor_sstore_then_revert() -> Vec<u8> {
+    vec![
+        0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xfd,
+    ]
+}
+
+fn ctor_oog() -> Vec<u8> {
+    let mut out = Vec::with_capacity(40);
+    out.extend_from_slice(&[0x5b]);
+    out.extend_from_slice(&[0x60, 0x00, 0x56]);
+    out
+}
+
+fn ctor_max_init_code_size() -> Vec<u8> {
+    let mut out = vec![0x00u8; 49_152];
+    out.push(0xfe);
+    out
+}
+
+fn ctor_multi_sstore() -> Vec<u8> {
+    let mut out = Vec::with_capacity(50);
+    for k in 0..5u8 {
+        out.extend_from_slice(&[0x60, k * 10 + 1, 0x60, k, 0x55]);
+    }
+    out.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0xf3]);
+    out
+}
+
+fn ctor_with_log() -> Vec<u8> {
+    vec![
+        0x60, 0xaa, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xa0, 0x60, 0x00, 0x60, 0x00, 0xf3,
+    ]
+}
+
+fn ctor_calls_then_returns_subcall_addr(target: Address) -> Vec<u8> {
+    let mut out = Vec::with_capacity(80);
+    out.extend_from_slice(&[
+        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00,
+    ]);
+    out.push(0x73);
+    out.extend_from_slice(target.as_slice());
+    out.extend_from_slice(&[
+        0x5a, 0xf1, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+    ]);
+    out
+}
+
+#[test]
+#[ignore]
+fn create_constructor_sstore_then_revert() {
+    let inner = encode_create_calldata(&ctor_sstore_then_revert());
+    let calldata = wrap_via_stylus_forward(stylus_addr(), factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("ctor_sstore_revert", steps);
+}
+
+#[test]
+#[ignore]
+fn create_constructor_runs_oog() {
+    let inner = encode_create_calldata(&ctor_oog());
+    let calldata = wrap_via_stylus_forward(stylus_addr(), factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("ctor_oog", steps);
+}
+
+#[test]
+#[ignore]
+fn create_constructor_at_max_init_code_size() {
+    let inner = encode_create_calldata(&ctor_max_init_code_size());
+    let calldata = wrap_via_stylus_forward(stylus_addr(), factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("ctor_max_init", steps);
+}
+
+#[test]
+#[ignore]
+fn create_constructor_multi_sstore() {
+    let inner = encode_create_calldata(&ctor_multi_sstore());
+    let calldata = wrap_via_stylus_forward(stylus_addr(), factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("ctor_multi_sstore", steps);
+}
+
+#[test]
+#[ignore]
+fn create_constructor_emits_log() {
+    let inner = encode_create_calldata(&ctor_with_log());
+    let calldata = wrap_via_stylus_forward(stylus_addr(), factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("ctor_log", steps);
+}
+
+#[test]
+#[ignore]
+fn create_constructor_subcall_returns_data() {
+    let target = factory_address();
+    let inner = encode_create_calldata(&ctor_calls_then_returns_subcall_addr(target));
+    let calldata = wrap_via_stylus_forward(stylus_addr(), factory_address(), &inner);
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("ctor_subcall_return", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_sstore_then_revert() {
+    let calldata = do_create_calldata(U256::ZERO, &ctor_sstore_then_revert());
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_ctor_sstore_revert", steps);
+}
+
+#[test]
+#[ignore]
+fn stylus_create_hostio_oog() {
+    let calldata = do_create_calldata(U256::ZERO, &ctor_oog());
+    let steps = build_steps(calldata, stylus_addr());
+    run_named("stylus_ctor_oog", steps);
+}
