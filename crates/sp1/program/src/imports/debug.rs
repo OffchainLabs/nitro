@@ -1,17 +1,17 @@
+use caller_env::MemAccess;
 use prover::value::Value;
 use wasmer::FunctionEnvMut;
 
-use crate::{Escape, MaybeEscape, Ptr, read_slice, stylus::StylusCustomEnvData};
+use crate::{Escape, MaybeEscape, Ptr, state::gp, stylus::{StylusCustomEnvData, stylus_env}};
 
 pub fn console_log_text(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
     ptr: Ptr,
     len: u32,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, _data) = stylus_env(&mut ctx);
 
-    let text = read_slice(ptr, len as usize, &memory)?;
+    let text = mem.read_slice(gp(ptr), len as usize);
     println!("Stylus says: {}", String::from_utf8_lossy(&text));
     Ok(())
 }

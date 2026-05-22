@@ -2,11 +2,11 @@
 
 use core::ops::Deref;
 
-use ::caller_env::wavmio as caller_env;
-use wasmer::{FunctionEnvMut, MemoryView};
+use ::caller_env::{MemAccess, wasmer_traits::WasmerMem, wavmio as caller_env};
+use wasmer::FunctionEnvMut;
 
 use crate::{
-    Escape, MaybeEscape, Ptr, read_bytes32,
+    Escape, MaybeEscape, Ptr,
     replay::CustomEnvData,
     state::{gp, sp1_env},
 };
@@ -144,7 +144,7 @@ pub fn greedy_resolve_typed_preimage(
 
 fn greedy_read(
     data: &[u8],
-    memory: &MemoryView,
+    mem: &mut WasmerMem,
     offset: usize,
     available: u32,
     out_ptr: Ptr,
@@ -154,7 +154,7 @@ fn greedy_read(
     let read = data
         .get(offset..(offset + len as usize))
         .unwrap_or_default();
-    memory.write(out_ptr.offset() as u64, read)?;
+    mem.write_slice(gp(out_ptr), read);
     Ok(full_len)
 }
 
@@ -167,10 +167,9 @@ fn greedy_resolve_typed_preimage_impl(
     out_ptr: Ptr,
     name: &str,
 ) -> Result<u32, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = sp1_env(&mut ctx);
     let offset = offset as usize;
-    let hash = read_bytes32(hash_ptr, &memory)?;
+    let hash = mem.read_bytes32(gp(hash_ptr));
     let Some(preimage) = data
         .input()
         .preimages
@@ -182,5 +181,5 @@ fn greedy_resolve_typed_preimage_impl(
             hex::encode(hash)
         ));
     };
-    greedy_read(preimage, &memory, offset, available, out_ptr)
+    greedy_read(preimage, &mut mem, offset, available, out_ptr)
 }

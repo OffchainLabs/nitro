@@ -8,11 +8,13 @@ use arbutil::{
 };
 use eyre::eyre;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
-use wasmer::{FunctionEnvMut, MemoryView};
+use caller_env::{MemAccess, wasmer_traits::WasmerMem};
+use wasmer::FunctionEnvMut;
 
 use crate::{
-    CallInputs, Escape, MaybeEscape, Ptr, keccak, read_bytes20, read_bytes32, read_slice,
-    stylus::StylusCustomEnvData,
+    CallInputs, Escape, MaybeEscape, Ptr, keccak,
+    state::gp,
+    stylus::{StylusCustomEnvData, stylus_env},
 };
 
 pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32, Escape> {
@@ -23,13 +25,12 @@ pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32
 }
 
 pub fn read_args(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::READ_ARGS_BASE_INK)?;
     data.pay_for_write(data.calldata.len() as u32)?;
 
-    memory.write(ptr.offset() as u64, &data.calldata)?;
+    mem.write_slice(gp(ptr), &data.calldata);
 
     Ok(())
 }
@@ -39,8 +40,7 @@ pub fn storage_load_bytes32(
     key: Ptr,
     dest: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::STORAGE_LOAD_BASE_INK)?;
 
@@ -52,11 +52,11 @@ pub fn storage_load_bytes32(
     };
     data.require_gas(COLD_SLOAD_GAS + StorageCache::REQUIRED_ACCESS_GAS + evm_api_gas_to_use)?;
 
-    let key = read_bytes32(key, &memory)?;
+    let key = mem.read_bytes32(gp(key));
 
     let (value, gas_cost) = data.get_bytes32(key, evm_api_gas_to_use);
     data.buy_gas(gas_cost)?;
-    memory.write(dest.offset() as u64, value.as_slice())?;
+    mem.write_slice(gp(dest), value.as_slice());
 
     Ok(())
 }
@@ -66,15 +66,14 @@ pub fn transient_load_bytes32(
     key: Ptr,
     dest: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::TRANSIENT_LOAD_BASE_INK)?;
     data.buy_gas(TLOAD_GAS)?;
 
-    let key = read_bytes32(key, &memory)?;
+    let key = mem.read_bytes32(gp(key));
     let value = data.get_transient_bytes32(key);
-    memory.write(dest.offset() as u64, value.as_slice())?;
+    mem.write_slice(gp(dest), value.as_slice());
 
     Ok(())
 }
@@ -84,14 +83,13 @@ pub fn storage_cache_bytes32(
     key: Ptr,
     value: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::STORAGE_CACHE_BASE_INK)?;
     data.require_gas(SSTORE_SENTRY_GAS + StorageCache::REQUIRED_ACCESS_GAS)?;
 
-    let key = read_bytes32(key, &memory)?;
-    let value = read_bytes32(value, &memory)?;
+    let key = mem.read_bytes32(gp(key));
+    let value = mem.read_bytes32(gp(value));
 
     let gas_cost = data.cache_bytes32(key, value);
     data.buy_gas(gas_cost)?;
@@ -104,14 +102,13 @@ pub fn transient_store_bytes32(
     key: Ptr,
     value: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::TRANSIENT_STORE_BASE_INK)?;
     data.buy_gas(TSTORE_GAS)?;
 
-    let key = read_bytes32(key, &memory)?;
-    let value = read_bytes32(value, &memory)?;
+    let key = mem.read_bytes32(gp(key));
+    let value = mem.read_bytes32(gp(value));
 
     data.set_transient_bytes32(key, value)?;
 
@@ -144,14 +141,13 @@ pub fn write_result(
     ptr: Ptr,
     len: u32,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::WRITE_RESULT_BASE_INK)?;
     data.pay_for_read(len)?;
     data.pay_for_read(len)?;
 
-    data.outs = read_slice(ptr, len as usize, &memory)?;
+    data.outs = mem.read_slice(gp(ptr), len as usize);
 
     Ok(())
 }
@@ -185,8 +181,7 @@ pub fn call_contract(
     gas: u64,
     ret_len: Ptr,
 ) -> Result<u8, Escape> {
-    let (ctx_data, store) = ctx.data_and_store_mut();
-    let memory = ctx_data.memory.clone().unwrap().view(&store);
+    let (mut mem, ctx_data) = stylus_env(&mut ctx);
 
     ctx_data.buy_ink(hostio::CALL_CONTRACT_BASE_INK)?;
     ctx_data.pay_for_read(data_len)?;
@@ -198,14 +193,14 @@ pub fn call_contract(
         gas_left,
         gas_req,
         value,
-    } = ctx_data.parse_call_inputs(&memory, contract, data, Gas(gas), data_len, Some(value))?;
+    } = ctx_data.parse_call_inputs(&mem, contract, data, Gas(gas), data_len, Some(value))?;
 
     let (outs_len, gas_cost, status) =
         ctx_data.contract_call(contract, &input, gas_left, gas_req, value.unwrap());
 
     ctx_data.buy_gas(gas_cost)?;
     ctx_data.evm_data.return_data_len = outs_len;
-    ret_len.write(&memory, outs_len)?;
+    mem.write_u32(gp(ret_len), outs_len);
 
     Ok(status as u8)
 }
@@ -218,8 +213,7 @@ pub fn delegate_call_contract(
     gas: u64,
     ret_len: Ptr,
 ) -> Result<u8, Escape> {
-    let (ctx_data, store) = ctx.data_and_store_mut();
-    let memory = ctx_data.memory.clone().unwrap().view(&store);
+    let (mut mem, ctx_data) = stylus_env(&mut ctx);
 
     ctx_data.buy_ink(hostio::CALL_CONTRACT_BASE_INK)?;
     ctx_data.pay_for_read(data_len)?;
@@ -231,13 +225,13 @@ pub fn delegate_call_contract(
         gas_left,
         gas_req,
         ..
-    } = ctx_data.parse_call_inputs(&memory, contract, data, Gas(gas), data_len, None)?;
+    } = ctx_data.parse_call_inputs(&mem, contract, data, Gas(gas), data_len, None)?;
 
     let (outs_len, gas_cost, status) = ctx_data.delegate_call(contract, &input, gas_left, gas_req);
 
     ctx_data.buy_gas(gas_cost)?;
     ctx_data.evm_data.return_data_len = outs_len;
-    ret_len.write(&memory, outs_len)?;
+    mem.write_u32(gp(ret_len), outs_len);
 
     Ok(status as u8)
 }
@@ -250,8 +244,7 @@ pub fn static_call_contract(
     gas: u64,
     ret_len: Ptr,
 ) -> Result<u8, Escape> {
-    let (ctx_data, store) = ctx.data_and_store_mut();
-    let memory = ctx_data.memory.clone().unwrap().view(&store);
+    let (mut mem, ctx_data) = stylus_env(&mut ctx);
 
     ctx_data.buy_ink(hostio::CALL_CONTRACT_BASE_INK)?;
     ctx_data.pay_for_read(data_len)?;
@@ -263,13 +256,13 @@ pub fn static_call_contract(
         gas_left,
         gas_req,
         ..
-    } = ctx_data.parse_call_inputs(&memory, contract, data, Gas(gas), data_len, None)?;
+    } = ctx_data.parse_call_inputs(&mem, contract, data, Gas(gas), data_len, None)?;
 
     let (outs_len, gas_cost, status) = ctx_data.static_call(contract, &input, gas_left, gas_req);
 
     ctx_data.buy_gas(gas_cost)?;
     ctx_data.evm_data.return_data_len = outs_len;
-    ret_len.write(&memory, outs_len)?;
+    mem.write_u32(gp(ret_len), outs_len);
 
     Ok(status as u8)
 }
@@ -282,15 +275,14 @@ pub fn create1(
     contract: Ptr,
     revert_data_len: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::CREATE1_BASE_INK)?;
     data.pay_for_read(code_len)?;
     data.pay_for_read(code_len)?;
 
-    let code = read_slice(code, code_len as usize, &memory)?;
-    let endowment = read_bytes32(endowment, &memory)?;
+    let code = mem.read_slice(gp(code), code_len as usize);
+    let endowment = mem.read_bytes32(gp(endowment));
     let gas = data.gas_left()?;
 
     let (result, ret_len, gas_cost) = data.create1(code, endowment, gas);
@@ -298,8 +290,8 @@ pub fn create1(
 
     data.buy_gas(gas_cost)?;
     data.evm_data.return_data_len = ret_len;
-    revert_data_len.write(&memory, ret_len)?;
-    memory.write(contract.offset() as u64, result.as_slice())?;
+    mem.write_u32(gp(revert_data_len), ret_len);
+    mem.write_slice(gp(contract), result.as_slice());
 
     Ok(())
 }
@@ -313,16 +305,15 @@ pub fn create2(
     contract: Ptr,
     revert_data_len: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::CREATE2_BASE_INK)?;
     data.pay_for_read(code_len)?;
     data.pay_for_read(code_len)?;
 
-    let code = read_slice(code, code_len as usize, &memory)?;
-    let endowment = read_bytes32(endowment, &memory)?;
-    let salt = read_bytes32(salt, &memory)?;
+    let code = mem.read_slice(gp(code), code_len as usize);
+    let endowment = mem.read_bytes32(gp(endowment));
+    let salt = mem.read_bytes32(gp(salt));
     let gas = data.gas_left()?;
 
     let (result, ret_len, gas_cost) = data.create2(code, endowment, salt, gas);
@@ -330,8 +321,8 @@ pub fn create2(
 
     data.buy_gas(gas_cost)?;
     data.evm_data.return_data_len = ret_len;
-    revert_data_len.write(&memory, ret_len)?;
-    memory.write(contract.offset() as u64, result.as_slice())?;
+    mem.write_u32(gp(revert_data_len), ret_len);
+    mem.write_slice(gp(contract), result.as_slice());
 
     Ok(())
 }
@@ -342,8 +333,7 @@ pub fn read_return_data(
     offset: u32,
     size: u32,
 ) -> Result<u32, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::READ_RETURN_DATA_BASE_INK)?;
 
@@ -358,7 +348,7 @@ pub fn read_return_data(
 
     let out_len = out_slice.len() as u32;
     if out_len > 0 {
-        memory.write(dest.offset() as u64, out_slice)?;
+        mem.write_slice(gp(dest), out_slice);
     }
     Ok(out_len)
 }
@@ -376,8 +366,7 @@ pub fn emit_log(
     len: u32,
     topics: u32,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::EMIT_LOG_BASE_INK)?;
     if topics > 4 || len < topics * 32 {
@@ -386,7 +375,7 @@ pub fn emit_log(
     data.pay_for_read(len)?;
     data.pay_for_evm_log(topics, len - topics * 32)?;
 
-    let log_data = read_slice(log_data, len as usize, &memory)?;
+    let log_data = mem.read_slice(gp(log_data), len as usize);
     data.emit_log(log_data, topics)
 }
 
@@ -395,16 +384,15 @@ pub fn account_balance(
     address: Ptr,
     ptr: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::ACCOUNT_BALANCE_BASE_INK)?;
     data.require_gas(COLD_ACCOUNT_GAS)?;
-    let address = read_bytes20(address, &memory)?;
+    let address = mem.read_bytes20(gp(address));
 
     let (balance, gas_cost) = data.account_balance(address);
     data.buy_gas(gas_cost)?;
-    memory.write(ptr.offset() as u64, balance.as_slice())?;
+    mem.write_slice(gp(ptr), balance.as_slice());
 
     Ok(())
 }
@@ -416,12 +404,11 @@ pub fn account_code(
     size: u32,
     dest: Ptr,
 ) -> Result<u32, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::ACCOUNT_CODE_BASE_INK)?;
     data.require_gas(COLD_ACCOUNT_GAS)?;
-    let address = read_bytes20(address, &memory)?;
+    let address = mem.read_bytes20(gp(address));
     let gas = data.gas_left()?;
 
     let arbos_version = data.evm_data.arbos_version;
@@ -433,7 +420,7 @@ pub fn account_code(
 
     let out_slice = slice_with_runoff(&code, offset, offset.saturating_add(size));
     let out_len = out_slice.len() as u32;
-    memory.write(dest.offset() as u64, out_slice)?;
+    mem.write_slice(gp(dest), out_slice);
 
     Ok(out_len)
 }
@@ -443,16 +430,15 @@ pub fn account_codehash(
     address: Ptr,
     ptr: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::ACCOUNT_CODE_HASH_BASE_INK)?;
     data.require_gas(COLD_ACCOUNT_GAS)?;
-    let address = read_bytes20(address, &memory)?;
+    let address = mem.read_bytes20(gp(address));
 
     let (hash, gas_cost) = data.account_codehash(address);
     data.buy_gas(gas_cost)?;
-    memory.write(ptr.offset() as u64, hash.as_slice())?;
+    mem.write_slice(gp(ptr), hash.as_slice());
 
     Ok(())
 }
@@ -461,12 +447,11 @@ pub fn account_code_size(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
     address: Ptr,
 ) -> Result<u32, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::ACCOUNT_CODE_SIZE_BASE_INK)?;
     data.require_gas(COLD_ACCOUNT_GAS)?;
-    let address = read_bytes20(address, &memory)?;
+    let address = mem.read_bytes20(gp(address));
     let gas = data.gas_left()?;
 
     let arbos_version = data.evm_data.arbos_version;
@@ -492,11 +477,10 @@ pub fn evm_ink_left(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u64,
 }
 
 pub fn block_basefee(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::BLOCK_BASEFEE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.block_basefee.as_slice())?;
+    mem.write_slice(gp(ptr), data.evm_data.block_basefee.as_slice());
 
     Ok(())
 }
@@ -509,11 +493,10 @@ pub fn chainid(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u64, Esca
 }
 
 pub fn block_coinbase(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::BLOCK_COINBASE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.block_coinbase.as_slice())?;
+    mem.write_slice(gp(ptr), data.evm_data.block_coinbase.as_slice());
 
     Ok(())
 }
@@ -540,23 +523,19 @@ pub fn block_timestamp(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u
 }
 
 pub fn contract_address(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::ADDRESS_BASE_INK)?;
-    memory.write(
-        ptr.offset() as u64,
-        data.evm_data.contract_address.as_slice(),
-    )?;
+    mem.write_slice(gp(ptr), data.evm_data.contract_address.as_slice());
 
     Ok(())
 }
 
 type U256 = ruint2::Uint<256, 4>;
 
-fn read_u256(ptr: Ptr, memory: &MemoryView) -> Result<(U256, Bytes32), Escape> {
-    let bytes = read_bytes32(ptr, memory)?;
-    Ok((bytes.into(), bytes))
+fn read_u256(mem: &WasmerMem, ptr: Ptr) -> (U256, Bytes32) {
+    let bytes = mem.read_bytes32(gp(ptr));
+    (bytes.into(), bytes)
 }
 
 pub fn math_div(
@@ -564,15 +543,14 @@ pub fn math_div(
     value: Ptr,
     divisor: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MATH_DIV_BASE_INK)?;
-    let (a, _) = read_u256(value, &memory)?;
-    let (b, _) = read_u256(divisor, &memory)?;
+    let (a, _) = read_u256(&mem, value);
+    let (b, _) = read_u256(&mem, divisor);
 
     let result: Bytes32 = a.checked_div(b).unwrap_or_default().into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    mem.write_slice(gp(value), result.as_slice());
 
     Ok(())
 }
@@ -582,15 +560,14 @@ pub fn math_mod(
     value: Ptr,
     modulus: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MATH_MOD_BASE_INK)?;
-    let (a, _) = read_u256(value, &memory)?;
-    let (b, _) = read_u256(modulus, &memory)?;
+    let (a, _) = read_u256(&mem, value);
+    let (b, _) = read_u256(&mem, modulus);
 
     let result: Bytes32 = a.checked_rem(b).unwrap_or_default().into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    mem.write_slice(gp(value), result.as_slice());
 
     Ok(())
 }
@@ -600,16 +577,15 @@ pub fn math_pow(
     value: Ptr,
     exponent: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MATH_POW_BASE_INK)?;
-    let (a, _) = read_u256(value, &memory)?;
-    let (b, b32) = read_u256(exponent, &memory)?;
+    let (a, _) = read_u256(&mem, value);
+    let (b, b32) = read_u256(&mem, exponent);
 
     data.pay_for_pow(&b32)?;
     let result: Bytes32 = a.wrapping_pow(b).into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    mem.write_slice(gp(value), result.as_slice());
 
     Ok(())
 }
@@ -620,16 +596,15 @@ pub fn math_add_mod(
     addend: Ptr,
     modulus: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MATH_ADD_MOD_BASE_INK)?;
-    let (a, _) = read_u256(value, &memory)?;
-    let (b, _) = read_u256(addend, &memory)?;
-    let (c, _) = read_u256(modulus, &memory)?;
+    let (a, _) = read_u256(&mem, value);
+    let (b, _) = read_u256(&mem, addend);
+    let (c, _) = read_u256(&mem, modulus);
 
     let result: Bytes32 = a.add_mod(b, c).into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    mem.write_slice(gp(value), result.as_slice());
 
     Ok(())
 }
@@ -640,46 +615,42 @@ pub fn math_mul_mod(
     multiplier: Ptr,
     modulus: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MATH_MUL_MOD_BASE_INK)?;
-    let (a, _) = read_u256(value, &memory)?;
-    let (b, _) = read_u256(multiplier, &memory)?;
-    let (c, _) = read_u256(modulus, &memory)?;
+    let (a, _) = read_u256(&mem, value);
+    let (b, _) = read_u256(&mem, multiplier);
+    let (c, _) = read_u256(&mem, modulus);
 
     let result: Bytes32 = a.mul_mod(b, c).into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    mem.write_slice(gp(value), result.as_slice());
 
     Ok(())
 }
 
 pub fn msg_sender(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MSG_SENDER_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.msg_sender.as_slice())?;
+    mem.write_slice(gp(ptr), data.evm_data.msg_sender.as_slice());
 
     Ok(())
 }
 
 pub fn msg_value(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::MSG_VALUE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.msg_value.as_slice())?;
+    mem.write_slice(gp(ptr), data.evm_data.msg_value.as_slice());
 
     Ok(())
 }
 
 pub fn tx_gas_price(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::TX_GAS_PRICE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.tx_gas_price.as_slice())?;
+    mem.write_slice(gp(ptr), data.evm_data.tx_gas_price.as_slice());
 
     Ok(())
 }
@@ -692,11 +663,10 @@ pub fn tx_ink_price(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32,
 }
 
 pub fn tx_origin(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.buy_ink(hostio::TX_ORIGIN_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.tx_origin.as_slice())?;
+    mem.write_slice(gp(ptr), data.evm_data.tx_origin.as_slice());
 
     Ok(())
 }
@@ -707,13 +677,12 @@ pub fn native_keccak256(
     len: u32,
     output: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = stylus_env(&mut ctx);
 
     data.pay_for_keccak(len)?;
-    let preimage = read_slice(input, len as usize, &memory)?;
+    let preimage = mem.read_slice(gp(input), len as usize);
     let digest = keccak(&preimage);
-    memory.write(output.offset() as u64, &digest)?;
+    mem.write_slice(gp(output), &digest);
 
     Ok(())
 }
