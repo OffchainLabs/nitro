@@ -20,7 +20,6 @@ pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x6b,
 ]);
 
-const INITIAL_MAX_FRAGMENT_COUNT: u8 = 4;
 // ArbOS version where MaxFragmentCount was introduced.
 const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = 60;
 // ArbOS version where collectTips storage flag was introduced.
@@ -491,7 +490,7 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
     let bytes = val.to_be_bytes::<32>();
     let mut count = bytes[29];
     if count == 0 {
-        count = INITIAL_MAX_FRAGMENT_COUNT;
+        count = arbos::programs::params::INITIAL_MAX_FRAGMENT_COUNT;
     }
     let mut out = [0u8; 32];
     out[31] = count;
