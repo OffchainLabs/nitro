@@ -1,5 +1,4 @@
 pub mod imports;
-mod memory;
 pub mod platform;
 pub mod replay;
 mod state;
