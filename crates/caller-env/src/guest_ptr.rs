@@ -38,8 +38,4 @@ impl GuestPtr {
     pub fn new(ptr: u32) -> Self {
         Self(ptr)
     }
-
-    pub fn as_u32(self) -> u32 {
-        self.0
-    }
 }
