@@ -6,7 +6,7 @@ use core::ops::{Add, AddAssign, Deref};
 /// Represents a pointer to a Guest WASM's memory.
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(transparent)]
-pub struct GuestPtr(pub u32);
+pub struct GuestPtr(u32);
 
 impl Add<u32> for GuestPtr {
     type Output = Self;
@@ -43,7 +43,7 @@ impl Deref for GuestPtr {
 }
 
 impl GuestPtr {
-    pub fn to_u64(self) -> u64 {
-        self.into()
+    pub fn new(ptr: u32) -> Self {
+        Self(ptr)
     }
 }

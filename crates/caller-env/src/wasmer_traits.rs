@@ -13,7 +13,7 @@ unsafe impl FromToNativeWasmType for GuestPtr {
     }
 
     fn to_native(self) -> i32 {
-        self.0.to_native()
+        u32::from(self).to_native()
     }
 }
 
@@ -31,6 +31,6 @@ unsafe impl FromToNativeWasmType for Errno {
 
 impl<T> From<GuestPtr> for WasmPtr<T> {
     fn from(value: GuestPtr) -> Self {
-        WasmPtr::new(value.0)
+        WasmPtr::new(value.into())
     }
 }

@@ -84,5 +84,5 @@ pub(crate) fn sp1_env<'a>(
 
 /// Converts a wasmer `Ptr` (WasmPtr<u32>) to a caller-env `GuestPtr`.
 pub(crate) fn gp(p: crate::Ptr) -> GuestPtr {
-    GuestPtr(p.offset())
+    GuestPtr::new(p.offset())
 }
