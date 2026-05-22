@@ -23,11 +23,11 @@ import (
 	"github.com/offchainlabs/nitro/bold/challenge/tree"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -57,7 +57,7 @@ func (e *specEdge) GetTotalChallengeLevels(ctx context.Context) uint8 {
 	return e.totalChallengeLevels
 }
 
-func (e *specEdge) MiniStaker() option.Option[common.Address] {
+func (e *specEdge) MiniStaker() util_containers.Option[common.Address] {
 	return e.miniStaker
 }
 
@@ -141,35 +141,35 @@ func (e *specEdge) HasChildren(ctx context.Context) (bool, error) {
 }
 
 // LowerChild of the edge, if any.
-func (e *specEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
+func (e *specEdge) LowerChild(ctx context.Context) (util_containers.Option[protocol.EdgeId], error) {
 	if e.lowerChild.IsSome() {
 		return e.lowerChild, nil
 	}
 	edge, err := e.fetchEdge(ctx)
 	if err != nil {
-		return option.None[protocol.EdgeId](), err
+		return util_containers.None[protocol.EdgeId](), err
 	}
 	if edge.LowerChildId == ([32]byte{}) {
-		return option.None[protocol.EdgeId](), nil
+		return util_containers.None[protocol.EdgeId](), nil
 	}
-	return option.Some(protocol.EdgeId{
+	return util_containers.Some(protocol.EdgeId{
 		Hash: edge.LowerChildId,
 	}), nil
 }
 
 // UpperChild of the edge, if any.
-func (e *specEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
+func (e *specEdge) UpperChild(ctx context.Context) (util_containers.Option[protocol.EdgeId], error) {
 	if e.upperChild.IsSome() {
 		return e.upperChild, nil
 	}
 	edge, err := e.fetchEdge(ctx)
 	if err != nil {
-		return option.None[protocol.EdgeId](), err
+		return util_containers.None[protocol.EdgeId](), err
 	}
 	if edge.UpperChildId == ([32]byte{}) {
-		return option.None[protocol.EdgeId](), nil
+		return util_containers.None[protocol.EdgeId](), nil
 	}
-	return option.Some(protocol.EdgeId{
+	return util_containers.Some(protocol.EdgeId{
 		Hash: edge.UpperChildId,
 	}), nil
 }
@@ -184,11 +184,11 @@ func (e *specEdge) OriginId() protocol.OriginId {
 }
 
 // ClaimId of the edge, if any.
-func (e *specEdge) ClaimId() option.Option[protocol.ClaimId] {
+func (e *specEdge) ClaimId() util_containers.Option[protocol.ClaimId] {
 	if e.inner.ClaimId == [32]byte{} {
-		return option.None[protocol.ClaimId]()
+		return util_containers.None[protocol.ClaimId]()
 	}
-	return option.Some(protocol.ClaimId(e.inner.ClaimId))
+	return util_containers.Some(protocol.ClaimId(e.inner.ClaimId))
 }
 
 // HasLengthOneRival returns true if there's a length one rival.
@@ -238,9 +238,9 @@ func (h *honestEdge) Bisect(
 	if err != nil {
 		return nil, nil, err
 	}
-	var upperEdge option.Option[protocol.SpecEdge]
-	var lowerId option.Option[protocol.EdgeId]
-	var lowerEdge option.Option[protocol.SpecEdge]
+	var upperEdge util_containers.Option[protocol.SpecEdge]
+	var lowerId util_containers.Option[protocol.EdgeId]
+	var lowerEdge util_containers.Option[protocol.SpecEdge]
 	if !upperId.IsNone() {
 		upperEdge, err = e.manager.GetEdge(ctx, upperId.Unwrap())
 		if err != nil {
@@ -541,14 +541,14 @@ func calculateMutualId(level uint8, originId [32]byte, startHeight *big.Int, sta
 func (cm *specChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
-) (option.Option[protocol.SpecEdge], error) {
+) (util_containers.Option[protocol.SpecEdge], error) {
 	edge, err := cm.caller.GetEdge(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), edgeId.Hash)
 	if err != nil {
-		return option.None[protocol.SpecEdge](), err
+		return util_containers.None[protocol.SpecEdge](), err
 	}
-	miniStaker := option.None[common.Address]()
+	miniStaker := util_containers.None[common.Address]()
 	if edge.Staker != (common.Address{}) {
-		miniStaker = option.Some(edge.Staker)
+		miniStaker = util_containers.Some(edge.Staker)
 	}
 	mutual, err := calculateMutualId(
 		edge.Level,
@@ -558,19 +558,19 @@ func (cm *specChallengeManager) GetEdge(
 		edge.EndHeight,
 	)
 	if err != nil {
-		return option.None[protocol.SpecEdge](), err
+		return util_containers.None[protocol.SpecEdge](), err
 	}
 	if !edge.StartHeight.IsUint64() {
-		return option.None[protocol.SpecEdge](), errors.New("start height not a uint64")
+		return util_containers.None[protocol.SpecEdge](), errors.New("start height not a uint64")
 	}
 	if !edge.EndHeight.IsUint64() {
-		return option.None[protocol.SpecEdge](), errors.New("end height not a uint64")
+		return util_containers.None[protocol.SpecEdge](), errors.New("end height not a uint64")
 	}
 	assertionHash, err := cm.caller.GetPrevAssertionHash(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), edgeId.Hash)
 	if err != nil {
-		return option.Option[protocol.SpecEdge]{}, err
+		return util_containers.Option[protocol.SpecEdge]{}, err
 	}
-	return option.Some(protocol.SpecEdge(&specEdge{
+	return util_containers.Some(protocol.SpecEdge(&specEdge{
 		id:                   edgeId.Hash,
 		mutualId:             mutual,
 		manager:              cm,
@@ -615,13 +615,13 @@ func (e *specEdge) fetchEdge(
 		e.isConfirmed = true
 	}
 	if edge.ConfirmedAtBlock != 0 {
-		e.confirmedAtBlock = option.Some(edge.ConfirmedAtBlock)
+		e.confirmedAtBlock = util_containers.Some(edge.ConfirmedAtBlock)
 	}
 	if edge.LowerChildId != ([32]byte{}) {
-		e.lowerChild = option.Some(protocol.EdgeId{Hash: edge.LowerChildId})
+		e.lowerChild = util_containers.Some(protocol.EdgeId{Hash: edge.LowerChildId})
 	}
 	if edge.UpperChildId != ([32]byte{}) {
-		e.upperChild = option.Some(protocol.EdgeId{Hash: edge.UpperChildId})
+		e.upperChild = util_containers.Some(protocol.EdgeId{Hash: edge.UpperChildId})
 	}
 	return edge, nil
 }
