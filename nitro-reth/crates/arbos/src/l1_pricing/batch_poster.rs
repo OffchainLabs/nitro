@@ -22,7 +22,7 @@ pub struct BatchPostersTable<D> {
 
 pub struct BatchPosterState<D> {
     funds_due: StorageBackedBigInt<D>,
-    pay_to: StorageBackedAddress<D>,
+    pay_to: StorageBackedAddress,
 }
 
 pub struct FundsDueItem {
@@ -43,9 +43,8 @@ pub fn initialize_batch_posters_table<D: Database, B: StorageBackend>(
     addrs.add(backend, initial_poster)?;
 
     let bp_storage = poster_info.open_sub_storage(initial_poster.as_slice());
-    let pay_to =
-        StorageBackedAddress::new(bp_storage.state_ptr(), bp_storage.base_key(), PAY_TO_OFFSET);
-    pay_to.set(initial_poster)?;
+    let pay_to = StorageBackedAddress::new(bp_storage.base_key(), PAY_TO_OFFSET);
+    pay_to.set(backend, initial_poster)?;
 
     let funds_due = StorageBackedBigInt::new(
         bp_storage.state_ptr(),
@@ -122,7 +121,7 @@ impl<D: Database> BatchPostersTable<D> {
 
         let bp_state = self.internal_open(poster_address);
         bp_state.funds_due.set(U256::ZERO)?;
-        bp_state.pay_to.set(pay_to)?;
+        bp_state.pay_to.set(backend, pay_to)?;
         self.poster_addrs.add(backend, poster_address)?;
         Ok(bp_state)
     }
@@ -135,11 +134,7 @@ impl<D: Database> BatchPostersTable<D> {
                 bp_storage.base_key(),
                 FUNDS_DUE_OFFSET,
             ),
-            pay_to: StorageBackedAddress::new(
-                bp_storage.state_ptr(),
-                bp_storage.base_key(),
-                PAY_TO_OFFSET,
-            ),
+            pay_to: StorageBackedAddress::new(bp_storage.base_key(), PAY_TO_OFFSET),
         }
     }
 
@@ -191,11 +186,15 @@ impl<D: Database> BatchPosterState<D> {
         Ok(self.funds_due.set(value)?)
     }
 
-    pub fn pay_to(&self) -> Result<Address, L1PricingError> {
-        Ok(self.pay_to.get()?)
+    pub fn pay_to<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, L1PricingError> {
+        Ok(self.pay_to.get(backend)?)
     }
 
-    pub fn set_pay_to(&self, addr: Address) -> Result<(), L1PricingError> {
-        Ok(self.pay_to.set(addr)?)
+    pub fn set_pay_to<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.pay_to.set(backend, addr)?)
     }
 }

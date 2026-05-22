@@ -106,42 +106,41 @@ impl StorageBackedBigUint {
 }
 
 /// Storage-backed Ethereum address (20 bytes, right-aligned in 32-byte slot).
-pub struct StorageBackedAddress<D> {
-    state: *mut revm::database::State<D>,
-    slot: U256,
+#[derive(Clone, Copy, Debug)]
+pub struct StorageBackedAddress {
+    pub slot: U256,
 }
 
-impl<D: Database> StorageBackedAddress<D> {
-    pub fn new(state: *mut revm::database::State<D>, base_key: B256, offset: u64) -> Self {
+impl StorageBackedAddress {
+    pub fn new(base_key: B256, offset: u64) -> Self {
         Self {
-            state,
             slot: compute_slot(base_key, offset),
         }
     }
 
-    pub fn get(&self) -> Result<Address, StorageError> {
-        let value = read_slot(self.state, self.slot)?;
+    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, StorageError> {
+        let value = backend
+            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .map_err(Into::into)?;
         decode_address(self.slot, value)
     }
 
-    pub fn set(&self, value: Address) -> Result<(), StorageError> {
+    pub fn set<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        value: Address,
+    ) -> Result<(), StorageError> {
         let mut value_bytes = [0u8; 32];
         value_bytes[12..32].copy_from_slice(value.as_slice());
-        write_slot(self.state, self.slot, U256::from_be_bytes(value_bytes))
+        backend
+            .sstore(
+                ARBOS_STATE_ADDRESS,
+                self.slot,
+                U256::from_be_bytes(value_bytes),
+            )
+            .map_err(Into::into)
     }
 }
-
-impl<D> Clone for StorageBackedAddress<D> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            slot: self.slot,
-        }
-    }
-}
-
-unsafe impl<D: Send> Send for StorageBackedAddress<D> {}
-unsafe impl<D: Sync> Sync for StorageBackedAddress<D> {}
 
 /// Storage-backed signed 64-bit integer, bit-reinterpreting `i64` as `u64`.
 pub struct StorageBackedInt64<D> {
@@ -241,28 +240,33 @@ fn nil_address_representation() -> U256 {
 }
 
 /// Storage-backed optional address, using `1 << 255` to represent `None`.
-pub struct StorageBackedAddressOrNil<D> {
-    state: *mut revm::database::State<D>,
-    slot: U256,
+#[derive(Clone, Copy, Debug)]
+pub struct StorageBackedAddressOrNil {
+    pub slot: U256,
 }
 
-impl<D: Database> StorageBackedAddressOrNil<D> {
-    pub fn new(state: *mut revm::database::State<D>, base_key: B256, offset: u64) -> Self {
+impl StorageBackedAddressOrNil {
+    pub fn new(base_key: B256, offset: u64) -> Self {
         Self {
-            state,
             slot: compute_slot(base_key, offset),
         }
     }
 
-    pub fn get(&self) -> Result<Option<Address>, StorageError> {
-        let value = read_slot(self.state, self.slot)?;
+    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<Option<Address>, StorageError> {
+        let value = backend
+            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .map_err(Into::into)?;
         if value == nil_address_representation() {
             return Ok(None);
         }
         decode_address(self.slot, value).map(Some)
     }
 
-    pub fn set(&self, value: Option<Address>) -> Result<(), StorageError> {
+    pub fn set<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        value: Option<Address>,
+    ) -> Result<(), StorageError> {
         let value_u256 = match value {
             None => nil_address_representation(),
             Some(addr) => {
@@ -271,18 +275,8 @@ impl<D: Database> StorageBackedAddressOrNil<D> {
                 U256::from_be_bytes(bytes)
             }
         };
-        write_slot(self.state, self.slot, value_u256)
+        backend
+            .sstore(ARBOS_STATE_ADDRESS, self.slot, value_u256)
+            .map_err(Into::into)
     }
 }
-
-impl<D> Clone for StorageBackedAddressOrNil<D> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            slot: self.slot,
-        }
-    }
-}
-
-unsafe impl<D: Send> Send for StorageBackedAddressOrNil<D> {}
-unsafe impl<D: Sync> Sync for StorageBackedAddressOrNil<D> {}

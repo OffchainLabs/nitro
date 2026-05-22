@@ -145,7 +145,7 @@ pub fn initialize_arbos_account<D: Database, B: Burner, C: StorageBackend>(
         let is_poster = poster_table.contains_poster(account.addr)?;
         if is_poster {
             let poster = poster_table.open_poster(backend, account.addr, false)?;
-            poster.set_pay_to(aggregator.fee_collector)?;
+            poster.set_pay_to(backend, aggregator.fee_collector)?;
         }
     }
     Ok(())

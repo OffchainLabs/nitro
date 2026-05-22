@@ -58,7 +58,7 @@ const ONE_IN_BIPS: u64 = 10000;
 /// L1 pricing state manages the cost model for L1 data posting.
 pub struct L1PricingState<D> {
     pub backing_storage: Storage<D>,
-    pay_rewards_to: StorageBackedAddress<D>,
+    pay_rewards_to: StorageBackedAddress,
     equilibration_units: StorageBackedBigUint,
     inertia: StorageBackedUint64,
     per_unit_reward: StorageBackedUint64,
@@ -83,7 +83,7 @@ pub fn initialize_l1_pricing_state<D: Database, B: StorageBackend>(
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
-    StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET).set(rewards_recipient)?;
+    StorageBackedAddress::new(base_key, PAY_REWARDS_TO_OFFSET).set(backend, rewards_recipient)?;
     StorageBackedBigUint::new(base_key, EQUILIBRATION_UNITS_OFFSET)
         .set(backend, U256::from(INITIAL_EQUILIBRATION_UNITS_V0))?;
     StorageBackedUint64::new(base_key, INERTIA_OFFSET).set(backend, INITIAL_INERTIA)?;
@@ -106,7 +106,7 @@ pub fn open_l1_pricing_state<D: Database>(
     let base_key = sto.base_key();
 
     L1PricingState {
-        pay_rewards_to: StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET),
+        pay_rewards_to: StorageBackedAddress::new(base_key, PAY_REWARDS_TO_OFFSET),
         equilibration_units: StorageBackedBigUint::new(base_key, EQUILIBRATION_UNITS_OFFSET),
         inertia: StorageBackedUint64::new(base_key, INERTIA_OFFSET),
         per_unit_reward: StorageBackedUint64::new(base_key, PER_UNIT_REWARD_OFFSET),
@@ -148,12 +148,19 @@ impl<D: Database> L1PricingState<D> {
 
     // --- Getters/Setters ---
 
-    pub fn pay_rewards_to(&self) -> Result<Address, L1PricingError> {
-        Ok(self.pay_rewards_to.get()?)
+    pub fn pay_rewards_to<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Address, L1PricingError> {
+        Ok(self.pay_rewards_to.get(backend)?)
     }
 
-    pub fn set_pay_rewards_to(&self, addr: Address) -> Result<(), L1PricingError> {
-        Ok(self.pay_rewards_to.set(addr)?)
+    pub fn set_pay_rewards_to<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.pay_rewards_to.set(backend, addr)?)
     }
 
     pub fn equilibration_units<B: StorageBackend>(
@@ -397,7 +404,7 @@ impl<D: Database> L1PricingState<D> {
         let bpt = self.batch_poster_table();
         let state = bpt.open_poster(backend, poster, false)?;
         let due = state.funds_due()?;
-        let pay_to = state.pay_to()?;
+        let pay_to = state.pay_to(backend)?;
         Ok((due, pay_to))
     }
 
@@ -540,7 +547,7 @@ impl<D: Database> L1PricingState<D> {
                 .saturating_sub(payment_for_rewards),
         )?;
 
-        let pay_rewards_to = self.pay_rewards_to().unwrap_or(Address::ZERO);
+        let pay_rewards_to = self.pay_rewards_to(backend).unwrap_or(Address::ZERO);
         if payment_for_rewards > U256::ZERO {
             let _ = transfer_fn(
                 L1_PRICER_FUNDS_POOL_ADDRESS,
@@ -557,7 +564,7 @@ impl<D: Database> L1PricingState<D> {
             transfer_amount = l1_fees;
         }
         if transfer_amount > U256::ZERO {
-            let addr_to_pay = poster_state.pay_to().unwrap_or(batch_poster);
+            let addr_to_pay = poster_state.pay_to(backend).unwrap_or(batch_poster);
             let _ = transfer_fn(L1_PRICER_FUNDS_POOL_ADDRESS, addr_to_pay, transfer_amount);
             l1_fees = l1_fees.saturating_sub(transfer_amount);
             self.set_l1_fees_available(backend, l1_fees)?;

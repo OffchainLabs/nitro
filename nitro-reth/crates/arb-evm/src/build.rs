@@ -382,10 +382,10 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             arb_precompiles::set_current_gas_backlog(backlog);
         }
 
-        if let Ok(addr) = arb_state.network_fee_account() {
+        if let Ok(addr) = arb_state.network_fee_account(state) {
             self.arb_ctx.network_fee_account = addr;
         }
-        if let Ok(addr) = arb_state.infra_fee_account() {
+        if let Ok(addr) = arb_state.infra_fee_account(state) {
             self.arb_ctx.infra_fee_account = addr;
         }
         if let Ok(level) = arb_state.brotli_compression_level(state) {
@@ -470,7 +470,9 @@ where
             let state_ptr: *mut State<DB> = db as *mut State<DB>;
             if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
                 if arb_state.filtered_transactions.is_filtered_free(ticket_id) {
-                    if let Ok(recipient) = arb_state.filtered_funds_recipient_or_default() {
+                    if let Ok(recipient) =
+                        arb_state.filtered_funds_recipient_or_default(unsafe { &mut *state_ptr })
+                    {
                         info.fee_refund_addr = recipient;
                         info.beneficiary = recipient;
                     }
@@ -1249,7 +1251,9 @@ where
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
                 if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
                     if arb_state.filtered_transactions.is_filtered_free(tx_hash) {
-                        if let Ok(recipient) = arb_state.filtered_funds_recipient_or_default() {
+                        if let Ok(recipient) = arb_state
+                            .filtered_funds_recipient_or_default(unsafe { &mut *state_ptr })
+                        {
                             to = recipient;
                         }
                         is_filtered = true;

@@ -100,9 +100,8 @@ fn initial_pay_rewards_to_is_readable() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
-    let _ = ps.pay_rewards_to().unwrap();
+    let _ = ps.pay_rewards_to(b).unwrap();
 }
 
 #[test]
@@ -110,11 +109,10 @@ fn set_and_get_pay_rewards_to() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
     let new = address!("AABBCCDDEEFF00112233445566778899AABBCCDD");
-    ps.set_pay_rewards_to(new).unwrap();
-    assert_eq!(ps.pay_rewards_to().unwrap(), new);
+    ps.set_pay_rewards_to(b, new).unwrap();
+    assert_eq!(ps.pay_rewards_to(b).unwrap(), new);
 }
 
 #[test]

@@ -49,12 +49,8 @@ impl<D: Database> AddressSet<D> {
         if size == 0 {
             return Ok(None);
         }
-        let sba = StorageBackedAddress::new(
-            self.backing_storage.state_ptr(),
-            self.backing_storage.base_key(),
-            1,
-        );
-        Ok(sba.get().map(Some)?)
+        let sba = StorageBackedAddress::new(self.backing_storage.base_key(), 1);
+        Ok(sba.get(backend).map(Some)?)
     }
 
     pub fn clear<B: StorageBackend>(&self, backend: &mut B) -> Result<(), AddressSetError> {
@@ -81,12 +77,8 @@ impl<D: Database> AddressSet<D> {
         }
         let mut ret = Vec::with_capacity(size as usize);
         for i in 0..size {
-            let sba = StorageBackedAddress::new(
-                self.backing_storage.state_ptr(),
-                self.backing_storage.base_key(),
-                i + 1,
-            );
-            ret.push(sba.get()?);
+            let sba = StorageBackedAddress::new(self.backing_storage.base_key(), i + 1);
+            ret.push(sba.get(backend)?);
         }
         Ok(ret)
     }
@@ -140,12 +132,8 @@ impl<D: Database> AddressSet<D> {
 
         self.by_address.set(addr_as_hash, slot)?;
 
-        let sba = StorageBackedAddress::new(
-            self.backing_storage.state_ptr(),
-            self.backing_storage.base_key(),
-            1 + size,
-        );
-        sba.set(addr)?;
+        let sba = StorageBackedAddress::new(self.backing_storage.base_key(), 1 + size);
+        sba.set(backend, addr)?;
 
         Ok(self.size.set(backend, size + 1)?)
     }
