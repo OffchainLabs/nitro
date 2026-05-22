@@ -1,7 +1,7 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use core::ops::{Add, AddAssign, Deref};
+use core::ops::{Add, AddAssign};
 
 /// Represents a pointer to a Guest WASM's memory.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -34,16 +34,12 @@ impl From<GuestPtr> for u64 {
     }
 }
 
-impl Deref for GuestPtr {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl GuestPtr {
     pub fn new(ptr: u32) -> Self {
         Self(ptr)
+    }
+
+    pub fn as_u32(self) -> u32 {
+        self.0
     }
 }
