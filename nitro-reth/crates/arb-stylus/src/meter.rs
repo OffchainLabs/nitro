@@ -1,4 +1,4 @@
-use crate::{config::PricingParams, error::Escape, ink::Ink};
+use crate::{config::PricingParams, error::StylusError, ink::Ink};
 
 /// Names of the WASM globals used for ink metering.
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
@@ -41,10 +41,10 @@ pub trait MeteredMachine {
     fn ink_left(&self) -> MachineMeter;
     fn set_meter(&mut self, meter: MachineMeter);
 
-    fn ink_ready(&self) -> Result<Ink, Escape> {
+    fn ink_ready(&self) -> Result<Ink, StylusError> {
         match self.ink_left() {
             MachineMeter::Ready(ink) => Ok(ink),
-            MachineMeter::Exhausted => Escape::out_of_ink(),
+            MachineMeter::Exhausted => StylusError::out_of_ink(),
         }
     }
 
@@ -52,33 +52,33 @@ pub trait MeteredMachine {
         self.set_meter(MachineMeter::Ready(ink));
     }
 
-    fn buy_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+    fn buy_ink(&mut self, ink: Ink) -> Result<(), StylusError> {
         let current = self.ink_ready()?;
         if current < ink {
             self.set_meter(MachineMeter::Exhausted);
-            return Escape::out_of_ink();
+            return StylusError::out_of_ink();
         }
         self.set_meter(MachineMeter::Ready(current - ink));
         Ok(())
     }
 
-    fn require_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+    fn require_ink(&mut self, ink: Ink) -> Result<(), StylusError> {
         let current = self.ink_ready()?;
         if current < ink {
-            return Escape::out_of_ink();
+            return StylusError::out_of_ink();
         }
         Ok(())
     }
 
-    fn pay_for_read(&mut self, bytes: u32) -> Result<(), Escape> {
+    fn pay_for_read(&mut self, bytes: u32) -> Result<(), StylusError> {
         self.buy_ink(crate::pricing::read_price(bytes))
     }
 
-    fn pay_for_write(&mut self, bytes: u32) -> Result<(), Escape> {
+    fn pay_for_write(&mut self, bytes: u32) -> Result<(), StylusError> {
         self.buy_ink(crate::pricing::write_price(bytes))
     }
 
-    fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), Escape> {
+    fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), StylusError> {
         self.buy_ink(crate::pricing::keccak_price(bytes))
     }
 }
@@ -87,17 +87,17 @@ pub trait MeteredMachine {
 pub trait GasMeteredMachine: MeteredMachine {
     fn pricing(&self) -> PricingParams;
 
-    fn buy_gas(&mut self, gas: u64) -> Result<(), Escape> {
+    fn buy_gas(&mut self, gas: u64) -> Result<(), StylusError> {
         let ink = self.pricing().gas_to_ink(crate::ink::Gas(gas));
         self.buy_ink(ink)
     }
 
-    fn require_gas(&mut self, gas: u64) -> Result<(), Escape> {
+    fn require_gas(&mut self, gas: u64) -> Result<(), StylusError> {
         let ink = self.pricing().gas_to_ink(crate::ink::Gas(gas));
         self.require_ink(ink)
     }
 
-    fn pay_for_evm_log(&mut self, topics: u32, data_len: u32) -> Result<(), Escape> {
+    fn pay_for_evm_log(&mut self, topics: u32, data_len: u32) -> Result<(), StylusError> {
         use crate::pricing::evm_gas;
         let cost = (1 + topics as u64) * evm_gas::LOG_TOPIC_GAS;
         let cost = cost.saturating_add(data_len as u64 * evm_gas::LOG_DATA_GAS);

@@ -3,7 +3,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use wasmer::{Engine, Module, Store};
 
-use crate::config::CompileConfig;
+use crate::{config::CompileConfig, error::StylusError};
 
 lazy_static::lazy_static! {
     static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new());
@@ -110,11 +110,17 @@ pub fn deserialize_module(
     module: &[u8],
     version: u16,
     debug: bool,
-) -> eyre::Result<(Module, Engine, usize)> {
+) -> Result<(Module, Engine, usize), StylusError> {
     let compile = CompileConfig::version(version, debug);
     let engine = compile.engine();
-    let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
-    let asm_size_estimate_bytes = module.serialize()?.len();
+    let module = unsafe {
+        Module::deserialize_unchecked(&engine, module)
+            .map_err(|e| StylusError::Compile(e.to_string()))?
+    };
+    let asm_size_estimate_bytes = module
+        .serialize()
+        .map_err(|e| StylusError::Compile(e.to_string()))?
+        .len();
     let entry_size_estimate_bytes = asm_size_estimate_bytes + 128;
     Ok((module, engine, entry_size_estimate_bytes))
 }
@@ -220,7 +226,7 @@ impl InitCache {
         version: u16,
         long_term_tag: u32,
         debug: bool,
-    ) -> eyre::Result<(Module, Store)> {
+    ) -> Result<(Module, Store), StylusError> {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
 

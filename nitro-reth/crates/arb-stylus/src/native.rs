@@ -1,5 +1,4 @@
 use arbos::programs::types::EvmData;
-use eyre::Result;
 use std::ops::{Deref, DerefMut};
 use wasmer::{
     imports, Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value,
@@ -9,6 +8,7 @@ use crate::{
     cache::InitCache,
     config::{CompileConfig, PricingParams, StylusConfig},
     env::{MeterData, WasmEnv},
+    error::StylusError,
     evm_api::EvmApi,
     host,
     ink::Ink,
@@ -71,7 +71,7 @@ impl<E: EvmApi> NativeInstance<E> {
         evm_data: EvmData,
         mut long_term_tag: u32,
         debug: bool,
-    ) -> Result<Self> {
+    ) -> Result<Self, StylusError> {
         let compile = CompileConfig::version(version, debug);
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let module_hash = env.evm_data.module_hash;
@@ -93,14 +93,18 @@ impl<E: EvmApi> NativeInstance<E> {
         evm_data: EvmData,
         compile: &CompileConfig,
         config: StylusConfig,
-    ) -> Result<Self> {
+    ) -> Result<Self, StylusError> {
         let env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
         let store = env.compile.store();
-        let module = Module::new(&store, bytes)?;
+        let module = Module::new(&store, bytes).map_err(|e| StylusError::Compile(e.to_string()))?;
         Self::from_module(module, store, env)
     }
 
-    pub fn from_module(module: Module, mut store: Store, env: WasmEnv<E>) -> Result<Self> {
+    pub fn from_module(
+        module: Module,
+        mut store: Store,
+        env: WasmEnv<E>,
+    ) -> Result<Self, StylusError> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
 
@@ -176,8 +180,13 @@ impl<E: EvmApi> NativeInstance<E> {
             import_object.define("debug", "end_benchmark", func!(host::end_benchmark::<E>));
         }
 
-        let instance = Instance::new(&mut store, &module, &import_object)?;
-        let memory = instance.exports.get_memory("memory")?.clone();
+        let instance = Instance::new(&mut store, &module, &import_object)
+            .map_err(|e| StylusError::Instantiation(e.to_string()))?;
+        let memory = instance
+            .exports
+            .get_memory("memory")
+            .map_err(|e| StylusError::Instantiation(e.to_string()))?
+            .clone();
 
         let ink_global = instance.exports.get_global(STYLUS_INK_LEFT).ok().cloned();
         let ink_status_global = instance.exports.get_global(STYLUS_INK_STATUS).ok().cloned();
@@ -235,7 +244,7 @@ impl<E: EvmApi> NativeInstance<E> {
         }
     }
 
-    pub fn get_global<T>(&mut self, name: &str) -> Result<T>
+    pub fn get_global<T>(&mut self, name: &str) -> Result<T, StylusError>
     where
         T: TryFrom<Value>,
         T::Error: std::fmt::Debug,
@@ -245,14 +254,14 @@ impl<E: EvmApi> NativeInstance<E> {
             .instance
             .exports
             .get_global(name)
-            .map_err(|_| eyre::eyre!("global {name} does not exist"))?;
+            .map_err(|_| StylusError::MissingGlobal(format!("global {name} does not exist")))?;
         global
             .get(store)
             .try_into()
-            .map_err(|_| eyre::eyre!("global {name} has wrong type"))
+            .map_err(|_| StylusError::MissingGlobal(format!("global {name} has wrong type")))
     }
 
-    pub fn set_global<T>(&mut self, name: &str, value: T) -> Result<()>
+    pub fn set_global<T>(&mut self, name: &str, value: T) -> Result<(), StylusError>
     where
         T: Into<Value>,
     {
@@ -261,19 +270,21 @@ impl<E: EvmApi> NativeInstance<E> {
             .instance
             .exports
             .get_global(name)
-            .map_err(|_| eyre::eyre!("global {name} does not exist"))?;
+            .map_err(|_| StylusError::MissingGlobal(format!("global {name} does not exist")))?;
         global
             .set(store, value.into())
-            .map_err(|e| eyre::eyre!("{e}"))
+            .map_err(|e| StylusError::MissingGlobal(e.to_string()))
     }
 
-    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: Ink) -> Result<R>
+    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: Ink) -> Result<R, StylusError>
     where
         R: wasmer::WasmTypeList,
     {
         self.set_ink(ink);
         self.sync_meter_to_globals();
-        let result = func.call(&mut self.store)?;
+        let result = func
+            .call(&mut self.store)
+            .map_err(|e| StylusError::Run(e.to_string()))?;
         self.sync_meter_from_globals();
         Ok(result)
     }
@@ -328,10 +339,12 @@ impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
 }
 
 /// Compile WASM bytes into a serialized module.
-pub fn compile_module(wasm: &[u8], version: u16, debug: bool) -> Result<Vec<u8>> {
+pub fn compile_module(wasm: &[u8], version: u16, debug: bool) -> Result<Vec<u8>, StylusError> {
     let compile = CompileConfig::version(version, debug);
     let store = compile.store();
-    let module = Module::new(&store, wasm)?;
-    let serialized = module.serialize()?;
+    let module = Module::new(&store, wasm).map_err(|e| StylusError::Compile(e.to_string()))?;
+    let serialized = module
+        .serialize()
+        .map_err(|e| StylusError::Compile(e.to_string()))?;
     Ok(serialized.to_vec())
 }

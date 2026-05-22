@@ -22,6 +22,7 @@ pub mod trace;
 
 pub use cache::InitCache;
 pub use config::{CompileConfig, StylusConfig};
+pub use error::{MaybeEscape, StylusError};
 pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
 pub use ink::{Gas, Ink};
@@ -47,12 +48,16 @@ pub fn is_stylus_program(bytecode: &[u8]) -> bool {
 ///
 /// Returns `(stripped_bytecode, version_byte)` or an error if the bytecode
 /// is too short or doesn't have the Stylus discriminant.
-pub fn strip_stylus_prefix(bytecode: &[u8]) -> Result<(&[u8], u8), &'static str> {
+pub fn strip_stylus_prefix(bytecode: &[u8]) -> Result<(&[u8], u8), StylusError> {
     if bytecode.len() < 4 {
-        return Err("bytecode too short for Stylus prefix");
+        return Err(StylusError::InvalidProgram(
+            "bytecode too short for Stylus prefix",
+        ));
     }
     if bytecode[..3] != STYLUS_DISCRIMINANT {
-        return Err("bytecode does not have Stylus discriminant");
+        return Err(StylusError::InvalidProgram(
+            "bytecode does not have Stylus discriminant",
+        ));
     }
     let version = bytecode[3];
     Ok((&bytecode[4..], version))
@@ -92,11 +97,11 @@ pub fn is_stylus_deployable(bytecode: &[u8], arbos_version: u64) -> bool {
 }
 
 /// Decompress a Stylus WASM program from its contract bytecode.
+///
 /// The bytecode format is `[0xEF, 0xF0, 0x00, dict_byte, ...compressed_wasm]`.
-/// Returns the decompressed WASM bytes.
-pub fn decompress_wasm(bytecode: &[u8]) -> eyre::Result<Vec<u8>> {
+pub fn decompress_wasm(bytecode: &[u8]) -> Result<Vec<u8>, StylusError> {
     if bytecode.len() < 4 || bytecode[..3] != STYLUS_DISCRIMINANT {
-        eyre::bail!("not a Stylus program");
+        return Err(StylusError::InvalidProgram("not a Stylus program"));
     }
     let dict_byte = bytecode[3];
     let compressed = &bytecode[4..];
@@ -104,11 +109,11 @@ pub fn decompress_wasm(bytecode: &[u8]) -> eyre::Result<Vec<u8>> {
     let dict = match dict_byte {
         0 => nitro_brotli::Dictionary::Empty,
         1 => nitro_brotli::Dictionary::StylusProgram,
-        _ => eyre::bail!("unsupported dictionary type: {dict_byte}"),
+        _ => return Err(StylusError::InvalidProgram("unsupported dictionary type")),
     };
 
     nitro_brotli::decompress(compressed, dict)
-        .map_err(|e| eyre::eyre!("brotli decompression failed: {e:?}"))
+        .map_err(|e| StylusError::Decompression(format!("{e:?}")))
 }
 
 /// Activate a Stylus program.
@@ -123,9 +128,9 @@ pub fn activate_program(
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
-) -> eyre::Result<arbos::programs::types::ActivationResult> {
+) -> Result<arbos::programs::types::ActivationResult, StylusError> {
     let codehash_bytes32 = nitro_arbutil::Bytes32(*codehash);
-    let (_module, stylus_data) = nitro_prover::machine::Module::activate(
+    let (module, stylus_data) = nitro_prover::machine::Module::activate(
         wasm,
         &codehash_bytes32,
         stylus_version,
@@ -133,10 +138,11 @@ pub fn activate_program(
         page_limit,
         debug,
         gas,
-    )?;
+    )
+    .map_err(|e| StylusError::Activation(format!("{e}")))?;
 
     Ok(arbos::programs::types::ActivationResult {
-        module_hash: alloy_primitives::B256::from(_module.hash().0),
+        module_hash: alloy_primitives::B256::from(module.hash().0),
         init_gas: stylus_data.init_cost,
         cached_init_gas: stylus_data.cached_init_cost,
         asm_estimate: stylus_data.asm_estimate,

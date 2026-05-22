@@ -5,7 +5,7 @@ use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
 
 use crate::{
     env::WasmEnv,
-    error::{Escape, MaybeEscape},
+    error::{MaybeEscape, StylusError},
     evm_api::{EvmApi, UserOutcomeKind},
     ink::Gas,
     meter::{GasMeteredMachine, MeteredMachine},
@@ -82,7 +82,7 @@ pub fn exit_early<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, status: u3
         );
     }
     let _info = hostio!(&mut env);
-    Err(Escape::Exit(status))
+    Err(StylusError::Exit(status))
 }
 
 /// Load a 32-byte storage value.
@@ -110,7 +110,7 @@ pub fn storage_load_bytes32<E: EvmApi>(
         .env
         .evm_api
         .get_bytes32(key, evm_api_gas)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, value.as_slice())?;
     if trace_on {
@@ -144,7 +144,7 @@ pub fn storage_cache_bytes32<E: EvmApi>(
         .env
         .evm_api
         .cache_bytes32(key, value)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -181,7 +181,7 @@ pub fn storage_flush_cache<E: EvmApi>(
         .env
         .evm_api
         .flush_storage_cache(clear != 0, Gas(gas_left.0 + 1))
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
 
     // Failure must skip buy_gas so WASM ink — and the EVM caller's gas-used —
     // reflect exactly what was spent before the failed flush. Other
@@ -194,12 +194,12 @@ pub fn storage_flush_cache<E: EvmApi>(
             }
             Ok(())
         }
-        UserOutcomeKind::Failure => Escape::logical("storage flush failed"),
+        UserOutcomeKind::Failure => StylusError::logical("storage flush failed"),
         _ => {
             if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
                 info.buy_gas(gas_cost.0)?;
             }
-            Escape::logical("storage flush failed")
+            StylusError::logical("storage flush failed")
         }
     }
 }
@@ -220,7 +220,7 @@ pub fn transient_load_bytes32<E: EvmApi>(
         .env
         .evm_api
         .get_transient_bytes32(key)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.write_slice(dest_ptr, value.as_slice())?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -253,9 +253,9 @@ pub fn transient_store_bytes32<E: EvmApi>(
         .env
         .evm_api
         .set_transient_bytes32(key, value)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     if status == UserOutcomeKind::Failure {
-        return Escape::logical("transient store failed");
+        return StylusError::logical("transient store failed");
     }
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -283,7 +283,7 @@ pub fn call_contract<E: EvmApi>(
     value_ptr: u32,
     gas: u64,
     ret_len_ptr: u32,
-) -> Result<u8, Escape> {
+) -> Result<u8, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -307,7 +307,7 @@ pub fn call_contract<E: EvmApi>(
     } else {
         Vec::new()
     };
-    let (ret_len, gas_cost, status) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    let (ret_len, gas_cost, status) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -339,7 +339,7 @@ pub fn delegate_call_contract<E: EvmApi>(
     calldata_len: u32,
     gas: u64,
     ret_len_ptr: u32,
-) -> Result<u8, Escape> {
+) -> Result<u8, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -362,7 +362,7 @@ pub fn delegate_call_contract<E: EvmApi>(
     } else {
         Vec::new()
     };
-    let (ret_len, gas_cost, status) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    let (ret_len, gas_cost, status) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -393,7 +393,7 @@ pub fn static_call_contract<E: EvmApi>(
     calldata_len: u32,
     gas: u64,
     ret_len_ptr: u32,
-) -> Result<u8, Escape> {
+) -> Result<u8, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -416,7 +416,7 @@ pub fn static_call_contract<E: EvmApi>(
     } else {
         Vec::new()
     };
-    let (ret_len, gas_cost, status) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    let (ret_len, gas_cost, status) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -466,11 +466,11 @@ pub fn create1<E: EvmApi>(
     } else {
         Vec::new()
     };
-    let (response, ret_len, gas_cost) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => {
-            return Err(Escape::Internal(reason));
+            return Err(StylusError::Internal(reason));
         }
     };
     info.buy_gas(gas_cost.0)?;
@@ -527,11 +527,11 @@ pub fn create2<E: EvmApi>(
     } else {
         Vec::new()
     };
-    let (response, ret_len, gas_cost) = result.map_err(|e| Escape::Internal(e.to_string()))?;
+    let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => {
-            return Err(Escape::Internal(reason));
+            return Err(StylusError::Internal(reason));
         }
     };
     info.buy_gas(gas_cost.0)?;
@@ -563,7 +563,7 @@ pub fn read_return_data<E: EvmApi>(
     dest_ptr: u32,
     offset: u32,
     size: u32,
-) -> Result<u32, Escape> {
+) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -617,7 +617,9 @@ pub fn read_return_data<E: EvmApi>(
 }
 
 /// Get the size of the return data.
-pub fn return_data_size<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
+pub fn return_data_size<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -649,7 +651,7 @@ pub fn emit_log<E: EvmApi>(
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::EMIT_LOG_BASE_INK)?;
     if topics > 4 || data_len < topics * 32 {
-        return Escape::logical("bad topic data");
+        return StylusError::logical("bad topic data");
     }
     info.pay_for_read(data_len)?;
     info.pay_for_evm_log(topics, data_len - topics * 32)?;
@@ -657,7 +659,7 @@ pub fn emit_log<E: EvmApi>(
     info.env
         .evm_api
         .emit_log(data.clone(), topics)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
         let mut args = Vec::with_capacity(4 + data.len());
@@ -691,7 +693,7 @@ pub fn account_balance<E: EvmApi>(
         .env
         .evm_api
         .account_balance(address)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, &balance.to_be_bytes::<32>())?;
     if trace_on {
@@ -715,7 +717,7 @@ pub fn account_code<E: EvmApi>(
     offset: u32,
     size: u32,
     dest_ptr: u32,
-) -> Result<u32, Escape> {
+) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -728,7 +730,7 @@ pub fn account_code<E: EvmApi>(
         .env
         .evm_api
         .account_code(arbos_version, address, gas_left)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.pay_for_write(code.len() as u32)?;
     let offset_usize = offset as usize;
@@ -760,7 +762,7 @@ pub fn account_code<E: EvmApi>(
 pub fn account_code_size<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
-) -> Result<u32, Escape> {
+) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -773,7 +775,7 @@ pub fn account_code_size<E: EvmApi>(
         .env
         .evm_api
         .account_code(arbos_version, address, gas_left)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     let len = code.len() as u32;
     if trace_on {
@@ -806,7 +808,7 @@ pub fn account_codehash<E: EvmApi>(
         .env
         .evm_api
         .account_codehash(address)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, hash.as_slice())?;
     if trace_on {
@@ -824,7 +826,9 @@ pub fn account_codehash<E: EvmApi>(
 }
 
 /// Get remaining EVM gas.
-pub fn evm_gas_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+pub fn evm_gas_left<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -846,7 +850,9 @@ pub fn evm_gas_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resul
 }
 
 /// Get remaining ink.
-pub fn evm_ink_left<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+pub fn evm_ink_left<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -889,7 +895,7 @@ pub fn block_basefee<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u3
 }
 
 /// Get the chain ID.
-pub fn chainid<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+pub fn chainid<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -932,7 +938,9 @@ pub fn block_coinbase<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u
 }
 
 /// Get the block gas limit.
-pub fn block_gas_limit<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+pub fn block_gas_limit<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -953,7 +961,9 @@ pub fn block_gas_limit<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Re
 }
 
 /// Get the block number.
-pub fn block_number<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+pub fn block_number<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -974,7 +984,9 @@ pub fn block_number<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Resul
 }
 
 /// Get the block timestamp.
-pub fn block_timestamp<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, Escape> {
+pub fn block_timestamp<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1191,7 +1203,9 @@ pub fn math_mul_mod<E: EvmApi>(
 }
 
 /// Get the reentrant counter.
-pub fn msg_reentrant<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
+pub fn msg_reentrant<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1278,7 +1292,9 @@ pub fn tx_gas_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32
 }
 
 /// Get the ink price.
-pub fn tx_ink_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u32, Escape> {
+pub fn tx_ink_price<E: EvmApi>(
+    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
+) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1339,7 +1355,7 @@ pub fn pay_for_memory_grow<E: EvmApi>(
         .env
         .evm_api
         .add_pages(pages)
-        .map_err(|e| Escape::Internal(e.to_string()))?;
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     Ok(())
 }
@@ -1404,7 +1420,7 @@ pub fn console_log<E: EvmApi, T: std::fmt::Display>(
 pub fn console_tee<E: EvmApi, T: Copy + std::fmt::Display>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     value: T,
-) -> Result<T, Escape> {
+) -> Result<T, StylusError> {
     crate::trace::record_leaf("console_tee", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     tracing::debug!(target: "stylus", "{value}");
