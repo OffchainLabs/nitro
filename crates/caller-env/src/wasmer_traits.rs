@@ -65,7 +65,7 @@ impl MemAccess for WasmerMem<'_> {
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
-        self.read_slice(ptr, N).try_into().unwrap()
+        self.read_slice(ptr, N).try_into().expect("read fixed bytes")
     }
 
     fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]) {
