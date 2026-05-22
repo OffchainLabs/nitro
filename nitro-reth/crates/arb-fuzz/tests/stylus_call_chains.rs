@@ -620,3 +620,150 @@ fn call_value_to_existing_contract() {
     steps.push(message_step(idx, tx, idx));
     run_named("call_value_to_contract", steps);
 }
+
+// ── Nested DELEGATECALL chains ─────────────────────────────────────────────
+
+fn helper_delegate_then_sstore(further: Address) -> Vec<u8> {
+    let mut out = Vec::with_capacity(80);
+    out.extend_from_slice(&[
+        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00,
+    ]);
+    out.push(0x73);
+    out.extend_from_slice(further.as_slice());
+    out.extend_from_slice(&[
+        0x5a, 0xf4, 0x50, 0x60, 0xaa, 0x60, 0x01, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3,
+    ]);
+    out
+}
+
+#[test]
+#[ignore]
+fn delegate_chain_writes_observed_at_initial_caller() {
+    let further_addr = Address::repeat_byte(0x88);
+    let helper = helper_delegate_then_sstore(further_addr);
+    let mut steps = baseline_with_helper(&helper);
+    let further_runtime: &[u8] = &[0x60, 0xbb, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3];
+    let deploy_further = signed(
+        3,
+        None,
+        Bytes::from(wrap_init_code(further_runtime)),
+        U256::ZERO,
+        DEPLOY_GAS_CAP,
+    )
+    .build()
+    .expect("deploy further");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, deploy_further, idx));
+    let cdata = forward_delegate_calldata(helper_addr(), &[]);
+    let tx = signed(4, Some(stylus_addr()), cdata, U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("delegate_chain_writes", steps);
+}
+
+// ── Stylus called via DELEGATECALL from Solidity ───────────────────────────
+
+#[test]
+#[ignore]
+fn solidity_delegatecall_into_stylus() {
+    let stylus = stylus_addr();
+    let mut helper = Vec::with_capacity(60);
+    helper.extend_from_slice(&[
+        0x60, 0x04, 0x60, 0x00, 0x60, 0x00, 0x37,
+        0x60, 0x20, 0x60, 0x00, 0x60, 0x04, 0x60, 0x00, 0x60, 0x00,
+    ]);
+    helper.push(0x73);
+    helper.extend_from_slice(stylus.as_slice());
+    helper.extend_from_slice(&[0x5a, 0xf4, 0x60, 0x00, 0x60, 0x00, 0xf3]);
+    let mut steps = baseline_with_helper(&helper);
+    let mut cdata = Vec::with_capacity(4);
+    cdata.extend_from_slice(&selector("callCount()"));
+    let tx = signed(3, Some(helper_addr()), Bytes::from(cdata), U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("sol_delegate_stylus", steps);
+}
+
+// ── Opcode coverage through Stylus -> Solidity helper ──────────────────────
+
+fn helper_returns_opcode_result(opcode: u8) -> Vec<u8> {
+    vec![opcode, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3]
+}
+
+fn helper_returns_balance(addr: Address) -> Vec<u8> {
+    let mut out = Vec::with_capacity(28);
+    out.push(0x73);
+    out.extend_from_slice(addr.as_slice());
+    out.extend_from_slice(&[0x31, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3]);
+    out
+}
+
+#[test]
+#[ignore]
+fn opcode_timestamp_via_stylus_call() {
+    let mut steps = baseline_with_helper(&helper_returns_opcode_result(0x42));
+    let cdata = forward_call_calldata(helper_addr(), &[]);
+    let tx = signed(3, Some(stylus_addr()), cdata, U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("op_timestamp", steps);
+}
+
+#[test]
+#[ignore]
+fn opcode_number_via_stylus_call() {
+    let mut steps = baseline_with_helper(&helper_returns_opcode_result(0x43));
+    let cdata = forward_call_calldata(helper_addr(), &[]);
+    let tx = signed(3, Some(stylus_addr()), cdata, U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("op_number", steps);
+}
+
+#[test]
+#[ignore]
+fn opcode_coinbase_via_stylus_call() {
+    let mut steps = baseline_with_helper(&helper_returns_opcode_result(0x41));
+    let cdata = forward_call_calldata(helper_addr(), &[]);
+    let tx = signed(3, Some(stylus_addr()), cdata, U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("op_coinbase", steps);
+}
+
+#[test]
+#[ignore]
+fn opcode_gasprice_via_stylus_call() {
+    let mut steps = baseline_with_helper(&helper_returns_opcode_result(0x3a));
+    let cdata = forward_call_calldata(helper_addr(), &[]);
+    let tx = signed(3, Some(stylus_addr()), cdata, U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("op_gasprice", steps);
+}
+
+#[test]
+#[ignore]
+fn opcode_balance_of_stylus_via_helper() {
+    let helper = helper_returns_balance(stylus_addr());
+    let mut steps = baseline_with_helper(&helper);
+    let cdata = forward_call_calldata(helper_addr(), &[]);
+    let tx = signed(3, Some(stylus_addr()), cdata, U256::ZERO, INVOKE_GAS_CAP)
+        .build()
+        .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    run_named("op_balance_stylus", steps);
+}
