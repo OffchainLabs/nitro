@@ -88,7 +88,11 @@ pub fn get_request(
     assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let msg = data.get_last_msg();
-    let len: u32 = msg.req_data.len().try_into().expect("req_data length exceeds u32::MAX");
+    let len: u32 = msg
+        .req_data
+        .len()
+        .try_into()
+        .expect("req_data length exceeds u32::MAX");
     mem.write_u32(gp(len_ptr), len);
 
     Ok(msg.req_type)

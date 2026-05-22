@@ -6,9 +6,9 @@ use arbutil::{
     },
     pricing::{EVM_API_INK, hostio},
 };
+use caller_env::{MemAccess, wasmer_traits::WasmerMem};
 use eyre::eyre;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
-use caller_env::{MemAccess, wasmer_traits::WasmerMem};
 use wasmer::FunctionEnvMut;
 
 use crate::{

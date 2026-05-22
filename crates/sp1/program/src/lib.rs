@@ -4,10 +4,7 @@ pub mod replay;
 mod state;
 pub mod stylus;
 
-use std::{
-    io,
-    ptr::NonNull,
-};
+use std::{io, ptr::NonNull};
 
 use arbutil::{
     Bytes20, Bytes32,

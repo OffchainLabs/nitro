@@ -18,6 +18,7 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
+use caller_env::{MemAccess, wasmer_traits::WasmerMem};
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
 use prover::programs::{
@@ -26,10 +27,9 @@ use prover::programs::{
     depth::STYLUS_STACK_LEFT,
     meter::{GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS},
 };
-use caller_env::{MemAccess, wasmer_traits::WasmerMem};
 use wasmer::{
-    AsStoreMut, Engine, Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory,
-    Module, RuntimeError, Store, StoreObjects, imports, sys::NativeEngineExt,
+    AsStoreMut, Engine, Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory, Module,
+    RuntimeError, Store, StoreObjects, imports, sys::NativeEngineExt,
 };
 use wasmer_vm::{UnwindReason, VMExtern, install_unwinder};
 
