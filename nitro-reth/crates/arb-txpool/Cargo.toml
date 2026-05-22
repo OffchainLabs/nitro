@@ -14,6 +14,7 @@ c-kzg = { workspace = true }
 derive_more = { workspace = true }
 reth-transaction-pool = { workspace = true }
 reth-primitives-traits = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true
