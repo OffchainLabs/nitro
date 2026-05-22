@@ -102,7 +102,9 @@ impl MemAccess for WasmerMem<'_> {
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
         let mut buf = [0u8; N];
-        self.view().read(ptr.to_u64(), &mut buf).expect("read fixed bytes");
+        self.view()
+            .read(ptr.to_u64(), &mut buf)
+            .expect("read fixed bytes");
         buf
     }
 
