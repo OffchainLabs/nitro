@@ -69,8 +69,9 @@ pub use nodeinterface_debug::{
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
+use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::cell::Cell;
+use std::{cell::Cell, sync::Arc};
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
@@ -137,24 +138,6 @@ thread_local! {
     static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
     /// Gas consumed by precompile operations before an error.
     static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
-    /// Current tx poster fee (wei), set by executor before each tx.
-    /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
-    static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
-    /// Currently-executing retryable ticket ID (zero when not inside a retry tx).
-    static CURRENT_RETRYABLE_ID: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
-    /// Currently-executing redeemer (refund_to) address, left-padded into 32 bytes.
-    static CURRENT_REDEEMER: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
-    /// Effective per-gas price the sender offered, captured before tip-drop
-    /// caps `tx_env.gas_price` to base_fee. Read by Stylus `tx.gasprice`.
-    static CURRENT_TX_EFFECTIVE_GAS_PRICE: Cell<u128> = const { Cell::new(0) };
-    /// Poster fee balance correction for BALANCE opcode.
-    /// The canonical implementation charges gas_limit * baseFee, but our reduced
-    /// gas_limit charges less by posterGas * baseFee. The BALANCE opcode handler
-    /// subtracts this amount when checking the sender's balance.
-    static POSTER_BALANCE_CORRECTION: Cell<u128> = const { Cell::new(0) };
-    /// Current transaction sender address (first 20 bytes as u128 + extra Cell).
-    static TX_SENDER_LO: Cell<u128> = const { Cell::new(0) };
-    static TX_SENDER_HI: Cell<u32> = const { Cell::new(0) };
     static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
     static STYLUS_KEEPALIVE_HASH: Cell<Option<[u8; 32]>> = const { Cell::new(None) };
     static STYLUS_ACTIVATION_DATA_FEE: Cell<u128> = const { Cell::new(0) };
@@ -304,78 +287,6 @@ pub fn init_precompile_gas_pure(input_len: usize) {
     reset_precompile_gas();
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
     charge_precompile_gas(args_cost);
-}
-
-/// Set the current tx poster fee for ArbGasInfo.getCurrentTxL1GasFees.
-pub fn set_current_tx_poster_fee(fee_wei: u128) {
-    CURRENT_TX_POSTER_FEE.with(|v| v.set(fee_wei));
-}
-
-/// Get the current tx poster fee.
-pub fn get_current_tx_poster_fee() -> u128 {
-    CURRENT_TX_POSTER_FEE.with(|v| v.get())
-}
-
-pub fn set_current_retryable_id(id: alloy_primitives::B256) {
-    CURRENT_RETRYABLE_ID.with(|v| v.set(id.0));
-}
-
-pub fn get_current_retryable_id() -> alloy_primitives::U256 {
-    alloy_primitives::U256::from_be_bytes(CURRENT_RETRYABLE_ID.with(|v| v.get()))
-}
-
-pub fn set_current_redeemer(addr: alloy_primitives::Address) {
-    let padded = alloy_primitives::B256::left_padding_from(addr.as_slice());
-    CURRENT_REDEEMER.with(|v| v.set(padded.0));
-}
-
-pub fn get_current_redeemer() -> alloy_primitives::U256 {
-    alloy_primitives::U256::from_be_bytes(CURRENT_REDEEMER.with(|v| v.get()))
-}
-
-pub fn set_current_tx_effective_gas_price(price: u128) {
-    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.set(price));
-}
-
-pub fn get_current_tx_effective_gas_price() -> u128 {
-    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.get())
-}
-
-pub fn clear_tx_scratch() {
-    CURRENT_TX_POSTER_FEE.with(|v| v.set(0));
-    CURRENT_RETRYABLE_ID.with(|v| v.set([0u8; 32]));
-    CURRENT_REDEEMER.with(|v| v.set([0u8; 32]));
-    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.set(0));
-}
-
-/// Set the poster balance correction for BALANCE opcode adjustment.
-pub fn set_poster_balance_correction(correction: alloy_primitives::U256) {
-    let val: u128 = correction.try_into().unwrap_or(u128::MAX);
-    POSTER_BALANCE_CORRECTION.with(|v| v.set(val));
-}
-
-/// Get the poster balance correction.
-pub fn get_poster_balance_correction() -> alloy_primitives::U256 {
-    alloy_primitives::U256::from(POSTER_BALANCE_CORRECTION.with(|v| v.get()))
-}
-
-/// Set the current tx sender for BALANCE correction.
-pub fn set_current_tx_sender(addr: alloy_primitives::Address) {
-    let bytes = addr.as_slice();
-    let lo = u128::from_be_bytes(bytes[4..20].try_into().unwrap_or([0u8; 16]));
-    let hi = u32::from_be_bytes(bytes[0..4].try_into().unwrap_or([0u8; 4]));
-    TX_SENDER_LO.with(|v| v.set(lo));
-    TX_SENDER_HI.with(|v| v.set(hi));
-}
-
-/// Get the current tx sender.
-pub fn get_current_tx_sender() -> alloy_primitives::Address {
-    let lo = TX_SENDER_LO.with(|v| v.get());
-    let hi = TX_SENDER_HI.with(|v| v.get());
-    let mut bytes = [0u8; 20];
-    bytes[0..4].copy_from_slice(&hi.to_be_bytes());
-    bytes[4..20].copy_from_slice(&lo.to_be_bytes());
-    alloy_primitives::Address::new(bytes)
 }
 
 /// Set the EVM call depth to a specific value.
@@ -535,10 +446,17 @@ const KZG_POINT_EVALUATION_ADDRESS: alloy_primitives::Address =
 
 /// Registers Arbitrum precompiles into `map` and applies the per-ArbOS-version
 /// adjustments to the standard Ethereum precompile set.
-pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
+pub fn register_arb_precompiles(
+    map: &mut PrecompilesMap,
+    ctx: Arc<ArbPrecompileCtx>,
+    arbos_version: u64,
+) {
     map.extend_precompiles([
         (ARBSYS_ADDRESS, create_arbsys_precompile()),
-        (ARBGASINFO_ADDRESS, create_arbgasinfo_precompile()),
+        (
+            ARBGASINFO_ADDRESS,
+            create_arbgasinfo_precompile(ctx.clone()),
+        ),
         (ARBINFO_ADDRESS, create_arbinfo_precompile()),
         (ARBSTATISTICS_ADDRESS, create_arbstatistics_precompile()),
         (
@@ -550,7 +468,10 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
         (ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile()),
         (ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile()),
         (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),
-        (ARBRETRYABLETX_ADDRESS, create_arbretryabletx_precompile()),
+        (
+            ARBRETRYABLETX_ADDRESS,
+            create_arbretryabletx_precompile(ctx.clone()),
+        ),
         (ARBOWNER_ADDRESS, create_arbowner_precompile()),
         (ARBBLS_ADDRESS, create_arbbls_precompile()),
         (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),

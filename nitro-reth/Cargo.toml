@@ -2,6 +2,7 @@
 members = [
     "crates/arb-primitives",
     "crates/arb-chainspec",
+    "crates/arb-context",
     "crates/arb-math",
     "crates/arb-storage",
     "crates/arb-storage-errors",
@@ -36,6 +37,7 @@ license = "BUSL-1.1"
 # Internal crates
 arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
+arb-context = { path = "crates/arb-context" }
 arb-math = { path = "crates/arb-math" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }

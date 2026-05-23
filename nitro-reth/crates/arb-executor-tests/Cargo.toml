@@ -27,6 +27,7 @@ revm = { workspace = true }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
 [dev-dependencies]
+arb-context = { workspace = true }
 arb-node = { workspace = true }
 reth-revm = { workspace = true }
 reth-storage-api = { workspace = true }

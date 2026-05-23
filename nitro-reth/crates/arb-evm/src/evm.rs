@@ -113,7 +113,6 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionConte
 /// reads the transaction sender's balance, so that the observed value matches
 /// a full-`gas_limit * basefee` buy-gas charge.
 fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
-    // Pop address from stack
     let addr_u256 = match ctx.interpreter.stack.pop() {
         Some(v) => v,
         None => {
@@ -127,15 +126,15 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext
         addr_u256.to_be_bytes::<32>(),
     ));
 
-    // Load account via host (handles cold/warm tracking)
+    let sender = ctx.host.caller();
+    let correction = poster_balance_correction_word();
+
     let spec_id = ctx.interpreter.runtime_flag.spec_id();
     if spec_id.is_enabled_in(revm::primitives::hardfork::SpecId::BERLIN) {
-        // Berlin+: use balance() which tracks cold/warm
         let Some(state_load) = ctx.host.balance(addr) else {
             ctx.interpreter.halt_fatal();
             return;
         };
-        // Charge gas: 2600 for cold, 100 for warm
         let gas_cost = if state_load.is_cold { 2600u64 } else { 100u64 };
         if !ctx.interpreter.gas.record_cost(gas_cost) {
             ctx.interpreter
@@ -143,11 +142,8 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext
             return;
         }
 
-        // Apply poster fee correction for sender
-        let balance = if addr == arb_precompiles::get_current_tx_sender() {
-            state_load
-                .data
-                .saturating_sub(arb_precompiles::get_poster_balance_correction())
+        let balance = if addr == sender {
+            state_load.data.saturating_sub(correction)
         } else {
             state_load.data
         };
@@ -157,16 +153,13 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext
                 .halt(revm::interpreter::InstructionResult::StackOverflow);
         }
     } else {
-        // Pre-Berlin: always 400 gas, load via basic path
         let Some(state_load) = ctx.host.balance(addr) else {
             ctx.interpreter.halt_fatal();
             return;
         };
 
-        let balance = if addr == arb_precompiles::get_current_tx_sender() {
-            state_load
-                .data
-                .saturating_sub(arb_precompiles::get_poster_balance_correction())
+        let balance = if addr == sender {
+            state_load.data.saturating_sub(correction)
         } else {
             state_load.data
         };
@@ -191,11 +184,11 @@ fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionCon
         return;
     };
 
-    // Apply poster fee correction if the contract being executed is the tx sender
-    let balance = if target == arb_precompiles::get_current_tx_sender() {
+    let sender = ctx.host.caller();
+    let balance = if target == sender {
         state_load
             .data
-            .saturating_sub(arb_precompiles::get_poster_balance_correction())
+            .saturating_sub(poster_balance_correction_word())
     } else {
         state_load.data
     };
@@ -204,6 +197,11 @@ fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionCon
         ctx.interpreter
             .halt(revm::interpreter::InstructionResult::StackOverflow);
     }
+}
+
+fn poster_balance_correction_word() -> U256 {
+    arb_context::with_active(|c| U256::from(c.tx_snapshot().poster_balance_correction))
+        .unwrap_or(U256::ZERO)
 }
 
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
@@ -482,7 +480,12 @@ where
         let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
         let mut precompiles =
             alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
-        register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
+        let active_ctx = arb_context::active().unwrap_or_default();
+        register_arb_precompiles(
+            &mut precompiles,
+            active_ctx,
+            arb_precompiles::get_arbos_version(),
+        );
         let mut arb_map = ArbPrecompilesMap(precompiles);
         let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
@@ -1292,7 +1295,7 @@ where
     let basefee = U256::from(context.block.basefee());
     // Pre-cap effective price stashed by ArbBlockExecutor; fall back to the
     // capped tx_env when unset (e.g. direct dispatch in unit tests).
-    let stashed = arb_precompiles::get_current_tx_effective_gas_price();
+    let stashed = arb_context::with_active(|c| c.tx_snapshot().effective_gas_price).unwrap_or(0);
     let gas_price = if stashed != 0 {
         U256::from(stashed)
     } else {
@@ -1842,12 +1845,22 @@ where
 // ── ArbEvmFactory ──────────────────────────────────────────────────
 
 /// Factory for creating Arbitrum EVM instances with custom precompiles.
-#[derive(Default, Debug, Clone, Copy)]
-pub struct ArbEvmFactory(pub alloy_evm::EthEvmFactory);
+#[derive(Default, Debug, Clone)]
+pub struct ArbEvmFactory {
+    pub inner: alloy_evm::EthEvmFactory,
+    pub ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+}
 
 impl ArbEvmFactory {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_ctx(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> Self {
+        Self {
+            inner: alloy_evm::EthEvmFactory::default(),
+            ctx,
+        }
     }
 }
 
@@ -1859,15 +1872,18 @@ fn build_arb_evm<DB: Database, I>(
         PrecompilesMap,
         EthFrame,
     >,
+    ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
     inspect: bool,
 ) -> ArbEvm<DB, I> {
     let RevmEvm {
-        ctx,
+        ctx: evm_ctx,
         inspector,
         mut instruction,
         mut precompiles,
         frame_stack: _,
     } = inner;
+
+    arb_context::install_active(ctx.clone());
 
     instruction.insert_instruction(
         BLOBBASEFEE_OPCODE,
@@ -1893,10 +1909,10 @@ fn build_arb_evm<DB: Database, I>(
         SELFBALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
-    register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
+    register_arb_precompiles(&mut precompiles, ctx, arb_precompiles::get_arbos_version());
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 
-    let revm_evm = RevmEvm::new_with_inspector(ctx, inspector, instruction, arb_precompiles);
+    let revm_evm = RevmEvm::new_with_inspector(evm_ctx, inspector, instruction, arb_precompiles);
     ArbEvm::new(revm_evm, inspect)
 }
 
@@ -1915,8 +1931,8 @@ impl EvmFactory for ArbEvmFactory {
         db: DB,
         input: EvmEnv<Self::Spec>,
     ) -> Self::Evm<DB, NoOpInspector> {
-        let eth_evm = self.0.create_evm(db, input);
-        build_arb_evm(eth_evm.into_inner(), false)
+        let eth_evm = self.inner.create_evm(db, input);
+        build_arb_evm(eth_evm.into_inner(), self.ctx.clone(), false)
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>, EthInterpreter>>(
@@ -1925,7 +1941,7 @@ impl EvmFactory for ArbEvmFactory {
         input: EvmEnv<Self::Spec>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        let eth_evm = self.0.create_evm_with_inspector(db, input, inspector);
-        build_arb_evm(eth_evm.into_inner(), true)
+        let eth_evm = self.inner.create_evm_with_inspector(db, input, inspector);
+        build_arb_evm(eth_evm.into_inner(), self.ctx.clone(), true)
     }
 }

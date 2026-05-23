@@ -1,10 +1,12 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use revm::{
     context_interface::block::Block,
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
 };
+use std::sync::Arc;
 
 use crate::{
     interfaces::IArbGasInfo,
@@ -65,11 +67,14 @@ const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
     0xff, 0xff, 0xff, 0xff,
 ]);
 
-pub fn create_arbgasinfo_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbgasinfo"), handler)
+pub fn create_arbgasinfo_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(
+        PrecompileId::custom("arbgasinfo"),
+        move |input: PrecompileInput<'_>| handler(input, &ctx),
+    )
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let gas_limit = input.gas;
     crate::init_precompile_gas(input.data.len());
 
@@ -89,7 +94,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getGasAccountingParams(_) => handle_gas_accounting_params(&mut input),
         Calls::getCurrentTxL1GasFees(_) => {
-            let fee = U256::from(crate::get_current_tx_poster_fee());
+            let fee = U256::from(ctx.tx_snapshot().poster_fee);
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),

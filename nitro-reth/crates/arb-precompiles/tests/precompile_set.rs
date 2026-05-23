@@ -1,11 +1,13 @@
 use alloy_evm::{eth::EthEvmContext, precompiles::PrecompilesMap};
 use alloy_primitives::{address, Address};
+use arb_context::ArbPrecompileCtx;
 use arb_precompiles::register_arb_precompiles;
 use revm::{
     database::EmptyDB,
     handler::{EthPrecompiles, PrecompileProvider},
     primitives::hardfork::SpecId,
 };
+use std::sync::Arc;
 
 const ECRECOVER: Address = address!("0000000000000000000000000000000000000001");
 const SHA256: Address = address!("0000000000000000000000000000000000000002");
@@ -28,7 +30,8 @@ const P256VERIFY: Address = address!("0000000000000000000000000000000000000100")
 
 fn build(spec: SpecId, arbos_version: u64) -> PrecompilesMap {
     let mut map = PrecompilesMap::from(EthPrecompiles::new(spec));
-    register_arb_precompiles(&mut map, arbos_version);
+    let ctx = Arc::new(ArbPrecompileCtx::default());
+    register_arb_precompiles(&mut map, ctx, arbos_version);
     map
 }
 
