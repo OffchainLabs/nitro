@@ -204,6 +204,19 @@ impl<D> Programs<D> {
             .map_err(Into::into)?;
         Ok(())
     }
+
+    /// Read the module hash for a code hash through a [`StorageBackend`].
+    pub fn get_module_hash_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        code_hash: B256,
+    ) -> Result<B256, ProgramsError> {
+        let slot = self.module_hashes.slot_for_key(code_hash);
+        let value = backend
+            .sload(self.module_hashes.account, slot)
+            .map_err(Into::into)?;
+        Ok(B256::from(value.to_be_bytes::<32>()))
+    }
 }
 
 impl<D: Database> Programs<D> {

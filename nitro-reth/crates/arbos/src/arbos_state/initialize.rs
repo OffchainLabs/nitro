@@ -1,9 +1,14 @@
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::StorageBackend;
-use revm::Database;
+use arb_storage::{
+    set_account_nonce, Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackend,
+    ARBOS_STATE_ADDRESS,
+};
+use revm::{database::State, Database};
 
 use crate::{
     burn::Burner,
+    l1_pricing::L1PricingState,
+    l2_pricing::L2PricingState,
     retryables::{self, RetryableState},
 };
 
@@ -218,4 +223,45 @@ pub fn initialize_arbos_in_database<D: Database, B: Burner, C: StorageBackend>(
         escrow_credits,
         accounts,
     })
+}
+
+/// Bring a fresh database to a fully-initialised ArbOS state at the requested
+/// version, returning the opened state.
+pub fn bootstrap<D: Database, B: Burner>(
+    state: &mut State<D>,
+    chain_id: u64,
+    network_fee_account: Address,
+    infra_fee_account: Address,
+    l1_initial_base_fee: U256,
+    target_arbos_version: u64,
+    burner: B,
+) -> Result<ArbosState<D, B>, ArbosStateError> {
+    let state_ptr: *mut State<D> = state;
+
+    set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
+
+    let backing = Storage::<D>::new(state_ptr, B256::ZERO);
+    backing.set_by_uint64(super::VERSION_OFFSET, B256::from(U256::from(1u64)))?;
+    StorageBackedBigUint::new(B256::ZERO, super::CHAIN_ID_OFFSET)
+        .set(state, U256::from(chain_id))?;
+    StorageBackedAddress::new(B256::ZERO, super::NETWORK_FEE_ACCOUNT_OFFSET)
+        .set(state, network_fee_account)?;
+    StorageBackedAddress::new(B256::ZERO, super::INFRA_FEE_ACCOUNT_OFFSET)
+        .set(state, infra_fee_account)?;
+
+    L1PricingState::initialize(
+        &backing.open_sub_storage(super::L1_PRICING_SUBSPACE),
+        unsafe { &mut *state_ptr },
+        network_fee_account,
+        l1_initial_base_fee,
+    )?;
+    L2PricingState::<D>::initialize(
+        &backing.open_sub_storage(super::L2_PRICING_SUBSPACE),
+        unsafe { &mut *state_ptr },
+    )?;
+    RetryableState::<D>::initialize(&backing.open_sub_storage(super::RETRYABLES_SUBSPACE))?;
+
+    let mut arbos = ArbosState::open(unsafe { &mut *state_ptr }, burner)?;
+    arbos.upgrade_arbos_version(unsafe { &mut *state_ptr }, target_arbos_version, true)?;
+    Ok(arbos)
 }
