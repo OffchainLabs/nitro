@@ -23,7 +23,7 @@ fn empty_set_size_zero_membership_false() {
     let s = fresh_set(&mut h, 0xA0);
     let backend = unsafe { &mut *state_ptr };
     assert_eq!(s.size(backend).unwrap(), 0);
-    assert!(!s.is_member(Address::ZERO).unwrap());
+    assert!(!s.is_member(backend, Address::ZERO).unwrap());
     s.remove(backend, Address::ZERO, ARBOS_V30).unwrap();
     assert_eq!(s.size(backend).unwrap(), 0);
     assert!(s.get_any_member(backend).unwrap().is_none());
@@ -47,14 +47,14 @@ fn add_remove_size_consistency() {
     s.add(backend, a1).unwrap();
     assert_eq!(s.size(backend).unwrap(), 2);
 
-    assert!(s.is_member(a1).unwrap());
-    assert!(s.is_member(a2).unwrap());
-    assert!(!s.is_member(a3).unwrap());
+    assert!(s.is_member(backend, a1).unwrap());
+    assert!(s.is_member(backend, a2).unwrap());
+    assert!(!s.is_member(backend, a3).unwrap());
 
     s.remove(backend, a1, ARBOS_V30).unwrap();
     assert_eq!(s.size(backend).unwrap(), 1);
-    assert!(!s.is_member(a1).unwrap());
-    assert!(s.is_member(a2).unwrap());
+    assert!(!s.is_member(backend, a1).unwrap());
+    assert!(s.is_member(backend, a2).unwrap());
 
     s.add(backend, a3).unwrap();
     assert_eq!(s.size(backend).unwrap(), 2);
@@ -83,8 +83,8 @@ fn clear_resets_size_and_membership() {
     assert_eq!(s.size(backend).unwrap(), 2);
     s.clear(backend).unwrap();
     assert_eq!(s.size(backend).unwrap(), 0);
-    assert!(!s.is_member(a1).unwrap());
-    assert!(!s.is_member(a2).unwrap());
+    assert!(!s.is_member(backend, a1).unwrap());
+    assert!(!s.is_member(backend, a2).unwrap());
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn random_add_remove_keeps_invariants() {
         }
         assert_eq!(s.size(backend).unwrap() as usize, model.len());
         for a in &pool {
-            assert_eq!(s.is_member(*a).unwrap(), model.contains(a));
+            assert_eq!(s.is_member(backend, *a).unwrap(), model.contains(a));
         }
     }
 }

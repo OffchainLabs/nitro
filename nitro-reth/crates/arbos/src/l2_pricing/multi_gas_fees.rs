@@ -1,5 +1,4 @@
 use alloy_primitives::U256;
-use revm::Database;
 
 use arb_primitives::multigas::{ResourceKind, NUM_RESOURCE_KIND};
 use arb_storage::{Storage, StorageBackedBigUint, StorageBackend};
@@ -19,11 +18,11 @@ pub struct MultiGasFees<D> {
     storage: Storage<D>,
 }
 
-pub fn open_multi_gas_fees<D: Database>(sto: Storage<D>) -> MultiGasFees<D> {
+pub fn open_multi_gas_fees<D>(sto: Storage<D>) -> MultiGasFees<D> {
     MultiGasFees { storage: sto }
 }
 
-impl<D: Database> MultiGasFees<D> {
+impl<D> MultiGasFees<D> {
     pub fn get_current_block_fee<B: StorageBackend>(
         &self,
         backend: &mut B,

@@ -54,9 +54,7 @@ pub fn initialize_batch_posters_table<D: Database, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_batch_posters_table<D: Database>(
-    l1_pricing_storage: &Storage<D>,
-) -> BatchPostersTable<D> {
+pub fn open_batch_posters_table<D>(l1_pricing_storage: &Storage<D>) -> BatchPostersTable<D> {
     let bpt_storage = l1_pricing_storage.open_sub_storage(BATCH_POSTER_TABLE_KEY);
     let poster_addrs_storage = bpt_storage.open_sub_storage(POSTER_ADDRS_KEY);
     let poster_info = bpt_storage.open_sub_storage(POSTER_INFO_KEY);
@@ -71,13 +69,34 @@ pub fn open_batch_posters_table<D: Database>(
     }
 }
 
-impl<D: Database> BatchPostersTable<D> {
+impl<D> BatchPostersTable<D> {
     pub fn open(l1_pricing_storage: &Storage<D>) -> Self {
         open_batch_posters_table(l1_pricing_storage)
     }
 
-    pub fn contains_poster(&self, poster: Address) -> Result<bool, L1PricingError> {
-        Ok(self.poster_addrs.is_member(poster)?)
+    pub fn total_funds_due<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
+        Ok(self.total_funds_due.get_raw(backend)?)
+    }
+
+    fn internal_open(&self, poster: Address) -> BatchPosterState {
+        let bp_storage = self.poster_info.open_sub_storage(poster.as_slice());
+        BatchPosterState {
+            funds_due: StorageBackedBigInt::new(bp_storage.base_key(), FUNDS_DUE_OFFSET),
+            pay_to: StorageBackedAddress::new(bp_storage.base_key(), PAY_TO_OFFSET),
+        }
+    }
+}
+
+impl<D> BatchPostersTable<D> {
+    pub fn contains_poster<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        poster: Address,
+    ) -> Result<bool, L1PricingError> {
+        Ok(self.poster_addrs.is_member(backend, poster)?)
     }
 
     pub fn open_poster<B: StorageBackend>(
@@ -86,7 +105,7 @@ impl<D: Database> BatchPostersTable<D> {
         poster: Address,
         create_if_not_exist: bool,
     ) -> Result<BatchPosterState, L1PricingError> {
-        let is_poster = self.poster_addrs.is_member(poster)?;
+        let is_poster = self.poster_addrs.is_member(backend, poster)?;
         if !is_poster {
             if !create_if_not_exist {
                 return Err(L1PricingError::BatchPosterNotFound);
@@ -102,7 +121,7 @@ impl<D: Database> BatchPostersTable<D> {
         poster_address: Address,
         pay_to: Address,
     ) -> Result<BatchPosterState, L1PricingError> {
-        let is_poster = self.poster_addrs.is_member(poster_address)?;
+        let is_poster = self.poster_addrs.is_member(backend, poster_address)?;
         if is_poster {
             return Err(L1PricingError::BatchPosterAlreadyExists);
         }
@@ -114,14 +133,6 @@ impl<D: Database> BatchPostersTable<D> {
         Ok(bp_state)
     }
 
-    fn internal_open(&self, poster: Address) -> BatchPosterState {
-        let bp_storage = self.poster_info.open_sub_storage(poster.as_slice());
-        BatchPosterState {
-            funds_due: StorageBackedBigInt::new(bp_storage.base_key(), FUNDS_DUE_OFFSET),
-            pay_to: StorageBackedAddress::new(bp_storage.base_key(), PAY_TO_OFFSET),
-        }
-    }
-
     pub fn all_posters<B: StorageBackend>(
         &self,
         backend: &mut B,
@@ -129,11 +140,12 @@ impl<D: Database> BatchPostersTable<D> {
         Ok(self.poster_addrs.all_members(backend, u64::MAX)?)
     }
 
-    pub fn total_funds_due<B: StorageBackend>(
+    pub fn all_posters_capped<B: StorageBackend>(
         &self,
         backend: &mut B,
-    ) -> Result<U256, L1PricingError> {
-        Ok(self.total_funds_due.get_raw(backend)?)
+        max: u64,
+    ) -> Result<Vec<Address>, L1PricingError> {
+        Ok(self.poster_addrs.all_members(backend, max)?)
     }
 
     pub fn get_funds_due_list<B: StorageBackend>(

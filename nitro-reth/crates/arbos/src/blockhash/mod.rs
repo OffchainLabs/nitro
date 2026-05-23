@@ -15,7 +15,7 @@ pub fn initialize_blockhashes<D: Database>(_backing_storage: &Storage<D>) {
     // no-op: next_block_number is already zero
 }
 
-pub fn open_blockhashes<D: Database>(backing_storage: Storage<D>) -> Blockhashes<D> {
+pub fn open_blockhashes<D>(backing_storage: Storage<D>) -> Blockhashes<D> {
     let l1_block_number = StorageBackedUint64::new(backing_storage.base_key(), 0);
     Blockhashes {
         backing_storage,

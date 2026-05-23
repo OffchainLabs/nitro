@@ -1311,6 +1311,7 @@ dependencies = [
  "arb-context",
  "arb-math",
  "arb-primitives",
+ "arb-storage",
  "arb-storage-errors",
  "arb-stylus",
  "arbos",
@@ -1563,6 +1564,7 @@ name = "arbos"
 version = "0.1.0"
 dependencies = [
  "alloy-eips",
+ "alloy-evm",
  "alloy-primitives",
  "alloy-rlp",
  "arb-alloy-consensus",

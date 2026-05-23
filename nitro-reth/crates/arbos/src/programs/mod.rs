@@ -118,19 +118,7 @@ pub struct Programs<D> {
     pub cache_managers: AddressSet<D>,
 }
 
-impl<D: Database> Programs<D> {
-    pub fn initialize<B: StorageBackend>(
-        arbos_version: u64,
-        sto: &Storage<D>,
-        backend: &mut B,
-    ) -> Result<(), ProgramsError> {
-        let params_sto = sto.open_sub_storage(PARAMS_KEY);
-        init_stylus_params(arbos_version, &params_sto);
-        let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
-        init_data_pricer(&data_pricer_sto, backend)?;
-        Ok(())
-    }
-
+impl<D> Programs<D> {
     pub fn open(arbos_version: u64, sto: Storage<D>) -> Self {
         let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
         let data_pricer = open_data_pricer(&data_pricer_sto);
@@ -146,6 +134,31 @@ impl<D: Database> Programs<D> {
             data_pricer,
             cache_managers,
         }
+    }
+}
+
+impl<D> Programs<D> {
+    /// Load the current Stylus parameters through a [`StorageBackend`].
+    pub fn params_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<StylusParams, ProgramsError> {
+        let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
+        StylusParams::load_via_backend(self.arbos_version, &sto, backend)
+    }
+}
+
+impl<D: Database> Programs<D> {
+    pub fn initialize<B: StorageBackend>(
+        arbos_version: u64,
+        sto: &Storage<D>,
+        backend: &mut B,
+    ) -> Result<(), ProgramsError> {
+        let params_sto = sto.open_sub_storage(PARAMS_KEY);
+        init_stylus_params(arbos_version, &params_sto);
+        let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
+        init_data_pricer(&data_pricer_sto, backend)?;
+        Ok(())
     }
 
     /// Load the current Stylus parameters.

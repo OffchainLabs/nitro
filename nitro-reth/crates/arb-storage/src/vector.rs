@@ -17,7 +17,7 @@ pub struct SubStorageVector {
     length: StorageBackedUint64,
 }
 
-pub fn open_sub_storage_vector<D: revm::Database>(storage: Storage<D>) -> SubStorageVector {
+pub fn open_sub_storage_vector<D>(storage: Storage<D>) -> SubStorageVector {
     open_sub_storage_vector_at(storage.base_key())
 }
 

@@ -13,6 +13,7 @@ arb-chainspec = { workspace = true }
 arb-context = { workspace = true }
 arb-math = { workspace = true }
 arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
 arb-storage-errors = { workspace = true }
 arb-stylus = { workspace = true }
 arbos = { workspace = true }

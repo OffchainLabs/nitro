@@ -1,16 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
+use arb_storage::ARBOS_STATE_ADDRESS;
+use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{
-    interfaces::IArbAggregator,
-    storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-        L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
-    },
-    ArbPrecompileError,
-};
+use crate::{interfaces::IArbAggregator, ArbPrecompileError};
 
 /// ArbAggregator precompile address (0x6d).
 pub const ARBAGGREGATOR_ADDRESS: Address = Address::new([
@@ -28,12 +23,6 @@ const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
-
-// Batch poster table storage layout constants.
-const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
-const POSTER_ADDRS_KEY: &[u8] = &[0];
-const POSTER_INFO_KEY: &[u8] = &[1];
-const PAY_TO_OFFSET: u64 = 1;
 
 pub fn create_arbaggregator_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbaggregator"), handler)
@@ -82,15 +71,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::setFeeCollector(c) => {
             handle_set_fee_collector(&mut input, &mut gas_used, c.batchPoster, c.newFeeCollector)
         }
-        Calls::getBatchPosters(_) => handle_get_batch_posters(&mut input, &mut gas_used),
+        Calls::getBatchPosters(_) => handle_get_batch_posters(&mut input),
         Calls::addBatchPoster(c) => {
             handle_add_batch_poster(&mut input, &mut gas_used, c.newBatchPoster)
         }
     };
     crate::gas_check(gas_limit, gas_used, result)
 }
-
-// ── helpers ──────────────────────────────────────────────────────────
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
@@ -100,66 +87,6 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn sload_field(
-    input: &mut PrecompileInput<'_>,
-    gas_used: &mut u64,
-    slot: U256,
-) -> Result<U256, ArbPrecompileError> {
-    let val = input
-        .internals_mut()
-        .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
-    Ok(val.data)
-}
-
-fn sstore_field(
-    input: &mut PrecompileInput<'_>,
-    gas_used: &mut u64,
-    slot: U256,
-    value: U256,
-) -> Result<(), ArbPrecompileError> {
-    input
-        .internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, SSTORE_GAS);
-    Ok(())
-}
-
-/// Derive the batch poster table sub-storage key.
-fn batch_poster_table_key() -> B256 {
-    let l1_pricing_key = derive_subspace_key(ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
-    derive_subspace_key(l1_pricing_key.as_slice(), BATCH_POSTER_TABLE_KEY)
-}
-
-/// Derive the posterAddrs (AddressSet) sub-storage key.
-fn poster_addrs_key() -> B256 {
-    let bpt_key = batch_poster_table_key();
-    derive_subspace_key(bpt_key.as_slice(), POSTER_ADDRS_KEY)
-}
-
-/// Derive the poster info sub-storage key for a specific batch poster.
-fn poster_info_key(poster: Address) -> B256 {
-    let bpt_key = batch_poster_table_key();
-    let poster_info = derive_subspace_key(bpt_key.as_slice(), POSTER_INFO_KEY);
-    derive_subspace_key(poster_info.as_slice(), poster.as_slice())
-}
-
-/// Check if caller is a chain owner via the address set membership check.
-fn is_chain_owner(
-    input: &mut PrecompileInput<'_>,
-    gas_used: &mut u64,
-    addr: Address,
-) -> Result<bool, ArbPrecompileError> {
-    let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
-    let by_address_key = derive_subspace_key(owner_key.as_slice(), &[0]);
-    let addr_b256 = B256::left_padding_from(addr.as_slice());
-    let slot = map_slot_b256(by_address_key.as_slice(), &addr_b256);
-    let val = sload_field(input, gas_used, slot)?;
-    Ok(val != U256::ZERO)
-}
-
 fn handle_get_fee_collector(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
@@ -167,23 +94,25 @@ fn handle_get_fee_collector(
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
+    let internals = input.internals_mut();
+    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        .map_err(ArbPrecompileError::fatal)?;
+    let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
-    let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
-    let poster_b256 = B256::left_padding_from(poster.as_slice());
-    let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
-    let is_member = sload_field(input, gas_used, member_slot)?;
-    if is_member == U256::ZERO {
-        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
-    }
-
-    let info_key = poster_info_key(poster);
-    let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
-    let pay_to = sload_field(input, gas_used, pay_to_slot)?;
-
-    crate::charge_precompile_gas(gas_used, COPY_GAS);
+    let poster_state = match bpt.open_poster(internals, poster, false) {
+        Ok(state) => state,
+        Err(_) => return Err(ArbPrecompileError::empty_revert(*gas_used).into()),
+    };
+    let pay_to = poster_state
+        .pay_to(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS + COPY_GAS);
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
-        pay_to.to_be_bytes::<32>().to_vec().into(),
+        U256::from_be_slice(pay_to.as_slice())
+            .to_be_bytes::<32>()
+            .to_vec()
+            .into(),
     ))
 }
 
@@ -192,84 +121,70 @@ fn handle_set_fee_collector(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     poster: Address,
-    _new_collector: Address,
+    new_collector: Address,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
+    let internals = input.internals_mut();
+    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        .map_err(ArbPrecompileError::fatal)?;
+    let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
-    let by_address_key = derive_subspace_key(poster_addrs_key().as_slice(), &[0]);
-    let poster_b256 = B256::left_padding_from(poster.as_slice());
-    let member_slot = map_slot_b256(by_address_key.as_slice(), &poster_b256);
-    let is_member = sload_field(input, gas_used, member_slot)?;
-    if is_member == U256::ZERO {
-        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
-    }
+    let poster_state = match bpt.open_poster(internals, poster, false) {
+        Ok(state) => state,
+        Err(_) => return Err(ArbPrecompileError::empty_revert(*gas_used).into()),
+    };
+    let old_collector = poster_state
+        .pay_to(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS);
 
-    // Read the current fee collector for the auth check.
-    let info_key = poster_info_key(poster);
-    let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
-    let old_collector_u256 = sload_field(input, gas_used, pay_to_slot)?;
-    let old_collector_bytes = old_collector_u256.to_be_bytes::<32>();
-    let old_collector = Address::from_slice(&old_collector_bytes[12..32]);
-
-    // Verify authorization: caller must be poster, current fee collector,
-    // or chain owner.
     if caller != poster && caller != old_collector {
-        let is_owner = is_chain_owner(input, gas_used, caller)?;
+        let is_owner = arb_state
+            .chain_owners
+            .is_member(internals, caller)
+            .map_err(ArbPrecompileError::fatal)?;
+        crate::charge_precompile_gas(gas_used, SLOAD_GAS);
         if !is_owner {
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
     }
 
-    // Write the new fee collector.
-    let new_val = U256::from_be_slice(_new_collector.as_slice());
-    sstore_field(input, gas_used, pay_to_slot, new_val)?;
+    poster_state
+        .set_pay_to(internals, new_collector)
+        .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_precompile_gas(gas_used, SSTORE_GAS);
 
-    // Cost: OAS(1) + IsMember(1) + payTo.Get(1) + [maybe owner IsMember(1)]
-    // + SetPayTo(1 SSTORE) + argsCost(6) — accumulator captured everything.
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         vec![].into(),
     ))
 }
 
-/// GetBatchPosters returns all batch poster addresses from the AddressSet.
-fn handle_get_batch_posters(
-    input: &mut PrecompileInput<'_>,
-    gas_used: &mut u64,
-) -> PrecompileResult {
+fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
-
-    let addrs_key = poster_addrs_key();
-    // AddressSet size is at offset 0.
-    let size_slot = map_slot(addrs_key.as_slice(), 0);
-    let size = sload_field(input, gas_used, size_slot)?;
-    let count: u64 = size
-        .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
+    let internals = input.internals_mut();
+    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        .map_err(ArbPrecompileError::fatal)?;
+    let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
     const MAX_MEMBERS: u64 = 1024;
-    let count = count.min(MAX_MEMBERS);
+    let posters = bpt
+        .all_posters_capped(internals, MAX_MEMBERS)
+        .map_err(ArbPrecompileError::fatal)?;
+    let count = posters.len() as u64;
 
-    // Read each member address from positions 1..=count.
-    let mut addresses = Vec::with_capacity(count as usize);
-    for i in 1..=count {
-        let member_slot = map_slot(addrs_key.as_slice(), i);
-        let val = sload_field(input, gas_used, member_slot)?;
-        addresses.push(val);
-    }
-
-    // ABI-encode as dynamic address array: offset, length, then elements.
-    let mut out = Vec::with_capacity(64 + 32 * addresses.len());
+    let mut out = Vec::with_capacity(64 + posters.len() * 32);
     out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(count).to_be_bytes::<32>());
-    for addr_val in &addresses {
-        out.extend_from_slice(&addr_val.to_be_bytes::<32>());
+    for addr in &posters {
+        let mut word = [0u8; 32];
+        word[12..32].copy_from_slice(addr.as_slice());
+        out.extend_from_slice(&word);
     }
 
-    // resultCost = (2 + N) words for dynamic array encoding.
     let gas_cost = (2 + count) * SLOAD_GAS + (2 + count) * COPY_GAS;
     Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
@@ -283,57 +198,34 @@ fn handle_add_batch_poster(
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
+    let internals = input.internals_mut();
+    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        .map_err(ArbPrecompileError::fatal)?;
 
-    // Verify caller is a chain owner.
-    if !is_chain_owner(input, gas_used, caller)? {
+    let is_owner = arb_state
+        .chain_owners
+        .is_member(internals, caller)
+        .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+    if !is_owner {
         return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
-    let addrs_key = poster_addrs_key();
+    let bpt = arb_state.l1_pricing_state.batch_poster_table();
+    let already = bpt
+        .contains_poster(internals, new_poster)
+        .map_err(ArbPrecompileError::fatal)?;
 
-    // Check if already a batch poster via byAddress sub-storage.
-    let by_address_key = derive_subspace_key(addrs_key.as_slice(), &[0]);
-    let addr_hash = B256::left_padding_from(new_poster.as_slice());
-    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
-    let existing = sload_field(input, gas_used, member_slot)?;
-
-    if existing != U256::ZERO {
-        // Already a batch poster — no-op.
+    if already {
         return Ok(PrecompileOutput::new(
             (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
             vec![].into(),
         ));
     }
 
-    // Read current size and increment.
-    let size_slot = map_slot(addrs_key.as_slice(), 0);
-    let size = sload_field(input, gas_used, size_slot)?;
-    let size_u64: u64 = size
-        .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
-    let new_size = size_u64 + 1;
+    bpt.add_poster(internals, new_poster, new_poster)
+        .map_err(ArbPrecompileError::fatal)?;
 
-    // Store the new poster at position (1 + size) in the backing storage.
-    let new_pos_slot = map_slot(addrs_key.as_slice(), new_size);
-    let addr_as_u256 = U256::from_be_slice(new_poster.as_slice());
-    sstore_field(input, gas_used, new_pos_slot, addr_as_u256)?;
-
-    // Store in byAddress mapping: byAddress[addr_hash] = 1-based position.
-    let slot_value = U256::from(new_size);
-    sstore_field(input, gas_used, member_slot, slot_value)?;
-
-    // Increment size.
-    sstore_field(input, gas_used, size_slot, U256::from(new_size))?;
-
-    // Initialize poster info: set payTo = newPoster (the poster pays itself initially).
-    let info_key = poster_info_key(new_poster);
-    let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
-    sstore_field(input, gas_used, pay_to_slot, addr_as_u256)?;
-
-    // IsMember(caller)(1) + ContainsPoster IsMember(1) + AddPoster[IsMember(1) +
-    // fundsDue.SetChecked(0)(5000) + payTo.Set(20000) + Add(IsMember(1) + size.Get(1) +
-    // byAddress.Set(20000) + backingStorage.Set(20000) + size.Increment Get(1)+Set(20000))]
-    // + argsCost(3).
     let gas_cost = 6 * SLOAD_GAS + SSTORE_ZERO_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(
         gas_cost.min(gas_limit),

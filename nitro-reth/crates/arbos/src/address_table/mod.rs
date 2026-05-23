@@ -22,7 +22,7 @@ pub fn initialize_address_table<D: Database>(_sto: &Storage<D>) {
     // no-op
 }
 
-pub fn open_address_table<D: Database>(sto: Storage<D>) -> AddressTable<D> {
+pub fn open_address_table<D>(sto: Storage<D>) -> AddressTable<D> {
     let num_items = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[]);
     AddressTable {
