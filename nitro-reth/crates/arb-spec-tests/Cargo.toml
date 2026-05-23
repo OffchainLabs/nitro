@@ -19,5 +19,13 @@ thiserror = { workspace = true }
 hex = { workspace = true }
 ureq = { version = "2", default-features = false }
 
+[features]
+# Opt-in feature for fixtures that drive a release `arb-reth` binary
+# (set via `ARB_SPEC_BINARY`) or talk to a remote RPC node
+# (set via `ARB_SPEC_RPC_URL`). Without this feature those tests are
+# marked `#[ignore]` so `cargo test --workspace` surfaces them in the
+# `ignored` count rather than silently skipping.
+spec-binary = []
+
 [lints]
 workspace = true

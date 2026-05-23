@@ -1,7 +1,21 @@
 use arb_spec_tests::{
     run_dir, run_execution_dir,
-    runner::{fixtures_root, BINARY_ENV, RPC_URL_ENV},
+    runner::{fixtures_root, BINARY_ENV, REQUIRE_BINARY_ENV, RPC_URL_ENV},
 };
+
+/// Sentinel test that fails when `ARB_SPEC_REQUIRE_BINARY=1` is set
+/// but the crate was built without `--features spec-binary`. CI uses
+/// this combination to guarantee the binary-driven fixtures actually
+/// run rather than being silently filtered out.
+#[test]
+fn require_binary_feature_when_env_set() {
+    if std::env::var(REQUIRE_BINARY_ENV).is_ok() && !cfg!(feature = "spec-binary") {
+        panic!(
+            "{REQUIRE_BINARY_ENV} is set but arb-spec-tests was built without `--features \
+             spec-binary`. Re-run with `cargo test -p arb-spec-tests --features spec-binary`."
+        );
+    }
+}
 
 macro_rules! spec_dir {
     ($name:ident, $dir:literal) => {
@@ -21,16 +35,28 @@ spec_dir!(merkle, "merkle");
 spec_dir!(version_transitions, "version_transitions");
 
 #[test]
+#[cfg_attr(
+    not(feature = "spec-binary"),
+    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY or ARB_SPEC_RPC_URL"
+)]
 fn execution() {
     run_execution_dir(&fixtures_root().join("execution"));
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "spec-binary"),
+    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY or ARB_SPEC_RPC_URL"
+)]
 fn arbos_gates() {
     run_execution_dir(&fixtures_root().join("arbos"));
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "spec-binary"),
+    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY or ARB_SPEC_RPC_URL"
+)]
 fn stylus() {
     let stylus_root = fixtures_root().join("stylus");
     let subs = ["hostio", "subcall", "cache", "contract_limit", "regression"];
@@ -58,22 +84,23 @@ fn stylus() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "spec-binary"),
+    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY or ARB_SPEC_RPC_URL"
+)]
 fn retryables_exec() {
     let retry_root = fixtures_root().join("retryables");
-    if !retry_root.exists() {
-        return;
-    }
+    assert!(
+        retry_root.exists(),
+        "retryables fixture dir missing: {}",
+        retry_root.display()
+    );
     let rpc_url = std::env::var(RPC_URL_ENV).ok();
     let has_binary = std::env::var(BINARY_ENV).is_ok();
-    if rpc_url.is_none() && !has_binary {
-        if std::env::var("ARB_SPEC_REQUIRE_BINARY").is_ok() {
-            panic!("retryables_exec needs {RPC_URL_ENV} or {BINARY_ENV} set");
-        }
-        eprintln!(
-            "skipping retryables_exec: set {RPC_URL_ENV} (static node) and/or {BINARY_ENV} (per-fixture genesis)"
-        );
-        return;
-    }
+    assert!(
+        rpc_url.is_some() || has_binary,
+        "retryables_exec needs {RPC_URL_ENV} (static node) or {BINARY_ENV} (per-fixture genesis) set"
+    );
     let mut had_exec = false;
     let mut count = 0;
     let mut failures: Vec<String> = Vec::new();
