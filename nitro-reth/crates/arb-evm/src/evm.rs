@@ -298,8 +298,11 @@ pub fn reset_stylus_pages() {
 // ── Stylus storage helpers ───────────────────────────────────────────
 
 use arb_precompiles::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
+    derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
     PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+};
+use arb_storage::{
+    DatabaseError, DatabaseErrorInfo, Detached, Storage, StorageBackend, StorageError,
 };
 use arbos::programs::{memory::MemoryModel, params::StylusParams, Program};
 
@@ -316,12 +319,66 @@ fn sload_arbos<DB: Database>(journal: &mut revm::Journal<DB>, slot: U256) -> Opt
     Some(result.data)
 }
 
-/// Read the StylusParams packed word from storage.
-fn read_params_word<DB: Database>(journal: &mut revm::Journal<DB>) -> Option<[u8; 32]> {
+/// `StorageBackend` adapter over a live `revm::Journal`, used so dispatch can
+/// drive the canonical `arb-storage` accessors without an `EvmInternals` in
+/// scope. Reads route through the journal's cold/warm cache; writes are
+/// unused on the dispatch path but routed identically for completeness.
+struct JournalBackend<'a, DB: Database> {
+    journal: &'a mut revm::Journal<DB>,
+}
+
+impl<'a, DB: Database> JournalBackend<'a, DB> {
+    fn new(journal: &'a mut revm::Journal<DB>) -> Self {
+        Self { journal }
+    }
+}
+
+impl<DB: Database> StorageBackend for JournalBackend<'_, DB> {
+    type Error = StorageError;
+
+    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
+        let journal = &mut *self.journal;
+        journal
+            .inner
+            .load_account(&mut journal.database, account)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        let value = journal
+            .inner
+            .sload(&mut journal.database, account, slot, false)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        Ok(value.data)
+    }
+
+    fn sstore(&mut self, account: Address, slot: U256, value: U256) -> Result<(), Self::Error> {
+        let journal = &mut *self.journal;
+        journal
+            .inner
+            .sstore(&mut journal.database, account, slot, value, false)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Write(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        Ok(())
+    }
+}
+
+/// Detached `Storage` handle for the `programs/params` subspace.
+///
+/// Reads route through a [`StorageBackend`]; no executor state pointer is
+/// required.
+fn programs_params_storage() -> Storage<Detached> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
-    let slot = map_slot(params_key.as_slice(), 0);
-    sload_arbos(journal, slot).map(|v| v.to_be_bytes::<32>())
+    Storage::detached(ARBOS_STATE_ADDRESS, params_key)
 }
 
 /// Read program data word by code hash.
@@ -345,30 +402,6 @@ fn read_module_hash<DB: Database>(
     let module_hashes_key = derive_subspace_key(programs_key.as_slice(), &[2]);
     let slot = map_slot_b256(module_hashes_key.as_slice(), &code_hash);
     sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
-}
-
-/// Parse essential StylusParams fields from the packed storage word.
-fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
-    StylusParams {
-        arbos_version,
-        version: u16::from_be_bytes([word[0], word[1]]),
-        ink_price: (word[2] as u32) << 16 | (word[3] as u32) << 8 | word[4] as u32,
-        max_stack_depth: u32::from_be_bytes([word[5], word[6], word[7], word[8]]),
-        free_pages: u16::from_be_bytes([word[9], word[10]]),
-        page_gas: u16::from_be_bytes([word[11], word[12]]),
-        page_ramp: arbos::programs::params::INITIAL_PAGE_RAMP,
-        page_limit: u16::from_be_bytes([word[13], word[14]]),
-        min_init_gas: word[15],
-        min_cached_init_gas: word[16],
-        init_cost_scalar: word[17],
-        cached_cost_scalar: word[18],
-        expiry_days: u16::from_be_bytes([word[19], word[20]]),
-        keepalive_days: u16::from_be_bytes([word[21], word[22]]),
-        block_cache_size: u16::from_be_bytes([word[23], word[24]]),
-        // These fields span to word 2; not needed for dispatch.
-        max_wasm_size: 0,
-        max_fragment_count: 0,
-    }
 }
 
 /// Compute upfront gas cost for a Stylus call, per `Programs.CallProgram`.
@@ -1094,14 +1127,17 @@ where
     let arbos_version = arb_precompiles::get_arbos_version();
     let block_timestamp = arb_precompiles::get_block_timestamp();
 
-    let params_word = match read_params_word(&mut context.journaled_state) {
-        Some(w) => w,
-        None => {
-            tracing::warn!(target: "stylus", "failed to read StylusParams from storage");
-            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+    let params_sto = programs_params_storage();
+    let params = {
+        let mut backend = JournalBackend::new(&mut context.journaled_state);
+        match StylusParams::load_via_backend(arbos_version, &params_sto, &mut backend) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(target: "stylus", err = %e, "failed to load StylusParams from storage");
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
         }
     };
-    let params = parse_stylus_params(&params_word, arbos_version);
 
     let program_word = match read_program_word(&mut context.journaled_state, code_hash) {
         Some(w) => w,
