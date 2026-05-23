@@ -127,9 +127,9 @@ pub fn initialize_arbos_state<D: Database>(
     // 3c. Store serialized chain config.
     if !init_msg.serialized_chain_config.is_empty() {
         let cc_sto = backing.open_sub_storage(&[7]); // CHAIN_CONFIG_SUBSPACE
-        let cc_bytes = StorageBackedBytes::new(cc_sto);
+        let cc_bytes = StorageBackedBytes::new(cc_sto.base_key());
         cc_bytes
-            .set(&init_msg.serialized_chain_config)
+            .set(state, &init_msg.serialized_chain_config)
             .map_err(|source| GenesisError::StorageWrite {
                 what: "chain config",
                 source,
