@@ -515,9 +515,10 @@ where
                 if let Ok(mut arb_state) =
                     ArbosState::open(state_ptr, SystemBurner::new(None, false))
                 {
-                    let _ = arb_state
-                        .l1_pricing_state
-                        .set_price_per_unit(init_msg.initial_l1_base_fee);
+                    let _ = arb_state.l1_pricing_state.set_price_per_unit(
+                        unsafe { &mut *state_ptr },
+                        init_msg.initial_l1_base_fee,
+                    );
                     // Optional ArbOS upgrade hook for benchmarking: lets the
                     // bench's subprocess boot at any target ArbOS version
                     // without needing to schedule an on-chain upgrade.

@@ -54,9 +54,10 @@ fn equilibration_units_v6_matches_nitro() {
 #[test]
 fn equilibration_units_after_v30_init_is_v6() {
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
+    let state_ptr = h.state_ptr();
     let l1 = h.l1_pricing_state();
     assert_eq!(
-        l1.equilibration_units().unwrap(),
+        l1.equilibration_units(unsafe { &mut *state_ptr }).unwrap(),
         U256::from(INITIAL_EQUILIBRATION_UNITS_V6)
     );
 }
@@ -172,8 +173,11 @@ fn l2_backlog_tolerance_is_10() {
 #[test]
 fn l2_min_base_fee_is_0_1_gwei() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     assert_eq!(
-        h.l2_pricing_state().min_base_fee_wei().unwrap(),
+        h.l2_pricing_state()
+            .min_base_fee_wei(unsafe { &mut *state_ptr })
+            .unwrap(),
         U256::from(100_000_000u64)
     );
 }
@@ -218,7 +222,7 @@ fn approx_exp_basis_points_10000_yields_27083() {
     let backlog = tolerance * speed + inertia * speed;
     p.set_gas_backlog(b, backlog).unwrap();
     p.update_pricing_model(b, 0, 30).unwrap();
-    assert_eq!(p.base_fee_wei().unwrap(), U256::from(270_830_000u64));
+    assert_eq!(p.base_fee_wei(b).unwrap(), U256::from(270_830_000u64));
 }
 
 #[test]
@@ -227,10 +231,10 @@ fn approx_exp_basis_points_zero_returns_one_in_bips() {
     let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
     let b = unsafe { &mut *state_ptr };
-    let min = p.min_base_fee_wei().unwrap();
+    let min = p.min_base_fee_wei(b).unwrap();
     p.set_gas_backlog(b, 0).unwrap();
     p.update_pricing_model(b, 0, 30).unwrap();
-    assert_eq!(p.base_fee_wei().unwrap(), min);
+    assert_eq!(p.base_fee_wei(b).unwrap(), min);
 }
 
 mod end_tx_retryable {
@@ -527,8 +531,11 @@ mod l1_pricing_surplus {
     #[test]
     fn surplus_at_genesis_is_zero() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let l1 = h.l1_pricing_state();
-        let (mag, neg) = l1.get_l1_pricing_surplus().unwrap();
+        let (mag, neg) = l1
+            .get_l1_pricing_surplus(unsafe { &mut *state_ptr })
+            .unwrap();
         assert_eq!(mag, U256::ZERO);
         assert!(!neg);
     }
@@ -537,10 +544,13 @@ mod l1_pricing_surplus {
     #[test]
     fn surplus_grows_with_l1_fees_available() {
         let mut h = ArbosHarness::new().initialize();
+        let state_ptr = h.state_ptr();
         let l1 = h.l1_pricing_state();
-        l1.add_to_l1_fees_available(U256::from(1_000_000u64))
+        l1.add_to_l1_fees_available(unsafe { &mut *state_ptr }, U256::from(1_000_000u64))
             .unwrap();
-        let (mag, neg) = l1.get_l1_pricing_surplus().unwrap();
+        let (mag, neg) = l1
+            .get_l1_pricing_surplus(unsafe { &mut *state_ptr })
+            .unwrap();
         assert_eq!(mag, U256::from(1_000_000u64));
         assert!(!neg);
     }

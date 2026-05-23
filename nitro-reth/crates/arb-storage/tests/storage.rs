@@ -86,8 +86,10 @@ fn int64_signed_round_trip() {
 #[test]
 fn big_uint_round_trip_at_boundaries() {
     let mut h = ArbosHarness::new().initialize();
-    let storage = h.root_storage();
-    let v = StorageBackedBigUint::new(storage.state_ptr(), B256::repeat_byte(3), TEST_OFFSET);
+    let state_ptr = h.state_ptr();
+    let _storage = h.root_storage();
+    let v = StorageBackedBigUint::new(B256::repeat_byte(3), TEST_OFFSET);
+    let b = unsafe { &mut *state_ptr };
 
     for x in [
         U256::ZERO,
@@ -95,8 +97,8 @@ fn big_uint_round_trip_at_boundaries() {
         U256::from(u64::MAX),
         U256::MAX,
     ] {
-        v.set(x).unwrap();
-        assert_eq!(v.get().unwrap(), x);
+        v.set(b, x).unwrap();
+        assert_eq!(v.get(b).unwrap(), x);
     }
 }
 

@@ -102,7 +102,7 @@ pub struct ArbosState<D, B: Burner> {
     pub send_merkle_accumulator: MerkleAccumulator<D>,
     pub programs: Programs<D>,
     pub blockhashes: Blockhashes<D>,
-    pub chain_id: StorageBackedBigUint<D>,
+    pub chain_id: StorageBackedBigUint,
     pub chain_config: StorageBackedBytes<D>,
     pub genesis_block_num: StorageBackedUint64,
     pub infra_fee_account: StorageBackedAddress<D>,
@@ -176,7 +176,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             blockhashes: blockhash::open_blockhashes(
                 backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
             ),
-            chain_id: StorageBackedBigUint::new(state, B256::ZERO, CHAIN_ID_OFFSET),
+            chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
             chain_config: StorageBackedBytes::new(chain_config_sto),
             genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
             infra_fee_account: StorageBackedAddress::new(
@@ -202,7 +202,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             transaction_filterers: address_set::open_address_set(
                 backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
             ),
-            features: features::open_features(state, features_sto.base_key(), 0),
+            features: features::open_features(features_sto.base_key(), 0),
             filtered_funds_recipient: StorageBackedAddress::new(
                 state,
                 B256::ZERO,
@@ -262,8 +262,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(self.collect_tips.get(backend)? != 0)
     }
 
-    pub fn chain_id(&self) -> Result<U256, ArbosStateError> {
-        Ok(self.chain_id.get()?)
+    pub fn chain_id<C: StorageBackend>(&self, backend: &mut C) -> Result<U256, ArbosStateError> {
+        Ok(self.chain_id.get(backend)?)
     }
 
     pub fn chain_config(&self) -> Result<Vec<u8>, ArbosStateError> {
@@ -426,7 +426,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                     let state = unsafe { &mut *self.backing_storage.state_ptr() };
                     let pool_balance =
                         get_account_balance(state, l1_pricing::L1_PRICER_FUNDS_POOL_ADDRESS);
-                    self.l1_pricing_state.set_l1_fees_available(pool_balance)?;
+                    self.l1_pricing_state
+                        .set_l1_fees_available(backend, pool_balance)?;
                 }
                 11 => {
                     self.l1_pricing_state
@@ -525,8 +526,10 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 self.l1_pricing_state
                     .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V6)?;
             }
-            self.l1_pricing_state
-                .set_equilibration_units(U256::from(l1_pricing::INITIAL_EQUILIBRATION_UNITS_V6))?;
+            self.l1_pricing_state.set_equilibration_units(
+                backend,
+                U256::from(l1_pricing::INITIAL_EQUILIBRATION_UNITS_V6),
+            )?;
             self.l2_pricing_state.set_speed_limit_per_second(
                 backend,
                 l2_pricing::INITIAL_SPEED_LIMIT_PER_SECOND_V6,

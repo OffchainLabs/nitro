@@ -70,7 +70,7 @@ fn apply_action(
     match action {
         Action::L1PricingSetPricePerUnit { value } => harness
             .l1_pricing_state()
-            .set_price_per_unit(*value)
+            .set_price_per_unit(unsafe { &mut *state_ptr }, *value)
             .map_err(|_| SpecError::Action("set_price_per_unit".into()))?,
         Action::L1PricingSetUnitsSinceUpdate { value } => harness
             .l1_pricing_state()
@@ -82,7 +82,7 @@ fn apply_action(
             .map_err(|_| SpecError::Action("set_inertia".into()))?,
         Action::L1PricingAddToFeesAvailable { amount } => harness
             .l1_pricing_state()
-            .add_to_l1_fees_available(*amount)
+            .add_to_l1_fees_available(unsafe { &mut *state_ptr }, *amount)
             .map_err(|_| SpecError::Action("add_to_l1_fees_available".into()))?,
         Action::L1PricingAddPoster { poster, pay_to } => {
             let l1 = harness.l1_pricing_state();
@@ -105,7 +105,7 @@ fn apply_action(
             .map_err(|_| SpecError::Action("set_gas_backlog".into()))?,
         Action::L2PricingSetMinBaseFee { value } => harness
             .l2_pricing_state()
-            .set_min_base_fee_wei(*value)
+            .set_min_base_fee_wei(unsafe { &mut *state_ptr }, *value)
             .map_err(|_| SpecError::Action("set_min_base_fee".into()))?,
         Action::L2PricingUpdateModel { time_passed } => {
             let v = harness.arbos_version();
@@ -245,7 +245,11 @@ fn check_assertions(
             ensure_eq("arbos_state.arbos_version", st.arbos_version(), v)?;
         }
         if let Some(v) = s.chain_id {
-            ensure_eq("arbos_state.chain_id", st.chain_id().map_err(map_err)?, v)?;
+            ensure_eq(
+                "arbos_state.chain_id",
+                st.chain_id(unsafe { &mut *state_ptr }).map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.brotli_compression_level {
             ensure_eq(
@@ -269,7 +273,8 @@ fn check_assertions(
         if let Some(v) = s.price_per_unit {
             ensure_eq(
                 "l1.price_per_unit",
-                l1.price_per_unit().map_err(map_err)?,
+                l1.price_per_unit(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -284,7 +289,8 @@ fn check_assertions(
         if let Some(v) = s.l1_fees_available {
             ensure_eq(
                 "l1.l1_fees_available",
-                l1.l1_fees_available().map_err(map_err)?,
+                l1.l1_fees_available(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -313,16 +319,21 @@ fn check_assertions(
         if let Some(v) = s.equilibration_units {
             ensure_eq(
                 "l1.equilibration_units",
-                l1.equilibration_units().map_err(map_err)?,
+                l1.equilibration_units(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
         if let Some(true) = s.surplus_is_zero {
-            let (mag, _) = l1.get_l1_pricing_surplus().map_err(map_err)?;
+            let (mag, _) = l1
+                .get_l1_pricing_surplus(unsafe { &mut *state_ptr })
+                .map_err(map_err)?;
             ensure_eq("l1.surplus_is_zero", mag, U256::ZERO)?;
         }
         if let Some(min) = s.surplus_at_least {
-            let (mag, neg) = l1.get_l1_pricing_surplus().map_err(map_err)?;
+            let (mag, neg) = l1
+                .get_l1_pricing_surplus(unsafe { &mut *state_ptr })
+                .map_err(map_err)?;
             if neg || mag < min {
                 return Err(SpecError::Assertion(format!(
                     "l1.surplus_at_least: expected positive >= {min}, got {mag} (neg={neg})"
@@ -341,12 +352,18 @@ fn check_assertions(
     if let Some(s) = &a.l2_pricing {
         let l2 = harness.l2_pricing_state();
         if let Some(v) = s.base_fee_wei {
-            ensure_eq("l2.base_fee_wei", l2.base_fee_wei().map_err(map_err)?, v)?;
+            ensure_eq(
+                "l2.base_fee_wei",
+                l2.base_fee_wei(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
+                v,
+            )?;
         }
         if let Some(v) = s.min_base_fee_wei {
             ensure_eq(
                 "l2.min_base_fee_wei",
-                l2.min_base_fee_wei().map_err(map_err)?,
+                l2.min_base_fee_wei(unsafe { &mut *state_ptr })
+                    .map_err(map_err)?,
                 v,
             )?;
         }
@@ -407,7 +424,9 @@ fn check_assertions(
             )?;
         }
         if let Some(threshold) = s.base_fee_at_least {
-            let actual = l2.base_fee_wei().map_err(map_err)?;
+            let actual = l2
+                .base_fee_wei(unsafe { &mut *state_ptr })
+                .map_err(map_err)?;
             if actual < threshold {
                 return Err(SpecError::Assertion(format!(
                     "l2.base_fee_at_least: expected >= {threshold}, got {actual}"
@@ -415,7 +434,9 @@ fn check_assertions(
             }
         }
         if let Some(threshold) = s.base_fee_at_most {
-            let actual = l2.base_fee_wei().map_err(map_err)?;
+            let actual = l2
+                .base_fee_wei(unsafe { &mut *state_ptr })
+                .map_err(map_err)?;
             if actual > threshold {
                 return Err(SpecError::Assertion(format!(
                     "l2.base_fee_at_most: expected <= {threshold}, got {actual}"

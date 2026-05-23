@@ -38,7 +38,7 @@ pub struct Retryable<D> {
     num_tries: StorageBackedUint64,
     from: StorageBackedAddress<D>,
     to: StorageBackedAddressOrNil<D>,
-    callvalue: StorageBackedBigUint<D>,
+    callvalue: StorageBackedBigUint,
     beneficiary: StorageBackedAddress<D>,
     calldata: StorageBackedBytes<D>,
     timeout: StorageBackedUint64,
@@ -82,7 +82,7 @@ impl<D: Database> RetryableState<D> {
         ret.num_tries.set(backend, 0)?;
         ret.from.set(from)?;
         ret.to.set(to)?;
-        ret.callvalue.set(callvalue)?;
+        ret.callvalue.set(backend, callvalue)?;
         ret.beneficiary.set(beneficiary)?;
         ret.calldata.set(calldata)?;
         ret.timeout.set(backend, timeout)?;
@@ -276,7 +276,7 @@ impl<D: Database> RetryableState<D> {
             num_tries: StorageBackedUint64::new(base_key, NUM_TRIES_OFFSET),
             from: StorageBackedAddress::new(state, base_key, FROM_OFFSET),
             to: StorageBackedAddressOrNil::new(state, base_key, TO_OFFSET),
-            callvalue: StorageBackedBigUint::new(state, base_key, CALLVALUE_OFFSET),
+            callvalue: StorageBackedBigUint::new(base_key, CALLVALUE_OFFSET),
             beneficiary: StorageBackedAddress::new(state, base_key, BENEFICIARY_OFFSET),
             calldata: StorageBackedBytes::new(sto.open_sub_storage(CALLDATA_KEY)),
             timeout: StorageBackedUint64::new(base_key, TIMEOUT_OFFSET),
@@ -347,8 +347,8 @@ impl<D: Database> Retryable<D> {
         Ok(self.to.get()?)
     }
 
-    pub fn callvalue(&self) -> Result<U256, RetryableError> {
-        Ok(self.callvalue.get()?)
+    pub fn callvalue<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, RetryableError> {
+        Ok(self.callvalue.get(backend)?)
     }
 
     pub fn calldata(&self) -> Result<Vec<u8>, RetryableError> {
@@ -361,8 +361,9 @@ impl<D: Database> Retryable<D> {
 
     /// Constructs a retry transaction from this retryable's stored fields
     /// combined with the provided runtime parameters.
-    pub fn make_tx(
+    pub fn make_tx<B: StorageBackend>(
         &self,
+        backend: &mut B,
         chain_id: U256,
         nonce: u64,
         gas_fee_cap: U256,
@@ -379,7 +380,7 @@ impl<D: Database> Retryable<D> {
             gas_fee_cap,
             gas,
             to: self.to()?,
-            value: self.callvalue()?,
+            value: self.callvalue(backend)?,
             data: self.calldata()?.into(),
             ticket_id,
             refund_to,

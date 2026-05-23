@@ -15,7 +15,7 @@ fn l1_price_update_initial_state() {
     let b = unsafe { &mut *state_ptr };
 
     assert_eq!(ps.last_update_time(b).unwrap(), 0);
-    assert_eq!(ps.price_per_unit().unwrap(), initial_price);
+    assert_eq!(ps.price_per_unit(b).unwrap(), initial_price);
 }
 
 #[test]
@@ -82,5 +82,5 @@ fn fresh_l1_pricing_state_reports_zero_units() {
     let ps = h.l1_pricing_state();
     let b = unsafe { &mut *state_ptr };
     assert_eq!(ps.units_since_update(b).unwrap(), 0);
-    assert_eq!(ps.l1_fees_available().unwrap(), U256::ZERO);
+    assert_eq!(ps.l1_fees_available(b).unwrap(), U256::ZERO);
 }

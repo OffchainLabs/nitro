@@ -77,39 +77,33 @@ impl StorageBackedUint64 {
     }
 }
 /// Storage-backed 256-bit unsigned integer.
-pub struct StorageBackedBigUint<D> {
-    state: *mut revm::database::State<D>,
-    slot: U256,
+///
+/// Holds only the storage slot; the caller passes a [`StorageBackend`] at
+/// access time.
+#[derive(Clone, Copy, Debug)]
+pub struct StorageBackedBigUint {
+    pub slot: U256,
 }
 
-impl<D: Database> StorageBackedBigUint<D> {
-    pub fn new(state: *mut revm::database::State<D>, base_key: B256, offset: u64) -> Self {
+impl StorageBackedBigUint {
+    pub fn new(base_key: B256, offset: u64) -> Self {
         Self {
-            state,
             slot: compute_slot(base_key, offset),
         }
     }
 
-    pub fn get(&self) -> Result<U256, StorageError> {
-        read_slot(self.state, self.slot)
+    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, StorageError> {
+        backend
+            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .map_err(Into::into)
     }
 
-    pub fn set(&self, value: U256) -> Result<(), StorageError> {
-        write_slot(self.state, self.slot, value)
-    }
-}
-
-impl<D> Clone for StorageBackedBigUint<D> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            slot: self.slot,
-        }
+    pub fn set<B: StorageBackend>(&self, backend: &mut B, value: U256) -> Result<(), StorageError> {
+        backend
+            .sstore(ARBOS_STATE_ADDRESS, self.slot, value)
+            .map_err(Into::into)
     }
 }
-
-unsafe impl<D: Send> Send for StorageBackedBigUint<D> {}
-unsafe impl<D: Sync> Sync for StorageBackedBigUint<D> {}
 
 /// Storage-backed Ethereum address (20 bytes, right-aligned in 32-byte slot).
 pub struct StorageBackedAddress<D> {

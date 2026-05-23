@@ -22,26 +22,26 @@ fn legacy_pricing_model_steady_state_and_escalation() {
     let p = h.l2_pricing_state();
     let b = unsafe { &mut *state_ptr };
 
-    let min_price = p.min_base_fee_wei().unwrap();
+    let min_price = p.min_base_fee_wei(b).unwrap();
     let limit = p.speed_limit_per_second(b).unwrap();
-    assert_eq!(p.base_fee_wei().unwrap(), min_price);
+    assert_eq!(p.base_fee_wei(b).unwrap(), min_price);
 
     for seconds in 0u64..4 {
         let prev = p.gas_backlog(b).unwrap();
         p.set_gas_backlog(b, prev.saturating_add(seconds.saturating_mul(limit)))
             .unwrap();
         p.update_pricing_model(b, seconds, ARBOS_V30).unwrap();
-        assert_eq!(p.base_fee_wei().unwrap(), min_price);
+        assert_eq!(p.base_fee_wei(b).unwrap(), min_price);
     }
 
-    let mut last = p.base_fee_wei().unwrap();
+    let mut last = p.base_fee_wei(b).unwrap();
     let mut escalated = false;
     for _ in 0..200 {
         let prev = p.gas_backlog(b).unwrap();
         p.set_gas_backlog(b, prev.saturating_add(8 * limit))
             .unwrap();
         p.update_pricing_model(b, 1, ARBOS_V30).unwrap();
-        let new_price = p.base_fee_wei().unwrap();
+        let new_price = p.base_fee_wei(b).unwrap();
         assert!(new_price >= last);
         if new_price > last {
             escalated = true;
@@ -51,11 +51,11 @@ fn legacy_pricing_model_steady_state_and_escalation() {
     }
     assert!(escalated);
 
-    let baseline = p.base_fee_wei().unwrap();
+    let baseline = p.base_fee_wei(b).unwrap();
     p.set_gas_backlog(b, limit.saturating_mul(1000)).unwrap();
     p.update_pricing_model(b, 0, ARBOS_V30).unwrap();
     p.update_pricing_model(b, 1, ARBOS_V30).unwrap();
-    assert!(p.base_fee_wei().unwrap() > baseline);
+    assert!(p.base_fee_wei(b).unwrap() > baseline);
 }
 
 #[test]
@@ -157,9 +157,11 @@ fn multi_gas_constraints_exponents() {
 #[test]
 fn initial_base_fee_equals_min() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let p = h.l2_pricing_state();
-    let base = p.base_fee_wei().unwrap();
-    let min = p.min_base_fee_wei().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    let base = p.base_fee_wei(b).unwrap();
+    let min = p.min_base_fee_wei(b).unwrap();
     assert_eq!(base, min);
     assert!(base > U256::ZERO);
 }
