@@ -66,8 +66,8 @@ pub struct L2PricingState<D> {
     pricing_inertia: StorageBackedUint64,
     backlog_tolerance: StorageBackedUint64,
     per_tx_gas_limit: StorageBackedUint64,
-    gas_constraints: SubStorageVector<D>,
-    multi_gas_constraints: SubStorageVector<D>,
+    gas_constraints: SubStorageVector,
+    multi_gas_constraints: SubStorageVector,
     multi_gas_base_fees: Storage<D>,
 }
 
@@ -256,7 +256,7 @@ impl<D: Database> L2PricingState<D> {
         Ok(self.gas_constraints.length(backend)?)
     }
 
-    pub fn open_gas_constraint_at(&self, index: u64) -> GasConstraint<D> {
+    pub fn open_gas_constraint_at(&self, index: u64) -> GasConstraint {
         open_gas_constraint(self.gas_constraints.at(index))
     }
 
@@ -267,8 +267,8 @@ impl<D: Database> L2PricingState<D> {
         adjustment_window: u64,
         backlog: u64,
     ) -> Result<(), L2PricingError> {
-        let sto = self.gas_constraints.push(backend)?;
-        let c = open_gas_constraint::<D>(sto);
+        let key = self.gas_constraints.push(backend)?;
+        let c = open_gas_constraint(key);
         c.set_target(backend, target)?;
         c.set_adjustment_window(backend, adjustment_window)?;
         c.set_backlog(backend, backlog)?;
@@ -299,7 +299,7 @@ impl<D: Database> L2PricingState<D> {
         Ok(self.multi_gas_constraints.length(backend)?)
     }
 
-    pub fn open_multi_gas_constraint_at(&self, index: u64) -> MultiGasConstraint<D> {
+    pub fn open_multi_gas_constraint_at(&self, index: u64) -> MultiGasConstraint {
         open_multi_gas_constraint(self.multi_gas_constraints.at(index))
     }
 
@@ -311,8 +311,8 @@ impl<D: Database> L2PricingState<D> {
         backlog: u64,
         weights: &[u64; NUM_RESOURCE_KIND],
     ) -> Result<(), L2PricingError> {
-        let sto = self.multi_gas_constraints.push(backend)?;
-        let c = open_multi_gas_constraint::<D>(sto);
+        let key = self.multi_gas_constraints.push(backend)?;
+        let c = open_multi_gas_constraint(key);
         c.set_target(backend, target)?;
         c.set_adjustment_window(backend, adjustment_window)?;
         c.set_backlog(backend, backlog)?;

@@ -27,7 +27,7 @@ pub const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 /// Manages the collection of retryable tickets.
 pub struct RetryableState<D> {
     retryables: Storage<D>,
-    pub timeout_queue: Queue<D>,
+    pub timeout_queue: Queue,
 }
 
 /// A single retryable ticket.
