@@ -36,10 +36,10 @@ pub struct Retryable<D> {
     #[allow(dead_code)]
     backing_storage: Storage<D>,
     num_tries: StorageBackedUint64,
-    from: StorageBackedAddress<D>,
-    to: StorageBackedAddressOrNil<D>,
+    from: StorageBackedAddress,
+    to: StorageBackedAddressOrNil,
     callvalue: StorageBackedBigUint,
-    beneficiary: StorageBackedAddress<D>,
+    beneficiary: StorageBackedAddress,
     calldata: StorageBackedBytes<D>,
     timeout: StorageBackedUint64,
     timeout_windows_left: StorageBackedUint64,
@@ -80,10 +80,10 @@ impl<D: Database> RetryableState<D> {
     ) -> Result<Retryable<D>, RetryableError> {
         let ret = self.internal_open(id);
         ret.num_tries.set(backend, 0)?;
-        ret.from.set(from)?;
-        ret.to.set(to)?;
+        ret.from.set(backend, from)?;
+        ret.to.set(backend, to)?;
         ret.callvalue.set(backend, callvalue)?;
-        ret.beneficiary.set(beneficiary)?;
+        ret.beneficiary.set(backend, beneficiary)?;
         ret.calldata.set(calldata)?;
         ret.timeout.set(backend, timeout)?;
         ret.timeout_windows_left.set(backend, 0)?;
@@ -269,15 +269,14 @@ impl<D: Database> RetryableState<D> {
 
     fn internal_open(&self, id: B256) -> Retryable<D> {
         let sto = self.retryables.open_sub_storage(id.as_slice());
-        let state = sto.state_ptr();
         let base_key = sto.base_key();
         Retryable {
             id,
             num_tries: StorageBackedUint64::new(base_key, NUM_TRIES_OFFSET),
-            from: StorageBackedAddress::new(state, base_key, FROM_OFFSET),
-            to: StorageBackedAddressOrNil::new(state, base_key, TO_OFFSET),
+            from: StorageBackedAddress::new(base_key, FROM_OFFSET),
+            to: StorageBackedAddressOrNil::new(base_key, TO_OFFSET),
             callvalue: StorageBackedBigUint::new(base_key, CALLVALUE_OFFSET),
-            beneficiary: StorageBackedAddress::new(state, base_key, BENEFICIARY_OFFSET),
+            beneficiary: StorageBackedAddress::new(base_key, BENEFICIARY_OFFSET),
             calldata: StorageBackedBytes::new(sto.open_sub_storage(CALLDATA_KEY)),
             timeout: StorageBackedUint64::new(base_key, TIMEOUT_OFFSET),
             timeout_windows_left: StorageBackedUint64::new(base_key, TIMEOUT_WINDOWS_LEFT_OFFSET),
@@ -301,8 +300,11 @@ impl<D: Database> Retryable<D> {
         Ok(new_val)
     }
 
-    pub fn beneficiary(&self) -> Result<Address, RetryableError> {
-        Ok(self.beneficiary.get()?)
+    pub fn beneficiary<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Address, RetryableError> {
+        Ok(self.beneficiary.get(backend)?)
     }
 
     pub fn calculate_timeout<B: StorageBackend>(
@@ -339,12 +341,15 @@ impl<D: Database> Retryable<D> {
         Ok(new_val)
     }
 
-    pub fn from(&self) -> Result<Address, RetryableError> {
-        Ok(self.from.get()?)
+    pub fn from<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, RetryableError> {
+        Ok(self.from.get(backend)?)
     }
 
-    pub fn to(&self) -> Result<Option<Address>, RetryableError> {
-        Ok(self.to.get()?)
+    pub fn to<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Option<Address>, RetryableError> {
+        Ok(self.to.get(backend)?)
     }
 
     pub fn callvalue<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, RetryableError> {
@@ -376,10 +381,10 @@ impl<D: Database> Retryable<D> {
         Ok(arb_alloy_consensus::tx::ArbRetryTx {
             chain_id,
             nonce,
-            from: self.from()?,
+            from: self.from(backend)?,
             gas_fee_cap,
             gas,
-            to: self.to()?,
+            to: self.to(backend)?,
             value: self.callvalue(backend)?,
             data: self.calldata()?.into(),
             ticket_id,

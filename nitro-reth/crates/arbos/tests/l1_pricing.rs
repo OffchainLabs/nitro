@@ -37,20 +37,20 @@ fn batch_poster_table_lifecycle() {
     assert!(!bpt.contains_poster(addr1).unwrap());
 
     let bp1 = bpt.add_poster(b, addr1, pay1).unwrap();
-    assert_eq!(bp1.pay_to().unwrap(), pay1);
+    assert_eq!(bp1.pay_to(b).unwrap(), pay1);
     assert_eq!(bp1.funds_due().unwrap(), U256::ZERO);
     assert!(bpt.contains_poster(addr1).unwrap());
 
     let bp2 = bpt.add_poster(b, addr2, pay2).unwrap();
-    assert_eq!(bp2.pay_to().unwrap(), pay2);
+    assert_eq!(bp2.pay_to(b).unwrap(), pay2);
     assert_eq!(bp2.funds_due().unwrap(), U256::ZERO);
     assert!(bpt.contains_poster(addr2).unwrap());
 
     assert_eq!(bpt.all_posters(b).unwrap().len(), 3);
 
     let bp1 = bpt.open_poster(b, addr1, false).unwrap();
-    bp1.set_pay_to(addr2).unwrap();
-    assert_eq!(bp1.pay_to().unwrap(), addr2);
+    bp1.set_pay_to(b, addr2).unwrap();
+    assert_eq!(bp1.pay_to(b).unwrap(), addr2);
 
     bp1.set_funds_due(U256::from(13u64), &bpt.total_funds_due)
         .unwrap();

@@ -36,10 +36,10 @@ fn create_open_round_trip() {
         .open_retryable(b, TICKET_ID, 999)
         .unwrap()
         .expect("exists");
-    assert_eq!(opened.from().unwrap(), FROM);
-    assert_eq!(opened.to().unwrap(), Some(DEST));
+    assert_eq!(opened.from(b).unwrap(), FROM);
+    assert_eq!(opened.to(b).unwrap(), Some(DEST));
     assert_eq!(opened.callvalue(b).unwrap(), U256::from(1_000_000u64));
-    assert_eq!(opened.beneficiary().unwrap(), BENEFICIARY);
+    assert_eq!(opened.beneficiary(b).unwrap(), BENEFICIARY);
     assert_eq!(opened.calldata().unwrap(), b"hello world".to_vec());
     assert_eq!(opened.num_tries(b).unwrap(), 0);
 }

@@ -93,7 +93,7 @@ pub struct ArbosState<D, B: Burner> {
     pub max_arbos_version_supported: u64,
     pub upgrade_version: StorageBackedUint64,
     pub upgrade_timestamp: StorageBackedUint64,
-    pub network_fee_account: StorageBackedAddress<D>,
+    pub network_fee_account: StorageBackedAddress,
     pub l1_pricing_state: L1PricingState<D>,
     pub l2_pricing_state: L2PricingState<D>,
     pub retryable_state: RetryableState<D>,
@@ -105,7 +105,7 @@ pub struct ArbosState<D, B: Burner> {
     pub chain_id: StorageBackedBigUint,
     pub chain_config: StorageBackedBytes<D>,
     pub genesis_block_num: StorageBackedUint64,
-    pub infra_fee_account: StorageBackedAddress<D>,
+    pub infra_fee_account: StorageBackedAddress,
     pub brotli_compression_level: StorageBackedUint64,
     pub backing_storage: Storage<D>,
     pub burner: B,
@@ -114,7 +114,7 @@ pub struct ArbosState<D, B: Burner> {
     pub transaction_filtering_enabled_from_time: StorageBackedUint64,
     pub transaction_filterers: AddressSet<D>,
     pub features: Features<D>,
-    pub filtered_funds_recipient: StorageBackedAddress<D>,
+    pub filtered_funds_recipient: StorageBackedAddress,
     pub filtered_transactions: FilteredTransactionsState<D>,
     pub collect_tips: StorageBackedUint64,
 }
@@ -144,11 +144,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
             upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
             upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
-            network_fee_account: StorageBackedAddress::new(
-                state,
-                B256::ZERO,
-                NETWORK_FEE_ACCOUNT_OFFSET,
-            ),
+            network_fee_account: StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET),
             l1_pricing_state: L1PricingState::open(
                 backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
                 arbos_version,
@@ -179,11 +175,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
             chain_config: StorageBackedBytes::new(chain_config_sto),
             genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
-            infra_fee_account: StorageBackedAddress::new(
-                state,
-                B256::ZERO,
-                INFRA_FEE_ACCOUNT_OFFSET,
-            ),
+            infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
             brotli_compression_level: StorageBackedUint64::new(
                 B256::ZERO,
                 BROTLI_COMPRESSION_LEVEL_OFFSET,
@@ -204,7 +196,6 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             ),
             features: features::open_features(features_sto.base_key(), 0),
             filtered_funds_recipient: StorageBackedAddress::new(
-                state,
                 B256::ZERO,
                 FILTERED_FUNDS_RECIPIENT_OFFSET,
             ),
@@ -281,37 +272,61 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(self.genesis_block_num.get(backend)?)
     }
 
-    pub fn network_fee_account(&self) -> Result<Address, ArbosStateError> {
-        Ok(self.network_fee_account.get()?)
+    pub fn network_fee_account<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        Ok(self.network_fee_account.get(backend)?)
     }
 
-    pub fn set_network_fee_account(&self, account: Address) -> Result<(), ArbosStateError> {
-        Ok(self.network_fee_account.set(account)?)
+    pub fn set_network_fee_account<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        account: Address,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.network_fee_account.set(backend, account)?)
     }
 
-    pub fn infra_fee_account(&self) -> Result<Address, ArbosStateError> {
-        Ok(self.infra_fee_account.get()?)
+    pub fn infra_fee_account<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        Ok(self.infra_fee_account.get(backend)?)
     }
 
-    pub fn set_infra_fee_account(&self, account: Address) -> Result<(), ArbosStateError> {
-        Ok(self.infra_fee_account.set(account)?)
+    pub fn set_infra_fee_account<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        account: Address,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.infra_fee_account.set(backend, account)?)
     }
 
-    pub fn filtered_funds_recipient(&self) -> Result<Address, ArbosStateError> {
-        Ok(self.filtered_funds_recipient.get()?)
+    pub fn filtered_funds_recipient<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        Ok(self.filtered_funds_recipient.get(backend)?)
     }
 
-    pub fn filtered_funds_recipient_or_default(&self) -> Result<Address, ArbosStateError> {
-        let addr = self.filtered_funds_recipient.get()?;
+    pub fn filtered_funds_recipient_or_default<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        let addr = self.filtered_funds_recipient.get(backend)?;
         if addr == Address::ZERO {
-            self.network_fee_account()
+            self.network_fee_account(backend)
         } else {
             Ok(addr)
         }
     }
 
-    pub fn set_filtered_funds_recipient(&self, addr: Address) -> Result<(), ArbosStateError> {
-        Ok(self.filtered_funds_recipient.set(addr)?)
+    pub fn set_filtered_funds_recipient<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        addr: Address,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.filtered_funds_recipient.set(backend, addr)?)
     }
 
     pub fn native_token_management_from_time<C: StorageBackend>(

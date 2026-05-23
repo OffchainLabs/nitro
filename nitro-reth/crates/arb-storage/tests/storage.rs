@@ -140,13 +140,15 @@ fn big_int_two_complement_encoding() {
 #[test]
 fn address_round_trip() {
     let mut h = ArbosHarness::new().initialize();
-    let storage = h.root_storage();
-    let v = StorageBackedAddress::new(storage.state_ptr(), B256::repeat_byte(5), TEST_OFFSET);
+    let state_ptr = h.state_ptr();
+    let _storage = h.root_storage();
+    let v = StorageBackedAddress::new(B256::repeat_byte(5), TEST_OFFSET);
+    let b = unsafe { &mut *state_ptr };
 
-    assert_eq!(v.get().unwrap(), alloy_primitives::Address::ZERO);
+    assert_eq!(v.get(b).unwrap(), alloy_primitives::Address::ZERO);
     let addr = alloy_primitives::address!("FFEEDDCCBBAA99887766554433221100AABBCCDD");
-    v.set(addr).unwrap();
-    assert_eq!(v.get().unwrap(), addr);
+    v.set(b, addr).unwrap();
+    assert_eq!(v.get(b).unwrap(), addr);
 }
 
 #[test]

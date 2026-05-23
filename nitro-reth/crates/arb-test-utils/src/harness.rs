@@ -104,11 +104,11 @@ impl ArbosHarness {
         backing
             .set_by_uint64(CHAIN_ID_OFFSET, B256::from(U256::from(self.chain_id)))
             .expect("set chain id");
-        StorageBackedAddress::new(state_ptr, B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET)
-            .set(self.network_fee_account)
+        StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET)
+            .set(&mut *self.state, self.network_fee_account)
             .expect("set network fee account");
-        StorageBackedAddress::new(state_ptr, B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET)
-            .set(self.infra_fee_account)
+        StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET)
+            .set(&mut *self.state, self.infra_fee_account)
             .expect("set infra fee account");
 
         l1_pricing::initialize_l1_pricing_state(
