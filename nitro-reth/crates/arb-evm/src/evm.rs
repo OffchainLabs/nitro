@@ -287,15 +287,13 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx.interpreter.halt(InstructionResult::SelfDestruct);
 }
 
-// ── Stylus page tracking & reentrancy ───────────────────────────────
-//
-// Page tracking and reentrancy state lives in arb_stylus::pages so that
-// both arb-evm (dispatch) and arb-stylus (EvmApi add_pages) can access it.
-
-pub use arb_stylus::pages::{
-    add_stylus_pages, get_stylus_pages, get_stylus_program_count, pop_stylus_program,
-    push_stylus_program, reset_stylus_pages, set_stylus_pages_open,
-};
+/// Reset per-tx Stylus state at the start of every transaction.
+pub fn reset_stylus_pages() {
+    arb_context::with_active(|c| {
+        let mut tx = c.tx.lock();
+        tx.stylus_program_counts.clear();
+    });
+}
 
 // ── Stylus storage helpers ───────────────────────────────────────────
 
@@ -397,11 +395,25 @@ fn stylus_call_gas_cost(
 
 use arb_stylus::evm_api_impl::{SubCallResult, SubCreateResult};
 
+/// Read the current (pages_open, pages_ever) carried on the active `TxCtx`.
+fn read_tx_pages(default: (u16, u16)) -> (u16, u16) {
+    arb_context::with_active(|c| {
+        let tx = c.tx.lock();
+        (tx.stylus_pages_open, tx.stylus_pages_ever)
+    })
+    .unwrap_or(default)
+}
+
+/// Write `pages_open` and `pages_ever` to the active `TxCtx`.
+fn write_tx_pages(pages: (u16, u16)) {
+    arb_context::with_active(|c| {
+        let mut tx = c.tx.lock();
+        tx.stylus_pages_open = pages.0;
+        tx.stylus_pages_ever = pages.1;
+    });
+}
+
 /// Monomorphized trampoline for Stylus sub-calls (CALL/DELEGATECALL/STATICCALL).
-///
-/// This function is created as a concrete `fn(...)` pointer by monomorphizing
-/// generic type parameters at the call site in `execute_stylus_program`.
-/// The `ctx` pointer is cast back to the concrete Context type.
 fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     ctx: *mut (),
     call_type: u8,
@@ -411,6 +423,7 @@ fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     input: &[u8],
     gas: u64,
     value: U256,
+    parent_pages: (u16, u16),
 ) -> SubCallResult
 where
     BlockEnv: revm::context::Block,
@@ -421,6 +434,8 @@ where
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
+
+    write_tx_pages(parent_pages);
 
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
@@ -441,6 +456,7 @@ where
                 gas_cost: 0,
                 success: false,
                 refund: 0,
+                pages: read_tx_pages(parent_pages),
             };
         }
     }
@@ -510,6 +526,7 @@ where
                     gas_cost: gas_used,
                     success,
                     refund,
+                    pages: read_tx_pages(parent_pages),
                 };
             }
             Ok(None) => {}
@@ -520,6 +537,7 @@ where
                     gas_cost: gas,
                     success: false,
                     refund: 0,
+                    pages: read_tx_pages(parent_pages),
                 };
             }
         }
@@ -544,6 +562,7 @@ where
                 gas_cost: 0,
                 success: false,
                 refund: 0,
+                pages: read_tx_pages(parent_pages),
             };
         }
     };
@@ -581,6 +600,7 @@ where
                     gas_cost: 0,
                     success: false,
                     refund: 0,
+                    pages: read_tx_pages(parent_pages),
                 };
             }
         }
@@ -595,6 +615,7 @@ where
             gas_cost: 0,
             success: true,
             refund: 0,
+            pages: read_tx_pages(parent_pages),
         };
     }
 
@@ -609,6 +630,7 @@ where
         && arb_stylus::is_stylus_program(&bytecode)
     {
         let result = execute_stylus_program(context, &sub_inputs, &bytecode);
+        let pages = read_tx_pages(parent_pages);
         let success = result.result.is_ok();
         let output = result.output.to_vec();
         let gas_used = gas.saturating_sub(result.gas.remaining());
@@ -623,14 +645,14 @@ where
             gas_cost: gas_used,
             success,
             refund,
+            pages,
         };
     }
 
     let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
+    let pages = read_tx_pages(parent_pages);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
-    // Match geth's evm.Call: only Revert refunds remaining gas; revm's
-    // halt() leaves it unspent, so non-Revert halts must charge `gas`.
     let gas_used = if success || matches!(result.result, InstructionResult::Revert) {
         gas.saturating_sub(result.gas.remaining())
     } else {
@@ -647,6 +669,7 @@ where
         gas_cost: gas_used,
         success,
         refund,
+        pages,
     }
 }
 
@@ -658,6 +681,7 @@ fn stylus_create_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     gas: u64,
     endowment: U256,
     salt: Option<B256>,
+    parent_pages: (u16, u16),
 ) -> SubCreateResult
 where
     BlockEnv: revm::context::Block,
@@ -665,6 +689,11 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
+    arb_context::with_active(|c| {
+        let mut tx = c.tx.lock();
+        tx.stylus_pages_open = parent_pages.0;
+        tx.stylus_pages_ever = parent_pages.1;
+    });
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
@@ -734,10 +763,14 @@ where
             address: None,
             output: Vec::new(),
             gas_cost: gas,
+            pages: arb_context::with_active(|c| {
+                let tx = c.tx.lock();
+                (tx.stylus_pages_open, tx.stylus_pages_ever)
+            })
+            .unwrap_or(parent_pages),
         };
     }
 
-    // Run init code as EVM
     let init_inputs = CallInputs {
         input: CallInput::Bytes(code.to_vec().into()),
         gas_limit: gas,
@@ -752,15 +785,14 @@ where
     };
 
     let result = run_evm_bytecode(context, &init_inputs, code, gas);
+    let pages = read_tx_pages(parent_pages);
     let success = result.result.is_ok();
     let gas_used = gas.saturating_sub(result.gas.remaining());
 
     if success {
-        // Store the returned bytecode as the contract's code
         let deployed_code = result.output.to_vec();
         let code_hash = alloy_primitives::keccak256(&deployed_code);
         let bytecode = revm::bytecode::Bytecode::new_raw(deployed_code.into());
-        // Ensure the account is loaded into state
         let _ = context
             .journaled_state
             .inner
@@ -772,16 +804,18 @@ where
         context.journaled_state.inner.checkpoint_commit();
         SubCreateResult {
             address: Some(created_address),
-            output: Vec::new(), // success doesn't return data
+            output: Vec::new(),
             gas_cost: gas_used,
+            pages,
         }
     } else {
         let output = result.output.to_vec();
         context.journaled_state.inner.checkpoint_revert(checkpoint);
         SubCreateResult {
             address: None,
-            output, // revert returns data
+            output,
             gas_cost: gas_used,
+            pages,
         }
     }
 }
@@ -904,6 +938,7 @@ where
                     }
                 };
                 let bytecode_address = sub_call.bytecode_address;
+                let parent_pages = read_tx_pages((0, 0));
                 let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
                     match sub_call.scheme {
@@ -917,9 +952,10 @@ where
                     &resolved_input,
                     sub_call.gas_limit,
                     sub_call.value.get(),
+                    parent_pages,
                 );
+                write_tx_pages(sub_result.pages);
 
-                // Inject result back into interpreter (matching EthFrame::return_result)
                 let gas_remaining = sub_call.gas_limit.saturating_sub(sub_result.gas_cost);
                 let ins_result = if sub_result.success {
                     InstructionResult::Return
@@ -972,6 +1008,7 @@ where
                     _ => None,
                 };
 
+                let parent_pages = read_tx_pages((0, 0));
                 let sub_result = stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
                     sub_create.caller(),
@@ -979,7 +1016,9 @@ where
                     sub_create.gas_limit(),
                     sub_create.value(),
                     salt,
+                    parent_pages,
                 );
+                write_tx_pages(sub_result.pages);
 
                 let gas_remaining = sub_create.gas_limit().saturating_sub(sub_result.gas_cost);
                 let created_addr = sub_result.address;
@@ -1007,7 +1046,6 @@ where
                 }
             }
             InterpreterAction::NewFrame(FrameInput::Empty) => {
-                // Should not happen
                 return InterpreterResult::new(
                     InstructionResult::Revert,
                     Bytes::new(),
@@ -1023,7 +1061,8 @@ where
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
 ///
 /// Validates the program, computes upfront gas costs (memory pages + init/cached
-/// gas), deducts them, then runs the WASM.
+/// gas), deducts them, then runs the WASM. Page counters flow through
+/// `TxCtx::stylus_pages_*` between dispatch boundaries.
 fn execute_stylus_program<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
@@ -1038,12 +1077,23 @@ where
     use arbos::programs::types::UserOutcome;
 
     let zero_gas = || EvmGas::new(0);
+    let write_pages = |open: u16, ever: u16| {
+        arb_context::with_active(|c| {
+            let mut tx = c.tx.lock();
+            tx.stylus_pages_open = open;
+            tx.stylus_pages_ever = ever;
+        });
+    };
+    let (parent_open, parent_ever) = arb_context::with_active(|c| {
+        let tx = c.tx.lock();
+        (tx.stylus_pages_open, tx.stylus_pages_ever)
+    })
+    .unwrap_or((0, 0));
 
     let code_hash = alloy_primitives::keccak256(bytecode);
     let arbos_version = arb_precompiles::get_arbos_version();
     let block_timestamp = arb_precompiles::get_block_timestamp();
 
-    // ── Read and validate program metadata ──────────────────────────
     let params_word = match read_params_word(&mut context.journaled_state) {
         Some(w) => w,
         None => {
@@ -1062,7 +1112,6 @@ where
     };
     let program = Program::from_storage(program_word, block_timestamp);
 
-    // Validate: program must be activated, correct version, not expired.
     if program.version == 0 || program.version != params.version {
         tracing::warn!(target: "stylus", codehash = %code_hash, program_ver = program.version, params_ver = params.version, "program version mismatch");
         return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
@@ -1073,9 +1122,6 @@ where
         return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
     }
 
-    // ── Compute and deduct upfront gas costs ────────────────────────
-    let (pages_open, pages_ever) = get_stylus_pages();
-    // ArbOS v60+: a recent-wasms cache hit counts as cached for pricing.
     let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
         arb_precompiles::insert_recent_wasm(code_hash)
     } else {
@@ -1089,7 +1135,7 @@ where
     } else {
         program
     };
-    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open, pages_ever);
+    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, parent_open, parent_ever);
     let total_gas = inputs.gas_limit;
 
     if total_gas < upfront_cost {
@@ -1099,37 +1145,34 @@ where
 
     let stylus_config = StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
 
-    // ── Track reentrancy ────────────────────────────────────────────
     let target_addr = inputs.target_address;
     let is_delegate = matches!(
         inputs.scheme,
         CallScheme::DelegateCall | CallScheme::CallCode
     );
-    // Only non-delegate-non-callcode calls increment the reentrancy counter.
-    // Delegate and callcode frames check the counter without bumping it, so an
-    // actual re-entry into the same storage context reports `reentrant=true`.
     let reentrant = if !is_delegate {
-        push_stylus_program(target_addr)
+        arb_context::with_active(|c| c.push_stylus_program(target_addr)).unwrap_or(false)
     } else {
-        get_stylus_program_count(target_addr) > 1
+        arb_context::with_active(|c| c.stylus_program_count(target_addr)).unwrap_or(0) > 1
     };
 
-    // Read the activation-time module hash from storage. This differs from
-    // code_hash (which is keccak256 of the bytecode); it is the hash of the
-    // compiled module computed during activateProgram.
     let module_hash =
         read_module_hash(&mut context.journaled_state, code_hash).unwrap_or(code_hash);
 
-    // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
     evm_data.reentrant = reentrant as u32;
     evm_data.cached = effective_program.cached;
     evm_data.module_hash = module_hash;
 
-    // Track pages — add this program's footprint.
-    let (prev_open, _prev_ever) = add_stylus_pages(program.footprint);
+    let start_open = parent_open.saturating_add(program.footprint);
+    let start_ever = parent_ever.max(start_open);
 
-    // Create the type-erased StylusEvmApi bridge.
+    let pop_program = |is_delegate: bool, target_addr: alloy_primitives::Address| {
+        if !is_delegate {
+            arb_context::with_active(|c| c.pop_stylus_program(target_addr));
+        }
+    };
+
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
     let ctx_ptr = context as *mut _ as *mut ();
@@ -1142,8 +1185,6 @@ where
             caller,
             call_value,
             is_static,
-            params.free_pages,
-            params.page_gas,
             arbos_version,
             ctx_ptr,
             Some(stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
@@ -1151,21 +1192,20 @@ where
         )
     };
 
-    // Try the module cache first; compile from WASM on miss and populate cache.
     let long_term_tag = if program.cached { 1u32 } else { 0u32 };
     let mut instance = if let Some((module, store)) =
         arb_stylus::cache::InitCache::get(code_hash, params.version, long_term_tag, false)
     {
         let compile = arb_stylus::CompileConfig::version(params.version, false);
-        let env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
+        let mut env =
+            arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
+        env.set_pages(start_open, start_ever, params.free_pages, params.page_gas);
         match arb_stylus::NativeInstance::from_module(module, store, env) {
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
-                set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
+                pop_program(is_delegate, target_addr);
+                write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
@@ -1174,66 +1214,60 @@ where
             Ok(w) => w,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
-                set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
+                pop_program(is_delegate, target_addr);
+                write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         };
         let compile = arb_stylus::CompileConfig::version(params.version, false);
-        match arb_stylus::NativeInstance::from_bytes(
+        match arb_stylus::NativeInstance::from_bytes_with_pages(
             &decompressed,
             evm_api,
             evm_data,
             &compile,
             stylus_config,
+            start_open,
+            start_ever,
+            params.free_pages,
+            params.page_gas,
         ) {
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
-                set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
+                pop_program(is_delegate, target_addr);
+                write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
     };
 
-    // Convert EVM gas (after upfront deduction) to ink.
+    write_pages(start_open, start_ever);
+
     let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas_for_wasm));
 
-    // Get calldata from CallInput enum. SharedBuffer references parent's
-    // memory and must be resolved via the context.
     let calldata_owned: Bytes = inputs.input.bytes(context);
     let calldata: &[u8] = &calldata_owned;
     let outcome = match instance.run_main(calldata, stylus_config, ink) {
         Ok(outcome) => outcome,
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
-            set_stylus_pages_open(prev_open);
-            if !is_delegate {
-                pop_stylus_program(target_addr);
-            }
+            let final_ever = instance.env().pages_ever.max(start_ever);
+            pop_program(is_delegate, target_addr);
+            write_pages(parent_open, final_ever);
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
 
-    // Restore page count and pop reentrancy.
-    set_stylus_pages_open(prev_open);
-    if !is_delegate {
-        pop_stylus_program(target_addr);
-    }
+    let final_ever = instance.env().pages_ever.max(start_ever);
+    pop_program(is_delegate, target_addr);
+    write_pages(parent_open, final_ever);
 
-    // Convert remaining ink back to gas.
     let ink_left = match instance.ink_left() {
         arb_stylus::MachineMeter::Ready(ink_val) => ink_val,
         arb_stylus::MachineMeter::Exhausted => arb_stylus::Ink(0),
     };
     let gas_left = stylus_config.pricing.ink_to_gas(ink_left).0;
 
-    // Return data cost parity with EVM (ArbOS >= StylusFixes).
     let output: Bytes = instance.env().outs.clone().into();
     let gas_left = if !output.is_empty()
         && arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES
@@ -1249,13 +1283,11 @@ where
     };
 
     let mut gas_result = EvmGas::new(gas_left);
-    // Propagate SSTORE refunds from Stylus flush to the EVM gas accounting.
     let sstore_refund = instance.env().evm_api.sstore_refund();
     if sstore_refund != 0 {
         gas_result.record_refund(sstore_refund);
     }
 
-    // Map UserOutcome to InterpreterResult.
     match outcome {
         UserOutcome::Success => {
             InterpreterResult::new(InstructionResult::Return, output, gas_result)

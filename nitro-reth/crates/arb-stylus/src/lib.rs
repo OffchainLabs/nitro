@@ -15,7 +15,6 @@ pub mod ink;
 pub mod meter;
 pub mod middleware;
 pub mod native;
-pub mod pages;
 pub mod pricing;
 pub mod run;
 pub mod trace;

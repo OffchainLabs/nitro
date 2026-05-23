@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use arbos::programs::types::EvmData;
+use arbos::programs::{memory::MemoryModel, types::EvmData};
 use wasmer::{FunctionEnvMut, Global, Memory, MemoryView, Pages, StoreMut, Value};
 
 use crate::{
@@ -41,6 +41,10 @@ pub struct WasmEnv<E: EvmApi> {
     pub ink_global: Option<Global>,
     /// WASM global for ink status (set after instantiation).
     pub ink_status_global: Option<Global>,
+    pub pages_open: u16,
+    pub pages_ever: u16,
+    pub free_pages: u16,
+    pub page_gas: u16,
     _phantom: PhantomData<E>,
 }
 
@@ -63,8 +67,31 @@ impl<E: EvmApi> WasmEnv<E> {
             ink_global: None,
             ink_status_global: None,
             evm_return_data_len: 0,
+            pages_open: 0,
+            pages_ever: 0,
+            free_pages: 0,
+            page_gas: 0,
             _phantom: PhantomData,
         }
+    }
+
+    /// Initialise page tracking with the parent call's values and a per-instance
+    /// `MemoryModel` configuration.
+    pub fn set_pages(&mut self, open: u16, ever: u16, free_pages: u16, page_gas: u16) {
+        self.pages_open = open;
+        self.pages_ever = ever;
+        self.free_pages = free_pages;
+        self.page_gas = page_gas;
+    }
+
+    /// Charge for allocating `new_pages`, updating the open/ever counters and
+    /// returning the gas cost.
+    pub fn add_pages_charge(&mut self, new_pages: u16) -> u64 {
+        let model = MemoryModel::new(self.free_pages, self.page_gas);
+        let cost = model.gas_cost(new_pages, self.pages_open, self.pages_ever);
+        self.pages_open = self.pages_open.saturating_add(new_pages);
+        self.pages_ever = self.pages_ever.max(self.pages_open);
+        cost
     }
 
     /// Create a HostioInfo and charge the standard hostio cost plus `ink`.

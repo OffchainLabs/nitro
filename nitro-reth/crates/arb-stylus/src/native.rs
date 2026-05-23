@@ -100,6 +100,26 @@ impl<E: EvmApi> NativeInstance<E> {
         Self::from_module(module, store, env)
     }
 
+    /// Create from WASM bytes with initial page counters and memory pricing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_bytes_with_pages(
+        bytes: impl AsRef<[u8]>,
+        evm_api: E,
+        evm_data: EvmData,
+        compile: &CompileConfig,
+        config: StylusConfig,
+        pages_open: u16,
+        pages_ever: u16,
+        free_pages: u16,
+        page_gas: u16,
+    ) -> Result<Self, StylusError> {
+        let mut env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
+        env.set_pages(pages_open, pages_ever, free_pages, page_gas);
+        let store = env.compile.store();
+        let module = Module::new(&store, bytes).map_err(|e| StylusError::Compile(e.to_string()))?;
+        Self::from_module(module, store, env)
+    }
+
     pub fn from_module(
         module: Module,
         mut store: Store,

@@ -52,7 +52,8 @@ pub trait EvmApi: Send + 'static {
     /// Write a transient storage slot.
     fn set_transient_bytes32(&mut self, key: B256, value: B256) -> eyre::Result<UserOutcomeKind>;
 
-    /// Execute a CALL. Returns return data length, gas cost, and outcome.
+    /// Execute a CALL. Returns return data length, gas cost, outcome, and the
+    /// updated page counters following the sub-call.
     fn contract_call(
         &mut self,
         contract: Address,
@@ -60,7 +61,8 @@ pub trait EvmApi: Send + 'static {
         gas_left: Gas,
         gas_req: Gas,
         value: U256,
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)>;
+        pages: (u16, u16),
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))>;
 
     /// Execute a DELEGATECALL.
     fn delegate_call(
@@ -69,7 +71,8 @@ pub trait EvmApi: Send + 'static {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)>;
+        pages: (u16, u16),
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))>;
 
     /// Execute a STATICCALL.
     fn static_call(
@@ -78,7 +81,8 @@ pub trait EvmApi: Send + 'static {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)>;
+        pages: (u16, u16),
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))>;
 
     /// Deploy via CREATE.
     fn create1(
@@ -86,7 +90,8 @@ pub trait EvmApi: Send + 'static {
         code: Vec<u8>,
         endowment: U256,
         gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)>;
+        pages: (u16, u16),
+    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))>;
 
     /// Deploy via CREATE2.
     fn create2(
@@ -95,7 +100,8 @@ pub trait EvmApi: Send + 'static {
         endowment: U256,
         salt: B256,
         gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)>;
+        pages: (u16, u16),
+    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))>;
 
     /// Get the return data from the last call.
     fn get_return_data(&self) -> Vec<u8>;
@@ -116,9 +122,6 @@ pub trait EvmApi: Send + 'static {
 
     /// Get an account's code hash. Returns hash and access cost.
     fn account_codehash(&mut self, address: Address) -> eyre::Result<(B256, Gas)>;
-
-    /// Determine cost of allocating additional WASM pages.
-    fn add_pages(&mut self, pages: u16) -> eyre::Result<Gas>;
 
     /// Capture tracing information for host I/O calls.
     fn capture_hostio(
