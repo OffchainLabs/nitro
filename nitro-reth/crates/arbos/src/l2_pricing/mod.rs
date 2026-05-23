@@ -21,7 +21,7 @@ use arb_storage::{
 // Storage offsets for L2 pricing state.
 const SPEED_LIMIT_PER_SECOND_OFFSET: u64 = 0;
 const PER_BLOCK_GAS_LIMIT_OFFSET: u64 = 1;
-const BASE_FEE_WEI_OFFSET: u64 = 2;
+pub const BASE_FEE_WEI_OFFSET: u64 = 2;
 const MIN_BASE_FEE_WEI_OFFSET: u64 = 3;
 const GAS_BACKLOG_OFFSET: u64 = 4;
 const PRICING_INERTIA_OFFSET: u64 = 5;

@@ -18,11 +18,11 @@ use arb_precompiles::{
         root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     },
 };
+use arbos::{
+    arbos_state::GENESIS_BLOCK_NUM_OFFSET, l1_pricing::PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,
+    l2_pricing::BASE_FEE_WEI_OFFSET as L2_BASE_FEE,
+};
 use common::{calldata, calldata_estimate, decode_u256, decode_word, word_u256, PrecompileTest};
-
-const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
-const L1_PRICE_PER_UNIT: u64 = 7;
-const L2_BASE_FEE: u64 = 2;
 
 fn nodeinterface() -> DynPrecompile {
     create_nodeinterface_precompile()

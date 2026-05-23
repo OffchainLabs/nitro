@@ -1,16 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
+use arb_storage::ARBOS_STATE_ADDRESS;
+use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{
-    interfaces::IArbNativeTokenManager,
-    storage_slot::{
-        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
-        ROOT_STORAGE_KEY,
-    },
-    ArbPrecompileError,
-};
+use crate::{interfaces::IArbNativeTokenManager, ArbPrecompileError};
 
 /// ArbNativeTokenManager precompile address (0x73).
 pub const ARBNATIVETOKENMANAGER_ADDRESS: Address = Address::new([
@@ -67,27 +62,18 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
-    let val = input
-        .internals_mut()
-        .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(ArbPrecompileError::fatal)?;
-    Ok(val.data)
-}
-
 /// Check if caller is a native token owner via the NativeTokenOwners address set.
 fn is_native_token_owner(
     input: &mut PrecompileInput<'_>,
     addr: Address,
 ) -> Result<bool, ArbPrecompileError> {
-    // NativeTokenOwners is at subspace [10] in ArbOS state.
-    // byAddress sub-storage is at [0] within the address set.
-    let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, NATIVE_TOKEN_SUBSPACE);
-    let by_address_key = derive_subspace_key(owner_key.as_slice(), &[0]);
-    let addr_hash = B256::left_padding_from(addr.as_slice());
-    let slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
-    let val = sload_arbos(input, slot)?;
-    Ok(val != U256::ZERO)
+    let internals = input.internals_mut();
+    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        .map_err(ArbPrecompileError::fatal)?;
+    arb_state
+        .native_token_owners
+        .is_member(internals, addr)
+        .map_err(ArbPrecompileError::fatal)
 }
 
 fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResult {

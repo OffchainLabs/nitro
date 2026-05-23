@@ -1,19 +1,14 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
+use arb_storage::ARBOS_STATE_ADDRESS;
+use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::{
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
 
-use crate::{
-    interfaces::IArbDebug,
-    storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-        ROOT_STORAGE_KEY,
-    },
-    ArbPrecompileError,
-};
+use crate::{interfaces::IArbDebug, ArbPrecompileError};
 
 /// ArbDebug precompile address (0xff).
 pub const ARBDEBUG_ADDRESS: Address = Address::new([
@@ -91,29 +86,25 @@ fn handle_become_chain_owner(
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
-    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
-    let addr_hash = B256::left_padding_from(caller.as_slice());
-    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let internals = input.internals_mut();
+    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        .map_err(ArbPrecompileError::fatal)?;
 
-    let existing = sload(input, gas_used, member_slot)?;
-    let gas_cost = if existing == U256::ZERO {
-        let size_slot = map_slot(set_key.as_slice(), 0);
-        let size = sload(input, gas_used, size_slot)?;
-        let new_size = u64::try_from(size).unwrap_or(0) + 1;
+    let was_member = arb_state
+        .chain_owners
+        .is_member(internals, caller)
+        .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
 
-        let new_pos_slot = map_slot(set_key.as_slice(), new_size);
-        sstore(
-            input,
-            gas_used,
-            new_pos_slot,
-            U256::from_be_slice(caller.as_slice()),
-        )?;
-        sstore(input, gas_used, member_slot, U256::from(new_size))?;
-        sstore(input, gas_used, size_slot, U256::from(new_size))?;
-
+    let gas_cost = if !was_member {
+        arb_state
+            .chain_owners
+            .add(internals, caller)
+            .map_err(ArbPrecompileError::fatal)?;
+        crate::charge_precompile_gas(gas_used, SLOAD_GAS + 3 * SSTORE_GAS);
         4 * SLOAD_GAS + 3 * SSTORE_GAS
     } else {
+        crate::charge_precompile_gas(gas_used, SLOAD_GAS);
         2 * SLOAD_GAS
     };
 
@@ -191,33 +182,6 @@ fn handle_custom_revert(gas_used: &mut u64, number: u64, gas_limit: u64) -> Prec
     }
     .abi_encode();
     crate::sol_error_revert(gas_used, payload, gas_limit)
-}
-
-fn sload(
-    input: &mut PrecompileInput<'_>,
-    gas_used: &mut u64,
-    slot: U256,
-) -> Result<U256, ArbPrecompileError> {
-    let v = input
-        .internals_mut()
-        .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
-    Ok(v.data)
-}
-
-fn sstore(
-    input: &mut PrecompileInput<'_>,
-    gas_used: &mut u64,
-    slot: U256,
-    value: U256,
-) -> Result<(), ArbPrecompileError> {
-    input
-        .internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, SSTORE_GAS);
-    Ok(())
 }
 
 fn emit_basic_event(input: &mut PrecompileInput<'_>, flag: bool, value: B256) {

@@ -1,10 +1,6 @@
 use alloy_primitives::{keccak256, B256, U256};
 
-/// ArbOS state storage address (NOT the ArbOS sender address 0xa4b05).
-pub const ARBOS_STATE_ADDRESS: alloy_primitives::Address = alloy_primitives::Address::new([
-    0xa4, 0xb0, 0x5f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff,
-]);
+pub use arb_storage::{ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS};
 
 /// Subspace keys for ArbOS partitioned storage (matching arbos_state constants).
 pub const L1_PRICING_SUBSPACE: &[u8] = &[0];
@@ -12,11 +8,7 @@ pub const L2_PRICING_SUBSPACE: &[u8] = &[1];
 pub const RETRYABLES_SUBSPACE: &[u8] = &[2];
 pub const ADDRESS_TABLE_SUBSPACE: &[u8] = &[3];
 pub const CHAIN_OWNER_SUBSPACE: &[u8] = &[4];
-pub const SEND_MERKLE_SUBSPACE: &[u8] = &[5];
-pub const BLOCKHASHES_SUBSPACE: &[u8] = &[6];
-pub const CHAIN_CONFIG_SUBSPACE: &[u8] = &[7];
 pub const PROGRAMS_SUBSPACE: &[u8] = &[8];
-pub const FEATURES_SUBSPACE: &[u8] = &[9];
 pub const NATIVE_TOKEN_SUBSPACE: &[u8] = &[10];
 pub const TRANSACTION_FILTERER_SUBSPACE: &[u8] = &[11];
 
@@ -25,28 +17,10 @@ pub const PROGRAMS_PARAMS_KEY: &[u8] = &[0];
 pub const PROGRAMS_DATA_KEY: &[u8] = &[1];
 pub const CACHE_MANAGERS_KEY: &[u8] = &[4];
 
-/// Cache managers subspace within ArbOS (PROGRAMS → CACHE_MANAGERS).
-/// Not a direct root subspace; derive at runtime via `programs_cache_managers_key()`.
-pub const CACHE_MANAGERS_SUBSPACE: &[u8] = CACHE_MANAGERS_KEY;
-
-/// Filtered transactions backing storage account (separate from ArbOS state).
-pub const FILTERED_TX_STATE_ADDRESS: alloy_primitives::Address = alloy_primitives::Address::new([
-    0xa4, 0xb0, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x01,
-]);
-
-/// Root-level ArbOS state field offsets.
+/// Root-level ArbOS state field offsets used outside of the arbos crate.
 pub const VERSION_OFFSET: u64 = 0;
-pub const UPGRADE_VERSION_OFFSET: u64 = 1;
-pub const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
-pub const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
 pub const CHAIN_ID_OFFSET: u64 = 4;
-pub const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
-pub const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
 pub const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
-pub const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
-pub const TX_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
-pub const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
 
 /// Compute the EVM storage slot for an ArbOS field at a given offset
 /// within a storage scope defined by `storage_key`.
@@ -122,64 +96,23 @@ pub fn subspace_slot(subspace_key: &[u8], offset: u64) -> U256 {
     map_slot(sub_storage_key.as_slice(), offset)
 }
 
-// ── Per-tx scratch slot ──────────────────────────────────────────────
-
-/// Scratch slot used to pass per-transaction L1 poster fee from the
-/// executor into the EVM where the ArbGasInfo precompile can read it.
-/// The value is written before EVM execution and has no long-term
-/// significance — it's overwritten every transaction.
-pub const CURRENT_TX_POSTER_FEE_OFFSET: u64 = 255;
-
-/// Compute the storage slot for the per-tx poster fee.
-pub fn current_tx_poster_fee_slot() -> U256 {
-    map_slot(ROOT_STORAGE_KEY, CURRENT_TX_POSTER_FEE_OFFSET)
-}
-
-/// Scratch slot for the currently-executing retryable ticket ID.
-/// Written by the executor before retry tx EVM execution so the Redeem
-/// precompile can reject self-modification attempts.
-/// Zero means no retryable is executing.
-pub const CURRENT_RETRYABLE_OFFSET: u64 = 254;
-
-/// Compute the storage slot for the current retryable ticket ID.
-pub fn current_retryable_slot() -> U256 {
-    map_slot(ROOT_STORAGE_KEY, CURRENT_RETRYABLE_OFFSET)
-}
-
-/// Scratch slot for the current redeemer (refund_to address) during retry tx.
-/// Written by the executor before retry tx EVM execution so GetCurrentRedeemer
-/// can return the correct address.
-pub const CURRENT_REDEEMER_OFFSET: u64 = 253;
-
-/// Compute the storage slot for the current redeemer address.
-pub fn current_redeemer_slot() -> U256 {
-    map_slot(ROOT_STORAGE_KEY, CURRENT_REDEEMER_OFFSET)
-}
-
 // ── L2 pricing vector helpers ────────────────────────────────────────
 
 /// L2 pricing subspace key (root → L2_PRICING_SUBSPACE).
-pub fn l2_pricing_subspace() -> B256 {
+fn l2_pricing_subspace() -> B256 {
     derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE)
 }
 
 /// Subspace keys within L2 pricing.
 const GAS_CONSTRAINTS_SUBKEY: &[u8] = &[0];
-const MULTI_GAS_CONSTRAINTS_SUBKEY: &[u8] = &[1];
-const MULTI_GAS_BASE_FEES_SUBKEY: &[u8] = &[2];
 
 /// Derive a sub-storage vector key under L2 pricing.
 fn l2_vector_key(sub_key: &[u8]) -> B256 {
     derive_subspace_key(l2_pricing_subspace().as_slice(), sub_key)
 }
 
-/// Slot for the length of a sub-storage vector.
-pub fn vector_length_slot(vector_key: &B256) -> U256 {
-    map_slot(vector_key.as_slice(), 0)
-}
-
 /// Subspace key for element `index` within a vector.
-pub fn vector_element_key(vector_key: &B256, index: u64) -> B256 {
+fn vector_element_key(vector_key: &B256, index: u64) -> B256 {
     derive_subspace_key(vector_key.as_slice(), &index.to_be_bytes())
 }
 
@@ -192,14 +125,4 @@ pub fn vector_element_field(vector_key: &B256, index: u64, offset: u64) -> U256 
 /// Gas constraints vector key.
 pub fn gas_constraints_vec_key() -> B256 {
     l2_vector_key(GAS_CONSTRAINTS_SUBKEY)
-}
-
-/// Multi-gas constraints vector key.
-pub fn multi_gas_constraints_vec_key() -> B256 {
-    l2_vector_key(MULTI_GAS_CONSTRAINTS_SUBKEY)
-}
-
-/// Multi-gas base fees subspace key.
-pub fn multi_gas_base_fees_subspace() -> B256 {
-    l2_vector_key(MULTI_GAS_BASE_FEES_SUBKEY)
 }
