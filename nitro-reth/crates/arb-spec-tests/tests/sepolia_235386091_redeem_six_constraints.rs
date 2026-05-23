@@ -20,10 +20,7 @@ use arb_spec_tests::runner::{fixtures_root, run_execution_fixture};
 /// `ARB_SPEC_RPC_URL` pointing at a Sepolia archive that has it, drop the
 /// fixture JSON at the path below and the test picks it up.
 #[test]
-#[cfg_attr(
-    not(feature = "spec-binary"),
-    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY"
-)]
+#[ignore = "regression fixture not yet captured at retryables/regression/sepolia_block_235_386_091_redeem_six_constraints.json"]
 fn sepolia_block_235_386_091_redeem_six_constraints() {
     let path = fixtures_root()
         .join("retryables/regression/sepolia_block_235_386_091_redeem_six_constraints.json");
