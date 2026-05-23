@@ -168,12 +168,14 @@ pub fn finalize_block_header_info(
     send_count: u64,
     l1_block_number: u64,
     arbos_version: u64,
+    collect_tips: bool,
 ) -> ArbHeaderInfo {
     ArbHeaderInfo {
         send_root,
         send_count,
         l1_block_number,
         arbos_format_version: arbos_version,
+        collect_tips,
     }
 }
 

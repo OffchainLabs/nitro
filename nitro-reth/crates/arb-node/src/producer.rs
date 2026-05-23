@@ -1371,13 +1371,8 @@ where
     Ok(())
 }
 
-/// Construct a mix_hash from send_count, l1_block_number, and arbos_version.
 fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
-    let mut bytes = [0u8; 32];
-    bytes[0..8].copy_from_slice(&send_count.to_be_bytes());
-    bytes[8..16].copy_from_slice(&l1_block_number.to_be_bytes());
-    bytes[16..24].copy_from_slice(&arbos_version.to_be_bytes());
-    B256::from(bytes)
+    arbos::header::compute_arbos_mixhash(send_count, l1_block_number, arbos_version, false)
 }
 
 /// EIP-161: mark empty non-zombie accounts for trie deletion.

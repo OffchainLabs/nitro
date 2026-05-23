@@ -11,7 +11,7 @@ use arbos::header::{
 
 #[test]
 fn mixhash_roundtrips_all_three_fields() {
-    let mix = compute_arbos_mixhash(0x1122334455667788, 0xAABBCCDDEEFF0011, 30);
+    let mix = compute_arbos_mixhash(0x1122334455667788, 0xAABBCCDDEEFF0011, 30, false);
     assert_eq!(extract_send_count_from_mix_hash(mix), 0x1122334455667788);
     assert_eq!(
         extract_l1_block_number_from_mix_hash(mix),
@@ -22,17 +22,36 @@ fn mixhash_roundtrips_all_three_fields() {
 
 #[test]
 fn mixhash_is_zero_for_zero_inputs() {
-    let mix = compute_arbos_mixhash(0, 0, 0);
+    let mix = compute_arbos_mixhash(0, 0, 0, false);
     assert_eq!(mix, B256::ZERO);
 }
 
 #[test]
 fn mixhash_layout_is_big_endian_send_count_first() {
-    let mix = compute_arbos_mixhash(1, 0, 0);
+    let mix = compute_arbos_mixhash(1, 0, 0, false);
     assert_eq!(mix.0[0..8], [0, 0, 0, 0, 0, 0, 0, 1]);
     assert_eq!(mix.0[8..16], [0u8; 8]);
     assert_eq!(mix.0[16..24], [0u8; 8]);
     assert_eq!(mix.0[24..32], [0u8; 8]);
+}
+
+#[test]
+fn mixhash_collect_tips_sets_byte_25() {
+    let mix = compute_arbos_mixhash(1, 2, 60, true);
+    assert_eq!(mix.0[25], 1);
+}
+
+#[test]
+fn mixhash_collect_tips_false_clears_byte_25() {
+    let mix = compute_arbos_mixhash(1, 2, 60, false);
+    assert_eq!(mix.0[25], 0);
+}
+
+#[test]
+fn mixhash_old_arbos_version_9_ignores_collect_tips_flag() {
+    use arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD;
+    let mix = compute_arbos_mixhash(0, 0, ARBOS_VERSION_COLLECT_TIPS_OLD, true);
+    assert_eq!(mix.0[25], 0);
 }
 
 #[test]
@@ -59,9 +78,10 @@ fn compute_mix_hash_via_arb_header_info() {
         send_count: 42,
         l1_block_number: 100,
         arbos_format_version: 30,
+        collect_tips: false,
     };
     let mix = info.compute_mix_hash();
-    assert_eq!(mix, compute_arbos_mixhash(42, 100, 30));
+    assert_eq!(mix, compute_arbos_mixhash(42, 100, 30, false));
 }
 
 #[test]
