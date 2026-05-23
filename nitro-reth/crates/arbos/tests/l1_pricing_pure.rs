@@ -183,9 +183,8 @@ fn last_surplus_default_zero_positive() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
-    let (mag, neg) = ps.last_surplus().unwrap();
+    let (mag, neg) = ps.last_surplus(b).unwrap();
     assert_eq!(mag, U256::ZERO);
     assert!(!neg);
 }
@@ -195,12 +194,11 @@ fn set_last_surplus_positive_and_negative() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
-    ps.set_last_surplus(U256::from(1000u64), false).unwrap();
-    assert_eq!(ps.last_surplus().unwrap(), (U256::from(1000u64), false));
-    ps.set_last_surplus(U256::from(500u64), true).unwrap();
-    assert_eq!(ps.last_surplus().unwrap(), (U256::from(500u64), true));
+    ps.set_last_surplus(b, U256::from(1000u64), false).unwrap();
+    assert_eq!(ps.last_surplus(b).unwrap(), (U256::from(1000u64), false));
+    ps.set_last_surplus(b, U256::from(500u64), true).unwrap();
+    assert_eq!(ps.last_surplus(b).unwrap(), (U256::from(500u64), true));
 }
 
 #[test]
@@ -208,10 +206,9 @@ fn per_batch_gas_cost_default_is_initial() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
     assert_eq!(
-        ps.per_batch_gas_cost().unwrap(),
+        ps.per_batch_gas_cost(b).unwrap(),
         INITIAL_PER_BATCH_GAS_COST_V12
     );
 }
@@ -221,10 +218,9 @@ fn per_batch_gas_cost_set_accepts_negative() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
-    ps.set_per_batch_gas_cost(-50_000).unwrap();
-    assert_eq!(ps.per_batch_gas_cost().unwrap(), -50_000);
+    ps.set_per_batch_gas_cost(b, -50_000).unwrap();
+    assert_eq!(ps.per_batch_gas_cost(b).unwrap(), -50_000);
 }
 
 #[test]
@@ -298,11 +294,11 @@ fn funds_due_for_rewards_set_get() {
     let mut h = fresh();
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    #[allow(unused_variables)]
     let b = unsafe { &mut *state_ptr };
-    assert_eq!(ps.funds_due_for_rewards().unwrap(), U256::ZERO);
-    ps.set_funds_due_for_rewards(U256::from(12_345u64)).unwrap();
-    assert_eq!(ps.funds_due_for_rewards().unwrap(), U256::from(12_345u64));
+    assert_eq!(ps.funds_due_for_rewards(b).unwrap(), U256::ZERO);
+    ps.set_funds_due_for_rewards(b, U256::from(12_345u64))
+        .unwrap();
+    assert_eq!(ps.funds_due_for_rewards(b).unwrap(), U256::from(12_345u64));
 }
 
 #[test]
@@ -322,7 +318,8 @@ fn surplus_is_negative_when_funds_due_exceeds_available() {
     let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
     let b = unsafe { &mut *state_ptr };
-    ps.set_funds_due_for_rewards(U256::from(1_000u64)).unwrap();
+    ps.set_funds_due_for_rewards(b, U256::from(1_000u64))
+        .unwrap();
     let (mag, neg) = ps.get_l1_pricing_surplus(b).unwrap();
     assert!(neg, "surplus should be negative when funds_due > available");
     assert_eq!(mag, U256::from(1_000u64));
@@ -348,10 +345,10 @@ fn poster_data_cost_adds_price_times_units_plus_per_batch_cost() {
     let ps = h.l1_pricing_state();
     let b = unsafe { &mut *state_ptr };
     ps.set_price_per_unit(b, U256::from(10u64)).unwrap();
-    ps.set_per_batch_gas_cost(0).unwrap();
+    ps.set_per_batch_gas_cost(b, 0).unwrap();
     let c = ps.poster_data_cost(b, 100).unwrap();
     assert_eq!(c, U256::from(1_000u64));
-    ps.set_per_batch_gas_cost(500).unwrap();
+    ps.set_per_batch_gas_cost(b, 500).unwrap();
     assert_eq!(ps.poster_data_cost(b, 100).unwrap(), U256::from(1_500u64));
 }
 
@@ -362,7 +359,7 @@ fn poster_data_cost_subtracts_negative_per_batch_cost() {
     let ps = h.l1_pricing_state();
     let b = unsafe { &mut *state_ptr };
     ps.set_price_per_unit(b, U256::from(10u64)).unwrap();
-    ps.set_per_batch_gas_cost(-200).unwrap();
+    ps.set_per_batch_gas_cost(b, -200).unwrap();
     assert_eq!(ps.poster_data_cost(b, 100).unwrap(), U256::from(800u64));
 }
 

@@ -1,12 +1,7 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_storage_errors::StorageError;
-use revm::Database;
 
-use crate::{
-    backend::StorageBackend,
-    slot::storage_key_map,
-    state_ops::{read_arbos_storage, write_arbos_storage, ARBOS_STATE_ADDRESS},
-};
+use crate::{backend::StorageBackend, slot::storage_key_map, state_ops::ARBOS_STATE_ADDRESS};
 
 fn compute_slot(base_key: B256, offset: u64) -> U256 {
     if base_key == B256::ZERO {
@@ -14,25 +9,6 @@ fn compute_slot(base_key: B256, offset: u64) -> U256 {
     } else {
         storage_key_map(base_key.as_slice(), offset)
     }
-}
-
-fn read_slot<D: Database>(
-    state: *mut revm::database::State<D>,
-    slot: U256,
-) -> Result<U256, StorageError> {
-    // SAFETY: see the invariant on `Storage<D>`.
-    let state = unsafe { &mut *state };
-    read_arbos_storage(state, slot)
-}
-
-fn write_slot<D: Database>(
-    state: *mut revm::database::State<D>,
-    slot: U256,
-    value: U256,
-) -> Result<(), StorageError> {
-    // SAFETY: see the invariant on `Storage<D>`.
-    let state = unsafe { &mut *state };
-    write_arbos_storage(state, slot, value)
 }
 
 fn decode_address(slot: U256, value: U256) -> Result<Address, StorageError> {
@@ -143,67 +119,62 @@ impl StorageBackedAddress {
 }
 
 /// Storage-backed signed 64-bit integer, bit-reinterpreting `i64` as `u64`.
-pub struct StorageBackedInt64<D> {
-    state: *mut revm::database::State<D>,
-    slot: U256,
+#[derive(Clone, Copy, Debug)]
+pub struct StorageBackedInt64 {
+    pub slot: U256,
 }
 
-impl<D: Database> StorageBackedInt64<D> {
-    pub fn new(state: *mut revm::database::State<D>, base_key: B256, offset: u64) -> Self {
+impl StorageBackedInt64 {
+    pub fn new(base_key: B256, offset: u64) -> Self {
         Self {
-            state,
             slot: compute_slot(base_key, offset),
         }
     }
 
-    pub fn get(&self) -> Result<i64, StorageError> {
-        let value = read_slot(self.state, self.slot)?;
+    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<i64, StorageError> {
+        let value = backend
+            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .map_err(Into::into)?;
         let value_u64: u64 = value.try_into().unwrap_or(0);
         Ok(value_u64 as i64)
     }
 
-    pub fn set(&self, value: i64) -> Result<(), StorageError> {
-        write_slot(self.state, self.slot, U256::from(value as u64))
+    pub fn set<B: StorageBackend>(&self, backend: &mut B, value: i64) -> Result<(), StorageError> {
+        backend
+            .sstore(ARBOS_STATE_ADDRESS, self.slot, U256::from(value as u64))
+            .map_err(Into::into)
     }
 }
-
-impl<D> Clone for StorageBackedInt64<D> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            slot: self.slot,
-        }
-    }
-}
-
-unsafe impl<D: Send> Send for StorageBackedInt64<D> {}
-unsafe impl<D: Sync> Sync for StorageBackedInt64<D> {}
 
 /// Storage-backed signed 256-bit integer using two's complement.
-pub struct StorageBackedBigInt<D> {
-    pub state: *mut revm::database::State<D>,
+#[derive(Clone, Copy, Debug)]
+pub struct StorageBackedBigInt {
     pub slot: U256,
 }
 
-impl<D: Database> StorageBackedBigInt<D> {
-    pub fn new(state: *mut revm::database::State<D>, base_key: B256, offset: u64) -> Self {
+impl StorageBackedBigInt {
+    pub fn new(base_key: B256, offset: u64) -> Self {
         Self {
-            state,
             slot: compute_slot(base_key, offset),
         }
     }
 
-    pub fn get_raw(&self) -> Result<U256, StorageError> {
-        read_slot(self.state, self.slot)
+    pub fn get_raw<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, StorageError> {
+        backend
+            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .map_err(Into::into)
     }
 
-    pub fn is_negative(&self) -> Result<bool, StorageError> {
-        Ok(self.get_raw()?.bit(255))
+    pub fn is_negative<B: StorageBackend>(&self, backend: &mut B) -> Result<bool, StorageError> {
+        Ok(self.get_raw(backend)?.bit(255))
     }
 
     /// Returns `(magnitude, is_negative)` decoded from two's complement.
-    pub fn get_signed(&self) -> Result<(U256, bool), StorageError> {
-        let raw = self.get_raw()?;
+    pub fn get_signed<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(U256, bool), StorageError> {
+        let raw = self.get_raw(backend)?;
         if raw.bit(255) {
             let magnitude = (!raw).wrapping_add(U256::from(1));
             Ok((magnitude, true))
@@ -212,27 +183,21 @@ impl<D: Database> StorageBackedBigInt<D> {
         }
     }
 
-    pub fn set(&self, value: U256) -> Result<(), StorageError> {
-        write_slot(self.state, self.slot, value)
+    pub fn set<B: StorageBackend>(&self, backend: &mut B, value: U256) -> Result<(), StorageError> {
+        backend
+            .sstore(ARBOS_STATE_ADDRESS, self.slot, value)
+            .map_err(Into::into)
     }
 
-    pub fn set_negative(&self, magnitude: U256) -> Result<(), StorageError> {
+    pub fn set_negative<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        magnitude: U256,
+    ) -> Result<(), StorageError> {
         let neg_value = (!magnitude).wrapping_add(U256::from(1));
-        self.set(neg_value)
+        self.set(backend, neg_value)
     }
 }
-
-impl<D> Clone for StorageBackedBigInt<D> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            slot: self.slot,
-        }
-    }
-}
-
-unsafe impl<D: Send> Send for StorageBackedBigInt<D> {}
-unsafe impl<D: Sync> Sync for StorageBackedBigInt<D> {}
 
 /// Sentinel value for nil addresses: `1 << 255`.
 fn nil_address_representation() -> U256 {

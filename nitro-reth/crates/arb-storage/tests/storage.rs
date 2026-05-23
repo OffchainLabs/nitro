@@ -74,12 +74,14 @@ fn uint64_round_trip() {
 #[test]
 fn int64_signed_round_trip() {
     let mut h = ArbosHarness::new().initialize();
-    let storage = h.root_storage();
-    let v = StorageBackedInt64::new(storage.state_ptr(), B256::repeat_byte(2), TEST_OFFSET);
+    let state_ptr = h.state_ptr();
+    let _storage = h.root_storage();
+    let v = StorageBackedInt64::new(B256::repeat_byte(2), TEST_OFFSET);
+    let b = unsafe { &mut *state_ptr };
 
     for x in [0i64, 1, -1, i64::MAX, i64::MIN, 31_591_083, -31_591_083] {
-        v.set(x).unwrap();
-        assert_eq!(v.get().unwrap(), x);
+        v.set(b, x).unwrap();
+        assert_eq!(v.get(b).unwrap(), x);
     }
 }
 
@@ -105,34 +107,36 @@ fn big_uint_round_trip_at_boundaries() {
 #[test]
 fn big_int_two_complement_encoding() {
     let mut h = ArbosHarness::new().initialize();
-    let storage = h.root_storage();
-    let v = StorageBackedBigInt::new(storage.state_ptr(), B256::repeat_byte(4), TEST_OFFSET);
+    let state_ptr = h.state_ptr();
+    let _storage = h.root_storage();
+    let v = StorageBackedBigInt::new(B256::repeat_byte(4), TEST_OFFSET);
+    let b = unsafe { &mut *state_ptr };
 
-    v.set(U256::from(33u64)).unwrap();
-    let (mag, neg) = v.get_signed().unwrap();
+    v.set(b, U256::from(33u64)).unwrap();
+    let (mag, neg) = v.get_signed(b).unwrap();
     assert_eq!(mag, U256::from(33u64));
     assert!(!neg);
-    assert!(!v.is_negative().unwrap());
+    assert!(!v.is_negative(b).unwrap());
 
-    v.set_negative(U256::from(33u64)).unwrap();
-    let (mag, neg) = v.get_signed().unwrap();
+    v.set_negative(b, U256::from(33u64)).unwrap();
+    let (mag, neg) = v.get_signed(b).unwrap();
     assert_eq!(mag, U256::from(33u64));
     assert!(neg);
-    assert!(v.is_negative().unwrap());
+    assert!(v.is_negative(b).unwrap());
     assert_eq!(
-        v.get_raw().unwrap(),
+        v.get_raw(b).unwrap(),
         U256::ZERO.wrapping_sub(U256::from(33u64))
     );
 
     let max_pos = (U256::from(1u64) << 255) - U256::from(1u64);
-    v.set(max_pos).unwrap();
-    let (mag, neg) = v.get_signed().unwrap();
+    v.set(b, max_pos).unwrap();
+    let (mag, neg) = v.get_signed(b).unwrap();
     assert_eq!(mag, max_pos);
     assert!(!neg);
 
     let min_neg_magnitude = U256::from(1u64) << 255;
-    v.set_negative(min_neg_magnitude).unwrap();
-    let (mag, neg) = v.get_signed().unwrap();
+    v.set_negative(b, min_neg_magnitude).unwrap();
+    let (mag, neg) = v.get_signed(b).unwrap();
     assert_eq!(mag, min_neg_magnitude);
     assert!(neg);
 }

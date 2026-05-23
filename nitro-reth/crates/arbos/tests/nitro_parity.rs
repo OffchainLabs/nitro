@@ -89,13 +89,25 @@ fn brotli_level_is_0_at_v10() {
 #[test]
 fn per_batch_gas_cost_at_v30_is_v12() {
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
-    assert_eq!(h.l1_pricing_state().per_batch_gas_cost().unwrap(), 210_000);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l1_pricing_state()
+            .per_batch_gas_cost(unsafe { &mut *state_ptr })
+            .unwrap(),
+        210_000
+    );
 }
 
 #[test]
 fn per_batch_gas_cost_at_v10_is_v6() {
     let mut h = ArbosHarness::new().with_arbos_version(10).initialize();
-    assert_eq!(h.l1_pricing_state().per_batch_gas_cost().unwrap(), 100_000);
+    let state_ptr = h.state_ptr();
+    assert_eq!(
+        h.l1_pricing_state()
+            .per_batch_gas_cost(unsafe { &mut *state_ptr })
+            .unwrap(),
+        100_000
+    );
 }
 
 #[test]
@@ -494,15 +506,15 @@ mod batch_poster_funds_due {
         let bp_a = bpt.add_poster(backend, a, a).unwrap();
         let bp_b = bpt.add_poster(backend, b, b).unwrap();
 
-        bp_a.set_funds_due(U256::from(100u64), &bpt.total_funds_due)
+        bp_a.set_funds_due(backend, U256::from(100u64), &bpt.total_funds_due)
             .unwrap();
-        bp_b.set_funds_due(U256::from(50u64), &bpt.total_funds_due)
+        bp_b.set_funds_due(backend, U256::from(50u64), &bpt.total_funds_due)
             .unwrap();
-        assert_eq!(bpt.total_funds_due().unwrap(), U256::from(150u64));
+        assert_eq!(bpt.total_funds_due(backend).unwrap(), U256::from(150u64));
 
-        bp_a.set_funds_due(U256::from(30u64), &bpt.total_funds_due)
+        bp_a.set_funds_due(backend, U256::from(30u64), &bpt.total_funds_due)
             .unwrap();
-        assert_eq!(bpt.total_funds_due().unwrap(), U256::from(80u64));
+        assert_eq!(bpt.total_funds_due(backend).unwrap(), U256::from(80u64));
     }
 
     /// `set_funds_due(0)` reduces total by the previous funds_due value.
@@ -515,11 +527,12 @@ mod batch_poster_funds_due {
         let backend = unsafe { &mut *state_ptr };
         let a = address!("AAAA000000000000000000000000000000000000");
         let bp = bpt.add_poster(backend, a, a).unwrap();
-        bp.set_funds_due(U256::from(500u64), &bpt.total_funds_due)
+        bp.set_funds_due(backend, U256::from(500u64), &bpt.total_funds_due)
             .unwrap();
-        assert_eq!(bpt.total_funds_due().unwrap(), U256::from(500u64));
-        bp.set_funds_due(U256::ZERO, &bpt.total_funds_due).unwrap();
-        assert_eq!(bpt.total_funds_due().unwrap(), U256::ZERO);
+        assert_eq!(bpt.total_funds_due(backend).unwrap(), U256::from(500u64));
+        bp.set_funds_due(backend, U256::ZERO, &bpt.total_funds_due)
+            .unwrap();
+        assert_eq!(bpt.total_funds_due(backend).unwrap(), U256::ZERO);
     }
 }
 
