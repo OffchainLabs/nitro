@@ -157,6 +157,14 @@ impl<D, B: Burner> ArbosState<D, B> {
         Ok(self.collect_tips.get(backend)? != 0)
     }
 
+    pub fn set_collect_tips<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        enabled: bool,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.collect_tips.set(backend, u64::from(enabled))?)
+    }
+
     pub fn chain_id<C: StorageBackend>(&self, backend: &mut C) -> Result<U256, ArbosStateError> {
         Ok(self.chain_id.get(backend)?)
     }

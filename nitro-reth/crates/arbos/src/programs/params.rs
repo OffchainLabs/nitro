@@ -112,6 +112,51 @@ impl StylusParams {
 
     /// Serialize and persist params to storage.
     pub fn save<D: Database>(&self, sto: &Storage<D>) -> Result<(), ProgramsError> {
+        let data = self.encode();
+        let mut slot = 0u64;
+        let mut offset = 0;
+        while offset < data.len() {
+            let end = (offset + 32).min(data.len());
+            let chunk = &data[offset..end];
+
+            let mut word = [0u8; 32];
+            word[..chunk.len()].copy_from_slice(chunk);
+            sto.set_by_uint64(slot, B256::from(word))?;
+
+            slot += 1;
+            offset += 32;
+        }
+        Ok(())
+    }
+
+    /// Serialize and persist params through a [`StorageBackend`].
+    pub fn save_via_backend<D, B: StorageBackend>(
+        &self,
+        sto: &Storage<D>,
+        backend: &mut B,
+    ) -> Result<(), ProgramsError> {
+        use alloy_primitives::U256;
+        let data = self.encode();
+        let mut slot = 0u64;
+        let mut offset = 0;
+        while offset < data.len() {
+            let end = (offset + 32).min(data.len());
+            let chunk = &data[offset..end];
+
+            let mut word = [0u8; 32];
+            word[..chunk.len()].copy_from_slice(chunk);
+            let storage_slot = sto.new_slot(slot);
+            backend
+                .sstore(sto.account, storage_slot, U256::from_be_bytes(word))
+                .map_err(Into::into)?;
+
+            slot += 1;
+            offset += 32;
+        }
+        Ok(())
+    }
+
+    fn encode(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(32);
 
         data.extend_from_slice(&self.version.to_be_bytes());
@@ -137,21 +182,7 @@ impl StylusParams {
         if self.arbos_version >= ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
             data.push(self.max_fragment_count);
         }
-
-        let mut slot = 0u64;
-        let mut offset = 0;
-        while offset < data.len() {
-            let end = (offset + 32).min(data.len());
-            let chunk = &data[offset..end];
-
-            let mut word = [0u8; 32];
-            word[..chunk.len()].copy_from_slice(chunk);
-            sto.set_by_uint64(slot, B256::from(word))?;
-
-            slot += 1;
-            offset += 32;
-        }
-        Ok(())
+        data
     }
 
     /// Upgrade the params version (e.g. 1 -> 2 -> 3).
