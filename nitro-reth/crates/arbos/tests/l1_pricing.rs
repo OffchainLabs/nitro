@@ -34,17 +34,17 @@ fn batch_poster_table_lifecycle() {
     let initial = bpt.all_posters(b).unwrap();
     assert_eq!(initial.len(), 1);
     assert_eq!(initial[0], BATCH_POSTER_ADDRESS);
-    assert!(!bpt.contains_poster(addr1).unwrap());
+    assert!(!bpt.contains_poster(b, addr1).unwrap());
 
     let bp1 = bpt.add_poster(b, addr1, pay1).unwrap();
     assert_eq!(bp1.pay_to(b).unwrap(), pay1);
     assert_eq!(bp1.funds_due(b).unwrap(), U256::ZERO);
-    assert!(bpt.contains_poster(addr1).unwrap());
+    assert!(bpt.contains_poster(b, addr1).unwrap());
 
     let bp2 = bpt.add_poster(b, addr2, pay2).unwrap();
     assert_eq!(bp2.pay_to(b).unwrap(), pay2);
     assert_eq!(bp2.funds_due(b).unwrap(), U256::ZERO);
-    assert!(bpt.contains_poster(addr2).unwrap());
+    assert!(bpt.contains_poster(b, addr2).unwrap());
 
     assert_eq!(bpt.all_posters(b).unwrap().len(), 3);
 

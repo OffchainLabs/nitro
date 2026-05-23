@@ -90,9 +90,13 @@ impl<D> BatchPostersTable<D> {
     }
 }
 
-impl<D: Database> BatchPostersTable<D> {
-    pub fn contains_poster(&self, poster: Address) -> Result<bool, L1PricingError> {
-        Ok(self.poster_addrs.is_member(poster)?)
+impl<D> BatchPostersTable<D> {
+    pub fn contains_poster<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        poster: Address,
+    ) -> Result<bool, L1PricingError> {
+        Ok(self.poster_addrs.is_member(backend, poster)?)
     }
 
     pub fn open_poster<B: StorageBackend>(
@@ -101,7 +105,7 @@ impl<D: Database> BatchPostersTable<D> {
         poster: Address,
         create_if_not_exist: bool,
     ) -> Result<BatchPosterState, L1PricingError> {
-        let is_poster = self.poster_addrs.is_member(poster)?;
+        let is_poster = self.poster_addrs.is_member(backend, poster)?;
         if !is_poster {
             if !create_if_not_exist {
                 return Err(L1PricingError::BatchPosterNotFound);
@@ -117,7 +121,7 @@ impl<D: Database> BatchPostersTable<D> {
         poster_address: Address,
         pay_to: Address,
     ) -> Result<BatchPosterState, L1PricingError> {
-        let is_poster = self.poster_addrs.is_member(poster_address)?;
+        let is_poster = self.poster_addrs.is_member(backend, poster_address)?;
         if is_poster {
             return Err(L1PricingError::BatchPosterAlreadyExists);
         }
@@ -134,6 +138,14 @@ impl<D: Database> BatchPostersTable<D> {
         backend: &mut B,
     ) -> Result<Vec<Address>, L1PricingError> {
         Ok(self.poster_addrs.all_members(backend, u64::MAX)?)
+    }
+
+    pub fn all_posters_capped<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        max: u64,
+    ) -> Result<Vec<Address>, L1PricingError> {
+        Ok(self.poster_addrs.all_members(backend, max)?)
     }
 
     pub fn get_funds_due_list<B: StorageBackend>(

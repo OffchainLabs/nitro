@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use revm::Database;
 
-use arb_storage::Storage;
+use arb_storage::{Storage, StorageBackend};
 
 use super::ProgramsError;
 
@@ -61,8 +61,23 @@ pub struct StylusParams {
 impl StylusParams {
     /// Deserialize params from a storage substorage.
     pub fn load<D: Database>(arbos_version: u64, sto: &Storage<D>) -> Result<Self, ProgramsError> {
-        let mut reader = PackedReader::new(sto);
+        Self::load_from_reader(arbos_version, PackedReader::new(sto))
+    }
 
+    /// Deserialize params through a [`StorageBackend`], suitable for handlers
+    /// without an executor pointer.
+    pub fn load_via_backend<D, B: StorageBackend>(
+        arbos_version: u64,
+        sto: &Storage<D>,
+        backend: &mut B,
+    ) -> Result<Self, ProgramsError> {
+        Self::load_from_reader(arbos_version, PackedReaderBackend::new(sto, backend))
+    }
+
+    fn load_from_reader<R: PackedRead>(
+        arbos_version: u64,
+        mut reader: R,
+    ) -> Result<Self, ProgramsError> {
         let mut params = StylusParams {
             arbos_version,
             version: reader.take_u16()?,
@@ -236,7 +251,13 @@ pub fn init_stylus_params<D: Database>(arbos_version: u64, sto: &Storage<D>) {
     let _ = params.save(sto);
 }
 
-/// Helper to read packed fields from sequential storage words.
+trait PackedRead {
+    fn take_u8(&mut self) -> Result<u8, ProgramsError>;
+    fn take_u16(&mut self) -> Result<u16, ProgramsError>;
+    fn take_u24(&mut self) -> Result<u32, ProgramsError>;
+    fn take_u32(&mut self) -> Result<u32, ProgramsError>;
+}
+
 struct PackedReader<'a, D> {
     sto: &'a Storage<D>,
     slot: u64,
@@ -270,7 +291,72 @@ impl<'a, D: Database> PackedReader<'a, D> {
         self.pos += count;
         Ok(&self.buf[start..self.pos])
     }
+}
 
+impl<D: Database> PackedRead for PackedReader<'_, D> {
+    fn take_u8(&mut self) -> Result<u8, ProgramsError> {
+        let bytes = self.take_bytes(1)?;
+        Ok(bytes[0])
+    }
+
+    fn take_u16(&mut self) -> Result<u16, ProgramsError> {
+        let bytes = self.take_bytes(2)?;
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    }
+
+    fn take_u24(&mut self) -> Result<u32, ProgramsError> {
+        let bytes = self.take_bytes(3)?;
+        Ok((bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | bytes[2] as u32)
+    }
+
+    fn take_u32(&mut self) -> Result<u32, ProgramsError> {
+        let bytes = self.take_bytes(4)?;
+        Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+}
+
+struct PackedReaderBackend<'a, 'b, D, B: StorageBackend> {
+    sto: &'a Storage<D>,
+    backend: &'b mut B,
+    slot: u64,
+    buf: [u8; 32],
+    pos: usize,
+}
+
+impl<'a, 'b, D, B: StorageBackend> PackedReaderBackend<'a, 'b, D, B> {
+    fn new(sto: &'a Storage<D>, backend: &'b mut B) -> Self {
+        Self {
+            sto,
+            backend,
+            slot: 0,
+            buf: [0u8; 32],
+            pos: 32,
+        }
+    }
+
+    fn ensure(&mut self, count: usize) -> Result<(), ProgramsError> {
+        if self.pos + count > 32 {
+            let slot = self.sto.new_slot(self.slot);
+            let value = self
+                .backend
+                .sload(self.sto.account, slot)
+                .map_err(Into::into)?;
+            self.buf = value.to_be_bytes::<32>();
+            self.slot += 1;
+            self.pos = 0;
+        }
+        Ok(())
+    }
+
+    fn take_bytes(&mut self, count: usize) -> Result<&[u8], ProgramsError> {
+        self.ensure(count)?;
+        let start = self.pos;
+        self.pos += count;
+        Ok(&self.buf[start..self.pos])
+    }
+}
+
+impl<D, B: StorageBackend> PackedRead for PackedReaderBackend<'_, '_, D, B> {
     fn take_u8(&mut self) -> Result<u8, ProgramsError> {
         let bytes = self.take_bytes(1)?;
         Ok(bytes[0])

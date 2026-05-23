@@ -120,104 +120,7 @@ pub struct ArbosState<D, B: Burner> {
     pub collect_tips: StorageBackedUint64,
 }
 
-impl<D: Database, B: Burner> ArbosState<D, B> {
-    /// Open existing ArbOS state from storage.
-    ///
-    /// Returns [`ArbosStateError::Uninitialised`] when the version slot reads
-    /// back as zero (expected only at genesis), [`ArbosStateError::Storage`]
-    /// when the backing storage layer fails, and
-    /// [`ArbosStateError::UnsupportedVersion`] when the stored version is
-    /// outside the range this build recognises.
-    pub fn open(state: &mut revm::database::State<D>, burner: B) -> Result<Self, ArbosStateError> {
-        let state_ptr: *mut revm::database::State<D> = state;
-        let backing_storage = Storage::new(state_ptr, B256::ZERO);
-
-        let arbos_version = backing_storage.get_uint64_by_uint64(VERSION_OFFSET)?;
-        if arbos_version == 0 {
-            return Err(ArbosStateError::Uninitialised);
-        }
-        if arbos_version > MAX_ARBOS_VERSION_SUPPORTED {
-            return Err(ArbosStateError::UnsupportedVersion(arbos_version));
-        }
-
-        if arbos_version >= 60 {
-            set_account_nonce(state, FILTERED_TX_STATE_ADDRESS, 1);
-        }
-
-        let chain_config_key = chain_config_root_key();
-        let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
-
-        Ok(Self {
-            arbos_version,
-            max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
-            upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
-            upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
-            network_fee_account: StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET),
-            l1_pricing_state: L1PricingState::open(
-                backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
-                arbos_version,
-            ),
-            l2_pricing_state: L2PricingState::open(
-                backing_storage.open_sub_storage_with_key(l2_pricing_root_key()),
-                arbos_version,
-            ),
-            retryable_state: RetryableState::open(
-                backing_storage.open_sub_storage_with_key(retryables_root_key()),
-            ),
-            address_table: address_table::open_address_table(
-                backing_storage.open_sub_storage_with_key(address_table_root_key()),
-            ),
-            chain_owners: address_set::open_address_set(
-                backing_storage.open_sub_storage_with_key(chain_owner_root_key()),
-            ),
-            send_merkle_accumulator: merkle_accumulator::open_merkle_accumulator(
-                backing_storage.open_sub_storage_with_key(send_merkle_root_key()),
-            ),
-            programs: Programs::open(
-                arbos_version,
-                backing_storage.open_sub_storage_with_key(programs_root_key()),
-            ),
-            blockhashes: blockhash::open_blockhashes(
-                backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
-            ),
-            chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
-            chain_config: StorageBackedBytes::new(chain_config_key),
-            genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
-            infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
-            brotli_compression_level: StorageBackedUint64::new(
-                B256::ZERO,
-                BROTLI_COMPRESSION_LEVEL_OFFSET,
-            ),
-            native_token_enabled_from_time: StorageBackedUint64::new(
-                B256::ZERO,
-                NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
-            ),
-            native_token_owners: address_set::open_address_set(
-                backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
-            ),
-            transaction_filtering_enabled_from_time: StorageBackedUint64::new(
-                B256::ZERO,
-                TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
-            ),
-            transaction_filterers: address_set::open_address_set(
-                backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
-            ),
-            features: features::open_features(features_sto.base_key(), 0),
-            filtered_funds_recipient: StorageBackedAddress::new(
-                B256::ZERO,
-                FILTERED_FUNDS_RECIPIENT_OFFSET,
-            ),
-            filtered_transactions: FilteredTransactionsState::open(Storage::new_with_account(
-                state_ptr,
-                B256::ZERO,
-                FILTERED_TX_STATE_ADDRESS,
-            )),
-            collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
-            backing_storage,
-            burner,
-        })
-    }
-
+impl<D, B: Burner> ArbosState<D, B> {
     // --- Accessor methods ---
 
     pub fn arbos_version(&self) -> u64 {
@@ -226,13 +129,6 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
 
     pub fn backing_storage(&self) -> &Storage<D> {
         &self.backing_storage
-    }
-
-    pub fn set_format_version(&mut self, version: u64) -> Result<(), ArbosStateError> {
-        self.arbos_version = version;
-        Ok(self
-            .backing_storage
-            .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(version)))?)
     }
 
     pub fn brotli_compression_level<C: StorageBackend>(
@@ -393,6 +289,112 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     ) -> Result<(), ArbosStateError> {
         self.upgrade_version.set(backend, version)?;
         Ok(self.upgrade_timestamp.set(backend, timestamp)?)
+    }
+}
+
+impl<D: Database, B: Burner> ArbosState<D, B> {
+    pub fn set_format_version(&mut self, version: u64) -> Result<(), ArbosStateError> {
+        self.arbos_version = version;
+        Ok(self
+            .backing_storage
+            .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(version)))?)
+    }
+
+    /// Open existing ArbOS state from storage.
+    ///
+    /// Returns [`ArbosStateError::Uninitialised`] when the version slot reads
+    /// back as zero (expected only at genesis), [`ArbosStateError::Storage`]
+    /// when the backing storage layer fails, and
+    /// [`ArbosStateError::UnsupportedVersion`] when the stored version is
+    /// outside the range this build recognises.
+    pub fn open(state: &mut revm::database::State<D>, burner: B) -> Result<Self, ArbosStateError> {
+        let state_ptr: *mut revm::database::State<D> = state;
+        let backing_storage = Storage::new(state_ptr, B256::ZERO);
+
+        let arbos_version = backing_storage.get_uint64_by_uint64(VERSION_OFFSET)?;
+        if arbos_version == 0 {
+            return Err(ArbosStateError::Uninitialised);
+        }
+        if arbos_version > MAX_ARBOS_VERSION_SUPPORTED {
+            return Err(ArbosStateError::UnsupportedVersion(arbos_version));
+        }
+
+        if arbos_version >= 60 {
+            set_account_nonce(state, FILTERED_TX_STATE_ADDRESS, 1);
+        }
+
+        let chain_config_key = chain_config_root_key();
+        let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
+
+        Ok(Self {
+            arbos_version,
+            max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
+            upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
+            upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
+            network_fee_account: StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET),
+            l1_pricing_state: L1PricingState::open(
+                backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
+                arbos_version,
+            ),
+            l2_pricing_state: L2PricingState::open(
+                backing_storage.open_sub_storage_with_key(l2_pricing_root_key()),
+                arbos_version,
+            ),
+            retryable_state: RetryableState::open(
+                backing_storage.open_sub_storage_with_key(retryables_root_key()),
+            ),
+            address_table: address_table::open_address_table(
+                backing_storage.open_sub_storage_with_key(address_table_root_key()),
+            ),
+            chain_owners: address_set::open_address_set(
+                backing_storage.open_sub_storage_with_key(chain_owner_root_key()),
+            ),
+            send_merkle_accumulator: merkle_accumulator::open_merkle_accumulator(
+                backing_storage.open_sub_storage_with_key(send_merkle_root_key()),
+            ),
+            programs: Programs::open(
+                arbos_version,
+                backing_storage.open_sub_storage_with_key(programs_root_key()),
+            ),
+            blockhashes: blockhash::open_blockhashes(
+                backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
+            ),
+            chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
+            chain_config: StorageBackedBytes::new(chain_config_key),
+            genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
+            infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
+            brotli_compression_level: StorageBackedUint64::new(
+                B256::ZERO,
+                BROTLI_COMPRESSION_LEVEL_OFFSET,
+            ),
+            native_token_enabled_from_time: StorageBackedUint64::new(
+                B256::ZERO,
+                NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+            ),
+            native_token_owners: address_set::open_address_set(
+                backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
+            ),
+            transaction_filtering_enabled_from_time: StorageBackedUint64::new(
+                B256::ZERO,
+                TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
+            ),
+            transaction_filterers: address_set::open_address_set(
+                backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
+            ),
+            features: features::open_features(features_sto.base_key(), 0),
+            filtered_funds_recipient: StorageBackedAddress::new(
+                B256::ZERO,
+                FILTERED_FUNDS_RECIPIENT_OFFSET,
+            ),
+            filtered_transactions: FilteredTransactionsState::open(Storage::new_with_account(
+                state_ptr,
+                B256::ZERO,
+                FILTERED_TX_STATE_ADDRESS,
+            )),
+            collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
+            backing_storage,
+            burner,
+        })
     }
 
     /// Checks and performs a scheduled ArbOS version upgrade if due.
