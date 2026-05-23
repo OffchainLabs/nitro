@@ -33,7 +33,7 @@ pub struct DataPricer {
 }
 
 pub fn init_data_pricer<D: Database, B: StorageBackend>(
-    sto: &Storage<D>,
+    sto: &Storage<'_, D>,
     backend: &mut B,
 ) -> Result<(), ProgramsError> {
     let base_key = sto.base_key();
@@ -47,7 +47,7 @@ pub fn init_data_pricer<D: Database, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_data_pricer<D>(sto: &Storage<D>) -> DataPricer {
+pub fn open_data_pricer<D>(sto: &Storage<'_, D>) -> DataPricer {
     let base_key = sto.base_key();
     DataPricer {
         demand: StorageBackedUint32::new(base_key, DEMAND_OFFSET),

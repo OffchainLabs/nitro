@@ -54,18 +54,18 @@ impl StorageBackend for alloy_evm::EvmInternals<'_> {
     }
 }
 
-impl<D: Database> StorageBackend for Storage<D> {
+impl<D: Database> StorageBackend for Storage<'_, D> {
     type Error = StorageError;
 
     fn sload(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
         // SAFETY: see `Storage` struct-level invariant.
-        let state = unsafe { &mut *self.state_ptr() };
+        let state = unsafe { self.state_mut() };
         read_storage_at(state, account, slot)
     }
 
     fn sstore(&mut self, account: Address, slot: U256, value: U256) -> Result<(), Self::Error> {
         // SAFETY: see `Storage` struct-level invariant.
-        let state = unsafe { &mut *self.state_ptr() };
+        let state = unsafe { self.state_mut() };
         write_storage_at(state, account, slot, value)
     }
 }

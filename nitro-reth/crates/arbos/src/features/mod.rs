@@ -9,19 +9,19 @@ pub use error::FeaturesError;
 const INCREASED_CALLDATA: usize = 0;
 
 /// Feature flags backed by a storage BigUint used as a bitmask.
-pub struct Features<D> {
+pub struct Features<'a, D> {
     features: StorageBackedBigUint,
-    _phantom: PhantomData<D>,
+    _phantom: PhantomData<&'a mut revm::database::State<D>>,
 }
 
-pub fn open_features<D>(base_key: alloy_primitives::B256, offset: u64) -> Features<D> {
+pub fn open_features<'a, D>(base_key: alloy_primitives::B256, offset: u64) -> Features<'a, D> {
     Features {
         features: StorageBackedBigUint::new(base_key, offset),
         _phantom: PhantomData,
     }
 }
 
-impl<D> Features<D> {
+impl<D> Features<'_, D> {
     pub fn set_calldata_price_increase<B: StorageBackend>(
         &self,
         backend: &mut B,

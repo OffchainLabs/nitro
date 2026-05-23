@@ -14,9 +14,9 @@ const TOTAL_FUNDS_DUE_OFFSET: u64 = 0;
 const FUNDS_DUE_OFFSET: u64 = 0;
 const PAY_TO_OFFSET: u64 = 1;
 
-pub struct BatchPostersTable<D> {
-    poster_addrs: AddressSet<D>,
-    poster_info: Storage<D>,
+pub struct BatchPostersTable<'a, D> {
+    poster_addrs: AddressSet<'a, D>,
+    poster_info: Storage<'a, D>,
     pub total_funds_due: StorageBackedBigInt,
 }
 
@@ -31,7 +31,7 @@ pub struct FundsDueItem {
 }
 
 pub fn initialize_batch_posters_table<D: Database, B: StorageBackend>(
-    l1_pricing_storage: &Storage<D>,
+    l1_pricing_storage: &Storage<'_, D>,
     backend: &mut B,
     initial_poster: Address,
 ) -> Result<(), L1PricingError> {
@@ -54,7 +54,9 @@ pub fn initialize_batch_posters_table<D: Database, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_batch_posters_table<D>(l1_pricing_storage: &Storage<D>) -> BatchPostersTable<D> {
+pub fn open_batch_posters_table<'a, D>(
+    l1_pricing_storage: &Storage<'a, D>,
+) -> BatchPostersTable<'a, D> {
     let bpt_storage = l1_pricing_storage.open_sub_storage(BATCH_POSTER_TABLE_KEY);
     let poster_addrs_storage = bpt_storage.open_sub_storage(POSTER_ADDRS_KEY);
     let poster_info = bpt_storage.open_sub_storage(POSTER_INFO_KEY);
@@ -69,8 +71,8 @@ pub fn open_batch_posters_table<D>(l1_pricing_storage: &Storage<D>) -> BatchPost
     }
 }
 
-impl<D> BatchPostersTable<D> {
-    pub fn open(l1_pricing_storage: &Storage<D>) -> Self {
+impl<'a, D> BatchPostersTable<'a, D> {
+    pub fn open(l1_pricing_storage: &Storage<'a, D>) -> Self {
         open_batch_posters_table(l1_pricing_storage)
     }
 
@@ -90,7 +92,7 @@ impl<D> BatchPostersTable<D> {
     }
 }
 
-impl<D> BatchPostersTable<D> {
+impl<D> BatchPostersTable<'_, D> {
     pub fn contains_poster<B: StorageBackend>(
         &self,
         backend: &mut B,

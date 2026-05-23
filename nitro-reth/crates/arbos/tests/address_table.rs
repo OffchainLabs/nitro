@@ -5,7 +5,7 @@ use arbos::address_table::open_address_table;
 fn fresh_table(
     h: &mut ArbosHarness,
     sub_id: u8,
-) -> arbos::address_table::AddressTable<arb_test_utils::EmptyDb> {
+) -> arbos::address_table::AddressTable<'static, arb_test_utils::EmptyDb> {
     let root = h.root_storage();
     open_address_table(root.open_sub_storage(&[sub_id]))
 }

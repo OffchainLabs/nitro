@@ -15,16 +15,16 @@ pub struct MerkleTreeNodeEvent {
 }
 
 /// Storage-backed Merkle accumulator.
-pub struct MerkleAccumulator<D> {
-    backing_storage: Storage<D>,
+pub struct MerkleAccumulator<'a, D> {
+    backing_storage: Storage<'a, D>,
     size: StorageBackedUint64,
 }
 
-pub fn initialize_merkle_accumulator<D: Database>(_sto: &Storage<D>) {
+pub fn initialize_merkle_accumulator<D: Database>(_sto: &Storage<'_, D>) {
     // no-op
 }
 
-pub fn open_merkle_accumulator<D>(sto: Storage<D>) -> MerkleAccumulator<D> {
+pub fn open_merkle_accumulator<D>(sto: Storage<'_, D>) -> MerkleAccumulator<'_, D> {
     let size = StorageBackedUint64::new(sto.base_key(), 0);
     MerkleAccumulator {
         backing_storage: sto,
@@ -41,7 +41,7 @@ pub fn calc_num_partials(size: u64) -> u64 {
     64 - size.leading_zeros() as u64
 }
 
-impl<D> MerkleAccumulator<D> {
+impl<D> MerkleAccumulator<'_, D> {
     fn partial_slot(&self, level: u64) -> U256 {
         self.backing_storage.new_slot(2 + level)
     }
@@ -53,7 +53,7 @@ impl<D> MerkleAccumulator<D> {
     ) -> Result<B256, MerkleAccumulatorError> {
         let slot = self.partial_slot(level);
         let value = backend
-            .sload(self.backing_storage.account, slot)
+            .sload(self.backing_storage.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -67,7 +67,7 @@ impl<D> MerkleAccumulator<D> {
         let slot = self.partial_slot(level);
         backend
             .sstore(
-                self.backing_storage.account,
+                self.backing_storage.account(),
                 slot,
                 U256::from_be_bytes(val.0),
             )

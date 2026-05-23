@@ -142,7 +142,7 @@ pub fn initialize_retryables<D: Database, C: StorageBackend>(
 /// sets the batch poster's pay-to (fee collector) address.
 pub fn initialize_arbos_account<D: Database, B: Burner, C: StorageBackend>(
     backend: &mut C,
-    arbos_state: &ArbosState<D, B>,
+    arbos_state: &ArbosState<'_, D, B>,
     account: &AccountInitInfo,
 ) -> Result<(), ArbosStateError> {
     if let Some(ref aggregator) = account.aggregator_info {
@@ -185,7 +185,7 @@ pub struct GenesisInitResult {
 /// containing all balance operations the caller needs to execute.
 pub fn initialize_arbos_in_database<D: Database, B: Burner, C: StorageBackend>(
     backend: &mut C,
-    arbos_state: &ArbosState<D, B>,
+    arbos_state: &ArbosState<'_, D, B>,
     chain_owner: Address,
     address_table_entries: Vec<Address>,
     retryable_data: Vec<InitRetryableData>,
@@ -227,41 +227,49 @@ pub fn initialize_arbos_in_database<D: Database, B: Burner, C: StorageBackend>(
 
 /// Bring a fresh database to a fully-initialised ArbOS state at the requested
 /// version, returning the opened state.
-pub fn bootstrap<D: Database, B: Burner>(
-    state: &mut State<D>,
+pub fn bootstrap<'a, D: Database, B: Burner>(
+    state: &'a mut State<D>,
     chain_id: u64,
     network_fee_account: Address,
     infra_fee_account: Address,
     l1_initial_base_fee: U256,
     target_arbos_version: u64,
     burner: B,
-) -> Result<ArbosState<D, B>, ArbosStateError> {
-    let state_ptr: *mut State<D> = state;
-
+) -> Result<ArbosState<'a, D, B>, ArbosStateError> {
     set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
 
-    let backing = Storage::<D>::new(state_ptr, B256::ZERO);
-    backing.set_by_uint64(super::VERSION_OFFSET, B256::from(U256::from(1u64)))?;
-    StorageBackedBigUint::new(B256::ZERO, super::CHAIN_ID_OFFSET)
-        .set(state, U256::from(chain_id))?;
-    StorageBackedAddress::new(B256::ZERO, super::NETWORK_FEE_ACCOUNT_OFFSET)
-        .set(state, network_fee_account)?;
-    StorageBackedAddress::new(B256::ZERO, super::INFRA_FEE_ACCOUNT_OFFSET)
-        .set(state, infra_fee_account)?;
+    {
+        let backing = Storage::<D>::new(state, B256::ZERO);
+        backing.set_by_uint64(super::VERSION_OFFSET, B256::from(U256::from(1u64)))?;
+        // SAFETY: see `Storage` struct-level invariant. The `&mut State`
+        // returned here is used transiently to drive `StorageBackend`-based
+        // setters and is dropped before any subsequent use of `backing`.
+        let s = unsafe { backing.state_mut() };
+        StorageBackedBigUint::new(B256::ZERO, super::CHAIN_ID_OFFSET)
+            .set(s, U256::from(chain_id))?;
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        StorageBackedAddress::new(B256::ZERO, super::NETWORK_FEE_ACCOUNT_OFFSET)
+            .set(s, network_fee_account)?;
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        StorageBackedAddress::new(B256::ZERO, super::INFRA_FEE_ACCOUNT_OFFSET)
+            .set(s, infra_fee_account)?;
 
-    L1PricingState::initialize(
-        &backing.open_sub_storage(super::L1_PRICING_SUBSPACE),
-        unsafe { &mut *state_ptr },
-        network_fee_account,
-        l1_initial_base_fee,
-    )?;
-    L2PricingState::<D>::initialize(
-        &backing.open_sub_storage(super::L2_PRICING_SUBSPACE),
-        unsafe { &mut *state_ptr },
-    )?;
-    RetryableState::<D>::initialize(&backing.open_sub_storage(super::RETRYABLES_SUBSPACE))?;
+        let l1_sto = backing.open_sub_storage(super::L1_PRICING_SUBSPACE);
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        L1PricingState::initialize(&l1_sto, s, network_fee_account, l1_initial_base_fee)?;
+        let l2_sto = backing.open_sub_storage(super::L2_PRICING_SUBSPACE);
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        L2PricingState::<D>::initialize(&l2_sto, s)?;
+        RetryableState::<D>::initialize(&backing.open_sub_storage(super::RETRYABLES_SUBSPACE))?;
+    }
 
-    let mut arbos = ArbosState::open(unsafe { &mut *state_ptr }, burner)?;
-    arbos.upgrade_arbos_version(unsafe { &mut *state_ptr }, target_arbos_version, true)?;
+    let mut arbos = ArbosState::open(state, burner)?;
+    // SAFETY: see `Storage` struct-level invariant.
+    let s = unsafe { arbos.backing_storage.state_mut() };
+    arbos.upgrade_arbos_version(s, target_arbos_version, true)?;
     Ok(arbos)
 }

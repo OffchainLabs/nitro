@@ -10,17 +10,17 @@ pub use error::AddressSetError;
 ///
 /// Layout: slot 0 = size, slots 1..size = addresses (as StorageBackedAddress).
 /// Sub-storage at key ]0\] maps address_hash → slot index.
-pub struct AddressSet<D> {
-    backing_storage: Storage<D>,
+pub struct AddressSet<'a, D> {
+    backing_storage: Storage<'a, D>,
     size: StorageBackedUint64,
-    by_address: Storage<D>,
+    by_address: Storage<'a, D>,
 }
 
-pub fn initialize_address_set<D: Database>(sto: &Storage<D>) -> Result<(), AddressSetError> {
+pub fn initialize_address_set<D: Database>(sto: &Storage<'_, D>) -> Result<(), AddressSetError> {
     Ok(sto.set_by_uint64(0, B256::ZERO)?)
 }
 
-pub fn open_address_set<D>(sto: Storage<D>) -> AddressSet<D> {
+pub fn open_address_set<D>(sto: Storage<'_, D>) -> AddressSet<'_, D> {
     let size = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[0u8]);
     AddressSet {
@@ -30,7 +30,7 @@ pub fn open_address_set<D>(sto: Storage<D>) -> AddressSet<D> {
     }
 }
 
-impl<D> AddressSet<D> {
+impl<D> AddressSet<'_, D> {
     pub fn size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, AddressSetError> {
         Ok(self.size.get(backend)?)
     }
@@ -178,7 +178,7 @@ impl<D> AddressSet<D> {
     ) -> Result<B256, AddressSetError> {
         let slot = self.by_address.slot_for_key(key);
         let value = backend
-            .sload(self.by_address.account, slot)
+            .sload(self.by_address.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -191,7 +191,11 @@ impl<D> AddressSet<D> {
     ) -> Result<(), AddressSetError> {
         let slot = self.by_address.slot_for_key(key);
         backend
-            .sstore(self.by_address.account, slot, U256::from_be_bytes(value.0))
+            .sstore(
+                self.by_address.account(),
+                slot,
+                U256::from_be_bytes(value.0),
+            )
             .map_err(Into::into)?;
         Ok(())
     }
@@ -203,7 +207,7 @@ impl<D> AddressSet<D> {
     ) -> Result<B256, AddressSetError> {
         let slot = self.backing_storage.new_slot(offset);
         let value = backend
-            .sload(self.backing_storage.account, slot)
+            .sload(self.backing_storage.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -217,7 +221,7 @@ impl<D> AddressSet<D> {
         let slot = self.backing_storage.new_slot(offset);
         backend
             .sstore(
-                self.backing_storage.account,
+                self.backing_storage.account(),
                 slot,
                 U256::from_be_bytes(value.0),
             )

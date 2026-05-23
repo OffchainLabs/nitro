@@ -286,7 +286,7 @@ pub struct InternalTxContext {
 pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G, C>(
     backend: &mut C,
     data: &[u8],
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     mut transfer_fn: F,
     mut balance_of: G,
@@ -335,7 +335,7 @@ where
 fn apply_start_block<D: revm::Database, B: Burner, F, G, C>(
     backend: &mut C,
     inputs: StartBlockData,
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
     balance_of: &mut G,
@@ -397,7 +397,7 @@ where
 fn apply_batch_posting_report<D: revm::Database, B: Burner, F, C>(
     backend: &mut C,
     inputs: BatchPostingReportData,
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
 ) -> Result<(), String>
@@ -433,7 +433,7 @@ where
 fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F, C>(
     backend: &mut C,
     inputs: BatchPostingReportV2Data,
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
 ) -> Result<(), String>

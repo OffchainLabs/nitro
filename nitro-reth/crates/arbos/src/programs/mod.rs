@@ -110,18 +110,18 @@ impl Program {
 }
 
 /// Stylus programs state.
-pub struct Programs<D> {
+pub struct Programs<'a, D> {
     pub arbos_version: u64,
-    pub backing_storage: Storage<D>,
-    programs: Storage<D>,
-    module_hashes: Storage<D>,
+    pub backing_storage: Storage<'a, D>,
+    programs: Storage<'a, D>,
+    module_hashes: Storage<'a, D>,
     pub data_pricer: DataPricer,
-    pub cache_managers: AddressSet<D>,
+    pub cache_managers: AddressSet<'a, D>,
     activation_gas: StorageBackedUint64,
 }
 
-impl<D> Programs<D> {
-    pub fn open(arbos_version: u64, sto: Storage<D>) -> Self {
+impl<'a, D> Programs<'a, D> {
+    pub fn open(arbos_version: u64, sto: Storage<'a, D>) -> Self {
         let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
         let data_pricer = open_data_pricer(&data_pricer_sto);
         let programs = sto.open_sub_storage(PROGRAM_DATA_KEY);
@@ -142,7 +142,7 @@ impl<D> Programs<D> {
     }
 }
 
-impl<D> Programs<D> {
+impl<D> Programs<'_, D> {
     /// Load the current Stylus parameters.
     pub fn params<B: StorageBackend>(
         &self,
@@ -186,7 +186,7 @@ impl<D> Programs<D> {
     ) -> Result<Program, ProgramsError> {
         let slot = self.programs.slot_for_key(code_hash);
         let value = backend
-            .sload(self.programs.account, slot)
+            .sload(self.programs.account(), slot)
             .map_err(Into::into)?;
         let data = B256::from(value.to_be_bytes::<32>());
         Ok(Program::from_storage(data, time))
@@ -202,7 +202,7 @@ impl<D> Programs<D> {
         let slot = self.programs.slot_for_key(code_hash);
         let value = U256::from_be_bytes(program.to_storage().0);
         backend
-            .sstore(self.programs.account, slot, value)
+            .sstore(self.programs.account(), slot, value)
             .map_err(Into::into)?;
         Ok(())
     }
@@ -217,7 +217,7 @@ impl<D> Programs<D> {
         let slot = self.module_hashes.slot_for_key(code_hash);
         let value = U256::from_be_bytes(module_hash.0);
         backend
-            .sstore(self.module_hashes.account, slot, value)
+            .sstore(self.module_hashes.account(), slot, value)
             .map_err(Into::into)?;
         Ok(())
     }
@@ -230,7 +230,7 @@ impl<D> Programs<D> {
     ) -> Result<B256, ProgramsError> {
         let slot = self.module_hashes.slot_for_key(code_hash);
         let value = backend
-            .sload(self.module_hashes.account, slot)
+            .sload(self.module_hashes.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -274,10 +274,10 @@ impl<D> Programs<D> {
     }
 }
 
-impl<D: Database> Programs<D> {
+impl<D: Database> Programs<'_, D> {
     pub fn initialize<B: StorageBackend>(
         arbos_version: u64,
-        sto: &Storage<D>,
+        sto: &Storage<'_, D>,
         backend: &mut B,
     ) -> Result<(), ProgramsError> {
         let params_sto = sto.open_sub_storage(PARAMS_KEY);

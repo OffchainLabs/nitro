@@ -27,16 +27,16 @@ pub const TIMEOUT_OFFSET: u64 = 5;
 pub const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 
 /// Manages the collection of retryable tickets.
-pub struct RetryableState<D> {
-    retryables: Storage<D>,
+pub struct RetryableState<'a, D> {
+    retryables: Storage<'a, D>,
     pub timeout_queue: Queue,
 }
 
 /// A single retryable ticket.
-pub struct Retryable<D> {
+pub struct Retryable<'a, D> {
     pub id: B256,
     #[allow(dead_code)]
-    backing_storage: Storage<D>,
+    backing_storage: Storage<'a, D>,
     num_tries: StorageBackedUint64,
     from: StorageBackedAddress,
     to: StorageBackedAddressOrNil,
@@ -47,11 +47,11 @@ pub struct Retryable<D> {
     timeout_windows_left: StorageBackedUint64,
 }
 
-pub fn initialize_retryable_state<D: Database>(sto: &Storage<D>) -> Result<(), RetryableError> {
+pub fn initialize_retryable_state<D: Database>(sto: &Storage<'_, D>) -> Result<(), RetryableError> {
     Ok(initialize_queue(&sto.open_sub_storage(TIMEOUT_QUEUE_KEY))?)
 }
 
-pub fn open_retryable_state<D>(sto: Storage<D>) -> RetryableState<D> {
+pub fn open_retryable_state<D>(sto: Storage<'_, D>) -> RetryableState<'_, D> {
     let queue_sto = sto.open_sub_storage(TIMEOUT_QUEUE_KEY);
     RetryableState {
         timeout_queue: open_queue(queue_sto),
@@ -59,8 +59,8 @@ pub fn open_retryable_state<D>(sto: Storage<D>) -> RetryableState<D> {
     }
 }
 
-impl<D> RetryableState<D> {
-    pub fn open(sto: Storage<D>) -> Self {
+impl<'a, D> RetryableState<'a, D> {
+    pub fn open(sto: Storage<'a, D>) -> Self {
         open_retryable_state(sto)
     }
 
@@ -75,7 +75,7 @@ impl<D> RetryableState<D> {
         callvalue: U256,
         beneficiary: Address,
         calldata: &[u8],
-    ) -> Result<Retryable<D>, RetryableError> {
+    ) -> Result<Retryable<'a, D>, RetryableError> {
         let ret = self.internal_open(id);
         ret.num_tries.set(backend, 0)?;
         ret.from.set(backend, from)?;
@@ -95,7 +95,7 @@ impl<D> RetryableState<D> {
         backend: &mut B,
         id: B256,
         current_timestamp: u64,
-    ) -> Result<Option<Retryable<D>>, RetryableError> {
+    ) -> Result<Option<Retryable<'a, D>>, RetryableError> {
         let sto = self.retryables.open_sub_storage(id.as_slice());
         let timeout_storage = StorageBackedUint64::new(sto.base_key(), TIMEOUT_OFFSET);
         let timeout = timeout_storage.get(backend)?;
@@ -345,7 +345,7 @@ impl<D> RetryableState<D> {
         Ok(out)
     }
 
-    fn internal_open(&self, id: B256) -> Retryable<D> {
+    fn internal_open(&self, id: B256) -> Retryable<'a, D> {
         let sto = self.retryables.open_sub_storage(id.as_slice());
         let base_key = sto.base_key();
         let calldata_key = sto.open_sub_storage(CALLDATA_KEY).base_key();
@@ -364,15 +364,15 @@ impl<D> RetryableState<D> {
     }
 }
 
-impl<D: Database> RetryableState<D> {
-    pub fn initialize(sto: &Storage<D>) -> Result<(), RetryableError> {
+impl<D: Database> RetryableState<'_, D> {
+    pub fn initialize(sto: &Storage<'_, D>) -> Result<(), RetryableError> {
         initialize_retryable_state(sto)
     }
 }
 
 fn clear_ticket_fields<D, B: StorageBackend>(
     backend: &mut B,
-    ret: &Retryable<D>,
+    ret: &Retryable<'_, D>,
 ) -> Result<(), RetryableError> {
     use arb_storage::ARBOS_STATE_ADDRESS;
     let base_key = ret.backing_storage.base_key();
@@ -399,7 +399,7 @@ fn clear_ticket_fields<D, B: StorageBackend>(
     Ok(())
 }
 
-impl<D> Retryable<D> {
+impl<D> Retryable<'_, D> {
     pub fn num_tries<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
         Ok(self.num_tries.get(backend)?)
     }

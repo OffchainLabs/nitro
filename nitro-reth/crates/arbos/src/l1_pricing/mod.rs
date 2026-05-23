@@ -57,8 +57,8 @@ pub const ESTIMATION_PADDING_BASIS_POINTS: u64 = 100;
 const ONE_IN_BIPS: u64 = 10000;
 
 /// L1 pricing state manages the cost model for L1 data posting.
-pub struct L1PricingState<D> {
-    pub backing_storage: Storage<D>,
+pub struct L1PricingState<'a, D> {
+    pub backing_storage: Storage<'a, D>,
     pay_rewards_to: StorageBackedAddress,
     equilibration_units: StorageBackedBigUint,
     inertia: StorageBackedUint64,
@@ -76,7 +76,7 @@ pub struct L1PricingState<D> {
 }
 
 pub fn initialize_l1_pricing_state<D: revm::Database, B: StorageBackend>(
-    sto: &Storage<D>,
+    sto: &Storage<'_, D>,
     backend: &mut B,
     rewards_recipient: Address,
     initial_l1_base_fee: U256,
@@ -98,7 +98,7 @@ pub fn initialize_l1_pricing_state<D: revm::Database, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_l1_pricing_state<D>(sto: Storage<D>, arbos_version: u64) -> L1PricingState<D> {
+pub fn open_l1_pricing_state<D>(sto: Storage<'_, D>, arbos_version: u64) -> L1PricingState<'_, D> {
     let base_key = sto.base_key();
 
     L1PricingState {
@@ -120,12 +120,12 @@ pub fn open_l1_pricing_state<D>(sto: Storage<D>, arbos_version: u64) -> L1Pricin
     }
 }
 
-impl<D> L1PricingState<D> {
-    pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
+impl<'a, D> L1PricingState<'a, D> {
+    pub fn open(sto: Storage<'a, D>, arbos_version: u64) -> Self {
         open_l1_pricing_state(sto, arbos_version)
     }
 
-    pub fn batch_poster_table(&self) -> BatchPostersTable<D> {
+    pub fn batch_poster_table(&self) -> BatchPostersTable<'a, D> {
         BatchPostersTable::open(&self.backing_storage)
     }
 
@@ -479,9 +479,9 @@ impl<D> L1PricingState<D> {
     }
 }
 
-impl<D: revm::Database> L1PricingState<D> {
+impl<D: revm::Database> L1PricingState<'_, D> {
     pub fn initialize<B: StorageBackend>(
-        sto: &Storage<D>,
+        sto: &Storage<'_, D>,
         backend: &mut B,
         rewards_recipient: Address,
         initial_l1_base_fee: U256,

@@ -108,35 +108,39 @@ impl ArbosHarness {
         self.state.as_mut()
     }
 
-    pub fn arbos_state(&mut self) -> ArbosState<EmptyDb, SystemBurner> {
+    /// Returns an [`ArbosState`] with `'static` lifetime — test-only escape
+    /// hatch that decouples the returned value from the harness's `&mut self`
+    /// borrow so multiple subsystems can be opened from one harness without
+    /// triggering borrow conflicts. Soundness is preserved by the harness
+    /// owning the underlying `Box<State>` for its full lifetime; callers must
+    /// not retain these handles past the harness drop.
+    pub fn arbos_state(&mut self) -> ArbosState<'static, EmptyDb, SystemBurner> {
         assert!(self.initialized, "call initialize() first");
-        ArbosState::open(&mut self.state, SystemBurner::new(None, false)).expect("open arbos state")
+        // SAFETY: see the doc comment above; the harness keeps the `State` in
+        // a heap allocation for its lifetime and the harness is the sole
+        // owner. This is a test utility.
+        let state: &'static mut State<EmptyDb> = unsafe { &mut *self.state_ptr() };
+        ArbosState::open(state, SystemBurner::new(None, false)).expect("open arbos state")
     }
 
-    pub fn l1_pricing_state(&mut self) -> L1PricingState<EmptyDb> {
-        assert!(self.initialized, "call initialize() first");
-        ArbosState::open(&mut self.state, SystemBurner::new(None, false))
-            .expect("open arbos state")
-            .l1_pricing_state
+    pub fn l1_pricing_state(&mut self) -> L1PricingState<'static, EmptyDb> {
+        self.arbos_state().l1_pricing_state
     }
 
-    pub fn l2_pricing_state(&mut self) -> L2PricingState<EmptyDb> {
-        assert!(self.initialized, "call initialize() first");
-        ArbosState::open(&mut self.state, SystemBurner::new(None, false))
-            .expect("open arbos state")
-            .l2_pricing_state
+    pub fn l2_pricing_state(&mut self) -> L2PricingState<'static, EmptyDb> {
+        self.arbos_state().l2_pricing_state
     }
 
-    pub fn retryable_state(&mut self) -> RetryableState<EmptyDb> {
-        assert!(self.initialized, "call initialize() first");
-        ArbosState::open(&mut self.state, SystemBurner::new(None, false))
-            .expect("open arbos state")
-            .retryable_state
+    pub fn retryable_state(&mut self) -> RetryableState<'static, EmptyDb> {
+        self.arbos_state().retryable_state
     }
 
-    pub fn root_storage(&mut self) -> Storage<EmptyDb> {
-        let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
-        Storage::new(state_ptr, B256::ZERO)
+    /// Test-only `Storage` handle. The `'static` lifetime is a test escape
+    /// hatch — see [`Self::arbos_state`].
+    pub fn root_storage(&mut self) -> Storage<'static, EmptyDb> {
+        // SAFETY: see [`Self::arbos_state`].
+        let state: &'static mut State<EmptyDb> = unsafe { &mut *self.state_ptr() };
+        Storage::new(state, B256::ZERO)
     }
 
     pub fn arbos_version(&self) -> u64 {

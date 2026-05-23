@@ -13,12 +13,12 @@ const PRESENT_HASH: B256 = {
 };
 
 /// Tracks transaction hashes that have been filtered (censored/blocked).
-pub struct FilteredTransactionsState<D> {
-    store: Storage<D>,
+pub struct FilteredTransactionsState<'a, D> {
+    store: Storage<'a, D>,
 }
 
-impl<D> FilteredTransactionsState<D> {
-    pub fn open(sto: Storage<D>) -> Self {
+impl<'a, D> FilteredTransactionsState<'a, D> {
+    pub fn open(sto: Storage<'a, D>) -> Self {
         Self { store: sto }
     }
 
@@ -34,7 +34,11 @@ impl<D> FilteredTransactionsState<D> {
             U256::ZERO
         };
         backend
-            .sstore(self.store.account, self.store.slot_for_key(tx_hash), value)
+            .sstore(
+                self.store.account(),
+                self.store.slot_for_key(tx_hash),
+                value,
+            )
             .map_err(Into::into)?;
         Ok(())
     }
@@ -45,13 +49,13 @@ impl<D> FilteredTransactionsState<D> {
         tx_hash: B256,
     ) -> Result<bool, FilteredTxError> {
         let value = backend
-            .sload(self.store.account, self.store.slot_for_key(tx_hash))
+            .sload(self.store.account(), self.store.slot_for_key(tx_hash))
             .map_err(Into::into)?;
         Ok(value == U256::from_be_bytes(PRESENT_HASH.0))
     }
 }
 
-impl<D: Database> FilteredTransactionsState<D> {
+impl<D: Database> FilteredTransactionsState<'_, D> {
     /// Check if a tx is filtered without charging gas.
     pub fn is_filtered_free(&self, tx_hash: B256) -> bool {
         self.store

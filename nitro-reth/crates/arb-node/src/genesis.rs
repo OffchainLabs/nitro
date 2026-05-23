@@ -75,7 +75,10 @@ pub fn initialize_arbos_state<D: Database>(
     let state_ptr: *mut State<D> = state as *mut State<D>;
 
     // Check if already initialized (version != 0 means state exists).
-    let backing = Storage::new(state_ptr, B256::ZERO);
+    // SAFETY: arbreth genesis runs synchronously on a single thread; the
+    // executor's state is the only live reference and `state_ptr` is bounded
+    // by `state`'s lifetime via the surrounding `&mut`.
+    let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
     if backing.get_uint64_by_uint64(0).unwrap_or(0) != 0 {
         return Err(GenesisError::AlreadyInitialized);
     }
@@ -248,7 +251,6 @@ pub fn initialize_arbos_state<D: Database>(
 
 /// Check if ArbOS state is already initialized in the given state database.
 pub fn is_arbos_initialized<D: Database>(state: &mut State<D>) -> bool {
-    let state_ptr: *mut State<D> = state as *mut State<D>;
-    let backing = Storage::new(state_ptr, B256::ZERO);
+    let backing = Storage::new(state, B256::ZERO);
     backing.get_uint64_by_uint64(0).unwrap_or(0) != 0
 }

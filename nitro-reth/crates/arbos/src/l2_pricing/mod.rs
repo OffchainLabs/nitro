@@ -54,8 +54,8 @@ pub const INITIAL_BACKLOG_TOLERANCE: u64 = 10;
 pub const INITIAL_PER_TX_GAS_LIMIT_V50: u64 = 32_000_000;
 
 /// L2 pricing state manages gas pricing for L2 execution.
-pub struct L2PricingState<D> {
-    pub backing_storage: Storage<D>,
+pub struct L2PricingState<'a, D> {
+    pub backing_storage: Storage<'a, D>,
     pub arbos_version: u64,
     speed_limit_per_second: StorageBackedUint64,
     per_block_gas_limit: StorageBackedUint64,
@@ -67,11 +67,11 @@ pub struct L2PricingState<D> {
     per_tx_gas_limit: StorageBackedUint64,
     gas_constraints: SubStorageVector,
     multi_gas_constraints: SubStorageVector,
-    multi_gas_base_fees: Storage<D>,
+    multi_gas_base_fees: Storage<'a, D>,
 }
 
 pub fn initialize_l2_pricing_state<D, B: StorageBackend>(
-    sto: &Storage<D>,
+    sto: &Storage<'_, D>,
     backend: &mut B,
 ) -> Result<(), L2PricingError> {
     let base_key = sto.base_key();
@@ -91,7 +91,7 @@ pub fn initialize_l2_pricing_state<D, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_l2_pricing_state<D>(sto: Storage<D>, arbos_version: u64) -> L2PricingState<D> {
+pub fn open_l2_pricing_state<D>(sto: Storage<'_, D>, arbos_version: u64) -> L2PricingState<'_, D> {
     let base_key = sto.base_key();
 
     let gc_sto = sto.open_sub_storage(GAS_CONSTRAINTS_KEY);
@@ -115,13 +115,13 @@ pub fn open_l2_pricing_state<D>(sto: Storage<D>, arbos_version: u64) -> L2Pricin
     }
 }
 
-impl<D> L2PricingState<D> {
-    pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
+impl<'a, D> L2PricingState<'a, D> {
+    pub fn open(sto: Storage<'a, D>, arbos_version: u64) -> Self {
         open_l2_pricing_state(sto, arbos_version)
     }
 
     pub fn initialize<B: StorageBackend>(
-        sto: &Storage<D>,
+        sto: &Storage<'_, D>,
         backend: &mut B,
     ) -> Result<(), L2PricingError> {
         initialize_l2_pricing_state(sto, backend)
@@ -336,7 +336,7 @@ impl<D> L2PricingState<D> {
     }
 
     /// Per-resource-kind base fee accessor for the current/next block.
-    pub fn multi_gas_fees(&self) -> MultiGasFees<D> {
+    pub fn multi_gas_fees(&self) -> MultiGasFees<'a, D> {
         multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone())
     }
 }

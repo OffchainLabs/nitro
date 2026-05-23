@@ -59,7 +59,7 @@ impl StylusParams {
     /// Deserialize params from a storage substorage through a [`StorageBackend`].
     pub fn load<D, B: StorageBackend>(
         arbos_version: u64,
-        sto: &Storage<D>,
+        sto: &Storage<'_, D>,
         backend: &mut B,
     ) -> Result<Self, ProgramsError> {
         Self::load_from_reader(arbos_version, PackedReader::new(sto, backend))
@@ -104,7 +104,7 @@ impl StylusParams {
     /// Serialize and persist params through a [`StorageBackend`].
     pub fn save<D, B: StorageBackend>(
         &self,
-        sto: &Storage<D>,
+        sto: &Storage<'_, D>,
         backend: &mut B,
     ) -> Result<(), ProgramsError> {
         use alloy_primitives::U256;
@@ -119,7 +119,7 @@ impl StylusParams {
             word[..chunk.len()].copy_from_slice(chunk);
             let storage_slot = sto.new_slot(slot);
             backend
-                .sstore(sto.account, storage_slot, U256::from_be_bytes(word))
+                .sstore(sto.account(), storage_slot, U256::from_be_bytes(word))
                 .map_err(Into::into)?;
 
             slot += 1;
@@ -225,7 +225,7 @@ impl StylusParams {
 /// Initialize default stylus params and persist them via a [`StorageBackend`].
 pub fn init_stylus_params<D, B: StorageBackend>(
     arbos_version: u64,
-    sto: &Storage<D>,
+    sto: &Storage<'_, D>,
     backend: &mut B,
 ) -> Result<(), ProgramsError> {
     let mut params = StylusParams {
@@ -265,16 +265,16 @@ trait PackedRead {
     fn take_u32(&mut self) -> Result<u32, ProgramsError>;
 }
 
-struct PackedReader<'a, 'b, D, B: StorageBackend> {
-    sto: &'a Storage<D>,
+struct PackedReader<'a, 'b, 'c, D, B: StorageBackend> {
+    sto: &'a Storage<'c, D>,
     backend: &'b mut B,
     slot: u64,
     buf: [u8; 32],
     pos: usize,
 }
 
-impl<'a, 'b, D, B: StorageBackend> PackedReader<'a, 'b, D, B> {
-    fn new(sto: &'a Storage<D>, backend: &'b mut B) -> Self {
+impl<'a, 'b, 'c, D, B: StorageBackend> PackedReader<'a, 'b, 'c, D, B> {
+    fn new(sto: &'a Storage<'c, D>, backend: &'b mut B) -> Self {
         Self {
             sto,
             backend,
@@ -289,7 +289,7 @@ impl<'a, 'b, D, B: StorageBackend> PackedReader<'a, 'b, D, B> {
             let slot = self.sto.new_slot(self.slot);
             let value = self
                 .backend
-                .sload(self.sto.account, slot)
+                .sload(self.sto.account(), slot)
                 .map_err(Into::into)?;
             self.buf = value.to_be_bytes::<32>();
             self.slot += 1;
@@ -306,7 +306,7 @@ impl<'a, 'b, D, B: StorageBackend> PackedReader<'a, 'b, D, B> {
     }
 }
 
-impl<D, B: StorageBackend> PackedRead for PackedReader<'_, '_, D, B> {
+impl<D, B: StorageBackend> PackedRead for PackedReader<'_, '_, '_, D, B> {
     fn take_u8(&mut self) -> Result<u8, ProgramsError> {
         let bytes = self.take_bytes(1)?;
         Ok(bytes[0])

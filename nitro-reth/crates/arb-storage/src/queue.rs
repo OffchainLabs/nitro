@@ -25,13 +25,13 @@ fn compute_slot(base_key: B256, offset: u64) -> U256 {
     }
 }
 
-pub fn initialize_queue<D: revm::Database>(storage: &Storage<D>) -> Result<(), StorageError> {
+pub fn initialize_queue<D: revm::Database>(storage: &Storage<'_, D>) -> Result<(), StorageError> {
     storage.set_uint64_by_uint64(0, 2)?;
     storage.set_uint64_by_uint64(1, 2)?;
     Ok(())
 }
 
-pub fn open_queue<D>(storage: Storage<D>) -> Queue {
+pub fn open_queue<D>(storage: Storage<'_, D>) -> Queue {
     open_queue_at(storage.base_key())
 }
 

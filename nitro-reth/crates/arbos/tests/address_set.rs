@@ -9,7 +9,7 @@ const ARBOS_V30: u64 = 30;
 fn fresh_set(
     harness: &mut ArbosHarness,
     sub_id: u8,
-) -> arbos::address_set::AddressSet<arb_test_utils::EmptyDb> {
+) -> arbos::address_set::AddressSet<'static, arb_test_utils::EmptyDb> {
     let root = harness.root_storage();
     let sto = root.open_sub_storage(&[sub_id]);
     initialize_address_set(&sto).unwrap();

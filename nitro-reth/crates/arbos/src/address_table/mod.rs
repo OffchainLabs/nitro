@@ -12,17 +12,17 @@ pub use error::AddressTableError;
 /// Allows compressing addresses to small integers for more efficient on-chain encoding.
 /// Slot 0 = number of items, slots 1..N = address hashes.
 /// Sub-storage at key [] maps address_hash → 1-based index.
-pub struct AddressTable<D> {
-    backing_storage: Storage<D>,
-    by_address: Storage<D>,
+pub struct AddressTable<'a, D> {
+    backing_storage: Storage<'a, D>,
+    by_address: Storage<'a, D>,
     num_items: StorageBackedUint64,
 }
 
-pub fn initialize_address_table<D: Database>(_sto: &Storage<D>) {
+pub fn initialize_address_table<D: Database>(_sto: &Storage<'_, D>) {
     // no-op
 }
 
-pub fn open_address_table<D>(sto: Storage<D>) -> AddressTable<D> {
+pub fn open_address_table<D>(sto: Storage<'_, D>) -> AddressTable<'_, D> {
     let num_items = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[]);
     AddressTable {
@@ -32,7 +32,7 @@ pub fn open_address_table<D>(sto: Storage<D>) -> AddressTable<D> {
     }
 }
 
-impl<D> AddressTable<D> {
+impl<D> AddressTable<'_, D> {
     /// Registers `addr` if not already present and returns its 0-based index
     /// together with a flag indicating whether the address was already
     /// registered.
@@ -164,7 +164,7 @@ impl<D> AddressTable<D> {
     ) -> Result<B256, AddressTableError> {
         let slot = self.by_address.slot_for_key(key);
         let value = backend
-            .sload(self.by_address.account, slot)
+            .sload(self.by_address.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -177,7 +177,11 @@ impl<D> AddressTable<D> {
     ) -> Result<(), AddressTableError> {
         let slot = self.by_address.slot_for_key(key);
         backend
-            .sstore(self.by_address.account, slot, U256::from_be_bytes(value.0))
+            .sstore(
+                self.by_address.account(),
+                slot,
+                U256::from_be_bytes(value.0),
+            )
             .map_err(Into::into)?;
         Ok(())
     }
@@ -189,7 +193,7 @@ impl<D> AddressTable<D> {
     ) -> Result<B256, AddressTableError> {
         let slot = self.backing_storage.new_slot(offset);
         let value = backend
-            .sload(self.backing_storage.account, slot)
+            .sload(self.backing_storage.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -203,7 +207,7 @@ impl<D> AddressTable<D> {
         let slot = self.backing_storage.new_slot(offset);
         backend
             .sstore(
-                self.backing_storage.account,
+                self.backing_storage.account(),
                 slot,
                 U256::from_be_bytes(value.0),
             )

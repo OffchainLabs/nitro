@@ -88,45 +88,45 @@ cached_root_key!(
 pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 60;
 
 /// Central ArbOS state aggregating all subsystem states.
-pub struct ArbosState<D, B: Burner> {
+pub struct ArbosState<'a, D, B: Burner> {
     pub arbos_version: u64,
     pub max_arbos_version_supported: u64,
     pub upgrade_version: StorageBackedUint64,
     pub upgrade_timestamp: StorageBackedUint64,
     pub network_fee_account: StorageBackedAddress,
-    pub l1_pricing_state: L1PricingState<D>,
-    pub l2_pricing_state: L2PricingState<D>,
-    pub retryable_state: RetryableState<D>,
-    pub address_table: AddressTable<D>,
-    pub chain_owners: AddressSet<D>,
-    pub send_merkle_accumulator: MerkleAccumulator<D>,
-    pub programs: Programs<D>,
-    pub blockhashes: Blockhashes<D>,
+    pub l1_pricing_state: L1PricingState<'a, D>,
+    pub l2_pricing_state: L2PricingState<'a, D>,
+    pub retryable_state: RetryableState<'a, D>,
+    pub address_table: AddressTable<'a, D>,
+    pub chain_owners: AddressSet<'a, D>,
+    pub send_merkle_accumulator: MerkleAccumulator<'a, D>,
+    pub programs: Programs<'a, D>,
+    pub blockhashes: Blockhashes<'a, D>,
     pub chain_id: StorageBackedBigUint,
     pub chain_config: StorageBackedBytes,
     pub genesis_block_num: StorageBackedUint64,
     pub infra_fee_account: StorageBackedAddress,
     pub brotli_compression_level: StorageBackedUint64,
-    pub backing_storage: Storage<D>,
+    pub backing_storage: Storage<'a, D>,
     pub burner: B,
     pub native_token_enabled_from_time: StorageBackedUint64,
-    pub native_token_owners: AddressSet<D>,
+    pub native_token_owners: AddressSet<'a, D>,
     pub transaction_filtering_enabled_from_time: StorageBackedUint64,
-    pub transaction_filterers: AddressSet<D>,
-    pub features: Features<D>,
+    pub transaction_filterers: AddressSet<'a, D>,
+    pub features: Features<'a, D>,
     pub filtered_funds_recipient: StorageBackedAddress,
-    pub filtered_transactions: FilteredTransactionsState<D>,
+    pub filtered_transactions: FilteredTransactionsState<'a, D>,
     pub collect_tips: StorageBackedUint64,
 }
 
-impl<D, B: Burner> ArbosState<D, B> {
+impl<'a, D, B: Burner> ArbosState<'a, D, B> {
     // --- Accessor methods ---
 
     pub fn arbos_version(&self) -> u64 {
         self.arbos_version
     }
 
-    pub fn backing_storage(&self) -> &Storage<D> {
+    pub fn backing_storage(&self) -> &Storage<'a, D> {
         &self.backing_storage
     }
 
@@ -299,7 +299,7 @@ impl<D, B: Burner> ArbosState<D, B> {
     }
 }
 
-impl<D: Database, B: Burner> ArbosState<D, B> {
+impl<'a, D: Database, B: Burner> ArbosState<'a, D, B> {
     pub fn set_format_version(&mut self, version: u64) -> Result<(), ArbosStateError> {
         self.arbos_version = version;
         Ok(self
@@ -314,9 +314,11 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     /// when the backing storage layer fails, and
     /// [`ArbosStateError::UnsupportedVersion`] when the stored version is
     /// outside the range this build recognises.
-    pub fn open(state: &mut revm::database::State<D>, burner: B) -> Result<Self, ArbosStateError> {
-        let state_ptr: *mut revm::database::State<D> = state;
-        let backing_storage = Storage::new(state_ptr, B256::ZERO);
+    pub fn open(
+        state: &'a mut revm::database::State<D>,
+        burner: B,
+    ) -> Result<Self, ArbosStateError> {
+        let backing_storage = Storage::new(state, B256::ZERO);
 
         let arbos_version = backing_storage.get_uint64_by_uint64(VERSION_OFFSET)?;
         if arbos_version == 0 {
@@ -327,7 +329,12 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         }
 
         if arbos_version >= 60 {
-            set_account_nonce(state, FILTERED_TX_STATE_ADDRESS, 1);
+            // SAFETY: see `Storage` struct-level invariant. The transient
+            // `&mut State` produced by `state_mut()` is dropped at end of
+            // statement before any live borrow into `backing_storage` is used
+            // again.
+            let state_ref = unsafe { backing_storage.state_mut() };
+            set_account_nonce(state_ref, FILTERED_TX_STATE_ADDRESS, 1);
         }
 
         let chain_config_key = chain_config_root_key();
@@ -393,11 +400,9 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 B256::ZERO,
                 FILTERED_FUNDS_RECIPIENT_OFFSET,
             ),
-            filtered_transactions: FilteredTransactionsState::open(Storage::new_with_account(
-                state_ptr,
-                B256::ZERO,
-                FILTERED_TX_STATE_ADDRESS,
-            )),
+            filtered_transactions: FilteredTransactionsState::open(
+                backing_storage.open_account(FILTERED_TX_STATE_ADDRESS, B256::ZERO),
+            ),
             collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
             backing_storage,
             burner,
@@ -463,7 +468,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 }
                 4..=9 => {}
                 10 => {
-                    let state = unsafe { &mut *self.backing_storage.state_ptr() };
+                    // SAFETY: see `Storage` struct-level invariant.
+                    let state = unsafe { self.backing_storage.state_mut() };
                     let pool_balance =
                         get_account_balance(state, l1_pricing::L1_PRICER_FUNDS_POOL_ADDRESS);
                     self.l1_pricing_state
@@ -508,7 +514,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 32 => {}
                 33..=39 => {}
                 40 => {
-                    let state = unsafe { &mut *self.backing_storage.state_ptr() };
+                    // SAFETY: see `Storage` struct-level invariant.
+                    let state = unsafe { self.backing_storage.state_mut() };
                     set_account_nonce(state, HISTORY_STORAGE_ADDRESS, 1);
                     set_account_code(
                         state,
@@ -567,7 +574,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
 
             for &(addr, version) in PRECOMPILE_MIN_ARBOS_VERSIONS {
                 if version == next {
-                    let state = unsafe { &mut *self.backing_storage.state_ptr() };
+                    // SAFETY: see `Storage` struct-level invariant.
+                    let state = unsafe { self.backing_storage.state_mut() };
                     set_account_code(state, addr, Bytes::from_static(&[0xFE]));
                 }
             }
@@ -613,7 +621,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
 pub fn arbos_from_input<S: StorageBackend, B: Burner>(
     backend: &mut S,
     burner: B,
-) -> Result<ArbosState<Detached, B>, ArbosStateError> {
+) -> Result<ArbosState<'static, Detached, B>, ArbosStateError> {
     let version_slot = storage_key_map(&[], VERSION_OFFSET);
     let raw_version =
         StorageBackend::sload(backend, ARBOS_STATE_ADDRESS, version_slot).map_err(Into::into)?;

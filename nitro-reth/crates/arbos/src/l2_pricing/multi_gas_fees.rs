@@ -14,15 +14,15 @@ const CURRENT_BLOCK_FEES_OFFSET: u64 = NUM_RESOURCE_KIND as u64;
 /// The `next` field stores fees computed during pricing model updates.
 /// The `current` field holds fees for the current block, rotated from
 /// `next` at block start via `commit_next_to_current`.
-pub struct MultiGasFees<D> {
-    storage: Storage<D>,
+pub struct MultiGasFees<'a, D> {
+    storage: Storage<'a, D>,
 }
 
-pub fn open_multi_gas_fees<D>(sto: Storage<D>) -> MultiGasFees<D> {
+pub fn open_multi_gas_fees<D>(sto: Storage<'_, D>) -> MultiGasFees<'_, D> {
     MultiGasFees { storage: sto }
 }
 
-impl<D> MultiGasFees<D> {
+impl<D> MultiGasFees<'_, D> {
     pub fn get_current_block_fee<B: StorageBackend>(
         &self,
         backend: &mut B,

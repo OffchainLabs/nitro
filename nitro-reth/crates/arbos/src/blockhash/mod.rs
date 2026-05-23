@@ -6,16 +6,16 @@ use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
 mod error;
 pub use error::BlockhashesError;
 
-pub struct Blockhashes<D> {
-    backing_storage: Storage<D>,
+pub struct Blockhashes<'a, D> {
+    backing_storage: Storage<'a, D>,
     l1_block_number: StorageBackedUint64,
 }
 
-pub fn initialize_blockhashes<D: Database>(_backing_storage: &Storage<D>) {
+pub fn initialize_blockhashes<D: Database>(_backing_storage: &Storage<'_, D>) {
     // no-op: next_block_number is already zero
 }
 
-pub fn open_blockhashes<D>(backing_storage: Storage<D>) -> Blockhashes<D> {
+pub fn open_blockhashes<D>(backing_storage: Storage<'_, D>) -> Blockhashes<'_, D> {
     let l1_block_number = StorageBackedUint64::new(backing_storage.base_key(), 0);
     Blockhashes {
         backing_storage,
@@ -23,7 +23,7 @@ pub fn open_blockhashes<D>(backing_storage: Storage<D>) -> Blockhashes<D> {
     }
 }
 
-impl<D: Database> Blockhashes<D> {
+impl<D: Database> Blockhashes<'_, D> {
     pub fn l1_block_number<B: StorageBackend>(
         &self,
         backend: &mut B,

@@ -27,7 +27,7 @@ pub enum BacklogOperation {
 // StorageReadCost (SloadGasEIP2200 = 800) + StorageWriteCost (SstoreSetGasEIP2200 = 20000)
 pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 20_800;
 
-impl<D: Database> L2PricingState<D> {
+impl<D: Database> L2PricingState<'_, D> {
     /// Determine which gas model to use based on ArbOS version and stored constraints.
     pub fn gas_model_to_use<B: StorageBackend>(
         &self,
@@ -609,7 +609,7 @@ mod tests {
         let state_ptr: *mut revm::database::State<EmptyDb> = &mut state;
 
         // Create L2 pricing storage (subspace [1] off root)
-        let backing = Storage::new(state_ptr, B256::ZERO);
+        let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
         let l2_sto = backing.open_sub_storage(&[1]);
 
         // Initialize L2 pricing state
@@ -780,7 +780,7 @@ mod tests {
         // ================================================================
         // update_pricing_model(time_passed=0) → drain=0 → no-op write
         {
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
@@ -980,7 +980,7 @@ mod tests {
 
         // === THE CRITICAL OPERATION: grow_backlog ===
         {
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
@@ -1149,7 +1149,7 @@ mod tests {
 
         // TX0: StartBlock (no-op drain)
         {
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
             let _ = l2_pricing.update_pricing_model(unsafe { &mut *state_ptr }, 0, 20);
@@ -1262,7 +1262,7 @@ mod tests {
 
         // THE CRITICAL OPERATION: grow_backlog
         {
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
@@ -1389,7 +1389,7 @@ mod tests {
 
         // TX0: StartBlock (no-op drain)
         {
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
             let _ = l2_pricing.update_pricing_model(unsafe { &mut *state_ptr }, 0, 20);
@@ -1408,7 +1408,7 @@ mod tests {
 
         // TX2: grow_backlog — the write goes to cache but transition is dropped
         {
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             let l2_pricing = super::super::open_l2_pricing_state(l2_sto, 20);
 
@@ -1558,7 +1558,7 @@ mod tests {
             let state_ptr: *mut revm::database::State<EmptyDb> = &mut state;
 
             // Step 2: Initialize L2 pricing state
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
@@ -1730,7 +1730,7 @@ mod tests {
 
             let state_ptr: *mut revm::database::State<EmptyDb> = &mut state;
 
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
@@ -1869,7 +1869,7 @@ mod tests {
 
             let state_ptr: *mut revm::database::State<EmptyDb> = &mut state;
 
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
@@ -2003,7 +2003,7 @@ mod tests {
 
             let state_ptr: *mut revm::database::State<EmptyDb> = &mut state;
 
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_sto = backing.open_sub_storage(&[1]);
             super::super::initialize_l2_pricing_state(&l2_sto, unsafe { &mut *state_ptr }).unwrap();
 
@@ -2224,7 +2224,7 @@ mod tests {
             let state_ptr: *mut revm::database::State<PrePopulatedDb> = &mut state;
 
             // Open L2 pricing state — gas_backlog already in DB as 552756
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
@@ -2462,7 +2462,7 @@ mod tests {
             let _ = state.load_cache_account(ARBOS_STATE_ADDRESS);
             let state_ptr: *mut revm::database::State<PrePopulatedDb2> = &mut state;
 
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 
@@ -2591,7 +2591,7 @@ mod tests {
             let _ = state.load_cache_account(ARBOS_STATE_ADDRESS);
             let state_ptr: *mut revm::database::State<PrePopDb3> = &mut state;
 
-            let backing = Storage::new(state_ptr, B256::ZERO);
+            let backing = Storage::new(unsafe { &mut *state_ptr }, B256::ZERO);
             let l2_pricing =
                 super::super::open_l2_pricing_state(backing.open_sub_storage(&[1]), 10);
 

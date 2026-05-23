@@ -375,7 +375,7 @@ impl<DB: Database> StorageBackend for JournalBackend<'_, DB> {
 ///
 /// Reads route through a [`StorageBackend`]; no executor state pointer is
 /// required.
-fn programs_params_storage() -> Storage<Detached> {
+fn programs_params_storage() -> Storage<'static, Detached> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     Storage::detached(ARBOS_STATE_ADDRESS, params_key)

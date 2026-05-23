@@ -4,7 +4,10 @@ use arbos::blockhash::open_blockhashes;
 
 const ARBOS_V30: u64 = 30;
 
-fn fresh(h: &mut ArbosHarness, sub: u8) -> arbos::blockhash::Blockhashes<arb_test_utils::EmptyDb> {
+fn fresh(
+    h: &mut ArbosHarness,
+    sub: u8,
+) -> arbos::blockhash::Blockhashes<'static, arb_test_utils::EmptyDb> {
     let root = h.root_storage();
     open_blockhashes(root.open_sub_storage(&[sub]))
 }

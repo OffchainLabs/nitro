@@ -43,7 +43,7 @@ fn baseline_params(arbos_version: u64) -> StylusParams {
 
 /// Detached params subspace handle that matches the one constructed by the
 /// EVM inner-call dispatch path.
-fn params_storage() -> Storage<Detached> {
+fn params_storage() -> Storage<'static, Detached> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     Storage::detached(ARBOS_STATE_ADDRESS, params_key)

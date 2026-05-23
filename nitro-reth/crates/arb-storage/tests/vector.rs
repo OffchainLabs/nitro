@@ -37,19 +37,23 @@ fn pushed_items_are_distinct_storages() {
     let s0_key = v.push(b).unwrap();
     let s1_key = v.push(b).unwrap();
 
-    Storage::new(state_ptr, s0_key)
+    Storage::new(unsafe { &mut *state_ptr }, s0_key)
         .set_by_uint64(0, B256::repeat_byte(0xAA))
         .unwrap();
-    Storage::new(state_ptr, s1_key)
+    Storage::new(unsafe { &mut *state_ptr }, s1_key)
         .set_by_uint64(0, B256::repeat_byte(0xBB))
         .unwrap();
 
     assert_eq!(
-        Storage::new(state_ptr, v.at(0)).get_by_uint64(0).unwrap(),
+        Storage::new(unsafe { &mut *state_ptr }, v.at(0))
+            .get_by_uint64(0)
+            .unwrap(),
         B256::repeat_byte(0xAA)
     );
     assert_eq!(
-        Storage::new(state_ptr, v.at(1)).get_by_uint64(0).unwrap(),
+        Storage::new(unsafe { &mut *state_ptr }, v.at(1))
+            .get_by_uint64(0)
+            .unwrap(),
         B256::repeat_byte(0xBB)
     );
 }
