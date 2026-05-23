@@ -36,8 +36,9 @@ pub fn create_arbaddresstable_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbAddressTable::ArbAddressTableCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -46,15 +47,15 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbAddressTable::ArbAddressTableCalls as Calls;
     let result = match call {
-        Calls::size(_) => handle_size(&mut input),
-        Calls::addressExists(c) => handle_address_exists(&mut input, c.addr),
-        Calls::lookup(c) => handle_lookup(&mut input, c.addr),
-        Calls::lookupIndex(c) => handle_lookup_index(&mut input, c.index),
-        Calls::register(c) => handle_register(&mut input, c.addr),
-        Calls::compress(c) => handle_compress(&mut input, c.addr),
-        Calls::decompress(c) => handle_decompress(&mut input, &c.buf, c.offset),
+        Calls::size(_) => handle_size(&mut input, &mut gas_used),
+        Calls::addressExists(c) => handle_address_exists(&mut input, &mut gas_used, c.addr),
+        Calls::lookup(c) => handle_lookup(&mut input, &mut gas_used, c.addr),
+        Calls::lookupIndex(c) => handle_lookup_index(&mut input, &mut gas_used, c.index),
+        Calls::register(c) => handle_register(&mut input, &mut gas_used, c.addr),
+        Calls::compress(c) => handle_compress(&mut input, &mut gas_used, c.addr),
+        Calls::decompress(c) => handle_decompress(&mut input, &mut gas_used, &c.buf, c.offset),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -67,21 +68,22 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
+fn sload_field(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    slot: U256,
+) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(ArbPrecompileError::fatal)?;
-    // Track gas in the accumulator so revert paths (which return
-    // `accumulated_gas` via `gas_check`) include each SLOAD this method
-    // performed. Success paths set their own `PrecompileOutput::new` total,
-    // so this is additive only for the revert case.
-    crate::charge_precompile_gas(SLOAD_GAS);
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
     Ok(val.data)
 }
 
 fn sstore_field(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     slot: U256,
     value: U256,
 ) -> Result<(), ArbPrecompileError> {
@@ -89,18 +91,18 @@ fn sstore_field(
         .internals_mut()
         .sstore(ARBOS_STATE_ADDRESS, slot, value)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(storage_write_cost(value));
+    crate::charge_precompile_gas(gas_used, storage_write_cost(value));
     Ok(())
 }
 
 /// AddressTable numItems is stored at offset 0 in the table's subspace storage.
-fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_size(input: &mut PrecompileInput<'_>, gas_used: &mut u64) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
     let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
     let size_slot = map_slot(table_key.as_slice(), 0);
-    let size = sload_field(input, size_slot)?;
+    let size = sload_field(input, gas_used, size_slot)?;
 
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -108,7 +110,11 @@ fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_address_exists(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_address_exists(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
@@ -119,7 +125,7 @@ fn handle_address_exists(input: &mut PrecompileInput<'_>, addr: Address) -> Prec
     let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
-    let value = sload_field(input, member_slot)?;
+    let value = sload_field(input, gas_used, member_slot)?;
     let exists = if value != U256::ZERO {
         U256::from(1u64)
     } else {
@@ -133,7 +139,11 @@ fn handle_address_exists(input: &mut PrecompileInput<'_>, addr: Address) -> Prec
     ))
 }
 
-fn handle_lookup(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_lookup(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
@@ -143,9 +153,9 @@ fn handle_lookup(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileRe
     let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
-    let value = sload_field(input, member_slot)?;
+    let value = sload_field(input, gas_used, member_slot)?;
     if value == U256::ZERO {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
     // Stored value is the 1-based index, so subtract 1.
@@ -158,20 +168,24 @@ fn handle_lookup(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileRe
 }
 
 /// Reverse entries are stored at offset (index + 1) in the table's backing storage.
-fn handle_lookup_index(input: &mut PrecompileInput<'_>, index_u256: U256) -> PrecompileResult {
+fn handle_lookup_index(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    index_u256: U256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let index: u64 = index_u256
         .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
     load_arbos(input)?;
 
     let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
     // Reverse lookup is at offset (index + 1) — 1-indexed.
     let entry_slot = map_slot(table_key.as_slice(), index + 1);
-    let value = sload_field(input, entry_slot)?;
+    let value = sload_field(input, gas_used, entry_slot)?;
 
     if value == U256::ZERO {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
     // OAS(1) + numItems(1) + backing(1) + argsCost(3) + resultCost(3).
@@ -183,7 +197,11 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>, index_u256: U256) -> Pre
 
 /// If already registered, returns the existing index; otherwise registers and
 /// returns the new 0-based index.
-fn handle_register(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_register(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
@@ -193,7 +211,7 @@ fn handle_register(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
 
     // Check if address already exists in byAddress mapping.
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
-    let existing = sload_field(input, member_slot)?;
+    let existing = sload_field(input, gas_used, member_slot)?;
 
     if existing != U256::ZERO {
         // Already registered — return 0-based index.
@@ -208,19 +226,24 @@ fn handle_register(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     // Not yet registered — add it.
     // Read numItems and increment it.
     let num_items_slot = map_slot(table_key.as_slice(), 0);
-    let num_items = sload_field(input, num_items_slot)?;
+    let num_items = sload_field(input, gas_used, num_items_slot)?;
     let num_items_u64: u64 = num_items
         .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
     let new_num_items = num_items_u64 + 1;
-    sstore_field(input, num_items_slot, U256::from(new_num_items))?;
+    sstore_field(input, gas_used, num_items_slot, U256::from(new_num_items))?;
 
     // Store reverse mapping: backingStorage[newNumItems] = addr_hash.
     let reverse_slot = map_slot(table_key.as_slice(), new_num_items);
-    sstore_field(input, reverse_slot, U256::from_be_bytes(addr_as_b256.0))?;
+    sstore_field(
+        input,
+        gas_used,
+        reverse_slot,
+        U256::from_be_bytes(addr_as_b256.0),
+    )?;
 
     // Store byAddress mapping: byAddress[addr_hash] = newNumItems (1-based).
-    sstore_field(input, member_slot, U256::from(new_num_items))?;
+    sstore_field(input, gas_used, member_slot, U256::from(new_num_items))?;
 
     // Return 0-based index.
     let index = new_num_items - 1;
@@ -228,16 +251,19 @@ fn handle_register(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     // OAS + 2 SLOADs + 3 dynamic-cost SSTOREs + argsCost + resultCost. The
     // accumulator captured everything via sload_field/sstore_field; add the
     // resultCost the framework charges after this returns.
-    crate::charge_precompile_gas(COPY_GAS);
-    let gas_used = crate::get_precompile_gas();
+    crate::charge_precompile_gas(gas_used, COPY_GAS);
 
     Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
+        (*gas_used).min(gas_limit),
         U256::from(index).to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
-fn handle_compress(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_compress(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
@@ -245,7 +271,7 @@ fn handle_compress(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     let by_address_key = derive_subspace_key(table_key.as_slice(), &[]);
     let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
-    let value = sload_field(input, member_slot)?;
+    let value = sload_field(input, gas_used, member_slot)?;
 
     let rlp_bytes = if value != U256::ZERO {
         // Address exists — RLP-encode the 0-based index.
@@ -277,6 +303,7 @@ fn handle_compress(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
 /// index looked up in the table. Returns ABI-encoded (address, uint256 bytesRead).
 fn handle_decompress(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     buf: &Bytes,
     offset: U256,
 ) -> PrecompileResult {
@@ -284,38 +311,38 @@ fn handle_decompress(
     let data_len = input.data.len();
     let ioffset: usize = offset
         .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
 
     if ioffset >= buf.len() {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
     let slice = &buf[ioffset..];
 
     load_arbos(input)?;
 
     // Try to RLP-decode as byte string first.
-    let (decoded, bytes_read) = rlp_decode_bytes(slice)
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+    let (decoded, bytes_read) =
+        rlp_decode_bytes(slice).map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
 
     let (addr, final_bytes_read) = if decoded.len() == 20 {
         // Raw 20-byte address.
         (Address::from_slice(&decoded), bytes_read)
     } else {
         // Re-decode as u64 index.
-        let (index, idx_bytes_read) = rlp_decode_u64(slice)
-            .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        let (index, idx_bytes_read) =
+            rlp_decode_u64(slice).map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
 
         let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
 
         // Bounds check: index < numItems.
         let num_items_slot = map_slot(table_key.as_slice(), 0);
-        let num_items = sload_field(input, num_items_slot)?;
+        let num_items = sload_field(input, gas_used, num_items_slot)?;
         if U256::from(index) >= num_items {
-            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
 
         let entry_slot = map_slot(table_key.as_slice(), index + 1);
-        let value = sload_field(input, entry_slot)?;
+        let value = sload_field(input, gas_used, entry_slot)?;
 
         // Extract 20-byte address from the 32-byte stored value.
         let value_bytes = value.to_be_bytes::<32>();

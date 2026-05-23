@@ -43,13 +43,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     // charging argsCost. Then always run the inner method. The wrapper keeps
     // the inner's output and error, but overrides gas — 1600 for non-filterer
     // callers, 0 for filterers (free access).
-    crate::reset_precompile_gas();
-    crate::charge_precompile_gas(SLOAD_GAS);
+    let mut wrapper_gas_used = 0u64;
+    crate::charge_precompile_gas(&mut wrapper_gas_used, SLOAD_GAS);
     let caller = input.caller;
     load_accounts(&mut input)?;
-    let is_filterer = is_transaction_filterer(&mut input, caller)?;
-    let wrapper_gas = crate::get_precompile_gas();
-    crate::reset_precompile_gas();
+    let is_filterer = is_transaction_filterer(&mut input, &mut wrapper_gas_used, caller)?;
+    let wrapper_gas = wrapper_gas_used;
 
     let call =
         match IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls::abi_decode(input.data) {
@@ -57,13 +56,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             Err(_) => return crate::burn_all_revert(gas_limit),
         };
 
+    let mut gas_used = 0u64;
     use IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls as Calls;
     let inner_result = match call {
-        Calls::addFilteredTransaction(c) => handle_add_filtered_tx(&mut input, c.txHash),
-        Calls::deleteFilteredTransaction(c) => handle_delete_filtered_tx(&mut input, c.txHash),
-        Calls::isTransactionFiltered(c) => handle_is_tx_filtered(&mut input, c.txHash),
+        Calls::addFilteredTransaction(c) => {
+            handle_add_filtered_tx(&mut input, &mut gas_used, c.txHash)
+        }
+        Calls::deleteFilteredTransaction(c) => {
+            handle_delete_filtered_tx(&mut input, &mut gas_used, c.txHash)
+        }
+        Calls::isTransactionFiltered(c) => {
+            handle_is_tx_filtered(&mut input, &mut gas_used, c.txHash)
+        }
     };
-    crate::reset_precompile_gas();
 
     // Wrapper overrides the inner's gas accounting: 0 for filterer, 1600 for
     // non-filterer. Inner's output and error are preserved.
@@ -99,26 +104,35 @@ fn load_accounts(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileErr
     Ok(())
 }
 
-fn sload_arbos(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
+fn sload_arbos(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    slot: U256,
+) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(SLOAD_GAS);
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
     Ok(val.data)
 }
 
-fn sload_filtered(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
+fn sload_filtered(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    slot: U256,
+) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(FILTERED_TX_STATE_ADDRESS, slot)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(SLOAD_GAS);
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
     Ok(val.data)
 }
 
 fn sstore_filtered(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     slot: U256,
     value: U256,
 ) -> Result<(), ArbPrecompileError> {
@@ -127,7 +141,7 @@ fn sstore_filtered(
         .sstore(FILTERED_TX_STATE_ADDRESS, slot, value)
         .map_err(ArbPrecompileError::fatal)?;
     let cost = if value.is_zero() { 5_000 } else { SSTORE_GAS };
-    crate::charge_precompile_gas(cost);
+    crate::charge_precompile_gas(gas_used, cost);
     Ok(())
 }
 
@@ -140,6 +154,7 @@ fn filtered_tx_slot(tx_hash: &B256) -> U256 {
 /// Check if caller is a transaction filterer via the TransactionFilterers address set.
 fn is_transaction_filterer(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
 ) -> Result<bool, ArbPrecompileError> {
     // TransactionFilterers is at subspace [11] in ArbOS state.
@@ -148,41 +163,48 @@ fn is_transaction_filterer(
     let by_address_key = derive_subspace_key(filterer_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
-    let val = sload_arbos(input, slot)?;
+    let val = sload_arbos(input, gas_used, slot)?;
     Ok(val != U256::ZERO)
 }
 
-fn handle_is_tx_filtered(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
+fn handle_is_tx_filtered(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    tx_hash: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_accounts(input)?;
 
     let slot = filtered_tx_slot(&tx_hash);
-    let value = sload_filtered(input, slot)?;
+    let value = sload_filtered(input, gas_used, slot)?;
     let is_filtered = if value == PRESENT_VALUE {
         U256::from(1u64)
     } else {
         U256::ZERO
     };
 
-    crate::charge_precompile_gas(COPY_GAS);
-    let gas_used = crate::get_precompile_gas().min(gas_limit);
+    crate::charge_precompile_gas(gas_used, COPY_GAS);
     Ok(PrecompileOutput::new(
-        gas_used,
+        (*gas_used).min(gas_limit),
         is_filtered.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
-fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
+fn handle_add_filtered_tx(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    tx_hash: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_accounts(input)?;
 
-    if !is_transaction_filterer(input, caller)? {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+    if !is_transaction_filterer(input, gas_used, caller)? {
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
     let slot = filtered_tx_slot(&tx_hash);
-    sstore_filtered(input, slot, PRESENT_VALUE)?;
+    sstore_filtered(input, gas_used, slot, PRESENT_VALUE)?;
 
     input.internals_mut().log(Log::new_unchecked(
         ARBFILTEREDTXMANAGER_ADDRESS,
@@ -193,21 +215,27 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> Pre
         Default::default(),
     ));
 
-    let gas_used = crate::get_precompile_gas().min(gas_limit);
-    Ok(PrecompileOutput::new(gas_used, vec![].into()))
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        vec![].into(),
+    ))
 }
 
-fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> PrecompileResult {
+fn handle_delete_filtered_tx(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    tx_hash: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_accounts(input)?;
 
-    if !is_transaction_filterer(input, caller)? {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+    if !is_transaction_filterer(input, gas_used, caller)? {
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
     let slot = filtered_tx_slot(&tx_hash);
-    sstore_filtered(input, slot, U256::ZERO)?;
+    sstore_filtered(input, gas_used, slot, U256::ZERO)?;
 
     input.internals_mut().log(Log::new_unchecked(
         ARBFILTEREDTXMANAGER_ADDRESS,
@@ -218,6 +246,8 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>, tx_hash: B256) -> 
         Default::default(),
     ));
 
-    let gas_used = crate::get_precompile_gas().min(gas_limit);
-    Ok(PrecompileOutput::new(gas_used, vec![].into()))
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        vec![].into(),
+    ))
 }

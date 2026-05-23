@@ -18,8 +18,9 @@ pub fn create_arbfunctiontable_precompile() -> DynPrecompile {
 }
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbFunctionTable::ArbFunctionTableCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -30,22 +31,20 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         // Upload: no-op. Cost = OpenArbosState + argsCost (pre-charged).
         ArbFunctionTableCalls::upload(_) => Ok(PrecompileOutput::new(
-            crate::get_precompile_gas().min(gas_limit),
+            gas_used.min(gas_limit),
             vec![].into(),
         )),
         // Size: no-op returning 0. Cost = OpenArbosState + argsCost + 1-word resultCost.
         ArbFunctionTableCalls::size(_) => {
-            crate::charge_precompile_gas(COPY_GAS);
+            crate::charge_precompile_gas(&mut gas_used, COPY_GAS);
             Ok(PrecompileOutput::new(
-                crate::get_precompile_gas().min(gas_limit),
+                gas_used.min(gas_limit),
                 U256::ZERO.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         // Get unconditionally reverts (table is empty). gas_check will return
         // accumulated_gas (OpenArbosState + argsCost) on the revert path.
-        ArbFunctionTableCalls::get(_) => {
-            Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into())
-        }
+        ArbFunctionTableCalls::get(_) => Err(ArbPrecompileError::empty_revert(gas_used).into()),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }

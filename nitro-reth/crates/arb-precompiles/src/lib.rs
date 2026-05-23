@@ -69,7 +69,6 @@ pub use storage_slot::ARBOS_STATE_ADDRESS;
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
 use alloy_primitives::B256;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::cell::Cell;
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
@@ -106,11 +105,6 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
     DynPrecompile::new(PrecompileId::ModExp, |input: PrecompileInput<'_>| {
         revm::precompile::modexp::osaka_run(input.data, input.gas)
     })
-}
-
-thread_local! {
-    /// Gas consumed by precompile operations before an error.
-    static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Reset the recent WASMs cache for a new block, with the given capacity.
@@ -155,33 +149,23 @@ pub fn get_block_timestamp() -> u64 {
     arb_context::with_active(|c| c.block.block_timestamp).unwrap_or(0)
 }
 
-pub fn reset_precompile_gas() {
-    PRECOMPILE_GAS_USED.with(|v| v.set(0));
+pub fn charge_precompile_gas(gas_used: &mut u64, gas: u64) {
+    *gas_used = gas_used.saturating_add(gas);
 }
 
-pub fn charge_precompile_gas(gas: u64) {
-    PRECOMPILE_GAS_USED.with(|v| v.set(v.get() + gas));
-}
-
-pub fn get_precompile_gas() -> u64 {
-    PRECOMPILE_GAS_USED.with(|v| v.get())
-}
-
-/// Initialize gas tracking for a precompile call: reset accumulator, charge
-/// argsCost (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
-pub fn init_precompile_gas(input_len: usize) {
-    reset_precompile_gas();
+/// Initialize gas tracking for a precompile call: charge argsCost
+/// (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
+pub fn init_precompile_gas(gas_used: &mut u64, input_len: usize) {
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
-    charge_precompile_gas(args_cost + 800);
+    charge_precompile_gas(gas_used, args_cost + 800);
 }
 
 /// Initialize gas tracking for a `pure` precompile method: like
 /// `init_precompile_gas` but skips the OpenArbosState SLOAD (800), matching the
 /// reference framework's pure-method path which does not open ArbOS state.
-pub fn init_precompile_gas_pure(input_len: usize) {
-    reset_precompile_gas();
+pub fn init_precompile_gas_pure(gas_used: &mut u64, input_len: usize) {
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
-    charge_precompile_gas(args_cost);
+    charge_precompile_gas(gas_used, args_cost);
 }
 
 pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
@@ -235,23 +219,20 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
 
 /// Emit a pre-encoded Solidity custom-error payload (selector + ABI args)
 /// as a revert. Adds the copy cost for the payload to the accumulated gas.
-pub fn sol_error_revert(payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
+pub fn sol_error_revert(gas_used: &mut u64, payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
     let result_cost = 3u64 * (payload.len() as u64).div_ceil(32); // CopyGas * words
-    charge_precompile_gas(result_cost);
-    let gas = get_precompile_gas();
+    charge_precompile_gas(gas_used, result_cost);
     Ok(PrecompileOutput::new_reverted(
-        gas.min(gas_limit),
+        (*gas_used).min(gas_limit),
         payload.into(),
     ))
 }
 
-fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
-    let accumulated_gas = get_precompile_gas();
-    reset_precompile_gas();
+fn gas_check(gas_limit: u64, gas_used: u64, result: PrecompileResult) -> PrecompileResult {
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
         Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => Ok(
-            PrecompileOutput::new_reverted(accumulated_gas.min(gas_limit), Default::default()),
+            PrecompileOutput::new_reverted(gas_used.min(gas_limit), Default::default()),
         ),
         other => other,
     }

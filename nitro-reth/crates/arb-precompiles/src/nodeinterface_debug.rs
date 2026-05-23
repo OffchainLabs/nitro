@@ -18,8 +18,9 @@ pub fn create_nodeinterface_debug_precompile() -> DynPrecompile {
 }
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match INodeInterfaceDebug::NodeInterfaceDebugCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -30,7 +31,7 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         NodeInterfaceDebugCalls::getRetryable(_) => handle_get_retryable(&input),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 /// Returns a well-formed empty `RetryableInfo` — bridge tooling gets a valid

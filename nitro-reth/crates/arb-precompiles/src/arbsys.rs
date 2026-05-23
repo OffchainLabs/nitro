@@ -77,9 +77,10 @@ pub fn create_arbsys_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
     let data = input.data;
-    crate::init_precompile_gas(data.len());
+    crate::init_precompile_gas(&mut gas_used, data.len());
 
     let call = match IArbSys::ArbSysCalls::abi_decode(data) {
         Ok(c) => c,
@@ -89,7 +90,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     use IArbSys::ArbSysCalls;
     let result = match call {
         ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input),
-        ArbSysCalls::arbBlockHash(c) => handle_arb_block_hash(&mut input, c.arbBlockNum),
+        ArbSysCalls::arbBlockHash(c) => handle_arb_block_hash(&mut input, gas_used, c.arbBlockNum),
         ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input),
         ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input),
         ArbSysCalls::getStorageGasAvailable(_) => handle_get_storage_gas(&mut input),
@@ -99,13 +100,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input),
         ArbSysCalls::myCallersAddressWithoutAliasing(_) => handle_caller_without_alias(&mut input),
-        ArbSysCalls::withdrawEth(c) => handle_withdraw_eth(&mut input, c.destination),
+        ArbSysCalls::withdrawEth(c) => handle_withdraw_eth(&mut input, gas_used, c.destination),
         ArbSysCalls::sendTxToL1(c) => {
-            handle_send_tx_to_l1(&mut input, c.destination, c.data.as_ref())
+            handle_send_tx_to_l1(&mut input, gas_used, c.destination, c.data.as_ref())
         }
-        ArbSysCalls::sendMerkleTreeState(_) => handle_send_merkle_tree_state(&mut input),
+        ArbSysCalls::sendMerkleTreeState(_) => handle_send_merkle_tree_state(&mut input, gas_used),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 // ── view functions ───────────────────────────────────────────────────
@@ -122,6 +123,7 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 
 fn handle_arb_block_hash(
     input: &mut PrecompileInput<'_>,
+    gas_used: u64,
     requested_u256: U256,
 ) -> PrecompileResult {
     let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
@@ -142,7 +144,7 @@ fn handle_arb_block_hash(
                 revert_data.into(),
             ));
         }
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
 
     // L2 block hashes come from the header chain cache — the journal's
@@ -301,26 +303,32 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 // ── L2→L1 messaging ─────────────────────────────────────────────────
 
-fn handle_withdraw_eth(input: &mut PrecompileInput<'_>, destination: Address) -> PrecompileResult {
+fn handle_withdraw_eth(
+    input: &mut PrecompileInput<'_>,
+    gas_used: u64,
+    destination: Address,
+) -> PrecompileResult {
     if input.is_static {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
-    do_send_tx_to_l1(input, destination, &[])
+    do_send_tx_to_l1(input, gas_used, destination, &[])
 }
 
 fn handle_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    gas_used: u64,
     destination: Address,
     calldata: &[u8],
 ) -> PrecompileResult {
     if input.is_static {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
-    do_send_tx_to_l1(input, destination, calldata)
+    do_send_tx_to_l1(input, gas_used, destination, calldata)
 }
 
 fn do_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    outer_gas_used: u64,
     destination: Address,
     calldata: &[u8],
 ) -> PrecompileResult {
@@ -362,7 +370,7 @@ fn do_send_tx_to_l1(
                 .map_err(ArbPrecompileError::fatal)?
                 .data;
             if !num_owners.is_zero() {
-                return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+                return Err(ArbPrecompileError::empty_revert(outer_gas_used).into());
             }
         }
     }
@@ -486,10 +494,13 @@ fn do_send_tx_to_l1(
     Ok(PrecompileOutput::new(gas_used, output.into()))
 }
 
-fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_send_merkle_tree_state(
+    input: &mut PrecompileInput<'_>,
+    outer_gas_used: u64,
+) -> PrecompileResult {
     // Only callable by address zero (for state export).
     if input.caller != Address::ZERO {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(outer_gas_used).into());
     }
     let mut gas_used = 0u64;
     let internals = input.internals_mut();

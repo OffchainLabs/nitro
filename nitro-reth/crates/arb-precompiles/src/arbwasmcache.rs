@@ -52,8 +52,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         return result;
     }
 
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbWasmCache::ArbWasmCacheCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -62,14 +63,26 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbWasmCache::ArbWasmCacheCalls;
     let result = match call {
-        ArbWasmCacheCalls::cacheCodehash(c) => handle_cache_codehash(&mut input, c.codehash),
-        ArbWasmCacheCalls::cacheProgram(c) => handle_cache_program(&mut input, c.addr),
-        ArbWasmCacheCalls::evictCodehash(c) => handle_evict_codehash(&mut input, c.codehash),
-        ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager),
-        ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input),
-        ArbWasmCacheCalls::codehashIsCached(c) => handle_codehash_is_cached(&mut input, c.codehash),
+        ArbWasmCacheCalls::cacheCodehash(c) => {
+            handle_cache_codehash(&mut input, &mut gas_used, c.codehash)
+        }
+        ArbWasmCacheCalls::cacheProgram(c) => {
+            handle_cache_program(&mut input, &mut gas_used, c.addr)
+        }
+        ArbWasmCacheCalls::evictCodehash(c) => {
+            handle_evict_codehash(&mut input, &mut gas_used, c.codehash)
+        }
+        ArbWasmCacheCalls::isCacheManager(c) => {
+            handle_is_cache_manager(&mut input, &mut gas_used, c.manager)
+        }
+        ArbWasmCacheCalls::allCacheManagers(_) => {
+            handle_all_cache_managers(&mut input, &mut gas_used)
+        }
+        ArbWasmCacheCalls::codehashIsCached(c) => {
+            handle_codehash_is_cached(&mut input, &mut gas_used, c.codehash)
+        }
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 fn words_for_bytes(n: u64) -> u64 {
@@ -86,12 +99,16 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
+fn sload_field(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    slot: U256,
+) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(SLOAD_GAS);
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -101,7 +118,11 @@ fn cache_managers_key() -> B256 {
     derive_subspace_key(programs_key.as_slice(), CACHE_MANAGERS_KEY)
 }
 
-fn handle_is_cache_manager(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_is_cache_manager(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    addr: Address,
+) -> PrecompileResult {
     let data_len = input.data.len();
     load_arbos(input)?;
 
@@ -109,7 +130,7 @@ fn handle_is_cache_manager(input: &mut PrecompileInput<'_>, addr: Address) -> Pr
     let by_addr_key = derive_subspace_key(cm_key.as_slice(), BY_ADDRESS_KEY);
     let addr_hash = address_to_b256(addr);
     let slot = map_slot_b256(by_addr_key.as_slice(), &addr_hash);
-    let value = sload_field(input, slot)?;
+    let value = sload_field(input, gas_used, slot)?;
 
     let is_member = value != U256::ZERO;
     let result = if is_member {
@@ -126,12 +147,15 @@ fn handle_is_cache_manager(input: &mut PrecompileInput<'_>, addr: Address) -> Pr
 }
 
 /// Return all cache manager addresses.
-fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_all_cache_managers(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+) -> PrecompileResult {
     load_arbos(input)?;
 
     let cm_key = cache_managers_key();
     let size_slot = map_slot(cm_key.as_slice(), 0);
-    let size = sload_field(input, size_slot)?.saturating_to::<u64>();
+    let size = sload_field(input, gas_used, size_slot)?.saturating_to::<u64>();
     let mut sloads: u64 = 1;
 
     // Cap to prevent excessive reads.
@@ -144,7 +168,7 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     for i in 1..=count {
         let addr_slot = map_slot(cm_key.as_slice(), i);
-        let addr_value = sload_field(input, addr_slot)?;
+        let addr_value = sload_field(input, gas_used, addr_slot)?;
         out.extend_from_slice(&addr_value.to_be_bytes::<32>());
         sloads += 1;
     }
@@ -156,14 +180,18 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
     Ok(PrecompileOutput::new(total.min(input.gas), out.into()))
 }
 
-fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
+fn handle_codehash_is_cached(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    codehash: B256,
+) -> PrecompileResult {
     let data_len = input.data.len();
     load_arbos(input)?;
 
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
     let program_slot = map_slot_b256(data_key.as_slice(), &codehash);
-    let program_word = sload_field(input, program_slot)?;
+    let program_word = sload_field(input, gas_used, program_slot)?;
 
     // Byte 14 of the program word is the cached flag.
     let word_bytes = program_word.to_be_bytes::<32>();
@@ -202,11 +230,14 @@ fn sstore_field(
 
 /// Read `version` (bytes 0-1) and `expiry_days` (bytes 19-20) from slot 0
 /// of the Programs.Params storage word.
-fn read_program_params(input: &mut PrecompileInput<'_>) -> Result<(u16, u16), ArbPrecompileError> {
+fn read_program_params(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+) -> Result<(u16, u16), ArbPrecompileError> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     let slot = map_slot(params_key.as_slice(), 0);
-    let word = sload_field(input, slot)?.to_be_bytes::<32>();
+    let word = sload_field(input, gas_used, slot)?.to_be_bytes::<32>();
     let version = u16::from_be_bytes([word[0], word[1]]);
     let expiry_days = u16::from_be_bytes([word[19], word[20]]);
     Ok((version, expiry_days))
@@ -223,20 +254,21 @@ fn program_data_slot(codehash: B256) -> U256 {
 /// 2 SLOADs (cache-managers probe then chain-owners probe).
 fn caller_has_cache_access(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     caller: Address,
 ) -> Result<(bool, u64), ArbPrecompileError> {
     let cm_key = cache_managers_key();
     let cm_by_addr = derive_subspace_key(cm_key.as_slice(), BY_ADDRESS_KEY);
     let addr_hash = address_to_b256(caller);
     let cm_slot = map_slot_b256(cm_by_addr.as_slice(), &addr_hash);
-    if sload_field(input, cm_slot)? != U256::ZERO {
+    if sload_field(input, gas_used, cm_slot)? != U256::ZERO {
         return Ok((true, SLOAD_GAS));
     }
 
     let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
     let owner_by_addr = derive_subspace_key(owner_key.as_slice(), BY_ADDRESS_KEY);
     let owner_slot = map_slot_b256(owner_by_addr.as_slice(), &addr_hash);
-    let is_owner = sload_field(input, owner_slot)? != U256::ZERO;
+    let is_owner = sload_field(input, gas_used, owner_slot)? != U256::ZERO;
     Ok((is_owner, 2 * SLOAD_GAS))
 }
 
@@ -244,6 +276,7 @@ fn caller_has_cache_access(
 /// every exit path (e.g., the GetCodeHash access cost for `cacheProgram`).
 fn set_program_cached(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     codehash: B256,
     cache: bool,
     pre_set_gas: u64,
@@ -261,15 +294,15 @@ fn set_program_cached(
 
     load_arbos(input)?;
 
-    let (has_access, access_gas) = caller_has_cache_access(input, caller)?;
+    let (has_access, access_gas) = caller_has_cache_access(input, gas_used, caller)?;
     if !has_access {
         return crate::burn_all_revert(input.gas);
     }
 
-    let (params_version, expiry_days) = read_program_params(input)?;
+    let (params_version, expiry_days) = read_program_params(input, gas_used)?;
 
     let prog_slot = program_data_slot(codehash);
-    let mut prog_word = sload_field(input, prog_slot)?.to_be_bytes::<32>();
+    let mut prog_word = sload_field(input, gas_used, prog_slot)?.to_be_bytes::<32>();
     let prog_version = u16::from_be_bytes([prog_word[0], prog_word[1]]);
     let prog_init_cost = u16::from_be_bytes([prog_word[2], prog_word[3]]);
     let activated_at_hours =
@@ -288,14 +321,14 @@ fn set_program_cached(
             stylusVersion: params_version,
         }
         .abi_encode();
-        return crate::sol_error_revert(data, input.gas);
+        return crate::sol_error_revert(gas_used, data, input.gas);
     }
     if cache && expired {
         let data = IArbWasm::ProgramExpired {
             ageInSeconds: age_seconds,
         }
         .abi_encode();
-        return crate::sol_error_revert(data, input.gas);
+        return crate::sol_error_revert(gas_used, data, input.gas);
     }
     if already_cached == cache {
         return Ok(PrecompileOutput::new(
@@ -325,18 +358,22 @@ fn set_program_cached(
         event_data.into(),
     ));
 
-    let gas_used = after_get_program_gas
+    let gas_cost = after_get_program_gas
         + EMIT_UPDATE_PROGRAM_CACHE_GAS
         + prog_init_cost as u64
         + SLOAD_GAS
         + sstore_gas;
     Ok(PrecompileOutput::new(
-        gas_used.min(input.gas),
+        gas_cost.min(input.gas),
         Vec::new().into(),
     ))
 }
 
-fn handle_cache_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
+fn handle_cache_codehash(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    codehash: B256,
+) -> PrecompileResult {
     if let Some(r) = crate::check_method_version(
         input.gas,
         arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
@@ -344,12 +381,16 @@ fn handle_cache_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> Pre
     ) {
         return r;
     }
-    set_program_cached(input, codehash, true, 0)
+    set_program_cached(input, gas_used, codehash, true, 0)
 }
 
 /// `cacheProgram` reads the code hash from an account, which costs
 /// `ColdAccountAccessCostEIP2929` even when the slot is already warm.
-fn handle_cache_program(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_cache_program(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    addr: Address,
+) -> PrecompileResult {
     // CacheProgram is gated at ArbOS v31 (StylusFixes). Pre-v31 burns all gas.
     if let Some(r) = crate::check_method_version(
         input.gas,
@@ -365,9 +406,13 @@ fn handle_cache_program(input: &mut PrecompileInput<'_>, addr: Address) -> Preco
             .map_err(ArbPrecompileError::fatal)?;
         acct.data.info.code_hash
     };
-    set_program_cached(input, codehash, true, COLD_ACCOUNT_ACCESS_GAS)
+    set_program_cached(input, gas_used, codehash, true, COLD_ACCOUNT_ACCESS_GAS)
 }
 
-fn handle_evict_codehash(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
-    set_program_cached(input, codehash, false, 0)
+fn handle_evict_codehash(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    codehash: B256,
+) -> PrecompileResult {
+    set_program_cached(input, gas_used, codehash, false, 0)
 }

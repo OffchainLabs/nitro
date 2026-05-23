@@ -16,11 +16,12 @@ pub fn create_arbostest_precompile() -> DynPrecompile {
 }
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
     if !crate::allow_debug_precompiles() {
         return crate::burn_all_revert(gas_limit);
     }
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbosTest::ArbosTestCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -31,7 +32,7 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         ArbosTestCalls::burnArbGas(c) => handle_burn_arb_gas(gas_limit, c.gasAmount),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 fn handle_burn_arb_gas(gas_limit: u64, amount: U256) -> PrecompileResult {
