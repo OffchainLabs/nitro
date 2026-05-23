@@ -369,6 +369,8 @@ fn stage_rpc_block_ctx(
         block: std::sync::Arc::new(block_ctx),
         tx: std::sync::Arc::new(parking_lot::Mutex::new(arb_context::TxCtx::default())),
         debug: std::sync::Arc::new(arb_context::DebugFlags::default()),
+        caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
+        evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     });
     factory.stage_ctx(ctx);
 }

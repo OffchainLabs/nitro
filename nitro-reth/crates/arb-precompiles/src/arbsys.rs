@@ -233,9 +233,7 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Returns `depth <= 2`.
-    // Depth 1 = direct precompile call from tx, depth 2 = one intermediate contract.
-    let depth = crate::get_evm_depth();
+    let depth = arb_context::with_active(|c| c.evm_depth()).unwrap_or(0);
     let is_top = depth <= 2;
     let val = if is_top { U256::from(1) } else { U256::ZERO };
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
@@ -247,9 +245,6 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
 }
 
 fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let tx_origin = input.internals().tx_origin();
-
-    // Read ArbOS version for version-gated behavior.
     let internals = input.internals_mut();
     internals
         .load_account(ARBOS_STATE_ADDRESS)
@@ -260,13 +255,15 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .data;
     let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
 
-    let depth = crate::get_evm_depth();
+    let tx_origin = input.internals().tx_origin();
+    let depth = arb_context::with_active(|c| c.evm_depth()).unwrap_or(0);
     let is_top_level = if arbos_version < 6 {
         depth == 2
     } else if depth <= 2 {
         true
     } else {
-        crate::caller_at_depth(depth - 1)
+        arb_context::with_active(|c| c.caller_at_depth(depth - 1))
+            .flatten()
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };
@@ -282,12 +279,11 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // address = 0 unless depth > 1, then Contracts[depth-2].Caller().
-    // Apply L1 inverse-alias iff `wasMyCallersAddressAliased` (top-level frame
-    // entered by an aliasing tx type).
-    let depth = crate::get_evm_depth();
+    let depth = arb_context::with_active(|c| c.evm_depth()).unwrap_or(0);
     let address = if depth > 1 {
-        crate::caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
+        arb_context::with_active(|c| c.caller_at_depth(depth - 1))
+            .flatten()
+            .unwrap_or(Address::ZERO)
     } else {
         Address::ZERO
     };
@@ -299,7 +295,8 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
         true
     } else {
         let tx_origin = input.internals().tx_origin();
-        crate::caller_at_depth(depth - 1)
+        arb_context::with_active(|c| c.caller_at_depth(depth - 1))
+            .flatten()
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };

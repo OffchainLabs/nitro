@@ -283,9 +283,10 @@ impl PrecompileTest {
             block: std::sync::Arc::new(block_ctx),
             tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
             debug: ctx.debug.clone(),
+            evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
+            caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
         });
         arb_context::install_active(installed);
-        arb_precompiles::set_evm_depth(self.evm_depth);
         arb_precompiles::set_tx_is_aliased(self.tx_is_aliased);
 
         let mut ctx = EthEvmContext::new(self.db, self.spec);

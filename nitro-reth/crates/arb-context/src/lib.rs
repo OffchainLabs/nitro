@@ -4,7 +4,10 @@ use alloy_primitives::{Address, B256, U256};
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize},
+        Arc,
+    },
 };
 
 /// Per-block parameters populated once at block start.
@@ -106,6 +109,13 @@ pub struct ArbPrecompileCtx {
     pub block: Arc<BlockCtx>,
     pub tx: Arc<Mutex<TxCtx>>,
     pub debug: Arc<DebugFlags>,
+    /// EVM call depth at the most recent precompile dispatch. Mirrors the
+    /// journal depth surfaced by revm to the precompile provider.
+    pub evm_depth: Arc<AtomicUsize>,
+    /// Caller addresses by depth, pushed at each frame boundary so that
+    /// precompile handlers can resolve the on-chain caller at arbitrary
+    /// depth (alloy-evm's `EvmInternals` does not surface this).
+    pub caller_stack: Arc<Mutex<Vec<Address>>>,
 }
 
 impl ArbPrecompileCtx {
@@ -118,6 +128,8 @@ impl ArbPrecompileCtx {
             block,
             tx: Arc::new(Mutex::new(TxCtx::default())),
             debug: Arc::new(DebugFlags::default()),
+            evm_depth: Arc::new(AtomicUsize::new(0)),
+            caller_stack: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -153,6 +165,36 @@ impl ArbPrecompileCtx {
 
     pub fn set_redeemer(&self, redeemer: Address) {
         self.tx.lock().redeemer = redeemer;
+    }
+
+    pub fn set_evm_depth(&self, depth: usize) {
+        self.evm_depth
+            .store(depth, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn evm_depth(&self) -> usize {
+        self.evm_depth.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn push_caller(&self, caller: Address) {
+        self.caller_stack.lock().push(caller);
+    }
+
+    pub fn pop_caller(&self) {
+        self.caller_stack.lock().pop();
+    }
+
+    pub fn reset_caller_stack(&self) {
+        self.caller_stack.lock().clear();
+    }
+
+    /// Return the caller at the given depth (1-indexed). Mirrors the
+    /// frame-depth conventions used by ArbSys.
+    pub fn caller_at_depth(&self, depth: usize) -> Option<Address> {
+        if depth == 0 {
+            return None;
+        }
+        self.caller_stack.lock().get(depth - 1).copied()
     }
 }
 
