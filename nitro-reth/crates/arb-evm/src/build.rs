@@ -397,6 +397,8 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             block: std::sync::Arc::new(block_ctx),
             tx: std::sync::Arc::new(parking_lot::Mutex::new(arb_context::TxCtx::default())),
             debug: std::sync::Arc::new(arb_context::DebugFlags::default()),
+            caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
+            evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         arb_context::install_active(new_ctx.clone());
         self.precompile_ctx = new_ctx;
@@ -1037,7 +1039,7 @@ where
         // Reset per-tx processor state.
         crate::evm::reset_stylus_pages();
         self.precompile_ctx.reset_tx();
-        arb_precompiles::reset_caller_stack();
+        self.precompile_ctx.reset_caller_stack();
         crate::state_overlay::reset_tx();
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;

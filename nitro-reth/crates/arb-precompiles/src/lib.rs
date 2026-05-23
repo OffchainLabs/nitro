@@ -109,15 +109,6 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
 }
 
 thread_local! {
-    /// Current EVM call depth, incremented on each CALL/CREATE frame.
-    /// Used by precompiles (e.g., ArbSys.isTopLevelCall) to determine
-    /// the call stack position. Reset to 0 at transaction start.
-    static EVM_CALL_DEPTH: Cell<usize> = const { Cell::new(0) };
-    /// msg.sender per call frame, indexed by depth-1. Pushed on
-    /// frame_init, popped on frame_return_result. Used by ArbSys to
-    /// resolve `Contracts[depth-2].Caller()`.
-    static CALLER_STACK: std::cell::RefCell<Vec<alloy_primitives::Address>> =
-        const { std::cell::RefCell::new(Vec::new()) };
     /// Gas consumed by precompile operations before an error.
     static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
     static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
@@ -222,39 +213,6 @@ pub fn init_precompile_gas_pure(input_len: usize) {
     reset_precompile_gas();
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
     charge_precompile_gas(args_cost);
-}
-
-/// Set the EVM call depth to a specific value.
-/// Called by the precompile provider which reads the depth from revm's journal.
-pub fn set_evm_depth(depth: usize) {
-    EVM_CALL_DEPTH.with(|v| v.set(depth));
-}
-
-/// Get the current EVM call depth.
-pub fn get_evm_depth() -> usize {
-    EVM_CALL_DEPTH.with(|v| v.get())
-}
-
-pub fn push_caller_frame(caller: alloy_primitives::Address) {
-    CALLER_STACK.with(|s| s.borrow_mut().push(caller));
-}
-
-pub fn pop_caller_frame() {
-    CALLER_STACK.with(|s| {
-        s.borrow_mut().pop();
-    });
-}
-
-pub fn reset_caller_stack() {
-    CALLER_STACK.with(|s| s.borrow_mut().clear());
-}
-
-/// msg.sender of the frame at `depth` (1-indexed). `None` outside range.
-pub fn caller_at_depth(depth: usize) -> Option<alloy_primitives::Address> {
-    if depth == 0 {
-        return None;
-    }
-    CALLER_STACK.with(|s| s.borrow().get(depth - 1).copied())
 }
 
 pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {

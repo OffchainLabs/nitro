@@ -476,7 +476,6 @@ where
     };
 
     {
-        arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
         let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
         let mut precompiles =
             alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
@@ -1379,11 +1378,8 @@ fn execute_stylus_call_concrete<DB: Database>(
     })
 }
 
-// ── Depth-tracking precompile provider ─────────────────────────────
+// ── Precompile provider ────────────────────────────────────────────
 
-/// Wraps [`PrecompilesMap`] to set the thread-local EVM call depth before
-/// each precompile invocation. The depth is read from revm's journal, which
-/// mirrors the `evm.Depth()` counter used by `ArbSys.isTopLevelCall`.
 #[derive(Clone, Debug)]
 pub struct ArbPrecompilesMap(pub PrecompilesMap);
 
@@ -1409,8 +1405,7 @@ where
         context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
         inputs: &CallInputs,
     ) -> Result<Option<Self::Output>, String> {
-        // Sync the thread-local depth from revm's journal before the precompile runs.
-        arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
+        arb_context::with_active(|c| c.set_evm_depth(context.journaled_state.inner.depth));
 
         // Check precompiles first.
         if let result @ Some(_) = <PrecompilesMap as PrecompileProvider<
@@ -1565,26 +1560,24 @@ where
         ItemOrResult<&mut Self::Frame, FrameResult>,
         revm::handler::evm::ContextDbError<Self::Context>,
     > {
-        // Track msg.sender per frame for ArbSys precompiles.
         let pushed_caller = match &frame_input.frame_input {
             FrameInput::Call(inputs) => {
-                arb_precompiles::push_caller_frame(inputs.caller);
+                arb_context::with_active(|c| c.push_caller(inputs.caller));
                 true
             }
             FrameInput::Create(inputs) => {
-                arb_precompiles::push_caller_frame(inputs.caller());
+                arb_context::with_active(|c| c.push_caller(inputs.caller()));
                 true
             }
             _ => false,
         };
 
-        // Intercept Stylus WASM calls before they reach EthFrame/precompiles.
         if let Some(bytecode) = is_stylus_call(&frame_input) {
             if let FrameInput::Call(ref inputs) = frame_input.frame_input {
                 if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
                     let gas = EvmGas::new(inputs.gas_limit);
                     if pushed_caller {
-                        arb_precompiles::pop_caller_frame();
+                        arb_context::with_active(|c| c.pop_caller());
                     }
                     return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
                         result: InterpreterResult::new(
@@ -1605,13 +1598,12 @@ where
                     checkpoint,
                 );
                 if pushed_caller {
-                    arb_precompiles::pop_caller_frame();
+                    arb_context::with_active(|c| c.pop_caller());
                 }
                 return Ok(ItemOrResult::Result(result));
             }
         }
 
-        // Non-Stylus: delegate. Pop happens in frame_return_result.
         self.inner.frame_init(frame_input)
     }
 
@@ -1630,8 +1622,7 @@ where
         &mut self,
         result: FrameResult,
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
-        // Pop the caller pushed by frame_init for this frame.
-        arb_precompiles::pop_caller_frame();
+        arb_context::with_active(|c| c.pop_caller());
         self.inner.frame_return_result(result)
     }
 }
