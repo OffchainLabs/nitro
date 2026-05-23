@@ -3,7 +3,6 @@ pub mod initialize;
 
 pub use error::ArbosStateError;
 
-use alloy_evm::EvmInternals;
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use revm::Database;
 use std::sync::OnceLock;
@@ -587,33 +586,19 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     }
 }
 
-/// Opens [`ArbosState`] from the precompile-handler call frame.
-///
-/// Bridges `EvmInternals` (the storage view available to precompile handlers)
-/// onto the same accessor layer the executor drives via `&mut State<D>`. The
-/// returned state holds no executor pointer, so every read and write must be
-/// driven through a [`StorageBackend`] — typically the same `EvmInternals`
-/// passed in. The version slot is read up front so divergence between the
-/// pinned build and the stored ArbOS version surfaces as
-/// [`ArbosStateError::UnsupportedVersion`] instead of silently reading the
-/// wrong slot.
-pub fn arbos_from_input<B: Burner>(
-    internals: &mut EvmInternals<'_>,
-    burner: B,
-) -> Result<ArbosState<Detached, B>, ArbosStateError> {
-    arbos_from_backend(internals, burner)
-}
-
-/// Open a detached [`ArbosState`] using any [`StorageBackend`].
+/// Open a detached [`ArbosState`] backed by any [`StorageBackend`].
 ///
 /// Reads only the version slot up front; all subsequent access goes through
 /// `backend`. Intended for callers that have a storage view but no executor
-/// state pointer (precompile handlers via `EvmInternals`, RPC tools reading
-/// historical state through a `StateProvider`, etc.).
-pub fn arbos_from_backend<S: StorageBackend, Bu: Burner>(
+/// state pointer — precompile handlers via `EvmInternals`, RPC tools reading
+/// historical state through a `StateProvider`, etc. The version slot is read
+/// up front so divergence between the pinned build and the stored ArbOS
+/// version surfaces as [`ArbosStateError::UnsupportedVersion`] instead of
+/// silently reading the wrong slot.
+pub fn arbos_from_input<S: StorageBackend, B: Burner>(
     backend: &mut S,
-    burner: Bu,
-) -> Result<ArbosState<Detached, Bu>, ArbosStateError> {
+    burner: B,
+) -> Result<ArbosState<Detached, B>, ArbosStateError> {
     let version_slot = storage_key_map(&[], VERSION_OFFSET);
     let raw_version =
         StorageBackend::sload(backend, ARBOS_STATE_ADDRESS, version_slot).map_err(Into::into)?;

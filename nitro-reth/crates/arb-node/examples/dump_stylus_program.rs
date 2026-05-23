@@ -30,7 +30,7 @@ use reth_provider::providers::{ProviderFactoryBuilder, ReadOnlyConfig};
 use reth_storage_api::StateProvider;
 
 use arb_storage::{StorageBackend, StorageError};
-use arbos::{arbos_state::arbos_from_backend, burn::SystemBurner, programs::Programs};
+use arbos::{arbos_state::arbos_from_input, burn::SystemBurner, programs::Programs};
 
 #[derive(Parser, Debug)]
 #[command(about = "Dump Stylus activation state at a given block")]
@@ -135,7 +135,7 @@ fn dump_one(state: &dyn StateProvider, addr: Address) -> eyre::Result<()> {
     println!("  wasm_hash:     {}", alloy_primitives::keccak256(&wasm));
 
     let mut backend = StateProviderBackend { inner: state };
-    let arb_state = arbos_from_backend(&mut backend, SystemBurner::new(None, false))
+    let arb_state = arbos_from_input(&mut backend, SystemBurner::new(None, false))
         .wrap_err("open ArbosState at this block")?;
     let programs: &Programs<_> = &arb_state.programs;
 

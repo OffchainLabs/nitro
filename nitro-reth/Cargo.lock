@@ -1564,7 +1564,6 @@ name = "arbos"
 version = "0.1.0"
 dependencies = [
  "alloy-eips",
- "alloy-evm",
  "alloy-primitives",
  "alloy-rlp",
  "arb-alloy-consensus",
