@@ -7,12 +7,12 @@ pub mod types;
 
 pub use error::ProgramsError;
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES;
 use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackend};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
 
 pub use self::types::{
     evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, RequestType, UserOutcome,
@@ -29,6 +29,7 @@ const PROGRAM_DATA_KEY: &[u8] = &[1];
 const MODULE_HASHES_KEY: &[u8] = &[2];
 const DATA_PRICER_KEY: &[u8] = &[3];
 const CACHE_MANAGERS_KEY: &[u8] = &[4];
+const ACTIVATION_GAS_KEY: &[u8] = &[5];
 
 /// Per-program metadata stored in state.
 #[derive(Debug, Clone, Copy)]
@@ -116,6 +117,7 @@ pub struct Programs<D> {
     module_hashes: Storage<D>,
     pub data_pricer: DataPricer,
     pub cache_managers: AddressSet<D>,
+    activation_gas: StorageBackedUint64,
 }
 
 impl<D> Programs<D> {
@@ -126,6 +128,8 @@ impl<D> Programs<D> {
         let module_hashes = sto.open_sub_storage(MODULE_HASHES_KEY);
         let cache_managers_sto = sto.open_sub_storage(CACHE_MANAGERS_KEY);
         let cache_managers = open_address_set(cache_managers_sto);
+        let activation_gas_sto = sto.open_sub_storage(ACTIVATION_GAS_KEY);
+        let activation_gas = StorageBackedUint64::new(activation_gas_sto.base_key(), 0);
         Self {
             arbos_version,
             backing_storage: sto,
@@ -133,6 +137,7 @@ impl<D> Programs<D> {
             module_hashes,
             data_pricer,
             cache_managers,
+            activation_gas,
         }
     }
 }
@@ -145,6 +150,59 @@ impl<D> Programs<D> {
     ) -> Result<StylusParams, ProgramsError> {
         let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
         StylusParams::load_via_backend(self.arbos_version, &sto, backend)
+    }
+
+    /// Read the configured Wasm activation gas cost.
+    pub fn activation_gas_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, ProgramsError> {
+        Ok(self.activation_gas.get(backend)?)
+    }
+
+    /// Retrieve a program entry through a [`StorageBackend`].
+    pub fn get_program_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        code_hash: B256,
+        time: u64,
+    ) -> Result<Program, ProgramsError> {
+        let slot = self.programs.slot_for_key(code_hash);
+        let value = backend
+            .sload(self.programs.account, slot)
+            .map_err(Into::into)?;
+        let data = B256::from(value.to_be_bytes::<32>());
+        Ok(Program::from_storage(data, time))
+    }
+
+    /// Store a program entry through a [`StorageBackend`].
+    pub fn set_program_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        code_hash: B256,
+        program: Program,
+    ) -> Result<(), ProgramsError> {
+        let slot = self.programs.slot_for_key(code_hash);
+        let value = U256::from_be_bytes(program.to_storage().0);
+        backend
+            .sstore(self.programs.account, slot, value)
+            .map_err(Into::into)?;
+        Ok(())
+    }
+
+    /// Write a module hash for a code hash through a [`StorageBackend`].
+    pub fn set_module_hash_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        code_hash: B256,
+        module_hash: B256,
+    ) -> Result<(), ProgramsError> {
+        let slot = self.module_hashes.slot_for_key(code_hash);
+        let value = U256::from_be_bytes(module_hash.0);
+        backend
+            .sstore(self.module_hashes.account, slot, value)
+            .map_err(Into::into)?;
+        Ok(())
     }
 }
 
