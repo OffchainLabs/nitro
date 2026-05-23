@@ -196,7 +196,7 @@ pub fn initialize_arbos_in_database<D: Database, B: Burner, C: StorageBackend>(
         return Err(ArbosStateError::AddressTableNotEmpty);
     }
     for (i, addr) in address_table_entries.iter().enumerate() {
-        let slot = arbos_state.address_table.register(backend, *addr)?;
+        let (slot, _) = arbos_state.address_table.register(backend, *addr)?;
         if slot != i as u64 {
             return Err(ArbosStateError::AddressTableSlotMismatch);
         }

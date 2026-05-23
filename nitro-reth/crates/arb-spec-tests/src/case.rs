@@ -557,7 +557,9 @@ fn check_assertions(
             ensure_eq("address_table.address_at_index", actual, Some(c.expected))?;
         }
         if let Some(c) = &s.index_for_address {
-            let (idx, exists) = t.lookup(c.address).map_err(map_err)?;
+            let (idx, exists) = t
+                .lookup(unsafe { &mut *state_ptr }, c.address)
+                .map_err(map_err)?;
             if !exists {
                 return Err(SpecError::Assertion(format!(
                     "address_table.index_for_address: address {} not registered",
@@ -569,7 +571,8 @@ fn check_assertions(
         if let Some(c) = &s.contains {
             ensure_eq(
                 "address_table.contains",
-                t.address_exists(c.address).map_err(map_err)?,
+                t.address_exists(unsafe { &mut *state_ptr }, c.address)
+                    .map_err(map_err)?,
                 c.expected,
             )?;
         }
