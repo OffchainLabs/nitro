@@ -157,7 +157,12 @@ where
     type EVM = ArbEvmConfig;
 
     async fn build_evm(self, ctx: &BuilderContext<N>) -> eyre::Result<Self::EVM> {
-        Ok(ArbEvmConfig::new(ctx.chain_spec()))
+        let chain_spec = ctx.chain_spec();
+        let allow_debug = chainspec::allow_debug_precompiles(&chain_spec);
+        Ok(ArbEvmConfig::with_allow_debug_precompiles(
+            chain_spec,
+            allow_debug,
+        ))
     }
 }
 
@@ -203,7 +208,8 @@ where
     }
 
     let chain_spec: Arc<ChainSpec> = ctx.config().chain.clone();
-    let evm_config = ArbEvmConfig::new(chain_spec.clone());
+    let allow_debug = chainspec::allow_debug_precompiles(&chain_spec);
+    let evm_config = ArbEvmConfig::with_allow_debug_precompiles(chain_spec.clone(), allow_debug);
 
     let in_memory_state: CanonicalInMemoryState<ArbPrimitives> =
         ctx.provider().canonical_in_memory_state();

@@ -7,10 +7,8 @@
 
 use alloy_evm::precompiles::PrecompilesMap;
 use alloy_primitives::{address, Address};
-use arb_context::ArbPrecompileCtx;
 use arb_precompiles::register_arb_precompiles;
 use revm::{handler::EthPrecompiles, precompile::Precompiles, primitives::hardfork::SpecId};
-use std::sync::Arc;
 
 fn enabled_eth_addresses(map: &PrecompilesMap) -> Vec<Address> {
     let mut out: Vec<Address> = map
@@ -31,8 +29,7 @@ fn build_map(spec: SpecId, arbos_version: u64) -> PrecompilesMap {
         precompiles: Precompiles::new(spec.into()),
         spec,
     });
-    let ctx = Arc::new(ArbPrecompileCtx::default());
-    register_arb_precompiles(&mut precompiles, ctx, arbos_version);
+    register_arb_precompiles(&mut precompiles, arbos_version);
     precompiles
 }
 

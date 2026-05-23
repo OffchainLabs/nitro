@@ -15,8 +15,8 @@ use std::sync::Arc;
 const ARBOS_V30: u64 = 30;
 const RETRYABLE_LIFETIME: u64 = 7 * 24 * 60 * 60;
 
-fn arbretryabletx(ctx: &Arc<ArbPrecompileCtx>) -> DynPrecompile {
-    create_arbretryabletx_precompile(ctx.clone())
+fn arbretryabletx() -> DynPrecompile {
+    create_arbretryabletx_precompile()
 }
 
 fn make_ctx() -> Arc<ArbPrecompileCtx> {
@@ -30,24 +30,22 @@ fn ticket_storage_key(ticket_id: B256) -> B256 {
 
 #[test]
 fn get_lifetime_returns_seven_days() {
-    let ctx = make_ctx();
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(&arbretryabletx(&ctx), &calldata("getLifetime()", &[]));
+        .call(&arbretryabletx(), &calldata("getLifetime()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(RETRYABLE_LIFETIME));
 }
 
 #[test]
 fn submit_retryable_always_reverts_with_not_callable() {
-    let ctx = make_ctx();
     let payload = vec![0u8; 11 * 32 + 32];
     let mut data = vec![0xc9, 0xf9, 0x5d, 0x32];
     data.extend_from_slice(&payload);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(&arbretryabletx(&ctx), &data.into());
+        .call(&arbretryabletx(), &data.into());
     let out = run.assert_ok();
     assert!(out.reverted, "SubmitRetryable must revert");
     let not_callable = alloy_primitives::keccak256(b"NotCallable()");
@@ -56,14 +54,10 @@ fn submit_retryable_always_reverts_with_not_callable() {
 
 #[test]
 fn get_current_redeemer_returns_zero_outside_retry() {
-    let ctx = make_ctx();
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(
-            &arbretryabletx(&ctx),
-            &calldata("getCurrentRedeemer()", &[]),
-        );
+        .call(&arbretryabletx(), &calldata("getCurrentRedeemer()", &[]));
     assert_eq!(decode_address(run.output()), Address::ZERO);
 }
 
@@ -75,22 +69,22 @@ fn get_current_redeemer_returns_value_set_by_executor() {
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(
-            &arbretryabletx(&ctx),
+        .call_with(
+            &arbretryabletx(),
             &calldata("getCurrentRedeemer()", &[]),
+            ctx,
         );
     assert_eq!(decode_address(run.output()), refund_to);
 }
 
 #[test]
 fn get_timeout_unknown_ticket_reverts_with_no_ticket() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x77; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getTimeout(bytes32)", &[B256::from(ticket_id)]),
         );
     let out = run.assert_ok();
@@ -101,7 +95,6 @@ fn get_timeout_unknown_ticket_reverts_with_no_ticket() {
 
 #[test]
 fn get_timeout_returns_effective_timeout_no_extension() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x42; 32]);
     let stored_timeout: u64 = 1_800_000_000;
     let ticket_key = ticket_storage_key(ticket_id);
@@ -120,7 +113,7 @@ fn get_timeout_returns_effective_timeout_no_extension() {
             U256::ZERO,
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getTimeout(bytes32)", &[ticket_id]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(stored_timeout));
@@ -128,7 +121,6 @@ fn get_timeout_returns_effective_timeout_no_extension() {
 
 #[test]
 fn get_timeout_includes_extra_lifetime_windows() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x42; 32]);
     let stored_timeout: u64 = 1_800_000_000;
     let windows: u64 = 3;
@@ -148,7 +140,7 @@ fn get_timeout_includes_extra_lifetime_windows() {
             U256::from(windows),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getTimeout(bytes32)", &[ticket_id]),
         );
     let expected = stored_timeout + windows * RETRYABLE_LIFETIME;
@@ -157,13 +149,12 @@ fn get_timeout_includes_extra_lifetime_windows() {
 
 #[test]
 fn get_beneficiary_unknown_ticket_reverts() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x99; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getBeneficiary(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -174,7 +165,6 @@ fn get_beneficiary_unknown_ticket_reverts() {
 
 #[test]
 fn get_beneficiary_returns_stored_address() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x10; 32]);
     let beneficiary: Address = address!("00000000000000000000000000000000000000bb");
     let ticket_key = ticket_storage_key(ticket_id);
@@ -194,7 +184,7 @@ fn get_beneficiary_returns_stored_address() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getBeneficiary(bytes32)", &[ticket_id]),
         );
     assert_eq!(decode_address(run.output()), beneficiary);
@@ -202,13 +192,12 @@ fn get_beneficiary_returns_stored_address() {
 
 #[test]
 fn cancel_unknown_ticket_reverts() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0xaa; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("cancel(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -217,7 +206,6 @@ fn cancel_unknown_ticket_reverts() {
 
 #[test]
 fn cancel_rejects_non_beneficiary_caller() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x55; 32]);
     let beneficiary: Address = address!("00000000000000000000000000000000000000bb");
     let intruder: Address = address!("00000000000000000000000000000000000000cc");
@@ -239,7 +227,7 @@ fn cancel_rejects_non_beneficiary_caller() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("cancel(bytes32)", &[ticket_id]),
         );
     assert!(run.assert_ok().reverted);
@@ -253,22 +241,22 @@ fn redeem_self_modifying_guard_rejects_current_retryable() {
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(
-            &arbretryabletx(&ctx),
+        .call_with(
+            &arbretryabletx(),
             &calldata("redeem(bytes32)", &[ticket_id]),
+            ctx,
         );
     assert!(run.assert_ok().reverted);
 }
 
 #[test]
 fn redeem_unknown_ticket_reverts_with_no_ticket() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x44; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("redeem(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -279,7 +267,6 @@ fn redeem_unknown_ticket_reverts_with_no_ticket() {
 
 #[test]
 fn get_timeout_reverts_for_expired_ticket() {
-    let ctx = make_ctx();
     // Regression for the missing-expiry-check bug: getTimeout used to return the
     // (past) effective timeout for tickets whose stored timeout < currentTime.
     let ticket_id = B256::from([0x88; 32]);
@@ -295,7 +282,7 @@ fn get_timeout_reverts_for_expired_ticket() {
             U256::from(now - 1),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getTimeout(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -306,7 +293,6 @@ fn get_timeout_reverts_for_expired_ticket() {
 
 #[test]
 fn cancel_emits_canceled_event_and_clears_storage() {
-    let ctx = make_ctx();
     // Regression: cancel previously charged event gas without actually emitting
     // the LOG. Verify both the event is emitted and side-effects fire.
     let ticket_id = B256::from([0x66; 32]);
@@ -329,7 +315,7 @@ fn cancel_emits_canceled_event_and_clears_storage() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("cancel(bytes32)", &[ticket_id]),
         );
     let _ = run.assert_ok();
@@ -343,7 +329,6 @@ fn cancel_emits_canceled_event_and_clears_storage() {
 
 #[test]
 fn keepalive_extends_timeout_window_and_records_storage() {
-    let ctx = make_ctx();
     // Regression: handle_keepalive previously didn't emit LifetimeExtended.
     // We don't have a log inspection API in the harness yet, but we can verify
     // the windows_left increment side-effect that proves the path runs.
@@ -365,7 +350,7 @@ fn keepalive_extends_timeout_window_and_records_storage() {
             U256::ZERO,
         );
     let run = test.call(
-        &arbretryabletx(&ctx),
+        &arbretryabletx(),
         &calldata("keepalive(bytes32)", &[ticket_id]),
     );
     let _ = run.assert_ok();
@@ -390,37 +375,31 @@ const RETRYABLE_REAP_PRICE: u64 = 58_000;
 
 #[test]
 fn get_lifetime_charges_one_sload_and_one_copy_word() {
-    let ctx = make_ctx();
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(&arbretryabletx(&ctx), &calldata("getLifetime()", &[]));
+        .call(&arbretryabletx(), &calldata("getLifetime()", &[]));
     assert_eq!(run.gas_used(), SLOAD_GAS + COPY_GAS);
 }
 
 #[test]
 fn get_current_redeemer_charges_one_sload_and_one_copy_word() {
-    let ctx = make_ctx();
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(
-            &arbretryabletx(&ctx),
-            &calldata("getCurrentRedeemer()", &[]),
-        );
+        .call(&arbretryabletx(), &calldata("getCurrentRedeemer()", &[]));
     assert_eq!(run.gas_used(), SLOAD_GAS + COPY_GAS);
 }
 
 #[test]
 fn submit_retryable_charges_init_plus_one_word_revert_payload() {
-    let ctx = make_ctx();
     let payload = vec![0u8; 11 * 32 + 32];
     let mut data = vec![0xc9, 0xf9, 0x5d, 0x32];
     data.extend_from_slice(&payload);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(&arbretryabletx(&ctx), &data.into());
+        .call(&arbretryabletx(), &data.into());
     let out = run.assert_ok();
     assert!(out.reverted);
     // init(800 + 12 arg words * 3) + 1-word NotCallable error payload = 836 + 3 = 839.
@@ -429,7 +408,6 @@ fn submit_retryable_charges_init_plus_one_word_revert_payload() {
 
 #[test]
 fn get_timeout_valid_ticket_charges_four_sloads_and_two_copy_words() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x42; 32]);
     let stored_timeout: u64 = 1_800_000_000;
     let ticket_key = ticket_storage_key(ticket_id);
@@ -448,7 +426,7 @@ fn get_timeout_valid_ticket_charges_four_sloads_and_two_copy_words() {
             U256::ZERO,
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getTimeout(bytes32)", &[ticket_id]),
         );
     // OAS(1) + getTimeout sload(1) + windows sload(1) + framework sload(1) + 2 copy words = 3206.
@@ -457,13 +435,12 @@ fn get_timeout_valid_ticket_charges_four_sloads_and_two_copy_words() {
 
 #[test]
 fn get_timeout_unknown_ticket_charges_init_plus_timeout_sload_plus_one_word_revert() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x77; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getTimeout(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -474,7 +451,6 @@ fn get_timeout_unknown_ticket_charges_init_plus_timeout_sload_plus_one_word_reve
 
 #[test]
 fn get_beneficiary_valid_ticket_charges_three_sloads_and_two_copy_words() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x10; 32]);
     let beneficiary: Address = address!("00000000000000000000000000000000000000bb");
     let ticket_key = ticket_storage_key(ticket_id);
@@ -494,7 +470,7 @@ fn get_beneficiary_valid_ticket_charges_three_sloads_and_two_copy_words() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getBeneficiary(bytes32)", &[ticket_id]),
         );
     assert_eq!(run.gas_used(), 3 * SLOAD_GAS + 2 * COPY_GAS);
@@ -502,13 +478,12 @@ fn get_beneficiary_valid_ticket_charges_three_sloads_and_two_copy_words() {
 
 #[test]
 fn get_beneficiary_unknown_ticket_charges_init_plus_open_sload_plus_revert_payload() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x99; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("getBeneficiary(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -519,13 +494,12 @@ fn get_beneficiary_unknown_ticket_charges_init_plus_open_sload_plus_revert_paylo
 
 #[test]
 fn cancel_unknown_ticket_charges_init_plus_open_sload_plus_revert_payload() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0xaa; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("cancel(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -535,7 +509,6 @@ fn cancel_unknown_ticket_charges_init_plus_open_sload_plus_revert_payload() {
 
 #[test]
 fn cancel_non_beneficiary_caller_reverts_with_accumulated_gas() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x55; 32]);
     let beneficiary: Address = address!("00000000000000000000000000000000000000bb");
     let intruder: Address = address!("00000000000000000000000000000000000000cc");
@@ -557,7 +530,7 @@ fn cancel_non_beneficiary_caller_reverts_with_accumulated_gas() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("cancel(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -568,7 +541,6 @@ fn cancel_non_beneficiary_caller_reverts_with_accumulated_gas() {
 
 #[test]
 fn cancel_with_empty_calldata_charges_full_formula() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x66; 32]);
     let beneficiary: Address = address!("00000000000000000000000000000000000000bb");
     let now: u64 = 1_700_000_000;
@@ -589,7 +561,7 @@ fn cancel_with_empty_calldata_charges_full_formula() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("cancel(bytes32)", &[ticket_id]),
         );
     // 6 SLOAD + 7 SSTORE_ZERO + LOG2(375+750) + COPY = 4800 + 35000 + 1125 + 3 = 40_928.
@@ -602,13 +574,12 @@ fn cancel_with_empty_calldata_charges_full_formula() {
 
 #[test]
 fn keepalive_unknown_ticket_charges_init_plus_open_sload_plus_revert_payload() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0xaa; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("keepalive(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -618,7 +589,6 @@ fn keepalive_unknown_ticket_charges_init_plus_open_sload_plus_revert_payload() {
 
 #[test]
 fn keepalive_with_empty_calldata_charges_full_formula() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x77; 32]);
     let now: u64 = 1_700_000_000;
     let ticket_key = ticket_storage_key(ticket_id);
@@ -637,7 +607,7 @@ fn keepalive_with_empty_calldata_charges_full_formula() {
             U256::ZERO,
         );
     let run = test.call(
-        &arbretryabletx(&ctx),
+        &arbretryabletx(),
         &calldata("keepalive(bytes32)", &[ticket_id]),
     );
     // 8 SLOAD + 3 SSTORE + 2 COPY + updateCost(7*200=1400) + event(375+750+256=1381) + reap(58000).
@@ -656,13 +626,12 @@ fn keepalive_with_empty_calldata_charges_full_formula() {
 
 #[test]
 fn redeem_unknown_ticket_charges_two_open_sloads_plus_revert_payload() {
-    let ctx = make_ctx();
     let ticket_id = B256::from([0x44; 32]);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbretryabletx(&ctx),
+            &arbretryabletx(),
             &calldata("redeem(bytes32)", &[ticket_id]),
         );
     let out = run.assert_ok();
@@ -680,9 +649,10 @@ fn redeem_self_modifying_guard_only_charges_init() {
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(
-            &arbretryabletx(&ctx),
+        .call_with(
+            &arbretryabletx(),
             &calldata("redeem(bytes32)", &[ticket_id]),
+            ctx,
         );
     let out = run.assert_ok();
     assert!(out.reverted);

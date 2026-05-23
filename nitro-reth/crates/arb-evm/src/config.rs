@@ -41,13 +41,19 @@ where
 {
     /// Creates a new Arbitrum EVM configuration with the given chain spec.
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
+        Self::with_allow_debug_precompiles(chain_spec, false)
+    }
+
+    /// Creates a configuration that opts into ArbDebug/ArbosTest precompiles.
+    pub fn with_allow_debug_precompiles(chain_spec: Arc<ChainSpec>, allow_debug: bool) -> Self {
         let evm_factory = ArbEvmFactory::new();
         Self {
             executor_factory: ArbBlockExecutorFactory::new(
                 ArbReceiptBuilder,
                 chain_spec.clone(),
                 evm_factory,
-            ),
+            )
+            .with_allow_debug_precompiles(allow_debug),
             block_assembler: ArbBlockAssembler::new(chain_spec.clone()),
             chain_spec,
         }
@@ -88,9 +94,14 @@ where
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
 
-        // Publish ArbOS version for precompile dispatch (eth_call/estimateGas paths
-        // construct the EVM here without going through the block executor).
-        arb_precompiles::set_arbos_version(arbos_version);
+        stage_rpc_block_ctx(
+            self.executor_factory.arb_evm_factory(),
+            arbos_version,
+            header.timestamp(),
+            l1_block_number,
+            header.number(),
+            self.executor_factory.allow_debug_precompiles(),
+        );
 
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
@@ -125,15 +136,21 @@ where
         let arbos_version = arbos_version_from_mix_hash(&attributes.prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
-        arb_precompiles::set_arbos_version(arbos_version);
+        let l1_block_number_initial = l1_block_number_from_mix_hash(&attributes.prev_randao);
+        stage_rpc_block_ctx(
+            self.executor_factory.arb_evm_factory(),
+            arbos_version,
+            attributes.timestamp,
+            l1_block_number_initial,
+            parent.number().saturating_add(1),
+            self.executor_factory.allow_debug_precompiles(),
+        );
 
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
-        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
-        let l1_block_number = l1_block_number_from_mix_hash(&attributes.prev_randao);
         // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
         let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
-            number: U256::from(l1_block_number),
+            number: U256::from(l1_block_number_initial),
             beneficiary: attributes.suggested_fee_recipient,
             timestamp: U256::from(attributes.timestamp),
             difficulty: U256::from(1),
@@ -198,12 +215,19 @@ where
         let arbos_version = arbos_version_from_mix_hash(&prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
-        arb_precompiles::set_arbos_version(arbos_version);
+        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
+        let l1_block_number = l1_block_number_from_mix_hash(&prev_randao);
+        stage_rpc_block_ctx(
+            self.executor_factory.arb_evm_factory(),
+            arbos_version,
+            payload.payload.timestamp(),
+            l1_block_number,
+            payload.payload.block_number(),
+            self.executor_factory.allow_debug_precompiles(),
+        );
 
         let cfg_env = arb_cfg_env(self.chain_spec.chain().id(), spec, arbos_version);
 
-        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
-        let l1_block_number = l1_block_number_from_mix_hash(&prev_randao);
         // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
         let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
@@ -319,6 +343,34 @@ where
             min_base_fee: U256::ZERO,
         }
     }
+}
+
+/// Stage a per-block context on the EVM factory so that `create_evm`
+/// installs it on the EVM-execution thread. This is required because
+/// reth's RPC dispatcher (`spawn_blocking`) runs `evm_env` and
+/// `create_evm` on different threads, so a thread-local install on the
+/// `evm_env` thread would not survive.
+fn stage_rpc_block_ctx(
+    factory: &ArbEvmFactory,
+    arbos_version: u64,
+    block_timestamp: u64,
+    l1_block_number: u64,
+    l2_block_number: u64,
+    allow_debug: bool,
+) {
+    let block_ctx = arb_context::BlockCtx::new(
+        arbos_version,
+        block_timestamp,
+        l1_block_number,
+        l2_block_number,
+        allow_debug,
+    );
+    let ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
+        block: std::sync::Arc::new(block_ctx),
+        tx: std::sync::Arc::new(parking_lot::Mutex::new(arb_context::TxCtx::default())),
+        debug: std::sync::Arc::new(arb_context::DebugFlags::default()),
+    });
+    factory.stage_ctx(ctx);
 }
 
 /// Build a `CfgEnv` with Arbitrum-specific overrides.

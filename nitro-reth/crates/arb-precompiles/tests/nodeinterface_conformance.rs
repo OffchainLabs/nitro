@@ -13,7 +13,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{B256, U256};
 use arb_precompiles::{
-    create_nodeinterface_precompile, set_cached_l1_block_number,
+    create_nodeinterface_precompile,
     storage_slot::{
         root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     },
@@ -61,11 +61,14 @@ fn nitro_genesis_block_returns_stored_value() {
 
 #[test]
 fn block_l1_num_reads_cached_l1_block() {
-    set_cached_l1_block_number(1000, 18_000_000);
-    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(1000))]),
-    );
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(1000, 18_000_000)
+        .call(
+            &nodeinterface(),
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(1000))]),
+        );
     assert_eq!(decode_u256(run.output()), U256::from(18_000_000_u64));
 }
 
@@ -83,11 +86,14 @@ fn block_l1_num_returns_zero_for_uncached_block() {
 
 #[test]
 fn block_l1_num_truncates_uint64_input() {
-    set_cached_l1_block_number(42, 123);
-    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(42))]),
-    );
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(42, 123)
+        .call(
+            &nodeinterface(),
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(42))]),
+        );
     assert_eq!(decode_u256(run.output()), U256::from(123));
 }
 

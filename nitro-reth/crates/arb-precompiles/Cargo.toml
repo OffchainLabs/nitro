@@ -32,6 +32,7 @@ tracing = { workspace = true }
 arb-context = { workspace = true }
 arb-storage-errors = { workspace = true }
 hex = { workspace = true }
+parking_lot = { workspace = true }
 rstest = { workspace = true }
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true }

@@ -1,9 +1,8 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
-use arb_context::ArbPrecompileCtx;
+use arb_context::{ArbPrecompileCtx, TxCtx};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 use crate::{
     interfaces::IArbRetryableTx,
@@ -14,6 +13,10 @@ use crate::{
     },
     ArbPrecompileError,
 };
+
+fn active_tx() -> TxCtx {
+    arb_context::with_active(ArbPrecompileCtx::tx_snapshot).unwrap_or_default()
+}
 
 /// Backlog offset within a single gas-constraint sub-storage (must match
 /// `arbos::l2_pricing::gas_constraint::BACKLOG_OFFSET`).
@@ -74,14 +77,11 @@ pub fn canceled_topic() -> B256 {
     IArbRetryableTx::Canceled::SIGNATURE_HASH
 }
 
-pub fn create_arbretryabletx_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
-    DynPrecompile::new_stateful(
-        PrecompileId::custom("arbretryabletx"),
-        move |input: PrecompileInput<'_>| handler(input, &ctx),
-    )
+pub fn create_arbretryabletx_precompile() -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbretryabletx"), handler)
 }
 
-fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     crate::init_precompile_gas(input.data.len());
 
@@ -100,7 +100,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ))
         }
         Calls::getCurrentRedeemer(_) => {
-            let redeemer = ctx.tx_snapshot().redeemer_word();
+            let redeemer = active_tx().redeemer_word();
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 redeemer.to_be_bytes::<32>().to_vec().into(),
@@ -112,7 +112,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         }
         Calls::getTimeout(c) => handle_get_timeout(&mut input, c.ticketId),
         Calls::getBeneficiary(c) => handle_get_beneficiary(&mut input, c.ticketId),
-        Calls::redeem(c) => handle_redeem(&mut input, c.ticketId, ctx),
+        Calls::redeem(c) => handle_redeem(&mut input, c.ticketId),
         Calls::keepalive(c) => handle_keepalive(&mut input, c.ticketId),
         Calls::cancel(c) => handle_cancel(&mut input, c.ticketId),
     };
@@ -281,11 +281,7 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> P
 /// Redeem validates the retryable, increments numTries, donates remaining gas
 /// to the retry tx, and emits a RedeemScheduled event. The block executor
 /// discovers the event in the execution logs and schedules the retry tx.
-fn handle_redeem(
-    input: &mut PrecompileInput<'_>,
-    ticket_id: B256,
-    ctx: &ArbPrecompileCtx,
-) -> PrecompileResult {
+fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     let current_timestamp: u64 = input
@@ -295,7 +291,7 @@ fn handle_redeem(
         .unwrap_or(u64::MAX);
 
     {
-        let current_retryable = ctx.tx_snapshot().retryable_id;
+        let current_retryable = active_tx().retryable_id;
         if !current_retryable.is_zero() && current_retryable == ticket_id {
             return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
         }
