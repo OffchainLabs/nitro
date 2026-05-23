@@ -1,5 +1,5 @@
 //! Verifies that the inner-call gas-cost path in `arb-evm` loads
-//! `StylusParams` through the canonical `load_via_backend` reader, including
+//! `StylusParams` through the canonical `load` reader, including
 //! the v40+ `max_wasm_size` field and the v60+ `max_fragment_count` field.
 //!
 //! Regression test for a latent consensus drift: an earlier local parser in
@@ -50,7 +50,7 @@ fn params_storage() -> Storage<Detached> {
 }
 
 #[test]
-fn load_via_backend_reads_max_wasm_size_at_v40() {
+fn load_reads_max_wasm_size_at_v40() {
     let mut h = ArbosHarness::new()
         .with_arbos_version(ARBOS_VERSION_40)
         .initialize();
@@ -62,11 +62,11 @@ fn load_via_backend_reads_max_wasm_size_at_v40() {
     let sto = params_storage();
     {
         let state = h.state();
-        want.save_via_backend(&sto, state).unwrap();
+        want.save(&sto, state).unwrap();
     }
 
     let state = h.state();
-    let got = StylusParams::load_via_backend(ARBOS_VERSION_40, &sto, state).unwrap();
+    let got = StylusParams::load(ARBOS_VERSION_40, &sto, state).unwrap();
 
     assert_eq!(got.max_wasm_size, 100_000);
     assert_eq!(got.max_fragment_count, 0);
@@ -81,7 +81,7 @@ fn load_via_backend_reads_max_wasm_size_at_v40() {
 }
 
 #[test]
-fn load_via_backend_reads_max_fragment_count_at_v60() {
+fn load_reads_max_fragment_count_at_v60() {
     let mut h = ArbosHarness::new()
         .with_arbos_version(ARBOS_VERSION_STYLUS_CONTRACT_LIMIT)
         .initialize();
@@ -93,26 +93,25 @@ fn load_via_backend_reads_max_fragment_count_at_v60() {
     let sto = params_storage();
     {
         let state = h.state();
-        want.save_via_backend(&sto, state).unwrap();
+        want.save(&sto, state).unwrap();
     }
 
     let state = h.state();
-    let got =
-        StylusParams::load_via_backend(ARBOS_VERSION_STYLUS_CONTRACT_LIMIT, &sto, state).unwrap();
+    let got = StylusParams::load(ARBOS_VERSION_STYLUS_CONTRACT_LIMIT, &sto, state).unwrap();
 
     assert_eq!(got.max_wasm_size, 256 * 1024);
     assert_eq!(got.max_fragment_count, 7);
 }
 
 #[test]
-fn load_via_backend_returns_initial_max_wasm_size_pre_v40() {
+fn load_returns_initial_max_wasm_size_pre_v40() {
     // Below v40 the loader fills in the initial constant rather than reading
     // it from storage.
     let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
 
     let sto = params_storage();
     let state = h.state();
-    let got = StylusParams::load_via_backend(30, &sto, state).unwrap();
+    let got = StylusParams::load(30, &sto, state).unwrap();
 
     assert_eq!(got.max_wasm_size, 128 * 1024);
     assert_eq!(got.max_fragment_count, 0);

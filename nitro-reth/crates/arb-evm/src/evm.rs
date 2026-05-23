@@ -1130,7 +1130,7 @@ where
     let params_sto = programs_params_storage();
     let params = {
         let mut backend = JournalBackend::new(&mut context.journaled_state);
-        match StylusParams::load_via_backend(arbos_version, &params_sto, &mut backend) {
+        match StylusParams::load(arbos_version, &params_sto, &mut backend) {
             Ok(p) => p,
             Err(e) => {
                 tracing::warn!(target: "stylus", err = %e, "failed to load StylusParams from storage");

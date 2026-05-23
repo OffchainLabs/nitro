@@ -150,7 +150,7 @@ fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>, codehash: B256) ->
         .map_err(ArbPrecompileError::fatal)?;
     let program = arb_state
         .programs
-        .get_program_via_backend(internals, codehash, time)
+        .get_program(internals, codehash, time)
         .map_err(ArbPrecompileError::fatal)?;
 
     let result = if program.cached {
@@ -205,11 +205,11 @@ fn read_params_and_program(
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
-        .params_via_backend(internals)
+        .params(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let program = arb_state
         .programs
-        .get_program_via_backend(internals, codehash, time)
+        .get_program(internals, codehash, time)
         .map_err(ArbPrecompileError::fatal)?;
     Ok((params, program))
 }
@@ -276,7 +276,7 @@ fn set_program_cached(
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
-            .set_program_via_backend(internals, codehash, program)
+            .set_program(internals, codehash, program)
             .map_err(ArbPrecompileError::fatal)?;
     }
     let stored = program.to_storage();

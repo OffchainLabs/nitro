@@ -150,7 +150,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 .map_err(ArbPrecompileError::fatal)?;
             let gas = arb_state
                 .programs
-                .activation_gas_via_backend(internals)
+                .activation_gas(internals)
                 .map_err(ArbPrecompileError::fatal)?;
             crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
             ok_u256(SLOAD_GAS + SLOAD_GAS + COPY_GAS, U256::from(gas))
@@ -281,7 +281,7 @@ fn load_params(
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
-        .params_via_backend(internals)
+        .params(internals)
         .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(gas_used, SLOAD_GAS + WARM_SLOAD_GAS);
     Ok(params)
@@ -299,11 +299,11 @@ fn load_params_and_program(
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
-        .params_via_backend(internals)
+        .params(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let program = arb_state
         .programs
-        .get_program_via_backend(internals, codehash, time)
+        .get_program(internals, codehash, time)
         .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(gas_used, SLOAD_GAS + SLOAD_GAS);
     Ok((params, program))
@@ -414,7 +414,7 @@ fn handle_activate_program(
             .map_err(ArbPrecompileError::fatal)?;
         let _activation_gas = arb_state
             .programs
-            .activation_gas_via_backend(internals)
+            .activation_gas(internals)
             .map_err(ArbPrecompileError::fatal)?;
         crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
     }
@@ -451,11 +451,11 @@ fn handle_activate_program(
             .map_err(ArbPrecompileError::fatal)?;
         let params = arb_state
             .programs
-            .params_via_backend(internals)
+            .params(internals)
             .map_err(ArbPrecompileError::fatal)?;
         let existing = arb_state
             .programs
-            .get_program_via_backend(internals, code_hash, time)
+            .get_program(internals, code_hash, time)
             .map_err(ArbPrecompileError::fatal)?;
         (params, existing)
     };
@@ -542,7 +542,7 @@ fn handle_activate_program(
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
-            .set_module_hash_via_backend(internals, code_hash, info.module_hash)
+            .set_module_hash(internals, code_hash, info.module_hash)
             .map_err(ArbPrecompileError::fatal)?;
     }
     crate::charge_precompile_gas(&mut gas_used, SSTORE_GAS);
@@ -576,7 +576,7 @@ fn handle_activate_program(
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
-            .set_program_via_backend(internals, code_hash, new_program)
+            .set_program(internals, code_hash, new_program)
             .map_err(ArbPrecompileError::fatal)?;
     }
     crate::charge_precompile_gas(&mut gas_used, SSTORE_GAS);
@@ -677,11 +677,11 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
             .map_err(ArbPrecompileError::fatal)?;
         let params = arb_state
             .programs
-            .params_via_backend(internals)
+            .params(internals)
             .map_err(ArbPrecompileError::fatal)?;
         let program = arb_state
             .programs
-            .get_program_via_backend(internals, codehash, time)
+            .get_program(internals, codehash, time)
             .map_err(ArbPrecompileError::fatal)?;
         (params, program)
     };
@@ -743,7 +743,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
-            .set_program_via_backend(internals, codehash, program)
+            .set_program(internals, codehash, program)
             .map_err(ArbPrecompileError::fatal)?;
     }
     crate::charge_precompile_gas(&mut gas_used, SSTORE_GAS);

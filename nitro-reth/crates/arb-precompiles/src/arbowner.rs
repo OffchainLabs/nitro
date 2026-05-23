@@ -1333,12 +1333,12 @@ fn write_stylus_param(
         .map_err(ArbPrecompileError::fatal)?;
     let mut params = arb_state
         .programs
-        .params_via_backend(internals)
+        .params(internals)
         .map_err(ArbPrecompileError::fatal)?;
     mutate(&mut params);
     arb_state
         .programs
-        .save_params_via_backend(internals, &params)
+        .save_params(internals, &params)
         .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(gas_used, SLOAD_GAS + SSTORE_GAS + COPY_GAS);
     Ok(PrecompileOutput::new(
@@ -1360,7 +1360,7 @@ fn handle_set_activation_gas(
     let value_u64: u64 = value.try_into().unwrap_or(u64::MAX);
     arb_state
         .programs
-        .set_activation_gas_via_backend(internals, value_u64)
+        .set_activation_gas(internals, value_u64)
         .map_err(ArbPrecompileError::fatal)?;
     crate::charge_precompile_gas(gas_used, SSTORE_GAS);
     Ok(PrecompileOutput::new(

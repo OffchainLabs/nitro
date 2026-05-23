@@ -143,25 +143,22 @@ impl<D> Programs<D> {
 }
 
 impl<D> Programs<D> {
-    /// Load the current Stylus parameters through a [`StorageBackend`].
-    pub fn params_via_backend<B: StorageBackend>(
+    /// Load the current Stylus parameters.
+    pub fn params<B: StorageBackend>(
         &self,
         backend: &mut B,
     ) -> Result<StylusParams, ProgramsError> {
         let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
-        StylusParams::load_via_backend(self.arbos_version, &sto, backend)
+        StylusParams::load(self.arbos_version, &sto, backend)
     }
 
     /// Read the configured Wasm activation gas cost.
-    pub fn activation_gas_via_backend<B: StorageBackend>(
-        &self,
-        backend: &mut B,
-    ) -> Result<u64, ProgramsError> {
+    pub fn activation_gas<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, ProgramsError> {
         Ok(self.activation_gas.get(backend)?)
     }
 
-    /// Persist a new activation-gas value through a [`StorageBackend`].
-    pub fn set_activation_gas_via_backend<B: StorageBackend>(
+    /// Persist a new activation-gas value.
+    pub fn set_activation_gas<B: StorageBackend>(
         &self,
         backend: &mut B,
         value: u64,
@@ -170,18 +167,18 @@ impl<D> Programs<D> {
         Ok(())
     }
 
-    /// Persist the given Stylus parameters through a [`StorageBackend`].
-    pub fn save_params_via_backend<B: StorageBackend>(
+    /// Persist the given Stylus parameters.
+    pub fn save_params<B: StorageBackend>(
         &self,
         backend: &mut B,
         params: &StylusParams,
     ) -> Result<(), ProgramsError> {
         let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
-        params.save_via_backend(&sto, backend)
+        params.save(&sto, backend)
     }
 
-    /// Retrieve a program entry through a [`StorageBackend`].
-    pub fn get_program_via_backend<B: StorageBackend>(
+    /// Retrieve a program entry (may be expired or unactivated).
+    pub fn get_program<B: StorageBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -195,8 +192,8 @@ impl<D> Programs<D> {
         Ok(Program::from_storage(data, time))
     }
 
-    /// Store a program entry through a [`StorageBackend`].
-    pub fn set_program_via_backend<B: StorageBackend>(
+    /// Store a program entry.
+    pub fn set_program<B: StorageBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -210,8 +207,8 @@ impl<D> Programs<D> {
         Ok(())
     }
 
-    /// Write a module hash for a code hash through a [`StorageBackend`].
-    pub fn set_module_hash_via_backend<B: StorageBackend>(
+    /// Write a module hash for a code hash.
+    pub fn set_module_hash<B: StorageBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -225,8 +222,8 @@ impl<D> Programs<D> {
         Ok(())
     }
 
-    /// Read the module hash for a code hash through a [`StorageBackend`].
-    pub fn get_module_hash_via_backend<B: StorageBackend>(
+    /// Read the module hash for a code hash.
+    pub fn get_module_hash<B: StorageBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -237,41 +234,16 @@ impl<D> Programs<D> {
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
-}
-
-impl<D: Database> Programs<D> {
-    pub fn initialize<B: StorageBackend>(
-        arbos_version: u64,
-        sto: &Storage<D>,
-        backend: &mut B,
-    ) -> Result<(), ProgramsError> {
-        let params_sto = sto.open_sub_storage(PARAMS_KEY);
-        init_stylus_params(arbos_version, &params_sto);
-        let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
-        init_data_pricer(&data_pricer_sto, backend)?;
-        Ok(())
-    }
-
-    /// Load the current Stylus parameters.
-    pub fn params(&self) -> Result<StylusParams, ProgramsError> {
-        let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
-        StylusParams::load(self.arbos_version, &sto)
-    }
-
-    /// Retrieve a program entry (may be expired or unactivated).
-    pub fn get_program(&self, code_hash: B256, time: u64) -> Result<Program, ProgramsError> {
-        let data = self.programs.get(code_hash)?;
-        Ok(Program::from_storage(data, time))
-    }
 
     /// Retrieve and validate an active program.
-    pub fn get_active_program(
+    pub fn get_active_program<B: StorageBackend>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         time: u64,
         params: &StylusParams,
     ) -> Result<Program, ProgramsError> {
-        let program = self.get_program(code_hash, time)?;
+        let program = self.get_program(backend, code_hash, time)?;
         if program.version == 0 {
             return Err(ProgramsError::NotActivated);
         }
@@ -287,32 +259,32 @@ impl<D: Database> Programs<D> {
         Ok(program)
     }
 
-    /// Store a program entry.
-    pub fn set_program(&self, code_hash: B256, program: Program) -> Result<(), ProgramsError> {
-        Ok(self.programs.set(code_hash, program.to_storage())?)
-    }
-
     /// Check if a program exists and its status.
-    pub fn program_exists(
+    pub fn program_exists<B: StorageBackend>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         time: u64,
         params: &StylusParams,
     ) -> Result<(u16, bool, bool), ProgramsError> {
-        let program = self.get_program(code_hash, time)?;
+        let program = self.get_program(backend, code_hash, time)?;
         let expired = program.activated_at == 0
             || hours_to_age(time, program.activated_at) > days_to_seconds(params.expiry_days);
         Ok((program.version, expired, program.cached))
     }
+}
 
-    /// Get the module hash for a code hash.
-    pub fn get_module_hash(&self, code_hash: B256) -> Result<B256, ProgramsError> {
-        Ok(self.module_hashes.get(code_hash)?)
-    }
-
-    /// Set the module hash for a code hash.
-    pub fn set_module_hash(&self, code_hash: B256, module_hash: B256) -> Result<(), ProgramsError> {
-        Ok(self.module_hashes.set(code_hash, module_hash)?)
+impl<D: Database> Programs<D> {
+    pub fn initialize<B: StorageBackend>(
+        arbos_version: u64,
+        sto: &Storage<D>,
+        backend: &mut B,
+    ) -> Result<(), ProgramsError> {
+        let params_sto = sto.open_sub_storage(PARAMS_KEY);
+        init_stylus_params(arbos_version, &params_sto, backend)?;
+        let data_pricer_sto = sto.open_sub_storage(DATA_PRICER_KEY);
+        init_data_pricer(&data_pricer_sto, backend)?;
+        Ok(())
     }
 
     /// Build runtime parameters for a program invocation.
@@ -338,11 +310,11 @@ impl<D: Database> Programs<D> {
         debug: bool,
         activate_fn: impl FnOnce(&[u8], u16, u64, u16, bool) -> Result<ActivationResult, String>,
     ) -> Result<(u16, B256, alloy_primitives::U256), String> {
-        let params = self.params().map_err(|_| "failed to load params")?;
+        let params = self.params(backend).map_err(|_| "failed to load params")?;
         let stylus_version = params.version;
 
         let (current_version, expired, cached) = self
-            .program_exists(code_hash, time, &params)
+            .program_exists(backend, code_hash, time, &params)
             .map_err(|_| "failed to read program")?;
 
         if current_version == stylus_version && !expired {
@@ -355,7 +327,7 @@ impl<D: Database> Programs<D> {
             // Old module eviction happens at the runtime layer.
         }
 
-        self.set_module_hash(code_hash, info.module_hash)
+        self.set_module_hash(backend, code_hash, info.module_hash)
             .map_err(|_| "failed to set module hash")?;
 
         let estimate_kb = div_ceil(info.asm_estimate as u64, 1024) as u32;
@@ -376,7 +348,7 @@ impl<D: Database> Programs<D> {
             cached,
         };
 
-        self.set_program(code_hash, program)
+        self.set_program(backend, code_hash, program)
             .map_err(|_| "failed to set program")?;
 
         Ok((stylus_version, info.module_hash, data_fee))
@@ -385,15 +357,16 @@ impl<D: Database> Programs<D> {
     /// Compute gas costs for calling a Stylus program.
     ///
     /// Returns `(call_gas_cost, memory_model)`.
-    pub fn call_gas_cost(
+    pub fn call_gas_cost<B: StorageBackend>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         time: u64,
         pages_open: u16,
         recent_cache_hit: bool,
     ) -> Result<(u64, Program, MemoryModel), ProgramsError> {
-        let params = self.params()?;
-        let program = self.get_active_program(code_hash, time, &params)?;
+        let params = self.params(backend)?;
+        let program = self.get_active_program(backend, code_hash, time, &params)?;
         let model = MemoryModel::new(params.free_pages, params.page_gas);
 
         let mut cost = model.gas_cost(program.footprint, pages_open, pages_open);
@@ -416,9 +389,9 @@ impl<D: Database> Programs<D> {
         code_hash: B256,
         time: u64,
     ) -> Result<alloy_primitives::U256, String> {
-        let params = self.params().map_err(|_| "failed to load params")?;
+        let params = self.params(backend).map_err(|_| "failed to load params")?;
         let mut program = self
-            .get_active_program(code_hash, time, &params)
+            .get_active_program(backend, code_hash, time, &params)
             .map_err(|_| "program not active")?;
 
         if program.age_seconds < days_to_seconds(params.keepalive_days) {
@@ -434,7 +407,7 @@ impl<D: Database> Programs<D> {
             .map_err(|_| "failed to update data pricer")?;
 
         program.activated_at = hours_since_arbitrum(time);
-        self.set_program(code_hash, program)
+        self.set_program(backend, code_hash, program)
             .map_err(|_| "failed to set program")?;
 
         Ok(data_fee)
@@ -449,8 +422,9 @@ impl<D: Database> Programs<D> {
     ///
     /// The `call_fn` receives `(program, prog_params, evm_data, calldata, gas)`
     /// and returns `(output_bytes, gas_left)` or an error.
-    pub fn call_program<F>(
+    pub fn call_program<B: StorageBackend, F>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         time: u64,
         pages_open: u16,
@@ -467,7 +441,7 @@ impl<D: Database> Programs<D> {
         F: FnOnce(Program, ProgParams, EvmData, &[u8], u64) -> Result<(Vec<u8>, u64), String>,
     {
         let (call_cost, program, _model) = self
-            .call_gas_cost(code_hash, time, pages_open, recent_cache_hit)
+            .call_gas_cost(backend, code_hash, time, pages_open, recent_cache_hit)
             .map_err(|_| "failed to compute call cost")?;
 
         if gas < call_cost {
@@ -478,7 +452,7 @@ impl<D: Database> Programs<D> {
         let params = self.prog_params(
             program.version,
             debug_mode,
-            &self.params().map_err(|_| "failed to load params")?,
+            &self.params(backend).map_err(|_| "failed to load params")?,
         );
 
         let starting_gas = gas;
@@ -504,15 +478,16 @@ impl<D: Database> Programs<D> {
     }
 
     /// Update the cached status of a program.
-    pub fn set_program_cached(
+    pub fn set_program_cached<B: StorageBackend>(
         &self,
+        backend: &mut B,
         code_hash: B256,
         cache: bool,
         time: u64,
     ) -> Result<(), String> {
-        let params = self.params().map_err(|_| "failed to load params")?;
+        let params = self.params(backend).map_err(|_| "failed to load params")?;
         let mut program = self
-            .get_program(code_hash, time)
+            .get_program(backend, code_hash, time)
             .map_err(|_| "failed to read program")?;
 
         let expired = program.age_seconds > days_to_seconds(params.expiry_days);
@@ -528,7 +503,7 @@ impl<D: Database> Programs<D> {
         }
 
         program.cached = cache;
-        self.set_program(code_hash, program)
+        self.set_program(backend, code_hash, program)
             .map_err(|_| "failed to set program")?;
 
         Ok(())

@@ -1,7 +1,7 @@
 use alloy_primitives::{b256, keccak256, B256, U256};
 use arb_storage::{
     storage_key_map, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint,
-    StorageBackedInt64, StorageBackedUint64,
+    StorageBackedInt64, StorageBackedUint64, StorageBackend, ARBOS_STATE_ADDRESS,
 };
 use arb_test_utils::ArbosHarness;
 
@@ -178,4 +178,16 @@ fn known_storage_layout_constants() {
     let slot_root_5 = storage_key_map(&[], 5);
     let slot_subspace_5 = storage_key_map(&[5], 0);
     assert_ne!(slot_root_5, slot_subspace_5);
+}
+
+#[test]
+fn storage_as_backend_round_trip() {
+    let mut h = ArbosHarness::new().initialize();
+    let mut sto = h.root_storage();
+    let slot = U256::from(0xDEAD_BEEFu64);
+    let value = U256::from(0x1234_5678_9ABC_DEF0u64);
+
+    assert_eq!(sto.sload(ARBOS_STATE_ADDRESS, slot).unwrap(), U256::ZERO);
+    sto.sstore(ARBOS_STATE_ADDRESS, slot, value).unwrap();
+    assert_eq!(sto.sload(ARBOS_STATE_ADDRESS, slot).unwrap(), value);
 }

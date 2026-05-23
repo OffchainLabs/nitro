@@ -498,9 +498,12 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                     )?;
                 }
                 31 => {
-                    let mut params = self.programs.params()?;
+                    let mut params = self.programs.params(backend)?;
                     params.upgrade_to_version(2)?;
-                    params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                 }
                 32 => {}
                 33..=39 => {}
@@ -512,16 +515,22 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                         HISTORY_STORAGE_ADDRESS,
                         HISTORY_STORAGE_CODE_ARBITRUM.clone(),
                     );
-                    let mut params = self.programs.params()?;
+                    let mut params = self.programs.params(backend)?;
                     params.upgrade_to_arbos_version(next)?;
-                    params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                 }
                 41 => {}
                 42..=49 => {}
                 50 => {
-                    let mut params = self.programs.params()?;
+                    let mut params = self.programs.params(backend)?;
                     params.upgrade_to_arbos_version(next)?;
-                    params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                     self.l2_pricing_state.set_max_per_tx_gas_limit(
                         backend,
                         l2_pricing::INITIAL_PER_TX_GAS_LIMIT_V50,
@@ -530,14 +539,20 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 51 => {}
                 52..=58 => {}
                 59 => {
-                    let mut params = self.programs.params()?;
+                    let mut params = self.programs.params(backend)?;
                     params.upgrade_to_version(3)?;
-                    params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                 }
                 60 => {
-                    let mut params = self.programs.params()?;
+                    let mut params = self.programs.params(backend)?;
                     params.upgrade_to_arbos_version(next)?;
-                    params.save(&self.programs.backing_storage.open_sub_storage(&[0]))?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                     crate::address_set::initialize_address_set(
                         &self
                             .backing_storage

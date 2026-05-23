@@ -140,18 +140,18 @@ fn dump_one(state: &dyn StateProvider, addr: Address) -> eyre::Result<()> {
     let programs: &Programs<_> = &arb_state.programs;
 
     let stylus_params = programs
-        .params_via_backend(&mut backend)
+        .params(&mut backend)
         .wrap_err("read Stylus params")?;
     println!("  params.version: {}", stylus_params.version);
     println!("  params.page_limit: {}", stylus_params.page_limit);
 
     let onchain = programs
-        .get_program_via_backend(&mut backend, codehash, 0)
+        .get_program(&mut backend, codehash, 0)
         .wrap_err("read program entry")?;
     println!("  on-chain Program: {onchain:?}");
 
     let onchain_module_hash = programs
-        .get_module_hash_via_backend(&mut backend, codehash)
+        .get_module_hash(&mut backend, codehash)
         .wrap_err("read module hash")?;
     println!("  on-chain module_hash: {onchain_module_hash}");
 

@@ -412,7 +412,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
             let cap = arb_state
                 .programs
-                .params()
+                .params(state)
                 .map(|p| p.block_cache_size as usize)
                 .unwrap_or(0);
             arb_precompiles::reset_recent_wasms(cap);

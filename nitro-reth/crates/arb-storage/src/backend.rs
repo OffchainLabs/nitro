@@ -2,7 +2,10 @@ use alloy_primitives::{Address, U256};
 use arb_storage_errors::{DatabaseError, StorageError};
 use revm::Database;
 
-use crate::state_ops::{read_storage_at, write_storage_at};
+use crate::{
+    state_ops::{read_storage_at, write_storage_at},
+    storage::Storage,
+};
 
 /// Abstraction over the two backing stores `arb-storage` accessor types are
 /// driven from: the block executor's `&mut State<D>` and the precompile
@@ -48,5 +51,21 @@ impl StorageBackend for alloy_evm::EvmInternals<'_> {
         alloy_evm::EvmInternals::sstore(self, account, slot, value)
             .map(|_| ())
             .map_err(|e| StorageError::Database(DatabaseError::custom(e)))
+    }
+}
+
+impl<D: Database> StorageBackend for Storage<D> {
+    type Error = StorageError;
+
+    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
+        // SAFETY: see `Storage` struct-level invariant.
+        let state = unsafe { &mut *self.state_ptr() };
+        read_storage_at(state, account, slot)
+    }
+
+    fn sstore(&mut self, account: Address, slot: U256, value: U256) -> Result<(), Self::Error> {
+        // SAFETY: see `Storage` struct-level invariant.
+        let state = unsafe { &mut *self.state_ptr() };
+        write_storage_at(state, account, slot, value)
     }
 }

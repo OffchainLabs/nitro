@@ -513,7 +513,7 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
-        .params_via_backend(internals)
+        .params(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let mut count = params.max_fragment_count;
     if count == 0 {

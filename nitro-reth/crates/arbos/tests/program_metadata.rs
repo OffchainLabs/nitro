@@ -210,9 +210,10 @@ fn fresh() -> ArbosHarness {
 #[test]
 fn programs_params_load_succeeds() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let mut arbos = h.arbos_state();
     let p = &mut arbos.programs;
-    let params = p.params().expect("load params");
+    let params = p.params(unsafe { &mut *state_ptr }).expect("load params");
     assert!(params.version >= 1);
     assert!(params.page_limit >= 128);
 }
@@ -220,12 +221,16 @@ fn programs_params_load_succeeds() {
 #[test]
 fn set_then_get_program() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let mut arbos = h.arbos_state();
     let p = &mut arbos.programs;
     let code_hash = B256::repeat_byte(0xAB);
     let prog = sample_program();
-    p.set_program(code_hash, prog).unwrap();
-    let got = p.get_program(code_hash, 1_421_388_000).unwrap();
+    p.set_program(unsafe { &mut *state_ptr }, code_hash, prog)
+        .unwrap();
+    let got = p
+        .get_program(unsafe { &mut *state_ptr }, code_hash, 1_421_388_000)
+        .unwrap();
     assert_eq!(got.version, prog.version);
     assert_eq!(got.init_cost, prog.init_cost);
     assert_eq!(got.activated_at, prog.activated_at);
@@ -234,20 +239,29 @@ fn set_then_get_program() {
 #[test]
 fn set_and_get_module_hash() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let mut arbos = h.arbos_state();
     let p = &mut arbos.programs;
     let code_hash = B256::repeat_byte(0x12);
     let module_hash = B256::repeat_byte(0x34);
-    p.set_module_hash(code_hash, module_hash).unwrap();
-    assert_eq!(p.get_module_hash(code_hash).unwrap(), module_hash);
+    p.set_module_hash(unsafe { &mut *state_ptr }, code_hash, module_hash)
+        .unwrap();
+    assert_eq!(
+        p.get_module_hash(unsafe { &mut *state_ptr }, code_hash)
+            .unwrap(),
+        module_hash
+    );
 }
 
 #[test]
 fn get_program_for_unknown_hash_returns_default_fields() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let mut arbos = h.arbos_state();
     let p = &mut arbos.programs;
-    let prog = p.get_program(B256::repeat_byte(0xFE), 0).unwrap();
+    let prog = p
+        .get_program(unsafe { &mut *state_ptr }, B256::repeat_byte(0xFE), 0)
+        .unwrap();
     assert_eq!(prog.version, 0);
     assert_eq!(prog.activated_at, 0);
     assert!(!prog.cached);
