@@ -81,6 +81,11 @@ impl<D> Storage<D> {
         self.compute_slot(offset)
     }
 
+    /// Computes the EVM slot for a `B256`-keyed entry under this subspace.
+    pub fn slot_for_key(&self, key: B256) -> U256 {
+        self.compute_slot_for_key(key)
+    }
+
     /// Returns the raw `*mut State<D>`. See the struct-level safety invariant.
     pub fn state_ptr(&self) -> *mut revm::database::State<D> {
         self.state

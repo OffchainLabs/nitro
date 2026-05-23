@@ -24,7 +24,7 @@ fn fresh_harness_does_not_inherit_previous_state() {
     let set2 = open_address_set(s2);
     let b2 = unsafe { &mut *sp2 };
     assert_eq!(set2.size(b2).unwrap(), 0);
-    assert!(!set2.is_member(addr).unwrap());
+    assert!(!set2.is_member(b2, addr).unwrap());
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn reopened_state_observes_prior_writes() {
         let root = h.root_storage();
         let set = open_address_set(root.open_sub_storage(&[0x88]));
         assert_eq!(set.size(unsafe { &mut *sp }).unwrap(), 1);
-        assert!(set.is_member(addr).unwrap());
+        assert!(set.is_member(unsafe { &mut *sp }, addr).unwrap());
     }
 }
 

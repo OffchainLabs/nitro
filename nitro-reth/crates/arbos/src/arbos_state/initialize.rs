@@ -142,7 +142,7 @@ pub fn initialize_arbos_account<D: Database, B: Burner, C: StorageBackend>(
 ) -> Result<(), ArbosStateError> {
     if let Some(ref aggregator) = account.aggregator_info {
         let poster_table = arbos_state.l1_pricing_state.batch_poster_table();
-        let is_poster = poster_table.contains_poster(account.addr)?;
+        let is_poster = poster_table.contains_poster(backend, account.addr)?;
         if is_poster {
             let poster = poster_table.open_poster(backend, account.addr, false)?;
             poster.set_pay_to(backend, aggregator.fee_collector)?;

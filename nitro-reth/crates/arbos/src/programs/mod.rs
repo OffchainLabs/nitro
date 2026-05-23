@@ -137,6 +137,17 @@ impl<D> Programs<D> {
     }
 }
 
+impl<D> Programs<D> {
+    /// Load the current Stylus parameters through a [`StorageBackend`].
+    pub fn params_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<StylusParams, ProgramsError> {
+        let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
+        StylusParams::load_via_backend(self.arbos_version, &sto, backend)
+    }
+}
+
 impl<D: Database> Programs<D> {
     pub fn initialize<B: StorageBackend>(
         arbos_version: u64,

@@ -587,7 +587,9 @@ fn check_assertions(
         if let Some(c) = &s.contains {
             ensure_eq(
                 "chain_owners.contains",
-                owners.is_member(c.address).map_err(map_err)?,
+                owners
+                    .is_member(unsafe { &mut *state_ptr }, c.address)
+                    .map_err(map_err)?,
                 c.expected,
             )?;
         }
