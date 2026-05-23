@@ -610,6 +610,7 @@ fn handle_activate_program(
                 .network_fee_account(internals)
                 .map_err(ArbPrecompileError::fatal)?
         };
+        crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
         let _ = input
             .internals_mut()
             .transfer(ARBWASM_ADDRESS, network_addr, data_fee);
@@ -776,6 +777,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
                 .network_fee_account(internals)
                 .map_err(ArbPrecompileError::fatal)?
         };
+        crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
         let _ = input
             .internals_mut()
             .transfer(ARBWASM_ADDRESS, network_addr, data_fee);
