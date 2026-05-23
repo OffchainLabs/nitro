@@ -2,7 +2,7 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
+use arbos::{address_set::AddressSetError, arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{interfaces::IArbOwnerPublic, ArbPrecompileError};
@@ -456,7 +456,10 @@ fn handle_rectify_chain_owner(
 
     match arb_state.chain_owners.rectify_mapping(internals, addr) {
         Ok(()) => {}
-        Err(_) => return Err(ArbPrecompileError::empty_revert(*gas_used).into()),
+        Err(AddressSetError::Storage(s)) => return Err(ArbPrecompileError::fatal(s).into()),
+        Err(AddressSetError::NotMember | AddressSetError::MappingAlreadyConsistent) => {
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into())
+        }
     }
 
     let topic0 = alloy_primitives::keccak256("ChainOwnerRectified(address)");

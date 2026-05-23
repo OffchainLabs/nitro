@@ -2,7 +2,7 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
+use arbos::{address_table::AddressTableError, arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{interfaces::IArbAddressTable, ArbPrecompileError};
@@ -220,7 +220,12 @@ fn handle_decompress(
     let (addr, bytes_read, raw_address) = arb_state
         .address_table
         .decompress(internals, slice)
-        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
+        .map_err(|e| match e {
+            AddressTableError::Storage(s) => ArbPrecompileError::fatal(s),
+            AddressTableError::InvalidEncoding | AddressTableError::IndexOutOfRange(_) => {
+                ArbPrecompileError::empty_revert(*gas_used)
+            }
+        })?;
 
     let mut output = Vec::with_capacity(64);
     output.extend_from_slice(&alloy_primitives::B256::left_padding_from(addr.as_slice()).0);
