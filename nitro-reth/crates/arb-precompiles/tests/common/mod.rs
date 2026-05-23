@@ -286,8 +286,8 @@ impl PrecompileTest {
             evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
             caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
         });
+        installed.set_tx_is_aliased(self.tx_is_aliased);
         arb_context::install_active(installed);
-        arb_precompiles::set_tx_is_aliased(self.tx_is_aliased);
 
         let mut ctx = EthEvmContext::new(self.db, self.spec);
         ctx.cfg.chain_id = self.chain_id;

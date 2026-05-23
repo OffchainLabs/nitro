@@ -1789,10 +1789,8 @@ where
             }
         }
 
-        // Set the address aliasing flag for L1→L2 message types so that
-        // ArbSys.wasMyCallersAddressAliased() and myCallersAddressWithoutAliasing()
-        // observe it during this tx.
-        arb_precompiles::set_tx_is_aliased(arbos::util::does_tx_type_alias(tx_type_raw));
+        self.precompile_ctx
+            .set_tx_is_aliased(arbos::util::does_tx_type_alias(tx_type_raw));
 
         {
             let poster_fee_val = self

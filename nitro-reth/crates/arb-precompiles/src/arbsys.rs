@@ -3,8 +3,6 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use std::cell::RefCell;
-
 use crate::{
     interfaces::IArbSys,
     storage_slot::{
@@ -62,44 +60,6 @@ pub fn l2_to_l1_tx_topic() -> B256 {
 
 pub fn send_merkle_update_topic() -> B256 {
     IArbSys::SendMerkleUpdate::SIGNATURE_HASH
-}
-
-/// State changes from an ArbSys call for post-execution application.
-#[derive(Debug, Clone, Default)]
-pub struct ArbSysMerkleState {
-    pub new_size: u64,
-    pub partials: Vec<(u64, B256)>,
-    pub send_hash: B256,
-    pub leaf_num: u64,
-    pub value_to_burn: U256,
-    pub block_number: u64,
-}
-
-thread_local! {
-    static ARBSYS_STATE: RefCell<Option<ArbSysMerkleState>> = const { RefCell::new(None) };
-    /// Set to `true` when the current transaction is an aliasing type
-    /// (unsigned, contract, or retryable L1→L2 message).
-    static TX_IS_ALIASED: RefCell<bool> = const { RefCell::new(false) };
-}
-
-/// Store ArbSys state changes for post-execution application.
-pub fn store_arbsys_state(state: ArbSysMerkleState) {
-    ARBSYS_STATE.with(|cell| *cell.borrow_mut() = Some(state));
-}
-
-/// Take the stored ArbSys state (clears it).
-pub fn take_arbsys_state() -> Option<ArbSysMerkleState> {
-    ARBSYS_STATE.with(|cell| cell.borrow_mut().take())
-}
-
-/// Mark the current transaction as an aliased L1→L2 type.
-pub fn set_tx_is_aliased(aliased: bool) {
-    TX_IS_ALIASED.with(|cell| *cell.borrow_mut() = aliased);
-}
-
-/// Check whether the current transaction uses address aliasing.
-pub fn get_tx_is_aliased() -> bool {
-    TX_IS_ALIASED.with(|cell| *cell.borrow())
 }
 
 /// Lookup an L1 block number recorded for a given L2 block.
@@ -268,7 +228,7 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
             .unwrap_or(false)
     };
 
-    let aliased = is_top_level && get_tx_is_aliased();
+    let aliased = is_top_level && arb_context::with_active(|c| c.tx_is_aliased()).unwrap_or(false);
     let val = if aliased { U256::from(1) } else { U256::ZERO };
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -300,7 +260,7 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };
-    let aliased = is_top_level && get_tx_is_aliased();
+    let aliased = is_top_level && arb_context::with_active(|c| c.tx_is_aliased()).unwrap_or(false);
     let result_addr = if aliased {
         undo_l1_alias(address)
     } else {
@@ -433,7 +393,7 @@ fn do_send_tx_to_l1(
     );
 
     // Update Merkle accumulator: insert leaf and collect intermediate node events.
-    let (new_size, merkle_events, partials) =
+    let (new_size, merkle_events) =
         update_merkle_accumulator(internals, &merkle_key, send_hash, old_size, &mut gas_used)?;
 
     // merkleAcc.Size() after Append does another storage read.
@@ -504,20 +464,6 @@ fn do_send_tx_to_l1(
     ));
     // Gas: 4 topics (event_id + 3 indexed), data = ABI-encoded non-indexed fields.
     gas_used += LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * l2l1_data_len;
-
-    // Store state for post-execution (value burn, etc.)
-    store_arbsys_state(ArbSysMerkleState {
-        new_size,
-        partials: partials
-            .iter()
-            .enumerate()
-            .map(|(i, h)| (i as u64, *h))
-            .collect(),
-        send_hash,
-        leaf_num,
-        value_to_burn: value,
-        block_number: l2_block_number.try_into().unwrap_or(0),
-    });
 
     // Read ArbOS version for return value versioning (no gas — uses cached value).
     let raw_version = internals
@@ -634,14 +580,14 @@ struct MerkleTreeNodeEvent {
 
 /// Append a leaf to the merkle accumulator (MerkleAccumulator.Append).
 ///
-/// Returns (new_size, events, partials_for_root_computation).
+/// Returns (new_size, events).
 fn update_merkle_accumulator(
     internals: &mut alloy_evm::EvmInternals<'_>,
     merkle_key: &B256,
     item_hash: B256,
     old_size: u64,
     gas_used: &mut u64,
-) -> Result<(u64, Vec<MerkleTreeNodeEvent>, Vec<B256>), ArbPrecompileError> {
+) -> Result<(u64, Vec<MerkleTreeNodeEvent>), ArbPrecompileError> {
     let new_size = old_size + 1;
     let mut events = Vec::new();
 
@@ -705,21 +651,7 @@ fn update_merkle_accumulator(
         });
     }
 
-    // Read all partials for root computation.
-    // No gas charge here: Append doesn't read partials for root.
-    // The root is computed later in the block builder.
-    let num_partials = calc_num_partials(new_size);
-    let mut partials = Vec::with_capacity(num_partials as usize);
-    for i in 0..num_partials {
-        let pslot = map_slot(merkle_key.as_slice(), 2 + i);
-        let val = internals
-            .sload(ARBOS_STATE_ADDRESS, pslot)
-            .map_err(ArbPrecompileError::fatal)?
-            .data;
-        partials.push(B256::from(val.to_be_bytes::<32>()));
-    }
-
-    Ok((new_size, events, partials))
+    Ok((new_size, events))
 }
 
 /// Calculate number of partials for a given size (Log2ceil).
