@@ -41,6 +41,7 @@ use crate::{
     context::ArbBlockExecutionCtx,
     executor::DefaultArbOsHooks,
     hooks::{ArbOsHooks, EndTxContext},
+    state_overlay::StateOverlay,
 };
 
 /// Extension trait for transaction environments that support gas price mutation.
@@ -167,6 +168,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
             multi_gas_current_fees: std::sync::OnceLock::new(),
+            state_overlay: StateOverlay::new(),
         }
     }
 }
@@ -227,6 +229,7 @@ where
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
             multi_gas_current_fees: std::sync::OnceLock::new(),
+            state_overlay: StateOverlay::new(),
         }
     }
 }
@@ -319,6 +322,10 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// `commit_next_to_current` during `apply_pre_execution_changes` — no user
     /// tx or precompile path mutates them mid-block.
     multi_gas_current_fees: std::sync::OnceLock<[U256; NUM_RESOURCE_KIND]>,
+    /// Per-transaction overlay of pre-mutation account snapshots. Reset at the
+    /// start of each tx and drained into the state's transition set when the
+    /// tx commits.
+    state_overlay: StateOverlay,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -524,10 +531,11 @@ where
         let current_time = revm::context::Block::timestamp(block).to::<u64>();
         let effective_base_fee = self.arb_ctx.basefee;
 
+        let overlay = &mut self.state_overlay;
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
 
         // Mint deposit value to sender.
-        mint_balance(db, sender, info.deposit_value);
+        mint_balance(db, overlay, sender, info.deposit_value);
         self.touched_accounts.insert(sender);
 
         // Track retryable deposit for balance delta verification.
@@ -607,12 +615,14 @@ where
             });
         }
 
+        let overlay = &mut self.state_overlay;
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
 
         // 3. Transfer submission fee to network fee account.
         if !fees.submission_fee.is_zero() {
             transfer_balance(
                 db,
+                overlay,
                 sender,
                 self.arb_ctx.network_fee_account,
                 fees.submission_fee,
@@ -623,19 +633,26 @@ where
         }
 
         // 4. Refund excess submission fee.
-        transfer_balance(db, sender, info.fee_refund_addr, fees.submission_fee_refund);
+        transfer_balance(
+            db,
+            overlay,
+            sender,
+            info.fee_refund_addr,
+            fees.submission_fee_refund,
+        );
         self.touched_accounts.insert(sender);
         self.touched_accounts.insert(info.fee_refund_addr);
 
         // 5. Move call value into escrow. If sender has insufficient funds (e.g. deposit didn't
         //    cover retry_value after fee deductions), refund the submission fee and end the
         //    transaction.
-        if !try_transfer_balance(db, sender, fees.escrow, info.retry_value) {
+        if !try_transfer_balance(db, overlay, sender, fees.escrow, info.retry_value) {
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(fees.escrow);
             // Refund submission fee from network account back to sender.
             transfer_balance(
                 db,
+                overlay,
                 self.arb_ctx.network_fee_account,
                 sender,
                 fees.submission_fee,
@@ -645,6 +662,7 @@ where
             // Refund withheld portion of submission fee to fee refund address.
             transfer_balance(
                 db,
+                overlay,
                 sender,
                 info.fee_refund_addr,
                 fees.withheld_submission_fee,
@@ -708,13 +726,20 @@ where
             ),
         });
 
+        let overlay = &mut self.state_overlay;
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
 
         // 7. Handle gas fees if user can pay.
         if fees.can_pay_for_gas {
             // Pay infra fee (skip when infra_fee_account is zero, matching Go).
             if self.arb_ctx.infra_fee_account != Address::ZERO {
-                transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
+                transfer_balance(
+                    db,
+                    overlay,
+                    sender,
+                    self.arb_ctx.infra_fee_account,
+                    fees.infra_cost,
+                );
                 self.touched_accounts.insert(sender);
                 self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
             }
@@ -722,6 +747,7 @@ where
             if !fees.network_cost.is_zero() {
                 transfer_balance(
                     db,
+                    overlay,
                     sender,
                     self.arb_ctx.network_fee_account,
                     fees.network_cost,
@@ -731,7 +757,13 @@ where
                     .insert(self.arb_ctx.network_fee_account);
             }
             // Gas price refund.
-            transfer_balance(db, sender, info.fee_refund_addr, fees.gas_price_refund);
+            transfer_balance(
+                db,
+                overlay,
+                sender,
+                info.fee_refund_addr,
+                fees.gas_price_refund,
+            );
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(info.fee_refund_addr);
 
@@ -834,7 +866,13 @@ where
             }
         } else if !fees.gas_cost_refund.is_zero() {
             // Can't pay for gas: refund gas cost from deposit.
-            transfer_balance(db, sender, info.fee_refund_addr, fees.gas_cost_refund);
+            transfer_balance(
+                db,
+                overlay,
+                sender,
+                info.fee_refund_addr,
+                fees.gas_cost_refund,
+            );
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(info.fee_refund_addr);
         }
@@ -1040,7 +1078,7 @@ where
         crate::evm::reset_stylus_pages();
         self.precompile_ctx.reset_tx();
         self.precompile_ctx.reset_caller_stack();
-        crate::state_overlay::reset_tx();
+        self.state_overlay.reset_tx();
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
             hooks.tx_proc.poster_gas = 0;
@@ -1132,6 +1170,7 @@ where
                 let touched_ptr = &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
                 let zombie_ptr = &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
                 let finalise_ptr = &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
+                let overlay_ptr = &mut self.state_overlay as *mut StateOverlay;
                 let arbos_ver = self.arb_ctx.arbos_version;
                 let closure_state_ptr = state_ptr;
                 let mut do_transfer = move |from: Address, to: Address, amount: U256| {
@@ -1141,13 +1180,20 @@ where
                         {
                             create_zombie_if_deleted(
                                 &mut *closure_state_ptr,
+                                &mut *overlay_ptr,
                                 from,
                                 &*finalise_ptr,
                                 &mut *zombie_ptr,
                                 &mut *touched_ptr,
                             );
                         }
-                        transfer_balance(&mut *closure_state_ptr, from, to, amount);
+                        transfer_balance(
+                            &mut *closure_state_ptr,
+                            &mut *overlay_ptr,
+                            from,
+                            to,
+                            amount,
+                        );
                         if !amount.is_zero() {
                             (*zombie_ptr).remove(&from);
                         }
@@ -1275,10 +1321,11 @@ where
                 }
             }
 
+            let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             // Mint deposit value to sender, then transfer to recipient.
-            mint_balance(db, sender, value);
-            transfer_balance(db, sender, to, value);
+            mint_balance(db, overlay, sender, value);
+            transfer_balance(db, overlay, sender, to, value);
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(to);
 
@@ -1348,6 +1395,7 @@ where
             if let Some(info) = recovered.tx().retry_tx_info() {
                 let block = self.inner.evm().block();
                 let current_time = revm::context::Block::timestamp(block).to::<u64>();
+                let overlay = &mut self.state_overlay;
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
 
@@ -1375,6 +1423,7 @@ where
                         {
                             create_zombie_if_deleted(
                                 db,
+                                overlay,
                                 escrow,
                                 &self.finalise_deleted,
                                 &mut self.zombie_accounts,
@@ -1382,7 +1431,7 @@ where
                             );
                         }
 
-                        if !try_transfer_balance(db, escrow, sender, value) {
+                        if !try_transfer_balance(db, overlay, escrow, sender, value) {
                             // Escrow has insufficient funds — abort the retry tx.
                             let tx_type = recovered.tx().tx_type();
                             self.pending_tx = Some(PendingArbTx {
@@ -1426,7 +1475,7 @@ where
                             .arb_ctx
                             .basefee
                             .saturating_mul(U256::from(tx_gas_limit));
-                        mint_balance(db, sender, prepaid);
+                        mint_balance(db, overlay, sender, prepaid);
                         retry_pre_exec_undo = Some((sender, prepaid, escrow, value));
 
                         // Set retry context for end-tx processing.
@@ -1654,8 +1703,9 @@ where
 
                 match action {
                     RevertedTxAction::PreRecordedRevert { gas_to_consume } => {
+                        let overlay = &mut self.state_overlay;
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                        increment_nonce(db, sender);
+                        increment_nonce(db, overlay, sender);
                         self.touched_accounts.insert(sender);
                         // RevertedTxHook fires after intrinsic deduction; the EVM never
                         // runs on this path, so add intrinsic manually:
@@ -1695,8 +1745,9 @@ where
                         });
                     }
                     RevertedTxAction::FilteredTx => {
+                        let overlay = &mut self.state_overlay;
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                        increment_nonce(db, sender);
+                        increment_nonce(db, overlay, sender);
                         self.touched_accounts.insert(sender);
                         // Consume all remaining gas.
                         let gas_remaining = tx_gas_limit
@@ -1817,6 +1868,7 @@ where
                                        units: u64|
          -> Result<(), BlockExecutionError> {
             this.precompile_ctx.reset_tx();
+            let overlay = &mut this.state_overlay;
             let db: &mut State<DB> = this.inner.evm_mut().db_mut();
             if units > 0 {
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
@@ -1829,10 +1881,10 @@ where
             }
             if let Some((retry_sender, prepaid, escrow, escrow_value)) = retry_undo {
                 if !prepaid.is_zero() {
-                    burn_balance(db, retry_sender, prepaid);
+                    burn_balance(db, overlay, retry_sender, prepaid);
                 }
                 if !escrow_value.is_zero() {
-                    let _ = try_transfer_balance(db, retry_sender, escrow, escrow_value);
+                    let _ = try_transfer_balance(db, overlay, retry_sender, escrow, escrow_value);
                 }
             }
             Ok(())
@@ -2140,9 +2192,10 @@ where
                 let tip_to_network =
                     U256::from(p.coinbase_tip_per_gas).saturating_mul(U256::from(compute_gas));
                 if coinbase != net_acct && !tip_to_network.is_zero() {
+                    let overlay = &mut self.state_overlay;
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     if get_balance(db, coinbase) >= tip_to_network {
-                        transfer_balance(db, coinbase, net_acct, tip_to_network);
+                        transfer_balance(db, overlay, coinbase, net_acct, tip_to_network);
                         self.touched_accounts.insert(coinbase);
                         self.touched_accounts.insert(net_acct);
                     }
@@ -2154,9 +2207,15 @@ where
         // Value was zeroed in tx_env so sender still has the ETH.
         if let Some(ref p) = pending {
             if !p.stylus_data_fee.is_zero() {
+                let overlay = &mut self.state_overlay;
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                burn_balance(db, p.sender, p.stylus_data_fee);
-                mint_balance(db, self.arb_ctx.network_fee_account, p.stylus_data_fee);
+                burn_balance(db, overlay, p.sender, p.stylus_data_fee);
+                mint_balance(
+                    db,
+                    overlay,
+                    self.arb_ctx.network_fee_account,
+                    p.stylus_data_fee,
+                );
                 self.touched_accounts.insert(p.sender);
                 self.touched_accounts
                     .insert(self.arb_ctx.network_fee_account);
@@ -2165,8 +2224,14 @@ where
 
         // Burn ETH from ArbSys address for L2→L1 withdrawals.
         if !withdrawal_value.is_zero() {
+            let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            burn_balance(db, arb_precompiles::ARBSYS_ADDRESS, withdrawal_value);
+            burn_balance(
+                db,
+                overlay,
+                arb_precompiles::ARBSYS_ADDRESS,
+                withdrawal_value,
+            );
             self.touched_accounts
                 .insert(arb_precompiles::ARBSYS_ADDRESS);
         }
@@ -2199,8 +2264,9 @@ where
                 let extra_cost = pending
                     .actual_gas_price
                     .saturating_mul(U256::from(sender_extra_gas));
+                let overlay = &mut self.state_overlay;
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                burn_balance(db, pending.sender, extra_cost);
+                burn_balance(db, overlay, pending.sender, extra_cost);
                 self.touched_accounts.insert(pending.sender);
             }
 
@@ -2213,6 +2279,7 @@ where
                 let touched_ptr = &mut self.touched_accounts as *mut rustc_hash::FxHashSet<Address>;
                 let zombie_ptr = &mut self.zombie_accounts as *mut rustc_hash::FxHashSet<Address>;
                 let finalise_ptr = &self.finalise_deleted as *const rustc_hash::FxHashSet<Address>;
+                let overlay_ptr = &mut self.state_overlay as *mut StateOverlay;
                 let arbos_ver = self.arb_ctx.arbos_version;
 
                 let arb_state_retry =
@@ -2262,7 +2329,7 @@ where
                             block_base_fee: self.arb_ctx.basefee,
                         },
                         |addr, amount| unsafe {
-                            burn_balance(&mut *state_ptr, addr, amount);
+                            burn_balance(&mut *state_ptr, &mut *overlay_ptr, addr, amount);
                             (*touched_ptr).insert(addr);
                         },
                         |from, to, amount| {
@@ -2273,13 +2340,20 @@ where
                                 {
                                     create_zombie_if_deleted(
                                         &mut *state_ptr,
+                                        &mut *overlay_ptr,
                                         from,
                                         &*finalise_ptr,
                                         &mut *zombie_ptr,
                                         &mut *touched_ptr,
                                     );
                                 }
-                                transfer_balance(&mut *state_ptr, from, to, amount);
+                                transfer_balance(
+                                    &mut *state_ptr,
+                                    &mut *overlay_ptr,
+                                    from,
+                                    to,
+                                    amount,
+                                );
                                 // Go's SubBalance(from, nonzero) creates a non-zombie
                                 // balanceChange entry, breaking zombie protection.
                                 if !amount.is_zero() {
@@ -2308,13 +2382,20 @@ where
                                     {
                                         create_zombie_if_deleted(
                                             &mut *state_ptr,
+                                            &mut *overlay_ptr,
                                             from,
                                             &*finalise_ptr,
                                             &mut *zombie_ptr,
                                             &mut *touched_ptr,
                                         );
                                     }
-                                    transfer_balance(&mut *state_ptr, from, to, amount);
+                                    transfer_balance(
+                                        &mut *state_ptr,
+                                        &mut *overlay_ptr,
+                                        from,
+                                        to,
+                                        amount,
+                                    );
                                     if !amount.is_zero() {
                                         (*zombie_ptr).remove(&from);
                                     }
@@ -2334,6 +2415,7 @@ where
                             {
                                 create_zombie_if_deleted(
                                     &mut *state_ptr,
+                                    &mut *overlay_ptr,
                                     pending.sender,
                                     &*finalise_ptr,
                                     &mut *zombie_ptr,
@@ -2342,6 +2424,7 @@ where
                             }
                             transfer_balance(
                                 &mut *state_ptr,
+                                &mut *overlay_ptr,
                                 pending.sender,
                                 result.escrow_address,
                                 retry_ctx.call_value,
@@ -2394,8 +2477,9 @@ where
                 });
 
                 if let Some(ref dist) = fee_dist {
+                    let overlay = &mut self.state_overlay;
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                    apply_fee_distribution(db, dist, None);
+                    apply_fee_distribution(db, overlay, dist, None);
                     // Skip the network-fee touch when compute cost is 0
                     // (avoids a no-op EIP-161 touch).
                     if !dist.network_fee_amount.is_zero() {
@@ -2438,6 +2522,7 @@ where
                                 let refund_amount = total_cost.saturating_sub(multi_cost);
                                 transfer_balance(
                                     db,
+                                    overlay,
                                     dist.network_fee_account,
                                     pending.sender,
                                     refund_amount,
@@ -2536,6 +2621,7 @@ where
         // (matching Go's dirtyCount > zombieEntries check).
         {
             let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
+            let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let to_remove: Vec<Address> = self
                 .touched_accounts
@@ -2565,7 +2651,7 @@ where
             // ensures subsequent accesses see a non-existent account —
             // matching Go's stateObject.deleted=true behaviour in Finalise.
             for addr in &to_remove {
-                crate::state_overlay::record_pre_touch(db, *addr);
+                overlay.record_pre_touch(db, *addr);
                 if let Some(cached) = db.cache.accounts.get_mut(addr) {
                     cached.account = None;
                 }
@@ -2574,8 +2660,9 @@ where
         }
 
         {
+            let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            crate::state_overlay::drain_and_apply(db);
+            overlay.drain_and_apply(db);
         }
 
         Ok(gas_used)
@@ -2645,11 +2732,16 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
 }
 
 /// Mint balance to an address. Zero-amount is a no-op (matches AddBalance).
-fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
+fn mint_balance<DB: Database>(
+    state: &mut State<DB>,
+    overlay: &mut StateOverlay,
+    address: Address,
+    amount: U256,
+) {
     if amount.is_zero() {
         return;
     }
-    crate::state_overlay::record_pre_touch(state, address);
+    overlay.record_pre_touch(state, address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
             acct.info.balance = acct.info.balance.saturating_add(amount);
@@ -2666,11 +2758,16 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 }
 
 /// Burn balance from an address. Zero-amount is a no-op (matches SubBalance).
-fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
+fn burn_balance<DB: Database>(
+    state: &mut State<DB>,
+    overlay: &mut StateOverlay,
+    address: Address,
+    amount: U256,
+) {
     if amount.is_zero() {
         return;
     }
-    crate::state_overlay::record_pre_touch(state, address);
+    overlay.record_pre_touch(state, address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
             acct.info.balance = acct.info.balance.saturating_sub(amount);
@@ -2679,8 +2776,12 @@ fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 }
 
 /// Increment the nonce of an account.
-fn increment_nonce<DB: Database>(state: &mut State<DB>, address: Address) {
-    crate::state_overlay::record_pre_touch(state, address);
+fn increment_nonce<DB: Database>(
+    state: &mut State<DB>,
+    overlay: &mut StateOverlay,
+    address: Address,
+) {
+    overlay.record_pre_touch(state, address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
             acct.info.nonce += 1;
@@ -2701,7 +2802,13 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
 /// At ArbOS >= Stylus a zero-amount call is a complete no-op. Pre-Stylus
 /// callers that need the zombie-deleted semantics must use a dedicated
 /// helper or call `create_zombie_if_deleted` directly.
-fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Address, amount: U256) {
+fn transfer_balance<DB: Database>(
+    state: &mut State<DB>,
+    overlay: &mut StateOverlay,
+    from: Address,
+    to: Address,
+    amount: U256,
+) {
     if amount.is_zero() {
         return;
     }
@@ -2717,8 +2824,8 @@ fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Addr
         );
         return;
     }
-    burn_balance(state, from, amount);
-    mint_balance(state, to, amount);
+    burn_balance(state, overlay, from, amount);
+    mint_balance(state, overlay, to, amount);
 }
 
 /// Re-create an empty account that was deleted by per-tx Finalise.
@@ -2728,12 +2835,13 @@ fn transfer_balance<DB: Database>(state: &mut State<DB>, from: Address, to: Addr
 /// ArbOS version < Stylus.
 fn create_zombie_if_deleted<DB: Database>(
     state: &mut State<DB>,
+    overlay: &mut StateOverlay,
     addr: Address,
     finalise_deleted: &rustc_hash::FxHashSet<Address>,
     zombie_accounts: &mut rustc_hash::FxHashSet<Address>,
     touched_accounts: &mut rustc_hash::FxHashSet<Address>,
 ) {
-    crate::state_overlay::record_pre_touch(state, addr);
+    overlay.record_pre_touch(state, addr);
     let account_missing = state
         .cache
         .accounts
@@ -2757,6 +2865,7 @@ fn create_zombie_if_deleted<DB: Database>(
 /// no-op at ArbOS >= Stylus.
 fn try_transfer_balance<DB: Database>(
     state: &mut State<DB>,
+    overlay: &mut StateOverlay,
     from: Address,
     to: Address,
     amount: U256,
@@ -2767,24 +2876,40 @@ fn try_transfer_balance<DB: Database>(
     if get_balance(state, from) < amount {
         return false;
     }
-    burn_balance(state, from, amount);
-    mint_balance(state, to, amount);
+    burn_balance(state, overlay, from, amount);
+    mint_balance(state, overlay, to, amount);
     true
 }
 
 /// Apply a computed fee distribution to the EVM state.
 fn apply_fee_distribution<DB: Database>(
     state: &mut State<DB>,
+    overlay: &mut StateOverlay,
     dist: &EndTxFeeDistribution,
     l1_pricing: Option<&l1_pricing::L1PricingState<DB>>,
 ) {
     // Skip the 0-value mint to avoid an EIP-161 touch on the network
     // fee account.
     if !dist.network_fee_amount.is_zero() {
-        mint_balance(state, dist.network_fee_account, dist.network_fee_amount);
+        mint_balance(
+            state,
+            overlay,
+            dist.network_fee_account,
+            dist.network_fee_amount,
+        );
     }
-    mint_balance(state, dist.infra_fee_account, dist.infra_fee_amount);
-    mint_balance(state, dist.poster_fee_destination, dist.poster_fee_amount);
+    mint_balance(
+        state,
+        overlay,
+        dist.infra_fee_account,
+        dist.infra_fee_amount,
+    );
+    mint_balance(
+        state,
+        overlay,
+        dist.poster_fee_destination,
+        dist.poster_fee_amount,
+    );
 
     if !dist.l1_fees_to_add.is_zero() {
         if let Some(l1_state) = l1_pricing {
