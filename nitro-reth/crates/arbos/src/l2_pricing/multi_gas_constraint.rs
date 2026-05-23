@@ -15,17 +15,16 @@ const WEIGHTED_RESOURCES_BASE_OFFSET: u64 = 4;
 pub struct MultiGasConstraint<D> {
     storage: Storage<D>,
     target: StorageBackedUint64,
-    adjustment_window: StorageBackedUint32<D>,
+    adjustment_window: StorageBackedUint32,
     backlog: StorageBackedUint64,
     max_weight: StorageBackedUint64,
 }
 
 pub fn open_multi_gas_constraint<D: Database>(sto: Storage<D>) -> MultiGasConstraint<D> {
-    let state = sto.state_ptr();
     let base_key = sto.base_key();
     MultiGasConstraint {
         target: StorageBackedUint64::new(base_key, TARGET_OFFSET),
-        adjustment_window: StorageBackedUint32::new(state, base_key, ADJUSTMENT_WINDOW_OFFSET),
+        adjustment_window: StorageBackedUint32::new(base_key, ADJUSTMENT_WINDOW_OFFSET),
         backlog: StorageBackedUint64::new(base_key, BACKLOG_OFFSET),
         max_weight: StorageBackedUint64::new(base_key, MAX_WEIGHT_OFFSET),
         storage: sto,
@@ -45,12 +44,19 @@ impl<D: Database> MultiGasConstraint<D> {
         Ok(self.target.set(backend, val)?)
     }
 
-    pub fn adjustment_window(&self) -> Result<u32, L2PricingError> {
-        Ok(self.adjustment_window.get()?)
+    pub fn adjustment_window<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u32, L2PricingError> {
+        Ok(self.adjustment_window.get(backend)?)
     }
 
-    pub fn set_adjustment_window(&self, val: u32) -> Result<(), L2PricingError> {
-        Ok(self.adjustment_window.set(val)?)
+    pub fn set_adjustment_window<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u32,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.adjustment_window.set(backend, val)?)
     }
 
     pub fn backlog<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
@@ -166,7 +172,7 @@ impl<D: Database> MultiGasConstraint<D> {
 
     pub fn clear<B: StorageBackend>(&self, backend: &mut B) -> Result<(), L2PricingError> {
         self.target.set(backend, 0)?;
-        self.adjustment_window.set(0)?;
+        self.adjustment_window.set(backend, 0)?;
         self.backlog.set(backend, 0)?;
         self.max_weight.set(backend, 0)?;
         for i in 0..NUM_RESOURCE_KIND {
