@@ -1,26 +1,17 @@
 //! In-memory ArbOS state for unit tests.
 
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::{set_account_nonce, Storage, StorageBackedAddress, ARBOS_STATE_ADDRESS};
+use arb_storage::{Storage, ARBOS_STATE_ADDRESS};
 use arbos::{
-    arbos_state::ArbosState,
+    arbos_state::{initialize::bootstrap, ArbosState},
     burn::SystemBurner,
-    l1_pricing::{self, L1PricingState},
-    l2_pricing::{self, L2PricingState},
-    retryables::{self, RetryableState},
+    l1_pricing::L1PricingState,
+    l2_pricing::L2PricingState,
+    retryables::RetryableState,
 };
 use revm::database::{State, StateBuilder};
 
 use crate::db::{ensure_cache_account, EmptyDb};
-
-const VERSION_OFFSET: u64 = 0;
-const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
-const CHAIN_ID_OFFSET: u64 = 4;
-const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
-
-const L1_PRICING_SUBSPACE: &[u8] = &[0];
-const L2_PRICING_SUBSPACE: &[u8] = &[1];
-const RETRYABLES_SUBSPACE: &[u8] = &[2];
 
 /// Builder + handle for an in-memory ArbOS state.
 pub struct ArbosHarness {
@@ -93,47 +84,17 @@ impl ArbosHarness {
         assert!(!self.initialized, "initialize() called twice");
 
         ensure_cache_account(&mut self.state, ARBOS_STATE_ADDRESS);
-        set_account_nonce(&mut self.state, ARBOS_STATE_ADDRESS, 1);
 
-        let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
-
-        let backing = Storage::new(state_ptr, B256::ZERO);
-        backing
-            .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(1u64)))
-            .expect("set initial version");
-        backing
-            .set_by_uint64(CHAIN_ID_OFFSET, B256::from(U256::from(self.chain_id)))
-            .expect("set chain id");
-        StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET)
-            .set(&mut *self.state, self.network_fee_account)
-            .expect("set network fee account");
-        StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET)
-            .set(&mut *self.state, self.infra_fee_account)
-            .expect("set infra fee account");
-
-        l1_pricing::initialize_l1_pricing_state(
-            &backing.open_sub_storage(L1_PRICING_SUBSPACE),
-            &mut *self.state,
+        bootstrap(
+            &mut self.state,
+            self.chain_id,
             self.network_fee_account,
+            self.infra_fee_account,
             self.l1_initial_base_fee,
-        )
-        .expect("init l1 pricing");
-        l2_pricing::initialize_l2_pricing_state(
-            &backing.open_sub_storage(L2_PRICING_SUBSPACE),
-            &mut *self.state,
-        )
-        .expect("init l2 pricing");
-        retryables::initialize_retryable_state(&backing.open_sub_storage(RETRYABLES_SUBSPACE))
-            .expect("init retryables");
-
-        let mut state = ArbosState::<EmptyDb, SystemBurner>::open(
-            unsafe { &mut *state_ptr },
+            self.arbos_version,
             SystemBurner::new(None, false),
         )
-        .expect("open arbos state at v1");
-        state
-            .upgrade_arbos_version(&mut *self.state, self.arbos_version, true)
-            .expect("upgrade to target arbos version");
+        .expect("bootstrap ArbOS state");
 
         self.initialized = true;
         self
@@ -154,29 +115,23 @@ impl ArbosHarness {
 
     pub fn l1_pricing_state(&mut self) -> L1PricingState<EmptyDb> {
         assert!(self.initialized, "call initialize() first");
-        let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
-        let backing = Storage::new(state_ptr, B256::ZERO);
-        L1PricingState::open(
-            backing.open_sub_storage(L1_PRICING_SUBSPACE),
-            self.arbos_version,
-        )
+        ArbosState::open(&mut self.state, SystemBurner::new(None, false))
+            .expect("open arbos state")
+            .l1_pricing_state
     }
 
     pub fn l2_pricing_state(&mut self) -> L2PricingState<EmptyDb> {
         assert!(self.initialized, "call initialize() first");
-        let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
-        let backing = Storage::new(state_ptr, B256::ZERO);
-        L2PricingState::open(
-            backing.open_sub_storage(L2_PRICING_SUBSPACE),
-            self.arbos_version,
-        )
+        ArbosState::open(&mut self.state, SystemBurner::new(None, false))
+            .expect("open arbos state")
+            .l2_pricing_state
     }
 
     pub fn retryable_state(&mut self) -> RetryableState<EmptyDb> {
         assert!(self.initialized, "call initialize() first");
-        let state_ptr: *mut State<EmptyDb> = self.state.as_mut();
-        let backing = Storage::new(state_ptr, B256::ZERO);
-        RetryableState::open(backing.open_sub_storage(RETRYABLES_SUBSPACE))
+        ArbosState::open(&mut self.state, SystemBurner::new(None, false))
+            .expect("open arbos state")
+            .retryable_state
     }
 
     pub fn root_storage(&mut self) -> Storage<EmptyDb> {

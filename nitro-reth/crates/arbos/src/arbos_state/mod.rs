@@ -593,8 +593,22 @@ pub fn arbos_from_input<B: Burner>(
     internals: &mut EvmInternals<'_>,
     burner: B,
 ) -> Result<ArbosState<Detached, B>, ArbosStateError> {
+    arbos_from_backend(internals, burner)
+}
+
+/// Open a detached [`ArbosState`] using any [`StorageBackend`].
+///
+/// Reads only the version slot up front; all subsequent access goes through
+/// `backend`. Intended for callers that have a storage view but no executor
+/// state pointer (precompile handlers via `EvmInternals`, RPC tools reading
+/// historical state through a `StateProvider`, etc.).
+pub fn arbos_from_backend<S: StorageBackend, Bu: Burner>(
+    backend: &mut S,
+    burner: Bu,
+) -> Result<ArbosState<Detached, Bu>, ArbosStateError> {
     let version_slot = storage_key_map(&[], VERSION_OFFSET);
-    let raw_version = StorageBackend::sload(internals, ARBOS_STATE_ADDRESS, version_slot)?;
+    let raw_version =
+        StorageBackend::sload(backend, ARBOS_STATE_ADDRESS, version_slot).map_err(Into::into)?;
     let arbos_version = u64::try_from(raw_version).unwrap_or(0);
     if arbos_version == 0 {
         return Err(ArbosStateError::Uninitialised);
