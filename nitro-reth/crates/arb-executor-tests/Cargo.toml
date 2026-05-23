@@ -31,6 +31,8 @@ arb-node = { workspace = true }
 reth-revm = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-primitives-traits = { workspace = true }
+revm-database-interface = { workspace = true }
+revm-state = { workspace = true }
 
 [lints]
 workspace = true

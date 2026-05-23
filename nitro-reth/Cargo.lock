@@ -1154,6 +1154,8 @@ dependencies = [
  "reth-revm",
  "reth-storage-api",
  "revm",
+ "revm-database-interface",
+ "revm-state",
 ]
 
 [[package]]
@@ -1559,6 +1561,9 @@ dependencies = [
  "cc",
  "proptest",
  "revm",
+ "revm-database",
+ "revm-database-interface",
+ "revm-state",
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
