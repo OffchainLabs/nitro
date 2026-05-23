@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 arb-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
+arb-context = { workspace = true }
 arb-storage = { workspace = true }
 arb-precompiles = { workspace = true }
 arb-stylus = { workspace = true }

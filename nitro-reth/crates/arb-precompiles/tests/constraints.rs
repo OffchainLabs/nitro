@@ -30,7 +30,7 @@ fn arbowner() -> DynPrecompile {
     create_arbowner_precompile()
 }
 fn arbgasinfo() -> DynPrecompile {
-    create_arbgasinfo_precompile()
+    create_arbgasinfo_precompile(std::sync::Arc::new(arb_context::ArbPrecompileCtx::default()))
 }
 
 const OWNER: Address = address!("00000000000000000000000000000000000000aa");

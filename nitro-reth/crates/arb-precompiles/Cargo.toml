@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 arb-chainspec = { workspace = true }
+arb-context = { workspace = true }
 arb-math = { workspace = true }
 arb-primitives = { workspace = true }
 arb-storage-errors = { workspace = true }
@@ -28,6 +29,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+arb-context = { workspace = true }
 arb-storage-errors = { workspace = true }
 hex = { workspace = true }
 rstest = { workspace = true }

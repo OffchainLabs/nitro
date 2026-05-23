@@ -140,6 +140,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
             arb_hooks: None,
             arb_ctx,
+            precompile_ctx: arb_context::active().unwrap_or_default(),
             pending_tx: None,
             block_gas_left: 0,
             user_txs_processed: 0,
@@ -198,6 +199,7 @@ where
             inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
             arb_hooks: None,
             arb_ctx,
+            precompile_ctx: arb_context::active().unwrap_or_default(),
             pending_tx: None,
             block_gas_left: 0, // Set from state in apply_pre_execution_changes
             user_txs_processed: 0,
@@ -265,6 +267,8 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub arb_hooks: Option<DefaultArbOsHooks>,
     /// Arbitrum-specific block context.
     pub arb_ctx: ArbBlockExecutionCtx,
+    /// Per-block precompile context handle (per-tx scratch writes).
+    pub precompile_ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
     /// Per-tx state between execute and commit.
     pending_tx: Option<PendingArbTx>,
     /// Remaining block gas for rate limiting.
@@ -1004,8 +1008,7 @@ where
 
         // Reset per-tx processor state.
         crate::evm::reset_stylus_pages();
-        arb_precompiles::set_poster_balance_correction(U256::ZERO);
-        arb_precompiles::set_current_tx_sender(Address::ZERO);
+        self.precompile_ctx.reset_tx();
         arb_precompiles::reset_caller_stack();
         crate::state_overlay::reset_tx();
         if let Some(hooks) = self.arb_hooks.as_mut() {
@@ -1600,8 +1603,9 @@ where
                 .arb_ctx
                 .basefee
                 .saturating_mul(U256::from(poster_gas.saturating_add(compute_hold_gas)));
-            arb_precompiles::set_poster_balance_correction(correction);
-            arb_precompiles::set_current_tx_sender(sender);
+            self.precompile_ctx
+                .set_poster_balance_correction(correction.try_into().unwrap_or(u128::MAX));
+            self.precompile_ctx.set_sender(sender);
         }
 
         // --- RevertedTxHook: check for pre-recorded reverted or filtered txs ---
@@ -1719,7 +1723,7 @@ where
                 revm::context_interface::Transaction::max_priority_fee_per_gas(&tx_env)
                     .unwrap_or(0);
             let effective: u128 = upfront_gas_price.min(base_fee_u128.saturating_add(max_priority));
-            arb_precompiles::set_current_tx_effective_gas_price(effective);
+            self.precompile_ctx.set_effective_gas_price(effective);
         }
 
         // Effective tip per gas (per EIP-1559): min(max_priority_fee, max_fee - base_fee).
@@ -1766,26 +1770,25 @@ where
                 .as_ref()
                 .map(|h| h.tx_proc.poster_fee)
                 .unwrap_or(U256::ZERO);
-            arb_precompiles::set_current_tx_poster_fee(
-                poster_fee_val.try_into().unwrap_or(u128::MAX),
-            );
+            self.precompile_ctx
+                .set_poster_fee(poster_fee_val.try_into().unwrap_or(u128::MAX));
             let retryable_id = retry_context
                 .as_ref()
                 .map(|ctx| ctx.ticket_id)
                 .unwrap_or(B256::ZERO);
-            arb_precompiles::set_current_retryable_id(retryable_id);
+            self.precompile_ctx.set_retryable_id(retryable_id);
             let redeemer = retry_context
                 .as_ref()
                 .map(|ctx| ctx.refund_to)
                 .unwrap_or(Address::ZERO);
-            arb_precompiles::set_current_redeemer(redeemer);
+            self.precompile_ctx.set_redeemer(redeemer);
         }
 
         let retry_undo = retry_pre_exec_undo;
         let rollback_pre_exec_state = |this: &mut Self,
                                        units: u64|
          -> Result<(), BlockExecutionError> {
-            arb_precompiles::clear_tx_scratch();
+            this.precompile_ctx.reset_tx();
             let db: &mut State<DB> = this.inner.evm_mut().db_mut();
             if units > 0 {
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
@@ -2492,7 +2495,7 @@ where
             let _ = is_retry; // suppress unused warning
         }
 
-        arb_precompiles::clear_tx_scratch();
+        self.precompile_ctx.reset_tx();
 
         // Per-tx Finalise: delete empty accounts from cache.
         // Only iterates touched accounts (matching Go's journal.dirties).

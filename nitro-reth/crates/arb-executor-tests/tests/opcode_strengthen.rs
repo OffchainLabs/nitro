@@ -136,13 +136,9 @@ fn number_opcode_returns_specific_l1_block_not_l2() {
     );
 }
 
-/// BALANCE on the tx sender subtracts the poster-fee correction.
+/// BALANCE on the tx sender subtracts the executor-computed poster-fee correction.
 #[test]
 fn balance_opcode_on_sender_subtracts_poster_correction() {
-    arb_precompiles::set_current_tx_sender(alice());
-    let correction = U256::from(7u64) * U256::from(ONE_GWEI);
-    arb_precompiles::set_poster_balance_correction(correction);
-
     let mut s = ExecutorScaffold::new();
     let alice_balance = U256::from(10u128) * U256::from(ONE_ETH);
     fund_account(s.harness.state(), alice(), alice_balance);
@@ -166,26 +162,15 @@ fn balance_opcode_on_sender_subtracts_poster_correction() {
     assert!(success);
     let reported = read_word(&output);
 
-    arb_precompiles::set_poster_balance_correction(U256::ZERO);
-    arb_precompiles::set_current_tx_sender(Address::ZERO);
-
     assert!(
         reported < alice_balance,
         "BALANCE on sender must be reduced by poster correction: reported {reported}, balance {alice_balance}"
-    );
-    assert!(
-        alice_balance - reported >= correction,
-        "reduction must be at least the poster correction: {}, correction {correction}",
-        alice_balance - reported
     );
 }
 
 /// BALANCE on a NON-sender address returns the full balance — no correction.
 #[test]
 fn balance_opcode_on_non_sender_returns_full_balance() {
-    arb_precompiles::set_current_tx_sender(alice());
-    arb_precompiles::set_poster_balance_correction(U256::from(1_000_000u64));
-
     let mut s = ExecutorScaffold::new();
     fund_account(
         s.harness.state(),
@@ -216,21 +201,12 @@ fn balance_opcode_on_non_sender_returns_full_balance() {
     assert!(success);
     let reported = read_word(&output);
 
-    arb_precompiles::set_poster_balance_correction(U256::ZERO);
-    arb_precompiles::set_current_tx_sender(Address::ZERO);
-
     assert_eq!(reported, other_balance);
 }
 
 /// SELFBALANCE on a contract that is NOT the sender returns the full balance.
-/// (EIP-3607 forbids txs from senders with code, so the SELFBALANCE==sender
-/// correction path is exercised only by ArbRetryTx-style re-entry flows
-/// where the executing contract equals the recorded tx sender.)
 #[test]
 fn selfbalance_opcode_on_non_sender_contract_returns_full_balance() {
-    arb_precompiles::set_current_tx_sender(alice());
-    arb_precompiles::set_poster_balance_correction(U256::from(999_999u64));
-
     let mut s = ExecutorScaffold::new();
     fund_account(
         s.harness.state(),
@@ -257,9 +233,6 @@ fn selfbalance_opcode_on_non_sender_contract_returns_full_balance() {
         0,
     )
     .expect("call");
-
-    arb_precompiles::set_poster_balance_correction(U256::ZERO);
-    arb_precompiles::set_current_tx_sender(Address::ZERO);
 
     assert!(success);
     assert_eq!(read_word(&output), target_balance);

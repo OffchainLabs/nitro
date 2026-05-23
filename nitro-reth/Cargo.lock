@@ -1083,6 +1083,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-context"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "parking_lot",
+]
+
+[[package]]
 name = "arb-errors"
 version = "0.1.0"
 dependencies = [
@@ -1103,6 +1111,7 @@ dependencies = [
  "alloy-rpc-types-eth",
  "arb-alloy-consensus",
  "arb-chainspec",
+ "arb-context",
  "arb-precompiles",
  "arb-primitives",
  "arb-storage",
@@ -1139,6 +1148,7 @@ dependencies = [
  "alloy-rlp",
  "arb-alloy-consensus",
  "arb-chainspec",
+ "arb-context",
  "arb-evm",
  "arb-node",
  "arb-precompiles",
@@ -1297,6 +1307,7 @@ dependencies = [
  "alloy-sol-types",
  "arb-alloy-predeploys",
  "arb-chainspec",
+ "arb-context",
  "arb-math",
  "arb-primitives",
  "arb-storage-errors",
