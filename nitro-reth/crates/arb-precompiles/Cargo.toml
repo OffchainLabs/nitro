@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 arb-chainspec = { workspace = true }
+arb-math = { workspace = true }
 arb-primitives = { workspace = true }
 arb-storage-errors = { workspace = true }
 arb-stylus = { workspace = true }

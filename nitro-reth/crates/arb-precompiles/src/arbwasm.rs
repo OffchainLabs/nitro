@@ -496,18 +496,6 @@ fn hours_since_arbitrum(time: u64) -> u32 {
     (elapsed / 3600) as u32
 }
 
-/// Approximates `b * e^(x/b)` where `b = 10_000` (basis points), via Horner's
-/// method with accuracy=12.
-fn approx_exp_basis_points(x: u64) -> u64 {
-    let b = 10_000u64;
-    let accuracy = 12u64;
-    let mut res = b + x / accuracy;
-    for i in (1..accuracy).rev() {
-        res = b + res.saturating_mul(x) / (i * b);
-    }
-    res
-}
-
 fn handle_activate_program(
     mut input: PrecompileInput<'_>,
     program_address: Address,
@@ -695,7 +683,7 @@ fn handle_activate_program(
     } else {
         0
     };
-    let multiplier = approx_exp_basis_points(exponent);
+    let multiplier = arb_math::approx_exp_basis_points(exponent, 12);
     let cost_per_byte = (min_price as u64).saturating_mul(multiplier) / 10_000;
     let data_fee = U256::from(cost_per_byte.saturating_mul(info.asm_estimate as u64));
 
@@ -900,7 +888,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     } else {
         0
     };
-    let multiplier = approx_exp_basis_points(exponent);
+    let multiplier = arb_math::approx_exp_basis_points(exponent, 12);
     let cost_per_byte = (min_price as u64).saturating_mul(multiplier) / 10_000;
     let data_fee = U256::from(cost_per_byte.saturating_mul(asm_size as u64));
 

@@ -1178,6 +1178,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-math"
+version = "0.1.0"
+
+[[package]]
 name = "arb-node"
 version = "0.1.0"
 dependencies = [
@@ -1291,6 +1295,7 @@ dependencies = [
  "alloy-sol-types",
  "arb-alloy-predeploys",
  "arb-chainspec",
+ "arb-math",
  "arb-primitives",
  "arb-storage-errors",
  "arb-stylus",
@@ -1547,6 +1552,7 @@ dependencies = [
  "alloy-rlp",
  "arb-alloy-consensus",
  "arb-chainspec",
+ "arb-math",
  "arb-primitives",
  "arb-storage",
  "arb-test-utils",

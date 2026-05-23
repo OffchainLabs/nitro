@@ -318,7 +318,7 @@ impl<D: Database> L2PricingState<D> {
             return Ok(min_base_fee);
         }
 
-        let exp_result = approx_exp_basis_points(exponent_bips);
+        let exp_result = arb_math::approx_exp_basis_points(exponent_bips, 4);
         let base_fee = (min_base_fee * U256::from(exp_result)) / U256::from(10000u64);
 
         if base_fee < min_base_fee {
@@ -499,28 +499,6 @@ impl<D: Database> L2PricingState<D> {
         }
         Ok(total)
     }
-}
-
-/// Approximate e^(x/10000) * 10000 using Horner's method (degree 4).
-///
-/// Matches `ApproxExpBasisPoints(value, 4)` exactly.
-fn approx_exp_basis_points(bips: u64) -> u64 {
-    const ACCURACY: u64 = 4;
-    const B: u64 = 10_000; // OneInBips
-
-    if bips == 0 {
-        return B;
-    }
-
-    // Horner's method: b*(1 + x/b*(1 + x/(2b)*(1 + x/(3b))))
-    let mut res = B.saturating_add(bips / ACCURACY);
-    let mut i = ACCURACY - 1;
-    while i > 0 {
-        res = B.saturating_add(res.saturating_mul(bips) / (i * B));
-        i -= 1;
-    }
-
-    res
 }
 
 /// Saturating cast from u64 to i64, capping at i64::MAX.
