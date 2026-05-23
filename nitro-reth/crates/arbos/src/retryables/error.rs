@@ -1,5 +1,7 @@
 use arb_storage::StorageError;
 
+use crate::util::BalanceError;
+
 /// Errors raised by the retryable ticket subsystem.
 #[derive(thiserror::Error, Debug)]
 pub enum RetryableError {
@@ -25,8 +27,8 @@ pub enum RetryableError {
     #[error("retryable cannot modify itself")]
     SelfModifyingRetryable,
 
-    /// The caller-supplied transfer callback returned an error while moving
-    /// escrowed funds.
-    #[error("transfer callback failed during retryable processing")]
-    TransferFailed,
+    /// The transfer callback rejected the escrow movement performed while
+    /// processing a retryable.
+    #[error(transparent)]
+    Balance(#[from] BalanceError),
 }

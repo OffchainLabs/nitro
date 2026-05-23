@@ -6,6 +6,8 @@ use arb_storage::{
     StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
 };
 
+use crate::util::BalanceError;
+
 mod error;
 pub use error::RetryableError;
 
@@ -131,7 +133,7 @@ impl<D> RetryableState<D> {
         mut balance_of: G,
     ) -> Result<bool, RetryableError>
     where
-        F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
         G: FnMut(Address) -> U256,
         B: StorageBackend,
     {
@@ -144,8 +146,7 @@ impl<D> RetryableState<D> {
         let beneficiary_address = ret.beneficiary.get(backend)?;
         let escrow_address = retryable_escrow_address(id);
         let amount = balance_of(escrow_address);
-        transfer_fn(escrow_address, beneficiary_address, amount)
-            .map_err(|()| RetryableError::TransferFailed)?;
+        transfer_fn(escrow_address, beneficiary_address, amount)?;
 
         clear_ticket_fields(backend, &ret)?;
         Ok(true)
@@ -270,7 +271,7 @@ impl<D> RetryableState<D> {
         mut balance_of: G,
     ) -> Result<(), RetryableError>
     where
-        F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
         G: FnMut(Address) -> U256,
         B: StorageBackend,
     {

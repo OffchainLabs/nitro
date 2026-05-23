@@ -7,6 +7,7 @@ use crate::{
     arbos_state::ArbosState,
     arbos_types::{legacy_cost_for_stats, BatchDataStats},
     burn::Burner,
+    util::BalanceError,
 };
 
 /// Standard Ethereum base transaction gas.
@@ -291,7 +292,7 @@ pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G, C>(
     mut balance_of: G,
 ) -> Result<(), String>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     G: FnMut(Address) -> U256,
     C: StorageBackend,
 {
@@ -340,7 +341,7 @@ fn apply_start_block<D: revm::Database, B: Burner, F, G, C>(
     balance_of: &mut G,
 ) -> Result<(), String>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     G: FnMut(Address) -> U256,
     C: StorageBackend,
 {
@@ -401,7 +402,7 @@ fn apply_batch_posting_report<D: revm::Database, B: Burner, F, C>(
     transfer_fn: &mut F,
 ) -> Result<(), String>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     C: StorageBackend,
 {
     let per_batch_gas = state
@@ -437,7 +438,7 @@ fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F, C>(
     transfer_fn: &mut F,
 ) -> Result<(), String>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     C: StorageBackend,
 {
     let arbos_version = state.arbos_version();
