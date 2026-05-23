@@ -525,9 +525,11 @@ where
                         if let Ok(target_version) = target.parse::<u64>() {
                             let current = arb_state.arbos_version();
                             if target_version > current {
-                                if let Err(e) =
-                                    arb_state.upgrade_arbos_version(target_version, true)
-                                {
+                                if let Err(e) = arb_state.upgrade_arbos_version(
+                                    unsafe { &mut *state_ptr },
+                                    target_version,
+                                    true,
+                                ) {
                                     info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
                                 } else {
                                     info!(

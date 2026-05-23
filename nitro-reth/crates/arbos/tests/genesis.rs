@@ -25,6 +25,7 @@ fn make_genesis_block_returns_well_formed_struct() {
 #[test]
 fn initialize_retryables_skips_expired() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let rs = h.retryable_state();
 
     let alive = InitRetryableData {
@@ -46,8 +47,13 @@ fn initialize_retryables_skips_expired() {
         calldata: Vec::new(),
     };
 
-    let (balance_credits, escrow_credits) =
-        initialize_retryables(&rs, vec![alive.clone(), expired.clone()], 1_000).unwrap();
+    let (balance_credits, escrow_credits) = initialize_retryables(
+        unsafe { &mut *state_ptr },
+        &rs,
+        vec![alive.clone(), expired.clone()],
+        1_000,
+    )
+    .unwrap();
 
     assert_eq!(balance_credits.len(), 1);
     assert_eq!(balance_credits[0], (expired.beneficiary, expired.callvalue));

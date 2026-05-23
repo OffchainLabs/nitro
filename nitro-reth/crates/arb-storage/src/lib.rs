@@ -9,6 +9,7 @@
 //! storage-level fault from a logical condition such as "slot is zero".
 
 mod backed_types;
+mod backend;
 mod bytes_storage;
 mod extra_types;
 pub mod queue;
@@ -22,6 +23,7 @@ pub use backed_types::{
     StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigInt, StorageBackedBigUint,
     StorageBackedInt64, StorageBackedUint64,
 };
+pub use backend::StorageBackend;
 pub use bytes_storage::StorageBackedBytes;
 pub use extra_types::{
     StorageBackedBips, StorageBackedUBips, StorageBackedUint16, StorageBackedUint24,

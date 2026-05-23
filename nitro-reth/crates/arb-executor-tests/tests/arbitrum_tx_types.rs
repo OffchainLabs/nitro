@@ -213,8 +213,11 @@ fn arbitrum_submit_retryable_creates_ticket_in_state() {
         run_arb_tx(&mut s.harness, s.base_fee, s.chain_id, tx, submitter).expect("execute");
     assert!(success);
 
+    let state_ptr = s.harness.state_ptr();
     let rs = s.harness.retryable_state();
-    let opened = rs.open_retryable(ticket_id, 1_700_000_000).unwrap();
+    let opened = rs
+        .open_retryable(unsafe { &mut *state_ptr }, ticket_id, 1_700_000_000)
+        .unwrap();
     assert!(opened.is_some(), "retryable must exist after submit");
 }
 

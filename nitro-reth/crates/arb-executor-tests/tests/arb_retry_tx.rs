@@ -96,9 +96,11 @@ fn retry_tx_redeems_existing_retryable() {
     fund_account(s.harness.state(), sender, U256::from(10u128 * ONE_ETH));
     fund_account(s.harness.state(), escrow, retry_value);
 
+    let state_ptr = s.harness.state_ptr();
     s.harness
         .retryable_state()
         .create_retryable(
+            unsafe { &mut *state_ptr },
             ticket_id,
             1_700_000_000 + 604_800,
             sender,
@@ -137,9 +139,10 @@ fn retry_tx_redeems_existing_retryable() {
         "recipient should receive the retry value"
     );
 
+    let state_ptr = s.harness.state_ptr();
     let rs = s.harness.retryable_state();
     assert!(
-        rs.open_retryable(ticket_id, 1_700_000_000)
+        rs.open_retryable(unsafe { &mut *state_ptr }, ticket_id, 1_700_000_000)
             .unwrap()
             .is_none(),
         "successful retry should delete the retryable"
@@ -167,9 +170,11 @@ fn retry_tx_failure_keeps_retryable_alive() {
         U256::ZERO,
     );
 
+    let state_ptr = s.harness.state_ptr();
     s.harness
         .retryable_state()
         .create_retryable(
+            unsafe { &mut *state_ptr },
             ticket_id,
             1_700_000_000 + 604_800,
             sender,
@@ -199,9 +204,10 @@ fn retry_tx_failure_keeps_retryable_alive() {
 
     let _ = run_tx(&mut s.harness, s.base_fee, chain_id, tx, sender).expect("exec");
 
+    let state_ptr = s.harness.state_ptr();
     let rs = s.harness.retryable_state();
     assert!(
-        rs.open_retryable(ticket_id, 1_700_000_000)
+        rs.open_retryable(unsafe { &mut *state_ptr }, ticket_id, 1_700_000_000)
             .unwrap()
             .is_some(),
         "failed retry must keep the retryable in state"

@@ -256,10 +256,17 @@ fn get_program_for_unknown_hash_returns_default_fields() {
 #[test]
 fn data_pricer_update_model_costs_more_with_demand() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let mut arbos = h.arbos_state();
     let p = &mut arbos.programs;
-    let c1 = p.data_pricer.update_model(1000, 1_700_000_000).unwrap();
-    let c2 = p.data_pricer.update_model(1000, 1_700_000_001).unwrap();
+    let c1 = p
+        .data_pricer
+        .update_model(unsafe { &mut *state_ptr }, 1000, 1_700_000_000)
+        .unwrap();
+    let c2 = p
+        .data_pricer
+        .update_model(unsafe { &mut *state_ptr }, 1000, 1_700_000_001)
+        .unwrap();
     assert!(c1 >= U256::ZERO);
     assert!(c2 >= U256::ZERO);
 }

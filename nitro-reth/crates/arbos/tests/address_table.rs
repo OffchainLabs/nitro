@@ -13,45 +13,53 @@ fn fresh_table(
 #[test]
 fn empty_table_size_zero_lookup_misses() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let t = fresh_table(&mut h, 0xB0);
-    assert_eq!(t.size().unwrap(), 0);
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(t.size(b).unwrap(), 0);
     assert_eq!(t.lookup(Address::ZERO).unwrap(), (0, false));
-    assert!(t.lookup_index(0).unwrap().is_none());
+    assert!(t.lookup_index(b, 0).unwrap().is_none());
     assert!(!t.address_exists(Address::ZERO).unwrap());
 }
 
 #[test]
 fn register_returns_sequential_indices() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let t = fresh_table(&mut h, 0xB1);
+    let b = unsafe { &mut *state_ptr };
     let a = address!("AAAA000000000000000000000000000000000000");
-    let b = address!("BBBB000000000000000000000000000000000000");
+    let bb = address!("BBBB000000000000000000000000000000000000");
     let c = address!("CCCC000000000000000000000000000000000000");
-    assert_eq!(t.register(a).unwrap(), 0);
-    assert_eq!(t.register(b).unwrap(), 1);
-    assert_eq!(t.register(c).unwrap(), 2);
-    assert_eq!(t.register(a).unwrap(), 0);
-    assert_eq!(t.size().unwrap(), 3);
+    assert_eq!(t.register(b, a).unwrap(), 0);
+    assert_eq!(t.register(b, bb).unwrap(), 1);
+    assert_eq!(t.register(b, c).unwrap(), 2);
+    assert_eq!(t.register(b, a).unwrap(), 0);
+    assert_eq!(t.size(b).unwrap(), 3);
 }
 
 #[test]
 fn lookup_round_trips_index_and_address() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let t = fresh_table(&mut h, 0xB2);
+    let b = unsafe { &mut *state_ptr };
     let a = address!("DEADBEEF00000000000000000000000000000000");
-    let idx = t.register(a).unwrap();
+    let idx = t.register(b, a).unwrap();
     assert_eq!(t.lookup(a).unwrap(), (idx, true));
-    assert_eq!(t.lookup_index(idx).unwrap(), Some(a));
+    assert_eq!(t.lookup_index(b, idx).unwrap(), Some(a));
 }
 
 #[test]
 fn compress_indexes_short_for_registered_addresses() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let t = fresh_table(&mut h, 0xB5);
+    let b = unsafe { &mut *state_ptr };
     for i in 0u8..10 {
         let mut bytes = [0u8; 20];
         bytes[19] = i;
-        t.register(Address::from(bytes)).unwrap();
+        t.register(b, Address::from(bytes)).unwrap();
     }
     let mut bytes = [0u8; 20];
     bytes[19] = 5;
@@ -71,10 +79,12 @@ fn compress_full_address_for_unregistered() {
 #[test]
 fn lookup_index_returns_none_out_of_range() {
     let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
     let t = fresh_table(&mut h, 0xB7);
+    let b = unsafe { &mut *state_ptr };
     let a = address!("AAAA000000000000000000000000000000000000");
-    t.register(a).unwrap();
-    assert_eq!(t.lookup_index(0).unwrap(), Some(a));
-    assert!(t.lookup_index(1).unwrap().is_none());
-    assert!(t.lookup_index(999_999).unwrap().is_none());
+    t.register(b, a).unwrap();
+    assert_eq!(t.lookup_index(b, 0).unwrap(), Some(a));
+    assert!(t.lookup_index(b, 1).unwrap().is_none());
+    assert!(t.lookup_index(b, 999_999).unwrap().is_none());
 }

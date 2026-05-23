@@ -2,7 +2,7 @@ use alloy_primitives::{Address, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
 
 mod error;
 pub use error::AddressTableError;
@@ -15,7 +15,7 @@ pub use error::AddressTableError;
 pub struct AddressTable<D> {
     backing_storage: Storage<D>,
     by_address: Storage<D>,
-    num_items: StorageBackedUint64<D>,
+    num_items: StorageBackedUint64,
 }
 
 pub fn initialize_address_table<D: Database>(_sto: &Storage<D>) {
@@ -23,7 +23,7 @@ pub fn initialize_address_table<D: Database>(_sto: &Storage<D>) {
 }
 
 pub fn open_address_table<D: Database>(sto: Storage<D>) -> AddressTable<D> {
-    let num_items = StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), 0);
+    let num_items = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[]);
     AddressTable {
         backing_storage: sto,
@@ -33,7 +33,11 @@ pub fn open_address_table<D: Database>(sto: Storage<D>) -> AddressTable<D> {
 }
 
 impl<D: Database> AddressTable<D> {
-    pub fn register(&self, addr: Address) -> Result<u64, AddressTableError> {
+    pub fn register<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<u64, AddressTableError> {
         let addr_hash = address_to_hash(addr);
         let rev = self.by_address.get(addr_hash)?;
 
@@ -41,10 +45,9 @@ impl<D: Database> AddressTable<D> {
             return Ok(U256::from_be_bytes(rev.0).to::<u64>() - 1);
         }
 
-        // Address isn't in the table, add it
-        let current = self.num_items.get()?;
+        let current = self.num_items.get(backend)?;
         let new_num_items = current + 1;
-        self.num_items.set(new_num_items)?;
+        self.num_items.set(backend, new_num_items)?;
 
         self.backing_storage
             .set_by_uint64(new_num_items, addr_hash)?;
@@ -71,12 +74,16 @@ impl<D: Database> AddressTable<D> {
         Ok(exists)
     }
 
-    pub fn size(&self) -> Result<u64, AddressTableError> {
-        Ok(self.num_items.get()?)
+    pub fn size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, AddressTableError> {
+        Ok(self.num_items.get(backend)?)
     }
 
-    pub fn lookup_index(&self, index: u64) -> Result<Option<Address>, AddressTableError> {
-        let items = self.num_items.get()?;
+    pub fn lookup_index<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        index: u64,
+    ) -> Result<Option<Address>, AddressTableError> {
+        let items = self.num_items.get(backend)?;
         if index >= items {
             return Ok(None);
         }
@@ -102,7 +109,11 @@ impl<D: Database> AddressTable<D> {
 
     /// Decompress RLP-encoded data back to an address. Returns
     /// `(address, number_of_bytes_read)`.
-    pub fn decompress(&self, buf: &[u8]) -> Result<(Address, u64), AddressTableError> {
+    pub fn decompress<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        buf: &[u8],
+    ) -> Result<(Address, u64), AddressTableError> {
         let mut cursor = buf;
         let input = <Vec<u8> as Decodable>::decode(&mut cursor)
             .map_err(|_| AddressTableError::InvalidEncoding)?;
@@ -117,7 +128,7 @@ impl<D: Database> AddressTable<D> {
             let index = u64::decode(&mut cursor).map_err(|_| AddressTableError::InvalidEncoding)?;
             let bytes_read = (buf.len() - cursor.len()) as u64;
             let addr = self
-                .lookup_index(index)?
+                .lookup_index(backend, index)?
                 .ok_or(AddressTableError::IndexOutOfRange(index))?;
             Ok((addr, bytes_read))
         }

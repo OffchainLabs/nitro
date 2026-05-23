@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, B256, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedAddress, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedAddress, StorageBackedUint64, StorageBackend};
 
 mod error;
 pub use error::AddressSetError;
@@ -12,7 +12,7 @@ pub use error::AddressSetError;
 /// Sub-storage at key ]0\] maps address_hash → slot index.
 pub struct AddressSet<D> {
     backing_storage: Storage<D>,
-    size: StorageBackedUint64<D>,
+    size: StorageBackedUint64,
     by_address: Storage<D>,
 }
 
@@ -21,7 +21,7 @@ pub fn initialize_address_set<D: Database>(sto: &Storage<D>) -> Result<(), Addre
 }
 
 pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
-    let size = StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), 0);
+    let size = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[0u8]);
     AddressSet {
         backing_storage: sto,
@@ -31,8 +31,8 @@ pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
 }
 
 impl<D: Database> AddressSet<D> {
-    pub fn size(&self) -> Result<u64, AddressSetError> {
-        Ok(self.size.get()?)
+    pub fn size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, AddressSetError> {
+        Ok(self.size.get(backend)?)
     }
 
     pub fn is_member(&self, addr: Address) -> Result<bool, AddressSetError> {
@@ -41,8 +41,11 @@ impl<D: Database> AddressSet<D> {
         Ok(value != B256::ZERO)
     }
 
-    pub fn get_any_member(&self) -> Result<Option<Address>, AddressSetError> {
-        let size = self.size.get()?;
+    pub fn get_any_member<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Option<Address>, AddressSetError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(None);
         }
@@ -54,8 +57,8 @@ impl<D: Database> AddressSet<D> {
         Ok(sba.get().map(Some)?)
     }
 
-    pub fn clear(&self) -> Result<(), AddressSetError> {
-        let size = self.size.get()?;
+    pub fn clear<B: StorageBackend>(&self, backend: &mut B) -> Result<(), AddressSetError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(());
         }
@@ -64,11 +67,15 @@ impl<D: Database> AddressSet<D> {
             self.backing_storage.set_by_uint64(i, B256::ZERO)?;
             self.by_address.set(contents, B256::ZERO)?;
         }
-        Ok(self.size.set(0)?)
+        Ok(self.size.set(backend, 0)?)
     }
 
-    pub fn all_members(&self, max_num: u64) -> Result<Vec<Address>, AddressSetError> {
-        let mut size = self.size.get()?;
+    pub fn all_members<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        max_num: u64,
+    ) -> Result<Vec<Address>, AddressSetError> {
+        let mut size = self.size.get(backend)?;
         if size > max_num {
             size = max_num;
         }
@@ -84,18 +91,22 @@ impl<D: Database> AddressSet<D> {
         Ok(ret)
     }
 
-    pub fn clear_list(&self) -> Result<(), AddressSetError> {
-        let size = self.size.get()?;
+    pub fn clear_list<B: StorageBackend>(&self, backend: &mut B) -> Result<(), AddressSetError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(());
         }
         for i in 1..=size {
             self.backing_storage.set_by_uint64(i, B256::ZERO)?;
         }
-        Ok(self.size.set(0)?)
+        Ok(self.size.set(backend, 0)?)
     }
 
-    pub fn rectify_mapping(&self, addr: Address) -> Result<(), AddressSetError> {
+    pub fn rectify_mapping<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), AddressSetError> {
         if !self.is_member(addr)? {
             return Err(AddressSetError::NotMember);
         }
@@ -103,23 +114,27 @@ impl<D: Database> AddressSet<D> {
         let addr_as_hash = address_to_hash(addr);
         let slot = hash_to_uint64(self.by_address.get(addr_as_hash)?);
         let at_slot = self.backing_storage.get_by_uint64(slot)?;
-        let size = self.size.get()?;
+        let size = self.size.get(backend)?;
 
         if at_slot == addr_as_hash && slot <= size {
             return Err(AddressSetError::MappingAlreadyConsistent);
         }
 
         self.by_address.set(addr_as_hash, B256::ZERO)?;
-        self.add(addr)
+        self.add(backend, addr)
     }
 
-    pub fn add(&self, addr: Address) -> Result<(), AddressSetError> {
+    pub fn add<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), AddressSetError> {
         let present = self.is_member(addr)?;
         if present {
             return Ok(());
         }
 
-        let size = self.size.get()?;
+        let size = self.size.get(backend)?;
         let slot = uint_to_hash(1 + size);
         let addr_as_hash = address_to_hash(addr);
 
@@ -132,10 +147,15 @@ impl<D: Database> AddressSet<D> {
         );
         sba.set(addr)?;
 
-        Ok(self.size.set(size + 1)?)
+        Ok(self.size.set(backend, size + 1)?)
     }
 
-    pub fn remove(&self, addr: Address, arbos_version: u64) -> Result<(), AddressSetError> {
+    pub fn remove<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+        arbos_version: u64,
+    ) -> Result<(), AddressSetError> {
         let addr_as_hash = address_to_hash(addr);
         let slot_hash = self.by_address.get(addr_as_hash)?;
         let slot = hash_to_uint64(slot_hash);
@@ -146,7 +166,7 @@ impl<D: Database> AddressSet<D> {
 
         self.by_address.set(addr_as_hash, B256::ZERO)?;
 
-        let size = self.size.get()?;
+        let size = self.size.get(backend)?;
         if slot < size {
             let at_size = self.backing_storage.get_by_uint64(size)?;
             self.backing_storage.set_by_uint64(slot, at_size)?;
@@ -157,7 +177,7 @@ impl<D: Database> AddressSet<D> {
         }
 
         self.backing_storage.set_by_uint64(size, B256::ZERO)?;
-        Ok(self.size.set(size - 1)?)
+        Ok(self.size.set(backend, size - 1)?)
     }
 }
 
