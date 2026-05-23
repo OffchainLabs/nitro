@@ -11,6 +11,8 @@ use arb_storage::{
     StorageBackedUint64, StorageBackend,
 };
 
+use crate::util::BalanceError;
+
 // Storage offsets for L1 pricing state.
 const PAY_REWARDS_TO_OFFSET: u64 = 0;
 const EQUILIBRATION_UNITS_OFFSET: u64 = 1;
@@ -511,7 +513,7 @@ impl<D: revm::Database> L1PricingState<D> {
         mut transfer_fn: F,
     ) -> Result<(), L1PricingError>
     where
-        F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
         B: StorageBackend,
     {
         if self.arbos_version < 10 {
