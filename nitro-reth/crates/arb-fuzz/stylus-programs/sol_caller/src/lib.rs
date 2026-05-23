@@ -99,4 +99,75 @@ impl SolCaller {
         };
         Ok(addr)
     }
+
+    pub fn probe_balance(&self, who: Address) -> U256 {
+        self.vm().balance(who)
+    }
+
+    pub fn probe_code_size(&self, who: Address) -> U256 {
+        U256::from(self.vm().code_size(who))
+    }
+
+    pub fn probe_code_hash(&self, who: Address) -> B256 {
+        self.vm().code_hash(who)
+    }
+
+    pub fn probe_code(&self, who: Address) -> Bytes {
+        self.vm().code(who).into()
+    }
+
+    pub fn cache_only(&mut self, slot: B256, value: B256) {
+        let key = U256::from_be_bytes(slot.0);
+        let host = self.vm();
+        unsafe {
+            host.storage_cache_bytes32(key, value);
+        }
+    }
+
+    pub fn cache_and_flush(&mut self, slot: B256, value: B256) {
+        let key = U256::from_be_bytes(slot.0);
+        let host = self.vm();
+        unsafe {
+            host.storage_cache_bytes32(key, value);
+        }
+        host.flush_cache(false);
+    }
+
+    pub fn cache_then_clear(&mut self, slot: B256, value: B256) {
+        let key = U256::from_be_bytes(slot.0);
+        let host = self.vm();
+        unsafe {
+            host.storage_cache_bytes32(key, value);
+        }
+        host.flush_cache(true);
+    }
+
+    pub fn read_storage(&self, slot: B256) -> B256 {
+        let key = U256::from_be_bytes(slot.0);
+        self.vm().storage_load_bytes32(key)
+    }
+
+    pub fn returndata_size(&self, target: Address, data: Bytes) -> U256 {
+        let ctx = Call::new();
+        let host = self.vm();
+        let _ = call::static_call(host, ctx, target, data.as_ref());
+        U256::from(self.vm().return_data_size())
+    }
+
+    pub fn returndata_slice(
+        &self,
+        target: Address,
+        data: Bytes,
+        offset: U256,
+        size: U256,
+    ) -> Bytes {
+        let ctx = Call::new();
+        let host = self.vm();
+        let _ = call::static_call(host, ctx, target, data.as_ref());
+        let slice = host.read_return_data(
+            offset.try_into().unwrap_or(usize::MAX),
+            Some(size.try_into().unwrap_or(usize::MAX)),
+        );
+        slice.into()
+    }
 }
