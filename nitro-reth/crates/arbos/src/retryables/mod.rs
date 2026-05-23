@@ -61,12 +61,6 @@ impl<D> RetryableState<D> {
     pub fn open(sto: Storage<D>) -> Self {
         open_retryable_state(sto)
     }
-}
-
-impl<D: Database> RetryableState<D> {
-    pub fn initialize(sto: &Storage<D>) -> Result<(), RetryableError> {
-        initialize_retryable_state(sto)
-    }
 
     /// Creates a new retryable ticket. The id must be unique.
     pub fn create_retryable<B: StorageBackend>(
@@ -141,30 +135,83 @@ impl<D: Database> RetryableState<D> {
         G: FnMut(Address) -> U256,
         B: StorageBackend,
     {
-        let ret_storage = self.retryables.open_sub_storage(id.as_slice());
-        let timeout_val = ret_storage.get_by_uint64(TIMEOUT_OFFSET)?;
-        if timeout_val == B256::ZERO {
+        let ret = self.internal_open(id);
+        let timeout = ret.timeout.get(backend)?;
+        if timeout == 0 {
             return Ok(false);
         }
 
-        let beneficiary_val = ret_storage.get_by_uint64(BENEFICIARY_OFFSET)?;
+        let beneficiary_address = ret.beneficiary.get(backend)?;
         let escrow_address = retryable_escrow_address(id);
-        let beneficiary_address = Address::from_slice(&beneficiary_val[12..]);
         let amount = balance_of(escrow_address);
         transfer_fn(escrow_address, beneficiary_address, amount)
             .map_err(|()| RetryableError::TransferFailed)?;
 
-        ret_storage.set_by_uint64(NUM_TRIES_OFFSET, B256::ZERO)?;
-        ret_storage.set_by_uint64(FROM_OFFSET, B256::ZERO)?;
-        ret_storage.set_by_uint64(TO_OFFSET, B256::ZERO)?;
-        ret_storage.set_by_uint64(CALLVALUE_OFFSET, B256::ZERO)?;
-        ret_storage.set_by_uint64(BENEFICIARY_OFFSET, B256::ZERO)?;
-        ret_storage.set_by_uint64(TIMEOUT_OFFSET, B256::ZERO)?;
-        ret_storage.set_by_uint64(TIMEOUT_WINDOWS_LEFT_OFFSET, B256::ZERO)?;
-        let bytes_storage =
-            StorageBackedBytes::new(ret_storage.open_sub_storage(CALLDATA_KEY).base_key());
-        bytes_storage.clear(backend)?;
+        clear_ticket_fields(backend, &ret)?;
         Ok(true)
+    }
+
+    /// Reads the effective timeout of an open retryable.
+    ///
+    /// Returns `NoTicketWithId` if the ticket does not exist or has expired.
+    pub fn get_timeout<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        ticket_id: B256,
+        current_timestamp: u64,
+    ) -> Result<u64, RetryableError> {
+        let retryable = self
+            .open_retryable(backend, ticket_id, current_timestamp)?
+            .ok_or(RetryableError::NoTicketWithId)?;
+        retryable.calculate_timeout(backend)
+    }
+
+    /// Reads the beneficiary of an open retryable.
+    ///
+    /// Returns `NoTicketWithId` if the ticket does not exist or has expired.
+    pub fn get_beneficiary<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        ticket_id: B256,
+        current_timestamp: u64,
+    ) -> Result<Address, RetryableError> {
+        let retryable = self
+            .open_retryable(backend, ticket_id, current_timestamp)?
+            .ok_or(RetryableError::NoTicketWithId)?;
+        retryable.beneficiary(backend)
+    }
+
+    /// Returns the calldata size of an open retryable, or zero if it has
+    /// expired. The lookup never fails the way `get_timeout` does so the
+    /// precompile can use it to size its gas reservation regardless of
+    /// liveness.
+    pub fn calldata_size_for<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        ticket_id: B256,
+        current_timestamp: u64,
+    ) -> Result<u64, RetryableError> {
+        match self.open_retryable(backend, ticket_id, current_timestamp)? {
+            Some(ret) => ret.calldata_size(backend),
+            None => Ok(0),
+        }
+    }
+
+    /// Increments `num_tries` on an open retryable and returns the *previous*
+    /// value (i.e. the nonce used by the retry transaction).
+    ///
+    /// Returns `NoTicketWithId` if the ticket is missing or expired.
+    pub fn increment_num_tries_for<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        ticket_id: B256,
+        current_timestamp: u64,
+    ) -> Result<u64, RetryableError> {
+        let retryable = self
+            .open_retryable(backend, ticket_id, current_timestamp)?
+            .ok_or(RetryableError::NoTicketWithId)?;
+        let next = retryable.increment_num_tries(backend)?;
+        Ok(next - 1)
     }
 
     /// Extends the lifetime of a retryable ticket.
@@ -187,6 +234,31 @@ impl<D: Database> RetryableState<D> {
         retryable.increment_timeout_windows(backend)?;
         let new_timeout = timeout + RETRYABLE_LIFETIME_SECONDS;
         Ok(new_timeout)
+    }
+
+    /// Verifies `caller` is the beneficiary of an open retryable and clears
+    /// the ticket's storage. Returns the calldata size that was cleared so
+    /// the precompile can derive its gas reservation.
+    ///
+    /// Returns `NoTicketWithId` for missing/expired tickets and
+    /// `NotBeneficiary` when the caller is unauthorised.
+    pub fn cancel<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        ticket_id: B256,
+        caller: Address,
+        current_timestamp: u64,
+    ) -> Result<u64, RetryableError> {
+        let retryable = self
+            .open_retryable(backend, ticket_id, current_timestamp)?
+            .ok_or(RetryableError::NoTicketWithId)?;
+        let beneficiary = retryable.beneficiary(backend)?;
+        if caller != beneficiary {
+            return Err(RetryableError::NotBeneficiary);
+        }
+        let calldata_size = retryable.calldata_size(backend)?;
+        clear_ticket_fields(backend, &retryable)?;
+        Ok(calldata_size)
     }
 
     /// Tries to reap one expired retryable from the timeout queue.
@@ -291,7 +363,42 @@ impl<D: Database> RetryableState<D> {
     }
 }
 
-impl<D: Database> Retryable<D> {
+impl<D: Database> RetryableState<D> {
+    pub fn initialize(sto: &Storage<D>) -> Result<(), RetryableError> {
+        initialize_retryable_state(sto)
+    }
+}
+
+fn clear_ticket_fields<D, B: StorageBackend>(
+    backend: &mut B,
+    ret: &Retryable<D>,
+) -> Result<(), RetryableError> {
+    use arb_storage::ARBOS_STATE_ADDRESS;
+    let base_key = ret.backing_storage.base_key();
+    let key_slice: &[u8] = if base_key == B256::ZERO {
+        &[]
+    } else {
+        base_key.as_slice()
+    };
+    for offset in [
+        NUM_TRIES_OFFSET,
+        FROM_OFFSET,
+        TO_OFFSET,
+        CALLVALUE_OFFSET,
+        BENEFICIARY_OFFSET,
+        TIMEOUT_OFFSET,
+        TIMEOUT_WINDOWS_LEFT_OFFSET,
+    ] {
+        let slot = arb_storage::storage_key_map(key_slice, offset);
+        backend
+            .sstore(ARBOS_STATE_ADDRESS, slot, U256::ZERO)
+            .map_err(Into::into)?;
+    }
+    ret.calldata.clear(backend)?;
+    Ok(())
+}
+
+impl<D> Retryable<D> {
     pub fn num_tries<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
         Ok(self.num_tries.get(backend)?)
     }
