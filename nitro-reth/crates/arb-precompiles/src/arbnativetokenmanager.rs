@@ -38,8 +38,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         return result;
     }
 
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbNativeTokenManager::ArbNativeTokenManagerCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -49,9 +50,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     use IArbNativeTokenManager::ArbNativeTokenManagerCalls;
     let result = match call {
         ArbNativeTokenManagerCalls::mintNativeToken(c) => handle_mint(&mut input, c.amount),
-        ArbNativeTokenManagerCalls::burnNativeToken(c) => handle_burn(&mut input, c.amount),
+        ArbNativeTokenManagerCalls::burnNativeToken(c) => {
+            handle_burn(&mut input, gas_used, c.amount)
+        }
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -113,11 +116,11 @@ fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
         event_data.into(),
     ));
 
-    let gas_used = (SLOAD_GAS + SLOAD_GAS + MINT_BURN_GAS + EVENT_GAS + COPY_GAS).min(gas_limit);
-    Ok(PrecompileOutput::new(gas_used, vec![].into()))
+    let gas_cost = (SLOAD_GAS + SLOAD_GAS + MINT_BURN_GAS + EVENT_GAS + COPY_GAS).min(gas_limit);
+    Ok(PrecompileOutput::new(gas_cost, vec![].into()))
 }
 
-fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResult {
+fn handle_burn(input: &mut PrecompileInput<'_>, gas_used: u64, amount: U256) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
@@ -134,7 +137,7 @@ fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     let current_balance = acct.data.info.balance;
 
     if current_balance < amount {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
 
     let new_balance = current_balance - amount;
@@ -154,6 +157,6 @@ fn handle_burn(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
         event_data.into(),
     ));
 
-    let gas_used = (SLOAD_GAS + SLOAD_GAS + MINT_BURN_GAS + EVENT_GAS + COPY_GAS).min(gas_limit);
-    Ok(PrecompileOutput::new(gas_used, vec![].into()))
+    let gas_cost = (SLOAD_GAS + SLOAD_GAS + MINT_BURN_GAS + EVENT_GAS + COPY_GAS).min(gas_limit);
+    Ok(PrecompileOutput::new(gas_cost, vec![].into()))
 }

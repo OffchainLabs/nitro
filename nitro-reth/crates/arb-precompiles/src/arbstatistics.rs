@@ -19,8 +19,9 @@ pub fn create_arbstatistics_precompile() -> DynPrecompile {
 }
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbStatistics::ArbStatisticsCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -31,7 +32,7 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         ArbStatisticsCalls::getStats(_) => handle_get_stats(&input),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {

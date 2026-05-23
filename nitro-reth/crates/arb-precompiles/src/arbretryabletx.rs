@@ -82,8 +82,9 @@ pub fn create_arbretryabletx_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbRetryableTx::ArbRetryableTxCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -108,15 +109,15 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::submitRetryable(_) => {
             let data = IArbRetryableTx::NotCallable {}.abi_encode();
-            return crate::sol_error_revert(data, gas_limit);
+            return crate::sol_error_revert(&mut gas_used, data, gas_limit);
         }
-        Calls::getTimeout(c) => handle_get_timeout(&mut input, c.ticketId),
-        Calls::getBeneficiary(c) => handle_get_beneficiary(&mut input, c.ticketId),
-        Calls::redeem(c) => handle_redeem(&mut input, c.ticketId),
-        Calls::keepalive(c) => handle_keepalive(&mut input, c.ticketId),
-        Calls::cancel(c) => handle_cancel(&mut input, c.ticketId),
+        Calls::getTimeout(c) => handle_get_timeout(&mut input, &mut gas_used, c.ticketId),
+        Calls::getBeneficiary(c) => handle_get_beneficiary(&mut input, &mut gas_used, c.ticketId),
+        Calls::redeem(c) => handle_redeem(&mut input, &mut gas_used, c.ticketId),
+        Calls::keepalive(c) => handle_keepalive(&mut input, &mut gas_used, c.ticketId),
+        Calls::cancel(c) => handle_cancel(&mut input, &mut gas_used, c.ticketId),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -129,12 +130,16 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, ArbPrecompileError> {
+fn sload_field(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    slot: U256,
+) -> Result<U256, ArbPrecompileError> {
     let val = input
         .internals_mut()
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(SLOAD_GAS);
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
     Ok(val.data)
 }
 
@@ -158,24 +163,25 @@ fn ticket_storage_key(ticket_id: B256) -> B256 {
 
 /// Revert encoding for "ticket not found": pre-v3 returns a plain error
 /// (framework BurnOut), v3+ emits the NoTicketWithIDError sol-error.
-fn not_found_revert(gas_limit: u64) -> PrecompileResult {
+fn not_found_revert(gas_used: &mut u64, gas_limit: u64) -> PrecompileResult {
     if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_3 {
         return crate::burn_all_revert(gas_limit);
     }
     let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-    crate::sol_error_revert(data, gas_limit)
+    crate::sol_error_revert(gas_used, data, gas_limit)
 }
 
 /// Open a retryable ticket by verifying it exists (timeout > 0) and hasn't expired.
 /// Returns the ticket's storage key.
 fn open_retryable(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ticket_id: B256,
     current_timestamp: u64,
 ) -> Result<Option<B256>, ArbPrecompileError> {
     let ticket_key = ticket_storage_key(ticket_id);
     let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
-    let timeout = sload_field(input, timeout_slot)?;
+    let timeout = sload_field(input, gas_used, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
     if timeout_u64 == 0 || timeout_u64 < current_timestamp {
@@ -186,7 +192,11 @@ fn open_retryable(
 }
 
 /// Effective timeout = stored_timeout + timeout_windows_left * RETRYABLE_LIFETIME.
-fn handle_get_timeout(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
+fn handle_get_timeout(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ticket_id: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let current_timestamp: u64 = input
         .internals()
@@ -199,17 +209,17 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Preco
     let ticket_key = ticket_storage_key(ticket_id);
 
     let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
-    let timeout = sload_field(input, timeout_slot)?;
+    let timeout = sload_field(input, gas_used, timeout_slot)?;
     let timeout_u64: u64 = timeout.try_into().unwrap_or(0);
 
     if timeout_u64 == 0 || timeout_u64 < current_timestamp {
         let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-        return crate::sol_error_revert(data, gas_limit);
+        return crate::sol_error_revert(gas_used, data, gas_limit);
     }
 
     // Read timeout_windows_left for effective timeout calculation.
     let windows_slot = map_slot(ticket_key.as_slice(), TIMEOUT_WINDOWS_LEFT_OFFSET);
-    let windows = sload_field(input, windows_slot)?;
+    let windows = sload_field(input, gas_used, windows_slot)?;
     let windows_u64: u64 = windows.try_into().unwrap_or(0);
 
     let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
@@ -233,15 +243,19 @@ fn timeout_queue_key() -> B256 {
 
 /// Queue Put: reads nextPutOffset (slot 0), writes the value at that offset, increments
 /// nextPutOffset.
-fn queue_put(input: &mut PrecompileInput<'_>, value: B256) -> Result<(), ArbPrecompileError> {
+fn queue_put(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    value: B256,
+) -> Result<(), ArbPrecompileError> {
     let queue_key = timeout_queue_key();
 
     // nextPutOffset is at offset 0 within the queue sub-storage.
     let put_offset_slot = map_slot(queue_key.as_slice(), 0);
-    let put_offset = sload_field(input, put_offset_slot)?;
+    let put_offset = sload_field(input, gas_used, put_offset_slot)?;
     let put_offset_u64: u64 = put_offset
         .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
 
     // Store the value at map_slot_b256(queue_key, value_as_key) using the offset as key.
     let item_slot = map_slot(queue_key.as_slice(), put_offset_u64);
@@ -253,7 +267,11 @@ fn queue_put(input: &mut PrecompileInput<'_>, value: B256) -> Result<(), ArbPrec
     Ok(())
 }
 
-fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
+fn handle_get_beneficiary(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ticket_id: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let current_timestamp: u64 = input
         .internals()
@@ -263,13 +281,13 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> P
 
     load_arbos(input)?;
 
-    let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
+    let ticket_key = match open_retryable(input, gas_used, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => return not_found_revert(gas_limit),
+        None => return not_found_revert(gas_used, gas_limit),
     };
 
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
-    let beneficiary = sload_field(input, beneficiary_slot)?;
+    let beneficiary = sload_field(input, gas_used, beneficiary_slot)?;
 
     // OAS(1) + OpenRetryable timeout(1) + beneficiary(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
@@ -281,7 +299,11 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>, ticket_id: B256) -> P
 /// Redeem validates the retryable, increments numTries, donates remaining gas
 /// to the retry tx, and emits a RedeemScheduled event. The block executor
 /// discovers the event in the execution logs and schedules the retry tx.
-fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
+fn handle_redeem(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ticket_id: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     let current_timestamp: u64 = input
@@ -293,14 +315,14 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     {
         let current_retryable = active_tx().retryable_id;
         if !current_retryable.is_zero() && current_retryable == ticket_id {
-            return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
     }
 
     // RetryableSizeBytes → OpenRetryable reads timeout (1 sload).
     let ticket_key_pre = ticket_storage_key(ticket_id);
     let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
-    let timeout_val = sload_field(input, timeout_slot)?;
+    let timeout_val = sload_field(input, gas_used, timeout_slot)?;
     let timeout_u64: u64 = timeout_val.try_into().unwrap_or(0);
 
     let (_calldata_words, write_bytes, calldata_raw_size) =
@@ -309,7 +331,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
         } else {
             let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
             let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
-            let calldata_size = sload_field(input, calldata_size_slot)?;
+            let calldata_size = sload_field(input, gas_used, calldata_size_slot)?;
             let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
             let cw = calldata_size_u64.div_ceil(32);
             let nbytes = 6 * 32 + 32 + 32 * cw;
@@ -319,18 +341,18 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
     const PARAMS_SLOAD_GAS: u64 = 50;
     let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);
-    crate::charge_precompile_gas(retryable_size_gas);
+    crate::charge_precompile_gas(gas_used, retryable_size_gas);
 
     // OpenRetryable reads timeout again (second sload).
-    let timeout_val2 = sload_field(input, timeout_slot)?;
+    let timeout_val2 = sload_field(input, gas_used, timeout_slot)?;
     let timeout_u64_2: u64 = timeout_val2.try_into().unwrap_or(0);
     if timeout_u64_2 == 0 || timeout_u64_2 < current_timestamp {
-        return not_found_revert(gas_limit);
+        return not_found_revert(gas_used, gas_limit);
     }
 
     let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
-    let num_tries = sload_field(input, num_tries_slot)?;
-    crate::charge_precompile_gas(SSTORE_GAS);
+    let num_tries = sload_field(input, gas_used, num_tries_slot)?;
+    crate::charge_precompile_gas(gas_used, SSTORE_GAS);
     let nonce: u64 = num_tries.try_into().unwrap_or(0);
     let internals = input.internals_mut();
     internals
@@ -339,7 +361,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
     // MakeTx reads: from + to + callvalue + GetBytes(size + floor(len/32) loop + trailing)
     let make_tx_reads = 5 + calldata_raw_size / 32;
-    crate::charge_precompile_gas(make_tx_reads * SLOAD_GAS);
+    crate::charge_precompile_gas(gas_used, make_tx_reads * SLOAD_GAS);
 
     // Compute deterministic retry tx hash: keccak256(ticket_id || nonce).
     let mut hash_input = [0u8; 64];
@@ -347,18 +369,18 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(hash_input);
 
-    let backlog_reservation = compute_backlog_update_cost(input)?;
+    let backlog_reservation = compute_backlog_update_cost(input, gas_used)?;
 
-    let gas_used_so_far = crate::get_precompile_gas();
+    let gas_used_so_far = *gas_used;
 
     let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
     if gas_remaining < future_gas_costs + TX_GAS {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
 
-    let actual_backlog_cost = compute_actual_backlog_cost(input, gas_to_donate)?;
+    let actual_backlog_cost = compute_actual_backlog_cost(input, gas_used, gas_to_donate)?;
 
     let max_refund = U256::MAX;
     let submission_fee_refund = U256::ZERO;
@@ -399,6 +421,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
 fn compute_actual_backlog_cost(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     gas_to_donate: u64,
 ) -> Result<u64, ArbPrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
@@ -419,6 +442,7 @@ fn compute_actual_backlog_cost(
             return Ok(total);
         }
     }
+    let _ = gas_used;
     Ok(legacy_actual_backlog_cost(
         crate::get_current_gas_backlog(),
         gas_to_donate,
@@ -461,7 +485,10 @@ fn read_constraint_backlog_free(
     Ok(val.data.try_into().unwrap_or(0))
 }
 
-fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, ArbPrecompileError> {
+fn compute_backlog_update_cost(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+) -> Result<u64, ArbPrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
     let arbos_version = crate::get_arbos_version();
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
@@ -473,7 +500,7 @@ fn compute_backlog_update_cost(input: &mut PrecompileInput<'_>) -> Result<u64, A
         result += SLOAD_GAS;
     }
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
-        let len = read_gas_constraints_length(input)?;
+        let len = read_gas_constraints_length(input, gas_used)?;
         if len > 0 {
             result += SLOAD_GAS;
             result += len.saturating_mul(SLOAD_GAS + SSTORE_GAS);
@@ -497,11 +524,14 @@ fn read_gas_constraints_length_free(
     Ok(val.data.try_into().unwrap_or(0))
 }
 
-fn read_gas_constraints_length(input: &mut PrecompileInput<'_>) -> Result<u64, ArbPrecompileError> {
+fn read_gas_constraints_length(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+) -> Result<u64, ArbPrecompileError> {
     let l2_subspace_key = derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE);
     let gas_constraints_subspace_key = derive_subspace_key(l2_subspace_key.as_slice(), &[0]);
     let len_slot = vector_length_slot(&gas_constraints_subspace_key);
-    let val = sload_field(input, len_slot)?;
+    let val = sload_field(input, gas_used, len_slot)?;
     Ok(val.try_into().unwrap_or(0))
 }
 
@@ -509,7 +539,11 @@ fn read_gas_constraints_length(input: &mut PrecompileInput<'_>) -> Result<u64, A
 ///
 /// Opens the retryable, verifies effective timeout isn't too far in the future,
 /// adds a duplicate entry to the timeout queue, and increments timeout_windows_left.
-fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
+fn handle_keepalive(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ticket_id: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let current_timestamp: u64 = input
         .internals()
@@ -519,40 +553,40 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precomp
 
     load_arbos(input)?;
 
-    let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
+    let ticket_key = match open_retryable(input, gas_used, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => return not_found_revert(gas_limit),
+        None => return not_found_revert(gas_used, gas_limit),
     };
 
     // Read calldata size for updateCost computation (RetryableSizeBytes).
     let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
     let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
-    let calldata_size = sload_field(input, calldata_size_slot)?;
+    let calldata_size = sload_field(input, gas_used, calldata_size_slot)?;
     let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
 
     // Read timeout and timeout_windows_left to compute effective timeout.
     let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
-    let timeout = sload_field(input, timeout_slot)?;
+    let timeout = sload_field(input, gas_used, timeout_slot)?;
     let timeout_u64: u64 = timeout
         .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
 
     let windows_slot = map_slot(ticket_key.as_slice(), TIMEOUT_WINDOWS_LEFT_OFFSET);
-    let windows = sload_field(input, windows_slot)?;
+    let windows = sload_field(input, gas_used, windows_slot)?;
     let windows_u64: u64 = windows
         .try_into()
-        .map_err(|_| ArbPrecompileError::empty_revert(crate::get_precompile_gas()))?;
+        .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
 
     let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
 
     // The window limit is current_time + one lifetime.
     let window_limit = current_timestamp + RETRYABLE_LIFETIME_SECONDS;
     if effective_timeout > window_limit {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
     // Put the ticket into the timeout queue (duplicate entry for the new window).
-    queue_put(input, ticket_id)?;
+    queue_put(input, gas_used, ticket_id)?;
 
     // Increment timeout_windows_left.
     let new_windows = windows_u64 + 1;
@@ -578,7 +612,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precomp
     let nbytes = 6 * 32 + 32 + 32 * calldata_words;
     let update_cost = nbytes.div_ceil(32) * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
-    let gas_used = 8 * SLOAD_GAS
+    let gas_cost = 8 * SLOAD_GAS
         + 3 * SSTORE_GAS
         + 2 * COPY_GAS
         + update_cost
@@ -586,7 +620,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precomp
         + RETRYABLE_REAP_PRICE;
 
     Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
+        gas_cost.min(gas_limit),
         U256::from(new_timeout).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -595,7 +629,11 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precomp
 ///
 /// Verifies the caller is the beneficiary, then clears all storage fields.
 /// Balance transfer (escrow → beneficiary) is handled by the executor.
-fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> PrecompileResult {
+fn handle_cancel(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ticket_id: B256,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     let current_timestamp: u64 = input
@@ -606,19 +644,19 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
 
     load_arbos(input)?;
 
-    let ticket_key = match open_retryable(input, ticket_id, current_timestamp)? {
+    let ticket_key = match open_retryable(input, gas_used, ticket_id, current_timestamp)? {
         Some(k) => k,
-        None => return not_found_revert(gas_limit),
+        None => return not_found_revert(gas_used, gas_limit),
     };
 
     // Read beneficiary and verify caller is the beneficiary.
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
-    let beneficiary = sload_field(input, beneficiary_slot)?;
+    let beneficiary = sload_field(input, gas_used, beneficiary_slot)?;
 
     // The caller address is left-padded with zeros in 20 bytes.
     let caller_u256 = U256::from_be_slice(caller.as_slice());
     if caller_u256 != beneficiary {
-        return Err(ArbPrecompileError::empty_revert(crate::get_precompile_gas()).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
     // Clear all storage fields for this retryable ticket (DeleteRetryable).
@@ -639,7 +677,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
     // Clear calldata bytes (ClearBytes on calldata sub-storage).
     let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
     let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
-    let calldata_size = sload_field(input, calldata_size_slot)?;
+    let calldata_size = sload_field(input, gas_used, calldata_size_slot)?;
     let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
     let calldata_words = calldata_size_u64.div_ceil(32);
     if calldata_size_u64 > 0 {
@@ -665,10 +703,10 @@ fn handle_cancel(input: &mut PrecompileInput<'_>, ticket_id: B256) -> Precompile
         0
     };
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS;
-    let gas_used = 6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + clear_bytes_cost + event_cost + COPY_GAS;
+    let gas_cost = 6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + clear_bytes_cost + event_cost + COPY_GAS;
 
     Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
+        gas_cost.min(gas_limit),
         Vec::new().into(),
     ))
 }

@@ -19,8 +19,9 @@ pub fn create_arbinfo_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbInfo::ArbInfoCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -32,7 +33,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         ArbInfoCalls::getBalance(c) => handle_get_balance(&mut input, c.account),
         ArbInfoCalls::getCode(c) => handle_get_code(&mut input, c.account),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(gas_limit, gas_used, result)
 }
 
 fn handle_get_balance(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
