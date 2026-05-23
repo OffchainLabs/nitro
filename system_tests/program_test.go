@@ -1335,7 +1335,7 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 	ed, err := arbWasm.ExpiryDays(nil)
 	Require(t, err)
 	if ed != expectedExpiryDays {
-		t.Errorf("ExpiryDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ed, expectedExpiryDays)
+		t.Errorf("ExpiryDays from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", ed, expectedExpiryDays)
 	}
 	ptl, err := arbWasm.ProgramTimeLeft(nil, programAddress)
 	Require(t, err)
@@ -1351,42 +1351,42 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 	bcs, err := arbWasm.BlockCacheSize(nil)
 	Require(t, err)
 	if bcs != 100 {
-		t.Errorf("BlockCacheSize from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", bcs, 100)
+		t.Errorf("BlockCacheSize from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", bcs, 100)
 	}
 
 	ensure(arbOwner.SetWasmFreePages(&ownerAuth, 3))
 	fp, err := arbWasm.FreePages(nil)
 	Require(t, err)
 	if fp != 3 {
-		t.Errorf("FreePages from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", fp, 3)
+		t.Errorf("FreePages from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", fp, 3)
 	}
 
 	ensure(arbOwner.SetWasmInitCostScalar(&ownerAuth, uint64(4)))
 	ics, err := arbWasm.InitCostScalar(nil)
 	Require(t, err)
 	if ics != uint64(4) {
-		t.Errorf("InitCostScalar from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ics, 4)
+		t.Errorf("InitCostScalar from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", ics, 4)
 	}
 
 	ensure(arbOwner.SetInkPrice(&ownerAuth, uint32(5)))
 	ip, err := arbWasm.InkPrice(nil)
 	Require(t, err)
 	if ip != uint32(5) {
-		t.Errorf("InkPrice from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", ip, 5)
+		t.Errorf("InkPrice from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", ip, 5)
 	}
 
 	ensure(arbOwner.SetWasmKeepaliveDays(&ownerAuth, 0))
 	kad, err := arbWasm.KeepaliveDays(nil)
 	Require(t, err)
 	if kad != 0 {
-		t.Errorf("KeepaliveDays from arbWasm precompile didnt match the value set by arbowner. have: %d, want: 0", kad)
+		t.Errorf("KeepaliveDays from arbWasm precompile didn't match the value set by arbowner. have: %d, want: 0", kad)
 	}
 
 	ensure(arbOwner.SetWasmMaxStackDepth(&ownerAuth, uint32(6)))
 	msd, err := arbWasm.MaxStackDepth(nil)
 	Require(t, err)
 	if msd != uint32(6) {
-		t.Errorf("MaxStackDepth from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", msd, 6)
+		t.Errorf("MaxStackDepth from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", msd, 6)
 	}
 
 	// Setting low values of gas and cached parameters ensures when MinInitGas is called on ArbWasm precompile,
@@ -1395,24 +1395,24 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 	mig, err := arbWasm.MinInitGas(nil)
 	Require(t, err)
 	if mig.Gas != programs.MinInitGasUnits {
-		t.Errorf("MinInitGas from arbWasm precompile didnt match the Gas value set by arbowner. have: %d, want: %d", mig.Gas, programs.MinInitGasUnits)
+		t.Errorf("MinInitGas from arbWasm precompile didn't match the Gas value set by arbowner. have: %d, want: %d", mig.Gas, programs.MinInitGasUnits)
 	}
 	if mig.Cached != programs.MinCachedGasUnits {
-		t.Errorf("MinInitGas from arbWasm precompile didnt match the Cached value set by arbowner. have: %d, want: %d", mig.Cached, programs.MinCachedGasUnits)
+		t.Errorf("MinInitGas from arbWasm precompile didn't match the Cached value set by arbowner. have: %d, want: %d", mig.Cached, programs.MinCachedGasUnits)
 	}
 
 	ensure(arbOwner.SetWasmPageGas(&ownerAuth, 7))
 	pg, err := arbWasm.PageGas(nil)
 	Require(t, err)
 	if pg != 7 {
-		t.Errorf("PageGas from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pg, 7)
+		t.Errorf("PageGas from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", pg, 7)
 	}
 
 	ensure(arbOwner.SetWasmPageLimit(&ownerAuth, 8))
 	pl, err := arbWasm.PageLimit(nil)
 	Require(t, err)
 	if pl != 8 {
-		t.Errorf("PageLimit from arbWasm precompile didnt match the value set by arbowner. have: %d, want: %d", pl, 8)
+		t.Errorf("PageLimit from arbWasm precompile didn't match the value set by arbowner. have: %d, want: %d", pl, 8)
 	}
 
 	// pageramp currently is initialPageRamp = 620674314 value in programs package

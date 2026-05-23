@@ -561,7 +561,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	// 		* Post a batch with L2 txs- this would include delayed message read corresponding to the index containing
 	// 		  eth deposit tx- as that delayed message was sequenced
 	// 		* MEL will add the right delayed message at the corresponding index and send those txs to txStreamer
-	// 		* TxStreamer would detect a reorg as the previous delayed message's bytes wont match the new one's
+	// 		* TxStreamer would detect a reorg as the previous delayed message's bytes won't match the new one's
 	// 		* We verify that TxStreamer detected reorg
 	// 		* Later we verify that the balance is as expected since the eth deposit tx should be successful
 

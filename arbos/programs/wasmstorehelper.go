@@ -64,7 +64,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	zeroGas := uint64(0)
 
 	// We know program is activated, so it must be in correct version and not use too much memory
-	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
+	// Empty program address is supplied because we don't have access to this during rebuilding of wasm store
 	moduleActivationMandatory := false
 	// recompile only missing targets
 	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, GetAllowFallback())

@@ -116,7 +116,7 @@ func (s *incorrectBlockStateProvider) CollectMachineHashes(
 			honestHashes = append(honestHashes, s.evilMachineHash)
 		}
 	} else if uint64(cfg.BlockChallengeHeight) >= s.wrongAtBlockHeight {
-		panic(fmt.Sprintf("challenge occured at block height %v at or after wrongAtBlockHeight %v", cfg.BlockChallengeHeight, s.wrongAtBlockHeight))
+		panic(fmt.Sprintf("challenge occurred at block height %v at or after wrongAtBlockHeight %v", cfg.BlockChallengeHeight, s.wrongAtBlockHeight))
 	}
 	return honestHashes, nil
 }
