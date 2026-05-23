@@ -114,9 +114,15 @@ fn receipt_to_expected_json(
                 "multiGas".into(),
                 json!({
                     "computation": mg.computation,
-                    "history": mg.history,
-                    "storage": mg.storage,
-                    "stateGrowth": mg.state_growth,
+                    "historyGrowth": mg.history_growth,
+                    "storageAccessRead": mg.storage_access_read,
+                    "storageAccessWrite": mg.storage_access_write,
+                    "storageGrowth": mg.storage_growth,
+                    "singleDim": mg.single_dim,
+                    "l2Calldata": mg.l2_calldata,
+                    "wasmComputation": mg.wasm_computation,
+                    "refund": mg.refund,
+                    "total": mg.total,
                 }),
             );
         }

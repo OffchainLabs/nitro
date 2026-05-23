@@ -319,6 +319,18 @@ fn pair_tx_hashes(left: &[B256], right: &[B256]) -> Vec<TxPair> {
 fn diff_receipt(hash: B256, l: &TxReceipt, r: &TxReceipt, report: &mut DiffReport) {
     push_tx_field(hash, "status", &l.status, &r.status, report);
     push_tx_field(hash, "gas_used", &l.gas_used, &r.gas_used, report);
+    if let (Some(lm), Some(rm)) = (l.multi_gas.as_ref(), r.multi_gas.as_ref()) {
+        push_tx_field(hash, "mg_computation", &lm.computation, &rm.computation, report);
+        push_tx_field(hash, "mg_history_growth", &lm.history_growth, &rm.history_growth, report);
+        push_tx_field(hash, "mg_storage_access_read", &lm.storage_access_read, &rm.storage_access_read, report);
+        push_tx_field(hash, "mg_storage_access_write", &lm.storage_access_write, &rm.storage_access_write, report);
+        push_tx_field(hash, "mg_storage_growth", &lm.storage_growth, &rm.storage_growth, report);
+        push_tx_field(hash, "mg_single_dim", &lm.single_dim, &rm.single_dim, report);
+        push_tx_field(hash, "mg_l2_calldata", &lm.l2_calldata, &rm.l2_calldata, report);
+        push_tx_field(hash, "mg_wasm_computation", &lm.wasm_computation, &rm.wasm_computation, report);
+        push_tx_field(hash, "mg_refund", &lm.refund, &rm.refund, report);
+        push_tx_field(hash, "mg_total", &lm.total, &rm.total, report);
+    }
     push_tx_field(
         hash,
         "cumulative_gas_used",
