@@ -63,11 +63,6 @@ pub enum GenesisError {
         source: ArbosStateError,
     },
 
-    /// `ArbosState::open` failed after the initial slot writes were
-    /// persisted. Signals a structural inconsistency in the bootstrap path.
-    #[error("failed to open ArbOS state after initial setup: {0}")]
-    OpenArbosState(#[source] ArbosStateError),
-
     /// Stepping the ArbOS version upward from `1` to the target failed.
     #[error("failed to upgrade ArbOS to version {target}: {source}")]
     Upgrade {

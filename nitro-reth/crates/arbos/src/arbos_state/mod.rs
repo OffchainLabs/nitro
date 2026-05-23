@@ -121,19 +121,26 @@ pub struct ArbosState<D, B: Burner> {
 
 impl<D: Database, B: Burner> ArbosState<D, B> {
     /// Open existing ArbOS state from storage.
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn open(state: *mut revm::database::State<D>, burner: B) -> Result<Self, ArbosStateError> {
-        let backing_storage = Storage::new(state, B256::ZERO);
+    ///
+    /// Returns [`ArbosStateError::Uninitialised`] when the version slot reads
+    /// back as zero (expected only at genesis), [`ArbosStateError::Storage`]
+    /// when the backing storage layer fails, and
+    /// [`ArbosStateError::UnsupportedVersion`] when the stored version is
+    /// outside the range this build recognises.
+    pub fn open(state: &mut revm::database::State<D>, burner: B) -> Result<Self, ArbosStateError> {
+        let state_ptr: *mut revm::database::State<D> = state;
+        let backing_storage = Storage::new(state_ptr, B256::ZERO);
 
         let arbos_version = backing_storage.get_uint64_by_uint64(VERSION_OFFSET)?;
         if arbos_version == 0 {
             return Err(ArbosStateError::Uninitialised);
         }
+        if arbos_version > MAX_ARBOS_VERSION_SUPPORTED {
+            return Err(ArbosStateError::UnsupportedVersion(arbos_version));
+        }
 
         if arbos_version >= 60 {
-            unsafe {
-                set_account_nonce(&mut *state, FILTERED_TX_STATE_ADDRESS, 1);
-            }
+            set_account_nonce(state, FILTERED_TX_STATE_ADDRESS, 1);
         }
 
         let chain_config_key = chain_config_root_key();
@@ -200,7 +207,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 FILTERED_FUNDS_RECIPIENT_OFFSET,
             ),
             filtered_transactions: FilteredTransactionsState::open(Storage::new_with_account(
-                state,
+                state_ptr,
                 B256::ZERO,
                 FILTERED_TX_STATE_ADDRESS,
             )),

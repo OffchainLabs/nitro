@@ -65,6 +65,10 @@ pub enum ArbosStateError {
     #[error("ArbOS state has not been initialised (version=0)")]
     Uninitialised,
 
+    /// `ArbosState::open` found a version word this build does not recognise.
+    #[error("unsupported ArbOS version: {0}")]
+    UnsupportedVersion(u64),
+
     /// A scheduled upgrade targets an ArbOS version this node does not
     /// support.
     #[error("scheduled ArbOS version {version} exceeds maximum supported {max}")]

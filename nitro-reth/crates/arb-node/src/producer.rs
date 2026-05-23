@@ -511,35 +511,30 @@ where
                     initial_l1_base_fee = %init_msg.initial_l1_base_fee,
                     "ArbOS already initialized; overriding L1 price_per_unit from Init message"
                 );
-                let state_ptr = &mut db as *mut _;
-                if let Ok(mut arb_state) =
-                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                {
-                    let _ = arb_state.l1_pricing_state.set_price_per_unit(
-                        unsafe { &mut *state_ptr },
-                        init_msg.initial_l1_base_fee,
-                    );
-                    // Optional ArbOS upgrade hook for benchmarking: lets the
-                    // bench's subprocess boot at any target ArbOS version
-                    // without needing to schedule an on-chain upgrade.
-                    if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION") {
-                        if let Ok(target_version) = target.parse::<u64>() {
-                            let current = arb_state.arbos_version();
-                            if target_version > current {
-                                if let Err(e) = arb_state.upgrade_arbos_version(
-                                    unsafe { &mut *state_ptr },
-                                    target_version,
-                                    true,
-                                ) {
-                                    info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                                } else {
-                                    info!(
-                                        target: "block_producer",
-                                        from = current,
-                                        to = target_version,
-                                        "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
-                                    );
-                                }
+                let state_ptr: *mut _ = &mut db;
+                let mut arb_state =
+                    ArbosState::open(unsafe { &mut *state_ptr }, SystemBurner::new(None, false))
+                        .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
+                let _ = arb_state
+                    .l1_pricing_state
+                    .set_price_per_unit(unsafe { &mut *state_ptr }, init_msg.initial_l1_base_fee);
+                if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION") {
+                    if let Ok(target_version) = target.parse::<u64>() {
+                        let current = arb_state.arbos_version();
+                        if target_version > current {
+                            if let Err(e) = arb_state.upgrade_arbos_version(
+                                unsafe { &mut *state_ptr },
+                                target_version,
+                                true,
+                            ) {
+                                info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
+                            } else {
+                                info!(
+                                    target: "block_producer",
+                                    from = current,
+                                    to = target_version,
+                                    "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
+                                );
                             }
                         }
                     }

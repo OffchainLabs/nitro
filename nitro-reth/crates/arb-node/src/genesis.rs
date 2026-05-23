@@ -196,10 +196,12 @@ pub fn initialize_arbos_state<D: Database>(
     // 11. Initialize features.
     let _feat_sto = backing.open_sub_storage(&[9]); // FEATURES_SUBSPACE
 
-    // Now open ArbOS state and run the upgrade path from v1 to target version.
-    // The open() method reads version from storage (we set it to 1 above).
-    let mut arb_state = ArbosState::open(state_ptr, SystemBurner::new(None, false))
-        .map_err(GenesisError::OpenArbosState)?;
+    // Open after persisting `version = 1` above. A failure here means the
+    // freshly written version word is unreadable, which is unrecoverable
+    // during genesis bring-up.
+    let mut arb_state =
+        ArbosState::open(unsafe { &mut *state_ptr }, SystemBurner::new(None, false))
+            .expect("open ArbOS state after genesis initial setup");
 
     arb_state
         .chain_owners

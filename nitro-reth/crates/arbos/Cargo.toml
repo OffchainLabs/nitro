@@ -23,6 +23,9 @@ cc = "1"
 [dev-dependencies]
 arb-test-utils = { workspace = true }
 proptest = { workspace = true }
+revm-database = { workspace = true }
+revm-database-interface = { workspace = true }
+revm-state = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]
