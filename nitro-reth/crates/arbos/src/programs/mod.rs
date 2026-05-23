@@ -160,6 +160,26 @@ impl<D> Programs<D> {
         Ok(self.activation_gas.get(backend)?)
     }
 
+    /// Persist a new activation-gas value through a [`StorageBackend`].
+    pub fn set_activation_gas_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        value: u64,
+    ) -> Result<(), ProgramsError> {
+        self.activation_gas.set(backend, value)?;
+        Ok(())
+    }
+
+    /// Persist the given Stylus parameters through a [`StorageBackend`].
+    pub fn save_params_via_backend<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        params: &StylusParams,
+    ) -> Result<(), ProgramsError> {
+        let sto = self.backing_storage.open_sub_storage(PARAMS_KEY);
+        params.save_via_backend(&sto, backend)
+    }
+
     /// Retrieve a program entry through a [`StorageBackend`].
     pub fn get_program_via_backend<B: StorageBackend>(
         &self,
