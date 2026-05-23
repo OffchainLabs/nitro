@@ -83,7 +83,7 @@ const START_WAT: &str = r#"
 /// `debug_info=true` so `StartMover` keeps non-whitelist exports
 /// (`add_one`, `recurse`, `depth`, `status`) visible to the test.
 fn make_store() -> Store {
-    let mut compile = CompileConfig::version(1, true);
+    let mut compile = CompileConfig::version(1, true).expect("version 1 is supported");
     compile.debug.debug_funcs = true;
     compile.debug.debug_info = true;
 

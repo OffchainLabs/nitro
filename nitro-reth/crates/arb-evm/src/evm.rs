@@ -1232,7 +1232,15 @@ where
     let mut instance = if let Some((module, store)) =
         arb_stylus::cache::InitCache::get(code_hash, params.version, long_term_tag, false)
     {
-        let compile = arb_stylus::CompileConfig::version(params.version, false);
+        let compile = match arb_stylus::CompileConfig::version(params.version, false) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
+                pop_program(is_delegate, target_addr);
+                write_pages(parent_open, start_ever);
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
+        };
         let mut env =
             arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
         env.set_pages(start_open, start_ever, params.free_pages, params.page_gas);
@@ -1255,7 +1263,15 @@ where
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         };
-        let compile = arb_stylus::CompileConfig::version(params.version, false);
+        let compile = match arb_stylus::CompileConfig::version(params.version, false) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
+                pop_program(is_delegate, target_addr);
+                write_pages(parent_open, start_ever);
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
+        };
         match arb_stylus::NativeInstance::from_bytes_with_pages(
             &decompressed,
             evm_api,

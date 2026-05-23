@@ -1,4 +1,4 @@
-use crate::ink::Ink;
+use crate::{error::StylusError, ink::Ink};
 
 use super::ink::Gas;
 
@@ -120,7 +120,11 @@ pub struct CompileDebugParams {
 
 impl CompileConfig {
     /// Create a versioned compile config.
-    pub fn version(version: u16, debug_chain: bool) -> Self {
+    ///
+    /// Returns [`StylusError::UnsupportedDictionaryVersion`] when `version`
+    /// falls outside the range this build understands. The version is read
+    /// from contract storage and therefore must not panic the executor.
+    pub fn version(version: u16, debug_chain: bool) -> Result<Self, StylusError> {
         let mut config = Self {
             version,
             debug: CompileDebugParams {
@@ -143,9 +147,38 @@ impl CompileConfig {
                     memory_copy_ink: 800 / 8,
                 };
             }
-            _ => unreachable!("unsupported Stylus version {version}"),
+            _ => return Err(StylusError::UnsupportedDictionaryVersion(version)),
         }
 
-        config
+        Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_version_returns_typed_error() {
+        let err = CompileConfig::version(99, false).expect_err("v99 must be unsupported");
+        assert!(
+            matches!(err, StylusError::UnsupportedDictionaryVersion(99)),
+            "expected UnsupportedDictionaryVersion(99), got {err:?}",
+        );
+    }
+
+    #[test]
+    fn supported_versions_succeed() {
+        for v in 0u16..=3 {
+            let cfg = CompileConfig::version(v, false)
+                .unwrap_or_else(|e| panic!("version {v} must be supported, got {e:?}"));
+            assert_eq!(cfg.version, v);
+        }
+    }
+
+    #[test]
+    fn version_boundary_above_supported_is_rejected() {
+        let err = CompileConfig::version(4, false).expect_err("v4 must be unsupported");
+        assert!(matches!(err, StylusError::UnsupportedDictionaryVersion(4)));
     }
 }

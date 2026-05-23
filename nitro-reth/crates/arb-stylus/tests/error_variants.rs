@@ -6,7 +6,7 @@
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use arb_stylus::{decompress_wasm, strip_stylus_prefix, StylusError};
+use arb_stylus::{decompress_wasm, strip_stylus_prefix, CompileConfig, StylusError};
 
 #[test]
 fn strip_stylus_prefix_rejects_short_bytecode() {
@@ -59,4 +59,13 @@ fn internal_constructor_carries_message() {
         StylusError::Internal(msg) => assert_eq!(msg, "bridge failed"),
         other => panic!("expected Internal, got {other:?}"),
     }
+}
+
+#[test]
+fn compile_config_rejects_unsupported_version() {
+    let err = CompileConfig::version(255, false).expect_err("v255 must be unsupported");
+    assert!(
+        matches!(err, StylusError::UnsupportedDictionaryVersion(255)),
+        "expected UnsupportedDictionaryVersion(255), got {err:?}",
+    );
 }

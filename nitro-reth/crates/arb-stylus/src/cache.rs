@@ -111,7 +111,7 @@ pub fn deserialize_module(
     version: u16,
     debug: bool,
 ) -> Result<(Module, Engine, usize), StylusError> {
-    let compile = CompileConfig::version(version, debug);
+    let compile = CompileConfig::version(version, debug)?;
     let engine = compile.engine();
     let module = unsafe {
         Module::deserialize_unchecked(&engine, module)

@@ -72,7 +72,7 @@ impl<E: EvmApi> NativeInstance<E> {
         mut long_term_tag: u32,
         debug: bool,
     ) -> Result<Self, StylusError> {
-        let compile = CompileConfig::version(version, debug);
+        let compile = CompileConfig::version(version, debug)?;
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let module_hash = env.evm_data.module_hash;
         if !env.evm_data.cached {
@@ -360,7 +360,7 @@ impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
 
 /// Compile WASM bytes into a serialized module.
 pub fn compile_module(wasm: &[u8], version: u16, debug: bool) -> Result<Vec<u8>, StylusError> {
-    let compile = CompileConfig::version(version, debug);
+    let compile = CompileConfig::version(version, debug)?;
     let store = compile.store();
     let module = Module::new(&store, wasm).map_err(|e| StylusError::Compile(e.to_string()))?;
     let serialized = module

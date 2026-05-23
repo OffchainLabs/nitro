@@ -71,6 +71,13 @@ pub enum StylusError {
     /// A required wasmer global export was missing or had the wrong type.
     #[error("missing or invalid wasm global: {0}")]
     MissingGlobal(String),
+
+    /// The compile/runtime version requested for a Stylus program is not
+    /// supported by this build. The version is read from contract storage
+    /// and is therefore considered attacker-influenced — bad values must
+    /// surface as a typed error rather than panic.
+    #[error("unsupported Stylus dictionary version: {0}")]
+    UnsupportedDictionaryVersion(u16),
 }
 
 impl StylusError {

@@ -17,7 +17,7 @@ use wasmer::{
 use wasmer_compiler::CompilerConfig;
 
 fn make_store() -> Store {
-    let mut compile = CompileConfig::version(1, true);
+    let mut compile = CompileConfig::version(1, true).expect("version 1 is supported");
     compile.debug.debug_funcs = true;
     compile.debug.debug_info = true;
 
