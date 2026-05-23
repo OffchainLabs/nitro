@@ -265,7 +265,7 @@ impl PrecompileTest {
     ) -> PrecompileRun {
         let _guard = test_lock();
 
-        let prior_tx = *ctx.tx.lock();
+        let prior_tx = ctx.tx.lock().clone();
         let block_ctx = arb_context::BlockCtx::new(
             self.arbos_version,
             self.block_timestamp,

@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
 use alloy_primitives::{Address, Log, B256, U256};
-use arbos::programs::memory::MemoryModel;
 use revm::Database;
 
 use crate::{
     evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
     ink::Gas,
-    pages,
 };
 
 /// EIP-2929 gas costs for storage operations.
@@ -154,14 +152,9 @@ pub struct SubCallResult {
     pub gas_cost: u64,
     pub success: bool,
     /// Gas refund accumulated during the sub-call (EIP-3529 SSTORE refunds).
-    ///
-    /// The inner `InterpreterResult` carries a `Gas` struct whose `refunded`
-    /// field holds any SSTORE clear/restore refunds that happened inside the
-    /// sub-call. We must propagate this to the outer Stylus program's
-    /// accounting so that the final tx-level refund reflects all nested
-    /// refund activity — otherwise every Stylus -> sub-call clearing refund
-    /// is silently dropped and the tx overcharges by ~4800 gas per clear.
     pub refund: i64,
+    /// Page counters after the sub-call returns.
+    pub pages: (u16, u16),
 }
 
 /// Result from a CREATE/CREATE2 operation.
@@ -169,23 +162,19 @@ pub struct SubCreateResult {
     pub address: Option<Address>,
     pub output: Vec<u8>,
     pub gas_cost: u64,
+    pub pages: (u16, u16),
 }
 
 /// Type-erased function pointer for executing sub-calls from Stylus.
 ///
-/// Parameters: `(ctx_ptr, call_type, contract, caller, storage_addr, input, gas, value)`.
-///
-/// - `call_type`: `0=CALL`, `1=DELEGATECALL`, `2=STATICCALL`
-/// - `caller`: msg.sender for the new frame (preserved for DELEGATECALL)
-/// - `storage_addr`: address whose storage the new frame uses (= current contract for
-///   CALL/STATICCALL, = preserved storage context for DELEGATECALL)
-pub type DoCallFn = fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256) -> SubCallResult;
+/// `call_type`: `0=CALL`, `1=DELEGATECALL`, `2=STATICCALL`.
+/// `pages` carries the parent's (open, ever) counters into the new frame.
+pub type DoCallFn =
+    fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256, (u16, u16)) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
-///
-/// Parameters: (ctx_ptr, caller, code, gas, endowment, salt)
-/// salt=None for CREATE, Some for CREATE2.
-pub type DoCreateFn = fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
+pub type DoCreateFn =
+    fn(*mut (), Address, &[u8], u64, U256, Option<B256>, (u16, u16)) -> SubCreateResult;
 
 /// Per-call storage cache entry.
 struct StorageCacheEntry {
@@ -276,9 +265,6 @@ pub struct StylusEvmApi {
     return_data: Vec<u8>,
     /// Whether the current execution context is read-only (STATICCALL).
     read_only: bool,
-    /// MemoryModel params for add_pages gas computation.
-    free_pages: u16,
-    page_gas: u16,
     /// ArbOS version — flush semantics are version-gated at v50.
     arbos_version: u64,
     /// Type-erased context pointer and callbacks for sub-calls.
@@ -287,7 +273,6 @@ pub struct StylusEvmApi {
     do_create: Option<DoCreateFn>,
 }
 
-// Safety: Wasmer executes synchronously on the calling thread. No cross-thread access occurs.
 unsafe impl Send for StylusEvmApi {}
 
 impl StylusEvmApi {
@@ -304,17 +289,11 @@ impl StylusEvmApi {
         caller: Address,
         call_value: U256,
         read_only: bool,
-        free_pages: u16,
-        page_gas: u16,
         arbos_version: u64,
         ctx_ptr: *mut (),
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
     ) -> Self {
-        // Annotate with '_ to avoid the default 'static bound on dyn trait objects.
-        // Raw pointers carry no lifetime; this is safe as long as the pointer
-        // remains valid for the duration of StylusEvmApi's use (guaranteed by
-        // synchronous WASM execution scoped within the caller).
         let journal: *mut dyn JournalAccess = {
             let r: &mut (dyn JournalAccess + '_) = &mut *journal;
             #[allow(clippy::unnecessary_cast)]
@@ -331,8 +310,6 @@ impl StylusEvmApi {
             sstore_refund: 0,
             return_data: Vec::new(),
             read_only,
-            free_pages,
-            page_gas,
             arbos_version,
             ctx_ptr,
             do_call,
@@ -498,10 +475,11 @@ impl EvmApi for StylusEvmApi {
         gas_left: Gas,
         gas_req: Gas,
         value: U256,
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
+        pages: (u16, u16),
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
         if self.read_only && !value.is_zero() {
             self.return_data = Vec::new();
-            return Ok((0, Gas(0), UserOutcomeKind::Failure));
+            return Ok((0, Gas(0), UserOutcomeKind::Failure, pages));
         }
 
         let do_call = match self.do_call {
@@ -512,49 +490,40 @@ impl EvmApi for StylusEvmApi {
                     self.return_data.len() as u32,
                     Gas(0),
                     UserOutcomeKind::Failure,
+                    pages,
                 ));
             }
         };
 
-        // WasmCallCost equivalent: warm/cold access + value transfer + new account
         let (base_cost, oog) = wasm_call_cost(self.journal(), contract, &value, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure, pages));
         }
 
-        // 63/64ths rule
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
         let gas = start_gas.min(gas_req.0);
 
-        // Stipend for value transfers
         let gas = if !value.is_zero() {
-            gas.saturating_add(2300) // CallStipend
+            gas.saturating_add(2300)
         } else {
             gas
         };
 
         let result = (do_call)(
             self.ctx_ptr,
-            0, // CALL
+            0,
             contract,
-            self.address, // caller = current contract
-            contract,     // storage_addr = target contract (CALL semantics)
+            self.address,
+            contract,
             calldata,
             gas,
             value,
+            pages,
         );
-
-        // Preserve the per-call storage cache across CALL: the sub-call
-        // targets a different contract's storage, so its writes cannot affect
-        // our cached entries, and invalidation would re-charge the full
-        // cold-miss cost on subsequent reads.
 
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
-
-        // Propagate the sub-call's accumulated SSTORE refund into our own
-        // accumulator so it survives the flatten into `SubCallResult`.
         self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
@@ -562,7 +531,12 @@ impl EvmApi for StylusEvmApi {
         } else {
             UserOutcomeKind::Failure
         };
-        Ok((self.return_data.len() as u32, Gas(cost), outcome))
+        Ok((
+            self.return_data.len() as u32,
+            Gas(cost),
+            outcome,
+            result.pages,
+        ))
     }
 
     fn delegate_call(
@@ -571,7 +545,8 @@ impl EvmApi for StylusEvmApi {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
+        pages: (u16, u16),
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
         let do_call = match self.do_call {
             Some(f) => f,
             None => {
@@ -580,15 +555,15 @@ impl EvmApi for StylusEvmApi {
                     self.return_data.len() as u32,
                     Gas(0),
                     UserOutcomeKind::Failure,
+                    pages,
                 ));
             }
         };
 
-        // For DELEGATECALL, no value transfer cost
         let (base_cost, oog) = wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure, pages));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -596,26 +571,18 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_call)(
             self.ctx_ptr,
-            1, // DELEGATECALL
+            1,
             contract,
-            self.caller, // caller = preserved msg.sender
-            self.address, /* storage_addr = current contract (DELEGATECALL preserves storage
-                          * context) */
+            self.caller,
+            self.address,
             calldata,
             gas,
-            self.call_value, // forward current call value
+            self.call_value,
+            pages,
         );
-
-        // Do not invalidate the per-call storage cache after DELEGATECALL.
-        // The on-chain gas schedule (via `EvmApiRequestor`) does not invalidate
-        // either; dropping clean entries forces the next read of the same slot
-        // to re-pay SLOAD + EVM_API_INK (~60k legacy gas) instead of the
-        // cache-hit cost.
 
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
-
-        // Propagate sub-call SSTORE refund (see contract_call).
         self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
@@ -623,7 +590,12 @@ impl EvmApi for StylusEvmApi {
         } else {
             UserOutcomeKind::Failure
         };
-        Ok((self.return_data.len() as u32, Gas(cost), outcome))
+        Ok((
+            self.return_data.len() as u32,
+            Gas(cost),
+            outcome,
+            result.pages,
+        ))
     }
 
     fn static_call(
@@ -632,7 +604,8 @@ impl EvmApi for StylusEvmApi {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
+        pages: (u16, u16),
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
         let do_call = match self.do_call {
             Some(f) => f,
             None => {
@@ -641,6 +614,7 @@ impl EvmApi for StylusEvmApi {
                     self.return_data.len() as u32,
                     Gas(0),
                     UserOutcomeKind::Failure,
+                    pages,
                 ));
             }
         };
@@ -648,7 +622,7 @@ impl EvmApi for StylusEvmApi {
         let (base_cost, oog) = wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure, pages));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -656,25 +630,18 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_call)(
             self.ctx_ptr,
-            2, // STATICCALL
+            2,
             contract,
-            self.address, // caller = current contract
-            contract,     // storage_addr = target contract (STATICCALL semantics)
+            self.address,
+            contract,
             calldata,
             gas,
             U256::ZERO,
+            pages,
         );
-
-        // STATICCALL cannot mutate storage — invalidating cache here is
-        // unambiguously wrong and drives the gas schedule out of parity with
-        // the on-chain cost (re-paying SLOAD + EVM_API_INK per repeated
-        // read across the call).
 
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
-
-        // A STATICCALL target can still internally CALL another contract and
-        // accumulate refunds on that path, so we carry the value upwards.
         self.sstore_refund = self.sstore_refund.saturating_add(result.refund);
 
         let outcome = if result.success {
@@ -682,7 +649,12 @@ impl EvmApi for StylusEvmApi {
         } else {
             UserOutcomeKind::Failure
         };
-        Ok((self.return_data.len() as u32, Gas(cost), outcome))
+        Ok((
+            self.return_data.len() as u32,
+            Gas(cost),
+            outcome,
+            result.pages,
+        ))
     }
 
     fn create1(
@@ -690,10 +662,16 @@ impl EvmApi for StylusEvmApi {
         code: Vec<u8>,
         endowment: U256,
         gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+        pages: (u16, u16),
+    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
+            return Ok((
+                CreateResponse::Fail("write protection".into()),
+                0,
+                Gas(0),
+                pages,
+            ));
         }
 
         let do_create = match self.do_create {
@@ -704,19 +682,22 @@ impl EvmApi for StylusEvmApi {
                     CreateResponse::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
+                    pages,
                 ));
             }
         };
 
-        // CREATE base cost = 32000
         let base_cost: u64 = 32000;
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
+            return Ok((
+                CreateResponse::Fail("out of gas".into()),
+                0,
+                Gas(gas.0),
+                pages,
+            ));
         }
         let remaining = gas.0 - base_cost;
-
-        // 63/64ths rule
         let one_64th = remaining / 64;
         let call_gas = remaining - one_64th;
 
@@ -726,17 +707,16 @@ impl EvmApi for StylusEvmApi {
             &code,
             call_gas,
             endowment,
-            None, // CREATE
+            None,
+            pages,
         );
 
         self.return_data = result.output.clone();
-        // cost = baseCost + gas_used (Go: startGas - returnGas - one_64th)
         let cost = base_cost.saturating_add(result.gas_cost);
 
         let response = match result.address {
             Some(addr) => CreateResponse::Success(addr),
             None => {
-                // On non-revert failure, clear return data
                 if self.return_data.is_empty() {
                     CreateResponse::Fail("create failed".into())
                 } else {
@@ -745,7 +725,12 @@ impl EvmApi for StylusEvmApi {
             }
         };
 
-        Ok((response, self.return_data.len() as u32, Gas(cost)))
+        Ok((
+            response,
+            self.return_data.len() as u32,
+            Gas(cost),
+            result.pages,
+        ))
     }
 
     fn create2(
@@ -754,10 +739,16 @@ impl EvmApi for StylusEvmApi {
         endowment: U256,
         salt: B256,
         gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+        pages: (u16, u16),
+    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
+            return Ok((
+                CreateResponse::Fail("write protection".into()),
+                0,
+                Gas(0),
+                pages,
+            ));
         }
 
         let do_create = match self.do_create {
@@ -768,20 +759,24 @@ impl EvmApi for StylusEvmApi {
                     CreateResponse::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
+                    pages,
                 ));
             }
         };
 
-        // CREATE2 base cost = 32000 + keccak cost
         let keccak_words = (code.len() as u64).div_ceil(32);
-        let keccak_cost = keccak_words.saturating_mul(6); // Keccak256WordGas
+        let keccak_cost = keccak_words.saturating_mul(6);
         let base_cost = 32000u64.saturating_add(keccak_cost);
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
+            return Ok((
+                CreateResponse::Fail("out of gas".into()),
+                0,
+                Gas(gas.0),
+                pages,
+            ));
         }
         let remaining = gas.0 - base_cost;
-
         let one_64th = remaining / 64;
         let call_gas = remaining - one_64th;
 
@@ -792,10 +787,10 @@ impl EvmApi for StylusEvmApi {
             call_gas,
             endowment,
             Some(salt),
+            pages,
         );
 
         self.return_data = result.output.clone();
-        // cost = baseCost + gas_used (Go: startGas - returnGas - one_64th)
         let cost = base_cost.saturating_add(result.gas_cost);
 
         let response = match result.address {
@@ -809,7 +804,12 @@ impl EvmApi for StylusEvmApi {
             }
         };
 
-        Ok((response, self.return_data.len() as u32, Gas(cost)))
+        Ok((
+            response,
+            self.return_data.len() as u32,
+            Gas(cost),
+            result.pages,
+        ))
     }
 
     fn get_return_data(&self) -> Vec<u8> {
@@ -884,14 +884,6 @@ impl EvmApi for StylusEvmApi {
             WARM_ACCOUNT_ACCESS_COST
         };
         Ok((hash, Gas(gas_cost)))
-    }
-
-    fn add_pages(&mut self, new_pages: u16) -> eyre::Result<Gas> {
-        // add_stylus_pages returns previous (open, ever) before updating
-        let (prev_open, prev_ever) = pages::add_stylus_pages(new_pages);
-        let model = MemoryModel::new(self.free_pages, self.page_gas);
-        let cost = model.gas_cost(new_pages, prev_open, prev_ever);
-        Ok(Gas(cost))
     }
 
     fn capture_hostio(

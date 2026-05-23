@@ -10,6 +10,42 @@ use std::{
     },
 };
 
+/// LRU cache of recently invoked Stylus program codehashes.
+#[derive(Debug, Default)]
+pub struct RecentWasms {
+    entries: Vec<B256>,
+    capacity: usize,
+}
+
+impl RecentWasms {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            capacity,
+        }
+    }
+
+    pub fn reset(&mut self, capacity: usize) {
+        self.entries.clear();
+        self.capacity = capacity;
+    }
+
+    /// Insert a hash. Returns `true` if it was already present.
+    pub fn insert(&mut self, hash: B256) -> bool {
+        let was_present = if let Some(pos) = self.entries.iter().position(|h| *h == hash) {
+            self.entries.remove(pos);
+            true
+        } else {
+            false
+        };
+        self.entries.push(hash);
+        if self.capacity > 0 && self.entries.len() > self.capacity {
+            self.entries.remove(0);
+        }
+        was_present
+    }
+}
+
 /// Per-block parameters populated once at block start.
 #[derive(Debug, Default)]
 pub struct BlockCtx {
@@ -26,6 +62,7 @@ pub struct BlockCtx {
     pub l1_block_cache: Mutex<HashMap<u64, u64>>,
     /// L2 block number -> L2 block hash, populated for `arbBlockHash` lookups.
     pub l2_blockhash_cache: Mutex<HashMap<u64, B256>>,
+    pub recent_wasms: Mutex<RecentWasms>,
 }
 
 impl BlockCtx {
@@ -45,6 +82,7 @@ impl BlockCtx {
             current_gas_backlog: AtomicU64::new(0),
             l1_block_cache: Mutex::new(HashMap::new()),
             l2_blockhash_cache: Mutex::new(HashMap::new()),
+            recent_wasms: Mutex::new(RecentWasms::default()),
         }
     }
 
@@ -79,10 +117,18 @@ impl BlockCtx {
     pub fn cached_l2_block_hash(&self, l2_block: u64) -> Option<B256> {
         self.l2_blockhash_cache.lock().get(&l2_block).copied()
     }
+
+    pub fn reset_recent_wasms(&self, capacity: usize) {
+        self.recent_wasms.lock().reset(capacity);
+    }
+
+    pub fn insert_recent_wasm(&self, hash: B256) -> bool {
+        self.recent_wasms.lock().insert(hash)
+    }
 }
 
 /// Per-tx scratch written by the executor between transactions.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct TxCtx {
     pub sender: Address,
     pub effective_gas_price: u128,
@@ -91,6 +137,13 @@ pub struct TxCtx {
     pub retryable_id: B256,
     pub redeemer: Address,
     pub tx_is_aliased: bool,
+    pub stylus_activation_addr: Option<Address>,
+    pub stylus_keepalive_hash: Option<B256>,
+    pub stylus_activation_data_fee: U256,
+    pub stylus_call_value: U256,
+    pub stylus_program_counts: HashMap<Address, u32>,
+    pub stylus_pages_open: u16,
+    pub stylus_pages_ever: u16,
 }
 
 impl TxCtx {
@@ -136,7 +189,7 @@ impl ArbPrecompileCtx {
 
     /// Snapshot the current per-tx scratch.
     pub fn tx_snapshot(&self) -> TxCtx {
-        *self.tx.lock()
+        self.tx.lock().clone()
     }
 
     /// Reset per-tx scratch between transactions.
@@ -204,6 +257,66 @@ impl ArbPrecompileCtx {
             return None;
         }
         self.caller_stack.lock().get(depth - 1).copied()
+    }
+
+    pub fn set_stylus_activation_addr(&self, addr: Option<Address>) {
+        self.tx.lock().stylus_activation_addr = addr;
+    }
+
+    pub fn take_stylus_activation_addr(&self) -> Option<Address> {
+        self.tx.lock().stylus_activation_addr.take()
+    }
+
+    pub fn set_stylus_keepalive_hash(&self, hash: Option<B256>) {
+        self.tx.lock().stylus_keepalive_hash = hash;
+    }
+
+    pub fn take_stylus_keepalive_hash(&self) -> Option<B256> {
+        self.tx.lock().stylus_keepalive_hash.take()
+    }
+
+    pub fn set_stylus_activation_data_fee(&self, fee: U256) {
+        self.tx.lock().stylus_activation_data_fee = fee;
+    }
+
+    pub fn take_stylus_activation_data_fee(&self) -> U256 {
+        std::mem::replace(&mut self.tx.lock().stylus_activation_data_fee, U256::ZERO)
+    }
+
+    pub fn set_stylus_call_value(&self, value: U256) {
+        self.tx.lock().stylus_call_value = value;
+    }
+
+    pub fn stylus_call_value(&self) -> U256 {
+        self.tx.lock().stylus_call_value
+    }
+
+    /// Increment the reentrancy counter for `addr` and return `true` if this
+    /// is a reentrant entry (counter was already > 0).
+    pub fn push_stylus_program(&self, addr: Address) -> bool {
+        let mut tx = self.tx.lock();
+        let count = tx.stylus_program_counts.entry(addr).or_insert(0);
+        *count += 1;
+        *count > 1
+    }
+
+    pub fn stylus_program_count(&self, addr: Address) -> u32 {
+        self.tx
+            .lock()
+            .stylus_program_counts
+            .get(&addr)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub fn pop_stylus_program(&self, addr: Address) {
+        let mut tx = self.tx.lock();
+        if let Some(count) = tx.stylus_program_counts.get_mut(&addr) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                tx.stylus_program_counts.remove(&addr);
+            }
+        }
     }
 }
 

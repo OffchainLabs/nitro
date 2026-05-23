@@ -67,6 +67,7 @@ pub use nodeinterface_debug::{
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
+use alloy_primitives::B256;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 use std::cell::Cell;
 
@@ -110,48 +111,17 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
 thread_local! {
     /// Gas consumed by precompile operations before an error.
     static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
-    static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
-    static STYLUS_KEEPALIVE_HASH: Cell<Option<[u8; 32]>> = const { Cell::new(None) };
-    static STYLUS_ACTIVATION_DATA_FEE: Cell<u128> = const { Cell::new(0) };
-    static STYLUS_CALL_VALUE_HI: Cell<u128> = const { Cell::new(0) };
-    static STYLUS_CALL_VALUE_LO: Cell<u128> = const { Cell::new(0) };
-}
-
-use std::cell::RefCell;
-
-thread_local! {
-    /// Per-block LRU of recently invoked Stylus program codehashes. Used by
-    /// ArbOS v60+ pricing; capacity set per-block from `params.BlockCacheSize`.
-    static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = const { RefCell::new((Vec::new(), 0)) };
 }
 
 /// Reset the recent WASMs cache for a new block, with the given capacity.
 pub fn reset_recent_wasms(capacity: usize) {
-    RECENT_WASMS.with(|c| {
-        let mut cache = c.borrow_mut();
-        cache.0.clear();
-        cache.1 = capacity;
-    });
+    arb_context::with_active(|c| c.block.reset_recent_wasms(capacity));
 }
 
 /// Insert a Stylus program codehash into the recent WASMs cache.
 /// Returns `true` if the codehash was already present (cache hit).
-pub fn insert_recent_wasm(hash: alloy_primitives::B256) -> bool {
-    RECENT_WASMS.with(|c| {
-        let mut cache = c.borrow_mut();
-        let was_present = if let Some(pos) = cache.0.iter().position(|h| *h == hash) {
-            cache.0.remove(pos);
-            true
-        } else {
-            false
-        };
-        cache.0.push(hash);
-        let max = cache.1;
-        if max > 0 && cache.0.len() > max {
-            cache.0.remove(0);
-        }
-        was_present
-    })
+pub fn insert_recent_wasm(hash: B256) -> bool {
+    arb_context::with_active(|c| c.block.insert_recent_wasm(hash)).unwrap_or(false)
 }
 
 /// Read the ArbOS version from the active block context.
@@ -215,56 +185,36 @@ pub fn init_precompile_gas_pure(input_len: usize) {
 }
 
 pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
-    STYLUS_ACTIVATION_ADDR.with(|v| v.set(addr.map(|a| *a.as_ref())));
+    arb_context::with_active(|c| c.set_stylus_activation_addr(addr));
 }
 
 pub fn take_stylus_activation_request() -> Option<alloy_primitives::Address> {
-    STYLUS_ACTIVATION_ADDR.with(|v| {
-        let val = v.get();
-        v.set(None);
-        val.map(alloy_primitives::Address::from)
-    })
+    arb_context::with_active(|c| c.take_stylus_activation_addr()).flatten()
 }
 
 pub fn set_stylus_keepalive_request(hash: Option<alloy_primitives::B256>) {
-    STYLUS_KEEPALIVE_HASH.with(|v| v.set(hash.map(|h| h.0)));
+    arb_context::with_active(|c| c.set_stylus_keepalive_hash(hash));
 }
 
 pub fn take_stylus_keepalive_request() -> Option<alloy_primitives::B256> {
-    STYLUS_KEEPALIVE_HASH.with(|v| {
-        let val = v.get();
-        v.set(None);
-        val.map(alloy_primitives::B256::from)
-    })
+    arb_context::with_active(|c| c.take_stylus_keepalive_hash()).flatten()
 }
 
 pub fn set_stylus_activation_data_fee(fee: alloy_primitives::U256) {
-    STYLUS_ACTIVATION_DATA_FEE.with(|v| v.set(fee.try_into().unwrap_or(u128::MAX)));
+    arb_context::with_active(|c| c.set_stylus_activation_data_fee(fee));
 }
 
 pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
-    STYLUS_ACTIVATION_DATA_FEE.with(|v| {
-        let val = v.get();
-        v.set(0);
-        alloy_primitives::U256::from(val)
-    })
+    arb_context::with_active(|c| c.take_stylus_activation_data_fee())
+        .unwrap_or(alloy_primitives::U256::ZERO)
 }
 
 pub fn set_stylus_call_value(value: alloy_primitives::U256) {
-    let bytes = value.to_be_bytes::<32>();
-    let hi = u128::from_be_bytes(bytes[0..16].try_into().unwrap_or([0u8; 16]));
-    let lo = u128::from_be_bytes(bytes[16..32].try_into().unwrap_or([0u8; 16]));
-    STYLUS_CALL_VALUE_HI.with(|v| v.set(hi));
-    STYLUS_CALL_VALUE_LO.with(|v| v.set(lo));
+    arb_context::with_active(|c| c.set_stylus_call_value(value));
 }
 
 pub fn get_stylus_call_value() -> alloy_primitives::U256 {
-    let hi = STYLUS_CALL_VALUE_HI.with(|v| v.get());
-    let lo = STYLUS_CALL_VALUE_LO.with(|v| v.get());
-    let mut bytes = [0u8; 32];
-    bytes[0..16].copy_from_slice(&hi.to_be_bytes());
-    bytes[16..32].copy_from_slice(&lo.to_be_bytes());
-    alloy_primitives::U256::from_be_bytes(bytes)
+    arb_context::with_active(|c| c.stylus_call_value()).unwrap_or(alloy_primitives::U256::ZERO)
 }
 
 fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
@@ -388,50 +338,49 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
 
 #[cfg(test)]
 mod recent_wasms_tests {
-    use super::*;
     use alloy_primitives::B256;
+    use arb_context::BlockCtx;
 
     #[test]
     fn reset_clears_entries_and_sets_capacity() {
+        let block = BlockCtx::default();
         let h1 = B256::repeat_byte(0xa1);
         let h2 = B256::repeat_byte(0xa2);
-        reset_recent_wasms(8);
-        assert!(!insert_recent_wasm(h1));
-        assert!(!insert_recent_wasm(h2));
-        assert!(insert_recent_wasm(h1));
-        // Block boundary: reset must drop everything.
-        reset_recent_wasms(8);
-        assert!(!insert_recent_wasm(h1), "reset must wipe prior entries");
+        block.reset_recent_wasms(8);
+        assert!(!block.insert_recent_wasm(h1));
+        assert!(!block.insert_recent_wasm(h2));
+        assert!(block.insert_recent_wasm(h1));
+        block.reset_recent_wasms(8);
+        assert!(
+            !block.insert_recent_wasm(h1),
+            "reset must wipe prior entries"
+        );
     }
 
     #[test]
     fn capacity_evicts_oldest() {
+        let block = BlockCtx::default();
         let h1 = B256::repeat_byte(0x01);
         let h2 = B256::repeat_byte(0x02);
         let h3 = B256::repeat_byte(0x03);
-        reset_recent_wasms(2);
-        assert!(!insert_recent_wasm(h1));
-        assert!(!insert_recent_wasm(h2));
-        // Inserting h3 over-fills, the oldest (h1) is evicted.
-        assert!(!insert_recent_wasm(h3));
-        // Probe in order: h1 evicted, h2 still present, h3 still present.
-        // (Each insert refreshes LRU position; we test exactly the sequence
-        // we care about — h1 being absent.)
+        block.reset_recent_wasms(2);
+        assert!(!block.insert_recent_wasm(h1));
+        assert!(!block.insert_recent_wasm(h2));
+        assert!(!block.insert_recent_wasm(h3));
         assert!(
-            !insert_recent_wasm(h1),
+            !block.insert_recent_wasm(h1),
             "h1 should be evicted after h3 push"
         );
     }
 
     #[test]
     fn zero_capacity_is_no_op_cache() {
+        let block = BlockCtx::default();
         let h = B256::repeat_byte(0xff);
-        reset_recent_wasms(0);
-        // With cap=0, nothing should be retained, every insert reports miss.
-        assert!(!insert_recent_wasm(h));
-        // Note: current impl with cap=0 doesn't evict, but reset is the cure.
-        reset_recent_wasms(0);
-        assert!(!insert_recent_wasm(h));
+        block.reset_recent_wasms(0);
+        assert!(!block.insert_recent_wasm(h));
+        block.reset_recent_wasms(0);
+        assert!(!block.insert_recent_wasm(h));
     }
 }
 
