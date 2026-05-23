@@ -426,6 +426,31 @@ where
 
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
+    let is_callcode = call_type == 3;
+
+    struct ActorGuard {
+        addr: Address,
+        pushed: bool,
+    }
+    impl Drop for ActorGuard {
+        fn drop(&mut self) {
+            if self.pushed {
+                pop_stylus_program(self.addr);
+            }
+        }
+    }
+    let _actor_guard = if !is_delegate && !is_callcode {
+        push_stylus_program(storage_addr);
+        ActorGuard {
+            addr: storage_addr,
+            pushed: true,
+        }
+    } else {
+        ActorGuard {
+            addr: storage_addr,
+            pushed: false,
+        }
+    };
 
     let checkpoint = context.journaled_state.inner.checkpoint();
 
@@ -688,7 +713,6 @@ where
     }
 
     let created_address = if let Some(salt) = salt {
-        // CREATE2: keccak256(0xff ++ sender ++ salt ++ keccak256(code))
         let code_hash = alloy_primitives::keccak256(code);
         let mut buf = Vec::with_capacity(1 + 20 + 32 + 32);
         buf.push(0xff);
@@ -697,7 +721,6 @@ where
         buf.extend_from_slice(code_hash.as_slice());
         Address::from_slice(&alloy_primitives::keccak256(&buf)[12..])
     } else {
-        // CREATE: RLP([sender, nonce])
         use alloy_rlp::Encodable;
         let mut rlp_buf = Vec::with_capacity(64);
         alloy_rlp::Header {
@@ -708,6 +731,19 @@ where
         caller.encode(&mut rlp_buf);
         caller_nonce.encode(&mut rlp_buf);
         Address::from_slice(&alloy_primitives::keccak256(&rlp_buf)[12..])
+    };
+
+    struct CreateActorGuard {
+        addr: Address,
+    }
+    impl Drop for CreateActorGuard {
+        fn drop(&mut self) {
+            pop_stylus_program(self.addr);
+        }
+    }
+    push_stylus_program(created_address);
+    let _create_guard = CreateActorGuard {
+        addr: created_address,
     };
 
     {
@@ -1147,20 +1183,8 @@ where
 
     let stylus_config = StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
 
-    // ── Track reentrancy ────────────────────────────────────────────
     let target_addr = inputs.target_address;
-    let is_delegate = matches!(
-        inputs.scheme,
-        CallScheme::DelegateCall | CallScheme::CallCode
-    );
-    // Only non-delegate-non-callcode calls increment the reentrancy counter.
-    // Delegate and callcode frames check the counter without bumping it, so an
-    // actual re-entry into the same storage context reports `reentrant=true`.
-    let reentrant = if !is_delegate {
-        push_stylus_program(target_addr)
-    } else {
-        get_stylus_program_count(target_addr) > 1
-    };
+    let reentrant = get_stylus_program_count(target_addr) > 1;
 
     // Read the activation-time module hash from storage. This differs from
     // code_hash (which is keccak256 of the bytecode); it is the hash of the
@@ -1211,9 +1235,6 @@ where
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
                 set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
@@ -1223,9 +1244,6 @@ where
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
                 set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         };
@@ -1241,9 +1259,6 @@ where
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
                 set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
@@ -1261,18 +1276,11 @@ where
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
             set_stylus_pages_open(prev_open);
-            if !is_delegate {
-                pop_stylus_program(target_addr);
-            }
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
 
-    // Restore page count and pop reentrancy.
     set_stylus_pages_open(prev_open);
-    if !is_delegate {
-        pop_stylus_program(target_addr);
-    }
 
     // Convert remaining ink back to gas.
     let ink_left = match instance.ink_left() {
@@ -1534,6 +1542,7 @@ pub struct ArbEvm<DB: Database, I> {
     inner: InnerRevmEvm<DB, I>,
     inspect: bool,
     create_ctx_stack: Vec<CreateFrameCtx>,
+    actor_stack: Vec<Option<Address>>,
 }
 
 impl<DB, I> ArbEvm<DB, I>
@@ -1545,6 +1554,7 @@ where
             inner,
             inspect,
             create_ctx_stack: Vec::new(),
+            actor_stack: Vec::new(),
         }
     }
 
@@ -1635,9 +1645,25 @@ where
             _ => false,
         };
 
-        // For Create frames: capture a checkpoint so we can revert if EIP-3541
-        // rejects the deployed bytecode (we keep revm's check disabled because
-        // legitimate Stylus contracts start with 0xEF).
+        match &frame_input.frame_input {
+            FrameInput::Call(inputs)
+                if !matches!(
+                    inputs.scheme,
+                    CallScheme::DelegateCall | CallScheme::CallCode
+                ) =>
+            {
+                push_stylus_program(inputs.target_address);
+                self.actor_stack.push(Some(inputs.target_address));
+            }
+            FrameInput::Call(_) => {
+                self.actor_stack.push(None);
+            }
+            FrameInput::Create(_) => {
+                self.actor_stack.push(None);
+            }
+            _ => {}
+        }
+
         if let FrameInput::Create(inputs) = &frame_input.frame_input {
             let cp = self.inner.ctx.journal_mut().checkpoint();
             self.create_ctx_stack.push(CreateFrameCtx {
@@ -1700,6 +1726,10 @@ where
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
         // Pop the caller pushed by frame_init for this frame.
         arb_precompiles::pop_caller_frame();
+
+        if let Some(Some(addr)) = self.actor_stack.pop() {
+            pop_stylus_program(addr);
+        }
 
         // EIP-3541: reject runtime starting with 0xEF unless it's the Stylus
         // marker (0xEF 0xF0 0x00). revm's global check is disabled so Stylus
