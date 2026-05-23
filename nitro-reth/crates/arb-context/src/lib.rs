@@ -153,16 +153,11 @@ impl TxCtx {
     }
 }
 
-/// Toggles that gate debug-only precompiles or features.
-#[derive(Debug, Default)]
-pub struct DebugFlags {}
-
 /// Handle threaded into precompile handlers. Cheap to clone (all `Arc`).
 #[derive(Debug, Default, Clone)]
 pub struct ArbPrecompileCtx {
     pub block: Arc<BlockCtx>,
     pub tx: Arc<Mutex<TxCtx>>,
-    pub debug: Arc<DebugFlags>,
     /// EVM call depth at the most recent precompile dispatch. Mirrors the
     /// journal depth surfaced by revm to the precompile provider.
     pub evm_depth: Arc<AtomicUsize>,
@@ -181,7 +176,6 @@ impl ArbPrecompileCtx {
         Self {
             block,
             tx: Arc::new(Mutex::new(TxCtx::default())),
-            debug: Arc::new(DebugFlags::default()),
             evm_depth: Arc::new(AtomicUsize::new(0)),
             caller_stack: Arc::new(Mutex::new(Vec::new())),
         }

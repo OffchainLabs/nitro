@@ -35,7 +35,7 @@ pub fn open_queue<D>(storage: Storage<D>) -> Queue {
     open_queue_at(storage.base_key())
 }
 
-pub fn open_queue_at(base_key: B256) -> Queue {
+pub(crate) fn open_queue_at(base_key: B256) -> Queue {
     Queue {
         base_key,
         next_put: StorageBackedUint64::new(base_key, 0),

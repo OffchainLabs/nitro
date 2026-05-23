@@ -21,7 +21,7 @@ pub fn open_sub_storage_vector<D>(storage: Storage<D>) -> SubStorageVector {
     open_sub_storage_vector_at(storage.base_key())
 }
 
-pub fn open_sub_storage_vector_at(base_key: B256) -> SubStorageVector {
+pub(crate) fn open_sub_storage_vector_at(base_key: B256) -> SubStorageVector {
     SubStorageVector {
         base_key,
         length: StorageBackedUint64::new(base_key, LENGTH_OFFSET),

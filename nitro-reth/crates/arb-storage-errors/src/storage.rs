@@ -13,15 +13,6 @@ pub enum StorageError {
     #[error(transparent)]
     Database(#[from] DatabaseError),
 
-    /// A stored value did not fit in the requested numeric type.
-    #[error("decode overflow at slot {slot}: stored value does not fit in {wanted}")]
-    DecodeOverflow {
-        /// The storage slot whose value failed to decode.
-        slot: U256,
-        /// Human-readable name of the expected width (e.g. `"u64"`).
-        wanted: &'static str,
-    },
-
     /// A stored value violated the layout invariants of its typed wrapper
     /// (e.g. an address slot whose upper 12 bytes are non-zero).
     #[error("invalid storage layout at slot {slot}: {reason}")]

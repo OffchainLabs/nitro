@@ -40,16 +40,6 @@ fn out_of_gas_maps_to_revm_out_of_gas() {
 }
 
 #[test]
-fn unsupported_method_propagates_as_other() {
-    let revm_err: PrecompileError = ArbPrecompileError::UnsupportedMethod {
-        method_id: [0xaa, 0xbb, 0xcc, 0xdd],
-        required_version: 60,
-    }
-    .into();
-    assert!(matches!(revm_err, PrecompileError::Other(_)));
-}
-
-#[test]
 fn fatal_propagates_source_via_display() {
     #[derive(Debug, thiserror::Error)]
     #[error("disk on fire: {0}")]

@@ -29,12 +29,11 @@ pub use extra_types::{
     StorageBackedBips, StorageBackedUBips, StorageBackedUint16, StorageBackedUint24,
     StorageBackedUint32,
 };
-pub use queue::{initialize_queue, open_queue, open_queue_at, Queue};
+pub use queue::{initialize_queue, open_queue, Queue};
 pub use slot::storage_key_map;
 pub use state_ops::{
-    ensure_account_in_bundle, ensure_arbos_account_in_bundle, get_account_balance,
-    read_arbos_storage, read_storage_at, set_account_code, set_account_nonce, write_arbos_storage,
+    get_account_balance, read_storage_at, set_account_code, set_account_nonce, write_arbos_storage,
     write_storage_at, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 pub use storage::{Detached, Storage};
-pub use vector::{open_sub_storage_vector, open_sub_storage_vector_at, SubStorageVector};
+pub use vector::{open_sub_storage_vector, SubStorageVector};

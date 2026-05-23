@@ -6,7 +6,6 @@
 extern crate alloc;
 
 pub mod arbos_versions;
-pub mod error;
 pub mod multigas;
 pub mod receipt;
 pub mod signed_tx;

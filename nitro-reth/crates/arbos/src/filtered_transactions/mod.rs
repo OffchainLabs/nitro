@@ -24,29 +24,11 @@ impl<D> FilteredTransactionsState<D> {
 }
 
 impl<D: Database> FilteredTransactionsState<D> {
-    pub fn add(&self, tx_hash: B256) -> Result<(), FilteredTxError> {
-        Ok(self.store.set(tx_hash, PRESENT_HASH)?)
-    }
-
-    pub fn delete(&self, tx_hash: B256) -> Result<(), FilteredTxError> {
-        Ok(self.store.set(tx_hash, B256::ZERO)?)
-    }
-
-    pub fn is_filtered(&self, tx_hash: B256) -> Result<bool, FilteredTxError> {
-        let value = self.store.get(tx_hash)?;
-        Ok(value == PRESENT_HASH)
-    }
-
     /// Check if a tx is filtered without charging gas.
     pub fn is_filtered_free(&self, tx_hash: B256) -> bool {
         self.store
             .get(tx_hash)
             .map(|v| v == PRESENT_HASH)
             .unwrap_or(false)
-    }
-
-    /// Delete a tx hash without charging gas (cleanup after no-op execution).
-    pub fn delete_free(&self, tx_hash: B256) {
-        let _ = self.store.set(tx_hash, B256::ZERO);
     }
 }

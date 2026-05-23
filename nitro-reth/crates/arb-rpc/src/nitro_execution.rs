@@ -9,49 +9,9 @@ use alloy_primitives::{Address, B256, U256};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use serde::{Deserialize, Serialize};
 
-/// Deserializer that accepts U256 as hex string ("0x..."), decimal string ("12345"),
-/// or bare JSON number (12345). The canonical `*big.Int` marshals to a bare JSON number.
-#[allow(dead_code)]
-mod u256_dec_or_hex {
-    use alloy_primitives::U256;
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serde::Serialize::serialize(value, serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<U256, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let v = serde_json::Value::deserialize(deserializer)?;
-        match v {
-            serde_json::Value::Number(n) => {
-                if let Some(u) = n.as_u64() {
-                    Ok(U256::from(u))
-                } else {
-                    // Large number: parse from string representation
-                    U256::from_str_radix(&n.to_string(), 10).map_err(serde::de::Error::custom)
-                }
-            }
-            serde_json::Value::String(s) => {
-                if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-                    U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
-                } else {
-                    U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)
-                }
-            }
-            _ => Err(serde::de::Error::custom(
-                "expected number or string for U256",
-            )),
-        }
-    }
-}
-
-/// Optional variant of u256_dec_or_hex.
+/// Deserializer for `Option<U256>` accepting hex string ("0x..."), decimal string
+/// ("12345"), or bare JSON number (12345). The canonical `*big.Int` marshals to
+/// a bare JSON number.
 mod opt_u256_dec_or_hex {
     use alloy_primitives::U256;
     use serde::{self, Deserialize, Deserializer, Serializer};

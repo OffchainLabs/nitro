@@ -127,8 +127,6 @@ pub struct ArbitrumExtraData {
     pub activated_wasms: HashMap<B256, ActivatedWasm>,
     /// Recently activated WASM modules (LRU).
     pub recent_wasms: RecentWasms,
-    /// Whether transaction filtering is active.
-    pub arb_tx_filter: bool,
     /// Zombie accounts: addresses that were self-destructed then touched by
     /// a zero-value transfer on pre-Stylus ArbOS (< v30). These must be
     /// preserved as empty accounts during finalization to match canonical behavior.
@@ -226,23 +224,6 @@ impl ArbitrumExtraData {
     pub fn reset_stylus_pages(&mut self) {
         self.open_wasm_pages = 0;
         self.ever_wasm_pages = 0;
-    }
-
-    // --- Transaction filter ---
-
-    /// Mark transaction as filtered (will be excluded at commit).
-    pub fn filter_tx(&mut self) {
-        self.arb_tx_filter = true;
-    }
-
-    /// Clear the transaction filter flag.
-    pub fn clear_tx_filter(&mut self) {
-        self.arb_tx_filter = false;
-    }
-
-    /// Returns whether a transaction is currently filtered.
-    pub fn is_tx_filtered(&self) -> bool {
-        self.arb_tx_filter
     }
 
     // --- Zombie accounts ---

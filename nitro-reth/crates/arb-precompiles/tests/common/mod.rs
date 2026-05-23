@@ -282,7 +282,6 @@ impl PrecompileTest {
         let installed = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
             block: std::sync::Arc::new(block_ctx),
             tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
-            debug: ctx.debug.clone(),
             evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
             caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
         });

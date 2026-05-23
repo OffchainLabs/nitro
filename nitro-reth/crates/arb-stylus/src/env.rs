@@ -164,8 +164,6 @@ impl MeterData {
     }
 }
 
-unsafe impl Send for MeterData {}
-
 /// Wrapper providing access to host I/O operations during WASM execution.
 ///
 /// Bundles the WasmEnv, Memory, and Store together for convenient access

@@ -6,8 +6,8 @@ use std::{cell::Cell, convert::Infallible};
 
 use alloy_primitives::{Address, B256, U256};
 use arb_storage::{
-    read_arbos_storage, read_storage_at, write_arbos_storage, write_storage_at, DatabaseError,
-    StorageError, ARBOS_STATE_ADDRESS,
+    read_storage_at, write_arbos_storage, write_storage_at, DatabaseError, StorageError,
+    ARBOS_STATE_ADDRESS,
 };
 use revm::Database;
 use revm_database::StateBuilder;
@@ -87,7 +87,7 @@ fn read_arbos_storage_propagates_database_error() {
         .with_bundle_update()
         .build();
 
-    let err = read_arbos_storage(&mut state, U256::from(7))
+    let err = read_storage_at(&mut state, ARBOS_STATE_ADDRESS, U256::from(7))
         .expect_err("db read returned Err; the call should propagate");
     assert!(matches!(
         err,

@@ -96,8 +96,6 @@ impl DefaultArbOsHooks {
 pub enum ArbHookError {
     #[error("gas charging: {0}")]
     GasCharging(#[from] GasChargingError),
-    #[error("state access: {0}")]
-    StateAccess(String),
 }
 
 impl ArbOsHooks for DefaultArbOsHooks {

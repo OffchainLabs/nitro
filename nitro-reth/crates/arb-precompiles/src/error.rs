@@ -6,10 +6,9 @@ use std::borrow::Cow;
 
 /// Errors raised by Arbitrum precompiles.
 ///
-/// `Revert`, `OutOfGas`, and `UnsupportedMethod` are user-visible: the
-/// transaction reverts and the surrounding block continues. `Fatal` indicates
-/// an infrastructure failure (database error, broken storage invariant) and
-/// must abort the block.
+/// `Revert` and `OutOfGas` are user-visible: the transaction reverts and the
+/// surrounding block continues. `Fatal` indicates an infrastructure failure
+/// (database error, broken storage invariant) and must abort the block.
 #[derive(thiserror::Error, Debug)]
 pub enum ArbPrecompileError {
     /// User-visible revert. The block continues; the tx reverts.
@@ -26,15 +25,6 @@ pub enum ArbPrecompileError {
     /// Out of gas during precompile execution. User-visible.
     #[error("out of gas")]
     OutOfGas,
-
-    /// Method id is gated on a future ArbOS version. User-visible.
-    #[error("method {method_id:?} requires ArbOS >= {required_version}")]
-    UnsupportedMethod {
-        /// Solidity method selector (first four bytes of the calldata).
-        method_id: [u8; 4],
-        /// ArbOS version at which the method becomes available.
-        required_version: u64,
-    },
 
     /// Infrastructure failure. Maps to `PrecompileError::Fatal` so the block
     /// aborts instead of producing a user-visible revert.
@@ -64,8 +54,8 @@ impl ArbPrecompileError {
     /// Converts this error into a [`PrecompileResult`], capped by `gas_limit`.
     ///
     /// `Revert` produces a successful `PrecompileOutput::new_reverted` carrying
-    /// the configured selector and payload. `OutOfGas`, `UnsupportedMethod`,
-    /// and `Fatal` become `Err`-variant `PrecompileError`s.
+    /// the configured selector and payload. `OutOfGas` and `Fatal` become
+    /// `Err`-variant `PrecompileError`s.
     pub fn into_precompile_result(self, gas_limit: u64) -> PrecompileResult {
         match self {
             Self::Revert {
@@ -103,9 +93,6 @@ impl From<ArbPrecompileError> for PrecompileError {
         match err {
             ArbPrecompileError::Revert { .. } => PrecompileError::Other(Cow::Borrowed("revert")),
             ArbPrecompileError::OutOfGas => PrecompileError::OutOfGas,
-            ArbPrecompileError::UnsupportedMethod { .. } => {
-                PrecompileError::Other(Cow::Borrowed("unsupported method"))
-            }
             ArbPrecompileError::Fatal(source) => PrecompileError::Fatal(source.to_string()),
         }
     }

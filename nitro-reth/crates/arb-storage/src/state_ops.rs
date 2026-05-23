@@ -13,43 +13,6 @@ pub const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFF
 /// Filtered transactions state address — a separate account for tracking filtered tx hashes.
 pub const FILTERED_TX_STATE_ADDRESS: Address = address!("a4b0500000000000000000000000000000000001");
 
-/// Ensures the ArbOS account exists in bundle_state.
-///
-/// Uses database.basic() instead of state.basic() to avoid cache non-determinism.
-pub fn ensure_arbos_account_in_bundle<D: Database>(state: &mut revm::database::State<D>) {
-    ensure_account_in_bundle(state, ARBOS_STATE_ADDRESS);
-}
-
-/// Ensures an arbitrary account exists in bundle_state with nonce=1.
-pub fn ensure_account_in_bundle<D: Database>(state: &mut revm::database::State<D>, addr: Address) {
-    use revm_database::{AccountStatus, BundleAccount};
-    use revm_state::AccountInfo;
-
-    if state.bundle_state.state.contains_key(&addr) {
-        return;
-    }
-
-    let db_info = state.database.basic(addr).ok().flatten();
-
-    let info = db_info.or_else(|| {
-        Some(AccountInfo {
-            balance: U256::ZERO,
-            nonce: 1,
-            code_hash: keccak256([]),
-            code: None,
-            account_id: None,
-        })
-    });
-
-    let acc = BundleAccount {
-        info: info.clone(),
-        storage: HashMap::default(),
-        original_info: info,
-        status: AccountStatus::Loaded,
-    };
-    state.bundle_state.state.insert(addr, acc);
-}
-
 /// Ensures the account exists in the cache. If the account doesn't exist
 /// (database returned None), creates it with default values (nonce=0, balance=0).
 fn ensure_cache_account<D: Database>(state: &mut revm::database::State<D>, addr: Address) {
@@ -72,14 +35,6 @@ fn ensure_cache_account<D: Database>(state: &mut revm::database::State<D>, addr:
             cached.status = AccountStatus::InMemoryChange;
         }
     }
-}
-
-/// Reads a storage slot from the ArbOS account, checking cache -> bundle -> database.
-pub fn read_arbos_storage<D: Database>(
-    state: &mut revm::database::State<D>,
-    slot: U256,
-) -> Result<U256, StorageError> {
-    read_storage_at(state, ARBOS_STATE_ADDRESS, slot)
 }
 
 /// Reads a storage slot from an arbitrary account, checking cache -> bundle -> database.

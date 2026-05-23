@@ -1,6 +1,6 @@
 use std::{cell::RefCell, path::Path};
 
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{B256, U256};
 use arb_test_utils::ArbosHarness;
 use arbos::{
     address_set::open_address_set, address_table::open_address_table, blockhash::open_blockhashes,
@@ -633,6 +633,3 @@ fn ensure_eq<T: std::fmt::Debug + PartialEq>(
 fn map_err<E: std::fmt::Display>(e: E) -> SpecError {
     SpecError::Assertion(format!("storage read failed: {e}"))
 }
-
-#[allow(dead_code)]
-fn _unused_marker(_: Address) {}
