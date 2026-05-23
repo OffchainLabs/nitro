@@ -97,6 +97,7 @@ pub struct ArbBlockExecutorFactory<R, Spec, EvmF> {
     receipt_builder: R,
     spec: Spec,
     evm_factory: EvmF,
+    allow_debug_precompiles: bool,
 }
 
 impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
@@ -105,7 +106,21 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             receipt_builder,
             spec,
             evm_factory,
+            allow_debug_precompiles: false,
         }
+    }
+
+    pub fn with_allow_debug_precompiles(mut self, allow: bool) -> Self {
+        self.allow_debug_precompiles = allow;
+        self
+    }
+
+    pub fn allow_debug_precompiles(&self) -> bool {
+        self.allow_debug_precompiles
+    }
+
+    pub fn arb_evm_factory(&self) -> &EvmF {
+        &self.evm_factory
     }
 
     /// Create an executor with the concrete `ArbBlockExecutor` return type.
@@ -141,6 +156,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             arb_hooks: None,
             arb_ctx,
             precompile_ctx: arb_context::active().unwrap_or_default(),
+            allow_debug_precompiles: self.allow_debug_precompiles,
             pending_tx: None,
             block_gas_left: 0,
             user_txs_processed: 0,
@@ -200,8 +216,9 @@ where
             arb_hooks: None,
             arb_ctx,
             precompile_ctx: arb_context::active().unwrap_or_default(),
+            allow_debug_precompiles: self.allow_debug_precompiles,
             pending_tx: None,
-            block_gas_left: 0, // Set from state in apply_pre_execution_changes
+            block_gas_left: 0,
             user_txs_processed: 0,
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
@@ -269,6 +286,7 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub arb_ctx: ArbBlockExecutionCtx,
     /// Per-block precompile context handle (per-tx scratch writes).
     pub precompile_ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    allow_debug_precompiles: bool,
     /// Per-tx state between execute and commit.
     pending_tx: Option<PendingArbTx>,
     /// Remaining block gas for rate limiting.
@@ -362,14 +380,26 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     ) {
         let arbos_version = arb_state.arbos_version();
         self.arb_ctx.arbos_version = arbos_version;
-        arb_precompiles::set_arbos_version(arbos_version);
-        arb_precompiles::set_block_timestamp(self.arb_ctx.block_timestamp);
-        arb_precompiles::set_current_l2_block(self.arb_ctx.l2_block_number);
-        arb_precompiles::set_l1_block_number_for_evm(self.arb_ctx.l1_block_number);
-        arb_precompiles::set_cached_l1_block_number(
-            self.arb_ctx.l2_block_number,
+
+        let block_ctx = arb_context::BlockCtx::new(
+            arbos_version,
+            self.arb_ctx.block_timestamp,
             self.arb_ctx.l1_block_number,
+            self.arb_ctx.l2_block_number,
+            self.allow_debug_precompiles,
         );
+        block_ctx.cache_l1_block_number(self.arb_ctx.l2_block_number, self.arb_ctx.l1_block_number);
+
+        let prior_l2_cache = self.precompile_ctx.block.l2_blockhash_cache.lock().clone();
+        *block_ctx.l2_blockhash_cache.lock() = prior_l2_cache;
+
+        let new_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
+            block: std::sync::Arc::new(block_ctx),
+            tx: std::sync::Arc::new(parking_lot::Mutex::new(arb_context::TxCtx::default())),
+            debug: std::sync::Arc::new(arb_context::DebugFlags::default()),
+        });
+        arb_context::install_active(new_ctx.clone());
+        self.precompile_ctx = new_ctx;
 
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
             let cap = arb_state
@@ -383,7 +413,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         }
 
         if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog(state) {
-            arb_precompiles::set_current_gas_backlog(backlog);
+            self.precompile_ctx.block.set_current_gas_backlog(backlog);
         }
 
         if let Ok(addr) = arb_state.network_fee_account(state) {
@@ -912,11 +942,9 @@ where
         // (set via arb_context_for_block or with_arb_ctx). If still 0, we're in a
         // path where it wasn't explicitly set — this shouldn't happen in production.
         if self.arb_ctx.l2_block_number > 0 {
-            arb_precompiles::set_current_l2_block(self.arb_ctx.l2_block_number);
-            arb_precompiles::set_cached_l1_block_number(
-                self.arb_ctx.l2_block_number,
-                self.arb_ctx.l1_block_number,
-            );
+            self.precompile_ctx
+                .block
+                .cache_l1_block_number(self.arb_ctx.l2_block_number, self.arb_ctx.l1_block_number);
         }
 
         // Load ArbOS state parameters from the EVM database.
@@ -1147,19 +1175,19 @@ where
                 }
 
                 if is_start_block {
+                    if let Ok(l1_block_number) = arb_state
+                        .blockhashes
+                        .l1_block_number(unsafe { &mut *state_ptr })
+                    {
+                        self.arb_ctx.l1_block_number = l1_block_number;
+                    }
+
                     self.load_state_params(unsafe { &mut *state_ptr }, &arb_state);
 
                     if let Ok(l1_block_number) = arb_state
                         .blockhashes
                         .l1_block_number(unsafe { &mut *state_ptr })
                     {
-                        self.arb_ctx.l1_block_number = l1_block_number;
-                        arb_precompiles::set_l1_block_number_for_evm(l1_block_number);
-                        arb_precompiles::set_cached_l1_block_number(
-                            self.arb_ctx.l2_block_number,
-                            l1_block_number,
-                        );
-
                         let lower = l1_block_number.saturating_sub(256);
                         let state_ref = unsafe { &mut *state_ptr };
                         for n in lower..l1_block_number {
@@ -1999,7 +2027,7 @@ where
                     .l2_pricing_state
                     .gas_backlog(unsafe { &mut *state_ptr })
                 {
-                    arb_precompiles::set_current_gas_backlog(b);
+                    self.precompile_ctx.block.set_current_gas_backlog(b);
                 }
             }
         }
@@ -2338,7 +2366,7 @@ where
                         .l2_pricing_state
                         .gas_backlog(unsafe { &mut *state_ptr })
                     {
-                        arb_precompiles::set_current_gas_backlog(b);
+                        self.precompile_ctx.block.set_current_gas_backlog(b);
                     }
                 }
             } else if matches!(
@@ -2437,7 +2465,7 @@ where
                             .l2_pricing_state
                             .gas_backlog(unsafe { &mut *state_ptr })
                         {
-                            arb_precompiles::set_current_gas_backlog(b);
+                            self.precompile_ctx.block.set_current_gas_backlog(b);
                         }
                     }
                     if !dist.l1_fees_to_add.is_zero() {

@@ -376,9 +376,7 @@ fn schedule_arbos_upgrade_writes_version_and_timestamp_slots() {
 const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
 
 fn arbgasinfo() -> DynPrecompile {
-    arb_precompiles::create_arbgasinfo_precompile(std::sync::Arc::new(
-        arb_context::ArbPrecompileCtx::default(),
-    ))
+    arb_precompiles::create_arbgasinfo_precompile()
 }
 
 fn arbownerpublic() -> DynPrecompile {

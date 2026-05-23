@@ -3,7 +3,7 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use std::{cell::RefCell, collections::HashMap, sync::Mutex};
+use std::cell::RefCell;
 
 use crate::{
     interfaces::IArbSys,
@@ -82,9 +82,6 @@ thread_local! {
     static TX_IS_ALIASED: RefCell<bool> = const { RefCell::new(false) };
 }
 
-static L1_BLOCK_CACHE: Mutex<Option<HashMap<u64, u64>>> = Mutex::new(None);
-static CURRENT_L2_BLOCK: Mutex<u64> = Mutex::new(0);
-
 /// Store ArbSys state changes for post-execution application.
 pub fn store_arbsys_state(state: ArbSysMerkleState) {
     ARBSYS_STATE.with(|cell| *cell.borrow_mut() = Some(state));
@@ -105,32 +102,14 @@ pub fn get_tx_is_aliased() -> bool {
     TX_IS_ALIASED.with(|cell| *cell.borrow())
 }
 
-/// Set the cached L1 block number for a given L2 block.
-pub fn set_cached_l1_block_number(l2_block: u64, l1_block: u64) {
-    let mut cache = L1_BLOCK_CACHE.lock().expect("L1 block cache lock poisoned");
-    let map = cache.get_or_insert_with(HashMap::new);
-    map.insert(l2_block, l1_block);
-    if l2_block > 100 {
-        map.retain(|&k, _| k >= l2_block - 100);
-    }
-}
-
-/// Get the cached L1 block number for a given L2 block.
+/// Lookup an L1 block number recorded for a given L2 block.
 pub fn get_cached_l1_block_number(l2_block: u64) -> Option<u64> {
-    let cache = L1_BLOCK_CACHE.lock().expect("L1 block cache lock poisoned");
-    cache.as_ref().and_then(|m| m.get(&l2_block).copied())
+    arb_context::with_active(|c| c.block.cached_l1_block_number(l2_block)).flatten()
 }
 
-/// Set the current L2 block number for precompile use.
-/// In Arbitrum, block_env.number holds the L1 block number (for the NUMBER opcode),
-/// so precompiles that need the L2 block number read it from here.
-pub fn set_current_l2_block(l2_block: u64) {
-    *CURRENT_L2_BLOCK.lock().expect("L2 block lock poisoned") = l2_block;
-}
-
-/// Get the current L2 block number.
+/// Read the current L2 block number for the executing block.
 pub fn get_current_l2_block() -> u64 {
-    *CURRENT_L2_BLOCK.lock().expect("L2 block lock poisoned")
+    arb_context::with_active(|c| c.block.l2_block_number).unwrap_or(0)
 }
 
 pub fn create_arbsys_precompile() -> DynPrecompile {

@@ -480,12 +480,7 @@ where
         let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
         let mut precompiles =
             alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
-        let active_ctx = arb_context::active().unwrap_or_default();
-        register_arb_precompiles(
-            &mut precompiles,
-            active_ctx,
-            arb_precompiles::get_arbos_version(),
-        );
+        register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
         let mut arb_map = ArbPrecompilesMap(precompiles);
         let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
@@ -1845,10 +1840,16 @@ where
 // ── ArbEvmFactory ──────────────────────────────────────────────────
 
 /// Factory for creating Arbitrum EVM instances with custom precompiles.
+///
+/// `staged_ctx` is the bridge that lets [`evm_env`](crate::config) on one
+/// thread hand a freshly-built [`ArbPrecompileCtx`] to [`create_evm`] on
+/// another (reth's RPC dispatcher uses `spawn_blocking`). The executor
+/// path writes through the same slot before each block.
 #[derive(Default, Debug, Clone)]
 pub struct ArbEvmFactory {
     pub inner: alloy_evm::EthEvmFactory,
-    pub ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    staged_ctx:
+        std::sync::Arc<parking_lot::RwLock<Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>>>,
 }
 
 impl ArbEvmFactory {
@@ -1856,11 +1857,17 @@ impl ArbEvmFactory {
         Self::default()
     }
 
-    pub fn with_ctx(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> Self {
-        Self {
-            inner: alloy_evm::EthEvmFactory::default(),
-            ctx,
-        }
+    /// Stage the per-block context that `create_evm` will install on the
+    /// EVM-execution thread. The active thread-local is also refreshed
+    /// here so that same-thread reads (executor path) see the new ctx
+    /// without waiting for the next `create_evm` call.
+    pub fn stage_ctx(&self, ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) {
+        *self.staged_ctx.write() = Some(ctx.clone());
+        arb_context::install_active(ctx);
+    }
+
+    fn staged(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>> {
+        self.staged_ctx.read().clone()
     }
 }
 
@@ -1872,9 +1879,14 @@ fn build_arb_evm<DB: Database, I>(
         PrecompilesMap,
         EthFrame,
     >,
-    ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    staged: Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>,
     inspect: bool,
 ) -> ArbEvm<DB, I> {
+    if arb_context::active().is_none() {
+        if let Some(staged) = staged {
+            arb_context::install_active(staged);
+        }
+    }
     let RevmEvm {
         ctx: evm_ctx,
         inspector,
@@ -1882,8 +1894,6 @@ fn build_arb_evm<DB: Database, I>(
         mut precompiles,
         frame_stack: _,
     } = inner;
-
-    arb_context::install_active(ctx.clone());
 
     instruction.insert_instruction(
         BLOBBASEFEE_OPCODE,
@@ -1909,7 +1919,7 @@ fn build_arb_evm<DB: Database, I>(
         SELFBALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
-    register_arb_precompiles(&mut precompiles, ctx, arb_precompiles::get_arbos_version());
+    register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 
     let revm_evm = RevmEvm::new_with_inspector(evm_ctx, inspector, instruction, arb_precompiles);
@@ -1932,7 +1942,7 @@ impl EvmFactory for ArbEvmFactory {
         input: EvmEnv<Self::Spec>,
     ) -> Self::Evm<DB, NoOpInspector> {
         let eth_evm = self.inner.create_evm(db, input);
-        build_arb_evm(eth_evm.into_inner(), self.ctx.clone(), false)
+        build_arb_evm(eth_evm.into_inner(), self.staged(), false)
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>, EthInterpreter>>(
@@ -1942,6 +1952,6 @@ impl EvmFactory for ArbEvmFactory {
         inspector: I,
     ) -> Self::Evm<DB, I> {
         let eth_evm = self.inner.create_evm_with_inspector(db, input, inspector);
-        build_arb_evm(eth_evm.into_inner(), self.ctx.clone(), true)
+        build_arb_evm(eth_evm.into_inner(), self.staged(), true)
     }
 }

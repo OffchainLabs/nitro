@@ -569,36 +569,42 @@ where
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = l1_block_number;
 
-        // Populate L2 block hash cache for arbBlockHash().
-        {
+        // Collect ancestor L2 hashes before apply_pre_execution_changes constructs
+        // the per-block context, since we need provider lookups outside the executor.
+        let l2_hash_entries = {
+            let mut entries = Vec::with_capacity(256);
             let parent_num = l2_block_number.saturating_sub(1);
-            arb_precompiles::set_l2_block_hash(parent_num, parent_header.hash());
-
-            // If cache is mostly empty (first block or after restart), do a full populate.
-            if arb_precompiles::get_l2_block_hash(parent_num.saturating_sub(1)).is_none()
-                && parent_num > 1
-            {
+            entries.push((parent_num, parent_header.hash()));
+            if parent_num > 1 {
                 let mut hash = parent_header.parent_hash();
                 for i in 2..=256u64 {
-                    let n = l2_block_number.checked_sub(i);
-                    if let Some(n) = n {
-                        arb_precompiles::set_l2_block_hash(n, hash);
-                        match self
-                            .provider
-                            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(n))
-                        {
-                            Ok(Some(h)) => hash = h.parent_hash(),
-                            _ => break,
-                        }
+                    let Some(n) = l2_block_number.checked_sub(i) else {
+                        break;
+                    };
+                    entries.push((n, hash));
+                    match self
+                        .provider
+                        .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(n))
+                    {
+                        Ok(Some(h)) => hash = h.parent_hash(),
+                        _ => break,
                     }
                 }
             }
-        }
+            entries
+        };
 
         // Apply pre-execution changes (loads ArbOS state, fee accounts, block hashes).
         executor
             .apply_pre_execution_changes()
             .map_err(|e| BlockProducerError::Execution(format!("pre-exec: {e}")))?;
+
+        for (l2_num, hash) in l2_hash_entries {
+            executor
+                .precompile_ctx
+                .block
+                .cache_l2_block_hash(l2_num, hash);
+        }
 
         let mut all_txs: Vec<ArbTransactionSigned> = Vec::new();
 

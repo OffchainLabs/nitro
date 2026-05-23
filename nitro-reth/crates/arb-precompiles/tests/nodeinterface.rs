@@ -3,7 +3,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::U256;
 use arb_precompiles::{
-    create_nodeinterface_precompile, set_cached_l1_block_number,
+    create_nodeinterface_precompile,
     storage_slot::{
         root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     },
@@ -34,11 +34,14 @@ fn nitro_genesis_block_returns_root_field() {
 
 #[test]
 fn block_l1_num_returns_cached_value() {
-    set_cached_l1_block_number(99, 7_777_777);
-    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
-    );
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(99, 7_777_777)
+        .call(
+            &nodeinterface(),
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
+        );
     assert_eq!(decode_u256(run.output()), U256::from(7_777_777_u64));
 }
 

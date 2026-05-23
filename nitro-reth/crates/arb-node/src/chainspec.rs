@@ -66,12 +66,6 @@ impl ChainSpecParser for ArbChainSpecParser {
             .unwrap_or(Address::ZERO);
         let arbos_init = parse_arbos_init(&value);
 
-        let allow_debug = value
-            .pointer("/config/arbitrum/AllowDebugPrecompiles")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        arb_precompiles::set_allow_debug_precompiles(allow_debug);
-
         let skip_injection = value
             .pointer(SKIP_GENESIS_INJECTION_POINTER)
             .and_then(Value::as_bool)
@@ -97,6 +91,19 @@ impl ChainSpecParser for ArbChainSpecParser {
         let augmented = serde_json::to_string(&value)?;
         EthereumChainSpecParser::parse(&augmented)
     }
+}
+
+/// Returns the `AllowDebugPrecompiles` flag declared in the chain spec's
+/// `config.arbitrum` section, defaulting to `false`.
+pub fn allow_debug_precompiles(chain_spec: &ChainSpec) -> bool {
+    chain_spec
+        .genesis()
+        .config
+        .extra_fields
+        .get_deserialized::<serde_json::Value>("arbitrum")
+        .and_then(|v| v.ok())
+        .and_then(|arb| arb.get("AllowDebugPrecompiles").and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
 /// Force the genesis header fields that the ArbOS init path hardcodes.

@@ -1,17 +1,82 @@
 //! Per-block and per-tx context threaded into Arbitrum precompile handlers.
-//!
-//! Replaces process-wide thread-locals that previously held per-tx scratch.
-//! The executor constructs an [`ArbPrecompileCtx`] once per block, the
-//! precompile registration captures it by clone, and writer sites update
-//! [`TxCtx`] between transactions.
 
 use alloy_primitives::{Address, B256, U256};
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicU64, Arc},
+};
 
 /// Per-block parameters populated once at block start.
 #[derive(Debug, Default)]
-pub struct BlockCtx {}
+pub struct BlockCtx {
+    pub arbos_version: u64,
+    pub block_timestamp: u64,
+    /// L1 block number observed by the EVM `NUMBER` opcode and precompiles
+    /// that surface the recorded L1 height.
+    pub l1_block_number_for_evm: u64,
+    pub l2_block_number: u64,
+    pub allow_debug_precompiles: bool,
+    /// Live counter mutated by the executor between transactions in the same block.
+    pub current_gas_backlog: AtomicU64,
+    /// L2 block number -> L1 block number recorded at that L2 height.
+    pub l1_block_cache: Mutex<HashMap<u64, u64>>,
+    /// L2 block number -> L2 block hash, populated for `arbBlockHash` lookups.
+    pub l2_blockhash_cache: Mutex<HashMap<u64, B256>>,
+}
+
+impl BlockCtx {
+    pub fn new(
+        arbos_version: u64,
+        block_timestamp: u64,
+        l1_block_number_for_evm: u64,
+        l2_block_number: u64,
+        allow_debug_precompiles: bool,
+    ) -> Self {
+        Self {
+            arbos_version,
+            block_timestamp,
+            l1_block_number_for_evm,
+            l2_block_number,
+            allow_debug_precompiles,
+            current_gas_backlog: AtomicU64::new(0),
+            l1_block_cache: Mutex::new(HashMap::new()),
+            l2_blockhash_cache: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn current_gas_backlog(&self) -> u64 {
+        self.current_gas_backlog
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_current_gas_backlog(&self, value: u64) {
+        self.current_gas_backlog
+            .store(value, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Insert an L1 block number into the cache, retaining a rolling window
+    /// of recent L2 heights.
+    pub fn cache_l1_block_number(&self, l2_block: u64, l1_block: u64) {
+        let mut map = self.l1_block_cache.lock();
+        map.insert(l2_block, l1_block);
+        if l2_block > 100 {
+            map.retain(|&k, _| k >= l2_block - 100);
+        }
+    }
+
+    pub fn cached_l1_block_number(&self, l2_block: u64) -> Option<u64> {
+        self.l1_block_cache.lock().get(&l2_block).copied()
+    }
+
+    pub fn cache_l2_block_hash(&self, l2_block: u64, hash: B256) {
+        self.l2_blockhash_cache.lock().insert(l2_block, hash);
+    }
+
+    pub fn cached_l2_block_hash(&self, l2_block: u64) -> Option<B256> {
+        self.l2_blockhash_cache.lock().get(&l2_block).copied()
+    }
+}
 
 /// Per-tx scratch written by the executor between transactions.
 #[derive(Debug, Default, Clone, Copy)]
@@ -36,11 +101,6 @@ impl TxCtx {
 pub struct DebugFlags {}
 
 /// Handle threaded into precompile handlers. Cheap to clone (all `Arc`).
-///
-/// `TxCtx` is wrapped in a [`parking_lot::Mutex`] because precompile
-/// handler closures must be `Send + Sync + 'static` while still reading
-/// values the executor updates between transactions. Locks are uncontended
-/// in the current single-threaded-per-block model.
 #[derive(Debug, Default, Clone)]
 pub struct ArbPrecompileCtx {
     pub block: Arc<BlockCtx>,
@@ -51,6 +111,14 @@ pub struct ArbPrecompileCtx {
 impl ArbPrecompileCtx {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_block(block: Arc<BlockCtx>) -> Self {
+        Self {
+            block,
+            tx: Arc::new(Mutex::new(TxCtx::default())),
+            debug: Arc::new(DebugFlags::default()),
+        }
     }
 
     /// Snapshot the current per-tx scratch.

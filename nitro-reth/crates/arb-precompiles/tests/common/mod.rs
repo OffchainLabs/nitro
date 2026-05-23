@@ -101,6 +101,9 @@ pub struct PrecompileTest {
     evm_depth: usize,
     tx_is_aliased: bool,
     block_basefee: u64,
+    l1_block_cache: Vec<(u64, u64)>,
+    l2_block_hashes: Vec<(u64, B256)>,
+    allow_debug_precompiles: bool,
 }
 
 impl Default for PrecompileTest {
@@ -120,7 +123,10 @@ impl Default for PrecompileTest {
             gas_limit: 1_000_000,
             evm_depth: 1,
             tx_is_aliased: false,
-            block_basefee: 100_000_000, // 0.1 gwei, typical Arbitrum L2 base fee
+            block_basefee: 100_000_000,
+            l1_block_cache: Vec::new(),
+            l2_block_hashes: Vec::new(),
+            allow_debug_precompiles: false,
         }
     }
 }
@@ -188,6 +194,18 @@ impl PrecompileTest {
         self.block_basefee = fee;
         self
     }
+    pub fn cache_l1_block_number(mut self, l2_block: u64, l1_block: u64) -> Self {
+        self.l1_block_cache.push((l2_block, l1_block));
+        self
+    }
+    pub fn cache_l2_block_hash(mut self, l2_block: u64, hash: B256) -> Self {
+        self.l2_block_hashes.push((l2_block, hash));
+        self
+    }
+    pub fn allow_debug_precompiles(mut self, allow: bool) -> Self {
+        self.allow_debug_precompiles = allow;
+        self
+    }
 
     pub fn account(mut self, addr: Address, info: AccountInfo) -> Self {
         self.db.insert_account_info(addr, info);
@@ -235,13 +253,39 @@ impl PrecompileTest {
     }
 
     pub fn call(self, precompile: &DynPrecompile, input: &Bytes) -> PrecompileRun {
+        let ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx::default());
+        self.call_with(precompile, input, ctx)
+    }
+
+    pub fn call_with(
+        self,
+        precompile: &DynPrecompile,
+        input: &Bytes,
+        ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    ) -> PrecompileRun {
         let _guard = test_lock();
 
-        arb_precompiles::set_arbos_version(self.arbos_version);
-        arb_precompiles::set_l1_block_number_for_evm(self.block_number);
-        arb_precompiles::set_block_timestamp(self.block_timestamp);
+        let prior_tx = *ctx.tx.lock();
+        let block_ctx = arb_context::BlockCtx::new(
+            self.arbos_version,
+            self.block_timestamp,
+            self.block_number,
+            self.block_number,
+            self.allow_debug_precompiles,
+        );
+        for (l2, l1) in &self.l1_block_cache {
+            block_ctx.cache_l1_block_number(*l2, *l1);
+        }
+        for (l2, hash) in &self.l2_block_hashes {
+            block_ctx.cache_l2_block_hash(*l2, *hash);
+        }
+        let installed = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
+            block: std::sync::Arc::new(block_ctx),
+            tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
+            debug: ctx.debug.clone(),
+        });
+        arb_context::install_active(installed);
         arb_precompiles::set_evm_depth(self.evm_depth);
-        arb_precompiles::set_current_l2_block(self.block_number);
         arb_precompiles::set_tx_is_aliased(self.tx_is_aliased);
 
         let mut ctx = EthEvmContext::new(self.db, self.spec);

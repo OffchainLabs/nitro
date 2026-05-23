@@ -53,8 +53,7 @@ pub use arbretryabletx::{
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
 pub use arbsys::{
     create_arbsys_precompile, get_cached_l1_block_number, get_current_l2_block, get_tx_is_aliased,
-    set_cached_l1_block_number, set_current_l2_block, set_tx_is_aliased, store_arbsys_state,
-    take_arbsys_state, ArbSysMerkleState, ARBSYS_ADDRESS,
+    set_tx_is_aliased, store_arbsys_state, take_arbsys_state, ArbSysMerkleState, ARBSYS_ADDRESS,
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
@@ -69,9 +68,8 @@ pub use nodeinterface_debug::{
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
-use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::{cell::Cell, sync::Arc};
+use std::cell::Cell;
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
@@ -110,17 +108,7 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
     })
 }
 
-// ── ArbOS version (process-wide) ────────────────────────────────────
-// Process-wide because tokio offloads EVM execution onto a blocking thread
-// pool; thread-locals set on the reactor thread don't propagate.
-
-static GLOBAL_ARBOS_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 thread_local! {
-    /// Per-thread fast-path mirror for ArbOS version (kept in sync via set_arbos_version).
-    static ARBOS_VERSION: Cell<u64> = const { Cell::new(0) };
-    /// L1 block number for the NUMBER opcode, from ArbOS state after StartBlock.
-    static L1_BLOCK_NUMBER_FOR_EVM: Cell<u64> = const { Cell::new(0) };
     /// Current EVM call depth, incremented on each CALL/CREATE frame.
     /// Used by precompiles (e.g., ArbSys.isTopLevelCall) to determine
     /// the call stack position. Reset to 0 at transaction start.
@@ -130,12 +118,6 @@ thread_local! {
     /// resolve `Contracts[depth-2].Caller()`.
     static CALLER_STACK: std::cell::RefCell<Vec<alloy_primitives::Address>> =
         const { std::cell::RefCell::new(Vec::new()) };
-    /// Current block timestamp, set before transaction execution.
-    /// Used by ArbWasm to compute program age for expiry checks.
-    static BLOCK_TIMESTAMP: Cell<u64> = const { Cell::new(0) };
-    /// Current gas backlog value, set by executor before each tx.
-    /// Used by Redeem precompile to determine ShrinkBacklog write cost.
-    static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
     /// Gas consumed by precompile operations before an error.
     static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
     static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
@@ -182,82 +164,35 @@ pub fn insert_recent_wasm(hash: alloy_primitives::B256) -> bool {
     })
 }
 
-use std::sync::Mutex as StdMutex;
-
-/// Cache of L2 block hashes for the arbBlockHash() precompile.
-/// Populated from the header chain during apply_pre_execution_changes.
-/// Separate from the journal's block_hashes (which holds L1 hashes for BLOCKHASH opcode).
-static L2_BLOCKHASH_CACHE: StdMutex<
-    Option<std::collections::HashMap<u64, alloy_primitives::B256>>,
-> = StdMutex::new(None);
-
-/// Set an L2 block hash in the arbBlockHash cache.
-pub fn set_l2_block_hash(l2_block_number: u64, hash: alloy_primitives::B256) {
-    let mut cache = L2_BLOCKHASH_CACHE
-        .lock()
-        .expect("L2 blockhash cache lock poisoned");
-    let map = cache.get_or_insert_with(std::collections::HashMap::new);
-    map.insert(l2_block_number, hash);
-}
-
-/// Get an L2 block hash from the arbBlockHash cache.
-pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256> {
-    let cache = L2_BLOCKHASH_CACHE
-        .lock()
-        .expect("L2 blockhash cache lock poisoned");
-    cache.as_ref()?.get(&l2_block_number).copied()
-}
-
-/// Set the current ArbOS version for precompile version gating.
-pub fn set_arbos_version(version: u64) {
-    GLOBAL_ARBOS_VERSION.store(version, std::sync::atomic::Ordering::Relaxed);
-    ARBOS_VERSION.with(|v| v.set(version));
-}
-
-/// Get the current ArbOS version.
+/// Read the ArbOS version from the active block context.
 pub fn get_arbos_version() -> u64 {
-    let local = ARBOS_VERSION.with(|v| v.get());
-    if local != 0 {
-        return local;
-    }
-    let global = GLOBAL_ARBOS_VERSION.load(std::sync::atomic::Ordering::Relaxed);
-    if global != 0 {
-        ARBOS_VERSION.with(|v| v.set(global));
-    }
-    global
+    arb_context::with_active(|c| c.block.arbos_version).unwrap_or(0)
 }
 
-static ALLOW_DEBUG_PRECOMPILES: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Set whether ArbDebug / ArbosTest debug precompiles are callable. Driven
+/// Whether ArbDebug / ArbosTest debug precompiles are callable. Driven
 /// by the chain spec's `AllowDebugPrecompiles` flag.
-pub fn set_allow_debug_precompiles(allow: bool) {
-    ALLOW_DEBUG_PRECOMPILES.store(allow, std::sync::atomic::Ordering::Relaxed);
-}
-
 pub fn allow_debug_precompiles() -> bool {
-    ALLOW_DEBUG_PRECOMPILES.load(std::sync::atomic::Ordering::Relaxed)
+    arb_context::with_active(|c| c.block.allow_debug_precompiles).unwrap_or(false)
 }
 
-/// Set the L1 block number for the NUMBER opcode.
-pub fn set_l1_block_number_for_evm(number: u64) {
-    L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.set(number));
-}
-
-/// Get the L1 block number for the NUMBER opcode.
+/// Read the L1 block number associated with the current block.
 pub fn get_l1_block_number_for_evm() -> u64 {
-    L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.get())
+    arb_context::with_active(|c| c.block.l1_block_number_for_evm).unwrap_or(0)
 }
 
-/// Set the current gas backlog value for the Redeem precompile.
-pub fn set_current_gas_backlog(backlog: u64) {
-    CURRENT_GAS_BACKLOG.with(|v| v.set(backlog));
-}
-
-/// Get the current gas backlog value.
+/// Read the current gas backlog (mutated by the executor between transactions).
 pub fn get_current_gas_backlog() -> u64 {
-    CURRENT_GAS_BACKLOG.with(|v| v.get())
+    arb_context::with_active(|c| c.block.current_gas_backlog()).unwrap_or(0)
+}
+
+/// Lookup an L2 block hash recorded for `arbBlockHash`.
+pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256> {
+    arb_context::with_active(|c| c.block.cached_l2_block_hash(l2_block_number)).flatten()
+}
+
+/// Read the current block timestamp.
+pub fn get_block_timestamp() -> u64 {
+    arb_context::with_active(|c| c.block.block_timestamp).unwrap_or(0)
 }
 
 pub fn reset_precompile_gas() {
@@ -320,16 +255,6 @@ pub fn caller_at_depth(depth: usize) -> Option<alloy_primitives::Address> {
         return None;
     }
     CALLER_STACK.with(|s| s.borrow().get(depth - 1).copied())
-}
-
-/// Set the current block timestamp for precompile queries.
-pub fn set_block_timestamp(timestamp: u64) {
-    BLOCK_TIMESTAMP.with(|v| v.set(timestamp));
-}
-
-/// Get the current block timestamp.
-pub fn get_block_timestamp() -> u64 {
-    BLOCK_TIMESTAMP.with(|v| v.get())
 }
 
 pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
@@ -446,17 +371,10 @@ const KZG_POINT_EVALUATION_ADDRESS: alloy_primitives::Address =
 
 /// Registers Arbitrum precompiles into `map` and applies the per-ArbOS-version
 /// adjustments to the standard Ethereum precompile set.
-pub fn register_arb_precompiles(
-    map: &mut PrecompilesMap,
-    ctx: Arc<ArbPrecompileCtx>,
-    arbos_version: u64,
-) {
+pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
     map.extend_precompiles([
         (ARBSYS_ADDRESS, create_arbsys_precompile()),
-        (
-            ARBGASINFO_ADDRESS,
-            create_arbgasinfo_precompile(ctx.clone()),
-        ),
+        (ARBGASINFO_ADDRESS, create_arbgasinfo_precompile()),
         (ARBINFO_ADDRESS, create_arbinfo_precompile()),
         (ARBSTATISTICS_ADDRESS, create_arbstatistics_precompile()),
         (
@@ -468,10 +386,7 @@ pub fn register_arb_precompiles(
         (ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile()),
         (ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile()),
         (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),
-        (
-            ARBRETRYABLETX_ADDRESS,
-            create_arbretryabletx_precompile(ctx.clone()),
-        ),
+        (ARBRETRYABLETX_ADDRESS, create_arbretryabletx_precompile()),
         (ARBOWNER_ADDRESS, create_arbowner_precompile()),
         (ARBBLS_ADDRESS, create_arbbls_precompile()),
         (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),

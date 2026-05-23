@@ -129,11 +129,11 @@ fn was_aliased_returns_true_when_top_level_aliased() {
 #[test]
 fn arb_block_hash_returns_cached_hash_for_recent_block() {
     let target_hash = B256::from_slice(&[0x42; 32]);
-    arb_precompiles::set_l2_block_hash(99, target_hash);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .block_number(100)
         .arbos_state()
+        .cache_l2_block_hash(99, target_hash)
         .call(
             &arbsys(),
             &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(99))]),
