@@ -90,6 +90,7 @@ pub struct TxCtx {
     pub poster_balance_correction: u128,
     pub retryable_id: B256,
     pub redeemer: Address,
+    pub tx_is_aliased: bool,
 }
 
 impl TxCtx {
@@ -165,6 +166,14 @@ impl ArbPrecompileCtx {
 
     pub fn set_redeemer(&self, redeemer: Address) {
         self.tx.lock().redeemer = redeemer;
+    }
+
+    pub fn set_tx_is_aliased(&self, aliased: bool) {
+        self.tx.lock().tx_is_aliased = aliased;
+    }
+
+    pub fn tx_is_aliased(&self) -> bool {
+        self.tx.lock().tx_is_aliased
     }
 
     pub fn set_evm_depth(&self, depth: usize) {
