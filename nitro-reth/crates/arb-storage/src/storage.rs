@@ -7,21 +7,26 @@ use crate::{
     state_ops::{read_storage_at, write_storage_at, ARBOS_STATE_ADDRESS},
 };
 
+/// Phantom backend used by read paths that drive ArbOS accessors through a
+/// [`StorageBackend`] (such as the precompile handlers reading via
+/// `EvmInternals`). Direct state-pointer I/O on a `Storage<Detached>` is
+/// unreachable by construction — the type does not implement [`Database`].
+pub enum Detached {}
+
 /// Hierarchical storage abstraction over EVM account state.
 ///
-/// State lives in a specific account. Storage uses keccak256-based
-/// subspace derivation to create a hierarchical key space.
-///
-/// Safety invariant: the `state` pointer must outlive every `Storage`
-/// holding it, and dereferences across handles pointing at the same
-/// `State<D>` must be sequential.
+/// Subspaces are derived from `base_key` using keccak-based mixing; direct
+/// state I/O (when available) targets `account`. The struct is parameterised
+/// over the executor's `Database` so the same shape can be inhabited by an
+/// executor `*mut State<D>` or by [`Detached`] for read paths that operate
+/// purely through a [`StorageBackend`].
 pub struct Storage<D> {
     pub(crate) state: *mut revm::database::State<D>,
     pub base_key: B256,
     pub account: Address,
 }
 
-impl<D: Database> Storage<D> {
+impl<D> Storage<D> {
     /// Creates a new Storage backed by the ArbOS state account.
     pub fn new(state: *mut revm::database::State<D>, base_key: B256) -> Self {
         Self {
@@ -55,6 +60,54 @@ impl<D: Database> Storage<D> {
         Storage::new_with_account(self.state, key, self.account)
     }
 
+    fn storage_key(&self) -> &[u8] {
+        if self.base_key == B256::ZERO {
+            &[]
+        } else {
+            self.base_key.as_slice()
+        }
+    }
+
+    fn compute_slot(&self, offset: u64) -> U256 {
+        storage_key_map(self.storage_key(), offset)
+    }
+
+    fn compute_slot_for_key(&self, key: B256) -> U256 {
+        storage_key_map_b256(self.storage_key(), &key.0)
+    }
+
+    /// Creates a StorageSlot handle for a specific offset.
+    pub fn new_slot(&self, offset: u64) -> U256 {
+        self.compute_slot(offset)
+    }
+
+    /// Returns the raw `*mut State<D>`. See the struct-level safety invariant.
+    pub fn state_ptr(&self) -> *mut revm::database::State<D> {
+        self.state
+    }
+
+    /// Returns the base key for this storage subspace.
+    pub fn base_key(&self) -> B256 {
+        self.base_key
+    }
+}
+
+impl Storage<Detached> {
+    /// Builds a `Storage` handle that has no executor state pointer.
+    ///
+    /// All reads and writes must be routed through a [`StorageBackend`];
+    /// direct I/O methods on `Storage` are gated on `D: Database` and are
+    /// therefore inaccessible here.
+    pub fn detached(account: Address, base_key: B256) -> Self {
+        Self {
+            state: std::ptr::null_mut(),
+            base_key,
+            account,
+        }
+    }
+}
+
+impl<D: Database> Storage<D> {
     /// Reads a 32-byte value by uint64 offset.
     pub fn get_by_uint64(&self, offset: u64) -> Result<B256, StorageError> {
         let slot = self.compute_slot(offset);
@@ -104,37 +157,6 @@ impl<D: Database> Storage<D> {
         // SAFETY: see struct-level invariant.
         let state = unsafe { &mut *self.state };
         write_storage_at(state, self.account, slot, value_u256)
-    }
-
-    fn storage_key(&self) -> &[u8] {
-        if self.base_key == B256::ZERO {
-            &[]
-        } else {
-            self.base_key.as_slice()
-        }
-    }
-
-    fn compute_slot(&self, offset: u64) -> U256 {
-        storage_key_map(self.storage_key(), offset)
-    }
-
-    fn compute_slot_for_key(&self, key: B256) -> U256 {
-        storage_key_map_b256(self.storage_key(), &key.0)
-    }
-
-    /// Creates a StorageSlot handle for a specific offset.
-    pub fn new_slot(&self, offset: u64) -> U256 {
-        self.compute_slot(offset)
-    }
-
-    /// Returns the raw `*mut State<D>`. See the struct-level safety invariant.
-    pub fn state_ptr(&self) -> *mut revm::database::State<D> {
-        self.state
-    }
-
-    /// Returns the base key for this storage subspace.
-    pub fn base_key(&self) -> B256 {
-        self.base_key
     }
 }
 

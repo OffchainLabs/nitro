@@ -24,7 +24,7 @@ pub fn initialize_merkle_accumulator<D: Database>(_sto: &Storage<D>) {
     // no-op
 }
 
-pub fn open_merkle_accumulator<D: Database>(sto: Storage<D>) -> MerkleAccumulator<D> {
+pub fn open_merkle_accumulator<D>(sto: Storage<D>) -> MerkleAccumulator<D> {
     let size = StorageBackedUint64::new(sto.base_key(), 0);
     MerkleAccumulator {
         backing_storage: sto,

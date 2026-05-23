@@ -49,7 +49,7 @@ pub fn initialize_retryable_state<D: Database>(sto: &Storage<D>) -> Result<(), R
     Ok(initialize_queue(&sto.open_sub_storage(TIMEOUT_QUEUE_KEY))?)
 }
 
-pub fn open_retryable_state<D: Database>(sto: Storage<D>) -> RetryableState<D> {
+pub fn open_retryable_state<D>(sto: Storage<D>) -> RetryableState<D> {
     let queue_sto = sto.open_sub_storage(TIMEOUT_QUEUE_KEY);
     RetryableState {
         timeout_queue: open_queue(queue_sto),
@@ -57,13 +57,15 @@ pub fn open_retryable_state<D: Database>(sto: Storage<D>) -> RetryableState<D> {
     }
 }
 
+impl<D> RetryableState<D> {
+    pub fn open(sto: Storage<D>) -> Self {
+        open_retryable_state(sto)
+    }
+}
+
 impl<D: Database> RetryableState<D> {
     pub fn initialize(sto: &Storage<D>) -> Result<(), RetryableError> {
         initialize_retryable_state(sto)
-    }
-
-    pub fn open(sto: Storage<D>) -> Self {
-        open_retryable_state(sto)
     }
 
     /// Creates a new retryable ticket. The id must be unique.

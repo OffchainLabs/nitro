@@ -36,5 +36,5 @@ pub use state_ops::{
     read_arbos_storage, read_storage_at, set_account_code, set_account_nonce, write_arbos_storage,
     write_storage_at, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
-pub use storage::Storage;
+pub use storage::{Detached, Storage};
 pub use vector::{open_sub_storage_vector, open_sub_storage_vector_at, SubStorageVector};

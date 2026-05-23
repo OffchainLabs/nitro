@@ -17,11 +17,13 @@ pub struct FilteredTransactionsState<D> {
     store: Storage<D>,
 }
 
-impl<D: Database> FilteredTransactionsState<D> {
+impl<D> FilteredTransactionsState<D> {
     pub fn open(sto: Storage<D>) -> Self {
         Self { store: sto }
     }
+}
 
+impl<D: Database> FilteredTransactionsState<D> {
     pub fn add(&self, tx_hash: B256) -> Result<(), FilteredTxError> {
         Ok(self.store.set(tx_hash, PRESENT_HASH)?)
     }

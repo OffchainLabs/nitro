@@ -11,7 +11,6 @@ pub use multi_gas_constraint::{open_multi_gas_constraint, MultiGasConstraint};
 pub use multi_gas_fees::MultiGasFees;
 
 use alloy_primitives::U256;
-use revm::Database;
 
 use arb_primitives::multigas::NUM_RESOURCE_KIND;
 use arb_storage::{
@@ -71,7 +70,7 @@ pub struct L2PricingState<D> {
     multi_gas_base_fees: Storage<D>,
 }
 
-pub fn initialize_l2_pricing_state<D: Database, B: StorageBackend>(
+pub fn initialize_l2_pricing_state<D, B: StorageBackend>(
     sto: &Storage<D>,
     backend: &mut B,
 ) -> Result<(), L2PricingError> {
@@ -92,10 +91,7 @@ pub fn initialize_l2_pricing_state<D: Database, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_l2_pricing_state<D: Database>(
-    sto: Storage<D>,
-    arbos_version: u64,
-) -> L2PricingState<D> {
+pub fn open_l2_pricing_state<D>(sto: Storage<D>, arbos_version: u64) -> L2PricingState<D> {
     let base_key = sto.base_key();
 
     let gc_sto = sto.open_sub_storage(GAS_CONSTRAINTS_KEY);
@@ -119,7 +115,7 @@ pub fn open_l2_pricing_state<D: Database>(
     }
 }
 
-impl<D: Database> L2PricingState<D> {
+impl<D> L2PricingState<D> {
     pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
         open_l2_pricing_state(sto, arbos_version)
     }
@@ -337,5 +333,10 @@ impl<D: Database> L2PricingState<D> {
 
     pub fn restrict(&self, _err: ()) {
         // No-op restriction
+    }
+
+    /// Per-resource-kind base fee accessor for the current/next block.
+    pub fn multi_gas_fees(&self) -> MultiGasFees<D> {
+        multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone())
     }
 }

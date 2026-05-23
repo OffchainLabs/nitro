@@ -5,7 +5,6 @@ pub use batch_poster::*;
 pub use error::L1PricingError;
 
 use alloy_primitives::{Address, U256};
-use revm::Database;
 
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint, StorageBackedInt64,
@@ -74,7 +73,7 @@ pub struct L1PricingState<D> {
     pub arbos_version: u64,
 }
 
-pub fn initialize_l1_pricing_state<D: Database, B: StorageBackend>(
+pub fn initialize_l1_pricing_state<D: revm::Database, B: StorageBackend>(
     sto: &Storage<D>,
     backend: &mut B,
     rewards_recipient: Address,
@@ -97,10 +96,7 @@ pub fn initialize_l1_pricing_state<D: Database, B: StorageBackend>(
     Ok(())
 }
 
-pub fn open_l1_pricing_state<D: Database>(
-    sto: Storage<D>,
-    arbos_version: u64,
-) -> L1PricingState<D> {
+pub fn open_l1_pricing_state<D>(sto: Storage<D>, arbos_version: u64) -> L1PricingState<D> {
     let base_key = sto.base_key();
 
     L1PricingState {
@@ -122,18 +118,9 @@ pub fn open_l1_pricing_state<D: Database>(
     }
 }
 
-impl<D: Database> L1PricingState<D> {
+impl<D> L1PricingState<D> {
     pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
         open_l1_pricing_state(sto, arbos_version)
-    }
-
-    pub fn initialize<B: StorageBackend>(
-        sto: &Storage<D>,
-        backend: &mut B,
-        rewards_recipient: Address,
-        initial_l1_base_fee: U256,
-    ) -> Result<(), L1PricingError> {
-        initialize_l1_pricing_state(sto, backend, rewards_recipient, initial_l1_base_fee)
     }
 
     pub fn batch_poster_table(&self) -> BatchPostersTable<D> {
@@ -412,18 +399,6 @@ impl<D: Database> L1PricingState<D> {
         }
     }
 
-    pub fn get_poster_info<B: StorageBackend>(
-        &self,
-        backend: &mut B,
-        poster: Address,
-    ) -> Result<(U256, Address), L1PricingError> {
-        let bpt = self.batch_poster_table();
-        let state = bpt.open_poster(backend, poster, false)?;
-        let due = state.funds_due(backend)?;
-        let pay_to = state.pay_to(backend)?;
-        Ok((due, pay_to))
-    }
-
     pub fn poster_data_cost<B: StorageBackend>(
         &self,
         backend: &mut B,
@@ -479,6 +454,49 @@ impl<D: Database> L1PricingState<D> {
     ) -> u64 {
         let l1_bytes = byte_count_after_brotli_level(tx_bytes, brotli_compression_level);
         TX_DATA_NON_ZERO_GAS_EIP2028.saturating_mul(l1_bytes)
+    }
+
+    fn _preversion10_update(
+        &self,
+        _update_time: u64,
+        _current_time: u64,
+        _wei_spent: U256,
+        _l1_basefee: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(())
+    }
+
+    fn _preversion2_update(
+        &self,
+        _update_time: u64,
+        _current_time: u64,
+        _wei_spent: U256,
+        _l1_basefee: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(())
+    }
+}
+
+impl<D: revm::Database> L1PricingState<D> {
+    pub fn initialize<B: StorageBackend>(
+        sto: &Storage<D>,
+        backend: &mut B,
+        rewards_recipient: Address,
+        initial_l1_base_fee: U256,
+    ) -> Result<(), L1PricingError> {
+        initialize_l1_pricing_state(sto, backend, rewards_recipient, initial_l1_base_fee)
+    }
+
+    pub fn get_poster_info<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        poster: Address,
+    ) -> Result<(U256, Address), L1PricingError> {
+        let bpt = self.batch_poster_table();
+        let state = bpt.open_poster(backend, poster, false)?;
+        let due = state.funds_due(backend)?;
+        let pay_to = state.pay_to(backend)?;
+        Ok((due, pay_to))
     }
 
     /// Update pricing based on a batch poster spending report.
@@ -656,26 +674,6 @@ impl<D: Database> L1PricingState<D> {
             self.set_price_per_unit(backend, new_price)?;
         }
 
-        Ok(())
-    }
-
-    fn _preversion10_update(
-        &self,
-        _update_time: u64,
-        _current_time: u64,
-        _wei_spent: U256,
-        _l1_basefee: U256,
-    ) -> Result<(), L1PricingError> {
-        Ok(())
-    }
-
-    fn _preversion2_update(
-        &self,
-        _update_time: u64,
-        _current_time: u64,
-        _wei_spent: U256,
-        _l1_basefee: U256,
-    ) -> Result<(), L1PricingError> {
         Ok(())
     }
 }

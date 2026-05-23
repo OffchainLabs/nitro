@@ -31,7 +31,7 @@ pub fn initialize_queue<D: revm::Database>(storage: &Storage<D>) -> Result<(), S
     Ok(())
 }
 
-pub fn open_queue<D: revm::Database>(storage: Storage<D>) -> Queue {
+pub fn open_queue<D>(storage: Storage<D>) -> Queue {
     open_queue_at(storage.base_key())
 }
 

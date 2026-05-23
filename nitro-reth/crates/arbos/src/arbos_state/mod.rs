@@ -3,6 +3,7 @@ pub mod initialize;
 
 pub use error::ArbosStateError;
 
+use alloy_evm::EvmInternals;
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use revm::Database;
 use std::sync::OnceLock;
@@ -11,9 +12,9 @@ use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
 use arb_storage::{
-    get_account_balance, set_account_code, set_account_nonce, Storage, StorageBackedAddress,
-    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
-    FILTERED_TX_STATE_ADDRESS,
+    get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
+    StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
+    StorageBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 
 use crate::{
@@ -574,4 +575,102 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
 
         Ok(())
     }
+}
+
+/// Opens [`ArbosState`] from the precompile-handler call frame.
+///
+/// Bridges `EvmInternals` (the storage view available to precompile handlers)
+/// onto the same accessor layer the executor drives via `&mut State<D>`. The
+/// returned state holds no executor pointer, so every read and write must be
+/// driven through a [`StorageBackend`] — typically the same `EvmInternals`
+/// passed in. The version slot is read up front so divergence between the
+/// pinned build and the stored ArbOS version surfaces as
+/// [`ArbosStateError::UnsupportedVersion`] instead of silently reading the
+/// wrong slot.
+pub fn arbos_from_input<B: Burner>(
+    internals: &mut EvmInternals<'_>,
+    burner: B,
+) -> Result<ArbosState<Detached, B>, ArbosStateError> {
+    let version_slot = storage_key_map(&[], VERSION_OFFSET);
+    let raw_version = StorageBackend::sload(internals, ARBOS_STATE_ADDRESS, version_slot)?;
+    let arbos_version = u64::try_from(raw_version).unwrap_or(0);
+    if arbos_version == 0 {
+        return Err(ArbosStateError::Uninitialised);
+    }
+    if arbos_version > MAX_ARBOS_VERSION_SUPPORTED {
+        return Err(ArbosStateError::UnsupportedVersion(arbos_version));
+    }
+
+    let backing_storage = Storage::<Detached>::detached(ARBOS_STATE_ADDRESS, B256::ZERO);
+    let chain_config_key = chain_config_root_key();
+    let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
+
+    Ok(ArbosState {
+        arbos_version,
+        max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
+        upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
+        upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
+        network_fee_account: StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET),
+        l1_pricing_state: L1PricingState::open(
+            backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
+            arbos_version,
+        ),
+        l2_pricing_state: L2PricingState::open(
+            backing_storage.open_sub_storage_with_key(l2_pricing_root_key()),
+            arbos_version,
+        ),
+        retryable_state: RetryableState::open(
+            backing_storage.open_sub_storage_with_key(retryables_root_key()),
+        ),
+        address_table: address_table::open_address_table(
+            backing_storage.open_sub_storage_with_key(address_table_root_key()),
+        ),
+        chain_owners: address_set::open_address_set(
+            backing_storage.open_sub_storage_with_key(chain_owner_root_key()),
+        ),
+        send_merkle_accumulator: merkle_accumulator::open_merkle_accumulator(
+            backing_storage.open_sub_storage_with_key(send_merkle_root_key()),
+        ),
+        programs: Programs::open(
+            arbos_version,
+            backing_storage.open_sub_storage_with_key(programs_root_key()),
+        ),
+        blockhashes: blockhash::open_blockhashes(
+            backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
+        ),
+        chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
+        chain_config: StorageBackedBytes::new(chain_config_key),
+        genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
+        infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
+        brotli_compression_level: StorageBackedUint64::new(
+            B256::ZERO,
+            BROTLI_COMPRESSION_LEVEL_OFFSET,
+        ),
+        native_token_enabled_from_time: StorageBackedUint64::new(
+            B256::ZERO,
+            NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+        ),
+        native_token_owners: address_set::open_address_set(
+            backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
+        ),
+        transaction_filtering_enabled_from_time: StorageBackedUint64::new(
+            B256::ZERO,
+            TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
+        ),
+        transaction_filterers: address_set::open_address_set(
+            backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
+        ),
+        features: features::open_features(features_sto.base_key(), 0),
+        filtered_funds_recipient: StorageBackedAddress::new(
+            B256::ZERO,
+            FILTERED_FUNDS_RECIPIENT_OFFSET,
+        ),
+        filtered_transactions: FilteredTransactionsState::open(Storage::<Detached>::detached(
+            FILTERED_TX_STATE_ADDRESS,
+            B256::ZERO,
+        )),
+        collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
+        backing_storage,
+        burner,
+    })
 }

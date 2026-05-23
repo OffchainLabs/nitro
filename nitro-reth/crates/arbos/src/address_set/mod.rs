@@ -20,7 +20,7 @@ pub fn initialize_address_set<D: Database>(sto: &Storage<D>) -> Result<(), Addre
     Ok(sto.set_by_uint64(0, B256::ZERO)?)
 }
 
-pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
+pub fn open_address_set<D>(sto: Storage<D>) -> AddressSet<D> {
     let size = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[0u8]);
     AddressSet {
