@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     node::{BlockId, EvmLog, ExecutionNode, TxReceipt},
-    scenario::{Scenario, ScenarioStep},
+    scenario::{Scenario, ScenarioStep, StateCheck},
     Result,
 };
 
@@ -18,6 +18,14 @@ impl<L: ExecutionNode, R: ExecutionNode> DualExec<L, R> {
     }
 
     pub fn run(&mut self, scenario: &Scenario) -> Result<DiffReport> {
+        self.run_with_state_checks(scenario, &[])
+    }
+
+    pub fn run_with_state_checks(
+        &mut self,
+        scenario: &Scenario,
+        state_checks: &[StateCheck],
+    ) -> Result<DiffReport> {
         let mut report = DiffReport::default();
 
         for step in &scenario.steps {
@@ -53,7 +61,69 @@ impl<L: ExecutionNode, R: ExecutionNode> DualExec<L, R> {
             });
         }
 
+        for check in state_checks {
+            self.diff_state_check(check, max_n, &mut report);
+        }
+
         Ok(report)
+    }
+
+    fn diff_state_check(&self, check: &StateCheck, at_block: u64, report: &mut DiffReport) {
+        let id = || BlockId::Number(at_block);
+        for slot in &check.slots {
+            let lv = self.left.storage(check.address, *slot, id()).ok();
+            let rv = self.right.storage(check.address, *slot, id()).ok();
+            if lv != rv {
+                report.state_diffs.push(StateDiff {
+                    address: check.address,
+                    at_block,
+                    field: StateField::Storage(*slot),
+                    left: serde_json::to_value(lv).unwrap_or(serde_json::Value::Null),
+                    right: serde_json::to_value(rv).unwrap_or(serde_json::Value::Null),
+                });
+            }
+        }
+        if check.check_balance {
+            let lv = self.left.balance(check.address, id()).ok();
+            let rv = self.right.balance(check.address, id()).ok();
+            if lv != rv {
+                report.state_diffs.push(StateDiff {
+                    address: check.address,
+                    at_block,
+                    field: StateField::Balance,
+                    left: serde_json::to_value(lv).unwrap_or(serde_json::Value::Null),
+                    right: serde_json::to_value(rv).unwrap_or(serde_json::Value::Null),
+                });
+            }
+        }
+        if check.check_nonce {
+            let lv = self.left.nonce(check.address, id()).ok();
+            let rv = self.right.nonce(check.address, id()).ok();
+            if lv != rv {
+                report.state_diffs.push(StateDiff {
+                    address: check.address,
+                    at_block,
+                    field: StateField::Nonce,
+                    left: serde_json::to_value(lv).unwrap_or(serde_json::Value::Null),
+                    right: serde_json::to_value(rv).unwrap_or(serde_json::Value::Null),
+                });
+            }
+        }
+        if check.check_code {
+            let lv = self.left.code(check.address, id()).ok();
+            let rv = self.right.code(check.address, id()).ok();
+            if lv != rv {
+                report.state_diffs.push(StateDiff {
+                    address: check.address,
+                    at_block,
+                    field: StateField::Code,
+                    left: serde_json::to_value(lv.map(|b| b.to_vec()))
+                        .unwrap_or(serde_json::Value::Null),
+                    right: serde_json::to_value(rv.map(|b| b.to_vec()))
+                        .unwrap_or(serde_json::Value::Null),
+                });
+            }
+        }
     }
 
     fn diff_block(&self, number: u64, report: &mut DiffReport) -> Result<()> {

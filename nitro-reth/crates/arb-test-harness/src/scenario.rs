@@ -1,3 +1,4 @@
+use alloy_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 
 use crate::messaging::L1Message;
@@ -9,6 +10,15 @@ pub struct Scenario {
     pub description: String,
     pub setup: ScenarioSetup,
     pub steps: Vec<ScenarioStep>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StateCheck {
+    pub address: Address,
+    pub slots: Vec<B256>,
+    pub check_balance: bool,
+    pub check_nonce: bool,
+    pub check_code: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
