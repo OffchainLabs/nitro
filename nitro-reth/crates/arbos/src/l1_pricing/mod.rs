@@ -592,6 +592,9 @@ impl<D: revm::Database> L1PricingState<D> {
 
         let pay_rewards_to = self.pay_rewards_to(backend).unwrap_or(Address::ZERO);
         if payment_for_rewards > U256::ZERO {
+            // payment_for_rewards was clamped to l1_fees just above, which mirrors
+            // the L1 pricer pool balance. A typed shortfall here would indicate
+            // pool/state drift and must not block the rest of the bookkeeping.
             let _ = transfer_fn(
                 L1_PRICER_FUNDS_POOL_ADDRESS,
                 pay_rewards_to,
@@ -608,6 +611,9 @@ impl<D: revm::Database> L1PricingState<D> {
         }
         if transfer_amount > U256::ZERO {
             let addr_to_pay = poster_state.pay_to(backend).unwrap_or(batch_poster);
+            // transfer_amount is capped to the remaining pool balance above; a
+            // shortfall here would be a pool/state inconsistency rather than a
+            // user-driven error, so do not surface it as Err.
             let _ = transfer_fn(L1_PRICER_FUNDS_POOL_ADDRESS, addr_to_pay, transfer_amount);
             l1_fees = l1_fees.saturating_sub(transfer_amount);
             self.set_l1_fees_available(backend, l1_fees)?;

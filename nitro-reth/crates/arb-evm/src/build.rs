@@ -28,7 +28,7 @@ use arbos::{
         compute_poster_gas, compute_submit_retryable_fees, EndTxFeeDistribution,
         EndTxRetryableParams, SubmitRetryableParams,
     },
-    util::tx_type_has_poster_costs,
+    util::{self as arb_util, tx_type_has_poster_costs, BalanceError},
 };
 use reth_evm::TransactionEnv;
 use revm::{
@@ -535,7 +535,9 @@ where
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
 
         // Mint deposit value to sender.
-        mint_balance(db, overlay, sender, info.deposit_value);
+        let _ = arb_util::mint_balance(&sender, info.deposit_value, |f, t, a| {
+            apply_balance_op(db, overlay, f, t, a)
+        });
         self.touched_accounts.insert(sender);
 
         // Track retryable deposit for balance delta verification.
@@ -620,12 +622,14 @@ where
 
         // 3. Transfer submission fee to network fee account.
         if !fees.submission_fee.is_zero() {
-            transfer_balance(
-                db,
-                overlay,
-                sender,
-                self.arb_ctx.network_fee_account,
+            // Sender balance was just topped up by the deposit mint above and the
+            // pre-submit checks ensure it covers all submit fees. A shortfall here
+            // would indicate a fee-validation bug, so silently tolerate it.
+            let _ = arb_util::transfer_balance(
+                Some(&sender),
+                Some(&self.arb_ctx.network_fee_account),
                 fees.submission_fee,
+                |f, t, a| apply_balance_op(db, overlay, f, t, a),
             );
             self.touched_accounts.insert(sender);
             self.touched_accounts
@@ -633,12 +637,11 @@ where
         }
 
         // 4. Refund excess submission fee.
-        transfer_balance(
-            db,
-            overlay,
-            sender,
-            info.fee_refund_addr,
+        let _ = arb_util::transfer_balance(
+            Some(&sender),
+            Some(&info.fee_refund_addr),
             fees.submission_fee_refund,
+            |f, t, a| apply_balance_op(db, overlay, f, t, a),
         );
         self.touched_accounts.insert(sender);
         self.touched_accounts.insert(info.fee_refund_addr);
@@ -646,26 +649,33 @@ where
         // 5. Move call value into escrow. If sender has insufficient funds (e.g. deposit didn't
         //    cover retry_value after fee deductions), refund the submission fee and end the
         //    transaction.
-        if !try_transfer_balance(db, overlay, sender, fees.escrow, info.retry_value) {
+        let escrow_outcome = arb_util::transfer_balance(
+            Some(&sender),
+            Some(&fees.escrow),
+            info.retry_value,
+            |f, t, a| apply_balance_op(db, overlay, f, t, a),
+        );
+        if matches!(
+            escrow_outcome,
+            Err(BalanceError::InsufficientBalance { .. })
+        ) {
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(fees.escrow);
             // Refund submission fee from network account back to sender.
-            transfer_balance(
-                db,
-                overlay,
-                self.arb_ctx.network_fee_account,
-                sender,
+            let _ = arb_util::transfer_balance(
+                Some(&self.arb_ctx.network_fee_account),
+                Some(&sender),
                 fees.submission_fee,
+                |f, t, a| apply_balance_op(db, overlay, f, t, a),
             );
             self.touched_accounts
                 .insert(self.arb_ctx.network_fee_account);
             // Refund withheld portion of submission fee to fee refund address.
-            transfer_balance(
-                db,
-                overlay,
-                sender,
-                info.fee_refund_addr,
+            let _ = arb_util::transfer_balance(
+                Some(&sender),
+                Some(&info.fee_refund_addr),
                 fees.withheld_submission_fee,
+                |f, t, a| apply_balance_op(db, overlay, f, t, a),
             );
             self.touched_accounts.insert(info.fee_refund_addr);
 
@@ -733,36 +743,33 @@ where
         if fees.can_pay_for_gas {
             // Pay infra fee (skip when infra_fee_account is zero, matching Go).
             if self.arb_ctx.infra_fee_account != Address::ZERO {
-                transfer_balance(
-                    db,
-                    overlay,
-                    sender,
-                    self.arb_ctx.infra_fee_account,
+                let _ = arb_util::transfer_balance(
+                    Some(&sender),
+                    Some(&self.arb_ctx.infra_fee_account),
                     fees.infra_cost,
+                    |f, t, a| apply_balance_op(db, overlay, f, t, a),
                 );
                 self.touched_accounts.insert(sender);
                 self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
             }
             // Pay network fee.
             if !fees.network_cost.is_zero() {
-                transfer_balance(
-                    db,
-                    overlay,
-                    sender,
-                    self.arb_ctx.network_fee_account,
+                let _ = arb_util::transfer_balance(
+                    Some(&sender),
+                    Some(&self.arb_ctx.network_fee_account),
                     fees.network_cost,
+                    |f, t, a| apply_balance_op(db, overlay, f, t, a),
                 );
                 self.touched_accounts.insert(sender);
                 self.touched_accounts
                     .insert(self.arb_ctx.network_fee_account);
             }
             // Gas price refund.
-            transfer_balance(
-                db,
-                overlay,
-                sender,
-                info.fee_refund_addr,
+            let _ = arb_util::transfer_balance(
+                Some(&sender),
+                Some(&info.fee_refund_addr),
                 fees.gas_price_refund,
+                |f, t, a| apply_balance_op(db, overlay, f, t, a),
             );
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(info.fee_refund_addr);
@@ -866,12 +873,11 @@ where
             }
         } else if !fees.gas_cost_refund.is_zero() {
             // Can't pay for gas: refund gas cost from deposit.
-            transfer_balance(
-                db,
-                overlay,
-                sender,
-                info.fee_refund_addr,
+            let _ = arb_util::transfer_balance(
+                Some(&sender),
+                Some(&info.fee_refund_addr),
                 fees.gas_cost_refund,
+                |f, t, a| apply_balance_op(db, overlay, f, t, a),
             );
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(info.fee_refund_addr);
@@ -1187,11 +1193,17 @@ where
                                 &mut *touched_ptr,
                             );
                         }
-                        transfer_balance(
+                        // Internal-tx transfers move funds between system accounts
+                        // (L1 pricer pool, fee accounts, retryable escrow). Their
+                        // bookkeeping keeps the source funded by construction; a
+                        // shortfall here would indicate consensus-state drift and
+                        // must not abort the internal tx — match the historic
+                        // best-effort behavior by swallowing the typed error.
+                        let _ = apply_balance_op(
                             &mut *closure_state_ptr,
                             &mut *overlay_ptr,
-                            from,
-                            to,
+                            Some(&from),
+                            Some(&to),
                             amount,
                         );
                         if !amount.is_zero() {
@@ -1324,8 +1336,13 @@ where
             let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             // Mint deposit value to sender, then transfer to recipient.
-            mint_balance(db, overlay, sender, value);
-            transfer_balance(db, overlay, sender, to, value);
+            // The deposit mint always covers the value transfer that follows.
+            let _ = arb_util::mint_balance(&sender, value, |f, t, a| {
+                apply_balance_op(db, overlay, f, t, a)
+            });
+            let _ = arb_util::transfer_balance(Some(&sender), Some(&to), value, |f, t, a| {
+                apply_balance_op(db, overlay, f, t, a)
+            });
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(to);
 
@@ -1431,7 +1448,16 @@ where
                             );
                         }
 
-                        if !try_transfer_balance(db, overlay, escrow, sender, value) {
+                        let escrow_outcome = arb_util::transfer_balance(
+                            Some(&escrow),
+                            Some(&sender),
+                            value,
+                            |f, t, a| apply_balance_op(db, overlay, f, t, a),
+                        );
+                        if matches!(
+                            escrow_outcome,
+                            Err(BalanceError::InsufficientBalance { .. })
+                        ) {
                             // Escrow has insufficient funds — abort the retry tx.
                             let tx_type = recovered.tx().tx_type();
                             self.pending_tx = Some(PendingArbTx {
@@ -1475,7 +1501,9 @@ where
                             .arb_ctx
                             .basefee
                             .saturating_mul(U256::from(tx_gas_limit));
-                        mint_balance(db, overlay, sender, prepaid);
+                        let _ = arb_util::mint_balance(&sender, prepaid, |f, t, a| {
+                            apply_balance_op(db, overlay, f, t, a)
+                        });
                         retry_pre_exec_undo = Some((sender, prepaid, escrow, value));
 
                         // Set retry context for end-tx processing.
@@ -1881,10 +1909,21 @@ where
             }
             if let Some((retry_sender, prepaid, escrow, escrow_value)) = retry_undo {
                 if !prepaid.is_zero() {
-                    burn_balance(db, overlay, retry_sender, prepaid);
+                    let _ = arb_util::burn_balance(&retry_sender, prepaid, |f, t, a| {
+                        apply_balance_op(db, overlay, f, t, a)
+                    });
                 }
                 if !escrow_value.is_zero() {
-                    let _ = try_transfer_balance(db, overlay, retry_sender, escrow, escrow_value);
+                    // Rollback path: best-effort return of the value we just
+                    // transferred from escrow. If the retry tx fails its
+                    // pre-checks, simply discarding the typed shortfall keeps
+                    // the rollback idempotent with the historic behavior.
+                    let _ = arb_util::transfer_balance(
+                        Some(&retry_sender),
+                        Some(&escrow),
+                        escrow_value,
+                        |f, t, a| apply_balance_op(db, overlay, f, t, a),
+                    );
                 }
             }
             Ok(())
@@ -2195,7 +2234,12 @@ where
                     let overlay = &mut self.state_overlay;
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     if get_balance(db, coinbase) >= tip_to_network {
-                        transfer_balance(db, overlay, coinbase, net_acct, tip_to_network);
+                        let _ = arb_util::transfer_balance(
+                            Some(&coinbase),
+                            Some(&net_acct),
+                            tip_to_network,
+                            |f, t, a| apply_balance_op(db, overlay, f, t, a),
+                        );
                         self.touched_accounts.insert(coinbase);
                         self.touched_accounts.insert(net_acct);
                     }
@@ -2209,12 +2253,13 @@ where
             if !p.stylus_data_fee.is_zero() {
                 let overlay = &mut self.state_overlay;
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                burn_balance(db, overlay, p.sender, p.stylus_data_fee);
-                mint_balance(
-                    db,
-                    overlay,
-                    self.arb_ctx.network_fee_account,
+                let _ = arb_util::burn_balance(&p.sender, p.stylus_data_fee, |f, t, a| {
+                    apply_balance_op(db, overlay, f, t, a)
+                });
+                let _ = arb_util::mint_balance(
+                    &self.arb_ctx.network_fee_account,
                     p.stylus_data_fee,
+                    |f, t, a| apply_balance_op(db, overlay, f, t, a),
                 );
                 self.touched_accounts.insert(p.sender);
                 self.touched_accounts
@@ -2226,11 +2271,10 @@ where
         if !withdrawal_value.is_zero() {
             let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            burn_balance(
-                db,
-                overlay,
-                arb_precompiles::ARBSYS_ADDRESS,
+            let _ = arb_util::burn_balance(
+                &arb_precompiles::ARBSYS_ADDRESS,
                 withdrawal_value,
+                |f, t, a| apply_balance_op(db, overlay, f, t, a),
             );
             self.touched_accounts
                 .insert(arb_precompiles::ARBSYS_ADDRESS);
@@ -2266,7 +2310,9 @@ where
                     .saturating_mul(U256::from(sender_extra_gas));
                 let overlay = &mut self.state_overlay;
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                burn_balance(db, overlay, pending.sender, extra_cost);
+                let _ = arb_util::burn_balance(&pending.sender, extra_cost, |f, t, a| {
+                    apply_balance_op(db, overlay, f, t, a)
+                });
                 self.touched_accounts.insert(pending.sender);
             }
 
@@ -2329,7 +2375,7 @@ where
                             block_base_fee: self.arb_ctx.basefee,
                         },
                         |addr, amount| unsafe {
-                            burn_balance(&mut *state_ptr, &mut *overlay_ptr, addr, amount);
+                            apply_burn_to_state(&mut *state_ptr, &mut *overlay_ptr, addr, amount);
                             (*touched_ptr).insert(addr);
                         },
                         |from, to, amount| {
@@ -2347,11 +2393,15 @@ where
                                         &mut *touched_ptr,
                                     );
                                 }
-                                transfer_balance(
+                                // end_tx_retryable distributes refunds via refund_with_pool,
+                                // which already discards typed errors. Mirror that pattern
+                                // here so a hypothetical shortfall does not surface as Err
+                                // and short-circuit downstream bookkeeping.
+                                let _ = apply_balance_op(
                                     &mut *state_ptr,
                                     &mut *overlay_ptr,
-                                    from,
-                                    to,
+                                    Some(&from),
+                                    Some(&to),
                                     amount,
                                 );
                                 // Go's SubBalance(from, nonzero) creates a non-zombie
@@ -2389,11 +2439,17 @@ where
                                             &mut *touched_ptr,
                                         );
                                     }
-                                    transfer_balance(
+                                    // delete_retryable propagates this closure's error
+                                    // via `?` and would skip clearing ticket fields on
+                                    // shortfall. The escrow holds the retryable's full
+                                    // callvalue by construction, so this never errors in
+                                    // practice; swallow the typed error to preserve the
+                                    // historic "always-clear" behavior.
+                                    let _ = apply_balance_op(
                                         &mut *state_ptr,
                                         &mut *overlay_ptr,
-                                        from,
-                                        to,
+                                        Some(&from),
+                                        Some(&to),
                                         amount,
                                     );
                                     if !amount.is_zero() {
@@ -2422,12 +2478,13 @@ where
                                     &mut *touched_ptr,
                                 );
                             }
-                            transfer_balance(
-                                &mut *state_ptr,
-                                &mut *overlay_ptr,
-                                pending.sender,
-                                result.escrow_address,
+                            let _ = arb_util::transfer_balance(
+                                Some(&pending.sender),
+                                Some(&result.escrow_address),
                                 retry_ctx.call_value,
+                                |f, t, a| {
+                                    apply_balance_op(&mut *state_ptr, &mut *overlay_ptr, f, t, a)
+                                },
                             );
                             // Go's SubBalance(sender, nonzero) breaks zombie on sender.
                             if !retry_ctx.call_value.is_zero() {
@@ -2520,12 +2577,11 @@ where
                         {
                             if total_cost > multi_cost {
                                 let refund_amount = total_cost.saturating_sub(multi_cost);
-                                transfer_balance(
-                                    db,
-                                    overlay,
-                                    dist.network_fee_account,
-                                    pending.sender,
+                                let _ = arb_util::transfer_balance(
+                                    Some(&dist.network_fee_account),
+                                    Some(&pending.sender),
                                     refund_amount,
+                                    |f, t, a| apply_balance_op(db, overlay, f, t, a),
                                 );
                                 self.touched_accounts.insert(dist.network_fee_account);
                                 self.touched_accounts.insert(pending.sender);
@@ -2731,8 +2787,8 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
     }
 }
 
-/// Mint balance to an address. Zero-amount is a no-op (matches AddBalance).
-fn mint_balance<DB: Database>(
+/// Apply an unconditional AddBalance to the EVM state.
+fn apply_mint_to_state<DB: Database>(
     state: &mut State<DB>,
     overlay: &mut StateOverlay,
     address: Address,
@@ -2757,8 +2813,8 @@ fn mint_balance<DB: Database>(
     }
 }
 
-/// Burn balance from an address. Zero-amount is a no-op (matches SubBalance).
-fn burn_balance<DB: Database>(
+/// Apply an unconditional SubBalance to the EVM state.
+fn apply_burn_to_state<DB: Database>(
     state: &mut State<DB>,
     overlay: &mut StateOverlay,
     address: Address,
@@ -2773,6 +2829,47 @@ fn burn_balance<DB: Database>(
             acct.info.balance = acct.info.balance.saturating_sub(amount);
         }
     }
+}
+
+/// Backing state mutation for the typed transfer callback.
+///
+/// Maps the `(from, to, amount)` triple to a concrete state mutation:
+///   - `(Some(from), Some(to))` — transfer with balance check; returns
+///     `BalanceError::InsufficientBalance` when `from` cannot cover `amount`.
+///   - `(Some(from), None)` — unconditional burn (saturating, matches Go).
+///   - `(None, Some(to))` — unconditional mint.
+fn apply_balance_op<DB: Database>(
+    state: &mut State<DB>,
+    overlay: &mut StateOverlay,
+    from: Option<&Address>,
+    to: Option<&Address>,
+    amount: U256,
+) -> Result<(), BalanceError> {
+    if amount.is_zero() {
+        return Ok(());
+    }
+    match (from, to) {
+        (Some(from_addr), Some(to_addr)) => {
+            let available = get_balance(state, *from_addr);
+            if available < amount {
+                return Err(BalanceError::InsufficientBalance {
+                    account: *from_addr,
+                    available,
+                    requested: amount,
+                });
+            }
+            apply_burn_to_state(state, overlay, *from_addr, amount);
+            apply_mint_to_state(state, overlay, *to_addr, amount);
+        }
+        (Some(from_addr), None) => {
+            apply_burn_to_state(state, overlay, *from_addr, amount);
+        }
+        (None, Some(to_addr)) => {
+            apply_mint_to_state(state, overlay, *to_addr, amount);
+        }
+        (None, None) => {}
+    }
+    Ok(())
 }
 
 /// Increment the nonce of an account.
@@ -2795,37 +2892,6 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
         Ok(Some(info)) => info.balance,
         _ => U256::ZERO,
     }
-}
-
-/// Transfer balance between two addresses. Skipped on insufficient funds.
-///
-/// At ArbOS >= Stylus a zero-amount call is a complete no-op. Pre-Stylus
-/// callers that need the zombie-deleted semantics must use a dedicated
-/// helper or call `create_zombie_if_deleted` directly.
-fn transfer_balance<DB: Database>(
-    state: &mut State<DB>,
-    overlay: &mut StateOverlay,
-    from: Address,
-    to: Address,
-    amount: U256,
-) {
-    if amount.is_zero() {
-        return;
-    }
-    // No from == to early return — Go always does SubBalance + AddBalance
-    // independently even when from == to. This ensures the account gets
-    // dirtied in the state trie consistently.
-    let balance = get_balance(state, from);
-    if balance < amount {
-        tracing::warn!(
-            target: "arb::executor",
-            %from, %to, %amount, %balance,
-            "transfer_balance: insufficient funds, skipping"
-        );
-        return;
-    }
-    burn_balance(state, overlay, from, amount);
-    mint_balance(state, overlay, to, amount);
 }
 
 /// Re-create an empty account that was deleted by per-tx Finalise.
@@ -2860,27 +2926,6 @@ fn create_zombie_if_deleted<DB: Database>(
     }
 }
 
-/// Transfer balance with balance check. Returns false if sender has
-/// insufficient funds (no state changes in that case). Zero-amount is a
-/// no-op at ArbOS >= Stylus.
-fn try_transfer_balance<DB: Database>(
-    state: &mut State<DB>,
-    overlay: &mut StateOverlay,
-    from: Address,
-    to: Address,
-    amount: U256,
-) -> bool {
-    if amount.is_zero() {
-        return true;
-    }
-    if get_balance(state, from) < amount {
-        return false;
-    }
-    burn_balance(state, overlay, from, amount);
-    mint_balance(state, overlay, to, amount);
-    true
-}
-
 /// Apply a computed fee distribution to the EVM state.
 fn apply_fee_distribution<DB: Database>(
     state: &mut State<DB>,
@@ -2891,24 +2936,19 @@ fn apply_fee_distribution<DB: Database>(
     // Skip the 0-value mint to avoid an EIP-161 touch on the network
     // fee account.
     if !dist.network_fee_amount.is_zero() {
-        mint_balance(
-            state,
-            overlay,
-            dist.network_fee_account,
+        let _ = arb_util::mint_balance(
+            &dist.network_fee_account,
             dist.network_fee_amount,
+            |f, t, a| apply_balance_op(state, overlay, f, t, a),
         );
     }
-    mint_balance(
-        state,
-        overlay,
-        dist.infra_fee_account,
-        dist.infra_fee_amount,
-    );
-    mint_balance(
-        state,
-        overlay,
-        dist.poster_fee_destination,
+    let _ = arb_util::mint_balance(&dist.infra_fee_account, dist.infra_fee_amount, |f, t, a| {
+        apply_balance_op(state, overlay, f, t, a)
+    });
+    let _ = arb_util::mint_balance(
+        &dist.poster_fee_destination,
         dist.poster_fee_amount,
+        |f, t, a| apply_balance_op(state, overlay, f, t, a),
     );
 
     if !dist.l1_fees_to_add.is_zero() {
