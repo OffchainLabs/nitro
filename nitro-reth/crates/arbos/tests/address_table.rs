@@ -90,3 +90,46 @@ fn lookup_index_returns_none_out_of_range() {
     assert!(t.lookup_index(b, 1).unwrap().is_none());
     assert!(t.lookup_index(b, 999_999).unwrap().is_none());
 }
+
+#[test]
+fn register_lookup_compress_decompress_round_trip() {
+    let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
+    let t = fresh_table(&mut h, 0xB8);
+    let b = unsafe { &mut *state_ptr };
+    let a = address!("c5d2460186f7233c927e7db2dcc703c0e500b653");
+
+    assert_eq!(t.register(b, a).unwrap(), (0, false));
+    assert_eq!(t.register(b, a).unwrap(), (0, true));
+
+    assert_eq!(t.lookup(b, a).unwrap(), (0, true));
+    assert_eq!(t.lookup_index(b, 0).unwrap(), Some(a));
+
+    let compressed = t.compress(b, a).unwrap();
+    assert_eq!(compressed.len(), 1);
+    assert_eq!(compressed[0], 0x80);
+
+    let (decoded_addr, bytes_read, raw) = t.decompress(b, &compressed).unwrap();
+    assert_eq!(decoded_addr, a);
+    assert_eq!(bytes_read, 1);
+    assert!(!raw);
+}
+
+#[test]
+fn compress_decompress_unregistered_raw_path() {
+    let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
+    let t = fresh_table(&mut h, 0xB9);
+    let b = unsafe { &mut *state_ptr };
+    let a = address!("FACEFEED00000000000000000000000000000000");
+
+    let compressed = t.compress(b, a).unwrap();
+    assert_eq!(compressed.len(), 21);
+    assert_eq!(compressed[0], 0x94);
+    assert_eq!(&compressed[1..], a.as_slice());
+
+    let (decoded_addr, bytes_read, raw) = t.decompress(b, &compressed).unwrap();
+    assert_eq!(decoded_addr, a);
+    assert_eq!(bytes_read, 21);
+    assert!(raw);
+}

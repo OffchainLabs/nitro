@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
-use alloy_rlp::{Decodable, Encodable};
+use alloy_rlp::{Decodable, Encodable, Header};
 use revm::Database;
 
 use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
@@ -128,15 +128,24 @@ impl<D> AddressTable<D> {
         backend: &mut B,
         buf: &[u8],
     ) -> Result<(Address, u64, bool), AddressTableError> {
-        let mut cursor = buf;
-        let input = <Vec<u8> as Decodable>::decode(&mut cursor)
-            .map_err(|_| AddressTableError::InvalidEncoding)?;
-        let bytes_read = (buf.len() - cursor.len()) as u64;
+        if buf.is_empty() {
+            return Err(AddressTableError::InvalidEncoding);
+        }
+        let mut header_cursor = buf;
+        let header =
+            Header::decode(&mut header_cursor).map_err(|_| AddressTableError::InvalidEncoding)?;
+        if header.list {
+            return Err(AddressTableError::InvalidEncoding);
+        }
 
-        if input.len() == 20 {
+        if header.payload_length == 20 {
+            if header_cursor.len() < 20 {
+                return Err(AddressTableError::InvalidEncoding);
+            }
             let mut addr_bytes = [0u8; 20];
-            addr_bytes.copy_from_slice(&input);
-            Ok((Address::from(addr_bytes), bytes_read, true))
+            addr_bytes.copy_from_slice(&header_cursor[..20]);
+            let consumed = buf.len() - header_cursor.len() + 20;
+            Ok((Address::from(addr_bytes), consumed as u64, true))
         } else {
             let mut cursor = buf;
             let index = u64::decode(&mut cursor).map_err(|_| AddressTableError::InvalidEncoding)?;
