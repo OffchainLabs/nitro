@@ -1,17 +1,57 @@
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::StorageBackend;
+use arb_storage::{StorageBackend, StorageError};
 
 use arb_chainspec::arbos_version;
 
 use crate::{
-    arbos_state::ArbosState,
+    arbos_state::{ArbosState, ArbosStateError},
     arbos_types::{legacy_cost_for_stats, BatchDataStats},
+    blockhash::BlockhashesError,
     burn::Burner,
     util::BalanceError,
 };
 
 /// Standard Ethereum base transaction gas.
 const TX_GAS: u64 = 21_000;
+
+/// Errors raised while decoding or applying an ArbOS internal transaction.
+#[derive(thiserror::Error, Debug)]
+pub enum InternalTxDecodeError {
+    /// The raw calldata was shorter than the ABI layout requires.
+    #[error("internal tx data too short: expected at least {expected} bytes, got {got}")]
+    Length {
+        /// Minimum number of bytes the ABI expects.
+        expected: usize,
+        /// Number of bytes actually supplied.
+        got: usize,
+    },
+
+    /// A `uint256` field did not fit in `u64`.
+    #[error("internal tx field `{field}` does not fit in u64")]
+    U256Overflow {
+        /// Name of the offending ABI field.
+        field: &'static str,
+    },
+
+    /// The 4-byte selector did not match any known internal tx method.
+    #[error("unknown internal tx selector: {selector:02x?}")]
+    UnknownSelector {
+        /// The unrecognized 4-byte selector.
+        selector: [u8; 4],
+    },
+
+    /// Reading the L1 block number from the ring buffer failed.
+    #[error(transparent)]
+    Blockhashes(#[from] BlockhashesError),
+
+    /// An ArbOS upgrade step failed (e.g. unsupported scheduled version).
+    #[error(transparent)]
+    ArbosState(#[from] ArbosStateError),
+
+    /// A bare storage failure surfaced from a typed accessor.
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+}
 
 // ---------------------------------------------------------------------------
 // Method selectors (keccak256 of ABI signatures)
@@ -205,12 +245,13 @@ pub fn encode_batch_posting_report_v2(
 // ---------------------------------------------------------------------------
 
 /// Decode startBlock data from raw internal tx bytes.
-pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, String> {
-    if data.len() < 4 + 32 * 4 {
-        return Err(format!(
-            "start block data too short: expected >= 132, got {}",
-            data.len()
-        ));
+pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, InternalTxDecodeError> {
+    const EXPECTED: usize = 4 + 32 * 4;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
     }
     let args = &data[4..];
     let l1_block_number = u256_to_u64(&args[32..64], "l1_block_number")?;
@@ -224,19 +265,22 @@ pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, String> {
     })
 }
 
-fn u256_to_u64(slice: &[u8], field: &str) -> Result<u64, String> {
+fn u256_to_u64(slice: &[u8], field: &'static str) -> Result<u64, InternalTxDecodeError> {
     U256::from_be_slice(slice)
         .try_into()
-        .map_err(|_| format!("{field} does not fit in u64"))
+        .map_err(|_| InternalTxDecodeError::U256Overflow { field })
 }
 
-fn decode_batch_posting_report(data: &[u8]) -> Result<BatchPostingReportData, String> {
+fn decode_batch_posting_report(
+    data: &[u8],
+) -> Result<BatchPostingReportData, InternalTxDecodeError> {
     // 5 ABI words: uint256, address, uint64, uint64, uint256
-    if data.len() < 4 + 32 * 5 {
-        return Err(format!(
-            "batch posting report data too short: expected >= 164, got {}",
-            data.len()
-        ));
+    const EXPECTED: usize = 4 + 32 * 5;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
     }
     let args = &data[4..];
     Ok(BatchPostingReportData {
@@ -247,13 +291,16 @@ fn decode_batch_posting_report(data: &[u8]) -> Result<BatchPostingReportData, St
     })
 }
 
-fn decode_batch_posting_report_v2(data: &[u8]) -> Result<BatchPostingReportV2Data, String> {
+fn decode_batch_posting_report_v2(
+    data: &[u8],
+) -> Result<BatchPostingReportV2Data, InternalTxDecodeError> {
     // 7 ABI words: uint256, address, uint64, uint64, uint64, uint64, uint256
-    if data.len() < 4 + 32 * 7 {
-        return Err(format!(
-            "batch posting report v2 data too short: expected >= 228, got {}",
-            data.len()
-        ));
+    const EXPECTED: usize = 4 + 32 * 7;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
     }
     let args = &data[4..];
     Ok(BatchPostingReportV2Data {
@@ -290,17 +337,17 @@ pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G, C>(
     ctx: &InternalTxContext,
     mut transfer_fn: F,
     mut balance_of: G,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
     F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     G: FnMut(Address) -> U256,
     C: StorageBackend,
 {
     if data.len() < 4 {
-        return Err(format!(
-            "internal tx data too short ({} bytes, need at least 4)",
-            data.len()
-        ));
+        return Err(InternalTxDecodeError::Length {
+            expected: 4,
+            got: data.len(),
+        });
     }
 
     let selector: [u8; 4] = data[0..4].try_into().unwrap();
@@ -325,10 +372,7 @@ where
             let inputs = decode_batch_posting_report_v2(data)?;
             apply_batch_posting_report_v2(backend, inputs, state, ctx, &mut transfer_fn)
         }
-        _ => Err(format!(
-            "unknown internal tx selector: {:02x}{:02x}{:02x}{:02x}",
-            selector[0], selector[1], selector[2], selector[3]
-        )),
+        _ => Err(InternalTxDecodeError::UnknownSelector { selector }),
     }
 }
 
@@ -339,7 +383,7 @@ fn apply_start_block<D: revm::Database, B: Burner, F, G, C>(
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
     balance_of: &mut G,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
     F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     G: FnMut(Address) -> U256,
@@ -358,16 +402,15 @@ where
         l1_block_number = l1_block_number.saturating_add(1);
     }
 
-    let old_l1_block_number = state
-        .blockhashes
-        .l1_block_number(backend)
-        .map_err(|_| "failed to read l1 block number")?;
+    let old_l1_block_number = state.blockhashes.l1_block_number(backend)?;
 
     if l1_block_number > old_l1_block_number {
-        state
-            .blockhashes
-            .record_new_l1_block(backend, l1_block_number - 1, ctx.prev_hash, arbos_version)
-            .map_err(|_| "failed to record L1 block")?;
+        state.blockhashes.record_new_l1_block(
+            backend,
+            l1_block_number - 1,
+            ctx.prev_hash,
+            arbos_version,
+        )?;
     }
 
     let _ = state.retryable_state.try_to_reap_one_retryable(
@@ -387,9 +430,7 @@ where
         .l2_pricing_state
         .update_pricing_model(backend, time_passed, arbos_version);
 
-    state
-        .upgrade_arbos_version_if_necessary(backend, ctx.current_time)
-        .map_err(|_| "ArbOS upgrade failed (node may be out of date)")?;
+    state.upgrade_arbos_version_if_necessary(backend, ctx.current_time)?;
 
     Ok(())
 }
@@ -400,7 +441,7 @@ fn apply_batch_posting_report<D: revm::Database, B: Burner, F, C>(
     state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
     F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     C: StorageBackend,
@@ -436,7 +477,7 @@ fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F, C>(
     state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
     F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     C: StorageBackend,

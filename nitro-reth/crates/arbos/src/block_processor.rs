@@ -7,6 +7,50 @@ use crate::{header::ArbHeaderInfo, internal_tx::L1Info, l2_pricing::GETH_BLOCK_G
 /// Standard Ethereum transaction gas.
 const TX_GAS: u64 = 21_000;
 
+/// A sequencer-implementation rejection raised by [`SequencingHooks`] filter
+/// methods.
+///
+/// Sequencer hooks are inherently policy-driven (allowlists, mempool budgets,
+/// custom validation): the rejection reason is opaque to the state machine and
+/// is preserved verbatim for diagnostics.
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
+#[error("sequencer rejected transaction: {reason}")]
+pub struct FilterReject {
+    /// Free-form reason supplied by the rejecting hook.
+    pub reason: String,
+}
+
+impl FilterReject {
+    /// Construct a new rejection from any [`Into<String>`] reason.
+    pub fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+        }
+    }
+}
+
+/// Errors raised while recording a tx outcome or finalising a block.
+#[derive(thiserror::Error, Debug)]
+pub enum BlockProcessorError {
+    /// The internal start-block transaction reported an EVM-level error.
+    /// Internal txs must never fail; this aborts block production.
+    #[error("internal start-block tx failed: {reason}")]
+    InternalTxFailed {
+        /// Verbatim EVM error message from the failed internal tx.
+        reason: String,
+    },
+
+    /// The post-block balance delta does not match the deposits/withdrawals
+    /// tracked during block production.
+    #[error("unexpected balance delta {actual} (expected {expected})")]
+    BalanceDelta {
+        /// Actual delta observed in state.
+        actual: i128,
+        /// Delta tracked from deposits/withdrawals.
+        expected: i128,
+    },
+}
+
 // =====================================================================
 // Conditional options
 // =====================================================================
@@ -31,10 +75,10 @@ pub trait SequencingHooks {
     fn next_tx_to_sequence(&mut self) -> Option<Vec<u8>>;
 
     /// Filters a transaction before execution.
-    fn pre_tx_filter(&self, tx: &[u8]) -> Result<(), String>;
+    fn pre_tx_filter(&self, tx: &[u8]) -> Result<(), FilterReject>;
 
     /// Filters a transaction after execution.
-    fn post_tx_filter(&self, tx: &[u8], result: &[u8]) -> Result<(), String>;
+    fn post_tx_filter(&self, tx: &[u8], result: &[u8]) -> Result<(), FilterReject>;
 
     /// Determines whether to discard invalid txs early.
     fn discard_invalid_txs_early(&self) -> bool;
@@ -45,7 +89,7 @@ pub trait SequencingHooks {
         _header: &NewHeaderResult,
         _txs: &[Vec<u8>],
         _receipts: &[Vec<u8>],
-    ) -> Result<(), String> {
+    ) -> Result<(), FilterReject> {
         Ok(())
     }
 
@@ -61,11 +105,11 @@ impl SequencingHooks for NoopSequencingHooks {
         None
     }
 
-    fn pre_tx_filter(&self, _tx: &[u8]) -> Result<(), String> {
+    fn pre_tx_filter(&self, _tx: &[u8]) -> Result<(), FilterReject> {
         Ok(())
     }
 
-    fn post_tx_filter(&self, _tx: &[u8], _result: &[u8]) -> Result<(), String> {
+    fn post_tx_filter(&self, _tx: &[u8], _result: &[u8]) -> Result<(), FilterReject> {
         Ok(())
     }
 
@@ -318,12 +362,13 @@ impl BlockProductionState {
 
     /// Record the result of executing a transaction.
     ///
-    /// Returns an error string if the internal start-block tx failed.
+    /// Returns [`BlockProcessorError::InternalTxFailed`] if the internal
+    /// start-block tx reported an EVM error.
     pub fn record_tx_outcome(
         &mut self,
         action: &TxAction,
         outcome: TxOutcome,
-    ) -> Result<(), String> {
+    ) -> Result<(), BlockProcessorError> {
         match outcome {
             TxOutcome::Invalid(err) => {
                 // Invalid txs still consume a TX_GAS worth of block gas.
@@ -343,7 +388,9 @@ impl BlockProductionState {
                 // Internal start-block tx must not fail.
                 if matches!(action, TxAction::ExecuteStartBlock) {
                     if let Some(ref err) = result.evm_error {
-                        return Err(format!("internal tx failed: {err}"));
+                        return Err(BlockProcessorError::InternalTxFailed {
+                            reason: err.clone(),
+                        });
                     }
                 }
 
@@ -409,16 +456,16 @@ impl BlockProductionState {
         &self,
         actual_balance_delta: i128,
         debug_mode: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), BlockProcessorError> {
         if actual_balance_delta == self.expected_balance_delta {
             return Ok(());
         }
 
         if actual_balance_delta > self.expected_balance_delta || debug_mode {
-            return Err(format!(
-                "unexpected balance delta {} (expected {})",
-                actual_balance_delta, self.expected_balance_delta,
-            ));
+            return Err(BlockProcessorError::BalanceDelta {
+                actual: actual_balance_delta,
+                expected: self.expected_balance_delta,
+            });
         }
 
         // Funds were burnt (not minted), only log an error.

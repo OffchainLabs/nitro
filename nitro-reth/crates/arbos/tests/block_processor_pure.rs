@@ -1,8 +1,8 @@
 use alloy_primitives::{Address, B256, U256};
 use arbos::{
     block_processor::{
-        create_new_header, finalize_block_header_info, BlockProductionState, NoopSequencingHooks,
-        SequencingHooks, TxAction, TxOutcome, TxResult,
+        create_new_header, finalize_block_header_info, BlockProductionState, FilterReject,
+        NoopSequencingHooks, SequencingHooks, TxAction, TxOutcome, TxResult,
     },
     internal_tx::L1Info,
 };
@@ -146,10 +146,10 @@ impl SequencingHooks for OneTx {
     fn next_tx_to_sequence(&mut self) -> Option<Vec<u8>> {
         self.0.take()
     }
-    fn pre_tx_filter(&self, _: &[u8]) -> Result<(), String> {
+    fn pre_tx_filter(&self, _: &[u8]) -> Result<(), FilterReject> {
         Ok(())
     }
-    fn post_tx_filter(&self, _: &[u8], _: &[u8]) -> Result<(), String> {
+    fn post_tx_filter(&self, _: &[u8], _: &[u8]) -> Result<(), FilterReject> {
         Ok(())
     }
     fn discard_invalid_txs_early(&self) -> bool {

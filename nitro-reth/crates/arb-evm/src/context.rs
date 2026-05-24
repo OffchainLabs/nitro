@@ -133,6 +133,19 @@ pub struct ArbitrumExtraData {
     pub zombie_accounts: HashSet<Address>,
 }
 
+/// Two activations of the same Stylus module within a single block disagreed
+/// on the set of compilation targets.
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
+#[error("inconsistent WASM targets for module {module_hash}: existing has {existing:?}, requested {requested:?}")]
+pub struct InconsistentWasmTargets {
+    /// Module hash that disagreed.
+    pub module_hash: B256,
+    /// Targets recorded by the previous activation in this block.
+    pub existing: Vec<String>,
+    /// Targets supplied by the current activation request.
+    pub requested: Vec<String>,
+}
+
 impl ArbitrumExtraData {
     /// Record a WASM activation for the given module hash.
     ///
@@ -144,7 +157,7 @@ impl ArbitrumExtraData {
         module_hash: B256,
         asm: HashMap<String, Vec<u8>>,
         module: Vec<u8>,
-    ) -> Result<(), String> {
+    ) -> Result<(), InconsistentWasmTargets> {
         if let Some(existing) = self.activated_wasms.get(&module_hash) {
             // Validate target consistency: the new activation must have the
             // same set of targets as the prior one.
@@ -153,12 +166,11 @@ impl ArbitrumExtraData {
             if existing_targets.len() != new_targets.len()
                 || !new_targets.iter().all(|t| existing.asm.contains_key(*t))
             {
-                return Err(format!(
-                    "inconsistent WASM targets for module {module_hash}: \
-                     existing has {:?}, new has {:?}",
-                    existing.asm.keys().collect::<Vec<_>>(),
-                    asm.keys().collect::<Vec<_>>(),
-                ));
+                return Err(InconsistentWasmTargets {
+                    module_hash,
+                    existing: existing.asm.keys().cloned().collect(),
+                    requested: asm.keys().cloned().collect(),
+                });
             }
         }
         self.activated_wasms

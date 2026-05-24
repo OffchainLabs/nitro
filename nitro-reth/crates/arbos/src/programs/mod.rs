@@ -308,17 +308,16 @@ impl<D: Database> Programs<'_, D> {
         time: u64,
         page_limit: u16,
         debug: bool,
-        activate_fn: impl FnOnce(&[u8], u16, u64, u16, bool) -> Result<ActivationResult, String>,
-    ) -> Result<(u16, B256, alloy_primitives::U256), String> {
-        let params = self.params(backend).map_err(|_| "failed to load params")?;
+        activate_fn: impl FnOnce(&[u8], u16, u64, u16, bool) -> Result<ActivationResult, ProgramsError>,
+    ) -> Result<(u16, B256, alloy_primitives::U256), ProgramsError> {
+        let params = self.params(backend)?;
         let stylus_version = params.version;
 
-        let (current_version, expired, cached) = self
-            .program_exists(backend, code_hash, time, &params)
-            .map_err(|_| "failed to read program")?;
+        let (current_version, expired, cached) =
+            self.program_exists(backend, code_hash, time, &params)?;
 
         if current_version == stylus_version && !expired {
-            return Err("program up to date".into());
+            return Err(ProgramsError::UpToDate);
         }
 
         let info = activate_fn(wasm, stylus_version, self.arbos_version, page_limit, debug)?;
@@ -327,15 +326,13 @@ impl<D: Database> Programs<'_, D> {
             // Old module eviction happens at the runtime layer.
         }
 
-        self.set_module_hash(backend, code_hash, info.module_hash)
-            .map_err(|_| "failed to set module hash")?;
+        self.set_module_hash(backend, code_hash, info.module_hash)?;
 
         let estimate_kb = div_ceil(info.asm_estimate as u64, 1024) as u32;
 
         let data_fee = self
             .data_pricer
-            .update_model(backend, info.asm_estimate, time)
-            .map_err(|_| "failed to update data pricer")?;
+            .update_model(backend, info.asm_estimate, time)?;
 
         let program = Program {
             version: stylus_version,
@@ -348,8 +345,7 @@ impl<D: Database> Programs<'_, D> {
             cached,
         };
 
-        self.set_program(backend, code_hash, program)
-            .map_err(|_| "failed to set program")?;
+        self.set_program(backend, code_hash, program)?;
 
         Ok((stylus_version, info.module_hash, data_fee))
     }
@@ -388,27 +384,23 @@ impl<D: Database> Programs<'_, D> {
         backend: &mut B,
         code_hash: B256,
         time: u64,
-    ) -> Result<alloy_primitives::U256, String> {
-        let params = self.params(backend).map_err(|_| "failed to load params")?;
-        let mut program = self
-            .get_active_program(backend, code_hash, time, &params)
-            .map_err(|_| "program not active")?;
+    ) -> Result<alloy_primitives::U256, ProgramsError> {
+        let params = self.params(backend)?;
+        let mut program = self.get_active_program(backend, code_hash, time, &params)?;
 
         if program.age_seconds < days_to_seconds(params.keepalive_days) {
-            return Err("keepalive too soon".into());
+            return Err(ProgramsError::KeepaliveTooSoon);
         }
         if program.version != params.version {
-            return Err("program needs upgrade".into());
+            return Err(ProgramsError::NeedsUpgrade);
         }
 
         let data_fee = self
             .data_pricer
-            .update_model(backend, program.asm_size(), time)
-            .map_err(|_| "failed to update data pricer")?;
+            .update_model(backend, program.asm_size(), time)?;
 
         program.activated_at = hours_since_arbitrum(time);
-        self.set_program(backend, code_hash, program)
-            .map_err(|_| "failed to set program")?;
+        self.set_program(backend, code_hash, program)?;
 
         Ok(data_fee)
     }
@@ -436,24 +428,28 @@ impl<D: Database> Programs<'_, D> {
         used_multi_gas: &mut MultiGas,
         recent_cache_hit: bool,
         call_fn: F,
-    ) -> Result<(Vec<u8>, u64), String>
+    ) -> Result<(Vec<u8>, u64), ProgramsError>
     where
-        F: FnOnce(Program, ProgParams, EvmData, &[u8], u64) -> Result<(Vec<u8>, u64), String>,
+        F: FnOnce(
+            Program,
+            ProgParams,
+            EvmData,
+            &[u8],
+            u64,
+        ) -> Result<(Vec<u8>, u64), ProgramsError>,
     {
-        let (call_cost, program, _model) = self
-            .call_gas_cost(backend, code_hash, time, pages_open, recent_cache_hit)
-            .map_err(|_| "failed to compute call cost")?;
+        let (call_cost, program, _model) =
+            self.call_gas_cost(backend, code_hash, time, pages_open, recent_cache_hit)?;
 
         if gas < call_cost {
-            return Err("insufficient gas for Stylus call".into());
+            return Err(ProgramsError::InsufficientGas {
+                needed: call_cost,
+                have: gas,
+            });
         }
 
         let gas_for_program = gas - call_cost;
-        let params = self.prog_params(
-            program.version,
-            debug_mode,
-            &self.params(backend).map_err(|_| "failed to load params")?,
-        );
+        let params = self.prog_params(program.version, debug_mode, &self.params(backend)?);
 
         let starting_gas = gas;
         let (output, gas_left) = call_fn(program, params, evm_data, calldata, gas_for_program)?;
@@ -464,7 +460,7 @@ impl<D: Database> Programs<'_, D> {
             if starting_gas < evm_cost {
                 // Burn all remaining gas.
                 attribute_wasm_computation(used_multi_gas, starting_gas, 0);
-                return Err("out of gas".into());
+                return Err(ProgramsError::ReturnDataOutOfGas);
             }
             let max_gas_to_return = starting_gas - evm_cost;
             gas_left.min(max_gas_to_return)
@@ -484,27 +480,24 @@ impl<D: Database> Programs<'_, D> {
         code_hash: B256,
         cache: bool,
         time: u64,
-    ) -> Result<(), String> {
-        let params = self.params(backend).map_err(|_| "failed to load params")?;
-        let mut program = self
-            .get_program(backend, code_hash, time)
-            .map_err(|_| "failed to read program")?;
+    ) -> Result<(), ProgramsError> {
+        let params = self.params(backend)?;
+        let mut program = self.get_program(backend, code_hash, time)?;
 
         let expired = program.age_seconds > days_to_seconds(params.expiry_days);
 
         if program.version != params.version && cache {
-            return Err("program needs upgrade".into());
+            return Err(ProgramsError::NeedsUpgrade);
         }
         if expired && cache {
-            return Err("program expired".into());
+            return Err(ProgramsError::Expired);
         }
         if program.cached == cache {
             return Ok(());
         }
 
         program.cached = cache;
-        self.set_program(backend, code_hash, program)
-            .map_err(|_| "failed to set program")?;
+        self.set_program(backend, code_hash, program)?;
 
         Ok(())
     }

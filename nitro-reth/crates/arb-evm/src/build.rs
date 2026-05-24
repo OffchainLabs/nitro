@@ -1280,9 +1280,7 @@ where
 
             // Internal tx errors are fatal — abort block production.
             if let Some(err) = tx_err {
-                return Err(BlockExecutionError::msg(format!(
-                    "failed to apply internal transaction: {err}"
-                )));
+                return Err(BlockExecutionError::other(err));
             }
 
             return Ok(EthTxResult {
