@@ -56,8 +56,7 @@ pub fn compute_arbos_mixhash(
     mix[0..8].copy_from_slice(&send_count.to_be_bytes());
     mix[8..16].copy_from_slice(&l1_block_number.to_be_bytes());
     mix[16..24].copy_from_slice(&arbos_version.to_be_bytes());
-    if collect_tips
-        && arbos_version != arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD
+    if collect_tips && arbos_version != arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD
     {
         mix[25] = 1;
     }

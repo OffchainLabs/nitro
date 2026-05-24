@@ -9,9 +9,7 @@
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use arb_fuzz::{
     arbitrary_impls::{
-        interop::{
-            create_address, interop_eoa, interop_signing_key, wrap_init_code, WhichProgram,
-        },
+        interop::{create_address, interop_eoa, interop_signing_key, wrap_init_code, WhichProgram},
         message_step,
     },
     shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
@@ -294,9 +292,15 @@ fn build_steps(target_tx_data: Bytes, target_to: Address) -> Vec<ScenarioStep> {
     let idx = next_msg_idx();
     steps.push(message_step(idx, deploy_factory, idx));
 
-    let tx = signed(3, Some(target_to), target_tx_data, U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("target tx");
+    let tx = signed(
+        3,
+        Some(target_to),
+        target_tx_data,
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("target tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
 
@@ -333,7 +337,10 @@ fn run_named(name: &str, steps: Vec<ScenarioStep>) {
         });
         let path = std::path::PathBuf::from(format!("/tmp/stylus_create_chains_{name}.json"));
         let _ = std::fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
-        panic!("arbreth diverged from Nitro on {name}; see {}", path.display());
+        panic!(
+            "arbreth diverged from Nitro on {name}; see {}",
+            path.display()
+        );
     }
 }
 
@@ -572,9 +579,7 @@ fn stylus_delegate_preserves_storage_context() {
     // delegate to a Solidity helper that does SSTORE; storage should land
     // on stylus_addr (delegate caller), not the target
     let target = factory_address();
-    let ss_runtime: &[u8] = &[
-        0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3,
-    ];
+    let ss_runtime: &[u8] = &[0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3];
     let _ = ss_runtime;
     let inner: &[u8] = &[0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3];
     let calldata = forward_delegate_calldata(target, inner);
@@ -585,9 +590,7 @@ fn stylus_delegate_preserves_storage_context() {
 // ── Adversarial constructor patterns ───────────────────────────────────────
 
 fn ctor_sstore_then_revert() -> Vec<u8> {
-    vec![
-        0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xfd,
-    ]
+    vec![0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xfd]
 }
 
 fn ctor_oog() -> Vec<u8> {
@@ -620,14 +623,10 @@ fn ctor_with_log() -> Vec<u8> {
 
 fn ctor_calls_then_returns_subcall_addr(target: Address) -> Vec<u8> {
     let mut out = Vec::with_capacity(80);
-    out.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00,
-    ]);
+    out.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00]);
     out.push(0x73);
     out.extend_from_slice(target.as_slice());
-    out.extend_from_slice(&[
-        0x5a, 0xf1, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
-    ]);
+    out.extend_from_slice(&[0x5a, 0xf1, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3]);
     out
 }
 

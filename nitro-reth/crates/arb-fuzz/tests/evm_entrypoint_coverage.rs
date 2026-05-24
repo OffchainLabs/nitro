@@ -17,9 +17,7 @@
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use arb_fuzz::{
     arbitrary_impls::{
-        interop::{
-            create_address, interop_eoa, interop_signing_key, wrap_init_code, WhichProgram,
-        },
+        interop::{create_address, interop_eoa, interop_signing_key, wrap_init_code, WhichProgram},
         message_step,
     },
     shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
@@ -317,9 +315,15 @@ fn baseline_steps_with_factory() -> (Vec<ScenarioStep>, Address) {
 fn create_constructor_sload() {
     let (mut steps, factory) = baseline_steps_with_factory();
     let calldata = encode_create_calldata(&ctor_storage_op(0x54));
-    let tx = signed(3, Some(factory), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx");
+    let tx = signed(
+        3,
+        Some(factory),
+        Bytes::from(calldata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
     run_named("create_sload", steps);
@@ -330,9 +334,15 @@ fn create_constructor_sload() {
 fn create_constructor_sstore() {
     let (mut steps, factory) = baseline_steps_with_factory();
     let calldata = encode_create_calldata(&ctor_storage_op(0x55));
-    let tx = signed(3, Some(factory), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx");
+    let tx = signed(
+        3,
+        Some(factory),
+        Bytes::from(calldata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
     run_named("create_sstore", steps);
@@ -343,9 +353,15 @@ fn create_constructor_sstore() {
 fn create_max_code_size_exceeded() {
     let (mut steps, factory) = baseline_steps_with_factory();
     let calldata = encode_create_calldata(&ctor_returns_oversize());
-    let tx = signed(3, Some(factory), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx");
+    let tx = signed(
+        3,
+        Some(factory),
+        Bytes::from(calldata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
     run_named("create_oversize", steps);
@@ -356,9 +372,15 @@ fn create_max_code_size_exceeded() {
 fn create_ef_prefix_returned() {
     let (mut steps, factory) = baseline_steps_with_factory();
     let calldata = encode_create_calldata(&ctor_returns_ef_prefix());
-    let tx = signed(3, Some(factory), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx");
+    let tx = signed(
+        3,
+        Some(factory),
+        Bytes::from(calldata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
     run_named("create_ef_prefix", steps);
@@ -391,9 +413,15 @@ fn create_endowment_transfer() {
 fn create2_constructor_sload() {
     let (mut steps, factory) = baseline_steps_with_factory();
     let calldata = encode_create2_calldata(B256::ZERO, &ctor_storage_op(0x54));
-    let tx = signed(3, Some(factory), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx");
+    let tx = signed(
+        3,
+        Some(factory),
+        Bytes::from(calldata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
     run_named("create2_sload", steps);
@@ -416,9 +444,15 @@ fn create2_address_collision() {
     .expect("tx1");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx1, idx));
-    let tx2 = signed(4, Some(factory), Bytes::from(calldata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx2");
+    let tx2 = signed(
+        4,
+        Some(factory),
+        Bytes::from(calldata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx2");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx2, idx));
     run_named("create2_collision", steps);

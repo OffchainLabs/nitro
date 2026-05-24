@@ -185,9 +185,7 @@ fn code_hash_of_empty_account() {
 #[test]
 #[ignore]
 fn full_code_of_helper() {
-    let runtime: &[u8] = &[
-        0x60, 0xaa, 0x60, 0xbb, 0x60, 0xcc, 0x60, 0x00, 0xf3,
-    ];
+    let runtime: &[u8] = &[0x60, 0xaa, 0x60, 0xbb, 0x60, 0xcc, 0x60, 0x00, 0xf3];
     let (mut steps, _, _) = baseline_stylus_plus_helper(runtime);
     let tx = signed(
         3,

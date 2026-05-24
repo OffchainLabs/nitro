@@ -242,7 +242,9 @@ fn arbsys_arb_block_hash_future_reverts() {
 fn arbsys_map_l1_sender_contract_to_l2_alias() {
     let (mut steps, _, _) = baseline_stylus_plus_helper(&[0x00]);
     let mut data = Vec::with_capacity(68);
-    data.extend_from_slice(&selector4("mapL1SenderContractAddressToL2Alias(address,address)"));
+    data.extend_from_slice(&selector4(
+        "mapL1SenderContractAddressToL2Alias(address,address)",
+    ));
     let mut pad1 = [0u8; 32];
     pad1[12..].copy_from_slice(Address::repeat_byte(0x11).as_slice());
     data.extend_from_slice(&pad1);

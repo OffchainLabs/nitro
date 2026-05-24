@@ -86,10 +86,7 @@ fn cache_codehash_is_cached_random() {
     let tx = signed(
         3,
         Some(ARBWASMCACHE_ADDR),
-        one_arg_b32(
-            "codehashIsCached(bytes32)",
-            B256::repeat_byte(0xcd),
-        ),
+        one_arg_b32("codehashIsCached(bytes32)", B256::repeat_byte(0xcd)),
         U256::ZERO,
         INVOKE_GAS_CAP,
     )

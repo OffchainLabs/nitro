@@ -113,7 +113,10 @@ fn run_named(name: &str, steps: Vec<ScenarioStep>) {
         });
         let path = std::path::PathBuf::from(format!("/tmp/stylus_call_chains_{name}.json"));
         let _ = std::fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
-        panic!("arbreth diverged from Nitro on {name}; see {}", path.display());
+        panic!(
+            "arbreth diverged from Nitro on {name}; see {}",
+            path.display()
+        );
     }
 }
 
@@ -213,9 +216,7 @@ fn wrap_two_arg(sig: &str, addr: Address, data: &[u8]) -> Bytes {
 // ── Solidity helper runtimes ──────────────────────────────────────────────
 
 fn helper_sstore_then_return_zero() -> Vec<u8> {
-    vec![
-        0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3,
-    ]
+    vec![0x60, 0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x60, 0x00, 0xf3]
 }
 
 fn helper_log0() -> Vec<u8> {
@@ -243,7 +244,14 @@ fn helper_return_large(words: u16) -> Vec<u8> {
     let len_bytes = ((words as u32) * 32).to_be_bytes();
     let mut out = Vec::with_capacity(24);
     out.extend_from_slice(&[
-        0x63, len_bytes[0], len_bytes[1], len_bytes[2], len_bytes[3], 0x60, 0x00, 0xf3,
+        0x63,
+        len_bytes[0],
+        len_bytes[1],
+        len_bytes[2],
+        len_bytes[3],
+        0x60,
+        0x00,
+        0xf3,
     ]);
     out
 }
@@ -259,15 +267,28 @@ fn helper_callback_to_stylus(stylus: Address) -> Vec<u8> {
     let inner = selector("callCount()").to_vec();
     let mut out = Vec::with_capacity(60 + inner.len());
     let inner_len = inner.len();
+    out.extend_from_slice(&[0x60, inner_len as u8, 0x60, 0x00, 0x60, 0x00, 0x37]);
     out.extend_from_slice(&[
-        0x60, inner_len as u8, 0x60, 0x00, 0x60, 0x00, 0x37,
-    ]);
-    out.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x20, 0x60, 0x00, 0x60, inner_len as u8, 0x60, 0x00, 0x60, 0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x20,
+        0x60,
+        0x00,
+        0x60,
+        inner_len as u8,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
     ]);
     out.push(0x73);
     out.extend_from_slice(stylus.as_slice());
-    out.extend_from_slice(&[0x5a, 0xf1, 0x60, 0x00, 0x60, 0x00, 0x60, 0x20, 0x60, 0x00, 0xf3]);
+    out.extend_from_slice(&[
+        0x5a, 0xf1, 0x60, 0x00, 0x60, 0x00, 0x60, 0x20, 0x60, 0x00, 0xf3,
+    ]);
     out
 }
 
@@ -352,9 +373,7 @@ fn call_value_insufficient_balance() {
     let huge = U256::from(10u128).pow(U256::from(30u64));
     let big_val = huge.to_be_bytes::<32>();
     let mut helper_runtime = Vec::with_capacity(80);
-    helper_runtime.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x7f,
-    ]);
+    helper_runtime.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x7f]);
     helper_runtime.extend_from_slice(&big_val);
     helper_runtime.push(0x73);
     helper_runtime.extend_from_slice(Address::repeat_byte(0x77).as_slice());
@@ -625,9 +644,7 @@ fn call_value_to_existing_contract() {
 
 fn helper_delegate_then_sstore(further: Address) -> Vec<u8> {
     let mut out = Vec::with_capacity(80);
-    out.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00,
-    ]);
+    out.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00]);
     out.push(0x73);
     out.extend_from_slice(further.as_slice());
     out.extend_from_slice(&[
@@ -671,8 +688,8 @@ fn solidity_delegatecall_into_stylus() {
     let stylus = stylus_addr();
     let mut helper = Vec::with_capacity(60);
     helper.extend_from_slice(&[
-        0x60, 0x04, 0x60, 0x00, 0x60, 0x00, 0x37,
-        0x60, 0x20, 0x60, 0x00, 0x60, 0x04, 0x60, 0x00, 0x60, 0x00,
+        0x60, 0x04, 0x60, 0x00, 0x60, 0x00, 0x37, 0x60, 0x20, 0x60, 0x00, 0x60, 0x04, 0x60, 0x00,
+        0x60, 0x00,
     ]);
     helper.push(0x73);
     helper.extend_from_slice(stylus.as_slice());
@@ -680,9 +697,15 @@ fn solidity_delegatecall_into_stylus() {
     let mut steps = baseline_with_helper(&helper);
     let mut cdata = Vec::with_capacity(4);
     cdata.extend_from_slice(&selector("callCount()"));
-    let tx = signed(3, Some(helper_addr()), Bytes::from(cdata), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx");
+    let tx = signed(
+        3,
+        Some(helper_addr()),
+        Bytes::from(cdata),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
     let idx = next_msg_idx();
     steps.push(message_step(idx, tx, idx));
     run_named("sol_delegate_stylus", steps);

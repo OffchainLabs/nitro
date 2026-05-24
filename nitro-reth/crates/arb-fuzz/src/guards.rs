@@ -144,7 +144,9 @@ impl GuardedRun {
                     assert!(
                         rec.gas_used <= max,
                         "[{}] last tx gas_used {} above ceiling {}",
-                        self.name, rec.gas_used, max,
+                        self.name,
+                        rec.gas_used,
+                        max,
                     );
                 }
                 if let Some(ok) = self.last_tx.status {
@@ -160,7 +162,9 @@ impl GuardedRun {
                         rec.logs.len(),
                         n,
                         "[{}] last tx log count mismatch (got {}, expected {})",
-                        self.name, rec.logs.len(), n,
+                        self.name,
+                        rec.logs.len(),
+                        n,
                     );
                 }
             }
@@ -221,5 +225,8 @@ fn dump_and_panic(name: &str, report: &arb_test_harness::dual_exec::DiffReport) 
     });
     let path = std::path::PathBuf::from(format!("/tmp/guarded_{name}.json"));
     let _ = std::fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
-    panic!("arbreth diverged from Nitro on {name}; see {}", path.display());
+    panic!(
+        "arbreth diverged from Nitro on {name}; see {}",
+        path.display()
+    );
 }

@@ -2,9 +2,7 @@ use alloy_primitives::{Address, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
     guards::GuardedRun,
-    scaffolding::{
-        baseline_stylus_plus_helper, selector4, signed, INVOKE_GAS_CAP,
-    },
+    scaffolding::{baseline_stylus_plus_helper, selector4, signed, INVOKE_GAS_CAP},
     shared_nodes::next_msg_idx,
 };
 use arb_test_harness::messaging::MessageBuilder;
@@ -43,7 +41,11 @@ fn run_query(name: &str, data: Bytes, expect_success: bool) {
 #[test]
 #[ignore]
 fn ownerpublic_get_network_fee_account() {
-    run_query("op_network_fee_account", no_arg("getNetworkFeeAccount()"), true);
+    run_query(
+        "op_network_fee_account",
+        no_arg("getNetworkFeeAccount()"),
+        true,
+    );
 }
 
 #[test]
@@ -61,7 +63,11 @@ fn ownerpublic_get_all_chain_owners() {
 #[test]
 #[ignore]
 fn ownerpublic_get_all_native_token_owners() {
-    run_query("op_all_nt_owners", no_arg("getAllNativeTokenOwners()"), true);
+    run_query(
+        "op_all_nt_owners",
+        no_arg("getAllNativeTokenOwners()"),
+        true,
+    );
 }
 
 #[test]
@@ -87,13 +93,21 @@ fn ownerpublic_is_native_token_owner_random_false() {
 #[test]
 #[ignore]
 fn ownerpublic_get_brotli_compression_level() {
-    run_query("op_brotli_level", no_arg("getBrotliCompressionLevel()"), true);
+    run_query(
+        "op_brotli_level",
+        no_arg("getBrotliCompressionLevel()"),
+        true,
+    );
 }
 
 #[test]
 #[ignore]
 fn ownerpublic_get_scheduled_upgrade() {
-    run_query("op_scheduled_upgrade", no_arg("getScheduledUpgrade()"), true);
+    run_query(
+        "op_scheduled_upgrade",
+        no_arg("getScheduledUpgrade()"),
+        true,
+    );
 }
 
 #[test]

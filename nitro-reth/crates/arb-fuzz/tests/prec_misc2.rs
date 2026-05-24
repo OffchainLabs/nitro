@@ -2,9 +2,7 @@ use alloy_primitives::{Address, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
     guards::GuardedRun,
-    scaffolding::{
-        baseline_stylus_plus_helper, selector4, signed, INVOKE_GAS_CAP,
-    },
+    scaffolding::{baseline_stylus_plus_helper, selector4, signed, INVOKE_GAS_CAP},
     shared_nodes::next_msg_idx,
 };
 use arb_test_harness::messaging::MessageBuilder;
@@ -47,44 +45,59 @@ fn run_query(name: &str, to: Address, data: Bytes, expect_success: bool) {
 #[test]
 #[ignore]
 fn function_table_size_empty() {
-    run_query("ft_size_empty", ARBFUNCTIONTABLE, {
-        let mut d = Vec::with_capacity(36);
-        d.extend_from_slice(&selector4("size(address)"));
-        let mut p = [0u8; 32];
-        p[12..].copy_from_slice(Address::repeat_byte(0x11).as_slice());
-        d.extend_from_slice(&p);
-        Bytes::from(d)
-    }, true);
+    run_query(
+        "ft_size_empty",
+        ARBFUNCTIONTABLE,
+        {
+            let mut d = Vec::with_capacity(36);
+            d.extend_from_slice(&selector4("size(address)"));
+            let mut p = [0u8; 32];
+            p[12..].copy_from_slice(Address::repeat_byte(0x11).as_slice());
+            d.extend_from_slice(&p);
+            Bytes::from(d)
+        },
+        true,
+    );
 }
 
 #[test]
 #[ignore]
 fn function_table_get_empty_reverts() {
-    run_query("ft_get_empty", ARBFUNCTIONTABLE, {
-        let mut d = Vec::with_capacity(68);
-        d.extend_from_slice(&selector4("get(address,uint256)"));
-        let mut p = [0u8; 32];
-        p[12..].copy_from_slice(Address::repeat_byte(0x11).as_slice());
-        d.extend_from_slice(&p);
-        d.extend_from_slice(&[0u8; 32]);
-        Bytes::from(d)
-    }, false);
+    run_query(
+        "ft_get_empty",
+        ARBFUNCTIONTABLE,
+        {
+            let mut d = Vec::with_capacity(68);
+            d.extend_from_slice(&selector4("get(address,uint256)"));
+            let mut p = [0u8; 32];
+            p[12..].copy_from_slice(Address::repeat_byte(0x11).as_slice());
+            d.extend_from_slice(&p);
+            d.extend_from_slice(&[0u8; 32]);
+            Bytes::from(d)
+        },
+        false,
+    );
 }
 
 #[test]
 #[ignore]
 fn function_table_upload_succeeds_noop() {
-    run_query("ft_upload_noop", ARBFUNCTIONTABLE, {
-        let mut d = Vec::with_capacity(100);
-        d.extend_from_slice(&selector4("upload(bytes)"));
-        let mut off = [0u8; 32];
-        off[31] = 0x20;
-        d.extend_from_slice(&off);
-        let mut len = [0u8; 32];
-        d.extend_from_slice(&len);
-        let _ = &mut len;
-        Bytes::from(d)
-    }, true);
+    run_query(
+        "ft_upload_noop",
+        ARBFUNCTIONTABLE,
+        {
+            let mut d = Vec::with_capacity(100);
+            d.extend_from_slice(&selector4("upload(bytes)"));
+            let mut off = [0u8; 32];
+            off[31] = 0x20;
+            d.extend_from_slice(&off);
+            let mut len = [0u8; 32];
+            d.extend_from_slice(&len);
+            let _ = &mut len;
+            Bytes::from(d)
+        },
+        true,
+    );
 }
 
 #[test]
@@ -178,12 +191,7 @@ fn nt_invalid_selector_reverts() {
 #[test]
 #[ignore]
 fn arbostest_empty_calldata_reverts() {
-    run_query(
-        "arbostest_empty_cd",
-        ARBOSTEST,
-        Bytes::new(),
-        false,
-    );
+    run_query("arbostest_empty_cd", ARBOSTEST, Bytes::new(), false);
 }
 
 #[test]

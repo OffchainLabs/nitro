@@ -7,11 +7,13 @@ use arb_test_harness::{
     scenario::ScenarioStep,
 };
 
-use crate::arbitrary_impls::{
-    interop::{create_address, interop_eoa, interop_signing_key, WhichProgram},
-    message_step,
+use crate::{
+    arbitrary_impls::{
+        interop::{create_address, interop_eoa, interop_signing_key, WhichProgram},
+        message_step,
+    },
+    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
 };
-use crate::shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID};
 
 pub const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
 pub const INVOKE_GAS_CAP: u64 = 30_000_000;
@@ -144,9 +146,7 @@ pub fn deploy_solidity(steps: &mut Vec<ScenarioStep>, nonce: u64, runtime: &[u8]
     eoa_create_addr(nonce)
 }
 
-pub fn baseline_stylus_plus_helper(
-    helper_runtime: &[u8],
-) -> (Vec<ScenarioStep>, Address, Address) {
+pub fn baseline_stylus_plus_helper(helper_runtime: &[u8]) -> (Vec<ScenarioStep>, Address, Address) {
     let mut steps = Vec::new();
     fund_interop_eoa(&mut steps);
     let stylus = deploy_solcaller(&mut steps, 0);

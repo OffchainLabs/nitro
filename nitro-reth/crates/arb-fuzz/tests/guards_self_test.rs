@@ -30,7 +30,10 @@ fn floor_catches_early_revert() {
             .expect_last_tx_min_gas(10_000_000)
             .run();
     });
-    assert!(result.is_err(), "guarded run should have panicked on gas floor violation");
+    assert!(
+        result.is_err(),
+        "guarded run should have panicked on gas floor violation"
+    );
 }
 
 #[test]

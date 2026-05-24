@@ -204,7 +204,10 @@ fn arbaggregator_get_preferred_aggregator_for_random() {
     run_query(
         "arbaggregator_preferred",
         ARBAGGREGATOR,
-        one_arg_addr("getPreferredAggregator(address)", Address::repeat_byte(0x99)),
+        one_arg_addr(
+            "getPreferredAggregator(address)",
+            Address::repeat_byte(0x99),
+        ),
         true,
     );
 }

@@ -1,13 +1,10 @@
 use alloy_primitives::{Address, Bytes, B256, U256};
 use arb_fuzz::{
-    arbitrary_impls::message_step,
+    arbitrary_impls::{interop::interop_signing_key, message_step},
     guards::GuardedRun,
-    scaffolding::{
-        fund_interop_eoa, FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, SEQUENCER_ALIAS,
-    },
+    scaffolding::{fund_interop_eoa, FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, SEQUENCER_ALIAS},
     shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
 };
-use arb_fuzz::arbitrary_impls::interop::interop_signing_key;
 use arb_test_harness::messaging::{
     signed_tx::{L2TxKind, SignedL2TxBuilder},
     MessageBuilder,
@@ -93,11 +90,13 @@ fn eip2930_tx_with_large_access_list() {
     for i in 0..10 {
         let mut addr_bytes = [0u8; 20];
         addr_bytes[19] = i;
-        let slots: Vec<B256> = (0..5).map(|j| {
-            let mut s = [0u8; 32];
-            s[31] = j;
-            B256::from(s)
-        }).collect();
+        let slots: Vec<B256> = (0..5)
+            .map(|j| {
+                let mut s = [0u8; 32];
+                s[31] = j;
+                B256::from(s)
+            })
+            .collect();
         al.push((Address::from(addr_bytes), slots));
     }
     tx.access_list = al;

@@ -141,7 +141,16 @@ fn reentry_helper(proxy: Address, forward_target: Address) -> Vec<u8> {
     let mut out2 = Vec::with_capacity(120);
     out2.extend_from_slice(&prefix);
     out2.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x20, 0x60, inner.len() as u8, 0x60, 0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x00,
+        0x60,
+        0x20,
+        0x60,
+        inner.len() as u8,
+        0x60,
+        0x00,
     ]);
     out2.push(0x73);
     out2.extend_from_slice(proxy.as_slice());

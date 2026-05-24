@@ -125,7 +125,9 @@ fn forward_calldata(target: Address, inner: &[u8]) -> Bytes {
 }
 
 fn ctor_sload() -> Vec<u8> {
-    vec![0x60, 0x00, 0x54, 0x50, 0x60, 0x00, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xf3]
+    vec![
+        0x60, 0x00, 0x54, 0x50, 0x60, 0x00, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xf3,
+    ]
 }
 
 fn stylus_addr() -> Address {
@@ -164,7 +166,10 @@ fn run_named(name: &str, steps: Vec<ScenarioStep>) {
         });
         let path = std::path::PathBuf::from(format!("/tmp/arb_tx_types_{name}.json"));
         let _ = std::fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap());
-        panic!("arbreth diverged from Nitro on {name}; see {}", path.display());
+        panic!(
+            "arbreth diverged from Nitro on {name}; see {}",
+            path.display()
+        );
     }
 }
 
@@ -330,9 +335,15 @@ fn deposit_then_stylus_create_collision() {
 
     let inner = deploy_create_calldata(&ctor_sload());
     let cdata = forward_calldata(factory_address(), &inner);
-    let tx1 = signed(3, Some(stylus_addr()), cdata.clone(), U256::ZERO, INVOKE_GAS_CAP)
-        .build()
-        .expect("tx1");
+    let tx1 = signed(
+        3,
+        Some(stylus_addr()),
+        cdata.clone(),
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx1");
     let i1 = next_msg_idx();
     steps.push(message_step(i1, tx1, i1));
 
