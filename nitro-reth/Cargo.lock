@@ -1462,6 +1462,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "arb-chainspec",
+ "arb-context",
  "arb-primitives",
  "arbos",
  "arbutil",
