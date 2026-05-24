@@ -91,6 +91,7 @@ pub struct FlushResult {
 struct FlushHandle {
     sender: std::sync::mpsc::Sender<PersistenceRequest>,
     result_rx: crossbeam_channel::Receiver<FlushResult>,
+    flush_done: Arc<tokio::sync::Notify>,
 }
 
 /// Type-erased parallel state root function.
@@ -143,6 +144,11 @@ pub fn try_flush_result() -> Option<FlushResult> {
     FLUSH_HANDLE
         .get()
         .and_then(|handle| handle.result_rx.try_recv().ok())
+}
+
+/// Returns the notifier signalled after each successful flush commit.
+pub fn flush_notifier() -> Option<Arc<tokio::sync::Notify>> {
+    FLUSH_HANDLE.get().map(|handle| handle.flush_done.clone())
 }
 
 pub fn compute_parallel_state_root(
@@ -358,6 +364,8 @@ impl ArbEngineLauncher {
             let pf = ctx.provider_factory().clone();
             let (req_tx, req_rx) = std::sync::mpsc::channel::<PersistenceRequest>();
             let (res_tx, res_rx) = crossbeam_channel::bounded::<FlushResult>(1);
+            let flush_done = Arc::new(tokio::sync::Notify::new());
+            let flush_done_thread = flush_done.clone();
 
             std::thread::Builder::new()
                 .name("arb-persistence".into())
@@ -393,6 +401,7 @@ impl ArbEngineLauncher {
                                         });
                                     }
                                 }
+                                flush_done_thread.notify_one();
                             }
                             PersistenceRequest::Unwind { target, done } => {
                                 let start = std::time::Instant::now();
@@ -426,6 +435,7 @@ impl ArbEngineLauncher {
             let _ = FLUSH_HANDLE.set(FlushHandle {
                 sender: req_tx,
                 result_rx: res_rx,
+                flush_done,
             });
         }
 

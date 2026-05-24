@@ -82,6 +82,73 @@ fn max_inflight() -> usize {
     })
 }
 
+/// Adaptive flush interval based on observed commit latency and dirty pages.
+pub struct FlushScheduler {
+    target_commit_latency_ms: u64,
+    max_dirty_pages_mb: u64,
+    min_interval: u64,
+    max_interval: u64,
+    current_interval: u64,
+    ema_commit_latency_ms: u64,
+}
+
+impl FlushScheduler {
+    pub fn new(initial_interval: u64) -> Self {
+        let min_interval = 32;
+        let max_interval = 256;
+        let current_interval = initial_interval.clamp(min_interval, max_interval);
+        Self {
+            target_commit_latency_ms: 1000,
+            max_dirty_pages_mb: 200,
+            min_interval,
+            max_interval,
+            current_interval,
+            ema_commit_latency_ms: 0,
+        }
+    }
+
+    pub fn should_flush(&self, since_last: u64, dirty_mb: Option<u64>) -> bool {
+        if let Some(mb) = dirty_mb {
+            if mb > self.max_dirty_pages_mb {
+                return true;
+            }
+        }
+        since_last >= self.current_interval
+    }
+
+    pub fn observe(&mut self, commit_latency_ms: u64) {
+        self.ema_commit_latency_ms = (self.ema_commit_latency_ms * 7 + commit_latency_ms * 3) / 10;
+        self.current_interval = if self.ema_commit_latency_ms > self.target_commit_latency_ms {
+            (self.current_interval / 2).max(self.min_interval)
+        } else if self.ema_commit_latency_ms < self.target_commit_latency_ms / 2 {
+            (self.current_interval * 2).min(self.max_interval)
+        } else {
+            self.current_interval
+        };
+    }
+
+    pub fn current_interval(&self) -> u64 {
+        self.current_interval
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn read_dirty_pages_mb() -> Option<u64> {
+    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("Dirty:") {
+            let kb: u64 = rest.trim().trim_end_matches(" kB").trim().parse().ok()?;
+            return Some(kb / 1024);
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_dirty_pages_mb() -> Option<u64> {
+    None
+}
+
 /// Block producer using reth's save_blocks(Full) for persistence.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
@@ -90,11 +157,11 @@ pub struct ArbBlockProducer<Provider> {
     in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
     head_block_num: AtomicU64,
     blocks_since_flush: AtomicU64,
-    flush_interval: u64,
+    scheduler: Mutex<FlushScheduler>,
     accumulated_trie_input: Mutex<Arc<TrieInputSorted>>,
     flushing_trie_input: Mutex<Option<Arc<TrieInputSorted>>>,
     pending_flush: AtomicBool,
-    produce_lock: Mutex<()>,
+    produce_lock: tokio::sync::Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
     /// Finality markers propagated by `nitroexecution_setFinalityData`.
     finality: Mutex<FinalityMarkers>,
@@ -145,11 +212,11 @@ where
             in_memory_state,
             head_block_num: AtomicU64::new(head),
             blocks_since_flush: AtomicU64::new(0),
-            flush_interval,
+            scheduler: Mutex::new(FlushScheduler::new(flush_interval)),
             accumulated_trie_input: Mutex::new(Arc::new(TrieInputSorted::default())),
             flushing_trie_input: Mutex::new(None),
             pending_flush: AtomicBool::new(false),
-            produce_lock: Mutex::new(()),
+            produce_lock: tokio::sync::Mutex::new(()),
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
@@ -308,17 +375,32 @@ where
         self.pending_flush.store(false, Ordering::SeqCst);
         self.invalidate_cached_overlay();
         self.invalidate_cached_prestate();
+        let commit_latency_ms = result.duration.as_millis() as u64;
+        let flush_interval_current = {
+            let mut sched = self.scheduler.lock();
+            sched.observe(commit_latency_ms);
+            sched.current_interval()
+        };
+        let dirty_pages_mb = read_dirty_pages_mb().unwrap_or(0);
+        let chain_len_unflushed = self
+            .in_memory_state
+            .head_state()
+            .map(|s| s.chain().count())
+            .unwrap_or(0) as u64;
         info!(
             target: "block_producer",
             flushed = result.count,
             last_block = result.last_num_hash.number,
-            duration_ms = result.duration.as_millis(),
-            "Background flush completed"
+            mdbx_commit_latency_ms = commit_latency_ms,
+            dirty_pages_mb,
+            flush_interval_current,
+            chain_len_unflushed,
+            "block flush"
         );
         true
     }
 
-    fn apply_backpressure(&self) {
+    async fn apply_backpressure(&self) {
         let chain_len = self
             .in_memory_state
             .head_state()
@@ -332,17 +414,31 @@ where
             self.start_async_flush();
         }
         let start = std::time::Instant::now();
-        let mut last_log = start;
-        while !self.drain_completed_flush() {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            if last_log.elapsed() >= std::time::Duration::from_secs(5) {
-                warn!(
-                    target: "block_producer",
-                    chain_len,
-                    waited_ms = start.elapsed().as_millis() as u64,
-                    "Backpressure: still waiting on flush"
-                );
-                last_log = std::time::Instant::now();
+        let notifier = crate::launcher::flush_notifier();
+        loop {
+            if let Some(n) = notifier.as_ref() {
+                // Register interest before checking, so notifications fired
+                // between the check and the await are not missed.
+                let notified = n.notified();
+                if self.drain_completed_flush() {
+                    break;
+                }
+                let waited = tokio::time::timeout(std::time::Duration::from_secs(30), notified)
+                    .await
+                    .is_ok();
+                if !waited {
+                    warn!(
+                        target: "block_producer",
+                        chain_len,
+                        waited_ms = start.elapsed().as_millis() as u64,
+                        "Backpressure: flush notification timed out, polling once"
+                    );
+                }
+            } else {
+                if self.drain_completed_flush() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
         }
         warn!(
@@ -354,13 +450,13 @@ where
         );
     }
 
-    fn produce_block_with_execution(
+    async fn produce_block_with_execution(
         &self,
         input: &BlockProductionInput,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.drain_completed_flush();
-        self.apply_backpressure();
+        self.apply_backpressure().await;
 
         let head_num = self.head_block_number()?;
         let l2_block_number = head_num + 1;
@@ -1052,9 +1148,11 @@ where
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
-        // Start async flush when buffer threshold reached (non-blocking).
+        // Start async flush when scheduler signals threshold or dirty cap (non-blocking).
         let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
-        if since_flush >= self.flush_interval && !self.pending_flush.load(Ordering::SeqCst) {
+        let dirty_mb = read_dirty_pages_mb();
+        let should_flush = self.scheduler.lock().should_flush(since_flush, dirty_mb);
+        if should_flush && !self.pending_flush.load(Ordering::SeqCst) {
             self.start_async_flush();
         }
 
@@ -1148,7 +1246,7 @@ where
         msg_idx: u64,
         input: BlockProductionInput,
     ) -> Result<ProducedBlock, BlockProducerError> {
-        let _lock = self.produce_lock.lock();
+        let _lock = self.produce_lock.lock().await;
 
         // Validate that this message is the next expected one.
         let head_num = self.head_block_number()?;
@@ -1185,11 +1283,11 @@ where
             "Parsed L1 message"
         );
 
-        self.produce_block_with_execution(&input, parsed_txs)
+        self.produce_block_with_execution(&input, parsed_txs).await
     }
 
     async fn reset_to_block(&self, target_block_number: u64) -> Result<(), BlockProducerError> {
-        let _lock = self.produce_lock.lock();
+        let _lock = self.produce_lock.lock().await;
         let current = self.head_block_num.load(Ordering::SeqCst);
         if target_block_number > current {
             return Err(BlockProducerError::Unexpected(format!(

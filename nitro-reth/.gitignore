@@ -21,6 +21,7 @@ Thumbs.db
 !SECURITY.md
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md
+!OPERATIONS.md
 !.github/**/*.md
 
 # Environment (keep .env.example tracked)
