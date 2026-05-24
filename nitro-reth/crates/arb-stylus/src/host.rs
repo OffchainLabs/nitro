@@ -486,13 +486,11 @@ pub fn create1<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
+    info.buy_gas(gas_cost.0)?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
-        crate::evm_api::CreateResponse::Fail(reason) => {
-            return Err(StylusError::Internal(reason));
-        }
+        crate::evm_api::CreateResponse::Fail(_) => Address::ZERO,
     };
-    info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
@@ -551,13 +549,11 @@ pub fn create2<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
+    info.buy_gas(gas_cost.0)?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
-        crate::evm_api::CreateResponse::Fail(reason) => {
-            return Err(StylusError::Internal(reason));
-        }
+        crate::evm_api::CreateResponse::Fail(_) => Address::ZERO,
     };
-    info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;

@@ -294,6 +294,7 @@ fn receipt_from_json(v: &Value) -> Result<TxReceipt> {
             .and_then(|x| x.as_str())
             .and_then(|s| s.parse::<Address>().ok()),
         logs: extract_logs(v),
+        multi_gas: None,
     })
 }
 

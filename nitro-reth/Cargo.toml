@@ -232,3 +232,9 @@ strip = "debuginfo"
 [profile.maxperf]
 inherits = "release"
 lto = "fat"
+
+[profile.fastdev]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true

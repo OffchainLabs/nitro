@@ -64,12 +64,18 @@ pub struct ArbReceiptFields {
     pub multi_gas: Option<MultiGasDims>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MultiGasDims {
     pub computation: u64,
-    pub history: u64,
-    pub storage: u64,
-    pub state_growth: u64,
+    pub history_growth: u64,
+    pub storage_access_read: u64,
+    pub storage_access_write: u64,
+    pub storage_growth: u64,
+    pub single_dim: u64,
+    pub l2_calldata: u64,
+    pub wasm_computation: u64,
+    pub refund: u64,
+    pub total: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -103,6 +109,7 @@ pub struct TxReceipt {
     pub to: Option<Address>,
     pub contract_address: Option<Address>,
     pub logs: Vec<EvmLog>,
+    pub multi_gas: Option<MultiGasDims>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
