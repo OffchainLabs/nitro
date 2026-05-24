@@ -8,12 +8,16 @@
 //! StartMover, or per-opcode pricing table without needing a full block
 //! replay.
 
-// Wasmer's vm crate references `__rust_probestack` (an LLVM stack-probe
-// intrinsic that recent Rust no longer exports from compiler-builtins).
-// `arb-reth/src/main.rs` provides the same shim for the production binary.
+/// Stack-probe shim for x86_64 test binaries that link wasmer's vm
+/// crate, which references the LLVM `__rust_probestack` intrinsic that
+/// recent `compiler-builtins` no longer exports. `arb-reth/src/main.rs`
+/// supplies the same shim for the production binary.
+///
+/// # Safety
+///
+/// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{collections::HashMap, sync::Arc};

@@ -90,9 +90,7 @@ impl<'a> FunctionMiddleware<'a> for NoopFunctionMiddleware {
         op: Operator<'a>,
         state: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
-        // SAFETY: Operator variants we encounter contain no borrowed data we keep.
-        let op_static = unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
-        state.push_operator(op_static);
+        state.push_operator(op);
         Ok(())
     }
 }
@@ -205,8 +203,13 @@ impl<'a> FunctionMiddleware<'a> for InkMeterFn {
         let mut cost = self.block_cost.saturating_add(op_cost);
         self.block_cost = cost;
 
-        // SAFETY: Operator variants we support contain no borrowed data.
-        // We buffer them as 'static and transmute back when draining.
+        // SAFETY: wasmparser's `Operator<'a>` borrows from the WASM byte
+        // buffer for variants like `BrTable`. `FunctionMiddleware<'a>` is
+        // implemented on a `'static` struct, so the `'a` from `feed()`
+        // cannot be propagated into `self.block` — we transmute to
+        // `'static` for buffering and back to `'a` immediately before
+        // re-emitting via `push_operator` inside the same `feed()` call,
+        // which runs while the source bytes are still live.
         let op_static = unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
         self.block.push(op_static);
 
@@ -234,6 +237,9 @@ impl<'a> FunctionMiddleware<'a> for InkMeterFn {
             state.push_operator(Operator::GlobalSet { global_index: ink });
 
             for buffered in self.block.drain(..) {
+                // SAFETY: reverses the `'a` -> `'static` transmute above
+                // within the same `feed()` call; the source WASM bytes
+                // owning any borrowed slice are still live.
                 let op_a =
                     unsafe { std::mem::transmute::<Operator<'static>, Operator<'a>>(buffered) };
                 state.push_operator(op_a);
@@ -813,7 +819,11 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
 
         let last = self.scopes == 0 && matches!(op, Operator::End);
 
-        // SAFETY: Operator variants we support contain no borrowed data.
+        // SAFETY: `Operator<'a>` borrows from the WASM byte buffer for
+        // some variants; `FunctionMiddleware<'a>` is implemented on a
+        // `'static` struct so `'a` cannot be threaded into `self.code`.
+        // The transmute is reversed inside this same `feed()` call
+        // before re-emission, while the source bytes are still live.
         let op_static = unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
         self.code.push(op_static);
 
@@ -865,6 +875,8 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
                     Operator::GlobalSet { global_index: g },
                 ]);
             }
+            // SAFETY: reverses the `'a` -> `'static` transmute earlier in
+            // this `feed()` call; source WASM bytes are still live.
             let op_a = unsafe { std::mem::transmute::<Operator<'static>, Operator<'a>>(op_s) };
             state.push_operator(op_a);
         }

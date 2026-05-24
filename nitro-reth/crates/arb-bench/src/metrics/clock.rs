@@ -26,10 +26,15 @@ fn process_cpu_ns() -> u64 {
     use std::mem::MaybeUninit;
     let mut ts = MaybeUninit::<libc::timespec>::uninit();
     // CLOCK_PROCESS_CPUTIME_ID = 2
+    // SAFETY: `clock_gettime` writes a fully initialised `timespec` to
+    // the pointer when it returns 0, which is checked before
+    // `assume_init`. On non-zero return, the buffer is dropped without
+    // being read.
     let rc = unsafe { libc::clock_gettime(2, ts.as_mut_ptr()) };
     if rc != 0 {
         return 0;
     }
+    // SAFETY: `clock_gettime` returned 0 above, so `ts` is initialised.
     let ts = unsafe { ts.assume_init() };
     (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
 }
@@ -41,16 +46,21 @@ fn process_cpu_ns() -> u64 {
         fn clock_gettime_nsec_np(clock_id: u32) -> u64;
     }
     // CLOCK_PROCESS_CPUTIME_ID == 12 on Darwin.
+    // SAFETY: `clock_gettime_nsec_np` is a Darwin-only libc call that
+    // returns a nanosecond reading or 0 on error; no buffers are passed.
     let nsec = unsafe { clock_gettime_nsec_np(12) };
     if nsec != 0 {
         return nsec;
     }
     // Fallback to monotonic.
     let mut ts = MaybeUninit::<libc::timespec>::uninit();
+    // SAFETY: see the linux branch above — `assume_init` only after a
+    // zero return from `clock_gettime`.
     let rc = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, ts.as_mut_ptr()) };
     if rc != 0 {
         return 0;
     }
+    // SAFETY: `clock_gettime` returned 0, so `ts` is initialised.
     let ts = unsafe { ts.assume_init() };
     (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
 }

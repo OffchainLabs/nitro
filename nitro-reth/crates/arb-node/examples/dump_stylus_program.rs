@@ -15,9 +15,15 @@
 //! IMPORTANT: the running node opens the DB with `--db.exclusive=true`. Stop
 //! the node before running this tool, or open will fail.
 
+/// Stack-probe shim for x86_64 binaries that link wasmer's vm crate,
+/// which references the LLVM `__rust_probestack` intrinsic that recent
+/// `compiler-builtins` no longer exports.
+///
+/// # Safety
+///
+/// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{path::PathBuf, sync::Arc};

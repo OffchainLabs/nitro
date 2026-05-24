@@ -791,6 +791,10 @@ pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
         fn BrotliEncoderMaxCompressedSize(input_size: usize) -> usize;
     }
 
+    // SAFETY: FFI into libbrotlienc. The encoder state is created,
+    // configured, fed, then unconditionally destroyed in this block;
+    // input and output buffers are stack/heap allocations whose lifetime
+    // exceeds the encoder. Null state is checked before any use.
     unsafe {
         let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
         if state.is_null() {

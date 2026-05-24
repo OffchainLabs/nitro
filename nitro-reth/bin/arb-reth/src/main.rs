@@ -1,6 +1,12 @@
 #![allow(missing_docs)]
-#![allow(clippy::missing_safety_doc)]
 
+/// Stack-probe shim for x86_64. wasmer's vm crate references the LLVM
+/// `__rust_probestack` intrinsic that recent `compiler-builtins` no
+/// longer exports; defining an empty function here satisfies the linker.
+///
+/// # Safety
+///
+/// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn __rust_probestack() {}
@@ -15,6 +21,9 @@ fn main() {
     reth_cli_util::sigsegv_handler::install();
 
     if std::env::var_os("RUST_BACKTRACE").is_none() {
+        // SAFETY: process startup, no other threads have been spawned, so
+        // no concurrent readers of the environment exist (Rust 2024
+        // unsafe set_var contract).
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
     }
 

@@ -485,6 +485,13 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
+    // SAFETY: `ctx` and `precompile_ctx` are the type-erased pointers stored
+    // by `execute_stylus_program` when it built the `StylusEvmApi` for this
+    // call frame. The concrete `revm::Context` and `ArbPrecompileCtx` types
+    // monomorphise this trampoline, so the cast is the structural inverse
+    // of the type-erasure performed when the host function was installed.
+    // Both pointers are valid for the duration of the parent EVM frame,
+    // which is the only frame that can invoke this trampoline.
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
@@ -550,9 +557,12 @@ where
         let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
         let mut precompiles =
             alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
-        // Clone the Arc that the parent dispatch holds without taking
-        // ownership: re-construct an `Arc` from the borrowed pointer, clone it,
-        // then forget the temporary so the parent's refcount stays intact.
+        // SAFETY: `precompile_ctx` was obtained as `Arc::as_ptr` from a
+        // live `Arc<ArbPrecompileCtx>` held by the dispatch path that
+        // installed this trampoline. `increment_strong_count` keeps the
+        // parent's refcount intact while `from_raw` rebuilds a clonable
+        // handle whose Drop will balance the increment. The pointer is
+        // valid for the duration of the parent EVM frame.
         let pre_arc = unsafe {
             let raw = precompile_ctx as *const arb_context::ArbPrecompileCtx;
             std::sync::Arc::increment_strong_count(raw);
@@ -692,8 +702,10 @@ where
     if pre_ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
         && arb_stylus::is_stylus_program(&bytecode)
     {
-        // The Stylus dispatch path expects an `Arc`. Clone via raw pointer
-        // borrow so the parent's refcount is preserved.
+        // SAFETY: see the `Arc::increment_strong_count` site above —
+        // `precompile_ctx` was produced by `Arc::as_ptr` and is valid
+        // for this frame's duration. The increment is balanced by the
+        // returned `Arc`'s Drop.
         let arc = unsafe {
             let raw = precompile_ctx as *const arb_context::ArbPrecompileCtx;
             std::sync::Arc::increment_strong_count(raw);
@@ -761,6 +773,10 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
+    // SAFETY: see `stylus_call_trampoline` for the type-erasure invariant —
+    // `ctx` and `precompile_ctx` were installed by `execute_stylus_program`
+    // for this monomorphised trampoline; both are valid for the lifetime of
+    // the parent EVM frame that invokes the host function.
     let pre_ctx = unsafe { &*(precompile_ctx as *const arb_context::ArbPrecompileCtx) };
     {
         let mut tx = pre_ctx.tx.lock();
@@ -1252,6 +1268,12 @@ where
     let precompile_ctx_ptr = std::sync::Arc::as_ptr(ctx) as *const ();
     let caller = inputs.caller;
     let call_value = inputs.value.get();
+    // SAFETY: `journal_ptr`, `ctx_ptr`, and `precompile_ctx_ptr` are all
+    // borrowed from values that live for the entirety of this function —
+    // `context` is borrowed `&mut` through the call, the `Arc` holds `ctx`
+    // pinned, and the journal is part of `context`. The `StylusEvmApi` is
+    // consumed by `instance.run_main` below before this function returns,
+    // so the pointers never outlive the borrows that produced them.
     let evm_api = unsafe {
         StylusEvmApi::new(
             journal_ptr,

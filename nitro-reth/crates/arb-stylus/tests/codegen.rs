@@ -12,9 +12,14 @@
 //! If any of these fail, we have a smoking gun for a Stylus divergence
 //! that would otherwise only surface during a multi-million-block sync.
 
+/// Stack-probe shim. See `wasm_execution.rs::__rust_probestack` for the
+/// rationale.
+///
+/// # Safety
+///
+/// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;
@@ -237,6 +242,9 @@ fn serialize_deserialize_round_trip_matches_fresh_compile() {
     let serialized = module_a.serialize().expect("serialize");
 
     let mut store_b = make_store();
+    // SAFETY: `serialized` was produced by `module_a.serialize()` above
+    // in this same test, using a store built from the same compile
+    // config, so the byte format is compatible with the wasmer engine.
     let module_b = unsafe { Module::deserialize(&store_b, serialized).expect("deserialize") };
     let instance_b = Instance::new(&mut store_b, &module_b, &imports! {}).unwrap();
     seed_meter(&instance_b, &mut store_b);

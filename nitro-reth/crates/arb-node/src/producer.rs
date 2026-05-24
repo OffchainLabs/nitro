@@ -511,6 +511,11 @@ where
                     initial_l1_base_fee = %init_msg.initial_l1_base_fee,
                     "ArbOS already initialized; overriding L1 price_per_unit from Init message"
                 );
+                // SAFETY: `state_ptr` points at the local `db` owned by
+                // this scope; reads through it are sequential and the
+                // `&mut *state_ptr` re-borrows are dropped at each call
+                // site before the next one, so the type-level aliasing
+                // does not overlap at runtime.
                 let state_ptr: *mut _ = &mut db;
                 let mut arb_state =
                     ArbosState::open(unsafe { &mut *state_ptr }, SystemBurner::new(None, false))

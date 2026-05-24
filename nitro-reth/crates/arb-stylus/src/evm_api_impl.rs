@@ -291,6 +291,15 @@ pub struct StylusEvmApi {
     do_create: Option<DoCreateFn>,
 }
 
+// SAFETY: `wasmer::FunctionEnv::new<T>` requires `T: Send + 'static`, so
+// `StylusEvmApi` (held inside a `WasmEnv` that is passed to wasmer host
+// functions) must be `Send`. The `*mut dyn JournalAccess` and the
+// `*mut ()` / `*const ()` context handles inside this struct make it
+// `!Send` by default. They are only ever dereferenced by host functions
+// invoked synchronously on the same thread that built and is currently
+// driving the `Instance` — wasmer never moves the env across threads
+// while host calls are in flight, so the raw pointers are never observed
+// from any thread other than the one that constructed them.
 unsafe impl Send for StylusEvmApi {}
 
 impl StylusEvmApi {
@@ -340,6 +349,11 @@ impl StylusEvmApi {
 
     /// Get a mutable reference to the type-erased journal.
     fn journal(&mut self) -> &mut dyn JournalAccess {
+        // SAFETY: `self.journal` was set by `Self::new`, whose caller
+        // contract requires the pointer to remain valid for the lifetime
+        // of this struct and grants exclusive access. The dispatch path
+        // upholds this: the EVM context owning the journal is kept alive
+        // and is not borrowed elsewhere while host functions run.
         unsafe { &mut *self.journal }
     }
 
