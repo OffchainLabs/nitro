@@ -11,8 +11,8 @@ use arb_precompiles::{
 };
 use common::{calldata, decode_address, decode_u256, decode_word, word_address, PrecompileTest};
 
-fn arbaggregator() -> DynPrecompile {
-    create_arbaggregator_precompile()
+fn arbaggregator(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbaggregator_precompile(ctx)
 }
 
 const BATCH_POSTER: Address = address!("a4b000000000000000000073657175656e636572");
@@ -21,7 +21,7 @@ const BATCH_POSTER: Address = address!("a4b000000000000000000073657175656e636572
 fn get_preferred_aggregator_returns_address_then_bool() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata("getPreferredAggregator(address)", &[word_address(probe)]),
     );
     let out = run.output();
@@ -36,7 +36,7 @@ fn get_default_aggregator_returns_batch_poster() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&arbaggregator(), &calldata("getDefaultAggregator()", &[]));
+        .call(arbaggregator, &calldata("getDefaultAggregator()", &[]));
     assert_eq!(decode_address(run.output()), BATCH_POSTER);
 }
 
@@ -44,7 +44,7 @@ fn get_default_aggregator_returns_batch_poster() {
 fn get_tx_base_fee_returns_zero() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata("getTxBaseFee(address)", &[word_address(probe)]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -97,7 +97,7 @@ fn get_fee_collector_returns_stored_pay_to() {
             U256::from_be_slice(collector.as_slice()),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata("getFeeCollector(address)", &[word_address(BATCH_POSTER)]),
         );
     assert_eq!(decode_address(run.output()), collector);
@@ -121,7 +121,7 @@ fn set_fee_collector_succeeds_when_caller_is_batch_poster() {
             U256::from_be_slice(BATCH_POSTER.as_slice()),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata(
                 "setFeeCollector(address,address)",
                 &[word_address(BATCH_POSTER), word_address(new_collector)],
@@ -155,7 +155,7 @@ fn set_fee_collector_succeeds_when_caller_is_current_collector() {
             U256::from_be_slice(current.as_slice()),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata(
                 "setFeeCollector(address,address)",
                 &[word_address(BATCH_POSTER), word_address(new_collector)],
@@ -192,7 +192,7 @@ fn set_fee_collector_succeeds_when_caller_is_chain_owner() {
             U256::from(1),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata(
                 "setFeeCollector(address,address)",
                 &[word_address(BATCH_POSTER), word_address(new_collector)],
@@ -219,7 +219,7 @@ fn set_fee_collector_rejects_unauthorised_caller() {
             U256::from_be_slice(BATCH_POSTER.as_slice()),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata(
                 "setFeeCollector(address,address)",
                 &[word_address(BATCH_POSTER), word_address(new_collector)],
@@ -233,7 +233,7 @@ fn set_fee_collector_rejects_unauthorised_caller() {
 fn set_tx_base_fee_is_a_noop_returning_no_data() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata(
             "setTxBaseFee(address,uint256)",
             &[
@@ -246,7 +246,7 @@ fn set_tx_base_fee_is_a_noop_returning_no_data() {
     assert!(out.bytes.is_empty(), "setTxBaseFee returns no data");
     // Verify a follow-up getter still returns 0.
     let run2 = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata("getTxBaseFee(address)", &[word_address(probe)]),
     );
     assert_eq!(decode_u256(run2.output()), U256::ZERO);
@@ -263,7 +263,7 @@ const COPY_GAS: u64 = 3;
 fn get_preferred_aggregator_charges_open_args_and_two_copy_words() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata("getPreferredAggregator(address)", &[word_address(probe)]),
     );
     // init(800 + 1 arg word * 3) + 2 result words = 809.
@@ -275,7 +275,7 @@ fn get_default_aggregator_charges_one_sload_and_one_copy_word() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&arbaggregator(), &calldata("getDefaultAggregator()", &[]));
+        .call(arbaggregator, &calldata("getDefaultAggregator()", &[]));
     assert_eq!(run.gas_used(), SLOAD_GAS + COPY_GAS);
 }
 
@@ -283,7 +283,7 @@ fn get_default_aggregator_charges_one_sload_and_one_copy_word() {
 fn get_tx_base_fee_charges_sload_plus_six() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata("getTxBaseFee(address)", &[word_address(probe)]),
     );
     assert_eq!(run.gas_used(), SLOAD_GAS + 6);
@@ -293,7 +293,7 @@ fn get_tx_base_fee_charges_sload_plus_six() {
 fn set_tx_base_fee_charges_sload_plus_six() {
     let probe: Address = address!("00000000000000000000000000000000000000ee");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaggregator(),
+        arbaggregator,
         &calldata(
             "setTxBaseFee(address,uint256)",
             &[
@@ -322,7 +322,7 @@ fn get_fee_collector_charges_two_sloads_after_init_and_one_copy_word() {
             U256::from_be_slice(collector.as_slice()),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata("getFeeCollector(address)", &[word_address(BATCH_POSTER)]),
         );
     // init(800 + 1 arg word * 3) + 2 SLOADs + 1 result word = 2406.
@@ -347,7 +347,7 @@ fn set_fee_collector_caller_is_poster_charges_three_sloads_and_one_sstore() {
             U256::from_be_slice(BATCH_POSTER.as_slice()),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata(
                 "setFeeCollector(address,address)",
                 &[word_address(BATCH_POSTER), word_address(new_collector)],
@@ -381,7 +381,7 @@ fn set_fee_collector_caller_is_chain_owner_charges_extra_sload() {
             U256::from(1),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata(
                 "setFeeCollector(address,address)",
                 &[word_address(BATCH_POSTER), word_address(new_collector)],
@@ -396,7 +396,7 @@ fn get_batch_posters_charges_two_sloads_and_two_copy_words_when_empty() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&arbaggregator(), &calldata("getBatchPosters()", &[]));
+        .call(arbaggregator, &calldata("getBatchPosters()", &[]));
     // count=0: (2 + 0) * SLOAD + (2 + 0) * COPY = 1606.
     assert_eq!(run.gas_used(), 2 * SLOAD_GAS + 2 * COPY_GAS);
 }
@@ -420,7 +420,7 @@ fn add_batch_poster_already_exists_returns_two_sloads_and_one_copy_word() {
             U256::from(1),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata("addBatchPoster(address)", &[word_address(existing)]),
         );
     // No-op path: explicit return (2 * SLOAD + COPY) = 1603.
@@ -441,7 +441,7 @@ fn add_batch_poster_new_writes_charges_full_formula() {
             U256::from(1),
         )
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata("addBatchPoster(address)", &[word_address(new_poster)]),
         );
     // 6 SLOAD + 1 SSTORE_ZERO + 4 SSTORE + COPY = 4800 + 5000 + 80000 + 3 = 89803.
@@ -460,7 +460,7 @@ fn add_batch_poster_non_owner_reverts_with_accumulated_gas() {
         .caller(stranger)
         .arbos_state()
         .call(
-            &arbaggregator(),
+            arbaggregator,
             &calldata("addBatchPoster(address)", &[word_address(new_poster)]),
         );
     let out = run.assert_ok();

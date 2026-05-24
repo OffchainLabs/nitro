@@ -11,8 +11,8 @@ use alloy_primitives::U256;
 use arb_precompiles::create_arbnativetokenmanager_precompile;
 use common::{calldata, word_u256, PrecompileTest};
 
-fn arbntm() -> DynPrecompile {
-    create_arbnativetokenmanager_precompile()
+fn arbntm(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbnativetokenmanager_precompile(ctx)
 }
 
 fn fixture(v: u64) -> PrecompileTest {
@@ -22,7 +22,7 @@ fn fixture(v: u64) -> PrecompileTest {
 #[test]
 fn below_v41_mint_returns_noop_zero_gas() {
     let run = fixture(40).gas(50_000).call(
-        &arbntm(),
+        arbntm,
         &calldata("mintNativeToken(uint256)", &[word_u256(U256::from(1u64))]),
     );
     let out = run.assert_ok();
@@ -34,7 +34,7 @@ fn below_v41_mint_returns_noop_zero_gas() {
 fn mint_unauthorized_burns_all_gas_v41() {
     // Caller is not in NativeTokenOwners → unauthorized burn-out.
     let run = fixture(41).gas(50_000).call(
-        &arbntm(),
+        arbntm,
         &calldata("mintNativeToken(uint256)", &[word_u256(U256::from(1u64))]),
     );
     let out = run.assert_ok();
@@ -45,7 +45,7 @@ fn mint_unauthorized_burns_all_gas_v41() {
 #[test]
 fn burn_unauthorized_burns_all_gas_v41() {
     let run = fixture(41).gas(50_000).call(
-        &arbntm(),
+        arbntm,
         &calldata("burnNativeToken(uint256)", &[word_u256(U256::from(1u64))]),
     );
     let out = run.assert_ok();
@@ -56,7 +56,7 @@ fn burn_unauthorized_burns_all_gas_v41() {
 #[test]
 fn invalid_calldata_burns_all_gas_v41() {
     let run = fixture(41).gas(50_000).call(
-        &arbntm(),
+        arbntm,
         &alloy_primitives::Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
     );
     let out = run.assert_ok();

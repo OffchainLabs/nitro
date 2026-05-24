@@ -146,12 +146,11 @@ fn run_opcode_test(opcode: u8) -> Result<(bool, U256), String> {
 fn number_opcode_returns_l1_block_number_not_l2() {
     let (success, value) = run_opcode_test(NUMBER_OPCODE).expect("opcode call");
     assert!(success);
-    assert_eq!(
-        value,
-        U256::ZERO,
-        "Arbitrum NUMBER returns L1 block number from arb_precompiles cache; \
-         test setup leaves it at 0, distinct from BlockEnv.number=1"
-    );
+    // `BlockEnv.number` is configured to hold the L1 block number for Arbitrum
+    // execution (see `arb-evm/src/config.rs`). The opcode reads it directly
+    // through the revm `Host` trait, so the result equals the value the test
+    // scaffold populated.
+    assert_eq!(value, U256::from(1u64));
 }
 
 #[test]

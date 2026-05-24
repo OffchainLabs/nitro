@@ -23,8 +23,8 @@ use common::{calldata, word_address, word_u256, PrecompileTest};
 const OWNER: Address = address!("00000000000000000000000000000000000000aa");
 const INTRUDER: Address = address!("00000000000000000000000000000000000000bb");
 
-fn arbowner() -> DynPrecompile {
-    create_arbowner_precompile()
+fn arbowner(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbowner_precompile(ctx)
 }
 
 fn chain_owner_member_slot(owner: Address) -> U256 {
@@ -64,7 +64,7 @@ fn caller_not_owner_propagates_revert_err() {
         .caller(INTRUDER)
         .arbos_state()
         .gas(50_000)
-        .call(&arbowner(), &calldata("getNetworkFeeAccount()", &[]));
+        .call(arbowner, &calldata("getNetworkFeeAccount()", &[]));
     assert!(run.result.is_err());
 }
 
@@ -75,13 +75,13 @@ fn caller_not_owner_propagates_revert_err() {
 
 #[test]
 fn get_network_fee_account_owner_dispatch_zeros_gas() {
-    let run = fixture(30).call(&arbowner(), &calldata("getNetworkFeeAccount()", &[]));
+    let run = fixture(30).call(arbowner, &calldata("getNetworkFeeAccount()", &[]));
     assert_eq!(run.gas_used(), 0);
 }
 
 #[test]
 fn get_infra_fee_account_owner_v6_zero_gas() {
-    let run = fixture(6).call(&arbowner(), &calldata("getInfraFeeAccount()", &[]));
+    let run = fixture(6).call(arbowner, &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(run.gas_used(), 0);
 }
 
@@ -89,7 +89,7 @@ fn get_infra_fee_account_owner_v6_zero_gas() {
 fn get_infra_fee_account_below_v5_reverts_burning_gas_limit() {
     let run = fixture(4)
         .gas(50_000)
-        .call(&arbowner(), &calldata("getInfraFeeAccount()", &[]));
+        .call(arbowner, &calldata("getInfraFeeAccount()", &[]));
     let out = run.assert_ok();
     assert!(out.reverted);
     assert_eq!(out.gas_used, 50_000);
@@ -98,7 +98,7 @@ fn get_infra_fee_account_below_v5_reverts_burning_gas_limit() {
 #[test]
 fn is_chain_owner_owner_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata("isChainOwner(address)", &[word_address(OWNER)]),
     );
     assert_eq!(run.gas_used(), 0);
@@ -106,7 +106,7 @@ fn is_chain_owner_owner_zero_gas() {
 
 #[test]
 fn get_all_chain_owners_owner_zero_gas() {
-    let run = fixture(30).call(&arbowner(), &calldata("getAllChainOwners()", &[]));
+    let run = fixture(30).call(arbowner, &calldata("getAllChainOwners()", &[]));
     assert_eq!(run.gas_used(), 0);
 }
 
@@ -114,7 +114,7 @@ fn get_all_chain_owners_owner_zero_gas() {
 fn add_chain_owner_zero_gas() {
     let new_owner: Address = address!("00000000000000000000000000000000000000cc");
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata("addChainOwner(address)", &[word_address(new_owner)]),
     );
     assert_eq!(run.gas_used(), 0);
@@ -126,7 +126,7 @@ fn remove_chain_owner_zero_gas() {
     // gas anyway. We pin the zero-output form.
     let target: Address = address!("00000000000000000000000000000000000000ff");
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata("removeChainOwner(address)", &[word_address(target)]),
     );
     // Could be reverted (target not in set); either way gas_used = 0.
@@ -137,7 +137,7 @@ fn remove_chain_owner_zero_gas() {
 fn set_network_fee_account_zero_gas() {
     let new_account: Address = address!("00000000000000000000000000000000000000cc");
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setNetworkFeeAccount(address)",
             &[word_address(new_account)],
@@ -150,7 +150,7 @@ fn set_network_fee_account_zero_gas() {
 fn set_infra_fee_account_v6_zero_gas() {
     let new_account: Address = address!("00000000000000000000000000000000000000dd");
     let run = fixture(6).call(
-        &arbowner(),
+        arbowner,
         &calldata("setInfraFeeAccount(address)", &[word_address(new_account)]),
     );
     assert_eq!(run.gas_used(), 0);
@@ -159,7 +159,7 @@ fn set_infra_fee_account_v6_zero_gas() {
 #[test]
 fn set_l2_base_fee_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL2BaseFee(uint256)",
             &[word_u256(U256::from(1_000_000u64))],
@@ -171,7 +171,7 @@ fn set_l2_base_fee_zero_gas() {
 #[test]
 fn set_minimum_l2_base_fee_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setMinimumL2BaseFee(uint256)",
             &[word_u256(U256::from(1u64))],
@@ -183,7 +183,7 @@ fn set_minimum_l2_base_fee_zero_gas() {
 #[test]
 fn set_speed_limit_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setSpeedLimit(uint64)",
             &[word_u256(U256::from(1_000_000u64))],
@@ -195,7 +195,7 @@ fn set_speed_limit_zero_gas() {
 #[test]
 fn set_max_tx_gas_limit_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setMaxTxGasLimit(uint64)",
             &[word_u256(U256::from(32_000_000u64))],
@@ -207,7 +207,7 @@ fn set_max_tx_gas_limit_zero_gas() {
 #[test]
 fn set_l2_gas_pricing_inertia_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL2GasPricingInertia(uint64)",
             &[word_u256(U256::from(102u64))],
@@ -219,7 +219,7 @@ fn set_l2_gas_pricing_inertia_zero_gas() {
 #[test]
 fn set_l2_gas_backlog_tolerance_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL2GasBacklogTolerance(uint64)",
             &[word_u256(U256::from(10u64))],
@@ -231,7 +231,7 @@ fn set_l2_gas_backlog_tolerance_zero_gas() {
 #[test]
 fn set_gas_backlog_v50_zero_gas() {
     let run = fixture(50).call(
-        &arbowner(),
+        arbowner,
         &calldata("setGasBacklog(uint64)", &[word_u256(U256::from(7_777u64))]),
     );
     assert_eq!(run.gas_used(), 0);
@@ -240,7 +240,7 @@ fn set_gas_backlog_v50_zero_gas() {
 #[test]
 fn set_gas_backlog_below_v50_reverts_burning_gas_limit() {
     let run = fixture(49).gas(50_000).call(
-        &arbowner(),
+        arbowner,
         &calldata("setGasBacklog(uint64)", &[word_u256(U256::from(1u64))]),
     );
     let out = run.assert_ok();
@@ -251,7 +251,7 @@ fn set_gas_backlog_below_v50_reverts_burning_gas_limit() {
 #[test]
 fn set_l1_price_per_unit_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL1PricePerUnit(uint256)",
             &[word_u256(U256::from(50_000_000_000u64))],
@@ -263,7 +263,7 @@ fn set_l1_price_per_unit_zero_gas() {
 #[test]
 fn set_per_batch_gas_charge_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setPerBatchGasCharge(int64)",
             &[word_u256(U256::from(210_000u64))],
@@ -275,7 +275,7 @@ fn set_per_batch_gas_charge_zero_gas() {
 #[test]
 fn set_amortized_cost_cap_bips_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setAmortizedCostCapBips(uint64)",
             &[word_u256(U256::from(2_000u64))],
@@ -287,7 +287,7 @@ fn set_amortized_cost_cap_bips_zero_gas() {
 #[test]
 fn schedule_arbos_upgrade_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "scheduleArbOSUpgrade(uint64,uint64)",
             &[
@@ -302,7 +302,7 @@ fn schedule_arbos_upgrade_zero_gas() {
 #[test]
 fn set_brotli_compression_level_v20_zero_gas() {
     let run = fixture(20).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setBrotliCompressionLevel(uint64)",
             &[word_u256(U256::from(1u64))],
@@ -314,7 +314,7 @@ fn set_brotli_compression_level_v20_zero_gas() {
 #[test]
 fn set_l1_pricing_equilibration_units_v20_zero_gas() {
     let run = fixture(20).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL1PricingEquilibrationUnits(uint256)",
             &[word_u256(U256::from(1_000_000u64))],
@@ -326,7 +326,7 @@ fn set_l1_pricing_equilibration_units_v20_zero_gas() {
 #[test]
 fn set_l1_pricing_inertia_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL1PricingInertia(uint64)",
             &[word_u256(U256::from(10u64))],
@@ -338,7 +338,7 @@ fn set_l1_pricing_inertia_zero_gas() {
 #[test]
 fn set_l1_pricing_reward_rate_v11_zero_gas() {
     let run = fixture(11).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL1PricingRewardRate(uint64)",
             &[word_u256(U256::from(7u64))],
@@ -351,7 +351,7 @@ fn set_l1_pricing_reward_rate_v11_zero_gas() {
 fn set_l1_pricing_reward_recipient_v11_zero_gas() {
     let recipient: Address = address!("00000000000000000000000000000000000000ee");
     let run = fixture(11).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setL1PricingRewardRecipient(address)",
             &[word_address(recipient)],
@@ -363,7 +363,7 @@ fn set_l1_pricing_reward_recipient_v11_zero_gas() {
 #[test]
 fn set_max_block_gas_limit_v50_zero_gas() {
     let run = fixture(50).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setMaxBlockGasLimit(uint64)",
             &[word_u256(U256::from(32_000_000u64))],
@@ -375,7 +375,7 @@ fn set_max_block_gas_limit_v50_zero_gas() {
 #[test]
 fn set_wasm_max_stack_depth_v30_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "setWasmMaxStackDepth(uint32)",
             &[word_u256(U256::from(1024u64))],
@@ -387,7 +387,7 @@ fn set_wasm_max_stack_depth_v30_zero_gas() {
 #[test]
 fn release_l1_pricer_surplus_funds_zero_gas() {
     let run = fixture(30).call(
-        &arbowner(),
+        arbowner,
         &calldata(
             "releaseL1PricerSurplusFunds(uint256)",
             &[word_u256(U256::from(0u64))],

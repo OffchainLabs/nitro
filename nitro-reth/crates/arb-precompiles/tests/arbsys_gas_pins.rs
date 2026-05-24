@@ -17,8 +17,10 @@ const ARBOS_V11: u64 = 11;
 const SLOAD: u64 = 800;
 const COPY: u64 = 3;
 
-fn arbsys() -> alloy_evm::precompiles::DynPrecompile {
-    create_arbsys_precompile()
+fn arbsys(
+    ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+) -> alloy_evm::precompiles::DynPrecompile {
+    create_arbsys_precompile(ctx)
 }
 
 fn fixture(v: u64) -> PrecompileTest {
@@ -31,7 +33,7 @@ fn fixture(v: u64) -> PrecompileTest {
 fn arb_block_number_v30_gas_pin() {
     let run = fixture(ARBOS_V30)
         .block_number(98_765)
-        .call(&arbsys(), &calldata("arbBlockNumber()", &[]));
+        .call(arbsys, &calldata("arbBlockNumber()", &[]));
     // STORAGE_READ_COST(800) + argsCost(0 words) + resultCost(1 word) = 803
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
@@ -40,19 +42,19 @@ fn arb_block_number_v30_gas_pin() {
 fn arb_chain_id_v30_gas_pin() {
     let run = fixture(ARBOS_V30)
         .chain_id(421_614)
-        .call(&arbsys(), &calldata("arbChainID()", &[]));
+        .call(arbsys, &calldata("arbChainID()", &[]));
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
 
 #[test]
 fn arbos_version_v30_gas_pin() {
-    let run = fixture(ARBOS_V30).call(&arbsys(), &calldata("arbOSVersion()", &[]));
+    let run = fixture(ARBOS_V30).call(arbsys, &calldata("arbOSVersion()", &[]));
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
 
 #[test]
 fn get_storage_gas_available_v30_gas_pin() {
-    let run = fixture(ARBOS_V30).call(&arbsys(), &calldata("getStorageGasAvailable()", &[]));
+    let run = fixture(ARBOS_V30).call(arbsys, &calldata("getStorageGasAvailable()", &[]));
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
 
@@ -60,7 +62,7 @@ fn get_storage_gas_available_v30_gas_pin() {
 fn is_top_level_call_v30_gas_pin() {
     let run = fixture(ARBOS_V30)
         .evm_depth(1)
-        .call(&arbsys(), &calldata("isTopLevelCall()", &[]));
+        .call(arbsys, &calldata("isTopLevelCall()", &[]));
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
 
@@ -68,16 +70,15 @@ fn is_top_level_call_v30_gas_pin() {
 fn was_my_callers_address_aliased_v30_gas_pin() {
     let run = fixture(ARBOS_V30)
         .evm_depth(2)
-        .call(&arbsys(), &calldata("wasMyCallersAddressAliased()", &[]));
+        .call(arbsys, &calldata("wasMyCallersAddressAliased()", &[]));
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
 
 #[test]
 fn my_callers_address_without_aliasing_v30_gas_pin() {
-    let run = fixture(ARBOS_V30).evm_depth(1).call(
-        &arbsys(),
-        &calldata("myCallersAddressWithoutAliasing()", &[]),
-    );
+    let run = fixture(ARBOS_V30)
+        .evm_depth(1)
+        .call(arbsys, &calldata("myCallersAddressWithoutAliasing()", &[]));
     assert_eq!(run.gas_used(), SLOAD + COPY);
 }
 
@@ -86,7 +87,7 @@ fn map_l1_sender_v30_gas_pin() {
     // Pure function: charges only argsCost + resultCost, no SLOAD.
     let l1: Address = address!("0123456789abcdef0123456789abcdef01234567");
     let run = fixture(ARBOS_V30).call(
-        &arbsys(),
+        arbsys,
         &calldata(
             "mapL1SenderContractAddressToL2Alias(address,address)",
             &[word_address(l1), word_address(Address::ZERO)],
@@ -106,7 +107,7 @@ fn arb_block_hash_recent_v30_gas_pin() {
         .block_number(100)
         .cache_l2_block_hash(99, target_hash)
         .call(
-            &arbsys(),
+            arbsys,
             &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(99))]),
         );
     // STORAGE_READ_COST(800) + argsCost(1 word) + resultCost(1 word) = 806
@@ -118,7 +119,7 @@ fn arb_block_hash_future_block_revert_arbos11_gas_pin() {
     // ArbOS >= 11 emits an `InvalidBlockNumber(uint256,uint256)` sol-error
     // revert. Encoded payload is 4 (selector) + 2 * 32 = 68 bytes → 3 words.
     let run = fixture(ARBOS_V11).block_number(100).call(
-        &arbsys(),
+        arbsys,
         &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(100))]),
     );
     let out = run.assert_ok();
@@ -136,7 +137,7 @@ fn send_merkle_tree_state_empty_v30_gas_pin() {
     // count), so resultCost = 4 * COPY.
     let run = fixture(ARBOS_V30)
         .caller(Address::ZERO)
-        .call(&arbsys(), &calldata("sendMerkleTreeState()", &[]));
+        .call(arbsys, &calldata("sendMerkleTreeState()", &[]));
     // STORAGE_READ_COST(800 body size read) + argsCost(0) + resultCost(4 words) = 812
     assert_eq!(run.gas_used(), SLOAD + 4 * COPY);
 }
@@ -154,7 +155,7 @@ fn withdraw_eth_to_l1_v30_gas_pin() {
         .block_timestamp(1_700_000_000)
         .gas(2_000_000)
         .call(
-            &arbsys(),
+            arbsys,
             &calldata("withdrawEth(address)", &[word_address(dest)]),
         );
     // Empty accumulator (0 merge events). Decomposition in arbsys.rs's
@@ -189,7 +190,7 @@ fn send_tx_to_l1_with_calldata_v30_gas_pin() {
         .block_number(1_000)
         .block_timestamp(1_700_000_000)
         .gas(2_000_000)
-        .call(&arbsys(), &alloy_primitives::Bytes::from(buf));
+        .call(arbsys, &alloy_primitives::Bytes::from(buf));
     // Empty accumulator (0 merge events) + 32-byte calldata payload.
     // Decomposition matches do_send_tx_to_l1: argsCost(4 words) + OpenArbosState
     // + size SLOAD + keccak(200) + terminator SSTORE_SET + size SSTORE_SET

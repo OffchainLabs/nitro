@@ -1,6 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{
     arbos_state::arbos_from_input,
@@ -8,6 +9,7 @@ use arbos::{
     programs::{params::StylusParams, Program},
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{
     interfaces::{IArbWasm, IArbWasmCache},
@@ -32,13 +34,15 @@ const SSTORE_RESET_GAS: u64 = 5_000;
 /// base 375 + 3 topics * 375 + 32 bytes data * 8.
 const EMIT_UPDATE_PROGRAM_CACHE_GAS: u64 = 375 + 3 * 375 + 32 * 8;
 
-pub fn create_arbwasmcache_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbwasmcache"), handler)
+pub fn create_arbwasmcache_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbwasmcache"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     if let Some(result) =
-        crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
+        crate::check_precompile_version(ctx, arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
     {
         return result;
     }
@@ -55,19 +59,21 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     use IArbWasmCache::ArbWasmCacheCalls;
     let result = match call {
         ArbWasmCacheCalls::cacheCodehash(c) => {
-            handle_cache_codehash(&mut input, &mut gas_used, c.codehash)
+            handle_cache_codehash(&mut input, ctx, &mut gas_used, c.codehash)
         }
         ArbWasmCacheCalls::cacheProgram(c) => {
-            handle_cache_program(&mut input, &mut gas_used, c.addr)
+            handle_cache_program(&mut input, ctx, &mut gas_used, c.addr)
         }
         ArbWasmCacheCalls::evictCodehash(c) => {
-            handle_evict_codehash(&mut input, &mut gas_used, c.codehash)
+            handle_evict_codehash(&mut input, ctx, &mut gas_used, c.codehash)
         }
         ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager),
         ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input),
-        ArbWasmCacheCalls::codehashIsCached(c) => handle_codehash_is_cached(&mut input, c.codehash),
+        ArbWasmCacheCalls::codehashIsCached(c) => {
+            handle_codehash_is_cached(&mut input, ctx, c.codehash)
+        }
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 fn words_for_bytes(n: u64) -> u64 {
@@ -140,11 +146,15 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
     Ok(PrecompileOutput::new(total.min(input.gas), out.into()))
 }
 
-fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
+fn handle_codehash_is_cached(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    codehash: B256,
+) -> PrecompileResult {
     let data_len = input.data.len();
     load_arbos(input)?;
 
-    let time = block_timestamp();
+    let time = ctx.block.block_timestamp;
     let internals = input.internals_mut();
     let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
         .map_err(ArbPrecompileError::fatal)?;
@@ -164,10 +174,6 @@ fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>, codehash: B256) ->
         SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
         result.to_be_bytes::<32>().to_vec().into(),
     ))
-}
-
-fn block_timestamp() -> u64 {
-    crate::get_block_timestamp()
 }
 
 /// Caller must be a cache manager OR chain owner. Returns `(has_access, gas)`:
@@ -218,6 +224,7 @@ fn read_params_and_program(
 /// every exit path (e.g., the GetCodeHash access cost for `cacheProgram`).
 fn set_program_cached(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     codehash: B256,
     cache: bool,
@@ -225,7 +232,7 @@ fn set_program_cached(
 ) -> PrecompileResult {
     let data_len = input.data.len();
     let caller = input.caller;
-    let now = block_timestamp();
+    let now = ctx.block.block_timestamp;
 
     let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
     let boilerplate_gas = args_cost + SLOAD_GAS + pre_set_gas;
@@ -318,27 +325,31 @@ fn address_to_b256(addr: Address) -> B256 {
 
 fn handle_cache_codehash(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     codehash: B256,
 ) -> PrecompileResult {
     if let Some(r) = crate::check_method_version(
+        ctx,
         input.gas,
         arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
         arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
     ) {
         return r;
     }
-    set_program_cached(input, gas_used, codehash, true, 0)
+    set_program_cached(input, ctx, gas_used, codehash, true, 0)
 }
 
 /// `cacheProgram` reads the code hash from an account, which costs
 /// `ColdAccountAccessCostEIP2929` even when the slot is already warm.
 fn handle_cache_program(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     addr: Address,
 ) -> PrecompileResult {
     if let Some(r) = crate::check_method_version(
+        ctx,
         input.gas,
         arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES,
         0,
@@ -352,13 +363,21 @@ fn handle_cache_program(
             .map_err(ArbPrecompileError::fatal)?;
         acct.data.info.code_hash
     };
-    set_program_cached(input, gas_used, codehash, true, COLD_ACCOUNT_ACCESS_GAS)
+    set_program_cached(
+        input,
+        ctx,
+        gas_used,
+        codehash,
+        true,
+        COLD_ACCOUNT_ACCESS_GAS,
+    )
 }
 
 fn handle_evict_codehash(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     codehash: B256,
 ) -> PrecompileResult {
-    set_program_cached(input, gas_used, codehash, false, 0)
+    set_program_cached(input, ctx, gas_used, codehash, false, 0)
 }

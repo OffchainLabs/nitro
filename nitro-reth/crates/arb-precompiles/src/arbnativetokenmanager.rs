@@ -1,9 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbNativeTokenManager, ArbPrecompileError};
 
@@ -22,13 +24,16 @@ const MINT_BURN_GAS: u64 = 100 + 9000;
 /// LOG2 with one 32-byte data word: base + 2 topics + data.
 const EVENT_GAS: u64 = 375 + 2 * 375 + 8 * 32;
 
-pub fn create_arbnativetokenmanager_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbnativetokenmanager"), handler)
+pub fn create_arbnativetokenmanager_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(
+        PrecompileId::custom("arbnativetokenmanager"),
+        move |input| handler(input, &ctx),
+    )
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     if let Some(result) =
-        crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_41)
+        crate::check_precompile_version(ctx, arb_chainspec::arbos_version::ARBOS_VERSION_41)
     {
         return result;
     }
@@ -49,7 +54,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_burn(&mut input, gas_used, c.amount)
         }
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

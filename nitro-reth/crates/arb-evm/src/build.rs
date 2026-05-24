@@ -139,7 +139,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
         R: ReceiptBuilder,
         Spec: EthExecutorSpec + Clone,
         I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
-        EvmF: EvmFactory,
+        EvmF: EvmFactory + crate::evm::ArbEvmFactoryStaged,
     {
         let extra_bytes = ctx.extra_data.as_ref();
         let (delayed_messages_read, l2_block_number) = decode_extra_fields(extra_bytes);
@@ -156,8 +156,10 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
             arb_hooks: None,
             arb_ctx,
-            precompile_ctx: arb_context::active().unwrap_or_default(),
-            allow_debug_precompiles: self.allow_debug_precompiles,
+            // Reuse the per-block ctx the factory staged for the EVM so the
+            // EVM-side precompile handlers and the executor's per-tx writes go
+            // through the same `Arc<ArbPrecompileCtx>`.
+            precompile_ctx: self.evm_factory.staged_precompile_ctx().unwrap_or_default(),
             pending_tx: None,
             block_gas_left: 0,
             user_txs_processed: 0,
@@ -181,8 +183,10 @@ where
         > + 'static,
     Spec: EthExecutorSpec + Clone + 'static,
     EvmF: EvmFactory<
-        Tx: FromRecoveredTx<R::Transaction> + FromTxWithEncoded<R::Transaction> + ArbTransactionEnv,
-    >,
+            Tx: FromRecoveredTx<R::Transaction>
+                    + FromTxWithEncoded<R::Transaction>
+                    + ArbTransactionEnv,
+        > + crate::evm::ArbEvmFactoryStaged,
     Self: 'static,
 {
     type EvmFactory = EvmF;
@@ -217,8 +221,13 @@ where
             inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
             arb_hooks: None,
             arb_ctx,
-            precompile_ctx: arb_context::active().unwrap_or_default(),
-            allow_debug_precompiles: self.allow_debug_precompiles,
+            // Reuse the per-block ctx the factory staged for the EVM so the
+            // EVM-side precompile handlers and the executor's per-tx writes go
+            // through the same `Arc<ArbPrecompileCtx>`.
+            precompile_ctx: <EvmF as crate::evm::ArbEvmFactoryStaged>::staged_precompile_ctx(
+                &self.evm_factory,
+            )
+            .unwrap_or_default(),
             pending_tx: None,
             block_gas_left: 0,
             user_txs_processed: 0,
@@ -289,7 +298,6 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub arb_ctx: ArbBlockExecutionCtx,
     /// Per-block precompile context handle (per-tx scratch writes).
     pub precompile_ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
-    allow_debug_precompiles: bool,
     /// Per-tx state between execute and commit.
     pending_tx: Option<PendingArbTx>,
     /// Remaining block gas for rate limiting.
@@ -387,33 +395,23 @@ fn load_state_params<D: Database>(
     arb_ctx: &mut ArbBlockExecutionCtx,
     precompile_ctx: &mut std::sync::Arc<arb_context::ArbPrecompileCtx>,
     arb_hooks: &mut Option<DefaultArbOsHooks>,
-    allow_debug_precompiles: bool,
     state: &mut revm::database::State<D>,
     arb_state: &ArbosState<D, impl arbos::burn::Burner>,
 ) {
     let arbos_version = arb_state.arbos_version();
     arb_ctx.arbos_version = arbos_version;
 
-    let block_ctx = arb_context::BlockCtx::new(
-        arbos_version,
-        arb_ctx.block_timestamp,
-        arb_ctx.l1_block_number,
-        arb_ctx.l2_block_number,
-        allow_debug_precompiles,
-    );
-    block_ctx.cache_l1_block_number(arb_ctx.l2_block_number, arb_ctx.l1_block_number);
-
-    let prior_l2_cache = precompile_ctx.block.l2_blockhash_cache.lock().clone();
-    *block_ctx.l2_blockhash_cache.lock() = prior_l2_cache;
-
-    let new_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
-        block: std::sync::Arc::new(block_ctx),
-        tx: std::sync::Arc::new(parking_lot::Mutex::new(arb_context::TxCtx::default())),
-        caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
-        evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-    });
-    arb_context::install_active(new_ctx.clone());
-    *precompile_ctx = new_ctx;
+    // Reset per-tx scratch on the existing precompile ctx Arc rather than
+    // allocating a new one. EVM-side precompile handler closures captured
+    // this Arc at registration time; swapping the Arc here would orphan
+    // their reads from the executor's per-tx writes (set_sender,
+    // set_stylus_call_value, etc.). Block-level fields are populated when
+    // the factory stages the per-block ctx (evm_env path).
+    precompile_ctx.reset_tx();
+    precompile_ctx.reset_caller_stack();
+    precompile_ctx
+        .block
+        .cache_l1_block_number(arb_ctx.l2_block_number, arb_ctx.l1_block_number);
 
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
         let cap = arb_state
@@ -421,9 +419,9 @@ fn load_state_params<D: Database>(
             .params(state)
             .map(|p| p.block_cache_size as usize)
             .unwrap_or(0);
-        arb_precompiles::reset_recent_wasms(cap);
+        precompile_ctx.block.reset_recent_wasms(cap);
     } else {
-        arb_precompiles::reset_recent_wasms(0);
+        precompile_ctx.block.reset_recent_wasms(0);
     }
 
     if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog(state) {
@@ -1018,7 +1016,6 @@ where
             &mut self.arb_ctx,
             &mut self.precompile_ctx,
             &mut self.arb_hooks,
-            self.allow_debug_precompiles,
             state_ref,
             &arb_state,
         );
@@ -1088,7 +1085,8 @@ where
         }
 
         // Reset per-tx processor state.
-        crate::evm::reset_stylus_pages();
+        crate::evm::reset_stylus_pages(&self.precompile_ctx);
+        crate::evm::clear_poster_balance_correction();
         self.precompile_ctx.reset_tx();
         self.precompile_ctx.reset_caller_stack();
         self.state_overlay.reset_tx();
@@ -1269,7 +1267,6 @@ where
                         &mut self.arb_ctx,
                         &mut self.precompile_ctx,
                         &mut self.arb_hooks,
-                        self.allow_debug_precompiles,
                         state_ref,
                         &arb_state,
                     );
@@ -1735,8 +1732,14 @@ where
                 .arb_ctx
                 .basefee
                 .saturating_mul(U256::from(poster_gas.saturating_add(compute_hold_gas)));
+            let correction_u128 = correction.try_into().unwrap_or(u128::MAX);
             self.precompile_ctx
-                .set_poster_balance_correction(correction.try_into().unwrap_or(u128::MAX));
+                .set_poster_balance_correction(correction_u128);
+            // Publish the same value to the per-thread slot consulted by
+            // `arb_balance` / `arb_selfbalance` opcode overrides — opcodes are
+            // invoked through revm's `fn`-pointer table and cannot accept
+            // ctx as an extra argument.
+            crate::evm::set_poster_balance_correction(correction_u128);
             self.precompile_ctx.set_sender(sender);
         }
 
@@ -2024,12 +2027,12 @@ where
                 _ => None,
             };
             if to_addr == Some(arb_precompiles::ARBWASM_ADDRESS) {
-                arb_precompiles::set_stylus_call_value(tx_value);
+                self.precompile_ctx.set_stylus_call_value(tx_value);
                 if tx_value > U256::ZERO {
                     tx_env.set_value(U256::ZERO);
                 }
             } else {
-                arb_precompiles::set_stylus_call_value(U256::ZERO);
+                self.precompile_ctx.set_stylus_call_value(U256::ZERO);
             }
         }
 
@@ -2177,10 +2180,10 @@ where
         // We zero out tx_env.value before EVM execution (below) so revm
         // doesn't transfer value to the precompile. The data_fee transfer
         // from sender to network happens via the cache after commit.
-        let stylus_data_fee = if arb_precompiles::take_stylus_activation_request().is_some()
-            || arb_precompiles::take_stylus_keepalive_request().is_some()
+        let stylus_data_fee = if self.precompile_ctx.take_stylus_activation_addr().is_some()
+            || self.precompile_ctx.take_stylus_keepalive_hash().is_some()
         {
-            arb_precompiles::take_stylus_activation_data_fee()
+            self.precompile_ctx.take_stylus_activation_data_fee()
         } else {
             U256::ZERO
         };

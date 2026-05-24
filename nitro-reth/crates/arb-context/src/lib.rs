@@ -313,28 +313,3 @@ impl ArbPrecompileCtx {
         }
     }
 }
-
-thread_local! {
-    static ACTIVE_CTX: std::cell::RefCell<Option<Arc<ArbPrecompileCtx>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Install the context active on the current thread for the lifetime of a block.
-pub fn install_active(ctx: Arc<ArbPrecompileCtx>) {
-    ACTIVE_CTX.with(|cell| *cell.borrow_mut() = Some(ctx));
-}
-
-/// Clear the per-thread active context once block execution is complete.
-pub fn clear_active() {
-    ACTIVE_CTX.with(|cell| *cell.borrow_mut() = None);
-}
-
-/// Clone the active context for the current thread, if any.
-pub fn active() -> Option<Arc<ArbPrecompileCtx>> {
-    ACTIVE_CTX.with(|cell| cell.borrow().clone())
-}
-
-/// Borrow the active context. Returns `None` when no block is executing on this thread.
-pub fn with_active<R>(f: impl FnOnce(&ArbPrecompileCtx) -> R) -> Option<R> {
-    ACTIVE_CTX.with(|cell| cell.borrow().as_ref().map(|arc| f(arc.as_ref())))
-}

@@ -1,11 +1,13 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{
     arbos_state::arbos_from_input, burn::SystemBurner, merkle_accumulator::calc_num_partials,
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbSys, ArbPrecompileError};
 
@@ -51,21 +53,13 @@ pub fn send_merkle_update_topic() -> B256 {
     IArbSys::SendMerkleUpdate::SIGNATURE_HASH
 }
 
-/// Lookup an L1 block number recorded for a given L2 block.
-pub fn get_cached_l1_block_number(l2_block: u64) -> Option<u64> {
-    arb_context::with_active(|c| c.block.cached_l1_block_number(l2_block)).flatten()
+pub fn create_arbsys_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbsys"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-/// Read the current L2 block number for the executing block.
-pub fn get_current_l2_block() -> u64 {
-    arb_context::with_active(|c| c.block.l2_block_number).unwrap_or(0)
-}
-
-pub fn create_arbsys_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbsys"), handler)
-}
-
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     let data = input.data;
@@ -78,30 +72,39 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbSys::ArbSysCalls;
     let result = match call {
-        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input),
-        ArbSysCalls::arbBlockHash(c) => handle_arb_block_hash(&mut input, gas_used, c.arbBlockNum),
+        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input, ctx),
+        ArbSysCalls::arbBlockHash(c) => {
+            handle_arb_block_hash(&mut input, ctx, gas_used, c.arbBlockNum)
+        }
         ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input),
         ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input),
         ArbSysCalls::getStorageGasAvailable(_) => handle_get_storage_gas(&mut input),
-        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input),
+        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input, ctx),
         ArbSysCalls::mapL1SenderContractAddressToL2Alias(c) => {
             handle_map_l1_sender(&mut input, c.sender)
         }
-        ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input),
-        ArbSysCalls::myCallersAddressWithoutAliasing(_) => handle_caller_without_alias(&mut input),
-        ArbSysCalls::withdrawEth(c) => handle_withdraw_eth(&mut input, gas_used, c.destination),
+        ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input, ctx),
+        ArbSysCalls::myCallersAddressWithoutAliasing(_) => {
+            handle_caller_without_alias(&mut input, ctx)
+        }
+        ArbSysCalls::withdrawEth(c) => {
+            handle_withdraw_eth(&mut input, ctx, gas_used, c.destination)
+        }
         ArbSysCalls::sendTxToL1(c) => {
-            handle_send_tx_to_l1(&mut input, gas_used, c.destination, c.data.as_ref())
+            handle_send_tx_to_l1(&mut input, ctx, gas_used, c.destination, c.data.as_ref())
         }
         ArbSysCalls::sendMerkleTreeState(_) => handle_send_merkle_tree_state(&mut input, gas_used),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 // ── view functions ───────────────────────────────────────────────────
 
-fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let block_num = U256::from(get_current_l2_block());
+fn handle_arb_block_number(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let block_num = U256::from(ctx.block.l2_block_number);
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
@@ -112,14 +115,15 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 
 fn handle_arb_block_hash(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: u64,
     requested_u256: U256,
 ) -> PrecompileResult {
     let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
-    let current = get_current_l2_block();
+    let current = ctx.block.l2_block_number;
 
     if requested >= current || requested + 256 < current {
-        let arbos_version = crate::get_arbos_version();
+        let arbos_version = ctx.block.arbos_version;
         if arbos_version >= 11 {
             let revert_data = IArbSys::InvalidBlockNumber {
                 requested: requested_u256,
@@ -138,7 +142,10 @@ fn handle_arb_block_hash(
 
     // L2 block hashes come from the header chain cache — the journal's
     // block_hashes map is pre-populated with L1 hashes for the BLOCKHASH opcode.
-    let hash = crate::get_l2_block_hash(requested).unwrap_or(B256::ZERO);
+    let hash = ctx
+        .block
+        .cached_l2_block_hash(requested)
+        .unwrap_or(B256::ZERO);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -182,8 +189,11 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let depth = arb_context::with_active(|c| c.evm_depth()).unwrap_or(0);
+fn handle_is_top_level_call(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let depth = ctx.evm_depth();
     let is_top = depth <= 2;
     let val = if is_top { U256::from(1) } else { U256::ZERO };
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
@@ -194,7 +204,7 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
     ))
 }
 
-fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_was_aliased(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let internals = input.internals_mut();
     internals
         .load_account(ARBOS_STATE_ADDRESS)
@@ -204,19 +214,18 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let arbos_version = arb_state.arbos_version();
 
     let tx_origin = input.internals().tx_origin();
-    let depth = arb_context::with_active(|c| c.evm_depth()).unwrap_or(0);
+    let depth = ctx.evm_depth();
     let is_top_level = if arbos_version < 6 {
         depth == 2
     } else if depth <= 2 {
         true
     } else {
-        arb_context::with_active(|c| c.caller_at_depth(depth - 1))
-            .flatten()
+        ctx.caller_at_depth(depth - 1)
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };
 
-    let aliased = is_top_level && arb_context::with_active(|c| c.tx_is_aliased()).unwrap_or(false);
+    let aliased = is_top_level && ctx.tx_is_aliased();
     let val = if aliased { U256::from(1) } else { U256::ZERO };
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -226,29 +235,29 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let depth = arb_context::with_active(|c| c.evm_depth()).unwrap_or(0);
+fn handle_caller_without_alias(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let depth = ctx.evm_depth();
     let address = if depth > 1 {
-        arb_context::with_active(|c| c.caller_at_depth(depth - 1))
-            .flatten()
-            .unwrap_or(Address::ZERO)
+        ctx.caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
     } else {
         Address::ZERO
     };
 
-    let arbos_version = crate::get_arbos_version();
+    let arbos_version = ctx.block.arbos_version;
     let is_top_level = if arbos_version < 6 {
         depth == 2
     } else if depth <= 2 {
         true
     } else {
         let tx_origin = input.internals().tx_origin();
-        arb_context::with_active(|c| c.caller_at_depth(depth - 1))
-            .flatten()
+        ctx.caller_at_depth(depth - 1)
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };
-    let aliased = is_top_level && arb_context::with_active(|c| c.tx_is_aliased()).unwrap_or(false);
+    let aliased = is_top_level && ctx.tx_is_aliased();
     let result_addr = if aliased {
         undo_l1_alias(address)
     } else {
@@ -291,17 +300,19 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 fn handle_withdraw_eth(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: u64,
     destination: Address,
 ) -> PrecompileResult {
     if input.is_static {
         return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
-    do_send_tx_to_l1(input, gas_used, destination, &[])
+    do_send_tx_to_l1(input, ctx, gas_used, destination, &[])
 }
 
 fn handle_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: u64,
     destination: Address,
     calldata: &[u8],
@@ -309,11 +320,12 @@ fn handle_send_tx_to_l1(
     if input.is_static {
         return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
-    do_send_tx_to_l1(input, gas_used, destination, calldata)
+    do_send_tx_to_l1(input, ctx, gas_used, destination, calldata)
 }
 
 fn do_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     outer_gas_used: u64,
     destination: Address,
     calldata: &[u8],
@@ -322,8 +334,8 @@ fn do_send_tx_to_l1(
     let value = input.value;
     // Read the L1 block number recorded by StartBlock. `block_env.number` holds
     // the header's mix_hash L1 value, which can lag the StartBlock-updated one.
-    let l1_block_number = U256::from(crate::get_l1_block_number_for_evm());
-    let l2_block_number = U256::from(get_current_l2_block());
+    let l1_block_number = U256::from(ctx.block.l1_block_number_for_evm);
+    let l2_block_number = U256::from(ctx.block.l2_block_number);
     let timestamp = input.internals().block_timestamp();
 
     let mut gas_used = 0u64;

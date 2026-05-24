@@ -1,12 +1,14 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::{
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
+use std::sync::Arc;
 
 use crate::{interfaces::IArbDebug, ArbPrecompileError};
 
@@ -23,14 +25,16 @@ const LOG_GAS: u64 = 375;
 const LOG_TOPIC_GAS: u64 = 375;
 const LOG_DATA_GAS: u64 = 8;
 
-pub fn create_arbdebug_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbdebug"), handler)
+pub fn create_arbdebug_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbdebug"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    if !crate::allow_debug_precompiles() {
+    if !ctx.block.allow_debug_precompiles {
         return crate::burn_all_revert(gas_limit);
     }
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -45,7 +49,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match call {
         ArbDebugCalls::becomeChainOwner(_) => handle_become_chain_owner(&mut input, &mut gas_used),
         ArbDebugCalls::events(c) => handle_events(&mut input, c.flag, c.value),
-        ArbDebugCalls::eventsView(_) => handle_events_view(&mut input, gas_used),
+        ArbDebugCalls::eventsView(_) => handle_events_view(&mut input, ctx, gas_used),
         ArbDebugCalls::customRevert(c) => {
             gas_used = 0;
             crate::init_precompile_gas_pure(&mut gas_used, input_len);
@@ -58,6 +62,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         ArbDebugCalls::panic(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
                 0,
@@ -71,7 +76,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
     };
 
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 fn handle_become_chain_owner(
@@ -142,10 +147,14 @@ fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> Pr
     Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
 
-fn handle_events_view(input: &mut PrecompileInput<'_>, gas_used: u64) -> PrecompileResult {
+fn handle_events_view(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    gas_used: u64,
+) -> PrecompileResult {
     // v < 11: view-method log writes are permitted; emit and succeed.
     // v >= 11: framework rejects with ErrWriteProtection.
-    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
+    if ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
         return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
 

@@ -1,6 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{
     arbos_state::arbos_from_input,
@@ -8,6 +9,7 @@ use arbos::{
     programs::{hours_since_arbitrum, hours_to_age, params::StylusParams, Program},
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbWasm, ArbPrecompileError};
 
@@ -30,13 +32,15 @@ const MIN_INIT_GAS_UNITS: u64 = 128;
 const MIN_CACHED_GAS_UNITS: u64 = 32;
 const COST_SCALAR_PERCENT: u64 = 2;
 
-pub fn create_arbwasm_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbwasm"), handler)
+pub fn create_arbwasm_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbwasm"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     if let Some(result) =
-        crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
+        crate::check_precompile_version(ctx, arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
     {
         return result;
     }
@@ -50,8 +54,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbWasm::ArbWasmCalls as Calls;
     match &call {
-        Calls::activateProgram(c) => return handle_activate_program(input, c.program),
-        Calls::codehashKeepalive(c) => return handle_codehash_keepalive(input, c.codehash),
+        Calls::activateProgram(c) => return handle_activate_program(input, ctx, c.program),
+        Calls::codehashKeepalive(c) => return handle_codehash_keepalive(input, ctx, c.codehash),
         _ => {}
     }
 
@@ -99,7 +103,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::minInitGas(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + 2 * COPY_GAS;
             let params = load_params(&mut input, &mut gas_used)?;
-            if crate::get_arbos_version()
+            if ctx.block.arbos_version
                 < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES
             {
                 let pre_revert_gas = (SLOAD_GAS + WARM_SLOAD_GAS).min(input.gas);
@@ -138,6 +142,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::activationGas(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 input.gas,
                 arb_chainspec::arbos_version::ARBOS_VERSION_59,
                 0,
@@ -158,7 +163,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::codehashVersion(c) => {
             const LOOKUP_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + COPY_GAS;
             const METHOD_GAS: u64 = LOOKUP_GAS + COPY_GAS;
-            let (params, program) = load_params_and_program(&mut input, &mut gas_used, c.codehash)?;
+            let (params, program) =
+                load_params_and_program(&mut input, ctx, &mut gas_used, c.codehash)?;
             if let Err(r) = validate_active_program(
                 &program,
                 params.version,
@@ -173,7 +179,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::codehashAsmSize(c) => {
             const LOOKUP_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS + COPY_GAS;
             const METHOD_GAS: u64 = LOOKUP_GAS + COPY_GAS;
-            let (params, program) = load_params_and_program(&mut input, &mut gas_used, c.codehash)?;
+            let (params, program) =
+                load_params_and_program(&mut input, ctx, &mut gas_used, c.codehash)?;
             if let Err(r) = validate_active_program(
                 &program,
                 params.version,
@@ -188,7 +195,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::programVersion(c) => {
             const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
-            let (params, program) = load_params_and_program(&mut input, &mut gas_used, codehash)?;
+            let (params, program) =
+                load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
                 &program,
                 params.version,
@@ -203,7 +211,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::programInitGas(c) => {
             const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + 2 * COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
-            let (params, program) = load_params_and_program(&mut input, &mut gas_used, codehash)?;
+            let (params, program) =
+                load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
                 &program,
                 params.version,
@@ -225,7 +234,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::programMemoryFootprint(c) => {
             const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
-            let (params, program) = load_params_and_program(&mut input, &mut gas_used, codehash)?;
+            let (params, program) =
+                load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
                 &program,
                 params.version,
@@ -240,7 +250,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::programTimeLeft(c) => {
             const METHOD_GAS: u64 = PROGRAM_LOOKUP_GAS + COPY_GAS;
             let codehash = get_account_codehash(&mut input, c.program)?;
-            let (params, program) = load_params_and_program(&mut input, &mut gas_used, codehash)?;
+            let (params, program) =
+                load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
                 &program,
                 params.version,
@@ -257,7 +268,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::activateProgram(_) | Calls::codehashKeepalive(_) => unreachable!(),
     };
-    crate::gas_check(input.gas, gas_used, result)
+    crate::gas_check(ctx, input.gas, gas_used, result)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -289,11 +300,12 @@ fn load_params(
 
 fn load_params_and_program(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     codehash: B256,
 ) -> Result<(StylusParams, Program), ArbPrecompileError> {
     load_arbos(input)?;
-    let time = block_timestamp();
+    let time = ctx.block.block_timestamp;
     let internals = input.internals_mut();
     let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
         .map_err(ArbPrecompileError::fatal)?;
@@ -319,10 +331,6 @@ fn get_account_codehash(
         .load_account(address)
         .map_err(ArbPrecompileError::fatal)?;
     Ok(account.data.info.code_hash)
-}
-
-fn block_timestamp() -> u64 {
-    crate::get_block_timestamp()
 }
 
 /// Returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
@@ -398,6 +406,7 @@ fn div_ceil(a: u64, b: u64) -> u64 {
 
 fn handle_activate_program(
     mut input: PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     program_address: Address,
 ) -> PrecompileResult {
     const ACTIVATION_UPFRONT_GAS: u64 = 1_659_168;
@@ -407,7 +416,7 @@ fn handle_activate_program(
     crate::charge_precompile_gas(&mut gas_used, args_cost);
     crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
 
-    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+    if ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
         load_arbos(&mut input)?;
         let internals = input.internals_mut();
         let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
@@ -443,7 +452,7 @@ fn handle_activate_program(
     };
 
     load_arbos(&mut input)?;
-    let time = block_timestamp();
+    let time = ctx.block.block_timestamp;
     crate::charge_precompile_gas(&mut gas_used, WARM_SLOAD_GAS);
     let (params, existing_program) = {
         let internals = input.internals_mut();
@@ -468,8 +477,8 @@ fn handle_activate_program(
             input.gas,
         );
     }
-    if !arb_stylus::is_stylus_deployable(&code_bytes, crate::get_arbos_version()) {
-        let arbos_v = crate::get_arbos_version();
+    if !arb_stylus::is_stylus_deployable(&code_bytes, ctx.block.arbos_version) {
+        let arbos_v = ctx.block.arbos_version;
         if arbos_v < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
             return Ok(PrecompileOutput::new_reverted(
                 gas_used.min(input.gas),
@@ -516,7 +525,7 @@ fn handle_activate_program(
         &wasm,
         code_hash.as_ref(),
         params.version,
-        crate::get_arbos_version(),
+        ctx.block.arbos_version,
         params.page_limit,
         false,
         &mut gas_for_prover,
@@ -581,7 +590,7 @@ fn handle_activate_program(
     }
     crate::charge_precompile_gas(&mut gas_used, SSTORE_GAS);
 
-    let stashed_outer_value = crate::get_stylus_call_value();
+    let stashed_outer_value = ctx.stylus_call_value();
     let inner_call_value = input.value;
     let effective_value = if inner_call_value > U256::ZERO {
         inner_call_value
@@ -620,11 +629,11 @@ fn handle_activate_program(
                 .internals_mut()
                 .transfer(ARBWASM_ADDRESS, caller, repay);
         }
-        crate::set_stylus_activation_request(Some(program_address));
+        ctx.set_stylus_activation_addr(Some(program_address));
     } else {
         crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
-        crate::set_stylus_activation_request(Some(program_address));
-        crate::set_stylus_activation_data_fee(data_fee);
+        ctx.set_stylus_activation_addr(Some(program_address));
+        ctx.set_stylus_activation_data_fee(data_fee);
     }
 
     let event_topic = IArbWasm::ProgramActivated::SIGNATURE_HASH;
@@ -664,13 +673,17 @@ fn handle_activate_program(
     Ok(PrecompileOutput::new(gas_used, return_data.into()))
 }
 
-fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> PrecompileResult {
+fn handle_codehash_keepalive(
+    mut input: PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    codehash: B256,
+) -> PrecompileResult {
     let mut gas_used = 0u64;
     let args_cost = COPY_GAS * (input.data.len() as u64).saturating_sub(4).div_ceil(32);
     crate::charge_precompile_gas(&mut gas_used, args_cost);
 
     load_arbos(&mut input)?;
-    let time = block_timestamp();
+    let time = ctx.block.block_timestamp;
     let (params, mut program) = {
         let internals = input.internals_mut();
         let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
@@ -748,7 +761,7 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
     }
     crate::charge_precompile_gas(&mut gas_used, SSTORE_GAS);
 
-    let stashed_outer_value = crate::get_stylus_call_value();
+    let stashed_outer_value = ctx.stylus_call_value();
     let inner_call_value = input.value;
     let effective_value = if inner_call_value > U256::ZERO {
         inner_call_value
@@ -787,11 +800,11 @@ fn handle_codehash_keepalive(mut input: PrecompileInput<'_>, codehash: B256) -> 
                 .internals_mut()
                 .transfer(ARBWASM_ADDRESS, caller, repay);
         }
-        crate::set_stylus_keepalive_request(Some(codehash));
+        ctx.set_stylus_keepalive_hash(Some(codehash));
     } else {
         crate::charge_precompile_gas(&mut gas_used, SLOAD_GAS);
-        crate::set_stylus_keepalive_request(Some(codehash));
-        crate::set_stylus_activation_data_fee(data_fee);
+        ctx.set_stylus_keepalive_hash(Some(codehash));
+        ctx.set_stylus_activation_data_fee(data_fee);
     }
 
     let event_topic = IArbWasm::ProgramLifetimeExtended::SIGNATURE_HASH;

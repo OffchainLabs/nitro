@@ -252,20 +252,26 @@ impl PrecompileTest {
         self
     }
 
-    pub fn call(self, precompile: &DynPrecompile, input: &Bytes) -> PrecompileRun {
-        let ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx::default());
-        self.call_with(precompile, input, ctx)
+    pub fn call<F>(self, factory: F, input: &Bytes) -> PrecompileRun
+    where
+        F: FnOnce(std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile,
+    {
+        let pre_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx::default());
+        self.call_with(factory, input, pre_ctx)
     }
 
-    pub fn call_with(
+    pub fn call_with<F>(
         self,
-        precompile: &DynPrecompile,
+        factory: F,
         input: &Bytes,
-        ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
-    ) -> PrecompileRun {
+        prior: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    ) -> PrecompileRun
+    where
+        F: FnOnce(std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile,
+    {
         let _guard = test_lock();
 
-        let prior_tx = ctx.tx.lock().clone();
+        let prior_tx = prior.tx.lock().clone();
         let block_ctx = arb_context::BlockCtx::new(
             self.arbos_version,
             self.block_timestamp,
@@ -279,14 +285,14 @@ impl PrecompileTest {
         for (l2, hash) in &self.l2_block_hashes {
             block_ctx.cache_l2_block_hash(*l2, *hash);
         }
-        let installed = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
+        let pre_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
             block: std::sync::Arc::new(block_ctx),
             tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
             evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
             caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
         });
-        installed.set_tx_is_aliased(self.tx_is_aliased);
-        arb_context::install_active(installed);
+        pre_ctx.set_tx_is_aliased(self.tx_is_aliased);
+        let precompile = factory(pre_ctx.clone());
 
         let mut ctx = EthEvmContext::new(self.db, self.spec);
         ctx.cfg.chain_id = self.chain_id;

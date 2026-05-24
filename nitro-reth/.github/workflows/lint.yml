@@ -102,3 +102,19 @@ jobs:
             echo "$matches"
             exit 1
           fi
+
+  no-thread-local-in-precompiles:
+    name: no thread_local in arb-precompiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any thread_local! macro is reintroduced into arb-precompiles
+        run: |
+          set -e
+          matches=$(grep -rn 'thread_local!' crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "thread_local! is not allowed in crates/arb-precompiles/src/."
+            echo "Handlers must read state via the ctx parameter threaded through register_arb_precompiles."
+            echo "$matches"
+            exit 1
+          fi

@@ -17,8 +17,8 @@ const COPY_GAS: u64 = 3;
 const BALANCE_GAS_EIP1884: u64 = 700;
 const COLD_SLOAD_COST_EIP2929: u64 = 2100;
 
-fn arbinfo() -> DynPrecompile {
-    create_arbinfo_precompile()
+fn arbinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbinfo_precompile(ctx)
 }
 
 fn fixture() -> PrecompileTest {
@@ -29,7 +29,7 @@ fn fixture() -> PrecompileTest {
 fn get_balance_v30_gas_pin() {
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture().balance(addr, U256::from(1_234u64)).call(
-        &arbinfo(),
+        arbinfo,
         &calldata("getBalance(address)", &[word_address(addr)]),
     );
     // OpenArbosState(800) + argsCost(3) + BalanceGasEIP1884(700) + resultCost(3) = 1506
@@ -43,7 +43,7 @@ fn get_balance_v30_gas_pin() {
 fn get_code_empty_v30_gas_pin() {
     let addr: Address = address!("00000000000000000000000000000000000000bb");
     let run = fixture().call(
-        &arbinfo(),
+        arbinfo,
         &calldata("getCode(address)", &[word_address(addr)]),
     );
     // OpenArbosState(800) + argsCost(3) + ColdSloadCostEIP2929(2100)
@@ -70,7 +70,7 @@ fn get_code_with_14_bytes_v30_gas_pin() {
             },
         )
         .call(
-            &arbinfo(),
+            arbinfo,
             &calldata("getCode(address)", &[word_address(addr)]),
         );
     // 14 bytes → 1 code word; output is 64 + 14 + 18 pad = 96 bytes = 3 result words.

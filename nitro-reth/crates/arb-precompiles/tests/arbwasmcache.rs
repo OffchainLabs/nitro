@@ -13,8 +13,8 @@ use arb_precompiles::{
 use common::{calldata, decode_u256, word_address, PrecompileTest};
 use revm::state::AccountInfo;
 
-fn arbwasmcache() -> DynPrecompile {
-    create_arbwasmcache_precompile()
+fn arbwasmcache(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbwasmcache_precompile(ctx)
 }
 
 fn cache_manager_member_slot(addr: Address) -> U256 {
@@ -30,7 +30,7 @@ fn cache_manager_member_slot(addr: Address) -> U256 {
 fn is_cache_manager_returns_false_for_unregistered() {
     let probe: Address = address!("00000000000000000000000000000000000000aa");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbwasmcache(),
+        arbwasmcache,
         &calldata("isCacheManager(address)", &[word_address(probe)]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -48,7 +48,7 @@ fn is_cache_manager_returns_true_for_member() {
             U256::from(1),
         )
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("isCacheManager(address)", &[word_address(probe)]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(1));
@@ -67,7 +67,7 @@ fn codehash_is_cached_reads_program_word_byte_14() {
         .arbos_state()
         .storage(ARBOS_STATE_ADDRESS, slot, U256::from_be_bytes(word))
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("codehashIsCached(bytes32)", &[codehash]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(1));
@@ -77,7 +77,7 @@ fn codehash_is_cached_reads_program_word_byte_14() {
 fn codehash_is_cached_returns_false_when_byte_14_zero() {
     let codehash = B256::from([0x55; 32]);
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbwasmcache(),
+        arbwasmcache,
         &calldata("codehashIsCached(bytes32)", &[codehash]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -140,7 +140,7 @@ fn cache_codehash_rejects_non_manager_non_owner() {
         .arbos_state()
         .gas(50_000)
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("cacheCodehash(bytes32)", &[codehash]),
         );
     let out = run.assert_ok();
@@ -174,7 +174,7 @@ fn cache_codehash_succeeds_for_chain_owner_and_sets_cached_byte() {
         );
 
     let run = test.call(
-        &arbwasmcache(),
+        arbwasmcache,
         &calldata("cacheCodehash(bytes32)", &[codehash]),
     );
     let _ = run.assert_ok();
@@ -210,7 +210,7 @@ fn cache_codehash_no_op_when_already_cached() {
             U256::from(1),
         )
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("cacheCodehash(bytes32)", &[codehash]),
         );
     let _ = run.assert_ok();
@@ -245,7 +245,7 @@ fn cache_codehash_reverts_program_needs_upgrade_for_stale_version() {
             U256::from(1),
         )
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("cacheCodehash(bytes32)", &[codehash]),
         );
     let out = run.assert_ok();
@@ -279,7 +279,7 @@ fn cache_codehash_reverts_program_expired() {
             U256::from(1),
         )
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("cacheCodehash(bytes32)", &[codehash]),
         );
     let out = run.assert_ok();
@@ -314,7 +314,7 @@ fn evict_codehash_clears_cached_byte() {
             U256::from(1),
         )
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("evictCodehash(bytes32)", &[codehash]),
         );
     let _ = run.assert_ok();
@@ -356,7 +356,7 @@ fn cache_program_resolves_address_to_codehash() {
             U256::from(1),
         )
         .call(
-            &arbwasmcache(),
+            arbwasmcache,
             &calldata("cacheProgram(address)", &[word_address(prog_addr)]),
         );
     let _ = run.assert_ok();

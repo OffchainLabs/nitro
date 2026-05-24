@@ -169,12 +169,26 @@ pub struct SubCreateResult {
 ///
 /// `call_type`: `0=CALL`, `1=DELEGATECALL`, `2=STATICCALL`.
 /// `pages` carries the parent's (open, ever) counters into the new frame.
-pub type DoCallFn =
-    fn(*mut (), u8, Address, Address, Address, &[u8], u64, U256, (u16, u16)) -> SubCallResult;
+///
+/// The first pointer is the type-erased revm `Context`; the second points at
+/// the `ArbPrecompileCtx` shared by the precompile closures and dispatch
+/// path. Both must remain live for the duration of the trampoline call.
+pub type DoCallFn = fn(
+    *mut (),
+    *const (),
+    u8,
+    Address,
+    Address,
+    Address,
+    &[u8],
+    u64,
+    U256,
+    (u16, u16),
+) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
 pub type DoCreateFn =
-    fn(*mut (), Address, &[u8], u64, U256, Option<B256>, (u16, u16)) -> SubCreateResult;
+    fn(*mut (), *const (), Address, &[u8], u64, U256, Option<B256>, (u16, u16)) -> SubCreateResult;
 
 /// Per-call storage cache entry.
 struct StorageCacheEntry {
@@ -269,6 +283,10 @@ pub struct StylusEvmApi {
     arbos_version: u64,
     /// Type-erased context pointer and callbacks for sub-calls.
     ctx_ptr: *mut (),
+    /// Type-erased pointer to the `ArbPrecompileCtx` carried alongside
+    /// `ctx_ptr` so the trampoline can access per-block / per-tx state
+    /// without going through a thread-local.
+    precompile_ctx_ptr: *const (),
     do_call: Option<DoCallFn>,
     do_create: Option<DoCreateFn>,
 }
@@ -283,6 +301,7 @@ impl StylusEvmApi {
     /// The `journal` pointer must remain valid for the lifetime of this struct.
     /// The caller must ensure exclusive mutable access through this pointer.
     /// If `ctx_ptr` is provided, it must also remain valid.
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn new<DB: Database>(
         journal: *mut revm::Journal<DB>,
         address: Address,
@@ -291,6 +310,7 @@ impl StylusEvmApi {
         read_only: bool,
         arbos_version: u64,
         ctx_ptr: *mut (),
+        precompile_ctx_ptr: *const (),
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
     ) -> Self {
@@ -312,6 +332,7 @@ impl StylusEvmApi {
             read_only,
             arbos_version,
             ctx_ptr,
+            precompile_ctx_ptr,
             do_call,
             do_create,
         }
@@ -512,6 +533,7 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_call)(
             self.ctx_ptr,
+            self.precompile_ctx_ptr,
             0,
             contract,
             self.address,
@@ -571,6 +593,7 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_call)(
             self.ctx_ptr,
+            self.precompile_ctx_ptr,
             1,
             contract,
             self.caller,
@@ -630,6 +653,7 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_call)(
             self.ctx_ptr,
+            self.precompile_ctx_ptr,
             2,
             contract,
             self.address,
@@ -703,6 +727,7 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_create)(
             self.ctx_ptr,
+            self.precompile_ctx_ptr,
             self.address,
             &code,
             call_gas,
@@ -782,6 +807,7 @@ impl EvmApi for StylusEvmApi {
 
         let result = (do_create)(
             self.ctx_ptr,
+            self.precompile_ctx_ptr,
             self.address,
             &code,
             call_gas,

@@ -1,7 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::interfaces::IArbStatistics;
 
@@ -14,11 +16,13 @@ pub const ARBSTATISTICS_ADDRESS: Address = Address::new([
 const COPY_GAS: u64 = 3;
 const SLOAD_GAS: u64 = 800;
 
-pub fn create_arbstatistics_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbstatistics"), handler)
+pub fn create_arbstatistics_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbstatistics"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -30,14 +34,14 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbStatistics::ArbStatisticsCalls;
     let result = match call {
-        ArbStatisticsCalls::getStats(_) => handle_get_stats(&input),
+        ArbStatisticsCalls::getStats(_) => handle_get_stats(&input, ctx),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
-fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
+fn handle_get_stats(input: &PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     // Five Classic-era stats stay zero post-migration; only block number is live.
-    let block_number = U256::from(crate::arbsys::get_current_l2_block());
+    let block_number = U256::from(ctx.block.l2_block_number);
     let mut out = Vec::with_capacity(192);
     out.extend_from_slice(&block_number.to_be_bytes::<32>());
     for _ in 0..5 {

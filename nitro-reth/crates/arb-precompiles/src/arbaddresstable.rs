@@ -1,9 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{address_table::AddressTableError, arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbAddressTable, ArbPrecompileError};
 
@@ -17,11 +19,13 @@ const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
-pub fn create_arbaddresstable_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbaddresstable"), handler)
+pub fn create_arbaddresstable_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbaddresstable"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -41,7 +45,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::compress(c) => handle_compress(&mut input, c.addr),
         Calls::decompress(c) => handle_decompress(&mut input, &mut gas_used, &c.buf, c.offset),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {

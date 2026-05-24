@@ -51,9 +51,7 @@ pub use arbretryabletx::{
     ARBRETRYABLETX_ADDRESS,
 };
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
-pub use arbsys::{
-    create_arbsys_precompile, get_cached_l1_block_number, get_current_l2_block, ARBSYS_ADDRESS,
-};
+pub use arbsys::{create_arbsys_precompile, ARBSYS_ADDRESS};
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
 pub use error::ArbPrecompileError;
@@ -67,8 +65,9 @@ pub use nodeinterface_debug::{
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
-use alloy_primitives::B256;
+use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
@@ -107,48 +106,6 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
     })
 }
 
-/// Reset the recent WASMs cache for a new block, with the given capacity.
-pub fn reset_recent_wasms(capacity: usize) {
-    arb_context::with_active(|c| c.block.reset_recent_wasms(capacity));
-}
-
-/// Insert a Stylus program codehash into the recent WASMs cache.
-/// Returns `true` if the codehash was already present (cache hit).
-pub fn insert_recent_wasm(hash: B256) -> bool {
-    arb_context::with_active(|c| c.block.insert_recent_wasm(hash)).unwrap_or(false)
-}
-
-/// Read the ArbOS version from the active block context.
-pub fn get_arbos_version() -> u64 {
-    arb_context::with_active(|c| c.block.arbos_version).unwrap_or(0)
-}
-
-/// Whether ArbDebug / ArbosTest debug precompiles are callable. Driven
-/// by the chain spec's `AllowDebugPrecompiles` flag.
-pub fn allow_debug_precompiles() -> bool {
-    arb_context::with_active(|c| c.block.allow_debug_precompiles).unwrap_or(false)
-}
-
-/// Read the L1 block number associated with the current block.
-pub fn get_l1_block_number_for_evm() -> u64 {
-    arb_context::with_active(|c| c.block.l1_block_number_for_evm).unwrap_or(0)
-}
-
-/// Read the current gas backlog (mutated by the executor between transactions).
-pub fn get_current_gas_backlog() -> u64 {
-    arb_context::with_active(|c| c.block.current_gas_backlog()).unwrap_or(0)
-}
-
-/// Lookup an L2 block hash recorded for `arbBlockHash`.
-pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256> {
-    arb_context::with_active(|c| c.block.cached_l2_block_hash(l2_block_number)).flatten()
-}
-
-/// Read the current block timestamp.
-pub fn get_block_timestamp() -> u64 {
-    arb_context::with_active(|c| c.block.block_timestamp).unwrap_or(0)
-}
-
 pub fn charge_precompile_gas(gas_used: &mut u64, gas: u64) {
     *gas_used = gas_used.saturating_add(gas);
 }
@@ -168,41 +125,8 @@ pub fn init_precompile_gas_pure(gas_used: &mut u64, input_len: usize) {
     charge_precompile_gas(gas_used, args_cost);
 }
 
-pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
-    arb_context::with_active(|c| c.set_stylus_activation_addr(addr));
-}
-
-pub fn take_stylus_activation_request() -> Option<alloy_primitives::Address> {
-    arb_context::with_active(|c| c.take_stylus_activation_addr()).flatten()
-}
-
-pub fn set_stylus_keepalive_request(hash: Option<alloy_primitives::B256>) {
-    arb_context::with_active(|c| c.set_stylus_keepalive_hash(hash));
-}
-
-pub fn take_stylus_keepalive_request() -> Option<alloy_primitives::B256> {
-    arb_context::with_active(|c| c.take_stylus_keepalive_hash()).flatten()
-}
-
-pub fn set_stylus_activation_data_fee(fee: alloy_primitives::U256) {
-    arb_context::with_active(|c| c.set_stylus_activation_data_fee(fee));
-}
-
-pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
-    arb_context::with_active(|c| c.take_stylus_activation_data_fee())
-        .unwrap_or(alloy_primitives::U256::ZERO)
-}
-
-pub fn set_stylus_call_value(value: alloy_primitives::U256) {
-    arb_context::with_active(|c| c.set_stylus_call_value(value));
-}
-
-pub fn get_stylus_call_value() -> alloy_primitives::U256 {
-    arb_context::with_active(|c| c.stylus_call_value()).unwrap_or(alloy_primitives::U256::ZERO)
-}
-
-fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
-    if get_arbos_version() < min_version {
+fn check_precompile_version(ctx: &ArbPrecompileCtx, min_version: u64) -> Option<PrecompileResult> {
+    if ctx.block.arbos_version < min_version {
         Some(Ok(PrecompileOutput::new(0, Default::default())))
     } else {
         None
@@ -228,10 +152,15 @@ pub fn sol_error_revert(gas_used: &mut u64, payload: Vec<u8>, gas_limit: u64) ->
     ))
 }
 
-fn gas_check(gas_limit: u64, gas_used: u64, result: PrecompileResult) -> PrecompileResult {
+fn gas_check(
+    ctx: &ArbPrecompileCtx,
+    gas_limit: u64,
+    gas_used: u64,
+    result: PrecompileResult,
+) -> PrecompileResult {
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
-        Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => Ok(
+        Err(PrecompileError::Other(_)) if ctx.block.arbos_version >= 11 => Ok(
             PrecompileOutput::new_reverted(gas_used.min(gas_limit), Default::default()),
         ),
         other => other,
@@ -242,11 +171,12 @@ fn gas_check(gas_limit: u64, gas_used: u64, result: PrecompileResult) -> Precomp
 /// version is outside `[min_version, max_version]`. `max_version == 0` is
 /// unbounded.
 fn check_method_version(
+    ctx: &ArbPrecompileCtx,
     gas_limit: u64,
     min_version: u64,
     max_version: u64,
 ) -> Option<PrecompileResult> {
-    let v = get_arbos_version();
+    let v = ctx.block.arbos_version;
     if v < min_version || (max_version > 0 && v > max_version) {
         Some(burn_all_revert(gas_limit))
     } else {
@@ -259,39 +189,68 @@ const KZG_POINT_EVALUATION_ADDRESS: alloy_primitives::Address =
 
 /// Registers Arbitrum precompiles into `map` and applies the per-ArbOS-version
 /// adjustments to the standard Ethereum precompile set.
-pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
+///
+/// `ctx` is captured into every handler closure so that handlers read the
+/// per-block / per-tx context as a typed function parameter rather than via
+/// a thread-local.
+pub fn register_arb_precompiles(map: &mut PrecompilesMap, ctx: Arc<ArbPrecompileCtx>) {
+    let arbos_version = ctx.block.arbos_version;
     map.extend_precompiles([
-        (ARBSYS_ADDRESS, create_arbsys_precompile()),
-        (ARBGASINFO_ADDRESS, create_arbgasinfo_precompile()),
-        (ARBINFO_ADDRESS, create_arbinfo_precompile()),
-        (ARBSTATISTICS_ADDRESS, create_arbstatistics_precompile()),
+        (ARBSYS_ADDRESS, create_arbsys_precompile(ctx.clone())),
+        (
+            ARBGASINFO_ADDRESS,
+            create_arbgasinfo_precompile(ctx.clone()),
+        ),
+        (ARBINFO_ADDRESS, create_arbinfo_precompile(ctx.clone())),
+        (
+            ARBSTATISTICS_ADDRESS,
+            create_arbstatistics_precompile(ctx.clone()),
+        ),
         (
             ARBFUNCTIONTABLE_ADDRESS,
-            create_arbfunctiontable_precompile(),
+            create_arbfunctiontable_precompile(ctx.clone()),
         ),
-        (ARBOSACTS_ADDRESS, create_arbosacts_precompile()),
-        (ARBOSTEST_ADDRESS, create_arbostest_precompile()),
-        (ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile()),
-        (ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile()),
-        (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),
-        (ARBRETRYABLETX_ADDRESS, create_arbretryabletx_precompile()),
-        (ARBOWNER_ADDRESS, create_arbowner_precompile()),
+        (ARBOSACTS_ADDRESS, create_arbosacts_precompile(ctx.clone())),
+        (ARBOSTEST_ADDRESS, create_arbostest_precompile(ctx.clone())),
+        (
+            ARBOWNERPUBLIC_ADDRESS,
+            create_arbownerpublic_precompile(ctx.clone()),
+        ),
+        (
+            ARBADDRESSTABLE_ADDRESS,
+            create_arbaddresstable_precompile(ctx.clone()),
+        ),
+        (
+            ARBAGGREGATOR_ADDRESS,
+            create_arbaggregator_precompile(ctx.clone()),
+        ),
+        (
+            ARBRETRYABLETX_ADDRESS,
+            create_arbretryabletx_precompile(ctx.clone()),
+        ),
+        (ARBOWNER_ADDRESS, create_arbowner_precompile(ctx.clone())),
         (ARBBLS_ADDRESS, create_arbbls_precompile()),
-        (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),
-        (ARBWASM_ADDRESS, create_arbwasm_precompile()),
-        (ARBWASMCACHE_ADDRESS, create_arbwasmcache_precompile()),
+        (ARBDEBUG_ADDRESS, create_arbdebug_precompile(ctx.clone())),
+        (ARBWASM_ADDRESS, create_arbwasm_precompile(ctx.clone())),
+        (
+            ARBWASMCACHE_ADDRESS,
+            create_arbwasmcache_precompile(ctx.clone()),
+        ),
         (
             ARBFILTEREDTXMANAGER_ADDRESS,
-            create_arbfilteredtxmanager_precompile(),
+            create_arbfilteredtxmanager_precompile(ctx.clone()),
         ),
         (
             ARBNATIVETOKENMANAGER_ADDRESS,
-            create_arbnativetokenmanager_precompile(),
+            create_arbnativetokenmanager_precompile(ctx.clone()),
         ),
-        (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
+        (
+            NODE_INTERFACE_ADDRESS,
+            create_nodeinterface_precompile(ctx.clone()),
+        ),
         (
             NODE_INTERFACE_DEBUG_ADDRESS,
-            create_nodeinterface_debug_precompile(),
+            create_nodeinterface_debug_precompile(ctx.clone()),
         ),
     ]);
 

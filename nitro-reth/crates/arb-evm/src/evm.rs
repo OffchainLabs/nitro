@@ -53,9 +53,13 @@ const BLOCKHASH_OPCODE: u8 = 0x40;
 const BALANCE_OPCODE: u8 = 0x31;
 
 /// Arbitrum NUMBER: returns the L1 block number recorded during StartBlock.
+///
+/// `block_env.number` is configured to hold the L1 block number for Arbitrum
+/// EVM execution; reading the host preserves consensus semantics without
+/// touching any per-thread global.
 fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
-    let l1_block = arb_precompiles::get_l1_block_number_for_evm();
-    if !ctx.interpreter.stack.push(U256::from(l1_block)) {
+    let l1_block = ctx.host.block_number();
+    if !ctx.interpreter.stack.push(l1_block) {
         ctx.interpreter.halt(InstructionResult::StackOverflow);
     }
 }
@@ -77,7 +81,7 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionConte
         }
     };
 
-    let l1_block_number = U256::from(arb_precompiles::get_l1_block_number_for_evm());
+    let l1_block_number = ctx.host.block_number();
 
     let Some(diff) = l1_block_number.checked_sub(requested) else {
         if !ctx.interpreter.stack.push(U256::ZERO) {
@@ -199,9 +203,31 @@ fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionCon
     }
 }
 
+// EVM opcodes are wired into revm via a `[Instruction; 256]` table built from
+// bare `fn` pointers, so the `arb_balance` / `arb_selfbalance` overrides cannot
+// accept an extra ctx parameter. The executor publishes the active tx's
+// `poster_balance_correction` into this thread-local at the same point it
+// stages the precompile ctx; opcode reads stay zero-cost and consensus-only.
+//
+// Scope: arb-evm only — `arb-precompiles` is forbidden from holding any
+// `thread_local!` by the lint job in `.github/workflows/lint.yml`.
+thread_local! {
+    static POSTER_BALANCE_CORRECTION: std::cell::Cell<u128> = const { std::cell::Cell::new(0) };
+}
+
+/// Publish the poster-balance correction word for the active tx so that
+/// `arb_balance` / `arb_selfbalance` opcode reads observe it.
+pub fn set_poster_balance_correction(value: u128) {
+    POSTER_BALANCE_CORRECTION.with(|cell| cell.set(value));
+}
+
+/// Reset the per-tx poster-balance correction to zero.
+pub fn clear_poster_balance_correction() {
+    POSTER_BALANCE_CORRECTION.with(|cell| cell.set(0));
+}
+
 fn poster_balance_correction_word() -> U256 {
-    arb_context::with_active(|c| U256::from(c.tx_snapshot().poster_balance_correction))
-        .unwrap_or(U256::ZERO)
+    POSTER_BALANCE_CORRECTION.with(|cell| U256::from(cell.get()))
 }
 
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
@@ -288,11 +314,9 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
 }
 
 /// Reset per-tx Stylus state at the start of every transaction.
-pub fn reset_stylus_pages() {
-    arb_context::with_active(|c| {
-        let mut tx = c.tx.lock();
-        tx.stylus_program_counts.clear();
-    });
+pub fn reset_stylus_pages(ctx: &arb_context::ArbPrecompileCtx) {
+    let mut tx = ctx.tx.lock();
+    tx.stylus_program_counts.clear();
 }
 
 // ── Stylus storage helpers ───────────────────────────────────────────
@@ -429,26 +453,23 @@ fn stylus_call_gas_cost(
 use arb_stylus::evm_api_impl::{SubCallResult, SubCreateResult};
 
 /// Read the current (pages_open, pages_ever) carried on the active `TxCtx`.
-fn read_tx_pages(default: (u16, u16)) -> (u16, u16) {
-    arb_context::with_active(|c| {
-        let tx = c.tx.lock();
-        (tx.stylus_pages_open, tx.stylus_pages_ever)
-    })
-    .unwrap_or(default)
+fn read_tx_pages(ctx: &arb_context::ArbPrecompileCtx) -> (u16, u16) {
+    let tx = ctx.tx.lock();
+    (tx.stylus_pages_open, tx.stylus_pages_ever)
 }
 
 /// Write `pages_open` and `pages_ever` to the active `TxCtx`.
-fn write_tx_pages(pages: (u16, u16)) {
-    arb_context::with_active(|c| {
-        let mut tx = c.tx.lock();
-        tx.stylus_pages_open = pages.0;
-        tx.stylus_pages_ever = pages.1;
-    });
+fn write_tx_pages(ctx: &arb_context::ArbPrecompileCtx, pages: (u16, u16)) {
+    let mut tx = ctx.tx.lock();
+    tx.stylus_pages_open = pages.0;
+    tx.stylus_pages_ever = pages.1;
 }
 
 /// Monomorphized trampoline for Stylus sub-calls (CALL/DELEGATECALL/STATICCALL).
+#[allow(clippy::too_many_arguments)]
 fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     ctx: *mut (),
+    precompile_ctx: *const (),
     call_type: u8,
     contract: Address,
     caller: Address,
@@ -467,8 +488,9 @@ where
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
+    let pre_ctx = unsafe { &*(precompile_ctx as *const arb_context::ArbPrecompileCtx) };
 
-    write_tx_pages(parent_pages);
+    write_tx_pages(pre_ctx, parent_pages);
 
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
@@ -489,7 +511,7 @@ where
                 gas_cost: 0,
                 success: false,
                 refund: 0,
-                pages: read_tx_pages(parent_pages),
+                pages: read_tx_pages(pre_ctx),
             };
         }
     }
@@ -528,8 +550,16 @@ where
         let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
         let mut precompiles =
             alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
-        register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
-        let mut arb_map = ArbPrecompilesMap(precompiles);
+        // Clone the Arc that the parent dispatch holds without taking
+        // ownership: re-construct an `Arc` from the borrowed pointer, clone it,
+        // then forget the temporary so the parent's refcount stays intact.
+        let pre_arc = unsafe {
+            let raw = precompile_ctx as *const arb_context::ArbPrecompileCtx;
+            std::sync::Arc::increment_strong_count(raw);
+            std::sync::Arc::from_raw(raw)
+        };
+        register_arb_precompiles(&mut precompiles, pre_arc.clone());
+        let mut arb_map = ArbPrecompilesMap::new(precompiles, pre_arc);
         let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
         >>::run(&mut arb_map, context, &sub_inputs);
@@ -559,7 +589,7 @@ where
                     gas_cost: gas_used,
                     success,
                     refund,
-                    pages: read_tx_pages(parent_pages),
+                    pages: read_tx_pages(pre_ctx),
                 };
             }
             Ok(None) => {}
@@ -570,7 +600,7 @@ where
                     gas_cost: gas,
                     success: false,
                     refund: 0,
-                    pages: read_tx_pages(parent_pages),
+                    pages: read_tx_pages(pre_ctx),
                 };
             }
         }
@@ -595,7 +625,7 @@ where
                 gas_cost: 0,
                 success: false,
                 refund: 0,
-                pages: read_tx_pages(parent_pages),
+                pages: read_tx_pages(pre_ctx),
             };
         }
     };
@@ -633,7 +663,7 @@ where
                     gas_cost: 0,
                     success: false,
                     refund: 0,
-                    pages: read_tx_pages(parent_pages),
+                    pages: read_tx_pages(pre_ctx),
                 };
             }
         }
@@ -648,7 +678,7 @@ where
             gas_cost: 0,
             success: true,
             refund: 0,
-            pages: read_tx_pages(parent_pages),
+            pages: read_tx_pages(pre_ctx),
         };
     }
 
@@ -659,11 +689,18 @@ where
 
     // If the loaded bytecode carries the Stylus discriminant, dispatch it
     // through the WASM runtime instead of the EVM interpreter.
-    if arb_precompiles::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+    if pre_ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
         && arb_stylus::is_stylus_program(&bytecode)
     {
-        let result = execute_stylus_program(context, &sub_inputs, &bytecode);
-        let pages = read_tx_pages(parent_pages);
+        // The Stylus dispatch path expects an `Arc`. Clone via raw pointer
+        // borrow so the parent's refcount is preserved.
+        let arc = unsafe {
+            let raw = precompile_ctx as *const arb_context::ArbPrecompileCtx;
+            std::sync::Arc::increment_strong_count(raw);
+            std::sync::Arc::from_raw(raw)
+        };
+        let result = execute_stylus_program(context, &sub_inputs, &bytecode, &arc);
+        let pages = read_tx_pages(pre_ctx);
         let success = result.result.is_ok();
         let output = result.output.to_vec();
         let gas_used = gas.saturating_sub(result.gas.remaining());
@@ -682,8 +719,8 @@ where
         };
     }
 
-    let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
-    let pages = read_tx_pages(parent_pages);
+    let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas, pre_ctx);
+    let pages = read_tx_pages(pre_ctx);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
     let gas_used = if success || matches!(result.result, InstructionResult::Revert) {
@@ -707,8 +744,10 @@ where
 }
 
 /// Monomorphized trampoline for Stylus CREATE/CREATE2 operations.
+#[allow(clippy::too_many_arguments)]
 fn stylus_create_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     ctx: *mut (),
+    precompile_ctx: *const (),
     caller: Address,
     code: &[u8],
     gas: u64,
@@ -722,11 +761,12 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
-    arb_context::with_active(|c| {
-        let mut tx = c.tx.lock();
+    let pre_ctx = unsafe { &*(precompile_ctx as *const arb_context::ArbPrecompileCtx) };
+    {
+        let mut tx = pre_ctx.tx.lock();
         tx.stylus_pages_open = parent_pages.0;
         tx.stylus_pages_ever = parent_pages.1;
-    });
+    }
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
@@ -796,11 +836,7 @@ where
             address: None,
             output: Vec::new(),
             gas_cost: gas,
-            pages: arb_context::with_active(|c| {
-                let tx = c.tx.lock();
-                (tx.stylus_pages_open, tx.stylus_pages_ever)
-            })
-            .unwrap_or(parent_pages),
+            pages: read_tx_pages(pre_ctx),
         };
     }
 
@@ -817,8 +853,8 @@ where
         known_bytecode: None,
     };
 
-    let result = run_evm_bytecode(context, &init_inputs, code, gas);
-    let pages = read_tx_pages(parent_pages);
+    let result = run_evm_bytecode(context, &init_inputs, code, gas, pre_ctx);
+    let pages = read_tx_pages(pre_ctx);
     let success = result.result.is_ok();
     let gas_used = gas.saturating_sub(result.gas.remaining());
 
@@ -863,6 +899,7 @@ fn run_evm_bytecode<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     inputs: &CallInputs,
     bytecode: &[u8],
     gas_limit: u64,
+    pre_ctx: &arb_context::ArbPrecompileCtx,
 ) -> InterpreterResult
 where
     BlockEnv: revm::context::Block,
@@ -971,9 +1008,10 @@ where
                     }
                 };
                 let bytecode_address = sub_call.bytecode_address;
-                let parent_pages = read_tx_pages((0, 0));
+                let parent_pages = read_tx_pages(pre_ctx);
                 let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
+                    pre_ctx as *const _ as *const (),
                     match sub_call.scheme {
                         CallScheme::Call | CallScheme::CallCode => 0,
                         CallScheme::DelegateCall => 1,
@@ -987,7 +1025,7 @@ where
                     sub_call.value.get(),
                     parent_pages,
                 );
-                write_tx_pages(sub_result.pages);
+                write_tx_pages(pre_ctx, sub_result.pages);
 
                 let gas_remaining = sub_call.gas_limit.saturating_sub(sub_result.gas_cost);
                 let ins_result = if sub_result.success {
@@ -1041,9 +1079,10 @@ where
                     _ => None,
                 };
 
-                let parent_pages = read_tx_pages((0, 0));
+                let parent_pages = read_tx_pages(pre_ctx);
                 let sub_result = stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
+                    pre_ctx as *const _ as *const (),
                     sub_create.caller(),
                     sub_create.init_code(),
                     sub_create.gas_limit(),
@@ -1051,7 +1090,7 @@ where
                     salt,
                     parent_pages,
                 );
-                write_tx_pages(sub_result.pages);
+                write_tx_pages(pre_ctx, sub_result.pages);
 
                 let gas_remaining = sub_create.gas_limit().saturating_sub(sub_result.gas_cost);
                 let created_addr = sub_result.address;
@@ -1100,6 +1139,7 @@ fn execute_stylus_program<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
     bytecode: &[u8],
+    ctx: &std::sync::Arc<arb_context::ArbPrecompileCtx>,
 ) -> InterpreterResult
 where
     BlockEnv: revm::context::Block,
@@ -1111,21 +1151,18 @@ where
 
     let zero_gas = || EvmGas::new(0);
     let write_pages = |open: u16, ever: u16| {
-        arb_context::with_active(|c| {
-            let mut tx = c.tx.lock();
-            tx.stylus_pages_open = open;
-            tx.stylus_pages_ever = ever;
-        });
+        let mut tx = ctx.tx.lock();
+        tx.stylus_pages_open = open;
+        tx.stylus_pages_ever = ever;
     };
-    let (parent_open, parent_ever) = arb_context::with_active(|c| {
-        let tx = c.tx.lock();
+    let (parent_open, parent_ever) = {
+        let tx = ctx.tx.lock();
         (tx.stylus_pages_open, tx.stylus_pages_ever)
-    })
-    .unwrap_or((0, 0));
+    };
 
     let code_hash = alloy_primitives::keccak256(bytecode);
-    let arbos_version = arb_precompiles::get_arbos_version();
-    let block_timestamp = arb_precompiles::get_block_timestamp();
+    let arbos_version = ctx.block.arbos_version;
+    let block_timestamp = ctx.block.block_timestamp;
 
     let params_sto = programs_params_storage();
     let params = {
@@ -1159,7 +1196,7 @@ where
     }
 
     let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
-        arb_precompiles::insert_recent_wasm(code_hash)
+        ctx.block.insert_recent_wasm(code_hash)
     } else {
         false
     };
@@ -1187,15 +1224,15 @@ where
         CallScheme::DelegateCall | CallScheme::CallCode
     );
     let reentrant = if !is_delegate {
-        arb_context::with_active(|c| c.push_stylus_program(target_addr)).unwrap_or(false)
+        ctx.push_stylus_program(target_addr)
     } else {
-        arb_context::with_active(|c| c.stylus_program_count(target_addr)).unwrap_or(0) > 1
+        ctx.stylus_program_count(target_addr) > 1
     };
 
     let module_hash =
         read_module_hash(&mut context.journaled_state, code_hash).unwrap_or(code_hash);
 
-    let mut evm_data = build_evm_data(context, inputs);
+    let mut evm_data = build_evm_data(context, inputs, ctx);
     evm_data.reentrant = reentrant as u32;
     evm_data.cached = effective_program.cached;
     evm_data.module_hash = module_hash;
@@ -1205,13 +1242,14 @@ where
 
     let pop_program = |is_delegate: bool, target_addr: alloy_primitives::Address| {
         if !is_delegate {
-            arb_context::with_active(|c| c.pop_stylus_program(target_addr));
+            ctx.pop_stylus_program(target_addr);
         }
     };
 
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
     let ctx_ptr = context as *mut _ as *mut ();
+    let precompile_ctx_ptr = std::sync::Arc::as_ptr(ctx) as *const ();
     let caller = inputs.caller;
     let call_value = inputs.value.get();
     let evm_api = unsafe {
@@ -1223,6 +1261,7 @@ where
             is_static,
             arbos_version,
             ctx_ptr,
+            precompile_ctx_ptr,
             Some(stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
             Some(stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
         )
@@ -1363,6 +1402,7 @@ where
 fn build_evm_data<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
+    ctx: &arb_context::ArbPrecompileCtx,
 ) -> EvmData
 where
     BlockEnv: revm::context::Block,
@@ -1373,7 +1413,7 @@ where
     let basefee = U256::from(context.block.basefee());
     // Pre-cap effective price stashed by ArbBlockExecutor; fall back to the
     // capped tx_env when unset (e.g. direct dispatch in unit tests).
-    let stashed = arb_context::with_active(|c| c.tx_snapshot().effective_gas_price).unwrap_or(0);
+    let stashed = ctx.tx_snapshot().effective_gas_price;
     let gas_price = if stashed != 0 {
         U256::from(stashed)
     } else {
@@ -1381,16 +1421,13 @@ where
     };
     let value = inputs.value.get();
 
-    // Stylus's block.number is the L1 block number, not the L2 block number.
-    let l1_block_number = arb_precompiles::get_l1_block_number_for_evm();
-
     EvmData {
-        arbos_version: arb_precompiles::get_arbos_version(),
+        arbos_version: ctx.block.arbos_version,
         block_basefee: B256::from(basefee.to_be_bytes()),
         chain_id: context.cfg.chain_id(),
         block_coinbase: context.block.beneficiary(),
         block_gas_limit: context.block.gas_limit(),
-        block_number: l1_block_number,
+        block_number: ctx.block.l1_block_number_for_evm,
         block_timestamp: context.block.timestamp().saturating_to(),
         contract_address: inputs.target_address,
         module_hash: alloy_primitives::keccak256(b""),
@@ -1407,8 +1444,8 @@ where
 // ── Stylus frame-level intercept ──────────────────────────────────
 
 /// Check if a `FrameInit` targets a Stylus WASM program via `known_bytecode`.
-fn is_stylus_call(frame_init: &FrameInit) -> Option<Bytes> {
-    if arb_precompiles::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
+fn is_stylus_call(frame_init: &FrameInit, arbos_version: u64) -> Option<Bytes> {
+    if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
         return None;
     }
     if let FrameInput::Call(ref inputs) = frame_init.frame_input {
@@ -1429,6 +1466,7 @@ fn execute_stylus_call_concrete<DB: Database>(
     inputs: &CallInputs,
     bytecode: &[u8],
     checkpoint: revm::context_interface::journaled_state::JournalCheckpoint,
+    pre_ctx: &std::sync::Arc<arb_context::ArbPrecompileCtx>,
 ) -> FrameResult {
     // Handle value transfer for non-delegate calls (matches EthFrame::make_call_frame).
     if let revm::interpreter::CallValue::Transfer(value) = inputs.value {
@@ -1447,7 +1485,7 @@ fn execute_stylus_call_concrete<DB: Database>(
         }
     }
 
-    let result = execute_stylus_program(ctx, inputs, bytecode);
+    let result = execute_stylus_program(ctx, inputs, bytecode, pre_ctx);
 
     if result.result.is_ok() {
         ctx.journaled_state.inner.checkpoint_commit();
@@ -1465,7 +1503,18 @@ fn execute_stylus_call_concrete<DB: Database>(
 // ── Precompile provider ────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
-pub struct ArbPrecompilesMap(pub PrecompilesMap);
+pub struct ArbPrecompilesMap {
+    pub inner: PrecompilesMap,
+    /// Per-block context shared with the registered precompile closures and
+    /// the Stylus dispatch path. Cheap to clone (`Arc`).
+    pub ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+}
+
+impl ArbPrecompilesMap {
+    pub fn new(inner: PrecompilesMap, ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> Self {
+        Self { inner, ctx }
+    }
+}
 
 impl<BlockEnv, TxEnv, CfgEnv, DB, Chain>
     PrecompileProvider<revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>>
@@ -1481,7 +1530,7 @@ where
     fn set_spec(&mut self, spec: CfgEnv::Spec) -> bool {
         <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::set_spec(&mut self.0, spec)
+        >>::set_spec(&mut self.inner, spec)
     }
 
     fn run(
@@ -1489,18 +1538,18 @@ where
         context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
         inputs: &CallInputs,
     ) -> Result<Option<Self::Output>, String> {
-        arb_context::with_active(|c| c.set_evm_depth(context.journaled_state.inner.depth));
+        self.ctx.set_evm_depth(context.journaled_state.inner.depth);
 
         // Check precompiles first.
         if let result @ Some(_) = <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::run(&mut self.0, context, inputs)?
+        >>::run(&mut self.inner, context, inputs)?
         {
             return Ok(result);
         }
 
         // Check for Stylus WASM programs (active at ArbOS v31+).
-        let arbos_version = arb_precompiles::get_arbos_version();
+        let arbos_version = self.ctx.block.arbos_version;
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
             // Use known_bytecode from CallInputs if available (already loaded by
             // revm's CALL handler), otherwise load from journal.
@@ -1522,7 +1571,9 @@ where
 
             if let Some(bytecode) = bytecode {
                 if arb_stylus::is_stylus_program(&bytecode) {
-                    return Ok(Some(execute_stylus_program(context, inputs, &bytecode)));
+                    return Ok(Some(execute_stylus_program(
+                        context, inputs, &bytecode, &self.ctx,
+                    )));
                 }
             }
         }
@@ -1533,13 +1584,13 @@ where
     fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {
         <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::warm_addresses(&self.0)
+        >>::warm_addresses(&self.inner)
     }
 
     fn contains(&self, address: &Address) -> bool {
         <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::contains(&self.0, address)
+        >>::contains(&self.inner, address)
     }
 }
 
@@ -1584,6 +1635,20 @@ where
 
     pub fn precompiles_mut(&mut self) -> &mut ArbPrecompilesMap {
         &mut self.inner.precompiles
+    }
+}
+
+/// Accessor for the `Arc<ArbPrecompileCtx>` that an EVM factory most recently
+/// staged for the next [`EvmFactory::create_evm`] call. The block executor
+/// reuses this `Arc` so its per-tx writes share an allocation with the EVM
+/// precompile handler closures (which capture the `Arc` at registration time).
+pub trait ArbEvmFactoryStaged {
+    fn staged_precompile_ctx(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>;
+}
+
+impl ArbEvmFactoryStaged for ArbEvmFactory {
+    fn staged_precompile_ctx(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>> {
+        self.staged()
     }
 }
 
@@ -1644,24 +1709,25 @@ where
         ItemOrResult<&mut Self::Frame, FrameResult>,
         revm::handler::evm::ContextDbError<Self::Context>,
     > {
+        let pre_ctx = self.inner.precompiles.ctx.clone();
         let pushed_caller = match &frame_input.frame_input {
             FrameInput::Call(inputs) => {
-                arb_context::with_active(|c| c.push_caller(inputs.caller));
+                pre_ctx.push_caller(inputs.caller);
                 true
             }
             FrameInput::Create(inputs) => {
-                arb_context::with_active(|c| c.push_caller(inputs.caller()));
+                pre_ctx.push_caller(inputs.caller());
                 true
             }
             _ => false,
         };
 
-        if let Some(bytecode) = is_stylus_call(&frame_input) {
+        if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version) {
             if let FrameInput::Call(ref inputs) = frame_input.frame_input {
                 if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
                     let gas = EvmGas::new(inputs.gas_limit);
                     if pushed_caller {
-                        arb_context::with_active(|c| c.pop_caller());
+                        pre_ctx.pop_caller();
                     }
                     return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
                         result: InterpreterResult::new(
@@ -1680,9 +1746,10 @@ where
                     inputs,
                     &bytecode,
                     checkpoint,
+                    &pre_ctx,
                 );
                 if pushed_caller {
-                    arb_context::with_active(|c| c.pop_caller());
+                    pre_ctx.pop_caller();
                 }
                 return Ok(ItemOrResult::Result(result));
             }
@@ -1706,7 +1773,7 @@ where
         &mut self,
         result: FrameResult,
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
-        arb_context::with_active(|c| c.pop_caller());
+        self.inner.precompiles.ctx.pop_caller();
         self.inner.frame_return_result(result)
     }
 }
@@ -1899,7 +1966,7 @@ where
         (
             &self.inner.ctx.journaled_state.database,
             &self.inner.inspector,
-            &self.inner.precompiles.0,
+            &self.inner.precompiles.inner,
         )
     }
 
@@ -1907,7 +1974,7 @@ where
         (
             &mut self.inner.ctx.journaled_state.database,
             &mut self.inner.inspector,
-            &mut self.inner.precompiles.0,
+            &mut self.inner.precompiles.inner,
         )
     }
 }
@@ -1933,12 +2000,9 @@ impl ArbEvmFactory {
     }
 
     /// Stage the per-block context that `create_evm` will install on the
-    /// EVM-execution thread. The active thread-local is also refreshed
-    /// here so that same-thread reads (executor path) see the new ctx
-    /// without waiting for the next `create_evm` call.
+    /// EVM-execution thread.
     pub fn stage_ctx(&self, ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) {
-        *self.staged_ctx.write() = Some(ctx.clone());
-        arb_context::install_active(ctx);
+        *self.staged_ctx.write() = Some(ctx);
     }
 
     fn staged(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>> {
@@ -1957,11 +2021,8 @@ fn build_arb_evm<DB: Database, I>(
     staged: Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>,
     inspect: bool,
 ) -> ArbEvm<DB, I> {
-    if arb_context::active().is_none() {
-        if let Some(staged) = staged {
-            arb_context::install_active(staged);
-        }
-    }
+    let pre_ctx =
+        staged.unwrap_or_else(|| std::sync::Arc::new(arb_context::ArbPrecompileCtx::default()));
     let RevmEvm {
         ctx: evm_ctx,
         inspector,
@@ -1994,8 +2055,8 @@ fn build_arb_evm<DB: Database, I>(
         SELFBALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
-    register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
-    let arb_precompiles = ArbPrecompilesMap(precompiles);
+    register_arb_precompiles(&mut precompiles, pre_ctx.clone());
+    let arb_precompiles = ArbPrecompilesMap::new(precompiles, pre_ctx);
 
     let revm_evm = RevmEvm::new_with_inspector(evm_ctx, inspector, instruction, arb_precompiles);
     ArbEvm::new(revm_evm, inspect)

@@ -40,7 +40,9 @@ fn execute_call(
     env.block_env.timestamp = U256::from(1_700_000_000u64);
     env.block_env.basefee = base_fee;
     env.block_env.gas_limit = 30_000_000;
-    env.block_env.number = U256::from(1u64);
+    // `block_env.number` holds the L1 block number for Arbitrum execution;
+    // the NUMBER opcode reads it directly via the revm Host trait.
+    env.block_env.number = U256::from(l1_block_number);
     env.block_env.prevrandao = Some(B256::from(U256::from(1u64)));
     env.block_env.difficulty = U256::from(1u64);
 

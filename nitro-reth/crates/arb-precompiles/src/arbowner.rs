@@ -1,6 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_primitives::multigas::NUM_RESOURCE_KIND;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{
@@ -11,6 +12,7 @@ use revm::{
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
+use std::sync::Arc;
 
 use crate::{interfaces::IArbOwner, ArbPrecompileError};
 
@@ -32,11 +34,13 @@ const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
-pub fn create_arbowner_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbowner"), handler)
+pub fn create_arbowner_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbowner"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     let data = input.data;
@@ -73,13 +77,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // Getters
         Calls::getNetworkFeeAccount(_) => handle_get_network_fee_account(&mut input, &mut gas_used),
         Calls::getInfraFeeAccount(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 5, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 5, 0) {
                 return r;
             }
             handle_get_infra_fee_account(&mut input, &mut gas_used)
         }
         Calls::getFilteredFundsRecipient(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_get_filtered_funds_recipient(&mut input, &mut gas_used)
@@ -91,7 +95,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_get_all_members(&mut input, &mut gas_used, AddressSetKind::ChainOwners)
         }
         Calls::getAllTransactionFilterers(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_get_all_members(
@@ -101,13 +105,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         Calls::getAllNativeTokenOwners(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 41, 0) {
                 return r;
             }
             handle_get_all_members(&mut input, &mut gas_used, AddressSetKind::NativeTokenOwners)
         }
         Calls::isTransactionFilterer(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_is_member(
@@ -117,7 +121,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         Calls::isNativeTokenOwner(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 41, 0) {
                 return r;
             }
             handle_is_member(&mut input, &mut gas_used, AddressSetKind::NativeTokenOwners)
@@ -130,13 +134,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // Root state setters
         Calls::setNetworkFeeAccount(_) => handle_set_network_fee_account(&mut input, &mut gas_used),
         Calls::setInfraFeeAccount(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 5, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 5, 0) {
                 return r;
             }
             handle_set_infra_fee_account(&mut input, &mut gas_used)
         }
         Calls::setBrotliCompressionLevel(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 20, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 20, 0) {
                 return r;
             }
             handle_set_brotli_compression_level(&mut input, &mut gas_used)
@@ -154,7 +158,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::setL2BaseFee(_) => handle_set_l2_base_fee(&mut input, &mut gas_used),
         Calls::setMinimumL2BaseFee(_) => handle_set_min_l2_base_fee(&mut input, &mut gas_used),
         Calls::setMaxBlockGasLimit(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
             handle_set_max_block_gas_limit(&mut input, &mut gas_used)
@@ -171,7 +175,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_set_l2_backlog_tolerance(&mut input, &mut gas_used)
         }
         Calls::setGasBacklog(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
             handle_set_gas_backlog(&mut input, &mut gas_used)
@@ -192,7 +196,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::setL1PricePerUnit(_) => handle_set_l1_price_per_unit(&mut input, &mut gas_used),
         Calls::setParentGasFloorPerToken(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
             handle_set_parent_gas_floor_per_token(&mut input, &mut gas_used)
@@ -202,7 +206,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_set_amortized_cost_cap_bips(&mut input, &mut gas_used)
         }
         Calls::releaseL1PricerSurplusFunds(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 10, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 10, 0) {
                 return r;
             }
             handle_release_l1_pricer_surplus_funds(&mut input, &mut gas_used)
@@ -210,7 +214,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // Stylus/Wasm parameter setters (all require ArbOS >= 30)
         Calls::setInkPrice(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             match read_u32_param(gas_used, data) {
@@ -222,42 +226,42 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             }
         }
         Calls::setWasmMaxStackDepth(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.max_stack_depth = val)
         }
         Calls::setWasmFreePages(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.free_pages = val as u16)
         }
         Calls::setWasmPageGas(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.page_gas = val as u16)
         }
         Calls::setWasmPageLimit(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.page_limit = val as u16)
         }
         Calls::setWasmMinInitGas(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.min_init_gas = val as u8)
         }
         Calls::setWasmInitCostScalar(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
@@ -268,21 +272,21 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             })
         }
         Calls::setWasmExpiryDays(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.expiry_days = val as u16)
         }
         Calls::setWasmKeepaliveDays(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
             write_stylus_param(&mut input, &mut gas_used, |p| p.keepalive_days = val as u16)
         }
         Calls::setWasmBlockCacheSize(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
@@ -291,7 +295,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             })
         }
         Calls::setWasmMaxSize(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 40, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 40, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
@@ -299,6 +303,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::setWasmActivationGas(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_59,
                 0,
@@ -312,7 +317,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_set_activation_gas(&mut input, &mut gas_used, val)
         }
         Calls::setMaxStylusContractFragments(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             let val = read_u32_param(gas_used, data)?;
@@ -321,25 +326,25 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             })
         }
         Calls::addWasmCacheManager(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             handle_add_cache_manager(&mut input, &mut gas_used)
         }
         Calls::removeWasmCacheManager(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 30, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 30, 0) {
                 return r;
             }
             handle_remove_cache_manager(&mut input, &mut gas_used)
         }
         Calls::setCalldataPriceIncrease(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 40, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 40, 0) {
                 return r;
             }
             handle_set_calldata_price_increase(&mut input, &mut gas_used)
         }
         Calls::setCollectTips(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, ARBOS_VERSION_60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, ARBOS_VERSION_60, 0) {
                 return r;
             }
             handle_set_collect_tips(&mut input, &mut gas_used)
@@ -347,7 +352,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // Transaction filtering (all ArbOS >= 60)
         Calls::addTransactionFilterer(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_add_to_set_with_feature_check(
@@ -359,7 +364,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         Calls::removeTransactionFilterer(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_remove_from_set(
@@ -370,7 +375,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         Calls::setTransactionFilteringFrom(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_set_feature_time(
@@ -380,7 +385,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         Calls::setFilteredFundsRecipient(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_set_filtered_funds_recipient(&mut input, &mut gas_used)
@@ -388,13 +393,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // Native token management (all ArbOS >= 41)
         Calls::setNativeTokenManagementFrom(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 41, 0) {
                 return r;
             }
             handle_set_feature_time(&mut input, &mut gas_used, FeatureTimeKind::NativeToken)
         }
         Calls::addNativeTokenOwner(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 41, 0) {
                 return r;
             }
             handle_add_to_set_with_feature_check(
@@ -406,7 +411,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         Calls::removeNativeTokenOwner(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 41, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 41, 0) {
                 return r;
             }
             handle_remove_from_set(
@@ -419,13 +424,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // Gas pricing constraints
         Calls::setGasPricingConstraints(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 50, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
             handle_set_gas_pricing_constraints(&mut input, &mut gas_used)
         }
         Calls::setMultiGasPricingConstraints(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 60, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
             handle_set_multi_gas_pricing_constraints(&mut input, &mut gas_used)
@@ -433,7 +438,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // Chain config (ArbOS >= 11)
         Calls::setChainConfig(_) => {
-            if let Some(r) = crate::check_method_version(gas_limit, 11, 0) {
+            if let Some(r) = crate::check_method_version(ctx, gas_limit, 11, 0) {
                 return r;
             }
             handle_set_chain_config(&mut input, &mut gas_used)
@@ -445,7 +450,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             if output.reverted {
                 Ok(PrecompileOutput::new_reverted(0, output.bytes))
             } else {
-                let arbos_version = crate::get_arbos_version();
+                let arbos_version = ctx.block.arbos_version;
                 if !is_read_only || arbos_version < 11 {
                     emit_owner_acts(&mut input, &selector, data);
                 }
@@ -454,7 +459,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Err(_) => Ok(PrecompileOutput::new_reverted(0, Default::default())),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 // Owner verification

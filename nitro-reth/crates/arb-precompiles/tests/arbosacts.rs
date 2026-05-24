@@ -13,7 +13,7 @@ fn rejects_all_calls_with_caller_not_arbos() {
         let run = PrecompileTest::new()
             .arbos_version(30)
             .arbos_state()
-            .call(&create_arbosacts_precompile(), &calldata(sig, &[]));
+            .call(create_arbosacts_precompile, &calldata(sig, &[]));
         assert!(run.result.is_err(), "{sig} must error");
     }
 }

@@ -4,8 +4,8 @@ use alloy_evm::precompiles::DynPrecompile;
 use arb_precompiles::create_arbdebug_precompile;
 use common::{calldata, PrecompileTest};
 
-fn arbdebug() -> DynPrecompile {
-    create_arbdebug_precompile()
+fn arbdebug(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbdebug_precompile(ctx)
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn debug_methods_revert_in_production() {
         let run = PrecompileTest::new()
             .arbos_version(30)
             .arbos_state()
-            .call(&arbdebug(), &calldata(sig, &[]));
+            .call(arbdebug, &calldata(sig, &[]));
         assert!(
             run.assert_ok().reverted,
             "{sig} must revert when debug precompiles are disabled"

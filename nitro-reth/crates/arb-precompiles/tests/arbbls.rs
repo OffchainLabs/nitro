@@ -8,6 +8,6 @@ fn arbbls_has_no_methods() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&create_arbbls_precompile(), &calldata("anything()", &[]));
+        .call(|_| create_arbbls_precompile(), &calldata("anything()", &[]));
     assert!(run.assert_ok().reverted);
 }

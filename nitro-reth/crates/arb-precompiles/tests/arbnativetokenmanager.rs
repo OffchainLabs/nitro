@@ -11,8 +11,8 @@ use arb_precompiles::{
 };
 use common::{calldata, word_u256, PrecompileTest};
 
-fn arbnativetokenmanager() -> DynPrecompile {
-    create_arbnativetokenmanager_precompile()
+fn arbnativetokenmanager(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbnativetokenmanager_precompile(ctx)
 }
 
 fn owner_member_slot(addr: Address) -> U256 {
@@ -28,7 +28,7 @@ fn owner_member_slot(addr: Address) -> U256 {
 fn precompile_gated_below_v41() {
     let amount = word_u256(U256::from(1_000_000));
     let run = PrecompileTest::new().arbos_version(40).arbos_state().call(
-        &arbnativetokenmanager(),
+        arbnativetokenmanager,
         &calldata("mintNativeToken(uint256)", &[amount]),
     );
     let out = run.assert_ok();
@@ -43,7 +43,7 @@ fn mint_rejects_non_owner_caller() {
         .caller(intruder)
         .arbos_state()
         .call(
-            &arbnativetokenmanager(),
+            arbnativetokenmanager,
             &calldata("mintNativeToken(uint256)", &[word_u256(U256::from(1))]),
         );
     assert!(run.assert_ok().reverted);
@@ -59,7 +59,7 @@ fn mint_succeeds_for_owner_and_increments_balance() {
         .arbos_state()
         .storage(ARBOS_STATE_ADDRESS, owner_member_slot(owner), U256::from(1))
         .call(
-            &arbnativetokenmanager(),
+            arbnativetokenmanager,
             &calldata("mintNativeToken(uint256)", &[word_u256(amount)]),
         );
     run.assert_ok();
@@ -74,7 +74,7 @@ fn burn_rejects_non_owner() {
         .caller(intruder)
         .arbos_state()
         .call(
-            &arbnativetokenmanager(),
+            arbnativetokenmanager,
             &calldata("burnNativeToken(uint256)", &[word_u256(U256::from(1))]),
         );
     assert!(run.assert_ok().reverted);

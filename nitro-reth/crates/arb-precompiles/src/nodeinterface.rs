@@ -2,11 +2,13 @@ use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
-use crate::{arbsys::get_cached_l1_block_number, interfaces::INodeInterface, ArbPrecompileError};
+use crate::{interfaces::INodeInterface, ArbPrecompileError};
 
 /// NodeInterface virtual contract address (0xc8).
 pub const NODE_INTERFACE_ADDRESS: Address = Address::new([
@@ -17,11 +19,13 @@ pub const NODE_INTERFACE_ADDRESS: Address = Address::new([
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
 
-pub fn create_nodeinterface_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("nodeinterface"), handler)
+pub fn create_nodeinterface_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("nodeinterface"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -36,7 +40,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::gasEstimateComponents(_) => handle_gas_estimate_components(&mut input),
         Calls::gasEstimateL1Component(_) => handle_gas_estimate_l1_component(&mut input),
         Calls::nitroGenesisBlock(_) => handle_nitro_genesis_block(&mut input),
-        Calls::blockL1Num(c) => handle_block_l1_num(&input, c.l2BlockNum),
+        Calls::blockL1Num(c) => handle_block_l1_num(&input, ctx, c.l2BlockNum),
         Calls::getL1Confirmations(_) => handle_zero_u64(&input),
         Calls::findBatchContainingBlock(_) => handle_zero_u64(&input),
         Calls::legacyLookupMessageBatchProof(_) => handle_legacy_lookup_empty(&input),
@@ -44,7 +48,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         | Calls::estimateRetryableTicket(_)
         | Calls::constructOutboxProof(_) => Err(ArbPrecompileError::empty_revert(gas_used).into()),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 /// gasEstimateComponents(address,bool,bytes) → (uint64, uint64, uint256, uint256)
@@ -128,8 +132,12 @@ fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResu
     ))
 }
 
-fn handle_block_l1_num(input: &PrecompileInput<'_>, block_num: u64) -> PrecompileResult {
-    let l1_block = get_cached_l1_block_number(block_num).unwrap_or(0);
+fn handle_block_l1_num(
+    input: &PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    block_num: u64,
+) -> PrecompileResult {
+    let l1_block = ctx.block.cached_l1_block_number(block_num).unwrap_or(0);
     Ok(PrecompileOutput::new(
         COPY_GAS.min(input.gas),
         U256::from(l1_block).to_be_bytes::<32>().to_vec().into(),

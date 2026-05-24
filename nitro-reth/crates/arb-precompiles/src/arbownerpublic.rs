@@ -1,9 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{address_set::AddressSetError, arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbOwnerPublic, ArbPrecompileError};
 
@@ -18,11 +20,13 @@ const WARM_SLOAD_GAS: u64 = 100;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
-pub fn create_arbownerpublic_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbownerpublic"), handler)
+pub fn create_arbownerpublic_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbownerpublic"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -37,16 +41,18 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::getNetworkFeeAccount(_) => read_network_fee_account(&mut input),
         Calls::getInfraFeeAccount(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_5,
                 0,
             ) {
                 return r;
             }
-            read_infra_fee_account(&mut input)
+            read_infra_fee_account(&mut input, ctx)
         }
         Calls::getBrotliCompressionLevel(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_20,
                 0,
@@ -57,6 +63,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getScheduledUpgrade(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_20,
                 0,
@@ -69,6 +76,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         Calls::getAllChainOwners(_) => handle_get_all_chain_owners(&mut input),
         Calls::rectifyChainOwner(c) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_11,
                 0,
@@ -79,6 +87,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::isNativeTokenOwner(c) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_41,
                 0,
@@ -89,6 +98,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::isTransactionFilterer(c) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
                 0,
@@ -99,6 +109,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getAllNativeTokenOwners(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_41,
                 0,
@@ -109,6 +120,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getAllTransactionFilterers(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
                 0,
@@ -119,6 +131,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getNativeTokenManagementFrom(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_50,
                 0,
@@ -129,6 +142,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getTransactionFilteringFrom(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
                 0,
@@ -139,6 +153,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getFilteredFundsRecipient(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
                 0,
@@ -149,6 +164,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::isCalldataPriceIncreaseEnabled(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_40,
                 0,
@@ -159,6 +175,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getParentGasFloorPerToken(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_50,
                 0,
@@ -169,6 +186,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getMaxStylusContractFragments(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_60,
                 0,
@@ -179,6 +197,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         Calls::getCollectTips(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_60,
                 0,
@@ -188,7 +207,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_get_collect_tips(&mut input, &mut gas_used)
         }
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
@@ -218,13 +237,16 @@ fn read_network_fee_account(input: &mut PrecompileInput<'_>) -> PrecompileResult
     field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
 }
 
-fn read_infra_fee_account(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_infra_fee_account(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
     let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
         .map_err(ArbPrecompileError::fatal)?;
-    let addr = if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
+    let addr = if ctx.block.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
         arb_state
             .network_fee_account(internals)
             .map_err(ArbPrecompileError::fatal)?

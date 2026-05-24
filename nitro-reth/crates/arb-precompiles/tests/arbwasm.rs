@@ -15,8 +15,8 @@ use revm::state::AccountInfo;
 const ARBOS_V30: u64 = 30;
 const ARBOS_V32: u64 = 32; // StylusChargingFixes
 
-fn arbwasm() -> DynPrecompile {
-    create_arbwasm_precompile()
+fn arbwasm(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbwasm_precompile(ctx)
 }
 
 #[derive(Clone, Copy)]
@@ -103,7 +103,7 @@ fn pre_stylus_arbos_returns_empty_like_unregistered() {
     let run = PrecompileTest::new()
         .arbos_version(29)
         .arbos_state()
-        .call(&arbwasm(), &calldata("stylusVersion()", &[]));
+        .call(arbwasm, &calldata("stylusVersion()", &[]));
     let out = run.assert_ok();
     assert!(out.bytes.is_empty());
 }
@@ -112,7 +112,7 @@ fn pre_stylus_arbos_returns_empty_like_unregistered() {
 fn stylus_version_returns_packed_field() {
     let mut p = default_params();
     p.version = 7;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("stylusVersion()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("stylusVersion()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(7));
 }
 
@@ -120,7 +120,7 @@ fn stylus_version_returns_packed_field() {
 fn ink_price_returns_packed_uint24() {
     let mut p = default_params();
     p.ink_price = 0x123_456; // requires the full 24 bits
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("inkPrice()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("inkPrice()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(0x123_456_u64));
 }
 
@@ -128,7 +128,7 @@ fn ink_price_returns_packed_uint24() {
 fn max_stack_depth_returns_packed_field() {
     let mut p = default_params();
     p.max_stack_depth = 0x1234_5678;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("maxStackDepth()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("maxStackDepth()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(0x1234_5678_u64));
 }
 
@@ -136,7 +136,7 @@ fn max_stack_depth_returns_packed_field() {
 fn free_pages_returns_packed_field() {
     let mut p = default_params();
     p.free_pages = 17;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("freePages()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("freePages()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(17));
 }
 
@@ -144,13 +144,13 @@ fn free_pages_returns_packed_field() {
 fn page_gas_returns_packed_field() {
     let mut p = default_params();
     p.page_gas = 4242;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("pageGas()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("pageGas()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(4242));
 }
 
 #[test]
 fn page_ramp_returns_initial_constant() {
-    let run = test_with(default_params(), ARBOS_V30).call(&arbwasm(), &calldata("pageRamp()", &[]));
+    let run = test_with(default_params(), ARBOS_V30).call(arbwasm, &calldata("pageRamp()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(620_674_314_u64));
 }
 
@@ -158,7 +158,7 @@ fn page_ramp_returns_initial_constant() {
 fn page_limit_returns_packed_field() {
     let mut p = default_params();
     p.page_limit = 256;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("pageLimit()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("pageLimit()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(256));
 }
 
@@ -167,7 +167,7 @@ fn min_init_gas_returns_units_multiplied() {
     let mut p = default_params();
     p.min_init_gas = 7;
     p.min_cached_init_gas = 9;
-    let run = test_with(p, ARBOS_V32).call(&arbwasm(), &calldata("minInitGas()", &[]));
+    let run = test_with(p, ARBOS_V32).call(arbwasm, &calldata("minInitGas()", &[]));
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u64(7 * 128));
     assert_eq!(decode_word(out, 1), common::word_u64(9 * 32));
@@ -179,7 +179,7 @@ fn min_init_gas_reverts_pre_charging_fixes() {
     let gas = 100_000_u64;
     let run = test_with(p, 31)
         .gas(gas)
-        .call(&arbwasm(), &calldata("minInitGas()", &[]));
+        .call(arbwasm, &calldata("minInitGas()", &[]));
     let out = run.assert_ok();
     assert!(out.reverted);
     // OpenArbosState SLOAD (800) + warm Params SLOAD (100) = 900.
@@ -190,7 +190,7 @@ fn min_init_gas_reverts_pre_charging_fixes() {
 fn init_cost_scalar_returns_field_times_percent() {
     let mut p = default_params();
     p.init_cost_scalar = 50;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("initCostScalar()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("initCostScalar()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(50 * 2));
 }
 
@@ -198,7 +198,7 @@ fn init_cost_scalar_returns_field_times_percent() {
 fn expiry_days_returns_packed_field() {
     let mut p = default_params();
     p.expiry_days = 365;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("expiryDays()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("expiryDays()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(365));
 }
 
@@ -206,7 +206,7 @@ fn expiry_days_returns_packed_field() {
 fn keepalive_days_returns_packed_field() {
     let mut p = default_params();
     p.keepalive_days = 31;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("keepaliveDays()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("keepaliveDays()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(31));
 }
 
@@ -214,7 +214,7 @@ fn keepalive_days_returns_packed_field() {
 fn block_cache_size_returns_packed_field() {
     let mut p = default_params();
     p.block_cache_size = 32;
-    let run = test_with(p, ARBOS_V30).call(&arbwasm(), &calldata("blockCacheSize()", &[]));
+    let run = test_with(p, ARBOS_V30).call(arbwasm, &calldata("blockCacheSize()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(32));
 }
 
@@ -238,7 +238,7 @@ fn full_round_trip_packs_and_unpacks_all_fields() {
 
     macro_rules! check {
         ($sig:expr, $expected:expr) => {{
-            let run = test_with(p, ARBOS_V32).call(&arbwasm(), &calldata($sig, &[]));
+            let run = test_with(p, ARBOS_V32).call(arbwasm, &calldata($sig, &[]));
             assert_eq!(
                 decode_u256(run.output()),
                 U256::from($expected),
@@ -258,7 +258,7 @@ fn full_round_trip_packs_and_unpacks_all_fields() {
     check!("blockCacheSize()", 0xc1c2_u64);
     check!("initCostScalar()", 0x81_u64 * 2);
 
-    let run = test_with(p, ARBOS_V32).call(&arbwasm(), &calldata("minInitGas()", &[]));
+    let run = test_with(p, ARBOS_V32).call(arbwasm, &calldata("minInitGas()", &[]));
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u64(0x61_u64 * 128));
     assert_eq!(decode_word(out, 1), common::word_u64(0x71_u64 * 32));
@@ -299,10 +299,8 @@ fn program_data_slot(codehash: B256) -> U256 {
 #[test]
 fn codehash_version_reverts_program_not_activated_for_unset_program() {
     let codehash = B256::from_slice(&[0x42u8; 32]);
-    let run = test_with(default_params(), ARBOS_V32).call(
-        &arbwasm(),
-        &calldata("codehashVersion(bytes32)", &[codehash]),
-    );
+    let run = test_with(default_params(), ARBOS_V32)
+        .call(arbwasm, &calldata("codehashVersion(bytes32)", &[codehash]));
     let out = run.assert_ok();
     assert!(out.reverted);
     let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
@@ -320,10 +318,7 @@ fn codehash_version_reverts_program_needs_upgrade_for_stale_version() {
     let test = test_with(default_params(), ARBOS_V32)
         .block_timestamp(now)
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
-    let run = test.call(
-        &arbwasm(),
-        &calldata("codehashVersion(bytes32)", &[codehash]),
-    );
+    let run = test.call(arbwasm, &calldata("codehashVersion(bytes32)", &[codehash]));
     let out = run.assert_ok();
     assert!(out.reverted, "must revert");
     let sel = alloy_primitives::keccak256(b"ProgramNeedsUpgrade(uint16,uint16)");
@@ -346,10 +341,7 @@ fn codehash_version_reverts_program_expired_after_expiry() {
     let test = test_with(default_params(), ARBOS_V32)
         .block_timestamp(now)
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
-    let run = test.call(
-        &arbwasm(),
-        &calldata("codehashVersion(bytes32)", &[codehash]),
-    );
+    let run = test.call(arbwasm, &calldata("codehashVersion(bytes32)", &[codehash]));
     let out = run.assert_ok();
     assert!(out.reverted);
     let sel = alloy_primitives::keccak256(b"ProgramExpired(uint64)");
@@ -368,10 +360,7 @@ fn codehash_version_returns_active_version_for_fresh_program() {
     let test = test_with(default_params(), ARBOS_V32)
         .block_timestamp(now)
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
-    let run = test.call(
-        &arbwasm(),
-        &calldata("codehashVersion(bytes32)", &[codehash]),
-    );
+    let run = test.call(arbwasm, &calldata("codehashVersion(bytes32)", &[codehash]));
     assert_eq!(
         decode_u256(run.output()),
         U256::from(default_params().version)
@@ -395,7 +384,7 @@ fn program_memory_footprint_returns_packed_value() {
         )
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata(
             "programMemoryFootprint(address)",
             &[word_address(prog_addr)],
@@ -457,7 +446,7 @@ fn program_init_gas_returns_init_and_cached_costs() {
         )
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("programInitGas(address)", &[word_address(prog_addr)]),
     );
     let out = run.output();
@@ -492,10 +481,7 @@ fn codehash_asm_size_returns_kb_times_1024() {
     let test = test_with(default_params(), ARBOS_V32)
         .block_timestamp(now)
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
-    let run = test.call(
-        &arbwasm(),
-        &calldata("codehashAsmSize(bytes32)", &[codehash]),
-    );
+    let run = test.call(arbwasm, &calldata("codehashAsmSize(bytes32)", &[codehash]));
     assert_eq!(decode_u256(run.output()), U256::from(7u64 * 1024));
 }
 
@@ -520,7 +506,7 @@ fn program_time_left_returns_expiry_seconds_minus_age() {
         )
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("programTimeLeft(address)", &[word_address(prog_addr)]),
     );
     let expected = 365u64 * 86_400 - 86_400;
@@ -532,10 +518,8 @@ fn codehash_asm_size_revert_charges_canonical_gas() {
     // Pin against the canonical receipt for tx 0x08b6a928 at Sepolia block
     // 109,336,195: revert must cost SLOAD + WARM + SLOAD + 2*COPY = 1706.
     let codehash = B256::from_slice(&[0xeeu8; 32]);
-    let run = test_with(default_params(), ARBOS_V32).call(
-        &arbwasm(),
-        &calldata("codehashAsmSize(bytes32)", &[codehash]),
-    );
+    let run = test_with(default_params(), ARBOS_V32)
+        .call(arbwasm, &calldata("codehashAsmSize(bytes32)", &[codehash]));
     let out = run.assert_ok();
     assert!(out.reverted);
     let sel = alloy_primitives::keccak256(b"ProgramNotActivated()");
@@ -556,7 +540,7 @@ fn program_version_revert_charges_canonical_gas() {
             },
         )
         .call(
-            &arbwasm(),
+            arbwasm,
             &calldata("programVersion(address)", &[word_address(prog_addr)]),
         );
     let out = run.assert_ok();
@@ -584,7 +568,7 @@ fn program_version_returns_program_version_for_fresh_program() {
         )
         .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("programVersion(address)", &[word_address(prog_addr)]),
     );
     assert_eq!(
@@ -650,7 +634,6 @@ fn keepalive_test_setup(codehash: B256, now: u64) -> PrecompileTest {
 fn keepalive_inner_call_with_value_passes() {
     // Reset the thread-local that `build.rs` would normally manage; in
     // unit tests it stays set across runs in the same process.
-    arb_precompiles::set_stylus_call_value(U256::ZERO);
 
     let codehash = B256::from_slice(&[0xdeu8; 32]);
     let now = 1_700_000_000_u64;
@@ -659,7 +642,7 @@ fn keepalive_inner_call_with_value_passes() {
     let test = keepalive_test_setup(codehash, now).value(U256::from(10u128).pow(U256::from(18u64)));
 
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("codehashKeepalive(bytes32)", &[codehash]),
     );
 
@@ -685,14 +668,12 @@ fn keepalive_inner_call_with_value_passes() {
 
 #[test]
 fn keepalive_inner_call_with_zero_value_still_reverts() {
-    arb_precompiles::set_stylus_call_value(U256::ZERO);
-
     let codehash = B256::from_slice(&[0xdfu8; 32]);
     let now = 1_700_000_000_u64;
     let test = keepalive_test_setup(codehash, now).value(U256::ZERO);
 
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("codehashKeepalive(bytes32)", &[codehash]),
     );
 
@@ -711,7 +692,6 @@ fn keepalive_inner_call_value_passes_at_arbos_v40() {
     // Sepolia at block 169,854,826 is at ArbOS v40 (Prague-era), same as
     // 149,889,087 and 152,429,039. Run the same check at that version to
     // confirm the fix is not version-gated.
-    arb_precompiles::set_stylus_call_value(U256::ZERO);
 
     let codehash = B256::from_slice(&[0xe0u8; 32]);
     let now = 1_700_000_000_u64;
@@ -719,7 +699,7 @@ fn keepalive_inner_call_value_passes_at_arbos_v40() {
         keepalive_test_setup_at(codehash, now, 40).value(U256::from(10u128).pow(U256::from(18u64)));
 
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("codehashKeepalive(bytes32)", &[codehash]),
     );
 
@@ -742,7 +722,6 @@ fn keepalive_inner_call_value_passes_at_arbos_v40() {
 fn keepalive_inner_call_value_passes_at_arbos_v50() {
     // Belt-and-braces: also exercise the Dia-era v50 (next upgrade after
     // v40). Same expectation: the fix is structural, not version-gated.
-    arb_precompiles::set_stylus_call_value(U256::ZERO);
 
     let codehash = B256::from_slice(&[0xe1u8; 32]);
     let now = 1_700_000_000_u64;
@@ -750,7 +729,7 @@ fn keepalive_inner_call_value_passes_at_arbos_v50() {
         keepalive_test_setup_at(codehash, now, 50).value(U256::from(10u128).pow(U256::from(18u64)));
 
     let run = test.call(
-        &arbwasm(),
+        arbwasm,
         &calldata("codehashKeepalive(bytes32)", &[codehash]),
     );
 

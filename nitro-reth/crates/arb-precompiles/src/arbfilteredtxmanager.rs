@@ -1,9 +1,11 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::{ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS};
 use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbFilteredTxManager, ArbPrecompileError};
 
@@ -17,12 +19,15 @@ const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
-pub fn create_arbfilteredtxmanager_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbfilteredtxmanager"), handler)
+pub fn create_arbfilteredtxmanager_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbfilteredtxmanager"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     if let Some(result) = crate::check_precompile_version(
+        ctx,
         arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
     ) {
         return result;

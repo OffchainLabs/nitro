@@ -5,8 +5,8 @@ use alloy_primitives::U256;
 use arb_precompiles::create_arbstatistics_precompile;
 use common::{calldata, decode_word, PrecompileTest};
 
-fn arbstatistics() -> DynPrecompile {
-    create_arbstatistics_precompile()
+fn arbstatistics(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbstatistics_precompile(ctx)
 }
 
 const SLOAD_GAS: u64 = 800;
@@ -18,7 +18,7 @@ fn get_stats_returns_block_number_and_zeros() {
         .arbos_version(30)
         .block_number(7_654_321)
         .arbos_state()
-        .call(&arbstatistics(), &calldata("getStats()", &[]));
+        .call(arbstatistics, &calldata("getStats()", &[]));
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u64(7_654_321));
     for i in 1..6 {
@@ -31,6 +31,6 @@ fn get_stats_charges_one_sload_and_six_copy_words() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&arbstatistics(), &calldata("getStats()", &[]));
+        .call(arbstatistics, &calldata("getStats()", &[]));
     assert_eq!(run.gas_used(), SLOAD_GAS + 6 * COPY_GAS);
 }

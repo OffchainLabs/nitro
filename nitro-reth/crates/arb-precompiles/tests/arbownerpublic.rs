@@ -18,8 +18,8 @@ const UPGRADE_VERSION_OFFSET: u64 = 1;
 const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
 const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
-fn arbownerpublic() -> DynPrecompile {
-    create_arbownerpublic_precompile()
+fn arbownerpublic(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbownerpublic_precompile(ctx)
 }
 
 fn chain_owner_member_slot(owner: Address) -> U256 {
@@ -45,7 +45,7 @@ fn get_network_fee_account_returns_root_field() {
             root_slot(NETWORK_FEE_ACCOUNT_OFFSET),
             val,
         )
-        .call(&arbownerpublic(), &calldata("getNetworkFeeAccount()", &[]));
+        .call(arbownerpublic, &calldata("getNetworkFeeAccount()", &[]));
     assert_eq!(decode_address(run.output()), fee);
 }
 
@@ -59,7 +59,7 @@ fn get_infra_fee_account_returns_root_field_at_v6() {
             root_slot(INFRA_FEE_ACCOUNT_OFFSET),
             val,
         )
-        .call(&arbownerpublic(), &calldata("getInfraFeeAccount()", &[]));
+        .call(arbownerpublic, &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(decode_address(run.output()), fee);
 }
 
@@ -74,7 +74,7 @@ fn get_infra_fee_account_falls_back_to_network_fee_account_below_v6() {
             root_slot(NETWORK_FEE_ACCOUNT_OFFSET),
             U256::from_be_slice(network.as_slice()),
         )
-        .call(&arbownerpublic(), &calldata("getInfraFeeAccount()", &[]));
+        .call(arbownerpublic, &calldata("getInfraFeeAccount()", &[]));
     assert_eq!(decode_address(run.output()), network);
 }
 
@@ -87,7 +87,7 @@ fn get_brotli_compression_level_at_v20() {
             U256::from(11),
         )
         .call(
-            &arbownerpublic(),
+            arbownerpublic,
             &calldata("getBrotliCompressionLevel()", &[]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(11));
@@ -96,7 +96,7 @@ fn get_brotli_compression_level_at_v20() {
 #[test]
 fn get_brotli_compression_level_at_v20_returns_zero_when_unset() {
     let run = fixture(20).call(
-        &arbownerpublic(),
+        arbownerpublic,
         &calldata("getBrotliCompressionLevel()", &[]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -115,7 +115,7 @@ fn get_scheduled_upgrade_at_v20_returns_pair() {
             root_slot(UPGRADE_TIMESTAMP_OFFSET),
             U256::from(1_800_000_000_u64),
         )
-        .call(&arbownerpublic(), &calldata("getScheduledUpgrade()", &[]));
+        .call(arbownerpublic, &calldata("getScheduledUpgrade()", &[]));
     let out = run.output();
     assert_eq!(decode_word(out, 0), common::word_u64(60));
     assert_eq!(decode_word(out, 1), common::word_u64(1_800_000_000));
@@ -131,7 +131,7 @@ fn is_chain_owner_returns_true_for_member() {
             U256::from(1),
         )
         .call(
-            &arbownerpublic(),
+            arbownerpublic,
             &calldata("isChainOwner(address)", &[word_address(owner)]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(1));
@@ -141,7 +141,7 @@ fn is_chain_owner_returns_true_for_member() {
 fn is_chain_owner_returns_false_for_non_member() {
     let stranger: Address = address!("00000000000000000000000000000000000000bb");
     let run = fixture(30).call(
-        &arbownerpublic(),
+        arbownerpublic,
         &calldata("isChainOwner(address)", &[word_address(stranger)]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -151,7 +151,7 @@ fn is_chain_owner_returns_false_for_non_member() {
 fn rectify_chain_owner_reverts_when_caller_not_owner_at_v11() {
     let target: Address = address!("00000000000000000000000000000000000000cc");
     let run = fixture(11).call(
-        &arbownerpublic(),
+        arbownerpublic,
         &calldata("rectifyChainOwner(address)", &[word_address(target)]),
     );
     assert!(
@@ -169,7 +169,7 @@ fn get_parent_gas_floor_per_token_at_v50() {
             U256::from(4),
         )
         .call(
-            &arbownerpublic(),
+            arbownerpublic,
             &calldata("getParentGasFloorPerToken()", &[]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(4));
@@ -178,7 +178,7 @@ fn get_parent_gas_floor_per_token_at_v50() {
 #[test]
 fn get_parent_gas_floor_per_token_at_v50_returns_zero_when_unset() {
     let run = fixture(50).call(
-        &arbownerpublic(),
+        arbownerpublic,
         &calldata("getParentGasFloorPerToken()", &[]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -188,7 +188,7 @@ fn get_parent_gas_floor_per_token_at_v50_returns_zero_when_unset() {
 fn is_native_token_owner_at_v41_returns_false_when_unset() {
     let target: Address = address!("00000000000000000000000000000000000000dd");
     let run = fixture(41).call(
-        &arbownerpublic(),
+        arbownerpublic,
         &calldata("isNativeTokenOwner(address)", &[word_address(target)]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -197,7 +197,7 @@ fn is_native_token_owner_at_v41_returns_false_when_unset() {
 #[test]
 fn get_max_stylus_contract_fragments_at_v60_returns_initial_default_when_unset() {
     let run = fixture(60).call(
-        &arbownerpublic(),
+        arbownerpublic,
         &calldata("getMaxStylusContractFragments()", &[]),
     );
     assert_eq!(decode_u256(run.output()), U256::from(4));

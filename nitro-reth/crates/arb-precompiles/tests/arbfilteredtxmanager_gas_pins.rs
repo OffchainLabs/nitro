@@ -14,8 +14,8 @@ use common::PrecompileTest;
 
 const SLOAD: u64 = 800;
 
-fn arbftm() -> DynPrecompile {
-    create_arbfilteredtxmanager_precompile()
+fn arbftm(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbfilteredtxmanager_precompile(ctx)
 }
 
 fn fixture(v: u64) -> PrecompileTest {
@@ -32,7 +32,7 @@ fn b32_calldata(name: &str, hash: B256) -> alloy_primitives::Bytes {
 #[test]
 fn below_v60_dispatch_returns_noop_zero_gas() {
     let run = fixture(59).gas(50_000).call(
-        &arbftm(),
+        arbftm,
         &b32_calldata("isTransactionFiltered(bytes32)", B256::ZERO),
     );
     let out = run.assert_ok();
@@ -45,7 +45,7 @@ fn is_transaction_filtered_non_filterer_caller_pays_wrapper_v60_gas_pin() {
     // Caller is not a transaction filterer: wrapper overrides gas to
     // 2 * SLOAD (its is-filterer probe) = 1600. Inner output is preserved.
     let run = fixture(60).gas(50_000).call(
-        &arbftm(),
+        arbftm,
         &b32_calldata("isTransactionFiltered(bytes32)", B256::ZERO),
     );
     let out = run.assert_ok();
@@ -58,7 +58,7 @@ fn add_filtered_transaction_non_filterer_caller_v60_gas_pin() {
     // Inner reverts (not a filterer) → wrapper converts that to
     // Ok(reverted, wrapper_gas).
     let run = fixture(60).gas(50_000).call(
-        &arbftm(),
+        arbftm,
         &b32_calldata("addFilteredTransaction(bytes32)", B256::ZERO),
     );
     let out = run.assert_ok();
@@ -69,7 +69,7 @@ fn add_filtered_transaction_non_filterer_caller_v60_gas_pin() {
 #[test]
 fn delete_filtered_transaction_non_filterer_caller_v60_gas_pin() {
     let run = fixture(60).gas(50_000).call(
-        &arbftm(),
+        arbftm,
         &b32_calldata("deleteFilteredTransaction(bytes32)", B256::ZERO),
     );
     let out = run.assert_ok();
@@ -80,7 +80,7 @@ fn delete_filtered_transaction_non_filterer_caller_v60_gas_pin() {
 #[test]
 fn invalid_calldata_burns_all_gas_v60() {
     let run = fixture(60).gas(50_000).call(
-        &arbftm(),
+        arbftm,
         &alloy_primitives::Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
     );
     let out = run.assert_ok();

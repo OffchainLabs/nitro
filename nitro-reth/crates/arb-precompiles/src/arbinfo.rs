@@ -1,7 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbInfo, ArbPrecompileError};
 
@@ -14,11 +16,13 @@ pub const ARBINFO_ADDRESS: Address = Address::new([
 const COPY_GAS: u64 = 3;
 const SLOAD_GAS: u64 = 800;
 
-pub fn create_arbinfo_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbinfo"), handler)
+pub fn create_arbinfo_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbinfo"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -33,7 +37,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         ArbInfoCalls::getBalance(c) => handle_get_balance(&mut input, c.account),
         ArbInfoCalls::getCode(c) => handle_get_code(&mut input, c.account),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 fn handle_get_balance(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {

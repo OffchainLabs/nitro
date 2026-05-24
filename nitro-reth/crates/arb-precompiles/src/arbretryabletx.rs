@@ -1,7 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
-use arb_context::{ArbPrecompileCtx, TxCtx};
+use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::{
     arbos_state::arbos_from_input,
@@ -9,12 +9,9 @@ use arbos::{
     retryables::{RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE},
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbRetryableTx, ArbPrecompileError};
-
-fn active_tx() -> TxCtx {
-    arb_context::with_active(ArbPrecompileCtx::tx_snapshot).unwrap_or_default()
-}
 
 /// ArbRetryableTx precompile address (0x6e).
 pub const ARBRETRYABLETX_ADDRESS: Address = Address::new([
@@ -55,11 +52,13 @@ pub fn canceled_topic() -> B256 {
     IArbRetryableTx::Canceled::SIGNATURE_HASH
 }
 
-pub fn create_arbretryabletx_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbretryabletx"), handler)
+pub fn create_arbretryabletx_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbretryabletx"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -79,7 +78,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         Calls::getCurrentRedeemer(_) => {
-            let redeemer = active_tx().redeemer_word();
+            let redeemer = ctx.tx_snapshot().redeemer_word();
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 redeemer.to_be_bytes::<32>().to_vec().into(),
@@ -90,12 +89,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             return crate::sol_error_revert(&mut gas_used, data, gas_limit);
         }
         Calls::getTimeout(c) => handle_get_timeout(&mut input, &mut gas_used, c.ticketId),
-        Calls::getBeneficiary(c) => handle_get_beneficiary(&mut input, &mut gas_used, c.ticketId),
-        Calls::redeem(c) => handle_redeem(&mut input, &mut gas_used, c.ticketId),
-        Calls::keepalive(c) => handle_keepalive(&mut input, &mut gas_used, c.ticketId),
-        Calls::cancel(c) => handle_cancel(&mut input, &mut gas_used, c.ticketId),
+        Calls::getBeneficiary(c) => {
+            handle_get_beneficiary(&mut input, ctx, &mut gas_used, c.ticketId)
+        }
+        Calls::redeem(c) => handle_redeem(&mut input, ctx, &mut gas_used, c.ticketId),
+        Calls::keepalive(c) => handle_keepalive(&mut input, ctx, &mut gas_used, c.ticketId),
+        Calls::cancel(c) => handle_cancel(&mut input, ctx, &mut gas_used, c.ticketId),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
@@ -126,8 +127,12 @@ fn map_retryable_error(err: RetryableError, gas_used: u64) -> ArbPrecompileError
 
 /// Pre-v3 burns the remaining gas; v3+ emits the `NoTicketWithIDError`
 /// sol-error.
-fn not_found_revert(gas_used: &mut u64, gas_limit: u64) -> PrecompileResult {
-    if crate::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_3 {
+fn not_found_revert(
+    ctx: &ArbPrecompileCtx,
+    gas_used: &mut u64,
+    gas_limit: u64,
+) -> PrecompileResult {
+    if ctx.block.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_3 {
         return crate::burn_all_revert(gas_limit);
     }
     let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
@@ -171,6 +176,7 @@ fn handle_get_timeout(
 
 fn handle_get_beneficiary(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     ticket_id: B256,
 ) -> PrecompileResult {
@@ -189,7 +195,7 @@ fn handle_get_beneficiary(
         Ok(addr) => addr,
         Err(RetryableError::NoTicketWithId) => {
             crate::charge_precompile_gas(gas_used, SLOAD_GAS);
-            return not_found_revert(gas_used, gas_limit);
+            return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
@@ -205,6 +211,7 @@ fn handle_get_beneficiary(
 
 fn handle_redeem(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     ticket_id: B256,
 ) -> PrecompileResult {
@@ -213,7 +220,7 @@ fn handle_redeem(
     let now = current_timestamp(input);
 
     {
-        let current_retryable = active_tx().retryable_id;
+        let current_retryable = ctx.tx_snapshot().retryable_id;
         if !current_retryable.is_zero() && current_retryable == ticket_id {
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
@@ -255,7 +262,7 @@ fn handle_redeem(
         Ok(n) => n,
         Err(RetryableError::NoTicketWithId) => {
             crate::charge_precompile_gas(gas_used, SLOAD_GAS);
-            return not_found_revert(gas_used, gas_limit);
+            return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
@@ -269,7 +276,7 @@ fn handle_redeem(
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(hash_input);
 
-    let backlog_reservation = compute_backlog_update_cost(input, gas_used)?;
+    let backlog_reservation = compute_backlog_update_cost(input, ctx, gas_used)?;
 
     let gas_used_so_far = *gas_used;
     let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
@@ -279,7 +286,7 @@ fn handle_redeem(
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
 
-    let actual_backlog_cost = compute_actual_backlog_cost(input, gas_to_donate)?;
+    let actual_backlog_cost = compute_actual_backlog_cost(input, ctx, gas_to_donate)?;
 
     let max_refund = U256::MAX;
     let submission_fee_refund = U256::ZERO;
@@ -317,6 +324,7 @@ fn handle_redeem(
 
 fn handle_keepalive(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     ticket_id: B256,
 ) -> PrecompileResult {
@@ -338,7 +346,7 @@ fn handle_keepalive(
         Ok(t) => t,
         Err(RetryableError::NoTicketWithId) => {
             crate::charge_precompile_gas(gas_used, SLOAD_GAS);
-            return not_found_revert(gas_used, gas_limit);
+            return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(RetryableError::TimeoutTooFarFuture) => {
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
@@ -374,6 +382,7 @@ fn handle_keepalive(
 
 fn handle_cancel(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
     ticket_id: B256,
 ) -> PrecompileResult {
@@ -391,7 +400,7 @@ fn handle_cancel(
         Ok(size) => size,
         Err(RetryableError::NoTicketWithId) => {
             crate::charge_precompile_gas(gas_used, SLOAD_GAS);
-            return not_found_revert(gas_used, gas_limit);
+            return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(RetryableError::NotBeneficiary) => {
             crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS);
@@ -423,10 +432,11 @@ fn handle_cancel(
 
 fn compute_backlog_update_cost(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_used: &mut u64,
 ) -> Result<u64, ArbPrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
-    let arbos_version = crate::get_arbos_version();
+    let arbos_version = ctx.block.arbos_version;
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
         return Ok(arbos::l2_pricing::MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
     }
@@ -450,10 +460,11 @@ fn compute_backlog_update_cost(
 
 fn compute_actual_backlog_cost(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     gas_to_donate: u64,
 ) -> Result<u64, ArbPrecompileError> {
     use arb_chainspec::arbos_version as arb_ver;
-    let arbos_version = crate::get_arbos_version();
+    let arbos_version = ctx.block.arbos_version;
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS {
         return Ok(arbos::l2_pricing::MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
     }
@@ -478,7 +489,7 @@ fn compute_actual_backlog_cost(
         }
     }
     Ok(legacy_actual_backlog_cost(
-        crate::get_current_gas_backlog(),
+        ctx.block.current_gas_backlog(),
         gas_to_donate,
     ))
 }

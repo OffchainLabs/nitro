@@ -1,7 +1,9 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
 use crate::{interfaces::IArbFunctionTable, ArbPrecompileError};
 
@@ -13,11 +15,13 @@ pub const ARBFUNCTIONTABLE_ADDRESS: Address = Address::new([
 
 const COPY_GAS: u64 = 3;
 
-pub fn create_arbfunctiontable_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbfunctiontable"), handler)
+pub fn create_arbfunctiontable_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbfunctiontable"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     crate::init_precompile_gas(&mut gas_used, input.data.len());
@@ -46,5 +50,5 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
         // accumulated_gas (OpenArbosState + argsCost) on the revert path.
         ArbFunctionTableCalls::get(_) => Err(ArbPrecompileError::empty_revert(gas_used).into()),
     };
-    crate::gas_check(gas_limit, gas_used, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }

@@ -11,8 +11,8 @@ const SLOAD: u64 = 800;
 const SSTORE_SET: u64 = 20_000;
 const COPY: u64 = 3;
 
-fn arbaddresstable() -> DynPrecompile {
-    create_arbaddresstable_precompile()
+fn arbaddresstable(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbaddresstable_precompile(ctx)
 }
 
 fn fixture() -> PrecompileTest {
@@ -22,7 +22,7 @@ fn fixture() -> PrecompileTest {
 #[test]
 fn size_v30_gas_pin() {
     // 2 * SLOAD + COPY = 1603.
-    let run = fixture().call(&arbaddresstable(), &calldata("size()", &[]));
+    let run = fixture().call(arbaddresstable, &calldata("size()", &[]));
     assert_eq!(run.gas_used(), 2 * SLOAD + COPY);
 }
 
@@ -31,7 +31,7 @@ fn address_exists_v30_gas_pin() {
     // 2 * SLOAD + 2 * COPY = 1606.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("addressExists(address)", &[word_address(addr)]),
     );
     assert_eq!(run.gas_used(), 2 * SLOAD + 2 * COPY);
@@ -43,7 +43,7 @@ fn lookup_unknown_reverts_v30_gas_pin() {
     // init_precompile_gas charged 800 + 1*3 = 803 before the body ran.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture().gas(50_000).call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("lookup(address)", &[word_address(addr)]),
     );
     let out = run.assert_ok();
@@ -55,7 +55,7 @@ fn lookup_unknown_reverts_v30_gas_pin() {
 fn lookup_index_unknown_reverts_v30_gas_pin() {
     // Unknown index → empty_revert with init_precompile_gas accumulated.
     let run = fixture().gas(50_000).call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("lookupIndex(uint256)", &[word_u256(U256::from(0u64))]),
     );
     let out = run.assert_ok();
@@ -68,7 +68,7 @@ fn register_new_address_v30_gas_pin() {
     // 803 boilerplate + (2*SLOAD + 3*SSTORE_SET + COPY) = 803 + 61_603 = 62_406.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("register(address)", &[word_address(addr)]),
     );
     assert_eq!(
@@ -84,7 +84,7 @@ fn compress_unregistered_v30_gas_pin() {
     // body charges 2*SLOAD + COPY + 3*COPY = 1612.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("compress(address)", &[word_address(addr)]),
     );
     assert_eq!(run.gas_used(), 2 * SLOAD + COPY + 3 * COPY);
@@ -106,7 +106,7 @@ fn decompress_raw_address_v30_gas_pin() {
         *b = (i + 1) as u8;
     }
     buf.extend_from_slice(&raw);
-    let run = fixture().call(&arbaddresstable(), &alloy_primitives::Bytes::from(buf));
+    let run = fixture().call(arbaddresstable, &alloy_primitives::Bytes::from(buf));
     // args=4 words (offset, offset_arg, length, 32-byte raw padded buf) → 128 bytes.
     // body_sloads = 1 (raw 21-byte). resultCost = (4+2)*3 = 18. Plus 1*SLOAD = 800.
     assert_eq!(run.gas_used(), SLOAD + (4 + 2) * COPY);
