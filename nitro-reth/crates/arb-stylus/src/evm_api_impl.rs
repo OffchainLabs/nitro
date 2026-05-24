@@ -109,7 +109,14 @@ impl<DB: Database> JournalAccess for revm::Journal<DB> {
             .inner
             .load_account(&mut self.database, addr)
             .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
-        Ok((result.data.info.code_hash, result.is_cold))
+        let is_cold = result.is_cold;
+        // EIP-1052: an empty account's code hash is zero, not `keccak("")`.
+        let hash = if result.data.info.is_empty() {
+            B256::ZERO
+        } else {
+            result.data.info.code_hash
+        };
+        Ok((hash, is_cold))
     }
 
     fn address_in_access_list(&self, addr: Address) -> bool {
