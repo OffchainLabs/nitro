@@ -2,13 +2,13 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbwasmcache_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CACHE_MANAGERS_KEY,
-        CHAIN_OWNER_SUBSPACE, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
-        ROOT_STORAGE_KEY,
+use arb_precompiles::create_arbwasmcache_precompile;
+use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot, map_slot_b256, CACHE_MANAGERS_KEY, CHAIN_OWNER_SUBSPACE,
+        PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
+    ARBOS_STATE_ADDRESS,
 };
 use common::{calldata, decode_u256, word_address, PrecompileTest};
 use revm::state::AccountInfo;

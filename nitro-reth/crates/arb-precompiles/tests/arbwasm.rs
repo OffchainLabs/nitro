@@ -2,12 +2,13 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, B256, U256};
-use arb_precompiles::{
-    create_arbwasm_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
-        PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+use arb_precompiles::create_arbwasm_precompile;
+use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot, map_slot_b256, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY,
+        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
+    ARBOS_STATE_ADDRESS,
 };
 use common::{calldata, decode_u256, decode_word, word_address, PrecompileTest};
 use revm::state::AccountInfo;
@@ -591,11 +592,9 @@ fn program_version_returns_program_version_for_fresh_program() {
 // then mirrors Nitro's `payActivationDataFee` for the success path. These
 // tests pin the symptom in both directions.
 
-const KEEPALIVE_DATA_PRICER_OFFSET: u8 = 3;
-
 fn data_pricer_slot(offset: u64) -> U256 {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let pricer_key = derive_subspace_key(programs_key.as_slice(), &[KEEPALIVE_DATA_PRICER_OFFSET]);
+    let pricer_key = derive_subspace_key(programs_key.as_slice(), arbos::programs::DATA_PRICER_KEY);
     map_slot(pricer_key.as_slice(), offset)
 }
 

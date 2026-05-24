@@ -16,7 +16,10 @@ use revm::{
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use tiny_keccak::{Hasher, Keccak};
 
-use arb_precompiles::storage_slot::{root_slot, ARBOS_STATE_ADDRESS, VERSION_OFFSET};
+use arb_storage::{
+    layout::{root_slot, VERSION_OFFSET},
+    ARBOS_STATE_ADDRESS,
+};
 
 /// Serialises tests that share global state in arb-precompiles.
 fn test_lock() -> MutexGuard<'static, ()> {

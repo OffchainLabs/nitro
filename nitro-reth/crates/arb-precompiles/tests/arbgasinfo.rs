@@ -3,9 +3,30 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, U256};
 use arb_context::ArbPrecompileCtx;
-use arb_precompiles::{
-    create_arbgasinfo_precompile,
-    storage_slot::{subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
+use arb_precompiles::create_arbgasinfo_precompile;
+use arb_storage::{
+    layout::{subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
+    ARBOS_STATE_ADDRESS,
+};
+use arbos::{
+    l1_pricing::{
+        AMORTIZED_COST_CAP_BIPS_OFFSET as L1_AMORTIZED_COST_CAP_BIPS,
+        EQUILIBRATION_UNITS_OFFSET as L1_EQUILIBRATION_UNITS,
+        FUNDS_DUE_FOR_REWARDS_OFFSET as L1_FUNDS_DUE_FOR_REWARDS, INERTIA_OFFSET as L1_INERTIA,
+        L1_FEES_AVAILABLE_OFFSET as L1_FEES_AVAILABLE, LAST_SURPLUS_OFFSET as L1_LAST_SURPLUS,
+        LAST_UPDATE_TIME_OFFSET as L1_LAST_UPDATE_TIME, PAY_REWARDS_TO_OFFSET as L1_PAY_REWARDS_TO,
+        PER_BATCH_GAS_COST_OFFSET as L1_PER_BATCH_GAS_COST,
+        PER_UNIT_REWARD_OFFSET as L1_PER_UNIT_REWARD, PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,
+        TOTAL_FUNDS_DUE_OFFSET, UNITS_SINCE_OFFSET as L1_UNITS_SINCE,
+    },
+    l2_pricing::{
+        BACKLOG_TOLERANCE_OFFSET as L2_BACKLOG_TOLERANCE, GAS_BACKLOG_OFFSET as L2_GAS_BACKLOG,
+        MIN_BASE_FEE_WEI_OFFSET as L2_MIN_BASE_FEE,
+        PER_BLOCK_GAS_LIMIT_OFFSET as L2_PER_BLOCK_GAS_LIMIT,
+        PER_TX_GAS_LIMIT_OFFSET as L2_PER_TX_GAS_LIMIT,
+        PRICING_INERTIA_OFFSET as L2_PRICING_INERTIA,
+        SPEED_LIMIT_PER_SECOND_OFFSET as L2_SPEED_LIMIT,
+    },
 };
 use common::{calldata, decode_address, decode_u256, decode_word, PrecompileTest};
 use std::sync::Arc;
@@ -17,27 +38,6 @@ fn arbgasinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompi
 fn make_ctx() -> Arc<ArbPrecompileCtx> {
     Arc::new(ArbPrecompileCtx::default())
 }
-
-const L2_SPEED_LIMIT: u64 = 0;
-const L2_PER_BLOCK_GAS_LIMIT: u64 = 1;
-const L2_MIN_BASE_FEE: u64 = 3;
-const L2_GAS_BACKLOG: u64 = 4;
-const L2_PRICING_INERTIA: u64 = 5;
-const L2_BACKLOG_TOLERANCE: u64 = 6;
-const L2_PER_TX_GAS_LIMIT: u64 = 7;
-
-const L1_PAY_REWARDS_TO: u64 = 0;
-const L1_EQUILIBRATION_UNITS: u64 = 1;
-const L1_INERTIA: u64 = 2;
-const L1_PER_UNIT_REWARD: u64 = 3;
-const L1_LAST_UPDATE_TIME: u64 = 4;
-const L1_FUNDS_DUE_FOR_REWARDS: u64 = 5;
-const L1_UNITS_SINCE: u64 = 6;
-const L1_PRICE_PER_UNIT: u64 = 7;
-const L1_LAST_SURPLUS: u64 = 8;
-const L1_PER_BATCH_GAS_COST: u64 = 9;
-const L1_AMORTIZED_COST_CAP_BIPS: u64 = 10;
-const L1_FEES_AVAILABLE: u64 = 11;
 
 fn fixture(arbos_version: u64) -> PrecompileTest {
     PrecompileTest::new()
@@ -478,19 +478,14 @@ fn get_minimum_gas_price_charges_two_sloads_and_one_copy_word() {
 
 // ── L1 pricing surplus ─────────────────────────────────────────────────
 
-const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
-const TOTAL_FUNDS_DUE_OFFSET: u64 = 0;
-
 const L1_PRICER_FUNDS_POOL: Address = address!("a4b05fffffffffffffffffffffffffffffffffff");
 
 fn batch_poster_total_funds_due_slot() -> U256 {
-    use arb_precompiles::storage_slot::derive_subspace_key;
-    let l1_key = derive_subspace_key(
-        arb_precompiles::storage_slot::ROOT_STORAGE_KEY,
-        L1_PRICING_SUBSPACE,
-    );
+    use arb_storage::layout::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};
+    use arbos::l1_pricing::BATCH_POSTER_TABLE_KEY;
+    let l1_key = derive_subspace_key(ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
     let bpt_key = derive_subspace_key(l1_key.as_slice(), BATCH_POSTER_TABLE_KEY);
-    arb_precompiles::storage_slot::map_slot(bpt_key.as_slice(), TOTAL_FUNDS_DUE_OFFSET)
+    map_slot(bpt_key.as_slice(), TOTAL_FUNDS_DUE_OFFSET)
 }
 
 #[test]

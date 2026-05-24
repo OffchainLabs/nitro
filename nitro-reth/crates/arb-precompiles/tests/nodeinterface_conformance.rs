@@ -12,11 +12,10 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{B256, U256};
-use arb_precompiles::{
-    create_nodeinterface_precompile,
-    storage_slot::{
-        root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
+use arb_precompiles::create_nodeinterface_precompile;
+use arb_storage::{
+    layout::{root_slot, subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
+    ARBOS_STATE_ADDRESS,
 };
 use arbos::{
     arbos_state::GENESIS_BLOCK_NUM_OFFSET, l1_pricing::PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,

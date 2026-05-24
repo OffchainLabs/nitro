@@ -19,14 +19,14 @@ use arb_storage::{
 };
 
 // Storage offsets for L2 pricing state.
-const SPEED_LIMIT_PER_SECOND_OFFSET: u64 = 0;
-const PER_BLOCK_GAS_LIMIT_OFFSET: u64 = 1;
+pub const SPEED_LIMIT_PER_SECOND_OFFSET: u64 = 0;
+pub const PER_BLOCK_GAS_LIMIT_OFFSET: u64 = 1;
 pub const BASE_FEE_WEI_OFFSET: u64 = 2;
-const MIN_BASE_FEE_WEI_OFFSET: u64 = 3;
-const GAS_BACKLOG_OFFSET: u64 = 4;
-const PRICING_INERTIA_OFFSET: u64 = 5;
-const BACKLOG_TOLERANCE_OFFSET: u64 = 6;
-const PER_TX_GAS_LIMIT_OFFSET: u64 = 7;
+pub const MIN_BASE_FEE_WEI_OFFSET: u64 = 3;
+pub const GAS_BACKLOG_OFFSET: u64 = 4;
+pub const PRICING_INERTIA_OFFSET: u64 = 5;
+pub const BACKLOG_TOLERANCE_OFFSET: u64 = 6;
+pub const PER_TX_GAS_LIMIT_OFFSET: u64 = 7;
 
 // Subspace keys for L2 pricing partitions.
 const GAS_CONSTRAINTS_KEY: &[u8] = &[0];

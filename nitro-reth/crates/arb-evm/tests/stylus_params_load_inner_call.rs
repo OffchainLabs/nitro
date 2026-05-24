@@ -7,11 +7,10 @@
 //! which would mis-cost Stylus sub-calls once the executor reached ArbOS v40+
 //! on a Sepolia-style upgrade path.
 
-use arb_precompiles::storage_slot::{
-    derive_subspace_key, ARBOS_STATE_ADDRESS, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE,
-    ROOT_STORAGE_KEY,
+use arb_storage::{
+    layout::{derive_subspace_key, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY},
+    Detached, Storage, ARBOS_STATE_ADDRESS,
 };
-use arb_storage::{Detached, Storage};
 use arb_test_utils::ArbosHarness;
 use arbos::programs::params::{
     StylusParams, ARBOS_VERSION_40, ARBOS_VERSION_STYLUS_CONTRACT_LIMIT, INITIAL_PAGE_RAMP,

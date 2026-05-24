@@ -2,23 +2,23 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbowner_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-        CHAIN_OWNER_SUBSPACE, L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
+use arb_precompiles::create_arbowner_precompile;
+use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot_b256, root_slot, subspace_slot, CHAIN_OWNER_SUBSPACE,
+        L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
     },
+    ARBOS_STATE_ADDRESS,
+};
+use arbos::{
+    arbos_state::{NETWORK_FEE_ACCOUNT_OFFSET, UPGRADE_TIMESTAMP_OFFSET, UPGRADE_VERSION_OFFSET},
+    l2_pricing::SPEED_LIMIT_PER_SECOND_OFFSET as L2_SPEED_LIMIT,
 };
 use common::{calldata, decode_u256, word_address, word_u256, PrecompileTest};
 
 fn arbowner(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbowner_precompile(ctx)
 }
-
-const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
-const UPGRADE_VERSION_OFFSET: u64 = 1;
-const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
-const L2_SPEED_LIMIT: u64 = 0;
 
 fn chain_owner_member_slot(owner: Address) -> U256 {
     let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
@@ -373,7 +373,7 @@ fn schedule_arbos_upgrade_writes_version_and_timestamp_slots() {
 
 // ── Ports from /data/nitro/precompiles/ArbOwner_test.go ───────────────
 
-const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
+use arbos::arbos_state::INFRA_FEE_ACCOUNT_OFFSET;
 
 fn arbgasinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     arb_precompiles::create_arbgasinfo_precompile(ctx)

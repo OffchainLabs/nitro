@@ -27,7 +27,7 @@ use crate::address_set::{open_address_set, AddressSet};
 const PARAMS_KEY: &[u8] = &[0];
 const PROGRAM_DATA_KEY: &[u8] = &[1];
 const MODULE_HASHES_KEY: &[u8] = &[2];
-const DATA_PRICER_KEY: &[u8] = &[3];
+pub const DATA_PRICER_KEY: &[u8] = &[3];
 const CACHE_MANAGERS_KEY: &[u8] = &[4];
 const ACTIVATION_GAS_KEY: &[u8] = &[5];
 

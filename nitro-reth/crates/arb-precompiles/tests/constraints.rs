@@ -17,12 +17,10 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbgasinfo_precompile, create_arbowner_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-        ROOT_STORAGE_KEY,
-    },
+use arb_precompiles::{create_arbgasinfo_precompile, create_arbowner_precompile};
+use arb_storage::{
+    layout::{derive_subspace_key, map_slot_b256, CHAIN_OWNER_SUBSPACE, ROOT_STORAGE_KEY},
+    ARBOS_STATE_ADDRESS,
 };
 use common::{calldata, word_u64, PrecompileTest};
 
@@ -255,7 +253,7 @@ fn nitro_parity_constraints_storage_round_trip_two_constraints() {
 /// CONSTRAINT_BACKLOG=2)`.
 #[test]
 fn nitro_parity_constraints_backlog_update() {
-    use arb_precompiles::storage_slot::{gas_constraints_vec_key, vector_element_field};
+    use arb_storage::layout::{gas_constraints_vec_key, vector_element_field};
 
     let set_run = owner_fixture(50).call(
         arbowner,

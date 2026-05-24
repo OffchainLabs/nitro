@@ -1,8 +1,7 @@
+//! ArbOS storage layout primitives — subspace keys and slot derivation.
+
 use alloy_primitives::{keccak256, B256, U256};
 
-pub use arb_storage::{ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS};
-
-/// Subspace keys for ArbOS partitioned storage (matching arbos_state constants).
 pub const L1_PRICING_SUBSPACE: &[u8] = &[0];
 pub const L2_PRICING_SUBSPACE: &[u8] = &[1];
 pub const RETRYABLES_SUBSPACE: &[u8] = &[2];
@@ -12,15 +11,15 @@ pub const PROGRAMS_SUBSPACE: &[u8] = &[8];
 pub const NATIVE_TOKEN_SUBSPACE: &[u8] = &[10];
 pub const TRANSACTION_FILTERER_SUBSPACE: &[u8] = &[11];
 
-/// Subspace keys within the PROGRAMS subspace.
 pub const PROGRAMS_PARAMS_KEY: &[u8] = &[0];
 pub const PROGRAMS_DATA_KEY: &[u8] = &[1];
 pub const CACHE_MANAGERS_KEY: &[u8] = &[4];
 
-/// Root-level ArbOS state field offsets used outside of the arbos crate.
 pub const VERSION_OFFSET: u64 = 0;
 pub const CHAIN_ID_OFFSET: u64 = 4;
 pub const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
+
+pub const ROOT_STORAGE_KEY: &[u8] = &[];
 
 /// Compute the EVM storage slot for an ArbOS field at a given offset
 /// within a storage scope defined by `storage_key`.
@@ -79,9 +78,6 @@ pub fn derive_subspace_key(parent_key: &[u8], sub_key: &[u8]) -> B256 {
     }
 }
 
-/// The root storage key for ArbOS state (empty, since base_key is B256::ZERO).
-pub const ROOT_STORAGE_KEY: &[u8] = &[];
-
 /// Compute a root-level ArbOS state slot.
 #[inline]
 pub fn root_slot(offset: u64) -> U256 {
@@ -89,29 +85,21 @@ pub fn root_slot(offset: u64) -> U256 {
 }
 
 /// Compute a slot within a subspace of the root ArbOS state.
-///
-/// E.g., `subspace_slot(L1_PRICING_SUBSPACE, field_offset)` for an L1 pricing field.
 pub fn subspace_slot(subspace_key: &[u8], offset: u64) -> U256 {
     let sub_storage_key = derive_subspace_key(ROOT_STORAGE_KEY, subspace_key);
     map_slot(sub_storage_key.as_slice(), offset)
 }
 
-// ── L2 pricing vector helpers ────────────────────────────────────────
-
-/// L2 pricing subspace key (root → L2_PRICING_SUBSPACE).
 fn l2_pricing_subspace() -> B256 {
     derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE)
 }
 
-/// Subspace keys within L2 pricing.
 const GAS_CONSTRAINTS_SUBKEY: &[u8] = &[0];
 
-/// Derive a sub-storage vector key under L2 pricing.
 fn l2_vector_key(sub_key: &[u8]) -> B256 {
     derive_subspace_key(l2_pricing_subspace().as_slice(), sub_key)
 }
 
-/// Subspace key for element `index` within a vector.
 fn vector_element_key(vector_key: &B256, index: u64) -> B256 {
     derive_subspace_key(vector_key.as_slice(), &index.to_be_bytes())
 }
@@ -122,7 +110,7 @@ pub fn vector_element_field(vector_key: &B256, index: u64, offset: u64) -> U256 
     map_slot(elem.as_slice(), offset)
 }
 
-/// Gas constraints vector key.
+/// Gas constraints vector key (L2 pricing subspace).
 pub fn gas_constraints_vec_key() -> B256 {
     l2_vector_key(GAS_CONSTRAINTS_SUBKEY)
 }

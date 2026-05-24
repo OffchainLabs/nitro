@@ -2,12 +2,10 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbfilteredtxmanager_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
-        ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
-    },
+use arb_precompiles::create_arbfilteredtxmanager_precompile;
+use arb_storage::{
+    layout::{derive_subspace_key, map_slot_b256, ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE},
+    ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 use common::{calldata, decode_u256, PrecompileTest};
 

@@ -14,19 +14,19 @@ use arb_storage::{
 use crate::util::BalanceError;
 
 // Storage offsets for L1 pricing state.
-const PAY_REWARDS_TO_OFFSET: u64 = 0;
-const EQUILIBRATION_UNITS_OFFSET: u64 = 1;
-const INERTIA_OFFSET: u64 = 2;
-const PER_UNIT_REWARD_OFFSET: u64 = 3;
-const LAST_UPDATE_TIME_OFFSET: u64 = 4;
-const FUNDS_DUE_FOR_REWARDS_OFFSET: u64 = 5;
-const UNITS_SINCE_OFFSET: u64 = 6;
+pub const PAY_REWARDS_TO_OFFSET: u64 = 0;
+pub const EQUILIBRATION_UNITS_OFFSET: u64 = 1;
+pub const INERTIA_OFFSET: u64 = 2;
+pub const PER_UNIT_REWARD_OFFSET: u64 = 3;
+pub const LAST_UPDATE_TIME_OFFSET: u64 = 4;
+pub const FUNDS_DUE_FOR_REWARDS_OFFSET: u64 = 5;
+pub const UNITS_SINCE_OFFSET: u64 = 6;
 pub const PRICE_PER_UNIT_OFFSET: u64 = 7;
-const LAST_SURPLUS_OFFSET: u64 = 8;
-const PER_BATCH_GAS_COST_OFFSET: u64 = 9;
-const AMORTIZED_COST_CAP_BIPS_OFFSET: u64 = 10;
-const L1_FEES_AVAILABLE_OFFSET: u64 = 11;
-const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
+pub const LAST_SURPLUS_OFFSET: u64 = 8;
+pub const PER_BATCH_GAS_COST_OFFSET: u64 = 9;
+pub const AMORTIZED_COST_CAP_BIPS_OFFSET: u64 = 10;
+pub const L1_FEES_AVAILABLE_OFFSET: u64 = 11;
+pub const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
 
 // Well-known addresses.
 pub const BATCH_POSTER_ADDRESS: Address = Address::new([

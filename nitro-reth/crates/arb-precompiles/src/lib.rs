@@ -27,7 +27,6 @@ mod arbwasm;
 mod arbwasmcache;
 mod nodeinterface;
 mod nodeinterface_debug;
-pub mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
 pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
@@ -62,7 +61,6 @@ pub use nodeinterface::{
 pub use nodeinterface_debug::{
     create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
 };
-pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
 use arb_context::ArbPrecompileCtx;

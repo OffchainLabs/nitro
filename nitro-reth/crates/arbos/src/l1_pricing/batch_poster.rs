@@ -6,13 +6,13 @@ use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt, StorageBac
 
 use super::L1PricingError;
 
-const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
-const POSTER_ADDRS_KEY: &[u8] = &[0];
-const POSTER_INFO_KEY: &[u8] = &[1];
+pub const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
+pub const POSTER_ADDRS_KEY: &[u8] = &[0];
+pub const POSTER_INFO_KEY: &[u8] = &[1];
 
-const TOTAL_FUNDS_DUE_OFFSET: u64 = 0;
+pub const TOTAL_FUNDS_DUE_OFFSET: u64 = 0;
 const FUNDS_DUE_OFFSET: u64 = 0;
-const PAY_TO_OFFSET: u64 = 1;
+pub const PAY_TO_OFFSET: u64 = 1;
 
 pub struct BatchPostersTable<'a, D> {
     poster_addrs: AddressSet<'a, D>,

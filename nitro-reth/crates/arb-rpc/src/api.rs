@@ -32,9 +32,12 @@ use reth_transaction_pool::{
 };
 use tracing::trace;
 
-use arb_precompiles::storage_slot::{
-    root_slot, subspace_slot, ARBOS_STATE_ADDRESS, BROTLI_COMPRESSION_LEVEL_OFFSET,
-    CHAIN_ID_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+use arb_storage::{
+    layout::{
+        root_slot, subspace_slot, BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET,
+        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    },
+    ARBOS_STATE_ADDRESS,
 };
 
 /// Type alias matching reth's `SignersForRpc`.
@@ -568,7 +571,7 @@ where
         input: &alloy_primitives::Bytes,
         at: BlockId,
     ) -> Result<alloy_primitives::Bytes, EthApiError> {
-        use arb_precompiles::storage_slot::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};
+        use arb_storage::layout::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};
         use arbos::retryables::{
             BENEFICIARY_OFFSET, CALLDATA_KEY, CALLVALUE_OFFSET, FROM_OFFSET, NUM_TRIES_OFFSET,
             TIMEOUT_OFFSET, TO_OFFSET,
@@ -594,10 +597,8 @@ where
                 .unwrap_or(U256::ZERO))
         };
 
-        let retryables_key = derive_subspace_key(
-            ROOT_STORAGE_KEY,
-            arb_precompiles::storage_slot::RETRYABLES_SUBSPACE,
-        );
+        let retryables_key =
+            derive_subspace_key(ROOT_STORAGE_KEY, arb_storage::layout::RETRYABLES_SUBSPACE);
         let r_key = derive_subspace_key(retryables_key.as_slice(), ticket.as_slice());
 
         let timeout: u64 = load(map_slot(r_key.as_slice(), TIMEOUT_OFFSET))?

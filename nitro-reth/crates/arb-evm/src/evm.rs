@@ -321,12 +321,13 @@ pub fn reset_stylus_pages(ctx: &arb_context::ArbPrecompileCtx) {
 
 // ── Stylus storage helpers ───────────────────────────────────────────
 
-use arb_precompiles::storage_slot::{
-    derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
-    PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
-};
 use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot_b256, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY,
+        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+    },
     DatabaseError, DatabaseErrorInfo, Detached, Storage, StorageBackend, StorageError,
+    ARBOS_STATE_ADDRESS,
 };
 use arbos::programs::{memory::MemoryModel, params::StylusParams, Program};
 

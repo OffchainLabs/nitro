@@ -12,6 +12,7 @@ mod backed_types;
 mod backend;
 mod bytes_storage;
 mod extra_types;
+pub mod layout;
 pub mod queue;
 mod slot;
 mod state_ops;

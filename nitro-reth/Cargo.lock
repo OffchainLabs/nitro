@@ -1379,6 +1379,7 @@ dependencies = [
  "arb-payload",
  "arb-precompiles",
  "arb-primitives",
+ "arb-storage",
  "arb-stylus",
  "arbos",
  "async-trait",
