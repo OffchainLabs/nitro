@@ -26,39 +26,49 @@ pub const ARBOS_STATE_ADDRESS: Address = {
     Address::new(bytes)
 };
 
-/// Holds Arbitrum-specific header metadata.
 #[derive(Debug, Clone, Default)]
 pub struct ArbHeaderInfo {
-    /// Merkle root of sent messages.
     pub send_root: B256,
-    /// Number of messages sent.
     pub send_count: u64,
-    /// Corresponding L1 block number.
     pub l1_block_number: u64,
-    /// ArbOS format version.
     pub arbos_format_version: u64,
+    pub collect_tips: bool,
 }
 
 impl ArbHeaderInfo {
-    /// Compute the mix_hash from send_count, l1_block_number, and arbos_version.
     pub fn compute_mix_hash(&self) -> B256 {
         compute_arbos_mixhash(
             self.send_count,
             self.l1_block_number,
             self.arbos_format_version,
+            self.collect_tips,
         )
     }
 }
 
-/// Compute the mix hash from the three u64 components.
-///
-/// Layout: ]send_count (8 bytes)\]]l1_block_number (8 bytes)\]]arbos_version (8 bytes)\]]0..0\]
-pub fn compute_arbos_mixhash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
+pub fn compute_arbos_mixhash(
+    send_count: u64,
+    l1_block_number: u64,
+    arbos_version: u64,
+    collect_tips: bool,
+) -> B256 {
     let mut mix = [0u8; 32];
     mix[0..8].copy_from_slice(&send_count.to_be_bytes());
     mix[8..16].copy_from_slice(&l1_block_number.to_be_bytes());
     mix[16..24].copy_from_slice(&arbos_version.to_be_bytes());
+    if collect_tips
+        && arbos_version != arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD
+    {
+        mix[25] = 1;
+    }
     B256::from(mix)
+}
+
+pub fn extract_collect_tips_from_mix_hash(mix_hash: B256, arbos_version: u64) -> bool {
+    if arbos_version == arb_chainspec::arbos_version::ARBOS_VERSION_COLLECT_TIPS_OLD {
+        return true;
+    }
+    mix_hash.0[25] & 0x1 == 1
 }
 
 /// Extract the send root from the first 32 bytes of header extra_data.
@@ -211,11 +221,15 @@ pub fn derive_arb_header_info<F: Fn(Address, B256) -> Option<U256>>(
     let l1_block_num_slot = storage_key_map(&blockhashes_sub, uint_to_hash_u64_be(0));
     let l1_block_number = read_storage_u64_be(read_slot, addr, l1_block_num_slot).unwrap_or(0);
 
+    let collect_tips_slot = storage_key_map(root_storage_key, uint_to_hash_u64_be(11));
+    let collect_tips = read_storage_u64_be(read_slot, addr, collect_tips_slot).unwrap_or(0) != 0;
+
     Some(ArbHeaderInfo {
         send_root,
         send_count,
         l1_block_number,
         arbos_format_version: arbos_version,
+        collect_tips,
     })
 }
 

@@ -143,6 +143,7 @@ pub(crate) fn receipt_from_json(v: &Value) -> Result<TxReceipt> {
             .and_then(|x| x.as_str())
             .and_then(|s| s.parse::<Address>().ok()),
         logs: extract_logs(v),
+        multi_gas: arb_receipt_fields(v).multi_gas,
     })
 }
 
@@ -203,6 +204,26 @@ pub(crate) fn extract_logs(v: &Value) -> Vec<EvmLog> {
 }
 
 pub(crate) fn arb_receipt_fields(v: &Value) -> ArbReceiptFields {
+    let mg = v.get("multiGasUsed").map(|m| {
+        let g = |k: &str| {
+            m.get(k)
+                .and_then(|x| x.as_str())
+                .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+                .unwrap_or(0)
+        };
+        crate::node::MultiGasDims {
+            computation: g("computation"),
+            history_growth: g("historyGrowth"),
+            storage_access_read: g("storageAccessRead"),
+            storage_access_write: g("storageAccessWrite"),
+            storage_growth: g("storageGrowth"),
+            single_dim: g("singleDim"),
+            l2_calldata: g("l2Calldata"),
+            wasm_computation: g("wasmComputation"),
+            refund: g("refund"),
+            total: g("total"),
+        }
+    });
     ArbReceiptFields {
         gas_used_for_l1: v
             .get("gasUsedForL1")
@@ -212,7 +233,7 @@ pub(crate) fn arb_receipt_fields(v: &Value) -> ArbReceiptFields {
             .get("l1BlockNumber")
             .and_then(|x| x.as_str())
             .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok()),
-        multi_gas: None,
+        multi_gas: mg,
     }
 }
 

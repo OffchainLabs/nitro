@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stylus-sdk = "0.10.5"
+stylus-sdk = "0.10.7"
 alloy-primitives = "1.5"
 
 [lib]

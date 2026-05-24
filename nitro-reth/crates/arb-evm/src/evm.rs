@@ -502,6 +502,34 @@ where
 
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
+    let is_callcode = call_type == 3;
+
+    struct ActorGuard<'a> {
+        ctx: &'a arb_context::ArbPrecompileCtx,
+        addr: Address,
+        pushed: bool,
+    }
+    impl Drop for ActorGuard<'_> {
+        fn drop(&mut self) {
+            if self.pushed {
+                self.ctx.pop_stylus_program(self.addr);
+            }
+        }
+    }
+    let _actor_guard = if !is_delegate && !is_callcode {
+        pre_ctx.push_stylus_program(storage_addr);
+        ActorGuard {
+            ctx: pre_ctx,
+            addr: storage_addr,
+            pushed: true,
+        }
+    } else {
+        ActorGuard {
+            ctx: pre_ctx,
+            addr: storage_addr,
+            pushed: false,
+        }
+    };
 
     let checkpoint = context.journaled_state.inner.checkpoint();
 
@@ -698,8 +726,6 @@ where
         ..sub_inputs
     };
 
-    // If the loaded bytecode carries the Stylus discriminant, dispatch it
-    // through the WASM runtime instead of the EVM interpreter.
     if pre_ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
         && arb_stylus::is_stylus_program(&bytecode)
     {
@@ -788,19 +814,25 @@ where
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
 
-    let checkpoint = context.journaled_state.inner.checkpoint();
-
-    // Compute CREATE/CREATE2 address
-    let caller_nonce = {
+    let (caller_nonce, caller_balance) = {
         let acc = context
             .journaled_state
             .inner
             .load_account(&mut context.journaled_state.database, caller);
-        acc.map(|a| a.data.info.nonce).unwrap_or(0)
+        acc.map(|a| (a.data.info.nonce, a.data.info.balance))
+            .unwrap_or((0, U256::ZERO))
     };
 
+    if caller_balance < endowment {
+        return SubCreateResult {
+            address: None,
+            output: Vec::new(),
+            gas_cost: 0,
+            pages: read_tx_pages(pre_ctx),
+        };
+    }
+
     let created_address = if let Some(salt) = salt {
-        // CREATE2: keccak256(0xff ++ sender ++ salt ++ keccak256(code))
         let code_hash = alloy_primitives::keccak256(code);
         let mut buf = Vec::with_capacity(1 + 20 + 32 + 32);
         buf.push(0xff);
@@ -809,7 +841,6 @@ where
         buf.extend_from_slice(code_hash.as_slice());
         Address::from_slice(&alloy_primitives::keccak256(&buf)[12..])
     } else {
-        // CREATE: RLP([sender, nonce])
         use alloy_rlp::Encodable;
         let mut rlp_buf = Vec::with_capacity(64);
         alloy_rlp::Header {
@@ -822,33 +853,47 @@ where
         Address::from_slice(&alloy_primitives::keccak256(&rlp_buf)[12..])
     };
 
-    // Increment caller nonce
-    let _ = context
-        .journaled_state
-        .inner
-        .load_account(&mut context.journaled_state.database, caller);
-    if let Some(acc) = context.journaled_state.inner.state.get_mut(&caller) {
-        acc.info.nonce += 1;
-        context
+    struct CreateActorGuard<'a> {
+        ctx: &'a arb_context::ArbPrecompileCtx,
+        addr: Address,
+    }
+    impl Drop for CreateActorGuard<'_> {
+        fn drop(&mut self) {
+            self.ctx.pop_stylus_program(self.addr);
+        }
+    }
+    pre_ctx.push_stylus_program(created_address);
+    let _create_guard = CreateActorGuard {
+        ctx: pre_ctx,
+        addr: created_address,
+    };
+
+    {
+        use revm::context_interface::journaled_state::account::JournaledAccountTr;
+        let bumped = match context
             .journaled_state
             .inner
-            .nonce_bump_journal_entry(caller);
+            .load_account_mut(&mut context.journaled_state.database, caller)
+        {
+            Ok(mut caller_acc) => caller_acc.data.bump_nonce(),
+            Err(_) => false,
+        };
+        if !bumped {
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages: read_tx_pages(pre_ctx),
+            };
+        }
     }
 
-    // Transfer endowment
-    if !endowment.is_zero()
-        && context
-            .journaled_state
-            .inner
-            .transfer(
-                &mut context.journaled_state.database,
-                caller,
-                created_address,
-                endowment,
-            )
-            .is_err()
+    if context
+        .journaled_state
+        .inner
+        .load_account(&mut context.journaled_state.database, created_address)
+        .is_err()
     {
-        context.journaled_state.inner.checkpoint_revert(checkpoint);
         return SubCreateResult {
             address: None,
             output: Vec::new(),
@@ -857,8 +902,26 @@ where
         };
     }
 
+    let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
+    let checkpoint = match context.journaled_state.inner.create_account_checkpoint(
+        caller,
+        created_address,
+        endowment,
+        spec,
+    ) {
+        Ok(cp) => cp,
+        Err(_) => {
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages: read_tx_pages(pre_ctx),
+            };
+        }
+    };
+
     let init_inputs = CallInputs {
-        input: CallInput::Bytes(code.to_vec().into()),
+        input: CallInput::Bytes(Bytes::new()),
         gas_limit: gas,
         target_address: created_address,
         bytecode_address: created_address,
@@ -873,10 +936,47 @@ where
     let result = run_evm_bytecode(context, &init_inputs, code, gas, pre_ctx);
     let pages = read_tx_pages(pre_ctx);
     let success = result.result.is_ok();
-    let gas_used = gas.saturating_sub(result.gas.remaining());
 
     if success {
         let deployed_code = result.output.to_vec();
+        let max_code_size = context.cfg.max_code_size();
+        if deployed_code.len() > max_code_size {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages,
+            };
+        }
+        let is_stylus = deployed_code.len() >= 3
+            && deployed_code[0] == 0xEF
+            && deployed_code[1] == 0xF0
+            && deployed_code[2] == 0x00;
+        if !deployed_code.is_empty() && deployed_code[0] == 0xEF && !is_stylus {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages,
+            };
+        }
+        let deposit_cost = context
+            .cfg
+            .gas_params()
+            .code_deposit_cost(deployed_code.len());
+        let after_deposit_remaining = result.gas.remaining().saturating_sub(deposit_cost);
+        if result.gas.remaining() < deposit_cost {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages,
+            };
+        }
+        let gas_used = gas.saturating_sub(after_deposit_remaining);
         let code_hash = alloy_primitives::keccak256(&deployed_code);
         let bytecode = revm::bytecode::Bytecode::new_raw(deployed_code.into());
         let _ = context
@@ -896,6 +996,7 @@ where
         }
     } else {
         let output = result.output.to_vec();
+        let gas_used = gas.saturating_sub(result.gas.remaining());
         context.journaled_state.inner.checkpoint_revert(checkpoint);
         SubCreateResult {
             address: None,
@@ -989,7 +1090,6 @@ where
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
 
-    // Run the interpreter in a loop, handling nested calls/creates
     loop {
         let action = interpreter.run_plain(&instructions.instruction_table, context);
 
@@ -1236,15 +1336,7 @@ where
     let stylus_config = StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
 
     let target_addr = inputs.target_address;
-    let is_delegate = matches!(
-        inputs.scheme,
-        CallScheme::DelegateCall | CallScheme::CallCode
-    );
-    let reentrant = if !is_delegate {
-        ctx.push_stylus_program(target_addr)
-    } else {
-        ctx.stylus_program_count(target_addr) > 1
-    };
+    let reentrant = ctx.stylus_program_count(target_addr) > 1;
 
     let module_hash =
         read_module_hash(&mut context.journaled_state, code_hash).unwrap_or(code_hash);
@@ -1256,12 +1348,6 @@ where
 
     let start_open = parent_open.saturating_add(program.footprint);
     let start_ever = parent_ever.max(start_open);
-
-    let pop_program = |is_delegate: bool, target_addr: alloy_primitives::Address| {
-        if !is_delegate {
-            ctx.pop_stylus_program(target_addr);
-        }
-    };
 
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
@@ -1298,7 +1384,6 @@ where
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
-                pop_program(is_delegate, target_addr);
                 write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
@@ -1310,7 +1395,6 @@ where
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
-                pop_program(is_delegate, target_addr);
                 write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
@@ -1320,7 +1404,6 @@ where
             Ok(w) => w,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
-                pop_program(is_delegate, target_addr);
                 write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
@@ -1329,7 +1412,6 @@ where
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
-                pop_program(is_delegate, target_addr);
                 write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
@@ -1348,7 +1430,6 @@ where
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
-                pop_program(is_delegate, target_addr);
                 write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
@@ -1366,14 +1447,12 @@ where
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
             let final_ever = instance.env().pages_ever.max(start_ever);
-            pop_program(is_delegate, target_addr);
             write_pages(parent_open, final_ever);
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
 
     let final_ever = instance.env().pages_ever.max(start_ever);
-    pop_program(is_delegate, target_addr);
     write_pages(parent_open, final_ever);
 
     let ink_left = match instance.ink_left() {
@@ -1629,6 +1708,11 @@ type InnerRevmEvm<DB, I> = RevmEvm<
     EthFrame,
 >;
 
+struct CreateFrameCtx {
+    caller: Address,
+    checkpoint: revm::context_interface::journaled_state::JournalCheckpoint,
+}
+
 /// Arbitrum EVM with frame-level Stylus dispatch and custom opcodes.
 ///
 /// Implements [`EvmTr`] directly to intercept Stylus WASM calls in
@@ -1636,6 +1720,8 @@ type InnerRevmEvm<DB, I> = RevmEvm<
 pub struct ArbEvm<DB: Database, I> {
     inner: InnerRevmEvm<DB, I>,
     inspect: bool,
+    create_ctx_stack: Vec<CreateFrameCtx>,
+    actor_stack: Vec<Option<Address>>,
 }
 
 impl<DB, I> ArbEvm<DB, I>
@@ -1643,7 +1729,12 @@ where
     DB: Database,
 {
     pub fn new(inner: InnerRevmEvm<DB, I>, inspect: bool) -> Self {
-        Self { inner, inspect }
+        Self {
+            inner,
+            inspect,
+            create_ctx_stack: Vec::new(),
+            actor_stack: Vec::new(),
+        }
     }
 
     pub fn into_inner(self) -> InnerRevmEvm<DB, I> {
@@ -1747,6 +1838,33 @@ where
             _ => false,
         };
 
+        match &frame_input.frame_input {
+            FrameInput::Call(inputs)
+                if !matches!(
+                    inputs.scheme,
+                    CallScheme::DelegateCall | CallScheme::CallCode
+                ) =>
+            {
+                pre_ctx.push_stylus_program(inputs.target_address);
+                self.actor_stack.push(Some(inputs.target_address));
+            }
+            FrameInput::Call(_) => {
+                self.actor_stack.push(None);
+            }
+            FrameInput::Create(_) => {
+                self.actor_stack.push(None);
+            }
+            _ => {}
+        }
+
+        if let FrameInput::Create(inputs) = &frame_input.frame_input {
+            let cp = self.inner.ctx.journal_mut().checkpoint();
+            self.create_ctx_stack.push(CreateFrameCtx {
+                caller: inputs.caller(),
+                checkpoint: cp,
+            });
+        }
+
         if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version) {
             if let FrameInput::Call(ref inputs) = frame_input.frame_input {
                 if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
@@ -1796,9 +1914,58 @@ where
     #[inline]
     fn frame_return_result(
         &mut self,
-        result: FrameResult,
+        mut result: FrameResult,
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
-        self.inner.precompiles.ctx.pop_caller();
+        let pre_ctx = self.inner.precompiles.ctx.clone();
+        pre_ctx.pop_caller();
+
+        if let Some(Some(addr)) = self.actor_stack.pop() {
+            pre_ctx.pop_stylus_program(addr);
+        }
+
+        // EIP-3541: reject runtime starting with 0xEF unless it's the Stylus
+        // marker (0xEF 0xF0 0x00). revm's global check is disabled so Stylus
+        // can deploy; we re-apply it here with the Stylus exception.
+        if let FrameResult::Create(ref mut outcome) = result {
+            let create_ctx = self.create_ctx_stack.pop();
+            if outcome.instruction_result().is_ok() {
+                if let Some(addr) = outcome.address {
+                    let code_bytes: Vec<u8> = self
+                        .inner
+                        .ctx
+                        .journal_mut()
+                        .code(addr)
+                        .map(|c| c.data.to_vec())
+                        .unwrap_or_default();
+                    let starts_with_ef = code_bytes.first() == Some(&0xEF);
+                    let is_stylus = code_bytes.len() >= 3
+                        && code_bytes[0] == 0xEF
+                        && code_bytes[1] == 0xF0
+                        && code_bytes[2] == 0x00;
+                    if starts_with_ef && !is_stylus {
+                        if let Some(create_ctx) = create_ctx {
+                            self.inner
+                                .ctx
+                                .journal_mut()
+                                .checkpoint_revert(create_ctx.checkpoint);
+                            use revm::context_interface::journaled_state::account::JournaledAccountTr;
+                            if let Ok(mut caller_acc) = self
+                                .inner
+                                .ctx
+                                .journal_mut()
+                                .load_account_mut(create_ctx.caller)
+                            {
+                                let _ = caller_acc.data.bump_nonce();
+                            }
+                        }
+                        outcome.address = None;
+                        outcome.result.result = InstructionResult::CreateContractStartingWithEF;
+                        outcome.result.output = Bytes::new();
+                        outcome.result.gas.spend_all();
+                    }
+                }
+            }
+        }
         self.inner.frame_return_result(result)
     }
 }
