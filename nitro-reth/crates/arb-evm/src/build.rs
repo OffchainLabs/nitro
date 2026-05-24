@@ -274,8 +274,6 @@ struct PendingArbTx {
 struct PendingRetryContext {
     ticket_id: alloy_primitives::B256,
     refund_to: Address,
-    #[allow(dead_code)]
-    gas_fee_cap: U256,
     max_refund: U256,
     submission_fee_refund: U256,
     /// Call value transferred from escrow; returned to escrow on failure.
@@ -1538,7 +1536,6 @@ where
                         retry_context = Some(PendingRetryContext {
                             ticket_id: info.ticket_id,
                             refund_to: info.refund_to,
-                            gas_fee_cap: info.gas_fee_cap,
                             max_refund: info.max_refund,
                             submission_fee_refund: info.submission_fee_refund,
                             call_value: recovered.tx().value(),

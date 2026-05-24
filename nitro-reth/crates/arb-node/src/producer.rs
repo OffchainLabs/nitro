@@ -1115,16 +1115,6 @@ where
             "Started async flush"
         );
     }
-
-    /// Produce a minimal block for messages with no transactions.
-    #[allow(dead_code)]
-    fn produce_empty_block(
-        &self,
-        input: &BlockProductionInput,
-    ) -> Result<ProducedBlock, BlockProducerError> {
-        // Empty blocks still need StartBlock execution for ArbOS state updates.
-        self.produce_block_with_execution(input, vec![])
-    }
 }
 
 #[async_trait::async_trait]

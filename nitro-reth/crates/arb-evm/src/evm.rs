@@ -1555,6 +1555,8 @@ where
         >>::set_spec(&mut self.inner, spec)
     }
 
+    // The `String` error type comes from upstream `PrecompileProvider::run`;
+    // we cannot tighten it without forking revm.
     fn run(
         &mut self,
         context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,

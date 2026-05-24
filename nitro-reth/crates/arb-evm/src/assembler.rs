@@ -1,4 +1,5 @@
 use alloc::{sync::Arc, vec::Vec};
+use core::marker::PhantomData;
 
 use alloy_consensus::{
     proofs, Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
@@ -21,15 +22,16 @@ use arbos::header::{derive_arb_header_info, read_l2_base_fee, ArbHeaderInfo};
 /// - `mix_hash`: encodes (send_count, l1_block_number, arbos_version)
 /// - `nonce`: delayed_messages_read
 /// - `difficulty`: always 1
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ArbBlockAssembler<ChainSpec> {
-    #[allow(dead_code)]
-    chain_spec: Arc<ChainSpec>,
+    _phantom: PhantomData<ChainSpec>,
 }
 
 impl<ChainSpec> ArbBlockAssembler<ChainSpec> {
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        Self { chain_spec }
+    pub fn new(_chain_spec: Arc<ChainSpec>) -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
     }
 }
 

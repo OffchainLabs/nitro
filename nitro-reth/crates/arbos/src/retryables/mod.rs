@@ -35,7 +35,6 @@ pub struct RetryableState<'a, D> {
 /// A single retryable ticket.
 pub struct Retryable<'a, D> {
     pub id: B256,
-    #[allow(dead_code)]
     backing_storage: Storage<'a, D>,
     num_tries: StorageBackedUint64,
     from: StorageBackedAddress,

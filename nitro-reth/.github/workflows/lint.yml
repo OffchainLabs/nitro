@@ -64,7 +64,8 @@ jobs:
     name: docs
     runs-on: ubuntu-latest
     env:
-      RUSTDOCFLAGS: "-D warnings -A rustdoc::broken-intra-doc-links"
+      # Treat any rustdoc warning as an error, including broken intra-doc links.
+      RUSTDOCFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -115,6 +116,137 @@ jobs:
           if [ -n "$matches" ]; then
             echo "thread_local! is not allowed in crates/arb-precompiles/src/."
             echo "Handlers must read state via the ctx parameter threaded through register_arb_precompiles."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-static-state-in-precompiles:
+    # Blocks reintroducing top-level static state (Mutex/RwLock/OnceCell)
+    # in arb-precompiles. State must be threaded through ArbPrecompileCtx.
+    name: no static state in arb-precompiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any static Mutex/RwLock/OnceCell is declared in arb-precompiles
+        run: |
+          set -e
+          matches=$(grep -rnE 'static\s+[A-Za-z0-9_]+.*(Mutex|RwLock|OnceCell)' crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Top-level static state (Mutex/RwLock/OnceCell) is not allowed in crates/arb-precompiles/src/."
+            echo "Per-block and per-tx state must be threaded through ArbPrecompileCtx."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-unit-error-results:
+    # Blocks Result<_, ()> in arbos/arb-evm/arb-precompiles: callers cannot
+    # diagnose failures from a bare () error.
+    name: no Result<_, ()> in core crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any Result<_, ()> is reintroduced
+        run: |
+          set -e
+          matches=$(grep -rnE 'Result<.*,\s*\(\)\s*>' \
+            crates/arbos/src/ crates/arb-evm/src/ crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Result<_, ()> is not allowed in arbos/arb-evm/arb-precompiles source."
+            echo "Use a typed error enum so callers can match on the failure mode."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-string-error-results:
+    # Blocks Result<_, String> in arbos/arb-evm/arb-precompiles. The single
+    # surviving site is revm's PrecompileProvider::run, whose return type is
+    # forced upstream and matches on `Self::Output`.
+    name: no Result<_, String> in core crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any Result<_, String> is reintroduced (PrecompileProvider trait excluded)
+        run: |
+          set -e
+          matches=$(grep -rnE 'Result<.*,\s*String\s*>' \
+            crates/arbos/src/ crates/arb-evm/src/ crates/arb-precompiles/src/ \
+            | grep -v 'Self::Output' || true)
+          if [ -n "$matches" ]; then
+            echo "Result<_, String> is not allowed in arbos/arb-evm/arb-precompiles source."
+            echo "Use a typed error enum (thiserror) so callers can match on the failure mode."
+            echo "The single allowed survivor is revm's PrecompileProvider::run signature,"
+            echo "which returns Result<Option<Self::Output>, String> and is filtered above."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-unsafe-mut-deref-in-arb-evm:
+    # Blocks raw `unsafe { &mut * ... }` derefs in arb-evm. The Stylus FFI
+    # cordon stays in arb-stylus (out of scope for this grep).
+    name: no unsafe mut-deref in arb-evm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any unsafe { &mut * } is reintroduced into arb-evm/src
+        run: |
+          set -e
+          matches=$(grep -rnE 'unsafe\s*\{\s*&mut\s*\*' crates/arb-evm/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Raw unsafe { &mut * ... } derefs are not allowed in crates/arb-evm/src/."
+            echo "Use Storage::state_mut() or another typed accessor that owns the SAFETY invariant."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-mut-state-cast-outside-stylus:
+    # Blocks `as *mut State<...>` casts everywhere except arb-stylus FFI.
+    name: no *mut State cast outside arb-stylus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any `as *mut State<` cast appears outside crates/arb-stylus/
+        run: |
+          set -e
+          matches=$(grep -rnE 'as\s*\*mut\s*State<' crates/ --include='*.rs' \
+            | grep -v '^crates/arb-stylus/' || true)
+          if [ -n "$matches" ]; then
+            echo "Raw `as *mut State<...>` casts are not allowed outside crates/arb-stylus/."
+            echo "Use Storage::state_mut() or another typed accessor that owns the SAFETY invariant."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-via-backend-suffix:
+    # Blocks `_via_backend` method/function names from being reintroduced.
+    name: no _via_backend suffix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any *_via_backend symbol is reintroduced
+        run: |
+          set -e
+          matches=$(grep -rn '_via_backend' crates/ --include='*.rs' || true)
+          if [ -n "$matches" ]; then
+            echo "The _via_backend suffix is not allowed; the StorageBackend API is the single path."
+            echo "$matches"
+            exit 1
+          fi
+
+  no-active-ctx-helpers:
+    # Blocks `with_active`, `install_active`, `clear_active`, and `ACTIVE_CTX`
+    # symbols. ArbPrecompileCtx must be threaded through handler signatures.
+    name: no ACTIVE_CTX helpers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail if any ACTIVE_CTX helper is reintroduced
+        run: |
+          set -e
+          matches=$(grep -rnE '(with_active|install_active|clear_active|ACTIVE_CTX)' \
+            crates/ --include='*.rs' || true)
+          if [ -n "$matches" ]; then
+            echo "ACTIVE_CTX helpers (with_active/install_active/clear_active) are not allowed."
+            echo "ArbPrecompileCtx is threaded through handler signatures; no ambient state."
             echo "$matches"
             exit 1
           fi
