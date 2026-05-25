@@ -2210,6 +2210,7 @@ pub struct ArbEvmFactory {
     pub inner: alloy_evm::EthEvmFactory,
     staged_ctx:
         std::sync::Arc<parking_lot::RwLock<Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>>>,
+    chain_caches: std::sync::Arc<arb_context::ChainCaches>,
 }
 
 impl ArbEvmFactory {
@@ -2221,6 +2222,10 @@ impl ArbEvmFactory {
     /// EVM-execution thread.
     pub fn stage_ctx(&self, ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) {
         *self.staged_ctx.write() = Some(ctx);
+    }
+
+    pub fn chain_caches(&self) -> &std::sync::Arc<arb_context::ChainCaches> {
+        &self.chain_caches
     }
 
     fn staged(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>> {

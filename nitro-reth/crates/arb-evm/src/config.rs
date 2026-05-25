@@ -358,12 +358,13 @@ fn stage_rpc_block_ctx(
     l2_block_number: u64,
     allow_debug: bool,
 ) {
-    let block_ctx = arb_context::BlockCtx::new(
+    let block_ctx = arb_context::BlockCtx::new_with_caches(
         arbos_version,
         block_timestamp,
         l1_block_number,
         l2_block_number,
         allow_debug,
+        factory.chain_caches().clone(),
     );
     let ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
         block: std::sync::Arc::new(block_ctx),

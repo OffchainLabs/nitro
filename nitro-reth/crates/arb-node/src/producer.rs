@@ -647,13 +647,22 @@ where
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = l1_block_number;
 
-        // Collect ancestor L2 hashes before apply_pre_execution_changes constructs
-        // the per-block context, since we need provider lookups outside the executor.
+        // 256-ancestor populate only fires on a cold cache.
         let l2_hash_entries = {
-            let mut entries = Vec::with_capacity(256);
+            let mut entries = Vec::new();
             let parent_num = l2_block_number.saturating_sub(1);
             entries.push((parent_num, parent_header.hash()));
-            if parent_num > 1 {
+            let cache_cold = parent_num > 1
+                && self
+                    .evm_config
+                    .executor_factory
+                    .arb_evm_factory()
+                    .chain_caches()
+                    .l2_block_hashes
+                    .lock()
+                    .get(&parent_num.saturating_sub(1))
+                    .is_none();
+            if cache_cold {
                 let mut hash = parent_header.parent_hash();
                 for i in 2..=256u64 {
                     let Some(n) = l2_block_number.checked_sub(i) else {
