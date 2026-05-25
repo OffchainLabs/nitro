@@ -65,14 +65,13 @@ func TestDangerousAlwaysFallback_OverridesEnabledAnyTrust(t *testing.T) {
 	builder.parallelise = false
 	builder.BuildL1(t)
 
-	rpcServer, pubkey, backendConfig, restServer, restURL := startLocalAnyTrustServer(t, ctx, t.TempDir(), builder.L1.Client, builder.addresses.SequencerInbox)
+	rpcServer, pubkey, _, restServer, restURL := startLocalAnyTrustServer(t, ctx, t.TempDir(), builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() { _ = rpcServer.Shutdown(ctx) }()
 	defer func() { _ = restServer.Shutdown() }()
 	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	builder.nodeConfig.Dangerous.AlwaysFallbackToParentChainDA = true
 	builder.nodeConfig.DA.AnyTrust.Enable = true
-	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
 	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
 	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restURL}
