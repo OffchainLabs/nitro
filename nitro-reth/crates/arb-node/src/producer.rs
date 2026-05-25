@@ -33,7 +33,7 @@ use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
 
-use arb_evm::config::{arbos_version_from_mix_hash, ArbEvmConfig};
+use arb_evm::config::{arbos_version_from_mix_hash, l1_block_number_from_mix_hash, ArbEvmConfig};
 use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
@@ -445,8 +445,10 @@ where
         let parent_mix_hash = parent_header.mix_hash().unwrap_or_default();
         let parent_arbos_version = arbos_version_from_mix_hash(&parent_mix_hash);
 
-        // Build the EVM environment for this block.
+        // The StartBlock tx carries the reported value verbatim; the EVM sees
+        // the monotonic one.
         let l1_block_number = input.l1_block_number;
+        let block_l1_block_number = monotonic_l1_block_number(l1_block_number, &parent_mix_hash);
         let arbos_version = parent_arbos_version; // May upgrade during StartBlock
 
         // Construct a provisional mix_hash for the EVM environment.
@@ -455,7 +457,8 @@ where
             buf.copy_from_slice(&parent_mix_hash.0[0..8]);
             u64::from_be_bytes(buf)
         };
-        let provisional_mix_hash = compute_mix_hash(send_count, l1_block_number, arbos_version);
+        let provisional_mix_hash =
+            compute_mix_hash(send_count, block_l1_block_number, arbos_version);
 
         // Open state at parent block via block hash.
         let raw_state_provider = self
@@ -645,7 +648,7 @@ where
             .block_executor_factory()
             .create_arb_executor(evm, exec_ctx, chain_id);
         executor.arb_ctx.l2_block_number = l2_block_number;
-        executor.arb_ctx.l1_block_number = l1_block_number;
+        executor.arb_ctx.l1_block_number = block_l1_block_number;
 
         // 256-ancestor populate only fires on a cold cache.
         let l2_hash_entries = {
@@ -1457,6 +1460,12 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
     arbos::header::compute_arbos_mixhash(send_count, l1_block_number, arbos_version, false)
 }
 
+/// L1 block number for the `NUMBER` opcode: monotonic, so a reported value
+/// below the parent's (recovered from its mix_hash) is clamped up to it.
+fn monotonic_l1_block_number(reported: u64, parent_mix_hash: &B256) -> u64 {
+    reported.max(l1_block_number_from_mix_hash(parent_mix_hash))
+}
+
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
 fn delete_empty_accounts(
     bundle: &mut BundleState,
@@ -1624,5 +1633,22 @@ fn augment_bundle_from_cache(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arbos::header::compute_arbos_mixhash;
+
+    #[test]
+    fn l1_block_number_clamps_to_parent() {
+        let parent = compute_arbos_mixhash(0, 10_538_022, 51, false);
+        // A lower sequencer-reported value is clamped up to the parent's.
+        assert_eq!(monotonic_l1_block_number(10_537_967, &parent), 10_538_022);
+        // A higher value advances normally.
+        assert_eq!(monotonic_l1_block_number(10_538_099, &parent), 10_538_099);
+        // Equal stays put.
+        assert_eq!(monotonic_l1_block_number(10_538_022, &parent), 10_538_022);
     }
 }
