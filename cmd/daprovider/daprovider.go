@@ -277,6 +277,7 @@ func startup() error {
 			l1Reader,
 			seqInboxAddr,
 			config.ProviderServer.EnableDAWriter,
+			false,
 		)
 		if err := factory.ValidateConfig(); err != nil {
 			return err

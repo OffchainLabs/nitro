@@ -316,7 +316,7 @@ func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
-	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! for chains being retired off AnyTrust: posts batches to the parent chain instead of the DAC and halts on any AnyTrust batch encountered during sync")
+	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! for chains being retired off AnyTrust: suppresses the AnyTrust writer and halts on any AnyTrust batch when rest-aggregator is disabled")
 }
 
 type Node struct {
@@ -653,72 +653,79 @@ func getDAProviders(
 		}
 	}
 
-	// Create AnyTrust DA provider if enabled (can coexist with external DA).
 	if config.DA.AnyTrust.Enable {
-		if config.Dangerous.AlwaysFallbackToParentChainDA {
-			log.Error("DANGEROUS: AnyTrust DAS factory wiring skipped; node will halt on the first AnyTrust batch encountered")
-		} else {
-			// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
-			if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
-				log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to da.anytrust.max-batch-size")
-				config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
+		// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
+		if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
+			log.Warn("Using deprecated batch-poster.max-size for AnyTrust max batch size; please migrate to da.anytrust.max-batch-size")
+			config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
+		}
+
+		alwaysFallback := config.Dangerous.AlwaysFallbackToParentChainDA
+		enableWriter := config.BatchPoster.Enable && !alwaysFallback
+
+		if alwaysFallback {
+			if config.DA.AnyTrust.RestAggregator.Enable {
+				log.Error("DANGEROUS: always-fallback-to-parent-chain-da is set; AnyTrust writer suppressed; reader continues serving batches via rest-aggregator")
+			} else {
+				log.Error("DANGEROUS: always-fallback-to-parent-chain-da is set and rest-aggregator is disabled; node will halt on any AnyTrust batch encountered")
 			}
+		}
 
-			log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
+		log.Info("Creating AnyTrust DA provider", "enableWriter", enableWriter, "alwaysFallback", alwaysFallback)
 
-			daFactory := anytrust.NewFactory(
-				&config.DA.AnyTrust,
-				dataSigner,
-				l1client,
-				l1Reader,
-				deployInfo.SequencerInbox,
-				config.BatchPoster.Enable,
-			)
-			log.Info("Created AnyTrust DA factory")
+		daFactory := anytrust.NewFactory(
+			&config.DA.AnyTrust,
+			dataSigner,
+			l1client,
+			l1Reader,
+			deployInfo.SequencerInbox,
+			enableWriter,
+			alwaysFallback,
+		)
+		log.Info("Created AnyTrust DA factory")
 
-			if err := daFactory.ValidateConfig(); err != nil {
-				return nil, nil, nil, err
-			}
+		if err := daFactory.ValidateConfig(); err != nil {
+			return nil, nil, nil, err
+		}
 
-			var localCleanupFuncs []func()
-			reader, readerCleanup, err := daFactory.CreateReader(ctx)
+		var localCleanupFuncs []func()
+		reader, readerCleanup, err := daFactory.CreateReader(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if readerCleanup != nil {
+			localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
+		}
+
+		var writer daprovider.Writer
+		if enableWriter {
+			var writerCleanup func()
+			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			if readerCleanup != nil {
-				localCleanupFuncs = append(localCleanupFuncs, readerCleanup)
+			if writerCleanup != nil {
+				localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
 			}
-
-			var writer daprovider.Writer
-			if config.BatchPoster.Enable {
-				var writerCleanup func()
-				writer, writerCleanup, err = daFactory.CreateWriter(ctx)
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				if writerCleanup != nil {
-					localCleanupFuncs = append(localCleanupFuncs, writerCleanup)
-				}
-				if writer != nil {
-					writers = append(writers, writer)
-					log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
-				}
+			if writer != nil {
+				writers = append(writers, writer)
+				log.Info("Added AnyTrust writer", "writerIndex", len(writers)-1, "totalWriters", len(writers))
 			}
-
-			headerBytes := daFactory.GetSupportedHeaderBytes()
-			for _, hb := range headerBytes {
-				if err := dapRegistry.Register(hb, reader, nil); err != nil {
-					return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
-				}
-			}
-
-			anytrustCleanup := func() {
-				for _, cleanup := range localCleanupFuncs {
-					cleanup()
-				}
-			}
-			cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 		}
+
+		headerBytes := daFactory.GetSupportedHeaderBytes()
+		for _, hb := range headerBytes {
+			if err := dapRegistry.Register(hb, reader, nil); err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
+			}
+		}
+
+		anytrustCleanup := func() {
+			for _, cleanup := range localCleanupFuncs {
+				cleanup()
+			}
+		}
+		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
 	// We support a nil txStreamer for the pruning code.
@@ -739,12 +746,6 @@ func getDAProviders(
 	if dapRegistry.GetReader(daprovider.DACertificateMessageHeaderFlag) == nil {
 		if err := dapRegistry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register fallback DACert reader: %w", err)
-		}
-	}
-
-	if config.Dangerous.AlwaysFallbackToParentChainDA {
-		if err := dapRegistry.SetupAnyTrustReader(&daprovider.DangerousAlwaysFallbackReader{}, nil); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to register dangerous fallback AnyTrust reader: %w", err)
 		}
 	}
 

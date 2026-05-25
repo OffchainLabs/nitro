@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/daprovider"
 	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
@@ -18,12 +19,13 @@ import (
 
 // lint:require-exhaustive-initialization
 type Factory struct {
-	config       *Config
-	dataSigner   signature.DataSignerFunc
-	l1Client     *ethclient.Client
-	l1Reader     *headerreader.HeaderReader
-	seqInboxAddr common.Address
-	enableWriter bool
+	config         *Config
+	dataSigner     signature.DataSignerFunc
+	l1Client       *ethclient.Client
+	l1Reader       *headerreader.HeaderReader
+	seqInboxAddr   common.Address
+	enableWriter   bool
+	alwaysFallback bool
 }
 
 // SupportedHeaderBytes are the header bytes supported by AnyTrust DA.
@@ -33,6 +35,7 @@ var SupportedHeaderBytes = []byte{
 }
 
 // NewFactory creates a new AnyTrust DA provider factory.
+// alwaysFallback is --node.dangerous.always-fallback-to-parent-chain-da; see ValidateConfig and CreateReader.
 func NewFactory(
 	config *Config,
 	dataSigner signature.DataSignerFunc,
@@ -40,14 +43,16 @@ func NewFactory(
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddr common.Address,
 	enableWriter bool,
+	alwaysFallback bool,
 ) *Factory {
 	return &Factory{
-		config:       config,
-		dataSigner:   dataSigner,
-		l1Client:     l1Client,
-		l1Reader:     l1Reader,
-		seqInboxAddr: seqInboxAddr,
-		enableWriter: enableWriter,
+		config:         config,
+		dataSigner:     dataSigner,
+		l1Client:       l1Client,
+		l1Reader:       l1Reader,
+		seqInboxAddr:   seqInboxAddr,
+		enableWriter:   enableWriter,
+		alwaysFallback: alwaysFallback,
 	}
 }
 
@@ -61,6 +66,16 @@ func (f *Factory) GetSupportedHeaderBytes() []byte {
 func (f *Factory) ValidateConfig() error {
 	if !f.config.Enable {
 		return errors.New("anytrust data availability must be enabled")
+	}
+
+	if f.alwaysFallback {
+		if f.enableWriter {
+			return errors.New("always-fallback-to-parent-chain-da requires enableWriter=false; the dangerous flag disallows posting new AnyTrust batches")
+		}
+		if f.config.RPCAggregator.Enable {
+			log.Warn("always-fallback-to-parent-chain-da is set but rpc-aggregator is still enabled; ignoring rpc-aggregator (writer-only)")
+		}
+		return nil
 	}
 
 	if f.enableWriter {
@@ -80,6 +95,20 @@ func (f *Factory) ValidateConfig() error {
 }
 
 func (f *Factory) CreateReader(ctx context.Context) (daprovider.Reader, func(), error) {
+	if f.alwaysFallback && !f.config.RestAggregator.Enable {
+		return &daprovider.DangerousAlwaysFallbackReader{}, nil, nil
+	}
+
+	cfg := f.config
+	if f.alwaysFallback && cfg.RPCAggregator.Enable {
+		// rpc-aggregator is the writer path; with alwaysFallback the writer is suppressed.
+		// Mask it so the reader-only path in CreateDAReader doesn't reject it.
+		log.Warn("alwaysFallback is set; ignoring rpc-aggregator (writer-path) config")
+		cfgCopy := *cfg
+		cfgCopy.RPCAggregator.Enable = false
+		cfg = &cfgCopy
+	}
+
 	var daReader anytrustutil.Reader
 	var keysetFetcher *KeysetFetcher
 	var lifecycleManager *LifecycleManager
@@ -87,10 +116,10 @@ func (f *Factory) CreateReader(ctx context.Context) (daprovider.Reader, func(), 
 
 	if f.enableWriter {
 		_, daReader, keysetFetcher, lifecycleManager, err = CreateDAReaderAndWriter(
-			ctx, f.config, f.dataSigner, f.l1Client, f.seqInboxAddr)
+			ctx, cfg, f.dataSigner, f.l1Client, f.seqInboxAddr)
 	} else {
 		daReader, keysetFetcher, lifecycleManager, err = CreateDAReader(
-			ctx, f.config, f.l1Reader, &f.seqInboxAddr)
+			ctx, cfg, f.l1Reader, &f.seqInboxAddr)
 	}
 
 	if err != nil {

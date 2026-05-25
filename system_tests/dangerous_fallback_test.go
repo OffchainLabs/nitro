@@ -21,9 +21,8 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 )
 
-// Post-retirement: chain config still requires DAC, AnyTrust.Enable=true to match
-// the chain config, no DAS server reachable. The dangerous flag must skip the
-// factory at runtime so the node never tries to connect.
+// Post-retirement: chain config still requires DAC and DAS is unreachable.
+// The dangerous flag must short-circuit AnyTrust wiring so the node never tries to connect.
 func TestDangerousAlwaysFallback_BatchPosterPostsToParentChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -109,8 +108,9 @@ func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
 	builder.parallelise = false
 	builder.BuildL1(t)
 
-	rpcServer, pubkey, backendConfig, _, restURL := startLocalAnyTrustServer(t, ctx, t.TempDir(), builder.L1.Client, builder.addresses.SequencerInbox)
+	rpcServer, pubkey, backendConfig, restServer, restURL := startLocalAnyTrustServer(t, ctx, t.TempDir(), builder.L1.Client, builder.addresses.SequencerInbox)
 	defer func() { _ = rpcServer.Shutdown(ctx) }()
+	defer func() { _ = restServer.Shutdown() }()
 	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
 
 	builder.nodeConfig.DA.AnyTrust.Enable = true
@@ -131,7 +131,6 @@ func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
 
 	waitForAnyTrustBatchOnL1(t, ctx, builder, 30*time.Second)
 
-	// Setup syncing node that should fatal error
 	nodeBFatalErrChan := make(chan error, 10)
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.BlockValidator.Enable = false
@@ -160,6 +159,66 @@ func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
 		t.Logf("Node B fataled on batch %d: %v", typed.BatchNum, err)
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for Node B to fatal on AnyTrust batch")
+	}
+}
+
+// Phase-out: sequencer (no flag) posts real AnyTrust batches; a syncing node
+// with the flag plus rest-aggregator must read them from the committee, not halt.
+func TestDangerousAlwaysFallback_SyncingReadsFromCommittee(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
+	builder.parallelise = false
+	builder.BuildL1(t)
+
+	rpcServer, pubkey, backendConfig, restServer, restURL := startLocalAnyTrustServer(t, ctx, t.TempDir(), builder.L1.Client, builder.addresses.SequencerInbox)
+	defer func() { _ = rpcServer.Shutdown(ctx) }()
+	defer func() { _ = restServer.Shutdown() }()
+	authorizeAnyTrustKeyset(t, ctx, pubkey, builder.L1Info, builder.L1.Client)
+
+	builder.nodeConfig.DA.AnyTrust.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfig)
+	builder.nodeConfig.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Enable = true
+	builder.nodeConfig.DA.AnyTrust.RestAggregator.Urls = []string{restURL}
+
+	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Recipient")
+	recipient := builder.L2Info.GetAddress("Recipient")
+	tx := builder.L2Info.PrepareTxTo("Owner", &recipient, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+
+	waitForAnyTrustBatchOnL1(t, ctx, builder, 30*time.Second)
+
+	nodeBFatalErrChan := make(chan error, 10)
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigB.BlockValidator.Enable = false
+	nodeConfigB.Dangerous.AlwaysFallbackToParentChainDA = true
+	nodeConfigB.DA.AnyTrust.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator = anytrust.DefaultRestfulClientAggregatorConfig
+	nodeConfigB.DA.AnyTrust.RestAggregator.Enable = true
+	nodeConfigB.DA.AnyTrust.RestAggregator.Urls = []string{restURL}
+
+	l2B, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig:   nodeConfigB,
+		initData:     &builder.L2Info.ArbInitData,
+		fatalErrChan: nodeBFatalErrChan,
+	})
+	defer cleanupB()
+
+	checkBatchPosting(t, ctx, builder, l2B.Client)
+
+	// Window > inbox reader poll cadence so a trailing fatal can't slip past the check.
+	select {
+	case err := <-nodeBFatalErrChan:
+		t.Fatalf("node B unexpectedly fataled: %v", err)
+	case <-time.After(2 * time.Second):
 	}
 }
 

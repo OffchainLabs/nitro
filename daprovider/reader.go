@@ -70,11 +70,8 @@ func (r *FallbackDACertReader) RecoverPayloadAndPreimages(
 		})
 }
 
-// ErrAnyTrustRequiresFallback is the errors.Is target for AnyTrustRequiresFallbackError.
 var ErrAnyTrustRequiresFallback = errors.New("AnyTrust DA committee required but unavailable")
 
-// AnyTrustRequiresFallbackError is returned by DangerousAlwaysFallbackReader
-// for the offending batch.
 type AnyTrustRequiresFallbackError struct {
 	BatchNum uint64
 }
@@ -87,8 +84,7 @@ func (e *AnyTrustRequiresFallbackError) Is(target error) bool {
 	return target == ErrAnyTrustRequiresFallback
 }
 
-// DangerousAlwaysFallbackReader rejects every AnyTrust batch with an
-// AnyTrustRequiresFallbackError. Registered when AlwaysFallbackToParentChainDA is set.
+// DangerousAlwaysFallbackReader rejects every AnyTrust batch with AnyTrustRequiresFallbackError.
 type DangerousAlwaysFallbackReader struct{}
 
 func (r *DangerousAlwaysFallbackReader) RecoverPayload(

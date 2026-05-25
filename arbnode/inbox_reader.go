@@ -126,7 +126,6 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
 	runChan := make(chan struct{}, 1)
-	// Set before close(runChan); the close synchronizes the read below.
 	var runFatalCause error
 	err := stopwaiter.CallIterativelyWith[struct{}](
 		&r.StopWaiterSafe,
@@ -136,17 +135,13 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 				log.Info("stopping block creation in inbox reader because transaction streamer has stopped")
 				close(runChan)
 			}
-			if errors.Is(err, daprovider.ErrAnyTrustRequiresFallback) {
-				var typed *daprovider.AnyTrustRequiresFallbackError
-				if errors.As(err, &typed) {
-					log.Error("inbox reader halting", "batch", typed.BatchNum, "err", err)
-				} else {
-					log.Error("inbox reader halting", "err", err)
-				}
+			var fallbackErr *daprovider.AnyTrustRequiresFallbackError
+			if errors.As(err, &fallbackErr) {
+				log.Error("inbox reader halting", "batch", fallbackErr.BatchNum, "err", err)
 				wrapped := fmt.Errorf("inbox reader: %w", err)
 				select {
 				case r.fatalErrChan <- wrapped:
-				case <-ctx.Done():
+				default:
 				}
 				runFatalCause = wrapped
 				close(runChan)
