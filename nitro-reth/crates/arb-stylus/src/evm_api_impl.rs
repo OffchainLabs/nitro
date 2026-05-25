@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use alloy_primitives::{Address, Log, B256, U256};
+use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX;
 use revm::Database;
 
 use crate::{
@@ -296,6 +297,8 @@ pub struct StylusEvmApi {
     precompile_ctx_ptr: *const (),
     do_call: Option<DoCallFn>,
     do_create: Option<DoCreateFn>,
+    /// Most recent `account_code` result; a same-address repeat read is free.
+    last_code: Option<(Address, Vec<u8>)>,
 }
 
 // SAFETY: `wasmer::FunctionEnv::new<T>` requires `T: Send + 'static`, so
@@ -351,6 +354,7 @@ impl StylusEvmApi {
             precompile_ctx_ptr,
             do_call,
             do_create,
+            last_code: None,
         }
     }
 
@@ -907,6 +911,11 @@ impl EvmApi for StylusEvmApi {
         address: Address,
         gas_left: Gas,
     ) -> eyre::Result<(Vec<u8>, Gas)> {
+        if let Some((stored, data)) = self.last_code.as_ref() {
+            if *stored == address {
+                return Ok((data.clone(), Gas(0)));
+            }
+        }
         let (code, is_cold) = self.journal().account_code(address)?;
         // WasmAccountTouchCost(withCode=true): extCodeCost + cold/warm access cost
         let access_cost = if is_cold {
@@ -918,6 +927,9 @@ impl EvmApi for StylusEvmApi {
         // If insufficient gas, return empty code but still charge
         if gas_left.0 < gas_cost {
             return Ok((Vec::new(), Gas(gas_cost)));
+        }
+        if !code.is_empty() || self.arbos_version < ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX {
+            self.last_code = Some((address, code.clone()));
         }
         Ok((code, Gas(gas_cost)))
     }
