@@ -82,53 +82,31 @@ fn max_inflight() -> usize {
     })
 }
 
-/// Adaptive flush interval based on observed commit latency and dirty pages.
+/// Fixed-interval flush scheduler with an EMA of commit latency tracked for
+/// observability. The interval is set at construction and does not change.
 pub struct FlushScheduler {
-    target_commit_latency_ms: u64,
-    max_dirty_pages_mb: u64,
-    min_interval: u64,
-    max_interval: u64,
-    current_interval: u64,
+    interval: u64,
     ema_commit_latency_ms: u64,
 }
 
 impl FlushScheduler {
-    pub fn new(initial_interval: u64) -> Self {
-        let min_interval = 32;
-        let max_interval = 256;
-        let current_interval = initial_interval.clamp(min_interval, max_interval);
+    pub fn new(interval: u64) -> Self {
         Self {
-            target_commit_latency_ms: 1000,
-            max_dirty_pages_mb: 200,
-            min_interval,
-            max_interval,
-            current_interval,
+            interval,
             ema_commit_latency_ms: 0,
         }
     }
 
-    pub fn should_flush(&self, since_last: u64, dirty_mb: Option<u64>) -> bool {
-        if let Some(mb) = dirty_mb {
-            if mb > self.max_dirty_pages_mb {
-                return true;
-            }
-        }
-        since_last >= self.current_interval
+    pub fn should_flush(&self, since_last: u64) -> bool {
+        since_last >= self.interval
     }
 
     pub fn observe(&mut self, commit_latency_ms: u64) {
         self.ema_commit_latency_ms = (self.ema_commit_latency_ms * 7 + commit_latency_ms * 3) / 10;
-        self.current_interval = if self.ema_commit_latency_ms > self.target_commit_latency_ms {
-            (self.current_interval / 2).max(self.min_interval)
-        } else if self.ema_commit_latency_ms < self.target_commit_latency_ms / 2 {
-            (self.current_interval * 2).min(self.max_interval)
-        } else {
-            self.current_interval
-        };
     }
 
     pub fn current_interval(&self) -> u64 {
-        self.current_interval
+        self.interval
     }
 }
 
@@ -450,13 +428,12 @@ where
         );
     }
 
-    async fn produce_block_with_execution(
+    fn produce_block_with_execution(
         &self,
         input: &BlockProductionInput,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.drain_completed_flush();
-        self.apply_backpressure().await;
 
         let head_num = self.head_block_number()?;
         let l2_block_number = head_num + 1;
@@ -1148,10 +1125,8 @@ where
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
-        // Start async flush when scheduler signals threshold or dirty cap (non-blocking).
         let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
-        let dirty_mb = read_dirty_pages_mb();
-        let should_flush = self.scheduler.lock().should_flush(since_flush, dirty_mb);
+        let should_flush = self.scheduler.lock().should_flush(since_flush);
         if should_flush && !self.pending_flush.load(Ordering::SeqCst) {
             self.start_async_flush();
         }
@@ -1283,7 +1258,8 @@ where
             "Parsed L1 message"
         );
 
-        self.produce_block_with_execution(&input, parsed_txs).await
+        self.apply_backpressure().await;
+        self.produce_block_with_execution(&input, parsed_txs)
     }
 
     async fn reset_to_block(&self, target_block_number: u64) -> Result<(), BlockProducerError> {
