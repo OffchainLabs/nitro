@@ -7,13 +7,17 @@ use arb_spec_tests::runner::{fixtures_root, run_execution_fixture};
 /// diverge on Sepolia replay at this block. Canon receipt: status=0,
 /// gasUsed=0xb226 (=45606).
 #[test]
+#[cfg_attr(
+    not(feature = "spec-binary"),
+    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY"
+)]
 fn sepolia_block_204_060_366_pre_recorded_revert() {
     let path = fixtures_root()
         .join("stylus/regression/sepolia_block_204_060_366_pre_recorded_revert.json");
-    if std::env::var("ARB_SPEC_BINARY").is_err() {
-        eprintln!("skipping: set ARB_SPEC_BINARY=path/to/arb-reth");
-        return;
-    }
+    assert!(
+        std::env::var("ARB_SPEC_BINARY").is_ok(),
+        "ARB_SPEC_BINARY must point at a built `arb-reth` binary"
+    );
     if let Err(e) = run_execution_fixture(&path, None) {
         panic!("fixture failed: {e}");
     }

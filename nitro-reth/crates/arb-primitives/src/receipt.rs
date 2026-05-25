@@ -93,7 +93,11 @@ impl ArbReceiptKind {
         }
     }
 
-    pub const fn as_receipt(&self) -> &AlloyReceipt {
+    /// Returns the underlying `AlloyReceipt` for variants that wrap one.
+    ///
+    /// Returns `None` for [`ArbReceiptKind::Deposit`], which has no inner
+    /// receipt body (deposits always succeed with zero gas and no logs).
+    pub const fn as_receipt(&self) -> Option<&AlloyReceipt> {
         match self {
             Self::Legacy(r)
             | Self::Eip2930(r)
@@ -103,8 +107,8 @@ impl ArbReceiptKind {
             | Self::Contract(r)
             | Self::Retry(r)
             | Self::SubmitRetryable(r)
-            | Self::Internal(r) => r,
-            Self::Deposit(_) => unreachable!(),
+            | Self::Internal(r) => Some(r),
+            Self::Deposit(_) => None,
         }
     }
 
@@ -296,37 +300,37 @@ impl TxReceipt for ArbReceipt {
     type Log = Log;
 
     fn status_or_post_state(&self) -> Eip658Value {
-        match &self.kind {
-            ArbReceiptKind::Deposit(_) => Eip658Value::Eip658(true),
-            _ => self.kind.as_receipt().status_or_post_state(),
+        match self.kind.as_receipt() {
+            Some(r) => r.status_or_post_state(),
+            None => Eip658Value::Eip658(true),
         }
     }
 
     fn status(&self) -> bool {
-        match &self.kind {
-            ArbReceiptKind::Deposit(_) => true,
-            _ => self.kind.as_receipt().status(),
+        match self.kind.as_receipt() {
+            Some(r) => r.status(),
+            None => true,
         }
     }
 
     fn bloom(&self) -> Bloom {
-        match &self.kind {
-            ArbReceiptKind::Deposit(_) => Bloom::ZERO,
-            _ => self.kind.as_receipt().bloom(),
+        match self.kind.as_receipt() {
+            Some(r) => r.bloom(),
+            None => Bloom::ZERO,
         }
     }
 
     fn cumulative_gas_used(&self) -> u64 {
-        match &self.kind {
-            ArbReceiptKind::Deposit(_) => 0,
-            _ => self.kind.as_receipt().cumulative_gas_used(),
+        match self.kind.as_receipt() {
+            Some(r) => r.cumulative_gas_used(),
+            None => 0,
         }
     }
 
     fn logs(&self) -> &[Self::Log] {
-        match &self.kind {
-            ArbReceiptKind::Deposit(_) => &[],
-            _ => self.kind.as_receipt().logs(),
+        match self.kind.as_receipt() {
+            Some(r) => r.logs(),
+            None => &[],
         }
     }
 
@@ -693,5 +697,47 @@ impl reth_db_api::table::Decompress for ArbReceipt {
     fn decompress(value: &[u8]) -> Result<Self, reth_db_api::DatabaseError> {
         let (obj, _) = reth_codecs::Compact::from_compact(value, value.len());
         Ok(obj)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn alloy_receipt() -> AlloyReceipt {
+        AlloyReceipt {
+            status: Eip658Value::Eip658(true),
+            cumulative_gas_used: 21_000,
+            logs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn as_receipt_returns_none_for_deposit() {
+        let kind = ArbReceiptKind::Deposit(ArbDepositReceipt);
+        assert!(kind.as_receipt().is_none());
+    }
+
+    #[test]
+    fn as_receipt_returns_some_for_non_deposit() {
+        let kind = ArbReceiptKind::Legacy(alloy_receipt());
+        assert!(kind.as_receipt().is_some());
+    }
+
+    #[test]
+    fn tx_receipt_trait_methods_handle_deposit() {
+        let receipt = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt));
+        assert!(receipt.status());
+        assert_eq!(receipt.status_or_post_state(), Eip658Value::Eip658(true));
+        assert_eq!(receipt.bloom(), Bloom::ZERO);
+        assert_eq!(receipt.cumulative_gas_used(), 0);
+        assert!(receipt.logs().is_empty());
+    }
+
+    #[test]
+    fn tx_receipt_trait_methods_delegate_for_non_deposit() {
+        let receipt = ArbReceipt::new(ArbReceiptKind::Legacy(alloy_receipt()));
+        assert!(receipt.status());
+        assert_eq!(receipt.cumulative_gas_used(), 21_000);
     }
 }

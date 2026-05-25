@@ -38,6 +38,7 @@ eyre = { workspace = true }
 cc = "1"
 
 [dev-dependencies]
+arb-context = { workspace = true }
 wat = "1"
 proptest = { workspace = true }
 

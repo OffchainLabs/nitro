@@ -4,6 +4,7 @@
 //! on-chain access to ArbOS state, gas pricing, retryable tickets,
 //! Stylus WASM management, and node interface queries.
 
+mod error;
 mod interfaces;
 
 mod arbaddresstable;
@@ -26,7 +27,6 @@ mod arbwasm;
 mod arbwasmcache;
 mod nodeinterface;
 mod nodeinterface_debug;
-pub mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
 pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
@@ -50,13 +50,10 @@ pub use arbretryabletx::{
     ARBRETRYABLETX_ADDRESS,
 };
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
-pub use arbsys::{
-    create_arbsys_precompile, get_cached_l1_block_number, get_current_l2_block, get_tx_is_aliased,
-    set_cached_l1_block_number, set_current_l2_block, set_tx_is_aliased, store_arbsys_state,
-    take_arbsys_state, ArbSysMerkleState, ARBSYS_ADDRESS,
-};
+pub use arbsys::{create_arbsys_precompile, ARBSYS_ADDRESS};
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
+pub use error::ArbPrecompileError;
 pub use nodeinterface::{
     build_fake_tx_bytes, compute_l1_gas_for_estimate, create_nodeinterface_precompile,
     decode_estimate_args, NODE_INTERFACE_ADDRESS,
@@ -64,11 +61,11 @@ pub use nodeinterface::{
 pub use nodeinterface_debug::{
     create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
 };
-pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
+use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::cell::Cell;
+use std::sync::Arc;
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =
@@ -107,373 +104,27 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
     })
 }
 
-// ── ArbOS version (process-wide) ────────────────────────────────────
-// Process-wide because tokio offloads EVM execution onto a blocking thread
-// pool; thread-locals set on the reactor thread don't propagate.
-
-static GLOBAL_ARBOS_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-thread_local! {
-    /// Per-thread fast-path mirror for ArbOS version (kept in sync via set_arbos_version).
-    static ARBOS_VERSION: Cell<u64> = const { Cell::new(0) };
-    /// L1 block number for the NUMBER opcode, from ArbOS state after StartBlock.
-    static L1_BLOCK_NUMBER_FOR_EVM: Cell<u64> = const { Cell::new(0) };
-    /// Current EVM call depth, incremented on each CALL/CREATE frame.
-    /// Used by precompiles (e.g., ArbSys.isTopLevelCall) to determine
-    /// the call stack position. Reset to 0 at transaction start.
-    static EVM_CALL_DEPTH: Cell<usize> = const { Cell::new(0) };
-    /// msg.sender per call frame, indexed by depth-1. Pushed on
-    /// frame_init, popped on frame_return_result. Used by ArbSys to
-    /// resolve `Contracts[depth-2].Caller()`.
-    static CALLER_STACK: std::cell::RefCell<Vec<alloy_primitives::Address>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-    /// Current block timestamp, set before transaction execution.
-    /// Used by ArbWasm to compute program age for expiry checks.
-    static BLOCK_TIMESTAMP: Cell<u64> = const { Cell::new(0) };
-    /// Current gas backlog value, set by executor before each tx.
-    /// Used by Redeem precompile to determine ShrinkBacklog write cost.
-    static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
-    /// Gas consumed by precompile operations before an error.
-    static PRECOMPILE_GAS_USED: Cell<u64> = const { Cell::new(0) };
-    /// Current tx poster fee (wei), set by executor before each tx.
-    /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
-    static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
-    /// Currently-executing retryable ticket ID (zero when not inside a retry tx).
-    static CURRENT_RETRYABLE_ID: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
-    /// Currently-executing redeemer (refund_to) address, left-padded into 32 bytes.
-    static CURRENT_REDEEMER: Cell<[u8; 32]> = const { Cell::new([0u8; 32]) };
-    /// Effective per-gas price the sender offered, captured before tip-drop
-    /// caps `tx_env.gas_price` to base_fee. Read by Stylus `tx.gasprice`.
-    static CURRENT_TX_EFFECTIVE_GAS_PRICE: Cell<u128> = const { Cell::new(0) };
-    /// Poster fee balance correction for BALANCE opcode.
-    /// The canonical implementation charges gas_limit * baseFee, but our reduced
-    /// gas_limit charges less by posterGas * baseFee. The BALANCE opcode handler
-    /// subtracts this amount when checking the sender's balance.
-    static POSTER_BALANCE_CORRECTION: Cell<u128> = const { Cell::new(0) };
-    /// Current transaction sender address (first 20 bytes as u128 + extra Cell).
-    static TX_SENDER_LO: Cell<u128> = const { Cell::new(0) };
-    static TX_SENDER_HI: Cell<u32> = const { Cell::new(0) };
-    static STYLUS_ACTIVATION_ADDR: Cell<Option<[u8; 20]>> = const { Cell::new(None) };
-    static STYLUS_KEEPALIVE_HASH: Cell<Option<[u8; 32]>> = const { Cell::new(None) };
-    static STYLUS_ACTIVATION_DATA_FEE: Cell<u128> = const { Cell::new(0) };
-    static STYLUS_CALL_VALUE_HI: Cell<u128> = const { Cell::new(0) };
-    static STYLUS_CALL_VALUE_LO: Cell<u128> = const { Cell::new(0) };
+pub fn charge_precompile_gas(gas_used: &mut u64, gas: u64) {
+    *gas_used = gas_used.saturating_add(gas);
 }
 
-use std::cell::RefCell;
-
-thread_local! {
-    /// Per-block LRU of recently invoked Stylus program codehashes. Used by
-    /// ArbOS v60+ pricing; capacity set per-block from `params.BlockCacheSize`.
-    static RECENT_WASMS: RefCell<(Vec<alloy_primitives::B256>, usize)> = const { RefCell::new((Vec::new(), 0)) };
-}
-
-/// Reset the recent WASMs cache for a new block, with the given capacity.
-pub fn reset_recent_wasms(capacity: usize) {
-    RECENT_WASMS.with(|c| {
-        let mut cache = c.borrow_mut();
-        cache.0.clear();
-        cache.1 = capacity;
-    });
-}
-
-/// Insert a Stylus program codehash into the recent WASMs cache.
-/// Returns `true` if the codehash was already present (cache hit).
-pub fn insert_recent_wasm(hash: alloy_primitives::B256) -> bool {
-    RECENT_WASMS.with(|c| {
-        let mut cache = c.borrow_mut();
-        let was_present = if let Some(pos) = cache.0.iter().position(|h| *h == hash) {
-            cache.0.remove(pos);
-            true
-        } else {
-            false
-        };
-        cache.0.push(hash);
-        let max = cache.1;
-        if max > 0 && cache.0.len() > max {
-            cache.0.remove(0);
-        }
-        was_present
-    })
-}
-
-use std::sync::Mutex as StdMutex;
-
-/// Cache of L2 block hashes for the arbBlockHash() precompile.
-/// Populated from the header chain during apply_pre_execution_changes.
-/// Separate from the journal's block_hashes (which holds L1 hashes for BLOCKHASH opcode).
-static L2_BLOCKHASH_CACHE: StdMutex<
-    Option<std::collections::HashMap<u64, alloy_primitives::B256>>,
-> = StdMutex::new(None);
-
-/// Set an L2 block hash in the arbBlockHash cache.
-pub fn set_l2_block_hash(l2_block_number: u64, hash: alloy_primitives::B256) {
-    let mut cache = L2_BLOCKHASH_CACHE
-        .lock()
-        .expect("L2 blockhash cache lock poisoned");
-    let map = cache.get_or_insert_with(std::collections::HashMap::new);
-    map.insert(l2_block_number, hash);
-}
-
-/// Get an L2 block hash from the arbBlockHash cache.
-pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256> {
-    let cache = L2_BLOCKHASH_CACHE
-        .lock()
-        .expect("L2 blockhash cache lock poisoned");
-    cache.as_ref()?.get(&l2_block_number).copied()
-}
-
-/// Set the current ArbOS version for precompile version gating.
-pub fn set_arbos_version(version: u64) {
-    GLOBAL_ARBOS_VERSION.store(version, std::sync::atomic::Ordering::Relaxed);
-    ARBOS_VERSION.with(|v| v.set(version));
-}
-
-/// Get the current ArbOS version.
-pub fn get_arbos_version() -> u64 {
-    let local = ARBOS_VERSION.with(|v| v.get());
-    if local != 0 {
-        return local;
-    }
-    let global = GLOBAL_ARBOS_VERSION.load(std::sync::atomic::Ordering::Relaxed);
-    if global != 0 {
-        ARBOS_VERSION.with(|v| v.set(global));
-    }
-    global
-}
-
-static ALLOW_DEBUG_PRECOMPILES: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Set whether ArbDebug / ArbosTest debug precompiles are callable. Driven
-/// by the chain spec's `AllowDebugPrecompiles` flag.
-pub fn set_allow_debug_precompiles(allow: bool) {
-    ALLOW_DEBUG_PRECOMPILES.store(allow, std::sync::atomic::Ordering::Relaxed);
-}
-
-pub fn allow_debug_precompiles() -> bool {
-    ALLOW_DEBUG_PRECOMPILES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Set the L1 block number for the NUMBER opcode.
-pub fn set_l1_block_number_for_evm(number: u64) {
-    L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.set(number));
-}
-
-/// Get the L1 block number for the NUMBER opcode.
-pub fn get_l1_block_number_for_evm() -> u64 {
-    L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.get())
-}
-
-/// Set the current gas backlog value for the Redeem precompile.
-pub fn set_current_gas_backlog(backlog: u64) {
-    CURRENT_GAS_BACKLOG.with(|v| v.set(backlog));
-}
-
-/// Get the current gas backlog value.
-pub fn get_current_gas_backlog() -> u64 {
-    CURRENT_GAS_BACKLOG.with(|v| v.get())
-}
-
-pub fn reset_precompile_gas() {
-    PRECOMPILE_GAS_USED.with(|v| v.set(0));
-}
-
-pub fn charge_precompile_gas(gas: u64) {
-    PRECOMPILE_GAS_USED.with(|v| v.set(v.get() + gas));
-}
-
-pub fn get_precompile_gas() -> u64 {
-    PRECOMPILE_GAS_USED.with(|v| v.get())
-}
-
-/// Initialize gas tracking for a precompile call: reset accumulator, charge
-/// argsCost (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
-pub fn init_precompile_gas(input_len: usize) {
-    reset_precompile_gas();
+/// Initialize gas tracking for a precompile call: charge argsCost
+/// (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
+pub fn init_precompile_gas(gas_used: &mut u64, input_len: usize) {
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
-    charge_precompile_gas(args_cost + 800);
+    charge_precompile_gas(gas_used, args_cost + 800);
 }
 
 /// Initialize gas tracking for a `pure` precompile method: like
 /// `init_precompile_gas` but skips the OpenArbosState SLOAD (800), matching the
 /// reference framework's pure-method path which does not open ArbOS state.
-pub fn init_precompile_gas_pure(input_len: usize) {
-    reset_precompile_gas();
+pub fn init_precompile_gas_pure(gas_used: &mut u64, input_len: usize) {
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
-    charge_precompile_gas(args_cost);
+    charge_precompile_gas(gas_used, args_cost);
 }
 
-/// Set the current tx poster fee for ArbGasInfo.getCurrentTxL1GasFees.
-pub fn set_current_tx_poster_fee(fee_wei: u128) {
-    CURRENT_TX_POSTER_FEE.with(|v| v.set(fee_wei));
-}
-
-/// Get the current tx poster fee.
-pub fn get_current_tx_poster_fee() -> u128 {
-    CURRENT_TX_POSTER_FEE.with(|v| v.get())
-}
-
-pub fn set_current_retryable_id(id: alloy_primitives::B256) {
-    CURRENT_RETRYABLE_ID.with(|v| v.set(id.0));
-}
-
-pub fn get_current_retryable_id() -> alloy_primitives::U256 {
-    alloy_primitives::U256::from_be_bytes(CURRENT_RETRYABLE_ID.with(|v| v.get()))
-}
-
-pub fn set_current_redeemer(addr: alloy_primitives::Address) {
-    let padded = alloy_primitives::B256::left_padding_from(addr.as_slice());
-    CURRENT_REDEEMER.with(|v| v.set(padded.0));
-}
-
-pub fn get_current_redeemer() -> alloy_primitives::U256 {
-    alloy_primitives::U256::from_be_bytes(CURRENT_REDEEMER.with(|v| v.get()))
-}
-
-pub fn set_current_tx_effective_gas_price(price: u128) {
-    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.set(price));
-}
-
-pub fn get_current_tx_effective_gas_price() -> u128 {
-    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.get())
-}
-
-pub fn clear_tx_scratch() {
-    CURRENT_TX_POSTER_FEE.with(|v| v.set(0));
-    CURRENT_RETRYABLE_ID.with(|v| v.set([0u8; 32]));
-    CURRENT_REDEEMER.with(|v| v.set([0u8; 32]));
-    CURRENT_TX_EFFECTIVE_GAS_PRICE.with(|v| v.set(0));
-}
-
-/// Set the poster balance correction for BALANCE opcode adjustment.
-pub fn set_poster_balance_correction(correction: alloy_primitives::U256) {
-    let val: u128 = correction.try_into().unwrap_or(u128::MAX);
-    POSTER_BALANCE_CORRECTION.with(|v| v.set(val));
-}
-
-/// Get the poster balance correction.
-pub fn get_poster_balance_correction() -> alloy_primitives::U256 {
-    alloy_primitives::U256::from(POSTER_BALANCE_CORRECTION.with(|v| v.get()))
-}
-
-/// Set the current tx sender for BALANCE correction.
-pub fn set_current_tx_sender(addr: alloy_primitives::Address) {
-    let bytes = addr.as_slice();
-    let lo = u128::from_be_bytes(bytes[4..20].try_into().unwrap_or([0u8; 16]));
-    let hi = u32::from_be_bytes(bytes[0..4].try_into().unwrap_or([0u8; 4]));
-    TX_SENDER_LO.with(|v| v.set(lo));
-    TX_SENDER_HI.with(|v| v.set(hi));
-}
-
-/// Get the current tx sender.
-pub fn get_current_tx_sender() -> alloy_primitives::Address {
-    let lo = TX_SENDER_LO.with(|v| v.get());
-    let hi = TX_SENDER_HI.with(|v| v.get());
-    let mut bytes = [0u8; 20];
-    bytes[0..4].copy_from_slice(&hi.to_be_bytes());
-    bytes[4..20].copy_from_slice(&lo.to_be_bytes());
-    alloy_primitives::Address::new(bytes)
-}
-
-/// Set the EVM call depth to a specific value.
-/// Called by the precompile provider which reads the depth from revm's journal.
-pub fn set_evm_depth(depth: usize) {
-    EVM_CALL_DEPTH.with(|v| v.set(depth));
-}
-
-/// Get the current EVM call depth.
-pub fn get_evm_depth() -> usize {
-    EVM_CALL_DEPTH.with(|v| v.get())
-}
-
-pub fn push_caller_frame(caller: alloy_primitives::Address) {
-    CALLER_STACK.with(|s| s.borrow_mut().push(caller));
-}
-
-pub fn pop_caller_frame() {
-    CALLER_STACK.with(|s| {
-        s.borrow_mut().pop();
-    });
-}
-
-pub fn reset_caller_stack() {
-    CALLER_STACK.with(|s| s.borrow_mut().clear());
-}
-
-/// msg.sender of the frame at `depth` (1-indexed). `None` outside range.
-pub fn caller_at_depth(depth: usize) -> Option<alloy_primitives::Address> {
-    if depth == 0 {
-        return None;
-    }
-    CALLER_STACK.with(|s| s.borrow().get(depth - 1).copied())
-}
-
-/// Set the current block timestamp for precompile queries.
-pub fn set_block_timestamp(timestamp: u64) {
-    BLOCK_TIMESTAMP.with(|v| v.set(timestamp));
-}
-
-/// Get the current block timestamp.
-pub fn get_block_timestamp() -> u64 {
-    BLOCK_TIMESTAMP.with(|v| v.get())
-}
-
-pub fn set_stylus_activation_request(addr: Option<alloy_primitives::Address>) {
-    STYLUS_ACTIVATION_ADDR.with(|v| v.set(addr.map(|a| *a.as_ref())));
-}
-
-pub fn take_stylus_activation_request() -> Option<alloy_primitives::Address> {
-    STYLUS_ACTIVATION_ADDR.with(|v| {
-        let val = v.get();
-        v.set(None);
-        val.map(alloy_primitives::Address::from)
-    })
-}
-
-pub fn set_stylus_keepalive_request(hash: Option<alloy_primitives::B256>) {
-    STYLUS_KEEPALIVE_HASH.with(|v| v.set(hash.map(|h| h.0)));
-}
-
-pub fn take_stylus_keepalive_request() -> Option<alloy_primitives::B256> {
-    STYLUS_KEEPALIVE_HASH.with(|v| {
-        let val = v.get();
-        v.set(None);
-        val.map(alloy_primitives::B256::from)
-    })
-}
-
-pub fn set_stylus_activation_data_fee(fee: alloy_primitives::U256) {
-    STYLUS_ACTIVATION_DATA_FEE.with(|v| v.set(fee.try_into().unwrap_or(u128::MAX)));
-}
-
-pub fn take_stylus_activation_data_fee() -> alloy_primitives::U256 {
-    STYLUS_ACTIVATION_DATA_FEE.with(|v| {
-        let val = v.get();
-        v.set(0);
-        alloy_primitives::U256::from(val)
-    })
-}
-
-pub fn set_stylus_call_value(value: alloy_primitives::U256) {
-    let bytes = value.to_be_bytes::<32>();
-    let hi = u128::from_be_bytes(bytes[0..16].try_into().unwrap_or([0u8; 16]));
-    let lo = u128::from_be_bytes(bytes[16..32].try_into().unwrap_or([0u8; 16]));
-    STYLUS_CALL_VALUE_HI.with(|v| v.set(hi));
-    STYLUS_CALL_VALUE_LO.with(|v| v.set(lo));
-}
-
-pub fn get_stylus_call_value() -> alloy_primitives::U256 {
-    let hi = STYLUS_CALL_VALUE_HI.with(|v| v.get());
-    let lo = STYLUS_CALL_VALUE_LO.with(|v| v.get());
-    let mut bytes = [0u8; 32];
-    bytes[0..16].copy_from_slice(&hi.to_be_bytes());
-    bytes[16..32].copy_from_slice(&lo.to_be_bytes());
-    alloy_primitives::U256::from_be_bytes(bytes)
-}
-
-fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
-    if get_arbos_version() < min_version {
+fn check_precompile_version(ctx: &ArbPrecompileCtx, min_version: u64) -> Option<PrecompileResult> {
+    if ctx.block.arbos_version < min_version {
         Some(Ok(PrecompileOutput::new(0, Default::default())))
     } else {
         None
@@ -490,23 +141,25 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
 
 /// Emit a pre-encoded Solidity custom-error payload (selector + ABI args)
 /// as a revert. Adds the copy cost for the payload to the accumulated gas.
-pub fn sol_error_revert(payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
+pub fn sol_error_revert(gas_used: &mut u64, payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
     let result_cost = 3u64 * (payload.len() as u64).div_ceil(32); // CopyGas * words
-    charge_precompile_gas(result_cost);
-    let gas = get_precompile_gas();
+    charge_precompile_gas(gas_used, result_cost);
     Ok(PrecompileOutput::new_reverted(
-        gas.min(gas_limit),
+        (*gas_used).min(gas_limit),
         payload.into(),
     ))
 }
 
-fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
-    let accumulated_gas = get_precompile_gas();
-    reset_precompile_gas();
+fn gas_check(
+    ctx: &ArbPrecompileCtx,
+    gas_limit: u64,
+    gas_used: u64,
+    result: PrecompileResult,
+) -> PrecompileResult {
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
-        Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => Ok(
-            PrecompileOutput::new_reverted(accumulated_gas.min(gas_limit), Default::default()),
+        Err(PrecompileError::Other(_)) if ctx.block.arbos_version >= 11 => Ok(
+            PrecompileOutput::new_reverted(gas_used.min(gas_limit), Default::default()),
         ),
         other => other,
     }
@@ -516,11 +169,12 @@ fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
 /// version is outside `[min_version, max_version]`. `max_version == 0` is
 /// unbounded.
 fn check_method_version(
+    ctx: &ArbPrecompileCtx,
     gas_limit: u64,
     min_version: u64,
     max_version: u64,
 ) -> Option<PrecompileResult> {
-    let v = get_arbos_version();
+    let v = ctx.block.arbos_version;
     if v < min_version || (max_version > 0 && v > max_version) {
         Some(burn_all_revert(gas_limit))
     } else {
@@ -533,39 +187,68 @@ const KZG_POINT_EVALUATION_ADDRESS: alloy_primitives::Address =
 
 /// Registers Arbitrum precompiles into `map` and applies the per-ArbOS-version
 /// adjustments to the standard Ethereum precompile set.
-pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
+///
+/// `ctx` is captured into every handler closure so that handlers read the
+/// per-block / per-tx context as a typed function parameter rather than via
+/// a thread-local.
+pub fn register_arb_precompiles(map: &mut PrecompilesMap, ctx: Arc<ArbPrecompileCtx>) {
+    let arbos_version = ctx.block.arbos_version;
     map.extend_precompiles([
-        (ARBSYS_ADDRESS, create_arbsys_precompile()),
-        (ARBGASINFO_ADDRESS, create_arbgasinfo_precompile()),
-        (ARBINFO_ADDRESS, create_arbinfo_precompile()),
-        (ARBSTATISTICS_ADDRESS, create_arbstatistics_precompile()),
+        (ARBSYS_ADDRESS, create_arbsys_precompile(ctx.clone())),
+        (
+            ARBGASINFO_ADDRESS,
+            create_arbgasinfo_precompile(ctx.clone()),
+        ),
+        (ARBINFO_ADDRESS, create_arbinfo_precompile(ctx.clone())),
+        (
+            ARBSTATISTICS_ADDRESS,
+            create_arbstatistics_precompile(ctx.clone()),
+        ),
         (
             ARBFUNCTIONTABLE_ADDRESS,
-            create_arbfunctiontable_precompile(),
+            create_arbfunctiontable_precompile(ctx.clone()),
         ),
-        (ARBOSACTS_ADDRESS, create_arbosacts_precompile()),
-        (ARBOSTEST_ADDRESS, create_arbostest_precompile()),
-        (ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile()),
-        (ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile()),
-        (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),
-        (ARBRETRYABLETX_ADDRESS, create_arbretryabletx_precompile()),
-        (ARBOWNER_ADDRESS, create_arbowner_precompile()),
+        (ARBOSACTS_ADDRESS, create_arbosacts_precompile(ctx.clone())),
+        (ARBOSTEST_ADDRESS, create_arbostest_precompile(ctx.clone())),
+        (
+            ARBOWNERPUBLIC_ADDRESS,
+            create_arbownerpublic_precompile(ctx.clone()),
+        ),
+        (
+            ARBADDRESSTABLE_ADDRESS,
+            create_arbaddresstable_precompile(ctx.clone()),
+        ),
+        (
+            ARBAGGREGATOR_ADDRESS,
+            create_arbaggregator_precompile(ctx.clone()),
+        ),
+        (
+            ARBRETRYABLETX_ADDRESS,
+            create_arbretryabletx_precompile(ctx.clone()),
+        ),
+        (ARBOWNER_ADDRESS, create_arbowner_precompile(ctx.clone())),
         (ARBBLS_ADDRESS, create_arbbls_precompile()),
-        (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),
-        (ARBWASM_ADDRESS, create_arbwasm_precompile()),
-        (ARBWASMCACHE_ADDRESS, create_arbwasmcache_precompile()),
+        (ARBDEBUG_ADDRESS, create_arbdebug_precompile(ctx.clone())),
+        (ARBWASM_ADDRESS, create_arbwasm_precompile(ctx.clone())),
+        (
+            ARBWASMCACHE_ADDRESS,
+            create_arbwasmcache_precompile(ctx.clone()),
+        ),
         (
             ARBFILTEREDTXMANAGER_ADDRESS,
-            create_arbfilteredtxmanager_precompile(),
+            create_arbfilteredtxmanager_precompile(ctx.clone()),
         ),
         (
             ARBNATIVETOKENMANAGER_ADDRESS,
-            create_arbnativetokenmanager_precompile(),
+            create_arbnativetokenmanager_precompile(ctx.clone()),
         ),
-        (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
+        (
+            NODE_INTERFACE_ADDRESS,
+            create_nodeinterface_precompile(ctx.clone()),
+        ),
         (
             NODE_INTERFACE_DEBUG_ADDRESS,
-            create_nodeinterface_debug_precompile(),
+            create_nodeinterface_debug_precompile(ctx.clone()),
         ),
     ]);
 
@@ -593,50 +276,49 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, arbos_version: u64) {
 
 #[cfg(test)]
 mod recent_wasms_tests {
-    use super::*;
     use alloy_primitives::B256;
+    use arb_context::BlockCtx;
 
     #[test]
     fn reset_clears_entries_and_sets_capacity() {
+        let block = BlockCtx::default();
         let h1 = B256::repeat_byte(0xa1);
         let h2 = B256::repeat_byte(0xa2);
-        reset_recent_wasms(8);
-        assert!(!insert_recent_wasm(h1));
-        assert!(!insert_recent_wasm(h2));
-        assert!(insert_recent_wasm(h1));
-        // Block boundary: reset must drop everything.
-        reset_recent_wasms(8);
-        assert!(!insert_recent_wasm(h1), "reset must wipe prior entries");
+        block.reset_recent_wasms(8);
+        assert!(!block.insert_recent_wasm(h1));
+        assert!(!block.insert_recent_wasm(h2));
+        assert!(block.insert_recent_wasm(h1));
+        block.reset_recent_wasms(8);
+        assert!(
+            !block.insert_recent_wasm(h1),
+            "reset must wipe prior entries"
+        );
     }
 
     #[test]
     fn capacity_evicts_oldest() {
+        let block = BlockCtx::default();
         let h1 = B256::repeat_byte(0x01);
         let h2 = B256::repeat_byte(0x02);
         let h3 = B256::repeat_byte(0x03);
-        reset_recent_wasms(2);
-        assert!(!insert_recent_wasm(h1));
-        assert!(!insert_recent_wasm(h2));
-        // Inserting h3 over-fills, the oldest (h1) is evicted.
-        assert!(!insert_recent_wasm(h3));
-        // Probe in order: h1 evicted, h2 still present, h3 still present.
-        // (Each insert refreshes LRU position; we test exactly the sequence
-        // we care about — h1 being absent.)
+        block.reset_recent_wasms(2);
+        assert!(!block.insert_recent_wasm(h1));
+        assert!(!block.insert_recent_wasm(h2));
+        assert!(!block.insert_recent_wasm(h3));
         assert!(
-            !insert_recent_wasm(h1),
+            !block.insert_recent_wasm(h1),
             "h1 should be evicted after h3 push"
         );
     }
 
     #[test]
     fn zero_capacity_is_no_op_cache() {
+        let block = BlockCtx::default();
         let h = B256::repeat_byte(0xff);
-        reset_recent_wasms(0);
-        // With cap=0, nothing should be retained, every insert reports miss.
-        assert!(!insert_recent_wasm(h));
-        // Note: current impl with cap=0 doesn't evict, but reset is the cure.
-        reset_recent_wasms(0);
-        assert!(!insert_recent_wasm(h));
+        block.reset_recent_wasms(0);
+        assert!(!block.insert_recent_wasm(h));
+        block.reset_recent_wasms(0);
+        assert!(!block.insert_recent_wasm(h));
     }
 }
 

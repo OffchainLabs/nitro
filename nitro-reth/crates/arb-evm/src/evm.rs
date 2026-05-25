@@ -53,9 +53,13 @@ const BLOCKHASH_OPCODE: u8 = 0x40;
 const BALANCE_OPCODE: u8 = 0x31;
 
 /// Arbitrum NUMBER: returns the L1 block number recorded during StartBlock.
+///
+/// `block_env.number` is configured to hold the L1 block number for Arbitrum
+/// EVM execution; reading the host preserves consensus semantics without
+/// touching any per-thread global.
 fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
-    let l1_block = arb_precompiles::get_l1_block_number_for_evm();
-    if !ctx.interpreter.stack.push(U256::from(l1_block)) {
+    let l1_block = ctx.host.block_number();
+    if !ctx.interpreter.stack.push(l1_block) {
         ctx.interpreter.halt(InstructionResult::StackOverflow);
     }
 }
@@ -77,7 +81,7 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionConte
         }
     };
 
-    let l1_block_number = U256::from(arb_precompiles::get_l1_block_number_for_evm());
+    let l1_block_number = ctx.host.block_number();
 
     let Some(diff) = l1_block_number.checked_sub(requested) else {
         if !ctx.interpreter.stack.push(U256::ZERO) {
@@ -113,7 +117,6 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionConte
 /// reads the transaction sender's balance, so that the observed value matches
 /// a full-`gas_limit * basefee` buy-gas charge.
 fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
-    // Pop address from stack
     let addr_u256 = match ctx.interpreter.stack.pop() {
         Some(v) => v,
         None => {
@@ -127,15 +130,15 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext
         addr_u256.to_be_bytes::<32>(),
     ));
 
-    // Load account via host (handles cold/warm tracking)
+    let sender = ctx.host.caller();
+    let correction = poster_balance_correction_word();
+
     let spec_id = ctx.interpreter.runtime_flag.spec_id();
     if spec_id.is_enabled_in(revm::primitives::hardfork::SpecId::BERLIN) {
-        // Berlin+: use balance() which tracks cold/warm
         let Some(state_load) = ctx.host.balance(addr) else {
             ctx.interpreter.halt_fatal();
             return;
         };
-        // Charge gas: 2600 for cold, 100 for warm
         let gas_cost = if state_load.is_cold { 2600u64 } else { 100u64 };
         if !ctx.interpreter.gas.record_cost(gas_cost) {
             ctx.interpreter
@@ -143,11 +146,8 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext
             return;
         }
 
-        // Apply poster fee correction for sender
-        let balance = if addr == arb_precompiles::get_current_tx_sender() {
-            state_load
-                .data
-                .saturating_sub(arb_precompiles::get_poster_balance_correction())
+        let balance = if addr == sender {
+            state_load.data.saturating_sub(correction)
         } else {
             state_load.data
         };
@@ -157,16 +157,13 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext
                 .halt(revm::interpreter::InstructionResult::StackOverflow);
         }
     } else {
-        // Pre-Berlin: always 400 gas, load via basic path
         let Some(state_load) = ctx.host.balance(addr) else {
             ctx.interpreter.halt_fatal();
             return;
         };
 
-        let balance = if addr == arb_precompiles::get_current_tx_sender() {
-            state_load
-                .data
-                .saturating_sub(arb_precompiles::get_poster_balance_correction())
+        let balance = if addr == sender {
+            state_load.data.saturating_sub(correction)
         } else {
             state_load.data
         };
@@ -191,11 +188,11 @@ fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionCon
         return;
     };
 
-    // Apply poster fee correction if the contract being executed is the tx sender
-    let balance = if target == arb_precompiles::get_current_tx_sender() {
+    let sender = ctx.host.caller();
+    let balance = if target == sender {
         state_load
             .data
-            .saturating_sub(arb_precompiles::get_poster_balance_correction())
+            .saturating_sub(poster_balance_correction_word())
     } else {
         state_load.data
     };
@@ -204,6 +201,33 @@ fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionCon
         ctx.interpreter
             .halt(revm::interpreter::InstructionResult::StackOverflow);
     }
+}
+
+// EVM opcodes are wired into revm via a `[Instruction; 256]` table built from
+// bare `fn` pointers, so the `arb_balance` / `arb_selfbalance` overrides cannot
+// accept an extra ctx parameter. The executor publishes the active tx's
+// `poster_balance_correction` into this thread-local at the same point it
+// stages the precompile ctx; opcode reads stay zero-cost and consensus-only.
+//
+// Scope: arb-evm only — `arb-precompiles` is forbidden from holding any
+// `thread_local!` by the lint job in `.github/workflows/lint.yml`.
+thread_local! {
+    static POSTER_BALANCE_CORRECTION: std::cell::Cell<u128> = const { std::cell::Cell::new(0) };
+}
+
+/// Publish the poster-balance correction word for the active tx so that
+/// `arb_balance` / `arb_selfbalance` opcode reads observe it.
+pub fn set_poster_balance_correction(value: u128) {
+    POSTER_BALANCE_CORRECTION.with(|cell| cell.set(value));
+}
+
+/// Reset the per-tx poster-balance correction to zero.
+pub fn clear_poster_balance_correction() {
+    POSTER_BALANCE_CORRECTION.with(|cell| cell.set(0));
+}
+
+fn poster_balance_correction_word() -> U256 {
+    POSTER_BALANCE_CORRECTION.with(|cell| U256::from(cell.get()))
 }
 
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
@@ -289,21 +313,21 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx.interpreter.halt(InstructionResult::SelfDestruct);
 }
 
-// ── Stylus page tracking & reentrancy ───────────────────────────────
-//
-// Page tracking and reentrancy state lives in arb_stylus::pages so that
-// both arb-evm (dispatch) and arb-stylus (EvmApi add_pages) can access it.
-
-pub use arb_stylus::pages::{
-    add_stylus_pages, get_stylus_pages, get_stylus_program_count, pop_stylus_program,
-    push_stylus_program, reset_stylus_pages, set_stylus_pages_open,
-};
+/// Reset per-tx Stylus state at the start of every transaction.
+pub fn reset_stylus_pages(ctx: &arb_context::ArbPrecompileCtx) {
+    let mut tx = ctx.tx.lock();
+    tx.stylus_program_counts.clear();
+}
 
 // ── Stylus storage helpers ───────────────────────────────────────────
 
-use arb_precompiles::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
-    PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot_b256, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY,
+        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+    },
+    DatabaseError, DatabaseErrorInfo, Detached, Storage, StorageBackend, StorageError,
+    SystemStateBackend, ARBOS_STATE_ADDRESS,
 };
 use arbos::programs::{memory::MemoryModel, params::StylusParams, Program};
 
@@ -320,12 +344,92 @@ fn sload_arbos<DB: Database>(journal: &mut revm::Journal<DB>, slot: U256) -> Opt
     Some(result.data)
 }
 
-/// Read the StylusParams packed word from storage.
-fn read_params_word<DB: Database>(journal: &mut revm::Journal<DB>) -> Option<[u8; 32]> {
+/// `StorageBackend` adapter over a live `revm::Journal`, used so dispatch can
+/// drive the canonical `arb-storage` accessors without an `EvmInternals` in
+/// scope. Reads route through the journal's cold/warm cache; writes are
+/// unused on the dispatch path but routed identically for completeness.
+struct JournalBackend<'a, DB: Database> {
+    journal: &'a mut revm::Journal<DB>,
+}
+
+impl<'a, DB: Database> JournalBackend<'a, DB> {
+    fn new(journal: &'a mut revm::Journal<DB>) -> Self {
+        Self { journal }
+    }
+}
+
+impl<DB: Database> SystemStateBackend for JournalBackend<'_, DB> {
+    type Error = StorageError;
+
+    fn sload_system(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
+        // Route through the journal so in-flight writes within the current
+        // call are observed; the perf win comes from the per-block
+        // ArbosState cache, not from bypassing the journal here.
+        let journal = &mut *self.journal;
+        journal
+            .inner
+            .load_account(&mut journal.database, account)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        let value = journal
+            .inner
+            .sload(&mut journal.database, account, slot, false)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        Ok(value.data)
+    }
+}
+
+impl<DB: Database> StorageBackend for JournalBackend<'_, DB> {
+    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, StorageError> {
+        let journal = &mut *self.journal;
+        journal
+            .inner
+            .load_account(&mut journal.database, account)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        let value = journal
+            .inner
+            .sload(&mut journal.database, account, slot, false)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        Ok(value.data)
+    }
+
+    fn sstore(&mut self, account: Address, slot: U256, value: U256) -> Result<(), StorageError> {
+        let journal = &mut *self.journal;
+        journal
+            .inner
+            .sstore(&mut journal.database, account, slot, value, false)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Write(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        Ok(())
+    }
+}
+
+/// Detached `Storage` handle for the `programs/params` subspace.
+///
+/// Reads route through a [`StorageBackend`]; no executor state pointer is
+/// required.
+fn programs_params_storage() -> Storage<'static, Detached> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
-    let slot = map_slot(params_key.as_slice(), 0);
-    sload_arbos(journal, slot).map(|v| v.to_be_bytes::<32>())
+    Storage::detached(ARBOS_STATE_ADDRESS, params_key)
 }
 
 /// Read program data word by code hash.
@@ -349,30 +453,6 @@ fn read_module_hash<DB: Database>(
     let module_hashes_key = derive_subspace_key(programs_key.as_slice(), &[2]);
     let slot = map_slot_b256(module_hashes_key.as_slice(), &code_hash);
     sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
-}
-
-/// Parse essential StylusParams fields from the packed storage word.
-fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
-    StylusParams {
-        arbos_version,
-        version: u16::from_be_bytes([word[0], word[1]]),
-        ink_price: (word[2] as u32) << 16 | (word[3] as u32) << 8 | word[4] as u32,
-        max_stack_depth: u32::from_be_bytes([word[5], word[6], word[7], word[8]]),
-        free_pages: u16::from_be_bytes([word[9], word[10]]),
-        page_gas: u16::from_be_bytes([word[11], word[12]]),
-        page_ramp: arbos::programs::params::INITIAL_PAGE_RAMP,
-        page_limit: u16::from_be_bytes([word[13], word[14]]),
-        min_init_gas: word[15],
-        min_cached_init_gas: word[16],
-        init_cost_scalar: word[17],
-        cached_cost_scalar: word[18],
-        expiry_days: u16::from_be_bytes([word[19], word[20]]),
-        keepalive_days: u16::from_be_bytes([word[21], word[22]]),
-        block_cache_size: u16::from_be_bytes([word[23], word[24]]),
-        // These fields span to word 2; not needed for dispatch.
-        max_wasm_size: 0,
-        max_fragment_count: 0,
-    }
 }
 
 /// Compute upfront gas cost for a Stylus call, per `Programs.CallProgram`.
@@ -399,13 +479,24 @@ fn stylus_call_gas_cost(
 
 use arb_stylus::evm_api_impl::{SubCallResult, SubCreateResult};
 
+/// Read the current (pages_open, pages_ever) carried on the active `TxCtx`.
+fn read_tx_pages(ctx: &arb_context::ArbPrecompileCtx) -> (u16, u16) {
+    let tx = ctx.tx.lock();
+    (tx.stylus_pages_open, tx.stylus_pages_ever)
+}
+
+/// Write `pages_open` and `pages_ever` to the active `TxCtx`.
+fn write_tx_pages(ctx: &arb_context::ArbPrecompileCtx, pages: (u16, u16)) {
+    let mut tx = ctx.tx.lock();
+    tx.stylus_pages_open = pages.0;
+    tx.stylus_pages_ever = pages.1;
+}
+
 /// Monomorphized trampoline for Stylus sub-calls (CALL/DELEGATECALL/STATICCALL).
-///
-/// This function is created as a concrete `fn(...)` pointer by monomorphizing
-/// generic type parameters at the call site in `execute_stylus_program`.
-/// The `ctx` pointer is cast back to the concrete Context type.
+#[allow(clippy::too_many_arguments)]
 fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     ctx: *mut (),
+    precompile_ctx: *const (),
     call_type: u8,
     contract: Address,
     caller: Address,
@@ -413,6 +504,7 @@ fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     input: &[u8],
     gas: u64,
     value: U256,
+    parent_pages: (u16, u16),
 ) -> SubCallResult
 where
     BlockEnv: revm::context::Block,
@@ -420,12 +512,50 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
+    // SAFETY: `ctx` and `precompile_ctx` are the type-erased pointers stored
+    // by `execute_stylus_program` when it built the `StylusEvmApi` for this
+    // call frame. The concrete `revm::Context` and `ArbPrecompileCtx` types
+    // monomorphise this trampoline, so the cast is the structural inverse
+    // of the type-erasure performed when the host function was installed.
+    // Both pointers are valid for the duration of the parent EVM frame,
+    // which is the only frame that can invoke this trampoline.
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
+    let pre_ctx = unsafe { &*(precompile_ctx as *const arb_context::ArbPrecompileCtx) };
+
+    write_tx_pages(pre_ctx, parent_pages);
 
     let is_static = call_type == 2;
     let is_delegate = call_type == 1;
+    let is_callcode = call_type == 3;
+
+    struct ActorGuard<'a> {
+        ctx: &'a arb_context::ArbPrecompileCtx,
+        addr: Address,
+        pushed: bool,
+    }
+    impl Drop for ActorGuard<'_> {
+        fn drop(&mut self) {
+            if self.pushed {
+                self.ctx.pop_stylus_program(self.addr);
+            }
+        }
+    }
+    let _actor_guard = if !is_delegate && !is_callcode {
+        pre_ctx.push_stylus_program(storage_addr);
+        ActorGuard {
+            ctx: pre_ctx,
+            addr: storage_addr,
+            pushed: true,
+        }
+    } else {
+        ActorGuard {
+            ctx: pre_ctx,
+            addr: storage_addr,
+            pushed: false,
+        }
+    };
 
     let checkpoint = context.journaled_state.inner.checkpoint();
 
@@ -443,6 +573,7 @@ where
                 gas_cost: 0,
                 success: false,
                 refund: 0,
+                pages: read_tx_pages(pre_ctx),
             };
         }
     }
@@ -478,12 +609,22 @@ where
     };
 
     {
-        arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
         let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
         let mut precompiles =
             alloy_evm::precompiles::PrecompilesMap::from(revm::handler::EthPrecompiles::new(spec));
-        register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
-        let mut arb_map = ArbPrecompilesMap(precompiles);
+        // SAFETY: `precompile_ctx` was obtained as `Arc::as_ptr` from a
+        // live `Arc<ArbPrecompileCtx>` held by the dispatch path that
+        // installed this trampoline. `increment_strong_count` keeps the
+        // parent's refcount intact while `from_raw` rebuilds a clonable
+        // handle whose Drop will balance the increment. The pointer is
+        // valid for the duration of the parent EVM frame.
+        let pre_arc = unsafe {
+            let raw = precompile_ctx as *const arb_context::ArbPrecompileCtx;
+            std::sync::Arc::increment_strong_count(raw);
+            std::sync::Arc::from_raw(raw)
+        };
+        register_arb_precompiles(&mut precompiles, pre_arc.clone());
+        let mut arb_map = ArbPrecompilesMap::new(precompiles, pre_arc);
         let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
         >>::run(&mut arb_map, context, &sub_inputs);
@@ -513,6 +654,7 @@ where
                     gas_cost: gas_used,
                     success,
                     refund,
+                    pages: read_tx_pages(pre_ctx),
                 };
             }
             Ok(None) => {}
@@ -523,6 +665,7 @@ where
                     gas_cost: gas,
                     success: false,
                     refund: 0,
+                    pages: read_tx_pages(pre_ctx),
                 };
             }
         }
@@ -547,6 +690,7 @@ where
                 gas_cost: 0,
                 success: false,
                 refund: 0,
+                pages: read_tx_pages(pre_ctx),
             };
         }
     };
@@ -584,6 +728,7 @@ where
                     gas_cost: 0,
                     success: false,
                     refund: 0,
+                    pages: read_tx_pages(pre_ctx),
                 };
             }
         }
@@ -598,6 +743,7 @@ where
             gas_cost: 0,
             success: true,
             refund: 0,
+            pages: read_tx_pages(pre_ctx),
         };
     }
 
@@ -606,12 +752,20 @@ where
         ..sub_inputs
     };
 
-    // If the loaded bytecode carries the Stylus discriminant, dispatch it
-    // through the WASM runtime instead of the EVM interpreter.
-    if arb_precompiles::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+    if pre_ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
         && arb_stylus::is_stylus_program(&bytecode)
     {
-        let result = execute_stylus_program(context, &sub_inputs, &bytecode);
+        // SAFETY: see the `Arc::increment_strong_count` site above —
+        // `precompile_ctx` was produced by `Arc::as_ptr` and is valid
+        // for this frame's duration. The increment is balanced by the
+        // returned `Arc`'s Drop.
+        let arc = unsafe {
+            let raw = precompile_ctx as *const arb_context::ArbPrecompileCtx;
+            std::sync::Arc::increment_strong_count(raw);
+            std::sync::Arc::from_raw(raw)
+        };
+        let result = execute_stylus_program(context, &sub_inputs, &bytecode, &arc);
+        let pages = read_tx_pages(pre_ctx);
         let success = result.result.is_ok();
         let output = result.output.to_vec();
         let gas_used = gas.saturating_sub(result.gas.remaining());
@@ -626,14 +780,14 @@ where
             gas_cost: gas_used,
             success,
             refund,
+            pages,
         };
     }
 
-    let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
+    let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas, pre_ctx);
+    let pages = read_tx_pages(pre_ctx);
     let success = result.result.is_ok();
     let output = result.output.to_vec();
-    // Match geth's evm.Call: only Revert refunds remaining gas; revm's
-    // halt() leaves it unspent, so non-Revert halts must charge `gas`.
     let gas_used = if success || matches!(result.result, InstructionResult::Revert) {
         gas.saturating_sub(result.gas.remaining())
     } else {
@@ -650,17 +804,21 @@ where
         gas_cost: gas_used,
         success,
         refund,
+        pages,
     }
 }
 
 /// Monomorphized trampoline for Stylus CREATE/CREATE2 operations.
+#[allow(clippy::too_many_arguments)]
 fn stylus_create_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     ctx: *mut (),
+    precompile_ctx: *const (),
     caller: Address,
     code: &[u8],
     gas: u64,
     endowment: U256,
     salt: Option<B256>,
+    parent_pages: (u16, u16),
 ) -> SubCreateResult
 where
     BlockEnv: revm::context::Block,
@@ -668,23 +826,39 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
+    // SAFETY: see `stylus_call_trampoline` for the type-erasure invariant —
+    // `ctx` and `precompile_ctx` were installed by `execute_stylus_program`
+    // for this monomorphised trampoline; both are valid for the lifetime of
+    // the parent EVM frame that invokes the host function.
+    let pre_ctx = unsafe { &*(precompile_ctx as *const arb_context::ArbPrecompileCtx) };
+    {
+        let mut tx = pre_ctx.tx.lock();
+        tx.stylus_pages_open = parent_pages.0;
+        tx.stylus_pages_ever = parent_pages.1;
+    }
     let context = unsafe {
         &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
     };
 
-    let checkpoint = context.journaled_state.inner.checkpoint();
-
-    // Compute CREATE/CREATE2 address
-    let caller_nonce = {
+    let (caller_nonce, caller_balance) = {
         let acc = context
             .journaled_state
             .inner
             .load_account(&mut context.journaled_state.database, caller);
-        acc.map(|a| a.data.info.nonce).unwrap_or(0)
+        acc.map(|a| (a.data.info.nonce, a.data.info.balance))
+            .unwrap_or((0, U256::ZERO))
     };
 
+    if caller_balance < endowment {
+        return SubCreateResult {
+            address: None,
+            output: Vec::new(),
+            gas_cost: 0,
+            pages: read_tx_pages(pre_ctx),
+        };
+    }
+
     let created_address = if let Some(salt) = salt {
-        // CREATE2: keccak256(0xff ++ sender ++ salt ++ keccak256(code))
         let code_hash = alloy_primitives::keccak256(code);
         let mut buf = Vec::with_capacity(1 + 20 + 32 + 32);
         buf.push(0xff);
@@ -693,7 +867,6 @@ where
         buf.extend_from_slice(code_hash.as_slice());
         Address::from_slice(&alloy_primitives::keccak256(&buf)[12..])
     } else {
-        // CREATE: RLP([sender, nonce])
         use alloy_rlp::Encodable;
         let mut rlp_buf = Vec::with_capacity(64);
         alloy_rlp::Header {
@@ -706,43 +879,75 @@ where
         Address::from_slice(&alloy_primitives::keccak256(&rlp_buf)[12..])
     };
 
-    // Increment caller nonce
-    let _ = context
-        .journaled_state
-        .inner
-        .load_account(&mut context.journaled_state.database, caller);
-    if let Some(acc) = context.journaled_state.inner.state.get_mut(&caller) {
-        acc.info.nonce += 1;
-        context
+    struct CreateActorGuard<'a> {
+        ctx: &'a arb_context::ArbPrecompileCtx,
+        addr: Address,
+    }
+    impl Drop for CreateActorGuard<'_> {
+        fn drop(&mut self) {
+            self.ctx.pop_stylus_program(self.addr);
+        }
+    }
+    pre_ctx.push_stylus_program(created_address);
+    let _create_guard = CreateActorGuard {
+        ctx: pre_ctx,
+        addr: created_address,
+    };
+
+    {
+        use revm::context_interface::journaled_state::account::JournaledAccountTr;
+        let bumped = match context
             .journaled_state
             .inner
-            .nonce_bump_journal_entry(caller);
+            .load_account_mut(&mut context.journaled_state.database, caller)
+        {
+            Ok(mut caller_acc) => caller_acc.data.bump_nonce(),
+            Err(_) => false,
+        };
+        if !bumped {
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages: read_tx_pages(pre_ctx),
+            };
+        }
     }
 
-    // Transfer endowment
-    if !endowment.is_zero()
-        && context
-            .journaled_state
-            .inner
-            .transfer(
-                &mut context.journaled_state.database,
-                caller,
-                created_address,
-                endowment,
-            )
-            .is_err()
+    if context
+        .journaled_state
+        .inner
+        .load_account(&mut context.journaled_state.database, created_address)
+        .is_err()
     {
-        context.journaled_state.inner.checkpoint_revert(checkpoint);
         return SubCreateResult {
             address: None,
             output: Vec::new(),
             gas_cost: gas,
+            pages: read_tx_pages(pre_ctx),
         };
     }
 
-    // Run init code as EVM
+    let spec: revm::primitives::hardfork::SpecId = context.cfg.spec().into();
+    let checkpoint = match context.journaled_state.inner.create_account_checkpoint(
+        caller,
+        created_address,
+        endowment,
+        spec,
+    ) {
+        Ok(cp) => cp,
+        Err(_) => {
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages: read_tx_pages(pre_ctx),
+            };
+        }
+    };
+
     let init_inputs = CallInputs {
-        input: CallInput::Bytes(code.to_vec().into()),
+        input: CallInput::Bytes(Bytes::new()),
         gas_limit: gas,
         target_address: created_address,
         bytecode_address: created_address,
@@ -754,16 +959,52 @@ where
         known_bytecode: None,
     };
 
-    let result = run_evm_bytecode(context, &init_inputs, code, gas);
+    let result = run_evm_bytecode(context, &init_inputs, code, gas, pre_ctx);
+    let pages = read_tx_pages(pre_ctx);
     let success = result.result.is_ok();
-    let gas_used = gas.saturating_sub(result.gas.remaining());
 
     if success {
-        // Store the returned bytecode as the contract's code
         let deployed_code = result.output.to_vec();
+        let max_code_size = context.cfg.max_code_size();
+        if deployed_code.len() > max_code_size {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages,
+            };
+        }
+        let is_stylus = deployed_code.len() >= 3
+            && deployed_code[0] == 0xEF
+            && deployed_code[1] == 0xF0
+            && deployed_code[2] == 0x00;
+        if !deployed_code.is_empty() && deployed_code[0] == 0xEF && !is_stylus {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages,
+            };
+        }
+        let deposit_cost = context
+            .cfg
+            .gas_params()
+            .code_deposit_cost(deployed_code.len());
+        let after_deposit_remaining = result.gas.remaining().saturating_sub(deposit_cost);
+        if result.gas.remaining() < deposit_cost {
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+                pages,
+            };
+        }
+        let gas_used = gas.saturating_sub(after_deposit_remaining);
         let code_hash = alloy_primitives::keccak256(&deployed_code);
         let bytecode = revm::bytecode::Bytecode::new_raw(deployed_code.into());
-        // Ensure the account is loaded into state
         let _ = context
             .journaled_state
             .inner
@@ -775,16 +1016,19 @@ where
         context.journaled_state.inner.checkpoint_commit();
         SubCreateResult {
             address: Some(created_address),
-            output: Vec::new(), // success doesn't return data
+            output: Vec::new(),
             gas_cost: gas_used,
+            pages,
         }
     } else {
         let output = result.output.to_vec();
+        let gas_used = gas.saturating_sub(result.gas.remaining());
         context.journaled_state.inner.checkpoint_revert(checkpoint);
         SubCreateResult {
             address: None,
-            output, // revert returns data
+            output,
             gas_cost: gas_used,
+            pages,
         }
     }
 }
@@ -799,6 +1043,7 @@ fn run_evm_bytecode<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     inputs: &CallInputs,
     bytecode: &[u8],
     gas_limit: u64,
+    pre_ctx: &arb_context::ArbPrecompileCtx,
 ) -> InterpreterResult
 where
     BlockEnv: revm::context::Block,
@@ -871,7 +1116,6 @@ where
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
 
-    // Run the interpreter in a loop, handling nested calls/creates
     loop {
         let action = interpreter.run_plain(&instructions.instruction_table, context);
 
@@ -907,8 +1151,10 @@ where
                     }
                 };
                 let bytecode_address = sub_call.bytecode_address;
+                let parent_pages = read_tx_pages(pre_ctx);
                 let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
+                    pre_ctx as *const _ as *const (),
                     match sub_call.scheme {
                         CallScheme::Call | CallScheme::CallCode => 0,
                         CallScheme::DelegateCall => 1,
@@ -920,9 +1166,10 @@ where
                     &resolved_input,
                     sub_call.gas_limit,
                     sub_call.value.get(),
+                    parent_pages,
                 );
+                write_tx_pages(pre_ctx, sub_result.pages);
 
-                // Inject result back into interpreter (matching EthFrame::return_result)
                 let gas_remaining = sub_call.gas_limit.saturating_sub(sub_result.gas_cost);
                 let ins_result = if sub_result.success {
                     InstructionResult::Return
@@ -975,14 +1222,18 @@ where
                     _ => None,
                 };
 
+                let parent_pages = read_tx_pages(pre_ctx);
                 let sub_result = stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
                     context as *mut _ as *mut (),
+                    pre_ctx as *const _ as *const (),
                     sub_create.caller(),
                     sub_create.init_code(),
                     sub_create.gas_limit(),
                     sub_create.value(),
                     salt,
+                    parent_pages,
                 );
+                write_tx_pages(pre_ctx, sub_result.pages);
 
                 let gas_remaining = sub_create.gas_limit().saturating_sub(sub_result.gas_cost);
                 let created_addr = sub_result.address;
@@ -1010,7 +1261,6 @@ where
                 }
             }
             InterpreterAction::NewFrame(FrameInput::Empty) => {
-                // Should not happen
                 return InterpreterResult::new(
                     InstructionResult::Revert,
                     Bytes::new(),
@@ -1026,11 +1276,13 @@ where
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
 ///
 /// Validates the program, computes upfront gas costs (memory pages + init/cached
-/// gas), deducts them, then runs the WASM.
+/// gas), deducts them, then runs the WASM. Page counters flow through
+/// `TxCtx::stylus_pages_*` between dispatch boundaries.
 fn execute_stylus_program<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
     bytecode: &[u8],
+    ctx: &std::sync::Arc<arb_context::ArbPrecompileCtx>,
 ) -> InterpreterResult
 where
     BlockEnv: revm::context::Block,
@@ -1041,20 +1293,31 @@ where
     use arbos::programs::types::UserOutcome;
 
     let zero_gas = || EvmGas::new(0);
+    let write_pages = |open: u16, ever: u16| {
+        let mut tx = ctx.tx.lock();
+        tx.stylus_pages_open = open;
+        tx.stylus_pages_ever = ever;
+    };
+    let (parent_open, parent_ever) = {
+        let tx = ctx.tx.lock();
+        (tx.stylus_pages_open, tx.stylus_pages_ever)
+    };
 
     let code_hash = alloy_primitives::keccak256(bytecode);
-    let arbos_version = arb_precompiles::get_arbos_version();
-    let block_timestamp = arb_precompiles::get_block_timestamp();
+    let arbos_version = ctx.block.arbos_version;
+    let block_timestamp = ctx.block.block_timestamp;
 
-    // ── Read and validate program metadata ──────────────────────────
-    let params_word = match read_params_word(&mut context.journaled_state) {
-        Some(w) => w,
-        None => {
-            tracing::warn!(target: "stylus", "failed to read StylusParams from storage");
-            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+    let params_sto = programs_params_storage();
+    let params = {
+        let mut backend = JournalBackend::new(&mut context.journaled_state);
+        match StylusParams::load(arbos_version, &params_sto, &mut backend) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(target: "stylus", err = %e, "failed to load StylusParams from storage");
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
         }
     };
-    let params = parse_stylus_params(&params_word, arbos_version);
 
     let program_word = match read_program_word(&mut context.journaled_state, code_hash) {
         Some(w) => w,
@@ -1065,7 +1328,6 @@ where
     };
     let program = Program::from_storage(program_word, block_timestamp);
 
-    // Validate: program must be activated, correct version, not expired.
     if program.version == 0 || program.version != params.version {
         tracing::warn!(target: "stylus", codehash = %code_hash, program_ver = program.version, params_ver = params.version, "program version mismatch");
         return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
@@ -1076,11 +1338,8 @@ where
         return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
     }
 
-    // ── Compute and deduct upfront gas costs ────────────────────────
-    let (pages_open, pages_ever) = get_stylus_pages();
-    // ArbOS v60+: a recent-wasms cache hit counts as cached for pricing.
     let recent_wasms_hit = if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
-        arb_precompiles::insert_recent_wasm(code_hash)
+        ctx.block.insert_recent_wasm(code_hash)
     } else {
         false
     };
@@ -1092,7 +1351,7 @@ where
     } else {
         program
     };
-    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, pages_open, pages_ever);
+    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, parent_open, parent_ever);
     let total_gas = inputs.gas_limit;
 
     if total_gas < upfront_cost {
@@ -1102,42 +1361,32 @@ where
 
     let stylus_config = StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
 
-    // ── Track reentrancy ────────────────────────────────────────────
     let target_addr = inputs.target_address;
-    let is_delegate = matches!(
-        inputs.scheme,
-        CallScheme::DelegateCall | CallScheme::CallCode
-    );
-    // Only non-delegate-non-callcode calls increment the reentrancy counter.
-    // Delegate and callcode frames check the counter without bumping it, so an
-    // actual re-entry into the same storage context reports `reentrant=true`.
-    let reentrant = if !is_delegate {
-        push_stylus_program(target_addr)
-    } else {
-        get_stylus_program_count(target_addr) > 1
-    };
+    let reentrant = ctx.stylus_program_count(target_addr) > 1;
 
-    // Read the activation-time module hash from storage. This differs from
-    // code_hash (which is keccak256 of the bytecode); it is the hash of the
-    // compiled module computed during activateProgram.
     let module_hash =
         read_module_hash(&mut context.journaled_state, code_hash).unwrap_or(code_hash);
 
-    // Build EvmData from the execution context.
-    let mut evm_data = build_evm_data(context, inputs);
+    let mut evm_data = build_evm_data(context, inputs, ctx);
     evm_data.reentrant = reentrant as u32;
     evm_data.cached = effective_program.cached;
     evm_data.module_hash = module_hash;
 
-    // Track pages — add this program's footprint.
-    let (prev_open, _prev_ever) = add_stylus_pages(program.footprint);
+    let start_open = parent_open.saturating_add(program.footprint);
+    let start_ever = parent_ever.max(start_open);
 
-    // Create the type-erased StylusEvmApi bridge.
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
     let ctx_ptr = context as *mut _ as *mut ();
+    let precompile_ctx_ptr = std::sync::Arc::as_ptr(ctx) as *const ();
     let caller = inputs.caller;
     let call_value = inputs.value.get();
+    // SAFETY: `journal_ptr`, `ctx_ptr`, and `precompile_ctx_ptr` are all
+    // borrowed from values that live for the entirety of this function —
+    // `context` is borrowed `&mut` through the call, the `Arc` holds `ctx`
+    // pinned, and the journal is part of `context`. The `StylusEvmApi` is
+    // consumed by `instance.run_main` below before this function returns,
+    // so the pointers never outlive the borrows that produced them.
     let evm_api = unsafe {
         StylusEvmApi::new(
             journal_ptr,
@@ -1145,30 +1394,34 @@ where
             caller,
             call_value,
             is_static,
-            params.free_pages,
-            params.page_gas,
             arbos_version,
             ctx_ptr,
+            precompile_ctx_ptr,
             Some(stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
             Some(stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
         )
     };
 
-    // Try the module cache first; compile from WASM on miss and populate cache.
     let long_term_tag = if program.cached { 1u32 } else { 0u32 };
     let mut instance = if let Some((module, store)) =
         arb_stylus::cache::InitCache::get(code_hash, params.version, long_term_tag, false)
     {
-        let compile = arb_stylus::CompileConfig::version(params.version, false);
-        let env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
+        let compile = match arb_stylus::CompileConfig::version(params.version, false) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
+                write_pages(parent_open, start_ever);
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
+        };
+        let mut env =
+            arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
+        env.set_pages(start_open, start_ever, params.free_pages, params.page_gas);
         match arb_stylus::NativeInstance::from_module(module, store, env) {
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
-                set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
+                write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
@@ -1177,66 +1430,63 @@ where
             Ok(w) => w,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
-                set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
+                write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         };
-        let compile = arb_stylus::CompileConfig::version(params.version, false);
-        match arb_stylus::NativeInstance::from_bytes(
+        let compile = match arb_stylus::CompileConfig::version(params.version, false) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
+                write_pages(parent_open, start_ever);
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
+        };
+        match arb_stylus::NativeInstance::from_bytes_with_pages(
             &decompressed,
             evm_api,
             evm_data,
             &compile,
             stylus_config,
+            start_open,
+            start_ever,
+            params.free_pages,
+            params.page_gas,
         ) {
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
-                set_stylus_pages_open(prev_open);
-                if !is_delegate {
-                    pop_stylus_program(target_addr);
-                }
+                write_pages(parent_open, start_ever);
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
     };
 
-    // Convert EVM gas (after upfront deduction) to ink.
+    write_pages(start_open, start_ever);
+
     let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas_for_wasm));
 
-    // Get calldata from CallInput enum. SharedBuffer references parent's
-    // memory and must be resolved via the context.
     let calldata_owned: Bytes = inputs.input.bytes(context);
     let calldata: &[u8] = &calldata_owned;
     let outcome = match instance.run_main(calldata, stylus_config, ink) {
         Ok(outcome) => outcome,
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
-            set_stylus_pages_open(prev_open);
-            if !is_delegate {
-                pop_stylus_program(target_addr);
-            }
+            let final_ever = instance.env().pages_ever.max(start_ever);
+            write_pages(parent_open, final_ever);
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
 
-    // Restore page count and pop reentrancy.
-    set_stylus_pages_open(prev_open);
-    if !is_delegate {
-        pop_stylus_program(target_addr);
-    }
+    let final_ever = instance.env().pages_ever.max(start_ever);
+    write_pages(parent_open, final_ever);
 
-    // Convert remaining ink back to gas.
     let ink_left = match instance.ink_left() {
         arb_stylus::MachineMeter::Ready(ink_val) => ink_val,
         arb_stylus::MachineMeter::Exhausted => arb_stylus::Ink(0),
     };
     let gas_left = stylus_config.pricing.ink_to_gas(ink_left).0;
 
-    // Return data cost parity with EVM (ArbOS >= StylusFixes).
     let output: Bytes = instance.env().outs.clone().into();
     let gas_left = if !output.is_empty()
         && arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES
@@ -1252,13 +1502,11 @@ where
     };
 
     let mut gas_result = EvmGas::new(gas_left);
-    // Propagate SSTORE refunds from Stylus flush to the EVM gas accounting.
     let sstore_refund = instance.env().evm_api.sstore_refund();
     if sstore_refund != 0 {
         gas_result.record_refund(sstore_refund);
     }
 
-    // Map UserOutcome to InterpreterResult.
     match outcome {
         UserOutcome::Success => {
             InterpreterResult::new(InstructionResult::Return, output, gas_result)
@@ -1282,6 +1530,7 @@ where
 fn build_evm_data<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
+    ctx: &arb_context::ArbPrecompileCtx,
 ) -> EvmData
 where
     BlockEnv: revm::context::Block,
@@ -1292,7 +1541,7 @@ where
     let basefee = U256::from(context.block.basefee());
     // Pre-cap effective price stashed by ArbBlockExecutor; fall back to the
     // capped tx_env when unset (e.g. direct dispatch in unit tests).
-    let stashed = arb_precompiles::get_current_tx_effective_gas_price();
+    let stashed = ctx.tx_snapshot().effective_gas_price;
     let gas_price = if stashed != 0 {
         U256::from(stashed)
     } else {
@@ -1300,16 +1549,13 @@ where
     };
     let value = inputs.value.get();
 
-    // Stylus's block.number is the L1 block number, not the L2 block number.
-    let l1_block_number = arb_precompiles::get_l1_block_number_for_evm();
-
     EvmData {
-        arbos_version: arb_precompiles::get_arbos_version(),
+        arbos_version: ctx.block.arbos_version,
         block_basefee: B256::from(basefee.to_be_bytes()),
         chain_id: context.cfg.chain_id(),
         block_coinbase: context.block.beneficiary(),
         block_gas_limit: context.block.gas_limit(),
-        block_number: l1_block_number,
+        block_number: ctx.block.l1_block_number_for_evm,
         block_timestamp: context.block.timestamp().saturating_to(),
         contract_address: inputs.target_address,
         module_hash: alloy_primitives::keccak256(b""),
@@ -1326,8 +1572,8 @@ where
 // ── Stylus frame-level intercept ──────────────────────────────────
 
 /// Check if a `FrameInit` targets a Stylus WASM program via `known_bytecode`.
-fn is_stylus_call(frame_init: &FrameInit) -> Option<Bytes> {
-    if arb_precompiles::get_arbos_version() < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
+fn is_stylus_call(frame_init: &FrameInit, arbos_version: u64) -> Option<Bytes> {
+    if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
         return None;
     }
     if let FrameInput::Call(ref inputs) = frame_init.frame_input {
@@ -1348,6 +1594,7 @@ fn execute_stylus_call_concrete<DB: Database>(
     inputs: &CallInputs,
     bytecode: &[u8],
     checkpoint: revm::context_interface::journaled_state::JournalCheckpoint,
+    pre_ctx: &std::sync::Arc<arb_context::ArbPrecompileCtx>,
 ) -> FrameResult {
     // Handle value transfer for non-delegate calls (matches EthFrame::make_call_frame).
     if let revm::interpreter::CallValue::Transfer(value) = inputs.value {
@@ -1366,7 +1613,7 @@ fn execute_stylus_call_concrete<DB: Database>(
         }
     }
 
-    let result = execute_stylus_program(ctx, inputs, bytecode);
+    let result = execute_stylus_program(ctx, inputs, bytecode, pre_ctx);
 
     if result.result.is_ok() {
         ctx.journaled_state.inner.checkpoint_commit();
@@ -1381,13 +1628,21 @@ fn execute_stylus_call_concrete<DB: Database>(
     })
 }
 
-// ── Depth-tracking precompile provider ─────────────────────────────
+// ── Precompile provider ────────────────────────────────────────────
 
-/// Wraps [`PrecompilesMap`] to set the thread-local EVM call depth before
-/// each precompile invocation. The depth is read from revm's journal, which
-/// mirrors the `evm.Depth()` counter used by `ArbSys.isTopLevelCall`.
 #[derive(Clone, Debug)]
-pub struct ArbPrecompilesMap(pub PrecompilesMap);
+pub struct ArbPrecompilesMap {
+    pub inner: PrecompilesMap,
+    /// Per-block context shared with the registered precompile closures and
+    /// the Stylus dispatch path. Cheap to clone (`Arc`).
+    pub ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+}
+
+impl ArbPrecompilesMap {
+    pub fn new(inner: PrecompilesMap, ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> Self {
+        Self { inner, ctx }
+    }
+}
 
 impl<BlockEnv, TxEnv, CfgEnv, DB, Chain>
     PrecompileProvider<revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>>
@@ -1403,27 +1658,28 @@ where
     fn set_spec(&mut self, spec: CfgEnv::Spec) -> bool {
         <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::set_spec(&mut self.0, spec)
+        >>::set_spec(&mut self.inner, spec)
     }
 
+    // The `String` error type comes from upstream `PrecompileProvider::run`;
+    // we cannot tighten it without forking revm.
     fn run(
         &mut self,
         context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
         inputs: &CallInputs,
     ) -> Result<Option<Self::Output>, String> {
-        // Sync the thread-local depth from revm's journal before the precompile runs.
-        arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
+        self.ctx.set_evm_depth(context.journaled_state.inner.depth);
 
         // Check precompiles first.
         if let result @ Some(_) = <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::run(&mut self.0, context, inputs)?
+        >>::run(&mut self.inner, context, inputs)?
         {
             return Ok(result);
         }
 
         // Check for Stylus WASM programs (active at ArbOS v31+).
-        let arbos_version = arb_precompiles::get_arbos_version();
+        let arbos_version = self.ctx.block.arbos_version;
         if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
             // Use known_bytecode from CallInputs if available (already loaded by
             // revm's CALL handler), otherwise load from journal.
@@ -1445,7 +1701,9 @@ where
 
             if let Some(bytecode) = bytecode {
                 if arb_stylus::is_stylus_program(&bytecode) {
-                    return Ok(Some(execute_stylus_program(context, inputs, &bytecode)));
+                    return Ok(Some(execute_stylus_program(
+                        context, inputs, &bytecode, &self.ctx,
+                    )));
                 }
             }
         }
@@ -1456,13 +1714,13 @@ where
     fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {
         <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::warm_addresses(&self.0)
+        >>::warm_addresses(&self.inner)
     }
 
     fn contains(&self, address: &Address) -> bool {
         <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::contains(&self.0, address)
+        >>::contains(&self.inner, address)
     }
 }
 
@@ -1476,6 +1734,11 @@ type InnerRevmEvm<DB, I> = RevmEvm<
     EthFrame,
 >;
 
+struct CreateFrameCtx {
+    caller: Address,
+    checkpoint: revm::context_interface::journaled_state::JournalCheckpoint,
+}
+
 /// Arbitrum EVM with frame-level Stylus dispatch and custom opcodes.
 ///
 /// Implements [`EvmTr`] directly to intercept Stylus WASM calls in
@@ -1483,6 +1746,8 @@ type InnerRevmEvm<DB, I> = RevmEvm<
 pub struct ArbEvm<DB: Database, I> {
     inner: InnerRevmEvm<DB, I>,
     inspect: bool,
+    create_ctx_stack: Vec<CreateFrameCtx>,
+    actor_stack: Vec<Option<Address>>,
 }
 
 impl<DB, I> ArbEvm<DB, I>
@@ -1490,7 +1755,12 @@ where
     DB: Database,
 {
     pub fn new(inner: InnerRevmEvm<DB, I>, inspect: bool) -> Self {
-        Self { inner, inspect }
+        Self {
+            inner,
+            inspect,
+            create_ctx_stack: Vec::new(),
+            actor_stack: Vec::new(),
+        }
     }
 
     pub fn into_inner(self) -> InnerRevmEvm<DB, I> {
@@ -1507,6 +1777,20 @@ where
 
     pub fn precompiles_mut(&mut self) -> &mut ArbPrecompilesMap {
         &mut self.inner.precompiles
+    }
+}
+
+/// Accessor for the `Arc<ArbPrecompileCtx>` that an EVM factory most recently
+/// staged for the next [`EvmFactory::create_evm`] call. The block executor
+/// reuses this `Arc` so its per-tx writes share an allocation with the EVM
+/// precompile handler closures (which capture the `Arc` at registration time).
+pub trait ArbEvmFactoryStaged {
+    fn staged_precompile_ctx(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>;
+}
+
+impl ArbEvmFactoryStaged for ArbEvmFactory {
+    fn staged_precompile_ctx(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>> {
+        self.staged()
     }
 }
 
@@ -1567,26 +1851,52 @@ where
         ItemOrResult<&mut Self::Frame, FrameResult>,
         revm::handler::evm::ContextDbError<Self::Context>,
     > {
-        // Track msg.sender per frame for ArbSys precompiles.
+        let pre_ctx = self.inner.precompiles.ctx.clone();
         let pushed_caller = match &frame_input.frame_input {
             FrameInput::Call(inputs) => {
-                arb_precompiles::push_caller_frame(inputs.caller);
+                pre_ctx.push_caller(inputs.caller);
                 true
             }
             FrameInput::Create(inputs) => {
-                arb_precompiles::push_caller_frame(inputs.caller());
+                pre_ctx.push_caller(inputs.caller());
                 true
             }
             _ => false,
         };
 
-        // Intercept Stylus WASM calls before they reach EthFrame/precompiles.
-        if let Some(bytecode) = is_stylus_call(&frame_input) {
+        match &frame_input.frame_input {
+            FrameInput::Call(inputs)
+                if !matches!(
+                    inputs.scheme,
+                    CallScheme::DelegateCall | CallScheme::CallCode
+                ) =>
+            {
+                pre_ctx.push_stylus_program(inputs.target_address);
+                self.actor_stack.push(Some(inputs.target_address));
+            }
+            FrameInput::Call(_) => {
+                self.actor_stack.push(None);
+            }
+            FrameInput::Create(_) => {
+                self.actor_stack.push(None);
+            }
+            _ => {}
+        }
+
+        if let FrameInput::Create(inputs) = &frame_input.frame_input {
+            let cp = self.inner.ctx.journal_mut().checkpoint();
+            self.create_ctx_stack.push(CreateFrameCtx {
+                caller: inputs.caller(),
+                checkpoint: cp,
+            });
+        }
+
+        if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version) {
             if let FrameInput::Call(ref inputs) = frame_input.frame_input {
                 if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
                     let gas = EvmGas::new(inputs.gas_limit);
                     if pushed_caller {
-                        arb_precompiles::pop_caller_frame();
+                        pre_ctx.pop_caller();
                     }
                     return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
                         result: InterpreterResult::new(
@@ -1605,15 +1915,15 @@ where
                     inputs,
                     &bytecode,
                     checkpoint,
+                    &pre_ctx,
                 );
                 if pushed_caller {
-                    arb_precompiles::pop_caller_frame();
+                    pre_ctx.pop_caller();
                 }
                 return Ok(ItemOrResult::Result(result));
             }
         }
 
-        // Non-Stylus: delegate. Pop happens in frame_return_result.
         self.inner.frame_init(frame_input)
     }
 
@@ -1630,10 +1940,58 @@ where
     #[inline]
     fn frame_return_result(
         &mut self,
-        result: FrameResult,
+        mut result: FrameResult,
     ) -> Result<Option<FrameResult>, revm::handler::evm::ContextDbError<Self::Context>> {
-        // Pop the caller pushed by frame_init for this frame.
-        arb_precompiles::pop_caller_frame();
+        let pre_ctx = self.inner.precompiles.ctx.clone();
+        pre_ctx.pop_caller();
+
+        if let Some(Some(addr)) = self.actor_stack.pop() {
+            pre_ctx.pop_stylus_program(addr);
+        }
+
+        // EIP-3541: reject runtime starting with 0xEF unless it's the Stylus
+        // marker (0xEF 0xF0 0x00). revm's global check is disabled so Stylus
+        // can deploy; we re-apply it here with the Stylus exception.
+        if let FrameResult::Create(ref mut outcome) = result {
+            let create_ctx = self.create_ctx_stack.pop();
+            if outcome.instruction_result().is_ok() {
+                if let Some(addr) = outcome.address {
+                    let code_bytes: Vec<u8> = self
+                        .inner
+                        .ctx
+                        .journal_mut()
+                        .code(addr)
+                        .map(|c| c.data.to_vec())
+                        .unwrap_or_default();
+                    let starts_with_ef = code_bytes.first() == Some(&0xEF);
+                    let is_stylus = code_bytes.len() >= 3
+                        && code_bytes[0] == 0xEF
+                        && code_bytes[1] == 0xF0
+                        && code_bytes[2] == 0x00;
+                    if starts_with_ef && !is_stylus {
+                        if let Some(create_ctx) = create_ctx {
+                            self.inner
+                                .ctx
+                                .journal_mut()
+                                .checkpoint_revert(create_ctx.checkpoint);
+                            use revm::context_interface::journaled_state::account::JournaledAccountTr;
+                            if let Ok(mut caller_acc) = self
+                                .inner
+                                .ctx
+                                .journal_mut()
+                                .load_account_mut(create_ctx.caller)
+                            {
+                                let _ = caller_acc.data.bump_nonce();
+                            }
+                        }
+                        outcome.address = None;
+                        outcome.result.result = InstructionResult::CreateContractStartingWithEF;
+                        outcome.result.output = Bytes::new();
+                        outcome.result.gas.spend_all();
+                    }
+                }
+            }
+        }
         self.inner.frame_return_result(result)
     }
 }
@@ -1826,7 +2184,7 @@ where
         (
             &self.inner.ctx.journaled_state.database,
             &self.inner.inspector,
-            &self.inner.precompiles.0,
+            &self.inner.precompiles.inner,
         )
     }
 
@@ -1834,7 +2192,7 @@ where
         (
             &mut self.inner.ctx.journaled_state.database,
             &mut self.inner.inspector,
-            &mut self.inner.precompiles.0,
+            &mut self.inner.precompiles.inner,
         )
     }
 }
@@ -1842,12 +2200,36 @@ where
 // ── ArbEvmFactory ──────────────────────────────────────────────────
 
 /// Factory for creating Arbitrum EVM instances with custom precompiles.
-#[derive(Default, Debug, Clone, Copy)]
-pub struct ArbEvmFactory(pub alloy_evm::EthEvmFactory);
+///
+/// `staged_ctx` is the bridge that lets [`evm_env`](crate::config) on one
+/// thread hand a freshly-built [`ArbPrecompileCtx`] to [`create_evm`] on
+/// another (reth's RPC dispatcher uses `spawn_blocking`). The executor
+/// path writes through the same slot before each block.
+#[derive(Default, Debug, Clone)]
+pub struct ArbEvmFactory {
+    pub inner: alloy_evm::EthEvmFactory,
+    staged_ctx:
+        std::sync::Arc<parking_lot::RwLock<Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>>>,
+    chain_caches: std::sync::Arc<arb_context::ChainCaches>,
+}
 
 impl ArbEvmFactory {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Stage the per-block context that `create_evm` will install on the
+    /// EVM-execution thread.
+    pub fn stage_ctx(&self, ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) {
+        *self.staged_ctx.write() = Some(ctx);
+    }
+
+    pub fn chain_caches(&self) -> &std::sync::Arc<arb_context::ChainCaches> {
+        &self.chain_caches
+    }
+
+    fn staged(&self) -> Option<std::sync::Arc<arb_context::ArbPrecompileCtx>> {
+        self.staged_ctx.read().clone()
     }
 }
 
@@ -1859,10 +2241,13 @@ fn build_arb_evm<DB: Database, I>(
         PrecompilesMap,
         EthFrame,
     >,
+    staged: Option<std::sync::Arc<arb_context::ArbPrecompileCtx>>,
     inspect: bool,
 ) -> ArbEvm<DB, I> {
+    let pre_ctx =
+        staged.unwrap_or_else(|| std::sync::Arc::new(arb_context::ArbPrecompileCtx::default()));
     let RevmEvm {
-        ctx,
+        ctx: evm_ctx,
         inspector,
         mut instruction,
         mut precompiles,
@@ -1893,10 +2278,10 @@ fn build_arb_evm<DB: Database, I>(
         SELFBALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
-    register_arb_precompiles(&mut precompiles, arb_precompiles::get_arbos_version());
-    let arb_precompiles = ArbPrecompilesMap(precompiles);
+    register_arb_precompiles(&mut precompiles, pre_ctx.clone());
+    let arb_precompiles = ArbPrecompilesMap::new(precompiles, pre_ctx);
 
-    let revm_evm = RevmEvm::new_with_inspector(ctx, inspector, instruction, arb_precompiles);
+    let revm_evm = RevmEvm::new_with_inspector(evm_ctx, inspector, instruction, arb_precompiles);
     ArbEvm::new(revm_evm, inspect)
 }
 
@@ -1915,8 +2300,8 @@ impl EvmFactory for ArbEvmFactory {
         db: DB,
         input: EvmEnv<Self::Spec>,
     ) -> Self::Evm<DB, NoOpInspector> {
-        let eth_evm = self.0.create_evm(db, input);
-        build_arb_evm(eth_evm.into_inner(), false)
+        let eth_evm = self.inner.create_evm(db, input);
+        build_arb_evm(eth_evm.into_inner(), self.staged(), false)
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>, EthInterpreter>>(
@@ -1925,7 +2310,7 @@ impl EvmFactory for ArbEvmFactory {
         input: EvmEnv<Self::Spec>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        let eth_evm = self.0.create_evm_with_inspector(db, input, inspector);
-        build_arb_evm(eth_evm.into_inner(), true)
+        let eth_evm = self.inner.create_evm_with_inspector(db, input, inspector);
+        build_arb_evm(eth_evm.into_inner(), self.staged(), true)
     }
 }

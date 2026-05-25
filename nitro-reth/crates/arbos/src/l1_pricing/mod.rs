@@ -1,29 +1,32 @@
 mod batch_poster;
+mod error;
 
 pub use batch_poster::*;
+pub use error::L1PricingError;
 
 use alloy_primitives::{Address, U256};
-use revm::Database;
 
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint, StorageBackedInt64,
-    StorageBackedUint64,
+    StorageBackedUint64, StorageBackend, SystemStateBackend,
 };
 
+use crate::util::BalanceError;
+
 // Storage offsets for L1 pricing state.
-const PAY_REWARDS_TO_OFFSET: u64 = 0;
-const EQUILIBRATION_UNITS_OFFSET: u64 = 1;
-const INERTIA_OFFSET: u64 = 2;
-const PER_UNIT_REWARD_OFFSET: u64 = 3;
-const LAST_UPDATE_TIME_OFFSET: u64 = 4;
-const FUNDS_DUE_FOR_REWARDS_OFFSET: u64 = 5;
-const UNITS_SINCE_OFFSET: u64 = 6;
-const PRICE_PER_UNIT_OFFSET: u64 = 7;
-const LAST_SURPLUS_OFFSET: u64 = 8;
-const PER_BATCH_GAS_COST_OFFSET: u64 = 9;
-const AMORTIZED_COST_CAP_BIPS_OFFSET: u64 = 10;
-const L1_FEES_AVAILABLE_OFFSET: u64 = 11;
-const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
+pub const PAY_REWARDS_TO_OFFSET: u64 = 0;
+pub const EQUILIBRATION_UNITS_OFFSET: u64 = 1;
+pub const INERTIA_OFFSET: u64 = 2;
+pub const PER_UNIT_REWARD_OFFSET: u64 = 3;
+pub const LAST_UPDATE_TIME_OFFSET: u64 = 4;
+pub const FUNDS_DUE_FOR_REWARDS_OFFSET: u64 = 5;
+pub const UNITS_SINCE_OFFSET: u64 = 6;
+pub const PRICE_PER_UNIT_OFFSET: u64 = 7;
+pub const LAST_SURPLUS_OFFSET: u64 = 8;
+pub const PER_BATCH_GAS_COST_OFFSET: u64 = 9;
+pub const AMORTIZED_COST_CAP_BIPS_OFFSET: u64 = 10;
+pub const L1_FEES_AVAILABLE_OFFSET: u64 = 11;
+pub const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
 
 // Well-known addresses.
 pub const BATCH_POSTER_ADDRESS: Address = Address::new([
@@ -54,246 +57,341 @@ pub const ESTIMATION_PADDING_BASIS_POINTS: u64 = 100;
 const ONE_IN_BIPS: u64 = 10000;
 
 /// L1 pricing state manages the cost model for L1 data posting.
-pub struct L1PricingState<D> {
-    pub backing_storage: Storage<D>,
-    pay_rewards_to: StorageBackedAddress<D>,
-    equilibration_units: StorageBackedBigUint<D>,
-    inertia: StorageBackedUint64<D>,
-    per_unit_reward: StorageBackedUint64<D>,
-    last_update_time: StorageBackedUint64<D>,
-    funds_due_for_rewards: StorageBackedBigInt<D>,
-    units_since_update: StorageBackedUint64<D>,
-    price_per_unit: StorageBackedBigUint<D>,
-    last_surplus: StorageBackedBigInt<D>,
-    per_batch_gas_cost: StorageBackedInt64<D>,
-    amortized_cost_cap_bips: StorageBackedUint64<D>,
-    l1_fees_available: StorageBackedBigUint<D>,
-    gas_floor_per_token: StorageBackedUint64<D>,
+pub struct L1PricingState<'a, D> {
+    pub backing_storage: Storage<'a, D>,
+    pay_rewards_to: StorageBackedAddress,
+    equilibration_units: StorageBackedBigUint,
+    inertia: StorageBackedUint64,
+    per_unit_reward: StorageBackedUint64,
+    last_update_time: StorageBackedUint64,
+    funds_due_for_rewards: StorageBackedBigInt,
+    units_since_update: StorageBackedUint64,
+    price_per_unit: StorageBackedBigUint,
+    last_surplus: StorageBackedBigInt,
+    per_batch_gas_cost: StorageBackedInt64,
+    amortized_cost_cap_bips: StorageBackedUint64,
+    l1_fees_available: StorageBackedBigUint,
+    gas_floor_per_token: StorageBackedUint64,
     pub arbos_version: u64,
 }
 
-pub fn initialize_l1_pricing_state<D: Database>(
-    sto: &Storage<D>,
+pub fn initialize_l1_pricing_state<D: revm::Database, B: StorageBackend>(
+    sto: &Storage<'_, D>,
+    backend: &mut B,
     rewards_recipient: Address,
     initial_l1_base_fee: U256,
-) {
-    let state = sto.state_ptr();
+) -> Result<(), L1PricingError> {
     let base_key = sto.base_key();
 
-    // V0 defaults. Later upgrades may overwrite (e.g., V6 EquilibrationUnits firstTime).
-    let _ =
-        StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET).set(rewards_recipient);
-    let _ = StorageBackedBigUint::new(state, base_key, EQUILIBRATION_UNITS_OFFSET)
-        .set(U256::from(INITIAL_EQUILIBRATION_UNITS_V0));
-    let _ = StorageBackedUint64::new(state, base_key, INERTIA_OFFSET).set(INITIAL_INERTIA);
-    let _ = StorageBackedUint64::new(state, base_key, PER_UNIT_REWARD_OFFSET)
-        .set(INITIAL_PER_UNIT_REWARD);
-    let _ = StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET).set(0);
-    let _ = StorageBackedBigInt::new(state, base_key, FUNDS_DUE_FOR_REWARDS_OFFSET).set(U256::ZERO);
-    let _ = StorageBackedUint64::new(state, base_key, UNITS_SINCE_OFFSET).set(0);
-    let _ =
-        StorageBackedBigUint::new(state, base_key, PRICE_PER_UNIT_OFFSET).set(initial_l1_base_fee);
+    StorageBackedAddress::new(base_key, PAY_REWARDS_TO_OFFSET).set(backend, rewards_recipient)?;
+    StorageBackedBigUint::new(base_key, EQUILIBRATION_UNITS_OFFSET)
+        .set(backend, U256::from(INITIAL_EQUILIBRATION_UNITS_V0))?;
+    StorageBackedUint64::new(base_key, INERTIA_OFFSET).set(backend, INITIAL_INERTIA)?;
+    StorageBackedUint64::new(base_key, PER_UNIT_REWARD_OFFSET)
+        .set(backend, INITIAL_PER_UNIT_REWARD)?;
+    StorageBackedUint64::new(base_key, LAST_UPDATE_TIME_OFFSET).set(backend, 0)?;
+    StorageBackedBigInt::new(base_key, FUNDS_DUE_FOR_REWARDS_OFFSET).set(backend, U256::ZERO)?;
+    StorageBackedUint64::new(base_key, UNITS_SINCE_OFFSET).set(backend, 0)?;
+    StorageBackedBigUint::new(base_key, PRICE_PER_UNIT_OFFSET).set(backend, initial_l1_base_fee)?;
 
-    initialize_batch_posters_table(sto, BATCH_POSTER_ADDRESS);
+    initialize_batch_posters_table(sto, backend, BATCH_POSTER_ADDRESS)?;
+    Ok(())
 }
 
-pub fn open_l1_pricing_state<D: Database>(
-    sto: Storage<D>,
-    arbos_version: u64,
-) -> L1PricingState<D> {
-    let state = sto.state_ptr();
+pub fn open_l1_pricing_state<D>(sto: Storage<'_, D>, arbos_version: u64) -> L1PricingState<'_, D> {
     let base_key = sto.base_key();
 
     L1PricingState {
-        pay_rewards_to: StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET),
-        equilibration_units: StorageBackedBigUint::new(state, base_key, EQUILIBRATION_UNITS_OFFSET),
-        inertia: StorageBackedUint64::new(state, base_key, INERTIA_OFFSET),
-        per_unit_reward: StorageBackedUint64::new(state, base_key, PER_UNIT_REWARD_OFFSET),
-        last_update_time: StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET),
-        funds_due_for_rewards: StorageBackedBigInt::new(
-            state,
-            base_key,
-            FUNDS_DUE_FOR_REWARDS_OFFSET,
-        ),
-        units_since_update: StorageBackedUint64::new(state, base_key, UNITS_SINCE_OFFSET),
-        price_per_unit: StorageBackedBigUint::new(state, base_key, PRICE_PER_UNIT_OFFSET),
-        last_surplus: StorageBackedBigInt::new(state, base_key, LAST_SURPLUS_OFFSET),
-        per_batch_gas_cost: StorageBackedInt64::new(state, base_key, PER_BATCH_GAS_COST_OFFSET),
-        amortized_cost_cap_bips: StorageBackedUint64::new(
-            state,
-            base_key,
-            AMORTIZED_COST_CAP_BIPS_OFFSET,
-        ),
-        l1_fees_available: StorageBackedBigUint::new(state, base_key, L1_FEES_AVAILABLE_OFFSET),
-        gas_floor_per_token: StorageBackedUint64::new(state, base_key, GAS_FLOOR_PER_TOKEN_OFFSET),
+        pay_rewards_to: StorageBackedAddress::new(base_key, PAY_REWARDS_TO_OFFSET),
+        equilibration_units: StorageBackedBigUint::new(base_key, EQUILIBRATION_UNITS_OFFSET),
+        inertia: StorageBackedUint64::new(base_key, INERTIA_OFFSET),
+        per_unit_reward: StorageBackedUint64::new(base_key, PER_UNIT_REWARD_OFFSET),
+        last_update_time: StorageBackedUint64::new(base_key, LAST_UPDATE_TIME_OFFSET),
+        funds_due_for_rewards: StorageBackedBigInt::new(base_key, FUNDS_DUE_FOR_REWARDS_OFFSET),
+        units_since_update: StorageBackedUint64::new(base_key, UNITS_SINCE_OFFSET),
+        price_per_unit: StorageBackedBigUint::new(base_key, PRICE_PER_UNIT_OFFSET),
+        last_surplus: StorageBackedBigInt::new(base_key, LAST_SURPLUS_OFFSET),
+        per_batch_gas_cost: StorageBackedInt64::new(base_key, PER_BATCH_GAS_COST_OFFSET),
+        amortized_cost_cap_bips: StorageBackedUint64::new(base_key, AMORTIZED_COST_CAP_BIPS_OFFSET),
+        l1_fees_available: StorageBackedBigUint::new(base_key, L1_FEES_AVAILABLE_OFFSET),
+        gas_floor_per_token: StorageBackedUint64::new(base_key, GAS_FLOOR_PER_TOKEN_OFFSET),
         backing_storage: sto,
         arbos_version,
     }
 }
 
-impl<D: Database> L1PricingState<D> {
-    pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
+impl<'a, D> L1PricingState<'a, D> {
+    pub fn open(sto: Storage<'a, D>, arbos_version: u64) -> Self {
         open_l1_pricing_state(sto, arbos_version)
     }
 
-    pub fn initialize(sto: &Storage<D>, rewards_recipient: Address, initial_l1_base_fee: U256) {
-        initialize_l1_pricing_state(sto, rewards_recipient, initial_l1_base_fee);
-    }
-
-    pub fn batch_poster_table(&self) -> BatchPostersTable<D> {
+    pub fn batch_poster_table(&self) -> BatchPostersTable<'a, D> {
         BatchPostersTable::open(&self.backing_storage)
     }
 
     // --- Getters/Setters ---
 
-    pub fn pay_rewards_to(&self) -> Result<Address, ()> {
-        self.pay_rewards_to.get()
+    pub fn pay_rewards_to<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Address, L1PricingError> {
+        Ok(self.pay_rewards_to.get(backend)?)
     }
 
-    pub fn set_pay_rewards_to(&self, addr: Address) -> Result<(), ()> {
-        self.pay_rewards_to.set(addr)
+    pub fn set_pay_rewards_to<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.pay_rewards_to.set(backend, addr)?)
     }
 
-    pub fn equilibration_units(&self) -> Result<U256, ()> {
-        self.equilibration_units.get()
+    pub fn equilibration_units<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
+        Ok(self.equilibration_units.get(backend)?)
     }
 
-    pub fn set_equilibration_units(&self, units: U256) -> Result<(), ()> {
-        self.equilibration_units.set(units)
+    pub fn set_equilibration_units<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        units: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.equilibration_units.set(backend, units)?)
     }
 
-    pub fn inertia(&self) -> Result<u64, ()> {
-        self.inertia.get()
+    pub fn inertia<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, L1PricingError> {
+        Ok(self.inertia.get(backend)?)
     }
 
-    pub fn set_inertia(&self, val: u64) -> Result<(), ()> {
-        self.inertia.set(val)
+    pub fn set_inertia<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.inertia.set(backend, val)?)
     }
 
-    pub fn per_unit_reward(&self) -> Result<u64, ()> {
-        self.per_unit_reward.get()
+    pub fn per_unit_reward<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L1PricingError> {
+        Ok(self.per_unit_reward.get(backend)?)
     }
 
-    pub fn set_per_unit_reward(&self, val: u64) -> Result<(), ()> {
-        self.per_unit_reward.set(val)
+    pub fn set_per_unit_reward<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.per_unit_reward.set(backend, val)?)
     }
 
-    pub fn last_update_time(&self) -> Result<u64, ()> {
-        self.last_update_time.get()
+    pub fn last_update_time<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L1PricingError> {
+        Ok(self.last_update_time.get(backend)?)
     }
 
-    pub fn set_last_update_time(&self, time: u64) -> Result<(), ()> {
-        self.last_update_time.set(time)
+    pub fn set_last_update_time<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        time: u64,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.last_update_time.set(backend, time)?)
     }
 
-    pub fn funds_due_for_rewards(&self) -> Result<U256, ()> {
-        self.funds_due_for_rewards.get_raw()
+    pub fn funds_due_for_rewards<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
+        Ok(self.funds_due_for_rewards.get_raw(backend)?)
     }
 
-    pub fn set_funds_due_for_rewards(&self, val: U256) -> Result<(), ()> {
-        self.funds_due_for_rewards.set(val)
+    pub fn set_funds_due_for_rewards<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.funds_due_for_rewards.set(backend, val)?)
     }
 
-    pub fn units_since_update(&self) -> Result<u64, ()> {
-        self.units_since_update.get()
+    pub fn units_since_update<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L1PricingError> {
+        Ok(self.units_since_update.get(backend)?)
     }
 
-    pub fn set_units_since_update(&self, val: u64) -> Result<(), ()> {
-        self.units_since_update.set(val)
+    pub fn set_units_since_update<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.units_since_update.set(backend, val)?)
     }
 
-    pub fn add_to_units_since_update(&self, units: u64) -> Result<(), ()> {
-        let current = self.units_since_update.get().unwrap_or(0);
-        self.units_since_update.set(current.saturating_add(units))
+    pub fn add_to_units_since_update<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        units: u64,
+    ) -> Result<(), L1PricingError> {
+        let current = self.units_since_update.get(backend).unwrap_or(0);
+        Ok(self
+            .units_since_update
+            .set(backend, current.saturating_add(units))?)
     }
 
-    pub fn subtract_from_units_since_update(&self, units: u64) -> Result<(), ()> {
-        let current = self.units_since_update.get().unwrap_or(0);
-        self.units_since_update.set(current.saturating_sub(units))
+    pub fn subtract_from_units_since_update<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        units: u64,
+    ) -> Result<(), L1PricingError> {
+        let current = self.units_since_update.get(backend).unwrap_or(0);
+        Ok(self
+            .units_since_update
+            .set(backend, current.saturating_sub(units))?)
     }
 
-    pub fn price_per_unit(&self) -> Result<U256, ()> {
-        self.price_per_unit.get()
+    pub fn price_per_unit<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
+        Ok(self.price_per_unit.get(backend)?)
     }
 
-    pub fn set_price_per_unit(&self, val: U256) -> Result<(), ()> {
-        self.price_per_unit.set(val)
+    pub fn set_price_per_unit<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.price_per_unit.set(backend, val)?)
     }
 
-    pub fn last_surplus(&self) -> Result<(U256, bool), ()> {
-        self.last_surplus.get_signed()
+    pub fn last_surplus<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(U256, bool), L1PricingError> {
+        Ok(self.last_surplus.get_signed(backend)?)
     }
 
-    pub fn set_last_surplus(&self, magnitude: U256, negative: bool) -> Result<(), ()> {
-        // Pre-v7 doesn't store surplus.
+    pub fn set_last_surplus<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        magnitude: U256,
+        negative: bool,
+    ) -> Result<(), L1PricingError> {
         if self.arbos_version < 7 {
             return Ok(());
         }
         if negative {
-            self.last_surplus.set_negative(magnitude)
+            Ok(self.last_surplus.set_negative(backend, magnitude)?)
         } else {
-            self.last_surplus.set(magnitude)
+            Ok(self.last_surplus.set(backend, magnitude)?)
         }
     }
 
-    pub fn per_batch_gas_cost(&self) -> Result<i64, ()> {
-        self.per_batch_gas_cost.get()
+    pub fn per_batch_gas_cost<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<i64, L1PricingError> {
+        Ok(self.per_batch_gas_cost.get(backend)?)
     }
 
-    pub fn set_per_batch_gas_cost(&self, val: i64) -> Result<(), ()> {
-        self.per_batch_gas_cost.set(val)
+    pub fn set_per_batch_gas_cost<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: i64,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.per_batch_gas_cost.set(backend, val)?)
     }
 
-    pub fn amortized_cost_cap_bips(&self) -> Result<u64, ()> {
-        self.amortized_cost_cap_bips.get()
+    pub fn amortized_cost_cap_bips<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L1PricingError> {
+        Ok(self.amortized_cost_cap_bips.get(backend)?)
     }
 
-    pub fn set_amortized_cost_cap_bips(&self, val: u64) -> Result<(), ()> {
-        self.amortized_cost_cap_bips.set(val)
+    pub fn set_amortized_cost_cap_bips<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.amortized_cost_cap_bips.set(backend, val)?)
     }
 
-    pub fn l1_fees_available(&self) -> Result<U256, ()> {
-        self.l1_fees_available.get()
+    pub fn l1_fees_available<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
+        Ok(self.l1_fees_available.get(backend)?)
     }
 
-    pub fn set_l1_fees_available(&self, val: U256) -> Result<(), ()> {
-        self.l1_fees_available.set(val)
+    pub fn set_l1_fees_available<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(self.l1_fees_available.set(backend, val)?)
     }
 
-    pub fn add_to_l1_fees_available(&self, amount: U256) -> Result<(), ()> {
-        let current = self.l1_fees_available.get().unwrap_or(U256::ZERO);
-        self.l1_fees_available.set(current.saturating_add(amount))
+    pub fn add_to_l1_fees_available<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        amount: U256,
+    ) -> Result<(), L1PricingError> {
+        let current = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
+        Ok(self
+            .l1_fees_available
+            .set(backend, current.saturating_add(amount))?)
     }
 
-    pub fn transfer_from_l1_fees_available(&self, amount: U256) -> Result<U256, ()> {
-        let available = self.l1_fees_available.get().unwrap_or(U256::ZERO);
+    pub fn transfer_from_l1_fees_available<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        amount: U256,
+    ) -> Result<U256, L1PricingError> {
+        let available = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
         let transfer = amount.min(available);
         self.l1_fees_available
-            .set(available.saturating_sub(transfer))?;
+            .set(backend, available.saturating_sub(transfer))?;
         Ok(transfer)
     }
 
-    pub fn parent_gas_floor_per_token(&self) -> Result<u64, ()> {
+    pub fn parent_gas_floor_per_token<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L1PricingError> {
         if self.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
             return Ok(0);
         }
-        self.gas_floor_per_token.get()
+        Ok(self.gas_floor_per_token.get(backend)?)
     }
 
-    pub fn set_parent_gas_floor_per_token(&self, val: u64) -> Result<(), ()> {
+    pub fn set_parent_gas_floor_per_token<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L1PricingError> {
         if self.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
-            return Err(());
+            return Err(L1PricingError::ParentGasFloorUnsupportedVersion);
         }
-        self.gas_floor_per_token.set(val)
+        Ok(self.gas_floor_per_token.set(backend, val)?)
     }
 
     // --- Pricing logic ---
 
-    pub fn get_l1_pricing_surplus(&self) -> Result<(U256, bool), ()> {
-        let l1_fees_available = self.l1_fees_available.get().unwrap_or(U256::ZERO);
+    pub fn get_l1_pricing_surplus<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(U256, bool), L1PricingError> {
+        let l1_fees_available = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
         let bpt = self.batch_poster_table();
-        let total_funds_due = bpt.total_funds_due().unwrap_or(U256::ZERO);
-        let funds_due_for_rewards = self.funds_due_for_rewards().unwrap_or(U256::ZERO);
+        let total_funds_due = bpt.total_funds_due(backend).unwrap_or(U256::ZERO);
+        let funds_due_for_rewards = self.funds_due_for_rewards(backend).unwrap_or(U256::ZERO);
 
         let need = total_funds_due.saturating_add(funds_due_for_rewards);
         if l1_fees_available >= need {
@@ -303,17 +401,13 @@ impl<D: Database> L1PricingState<D> {
         }
     }
 
-    pub fn get_poster_info(&self, poster: Address) -> Result<(U256, Address), ()> {
-        let bpt = self.batch_poster_table();
-        let state = bpt.open_poster(poster, false)?;
-        let due = state.funds_due()?;
-        let pay_to = state.pay_to()?;
-        Ok((due, pay_to))
-    }
-
-    pub fn poster_data_cost(&self, calldata_units: u64) -> Result<U256, ()> {
-        let price = self.price_per_unit()?;
-        let batch_cost = self.per_batch_gas_cost()?;
+    pub fn poster_data_cost<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        calldata_units: u64,
+    ) -> Result<U256, L1PricingError> {
+        let price = self.price_per_unit(backend)?;
+        let batch_cost = self.per_batch_gas_cost(backend)?;
 
         let calldata_cost = price.saturating_mul(U256::from(calldata_units));
         if batch_cost >= 0 {
@@ -324,43 +418,37 @@ impl<D: Database> L1PricingState<D> {
     }
 
     /// Compute poster cost and units for a transaction on-chain.
-    ///
-    /// Returns `(l1_fee, units)` where `l1_fee = price_per_unit * units`.
-    pub fn compute_poster_cost(
+    pub fn compute_poster_cost<B: SystemStateBackend>(
         &self,
+        backend: &mut B,
         poster: Address,
         tx_bytes: &[u8],
         brotli_compression_level: u64,
-    ) -> Result<(U256, u64), ()> {
+    ) -> Result<(U256, u64), L1PricingError> {
         if poster != BATCH_POSTER_ADDRESS {
             return Ok((U256::ZERO, 0));
         }
         let units = self.get_poster_units_without_cache(tx_bytes, brotli_compression_level);
-        let price = self.price_per_unit()?;
+        let price = self.price_per_unit(backend)?;
         Ok((price.saturating_mul(U256::from(units)), units))
     }
 
     /// Compute poster data cost for gas estimation (with padding).
-    ///
-    /// Used when we don't have an actual signed transaction, e.g. during
-    /// `eth_estimateGas`. Applies padding to account for tx encoding overhead.
-    pub fn poster_data_cost_for_estimation(
+    pub fn poster_data_cost_for_estimation<B: SystemStateBackend>(
         &self,
+        backend: &mut B,
         tx_bytes: &[u8],
         brotli_compression_level: u64,
-    ) -> Result<(U256, u64), ()> {
+    ) -> Result<(U256, u64), L1PricingError> {
         let raw_units = self.get_poster_units_without_cache(tx_bytes, brotli_compression_level);
         let padded = (raw_units.saturating_add(ESTIMATION_PADDING_UNITS))
             .saturating_mul(ONE_IN_BIPS + ESTIMATION_PADDING_BASIS_POINTS)
             / ONE_IN_BIPS;
-        let price = self.price_per_unit()?;
+        let price = self.price_per_unit(backend)?;
         Ok((price.saturating_mul(U256::from(padded)), padded))
     }
 
     /// Compute the L1 calldata units for a transaction.
-    ///
-    /// Compresses the tx bytes with brotli and multiplies by the EIP-2028
-    /// non-zero gas cost (16) to get the unit count.
     pub fn get_poster_units_without_cache(
         &self,
         tx_bytes: &[u8],
@@ -370,36 +458,81 @@ impl<D: Database> L1PricingState<D> {
         TX_DATA_NON_ZERO_GAS_EIP2028.saturating_mul(l1_bytes)
     }
 
-    /// Update pricing based on a batch poster spending report.
-    pub fn update_for_batch_poster_spending<F>(
+    fn _preversion10_update(
         &self,
+        _update_time: u64,
+        _current_time: u64,
+        _wei_spent: U256,
+        _l1_basefee: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(())
+    }
+
+    fn _preversion2_update(
+        &self,
+        _update_time: u64,
+        _current_time: u64,
+        _wei_spent: U256,
+        _l1_basefee: U256,
+    ) -> Result<(), L1PricingError> {
+        Ok(())
+    }
+}
+
+impl<D: revm::Database> L1PricingState<'_, D> {
+    pub fn initialize<B: StorageBackend>(
+        sto: &Storage<'_, D>,
+        backend: &mut B,
+        rewards_recipient: Address,
+        initial_l1_base_fee: U256,
+    ) -> Result<(), L1PricingError> {
+        initialize_l1_pricing_state(sto, backend, rewards_recipient, initial_l1_base_fee)
+    }
+
+    pub fn get_poster_info<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        poster: Address,
+    ) -> Result<(U256, Address), L1PricingError> {
+        let bpt = self.batch_poster_table();
+        let state = bpt.open_poster(backend, poster, false)?;
+        let due = state.funds_due(backend)?;
+        let pay_to = state.pay_to(backend)?;
+        Ok((due, pay_to))
+    }
+
+    /// Update pricing based on a batch poster spending report.
+    pub fn update_for_batch_poster_spending<F, B>(
+        &self,
+        backend: &mut B,
         update_time: u64,
         current_time: u64,
         batch_poster: Address,
         wei_spent: U256,
         l1_basefee: U256,
         mut transfer_fn: F,
-    ) -> Result<(), ()>
+    ) -> Result<(), L1PricingError>
     where
-        F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+        B: StorageBackend,
     {
         if self.arbos_version < 10 {
             return self._preversion10_update(update_time, current_time, wei_spent, l1_basefee);
         }
 
         let bpt = self.batch_poster_table();
-        let poster_state = bpt.open_poster(batch_poster, true)?;
+        let poster_state = bpt.open_poster(backend, batch_poster, true)?;
 
-        let funds_due_for_rewards = self.funds_due_for_rewards().unwrap_or(U256::ZERO);
-        let l1_fees_available = self.l1_fees_available.get().unwrap_or(U256::ZERO);
+        let funds_due_for_rewards = self.funds_due_for_rewards(backend).unwrap_or(U256::ZERO);
+        let l1_fees_available = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
 
-        let mut last_update_time = self.last_update_time().unwrap_or(0);
+        let mut last_update_time = self.last_update_time(backend).unwrap_or(0);
         if last_update_time == 0 && update_time > 0 {
             last_update_time = update_time.saturating_sub(1);
         }
 
         if update_time > current_time || update_time < last_update_time {
-            return Err(());
+            return Err(L1PricingError::InvalidUpdateTime);
         }
 
         let alloc_num = update_time.saturating_sub(last_update_time);
@@ -410,16 +543,16 @@ impl<D: Database> L1PricingState<D> {
             (alloc_num, alloc_denom)
         };
 
-        let units_since = self.units_since_update().unwrap_or(0);
+        let units_since = self.units_since_update(backend).unwrap_or(0);
         let units_allocated = units_since
             .saturating_mul(alloc_num)
             .checked_div(alloc_denom)
             .unwrap_or(0);
-        let _ = self.set_units_since_update(units_since.saturating_sub(units_allocated));
+        self.set_units_since_update(backend, units_since.saturating_sub(units_allocated))?;
 
         let mut wei_spent = wei_spent;
         if self.arbos_version >= 3 {
-            let cap_bips = self.amortized_cost_cap_bips().unwrap_or(0);
+            let cap_bips = self.amortized_cost_cap_bips(backend).unwrap_or(0);
             if cap_bips != 0 {
                 let cap = l1_basefee
                     .saturating_mul(U256::from(units_allocated))
@@ -432,56 +565,70 @@ impl<D: Database> L1PricingState<D> {
             }
         }
 
-        let due = poster_state.funds_due().unwrap_or(U256::ZERO);
-        let _ = poster_state.set_funds_due(due.saturating_add(wei_spent), &bpt.total_funds_due);
+        let due = poster_state.funds_due(backend).unwrap_or(U256::ZERO);
+        let _ = poster_state.set_funds_due(
+            backend,
+            due.saturating_add(wei_spent),
+            &bpt.total_funds_due,
+        );
 
-        let per_unit_reward = self.per_unit_reward().unwrap_or(0);
+        let per_unit_reward = self.per_unit_reward(backend).unwrap_or(0);
         let reward_amount = U256::from(units_allocated).saturating_mul(U256::from(per_unit_reward));
-        let _ = self.set_funds_due_for_rewards(funds_due_for_rewards.saturating_add(reward_amount));
+        self.set_funds_due_for_rewards(
+            backend,
+            funds_due_for_rewards.saturating_add(reward_amount),
+        )?;
 
         let mut l1_fees = l1_fees_available;
         let mut payment_for_rewards = reward_amount;
         if l1_fees < payment_for_rewards {
             payment_for_rewards = l1_fees;
         }
-        let _ = self.set_funds_due_for_rewards(
-            self.funds_due_for_rewards()
-                .unwrap_or(U256::ZERO)
-                .saturating_sub(payment_for_rewards),
-        );
+        let fdr_after = self
+            .funds_due_for_rewards(backend)
+            .unwrap_or(U256::ZERO)
+            .saturating_sub(payment_for_rewards);
+        self.set_funds_due_for_rewards(backend, fdr_after)?;
 
-        let pay_rewards_to = self.pay_rewards_to().unwrap_or(Address::ZERO);
+        let pay_rewards_to = self.pay_rewards_to(backend).unwrap_or(Address::ZERO);
         if payment_for_rewards > U256::ZERO {
+            // payment_for_rewards was clamped to l1_fees just above, which mirrors
+            // the L1 pricer pool balance. A typed shortfall here would indicate
+            // pool/state drift and must not block the rest of the bookkeeping.
             let _ = transfer_fn(
                 L1_PRICER_FUNDS_POOL_ADDRESS,
                 pay_rewards_to,
                 payment_for_rewards,
             );
             l1_fees = l1_fees.saturating_sub(payment_for_rewards);
-            let _ = self.set_l1_fees_available(l1_fees);
+            self.set_l1_fees_available(backend, l1_fees)?;
         }
 
-        let balance_due = poster_state.funds_due().unwrap_or(U256::ZERO);
+        let balance_due = poster_state.funds_due(backend).unwrap_or(U256::ZERO);
         let mut transfer_amount = balance_due;
         if l1_fees < transfer_amount {
             transfer_amount = l1_fees;
         }
         if transfer_amount > U256::ZERO {
-            let addr_to_pay = poster_state.pay_to().unwrap_or(batch_poster);
+            let addr_to_pay = poster_state.pay_to(backend).unwrap_or(batch_poster);
+            // transfer_amount is capped to the remaining pool balance above; a
+            // shortfall here would be a pool/state inconsistency rather than a
+            // user-driven error, so do not surface it as Err.
             let _ = transfer_fn(L1_PRICER_FUNDS_POOL_ADDRESS, addr_to_pay, transfer_amount);
             l1_fees = l1_fees.saturating_sub(transfer_amount);
-            let _ = self.set_l1_fees_available(l1_fees);
+            self.set_l1_fees_available(backend, l1_fees)?;
             let _ = poster_state.set_funds_due(
+                backend,
                 balance_due.saturating_sub(transfer_amount),
                 &bpt.total_funds_due,
             );
         }
 
-        let _ = self.set_last_update_time(update_time);
+        self.set_last_update_time(backend, update_time)?;
 
         if units_allocated > 0 {
-            let total_funds_due = bpt.total_funds_due().unwrap_or(U256::ZERO);
-            let fdr = self.funds_due_for_rewards().unwrap_or(U256::ZERO);
+            let total_funds_due = bpt.total_funds_due(backend).unwrap_or(U256::ZERO);
+            let fdr = self.funds_due_for_rewards(backend).unwrap_or(U256::ZERO);
 
             let need_funds = total_funds_due.saturating_add(fdr);
             let (surplus_mag, surplus_positive) = if l1_fees >= need_funds {
@@ -490,28 +637,26 @@ impl<D: Database> L1PricingState<D> {
                 (need_funds.saturating_sub(l1_fees), false)
             };
 
-            let inertia = self.inertia().unwrap_or(INITIAL_INERTIA);
+            let inertia = self.inertia(backend).unwrap_or(INITIAL_INERTIA);
             let equil_units = self
-                .equilibration_units()
+                .equilibration_units(backend)
                 .unwrap_or(U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
             let inertia_units = equil_units
                 .checked_div(U256::from(inertia))
                 .unwrap_or(U256::ZERO);
-            let price = self.price_per_unit().unwrap_or(U256::ZERO);
+            let price = self.price_per_unit(backend).unwrap_or(U256::ZERO);
 
             let alloc_plus_inert = inertia_units.saturating_add(U256::from(units_allocated));
             let (old_surplus_mag, old_surplus_neg) = self
                 .last_surplus
-                .get_signed()
+                .get_signed(backend)
                 .unwrap_or((U256::ZERO, false));
 
             let units_u256 = U256::from(units_allocated);
 
-            // desiredDerivative = -surplus / equilUnits
             let (desired_mag, desired_pos) =
                 signed_div(surplus_mag, !surplus_positive, equil_units);
 
-            // actualDerivative = (surplus - oldSurplus) / unitsAllocated
             let (diff_mag, diff_pos) = signed_sub(
                 surplus_mag,
                 surplus_positive,
@@ -520,11 +665,9 @@ impl<D: Database> L1PricingState<D> {
             );
             let (actual_mag, actual_pos) = signed_div(diff_mag, diff_pos, units_u256);
 
-            // changeDerivativeBy = desired - actual
             let (change_mag, change_pos) =
                 signed_sub(desired_mag, desired_pos, actual_mag, actual_pos);
 
-            // priceChange = changeDerivativeBy * unitsAllocated / allocPlusInert
             let change_times_units = change_mag.saturating_mul(units_u256);
             let (price_change, price_change_pos) =
                 signed_div(change_times_units, change_pos, alloc_plus_inert);
@@ -535,32 +678,10 @@ impl<D: Database> L1PricingState<D> {
                 price.saturating_sub(price_change)
             };
 
-            let _ = self.set_last_surplus(surplus_mag, !surplus_positive);
-            let _ = self.set_price_per_unit(new_price);
+            self.set_last_surplus(backend, surplus_mag, !surplus_positive)?;
+            self.set_price_per_unit(backend, new_price)?;
         }
 
-        Ok(())
-    }
-
-    fn _preversion10_update(
-        &self,
-        _update_time: u64,
-        _current_time: u64,
-        _wei_spent: U256,
-        _l1_basefee: U256,
-    ) -> Result<(), ()> {
-        // Simplified legacy pricing update for ArbOS < 10
-        Ok(())
-    }
-
-    fn _preversion2_update(
-        &self,
-        _update_time: u64,
-        _current_time: u64,
-        _wei_spent: U256,
-        _l1_basefee: U256,
-    ) -> Result<(), ()> {
-        // Simplified legacy pricing update for ArbOS < 2
         Ok(())
     }
 }
@@ -670,6 +791,10 @@ pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
         fn BrotliEncoderMaxCompressedSize(input_size: usize) -> usize;
     }
 
+    // SAFETY: FFI into libbrotlienc. The encoder state is created,
+    // configured, fed, then unconditionally destroyed in this block;
+    // input and output buffers are stack/heap allocations whose lifetime
+    // exceeds the encoder. Null state is checked before any use.
     unsafe {
         let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
         if state.is_null() {

@@ -7,8 +7,10 @@ use common::{calldata, decode_address, decode_u256, word_address, word_u256, Pre
 const ARBOS_V11: u64 = 11;
 const ARBOS_V30: u64 = 30;
 
-fn arbsys() -> alloy_evm::precompiles::DynPrecompile {
-    create_arbsys_precompile()
+fn arbsys(
+    ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+) -> alloy_evm::precompiles::DynPrecompile {
+    create_arbsys_precompile(ctx)
 }
 
 #[test]
@@ -17,7 +19,7 @@ fn arb_block_number_returns_l2_block() {
         .arbos_version(ARBOS_V30)
         .block_number(98_765)
         .arbos_state()
-        .call(&arbsys(), &calldata("arbBlockNumber()", &[]));
+        .call(arbsys, &calldata("arbBlockNumber()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(98_765));
 }
 
@@ -27,7 +29,7 @@ fn arb_chain_id_returns_configured_chain_id() {
         .arbos_version(ARBOS_V30)
         .chain_id(421_614)
         .arbos_state()
-        .call(&arbsys(), &calldata("arbChainID()", &[]));
+        .call(arbsys, &calldata("arbChainID()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(421_614));
 }
 
@@ -36,7 +38,7 @@ fn arbos_version_returns_55_plus_raw() {
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(&arbsys(), &calldata("arbOSVersion()", &[]));
+        .call(arbsys, &calldata("arbOSVersion()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(55 + ARBOS_V30));
 }
 
@@ -45,7 +47,7 @@ fn get_storage_gas_available_returns_zero() {
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .arbos_state()
-        .call(&arbsys(), &calldata("getStorageGasAvailable()", &[]));
+        .call(arbsys, &calldata("getStorageGasAvailable()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -55,7 +57,7 @@ fn is_top_level_call_at_depth_one() {
         .arbos_version(ARBOS_V30)
         .evm_depth(1)
         .arbos_state()
-        .call(&arbsys(), &calldata("isTopLevelCall()", &[]));
+        .call(arbsys, &calldata("isTopLevelCall()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(1));
 }
 
@@ -65,7 +67,7 @@ fn is_top_level_call_at_depth_three() {
         .arbos_version(ARBOS_V30)
         .evm_depth(3)
         .arbos_state()
-        .call(&arbsys(), &calldata("isTopLevelCall()", &[]));
+        .call(arbsys, &calldata("isTopLevelCall()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -77,7 +79,7 @@ fn map_l1_sender_low_byte_carry() {
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbsys(),
+            arbsys,
             &calldata(
                 "mapL1SenderContractAddressToL2Alias(address,address)",
                 &[word_address(l1), word_address(Address::ZERO)],
@@ -94,7 +96,7 @@ fn map_l1_sender_with_carry_propagation() {
         .arbos_version(ARBOS_V30)
         .arbos_state()
         .call(
-            &arbsys(),
+            arbsys,
             &calldata(
                 "mapL1SenderContractAddressToL2Alias(address,address)",
                 &[word_address(l1), word_address(Address::ZERO)],
@@ -110,7 +112,7 @@ fn was_aliased_returns_false_when_tx_not_aliased() {
         .evm_depth(2)
         .tx_is_aliased(false)
         .arbos_state()
-        .call(&arbsys(), &calldata("wasMyCallersAddressAliased()", &[]));
+        .call(arbsys, &calldata("wasMyCallersAddressAliased()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -122,20 +124,20 @@ fn was_aliased_returns_true_when_top_level_aliased() {
         .tx_is_aliased(true)
         .caller(address!("00000000000000000000000000000000000000aa"))
         .arbos_state()
-        .call(&arbsys(), &calldata("wasMyCallersAddressAliased()", &[]));
+        .call(arbsys, &calldata("wasMyCallersAddressAliased()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(1));
 }
 
 #[test]
 fn arb_block_hash_returns_cached_hash_for_recent_block() {
     let target_hash = B256::from_slice(&[0x42; 32]);
-    arb_precompiles::set_l2_block_hash(99, target_hash);
     let run = PrecompileTest::new()
         .arbos_version(ARBOS_V30)
         .block_number(100)
         .arbos_state()
+        .cache_l2_block_hash(99, target_hash)
         .call(
-            &arbsys(),
+            arbsys,
             &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(99))]),
         );
     let returned = B256::from(decode_u256(run.output()).to_be_bytes::<32>());
@@ -149,7 +151,7 @@ fn arb_block_hash_reverts_for_future_block_arbos11() {
         .block_number(100)
         .arbos_state()
         .call(
-            &arbsys(),
+            arbsys,
             &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(100))]),
         );
     let out = run.assert_ok();
@@ -164,7 +166,7 @@ fn arb_block_hash_reverts_for_too_old_block_arbos11() {
         .block_number(1000)
         .arbos_state()
         .call(
-            &arbsys(),
+            arbsys,
             &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(500))]),
         );
     let out = run.assert_ok();

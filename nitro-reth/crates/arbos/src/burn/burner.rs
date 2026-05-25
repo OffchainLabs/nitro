@@ -24,10 +24,6 @@ pub trait Burner {
 pub enum BurnError {
     #[error("out of gas")]
     OutOfGas,
-    #[error("restricted: {0}")]
-    Restricted(String),
-    #[error("{0}")]
-    Other(String),
 }
 
 /// A burner for internal ArbOS system operations.

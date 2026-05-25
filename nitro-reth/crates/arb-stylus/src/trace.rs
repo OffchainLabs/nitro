@@ -31,6 +31,12 @@ pub struct HostioRecord {
     pub steps: Vec<HostioRecord>,
 }
 
+// Debug-only host-call trace buffers. Tracing is opt-in: production blocks
+// hit the `is_active()` guard which short-circuits to a single atomic read
+// when `STYLUS_HOSTIO_TRACE` is unset and no buffer is installed. Thread-
+// local storage is used because wasmer host functions execute synchronously
+// on the invoking executor thread and the recorded data must follow that
+// stack; cross-thread visibility is neither required nor desired.
 thread_local! {
     static ACTIVE: RefCell<Option<Arc<Mutex<Vec<HostioRecord>>>>> = const { RefCell::new(None) };
     /// Stack of sub-call frames. While non-empty, recording goes into the

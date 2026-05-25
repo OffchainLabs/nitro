@@ -1,0 +1,51 @@
+name: miri
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * *" # nightly at 04:00 UTC
+
+env:
+  CARGO_TERM_COLOR: always
+  # Skip isolation so miri can hit the workspace-vendored advisory db
+  # used by some lazy initialisers.
+  MIRIFLAGS: "-Zmiri-disable-isolation"
+
+jobs:
+  miri:
+    name: miri aliasing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+      - name: Init submodules with retry
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            if git submodule update --init --recursive --depth 1; then
+              echo "Submodules initialized"
+              exit 0
+            fi
+            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
+            sleep $((i*5))
+          done
+          echo "Submodule init failed after 3 attempts"
+          exit 1
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      # The lifetime-bound Storage<'a, D> foundation and the per-block
+      # ArbPrecompileCtx are the two types whose aliasing invariants are
+      # load-bearing for the rest of the workspace.
+      #
+      # arb-storage runs --lib only; integration tests there exercise the
+      # documented Storage::state_mut() compromise (see SECURITY.md) and
+      # are not in scope for the aliasing gate.
+      - name: miri arb-storage lib tests
+        run: cargo +nightly miri test -p arb-storage --lib
+      - name: miri arb-context tests
+        run: cargo +nightly miri test -p arb-context

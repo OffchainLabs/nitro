@@ -17,20 +17,18 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbgasinfo_precompile, create_arbowner_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-        ROOT_STORAGE_KEY,
-    },
+use arb_precompiles::{create_arbgasinfo_precompile, create_arbowner_precompile};
+use arb_storage::{
+    layout::{derive_subspace_key, map_slot_b256, CHAIN_OWNER_SUBSPACE, ROOT_STORAGE_KEY},
+    ARBOS_STATE_ADDRESS,
 };
 use common::{calldata, word_u64, PrecompileTest};
 
-fn arbowner() -> DynPrecompile {
-    create_arbowner_precompile()
+fn arbowner(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbowner_precompile(ctx)
 }
-fn arbgasinfo() -> DynPrecompile {
-    create_arbgasinfo_precompile()
+fn arbgasinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbgasinfo_precompile(ctx)
 }
 
 const OWNER: Address = address!("00000000000000000000000000000000000000aa");
@@ -196,15 +194,12 @@ fn decode_gas_pricing_constraints(out: &[u8]) -> Vec<[u64; 3]> {
 #[test]
 fn nitro_parity_fail_to_set_invalid_constraints() {
     // Zero target.
-    let run = owner_fixture(50).call(&arbowner(), &set_gas_pricing_calldata(&[[0, 17, 1000]]));
+    let run = owner_fixture(50).call(arbowner, &set_gas_pricing_calldata(&[[0, 17, 1000]]));
     let out = run.result.as_ref().expect("should return Ok(reverted)");
     assert!(out.reverted, "zero target should revert");
 
     // Zero adjustment window.
-    let run = owner_fixture(50).call(
-        &arbowner(),
-        &set_gas_pricing_calldata(&[[10_000_000, 0, 0]]),
-    );
+    let run = owner_fixture(50).call(arbowner, &set_gas_pricing_calldata(&[[10_000_000, 0, 0]]));
     let out = run.result.as_ref().expect("should return Ok(reverted)");
     assert!(out.reverted, "zero adjustment window should revert");
 }
@@ -214,12 +209,12 @@ fn nitro_parity_fail_to_set_invalid_constraints() {
 #[test]
 fn nitro_parity_set_legacy_backlog_round_trip() {
     // Initially zero.
-    let run = owner_fixture(50).call(&arbgasinfo(), &calldata("getGasBacklog()", &[]));
+    let run = owner_fixture(50).call(arbgasinfo, &calldata("getGasBacklog()", &[]));
     assert_eq!(U256::from_be_slice(run.output()), U256::ZERO);
 
     // Set to 80_000.
     let run = owner_fixture(50).call(
-        &arbowner(),
+        arbowner,
         &calldata("setGasBacklog(uint64)", &[word_u64(80_000)]),
     );
     let _ = run.assert_ok();
@@ -227,7 +222,7 @@ fn nitro_parity_set_legacy_backlog_round_trip() {
     // Read back through a fresh GetInfo call that inherits the setter's
     // storage mutations.
     let getter = run.continue_into(owner_fixture(50), ARBOS_STATE_ADDRESS);
-    let run = getter.call(&arbgasinfo(), &calldata("getGasBacklog()", &[]));
+    let run = getter.call(arbgasinfo, &calldata("getGasBacklog()", &[]));
     assert_eq!(U256::from_be_slice(run.output()), U256::from(80_000));
 }
 
@@ -237,11 +232,11 @@ fn nitro_parity_set_legacy_backlog_round_trip() {
 #[test]
 fn nitro_parity_constraints_storage_round_trip_two_constraints() {
     let constraints = [[30_000_000, 1, 800_000], [15_000_000, 102, 1_600_000]];
-    let set_run = owner_fixture(50).call(&arbowner(), &set_gas_pricing_calldata(&constraints));
+    let set_run = owner_fixture(50).call(arbowner, &set_gas_pricing_calldata(&constraints));
     let _ = set_run.assert_ok();
 
     let getter = set_run.continue_into(owner_fixture(50), ARBOS_STATE_ADDRESS);
-    let run = getter.call(&arbgasinfo(), &calldata("getGasPricingConstraints()", &[]));
+    let run = getter.call(arbgasinfo, &calldata("getGasPricingConstraints()", &[]));
     let got = decode_gas_pricing_constraints(run.output());
     assert_eq!(got.len(), 2);
     assert_eq!(got[0], [30_000_000, 1, 800_000]);
@@ -258,10 +253,10 @@ fn nitro_parity_constraints_storage_round_trip_two_constraints() {
 /// CONSTRAINT_BACKLOG=2)`.
 #[test]
 fn nitro_parity_constraints_backlog_update() {
-    use arb_precompiles::storage_slot::{gas_constraints_vec_key, vector_element_field};
+    use arb_storage::layout::{gas_constraints_vec_key, vector_element_field};
 
     let set_run = owner_fixture(50).call(
-        &arbowner(),
+        arbowner,
         &set_gas_pricing_calldata(&[[30_000_000, 1, 0], [15_000_000, 86400, 8000]]),
     );
     let _ = set_run.assert_ok();
@@ -284,7 +279,7 @@ fn nitro_parity_constraints_backlog_update() {
             U256::from(10_000_000_u64),
         );
 
-    let run = base.call(&arbgasinfo(), &calldata("getGasPricingConstraints()", &[]));
+    let run = base.call(arbgasinfo, &calldata("getGasPricingConstraints()", &[]));
     let got = decode_gas_pricing_constraints(run.output());
     assert_eq!(got.len(), 2);
     assert_eq!(
@@ -303,7 +298,7 @@ fn nitro_parity_constraints_backlog_update() {
 #[test]
 fn nitro_parity_multi_gas_constraints_cant_exceed_limit() {
     let run = owner_fixture(60).call(
-        &arbowner(),
+        arbowner,
         &set_multi_gas_pricing_calldata(&[(
             vec![(0, 1), (1, 2)], // Computation=1, StorageAccess=2
             1,                    // adjustment window secs
@@ -331,13 +326,12 @@ fn nitro_parity_multi_gas_pricing_constraints_order() {
         20_000_000u64,
         800_000u64,
     )];
-    let set_run =
-        owner_fixture(60).call(&arbowner(), &set_multi_gas_pricing_calldata(&constraints));
+    let set_run = owner_fixture(60).call(arbowner, &set_multi_gas_pricing_calldata(&constraints));
     let _ = set_run.assert_ok();
 
     let getter = set_run.continue_into(owner_fixture(60), ARBOS_STATE_ADDRESS);
     let run = getter.call(
-        &arbgasinfo(),
+        arbgasinfo,
         &calldata("getMultiGasPricingConstraints()", &[]),
     );
     let got = decode_multi_gas_pricing_constraints(run.output());
@@ -372,8 +366,7 @@ fn nitro_parity_multi_gas_constraints_storage_round_trip() {
             1_600_000u64,
         ),
     ];
-    let set_run =
-        owner_fixture(60).call(&arbowner(), &set_multi_gas_pricing_calldata(&constraints));
+    let set_run = owner_fixture(60).call(arbowner, &set_multi_gas_pricing_calldata(&constraints));
     let out = set_run
         .result
         .as_ref()
@@ -382,7 +375,7 @@ fn nitro_parity_multi_gas_constraints_storage_round_trip() {
 
     let getter = set_run.continue_into(owner_fixture(60), ARBOS_STATE_ADDRESS);
     let run = getter.call(
-        &arbgasinfo(),
+        arbgasinfo,
         &calldata("getMultiGasPricingConstraints()", &[]),
     );
     let got = decode_multi_gas_pricing_constraints(run.output());
@@ -414,7 +407,7 @@ fn nitro_parity_multi_gas_constraints_storage_round_trip() {
 fn nitro_parity_constraints_storage_replace_clears_old() {
     // Start with two, then replace with one.
     let first = owner_fixture(50).call(
-        &arbowner(),
+        arbowner,
         &set_gas_pricing_calldata(&[[30_000_000, 1, 800_000], [15_000_000, 102, 1_600_000]]),
     );
     let _ = first.assert_ok();
@@ -422,14 +415,14 @@ fn nitro_parity_constraints_storage_replace_clears_old() {
     // Replace.
     let base = first.continue_into(owner_fixture(50), ARBOS_STATE_ADDRESS);
     let second = base.call(
-        &arbowner(),
+        arbowner,
         &set_gas_pricing_calldata(&[[7_000_000, 12, 50_000_000]]),
     );
     let _ = second.assert_ok();
 
     // Verify only the new constraint remains.
     let getter = second.continue_into(owner_fixture(50), ARBOS_STATE_ADDRESS);
-    let run = getter.call(&arbgasinfo(), &calldata("getGasPricingConstraints()", &[]));
+    let run = getter.call(arbgasinfo, &calldata("getGasPricingConstraints()", &[]));
     let got = decode_gas_pricing_constraints(run.output());
     assert_eq!(got.len(), 1, "old constraints must be cleared");
     assert_eq!(got[0], [7_000_000, 12, 50_000_000]);

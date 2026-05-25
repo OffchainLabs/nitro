@@ -1,17 +1,13 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use arb_context::ArbPrecompileCtx;
+use arb_storage::ARBOS_STATE_ADDRESS;
+use arbos::merkle_accumulator::calc_num_partials;
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
 
-use std::{cell::RefCell, collections::HashMap, sync::Mutex};
-
-use crate::{
-    interfaces::IArbSys,
-    storage_slot::{
-        derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
-        ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE,
-    },
-};
+use crate::{interfaces::IArbSys, ArbPrecompileError};
 
 /// ArbSys precompile address (0x64).
 pub const ARBSYS_ADDRESS: Address = Address::new([
@@ -38,14 +34,6 @@ const STORAGE_READ_COST: u64 = 800; // params.SloadGasEIP2200
 const STORAGE_WRITE_COST: u64 = 20_000; // params.SstoreSetGasEIP2200
 const STORAGE_WRITE_ZERO_COST: u64 = 5_000; // params.SstoreResetGasEIP2200
 
-fn storage_write_cost(value: U256) -> u64 {
-    if value.is_zero() {
-        STORAGE_WRITE_ZERO_COST
-    } else {
-        STORAGE_WRITE_COST
-    }
-}
-
 fn words_for_bytes(n: u64) -> u64 {
     n.div_ceil(32)
 }
@@ -63,83 +51,17 @@ pub fn send_merkle_update_topic() -> B256 {
     IArbSys::SendMerkleUpdate::SIGNATURE_HASH
 }
 
-/// State changes from an ArbSys call for post-execution application.
-#[derive(Debug, Clone, Default)]
-pub struct ArbSysMerkleState {
-    pub new_size: u64,
-    pub partials: Vec<(u64, B256)>,
-    pub send_hash: B256,
-    pub leaf_num: u64,
-    pub value_to_burn: U256,
-    pub block_number: u64,
+pub fn create_arbsys_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbsys"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-thread_local! {
-    static ARBSYS_STATE: RefCell<Option<ArbSysMerkleState>> = const { RefCell::new(None) };
-    /// Set to `true` when the current transaction is an aliasing type
-    /// (unsigned, contract, or retryable L1→L2 message).
-    static TX_IS_ALIASED: RefCell<bool> = const { RefCell::new(false) };
-}
-
-static L1_BLOCK_CACHE: Mutex<Option<HashMap<u64, u64>>> = Mutex::new(None);
-static CURRENT_L2_BLOCK: Mutex<u64> = Mutex::new(0);
-
-/// Store ArbSys state changes for post-execution application.
-pub fn store_arbsys_state(state: ArbSysMerkleState) {
-    ARBSYS_STATE.with(|cell| *cell.borrow_mut() = Some(state));
-}
-
-/// Take the stored ArbSys state (clears it).
-pub fn take_arbsys_state() -> Option<ArbSysMerkleState> {
-    ARBSYS_STATE.with(|cell| cell.borrow_mut().take())
-}
-
-/// Mark the current transaction as an aliased L1→L2 type.
-pub fn set_tx_is_aliased(aliased: bool) {
-    TX_IS_ALIASED.with(|cell| *cell.borrow_mut() = aliased);
-}
-
-/// Check whether the current transaction uses address aliasing.
-pub fn get_tx_is_aliased() -> bool {
-    TX_IS_ALIASED.with(|cell| *cell.borrow())
-}
-
-/// Set the cached L1 block number for a given L2 block.
-pub fn set_cached_l1_block_number(l2_block: u64, l1_block: u64) {
-    let mut cache = L1_BLOCK_CACHE.lock().expect("L1 block cache lock poisoned");
-    let map = cache.get_or_insert_with(HashMap::new);
-    map.insert(l2_block, l1_block);
-    if l2_block > 100 {
-        map.retain(|&k, _| k >= l2_block - 100);
-    }
-}
-
-/// Get the cached L1 block number for a given L2 block.
-pub fn get_cached_l1_block_number(l2_block: u64) -> Option<u64> {
-    let cache = L1_BLOCK_CACHE.lock().expect("L1 block cache lock poisoned");
-    cache.as_ref().and_then(|m| m.get(&l2_block).copied())
-}
-
-/// Set the current L2 block number for precompile use.
-/// In Arbitrum, block_env.number holds the L1 block number (for the NUMBER opcode),
-/// so precompiles that need the L2 block number read it from here.
-pub fn set_current_l2_block(l2_block: u64) {
-    *CURRENT_L2_BLOCK.lock().expect("L2 block lock poisoned") = l2_block;
-}
-
-/// Get the current L2 block number.
-pub fn get_current_l2_block() -> u64 {
-    *CURRENT_L2_BLOCK.lock().expect("L2 block lock poisoned")
-}
-
-pub fn create_arbsys_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbsys"), handler)
-}
-
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
     let data = input.data;
-    crate::init_precompile_gas(data.len());
+    crate::init_precompile_gas(&mut gas_used, data.len());
 
     let call = match IArbSys::ArbSysCalls::abi_decode(data) {
         Ok(c) => c,
@@ -148,30 +70,41 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     use IArbSys::ArbSysCalls;
     let result = match call {
-        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input),
-        ArbSysCalls::arbBlockHash(c) => handle_arb_block_hash(&mut input, c.arbBlockNum),
+        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input, ctx),
+        ArbSysCalls::arbBlockHash(c) => {
+            handle_arb_block_hash(&mut input, ctx, gas_used, c.arbBlockNum)
+        }
         ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input),
-        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input),
+        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input, ctx),
         ArbSysCalls::getStorageGasAvailable(_) => handle_get_storage_gas(&mut input),
-        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input),
+        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input, ctx),
         ArbSysCalls::mapL1SenderContractAddressToL2Alias(c) => {
             handle_map_l1_sender(&mut input, c.sender)
         }
-        ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input),
-        ArbSysCalls::myCallersAddressWithoutAliasing(_) => handle_caller_without_alias(&mut input),
-        ArbSysCalls::withdrawEth(c) => handle_withdraw_eth(&mut input, c.destination),
-        ArbSysCalls::sendTxToL1(c) => {
-            handle_send_tx_to_l1(&mut input, c.destination, c.data.as_ref())
+        ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input, ctx),
+        ArbSysCalls::myCallersAddressWithoutAliasing(_) => {
+            handle_caller_without_alias(&mut input, ctx)
         }
-        ArbSysCalls::sendMerkleTreeState(_) => handle_send_merkle_tree_state(&mut input),
+        ArbSysCalls::withdrawEth(c) => {
+            handle_withdraw_eth(&mut input, ctx, gas_used, c.destination)
+        }
+        ArbSysCalls::sendTxToL1(c) => {
+            handle_send_tx_to_l1(&mut input, ctx, gas_used, c.destination, c.data.as_ref())
+        }
+        ArbSysCalls::sendMerkleTreeState(_) => {
+            handle_send_merkle_tree_state(&mut input, ctx, gas_used)
+        }
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 // ── view functions ───────────────────────────────────────────────────
 
-fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let block_num = U256::from(get_current_l2_block());
+fn handle_arb_block_number(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let block_num = U256::from(ctx.block.l2_block_number);
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
@@ -182,13 +115,15 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 
 fn handle_arb_block_hash(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    gas_used: u64,
     requested_u256: U256,
 ) -> PrecompileResult {
     let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
-    let current = get_current_l2_block();
+    let current = ctx.block.l2_block_number;
 
     if requested >= current || requested + 256 < current {
-        let arbos_version = crate::get_arbos_version();
+        let arbos_version = ctx.block.arbos_version;
         if arbos_version >= 11 {
             let revert_data = IArbSys::InvalidBlockNumber {
                 requested: requested_u256,
@@ -202,12 +137,15 @@ fn handle_arb_block_hash(
                 revert_data.into(),
             ));
         }
-        return Err(PrecompileError::other("invalid block number"));
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
 
     // L2 block hashes come from the header chain cache — the journal's
     // block_hashes map is pre-populated with L1 hashes for the BLOCKHASH opcode.
-    let hash = crate::get_l2_block_hash(requested).unwrap_or(B256::ZERO);
+    let hash = ctx
+        .block
+        .cached_l2_block_hash(requested)
+        .unwrap_or(B256::ZERO);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -232,17 +170,21 @@ fn arbos_version_from_format(format_version: U256) -> U256 {
     format_version + U256::from(55)
 }
 
-fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_arbos_version(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let internals = input.internals_mut();
 
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
-    let raw_version = internals
-        .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-        .map_err(|_| PrecompileError::other("sload failed"))?;
-    let version = arbos_version_from_format(raw_version.data);
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let version = arbos_version_from_format(U256::from(arb_state.arbos_version()));
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -252,10 +194,11 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Returns `depth <= 2`.
-    // Depth 1 = direct precompile call from tx, depth 2 = one intermediate contract.
-    let depth = crate::get_evm_depth();
+fn handle_is_top_level_call(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let depth = ctx.evm_depth();
     let is_top = depth <= 2;
     let val = if is_top { U256::from(1) } else { U256::ZERO };
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
@@ -266,32 +209,30 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
     ))
 }
 
-fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let tx_origin = input.internals().tx_origin();
-
-    // Read ArbOS version for version-gated behavior.
+fn handle_was_aliased(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let internals = input.internals_mut();
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
-    let raw_version = internals
-        .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-        .map_err(|_| PrecompileError::other("sload failed"))?
-        .data;
-    let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
+        .map_err(ArbPrecompileError::fatal)?;
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let arbos_version = arb_state.arbos_version();
 
-    let depth = crate::get_evm_depth();
+    let tx_origin = input.internals().tx_origin();
+    let depth = ctx.evm_depth();
     let is_top_level = if arbos_version < 6 {
         depth == 2
     } else if depth <= 2 {
         true
     } else {
-        crate::caller_at_depth(depth - 1)
+        ctx.caller_at_depth(depth - 1)
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };
 
-    let aliased = is_top_level && get_tx_is_aliased();
+    let aliased = is_top_level && ctx.tx_is_aliased();
     let val = if aliased { U256::from(1) } else { U256::ZERO };
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
@@ -301,29 +242,29 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // address = 0 unless depth > 1, then Contracts[depth-2].Caller().
-    // Apply L1 inverse-alias iff `wasMyCallersAddressAliased` (top-level frame
-    // entered by an aliasing tx type).
-    let depth = crate::get_evm_depth();
+fn handle_caller_without_alias(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let depth = ctx.evm_depth();
     let address = if depth > 1 {
-        crate::caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
+        ctx.caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
     } else {
         Address::ZERO
     };
 
-    let arbos_version = crate::get_arbos_version();
+    let arbos_version = ctx.block.arbos_version;
     let is_top_level = if arbos_version < 6 {
         depth == 2
     } else if depth <= 2 {
         true
     } else {
         let tx_origin = input.internals().tx_origin();
-        crate::caller_at_depth(depth - 1)
+        ctx.caller_at_depth(depth - 1)
             .map(|c| tx_origin == c)
             .unwrap_or(false)
     };
-    let aliased = is_top_level && get_tx_is_aliased();
+    let aliased = is_top_level && ctx.tx_is_aliased();
     let result_addr = if aliased {
         undo_l1_alias(address)
     } else {
@@ -364,30 +305,35 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 // ── L2→L1 messaging ─────────────────────────────────────────────────
 
-fn handle_withdraw_eth(input: &mut PrecompileInput<'_>, destination: Address) -> PrecompileResult {
+fn handle_withdraw_eth(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    gas_used: u64,
+    destination: Address,
+) -> PrecompileResult {
     if input.is_static {
-        return Err(PrecompileError::other(
-            "cannot call withdrawEth in static context",
-        ));
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
-    do_send_tx_to_l1(input, destination, &[])
+    do_send_tx_to_l1(input, ctx, gas_used, destination, &[])
 }
 
 fn handle_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    gas_used: u64,
     destination: Address,
     calldata: &[u8],
 ) -> PrecompileResult {
     if input.is_static {
-        return Err(PrecompileError::other(
-            "cannot call sendTxToL1 in static context",
-        ));
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
-    do_send_tx_to_l1(input, destination, calldata)
+    do_send_tx_to_l1(input, ctx, gas_used, destination, calldata)
 }
 
 fn do_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    outer_gas_used: u64,
     destination: Address,
     calldata: &[u8],
 ) -> PrecompileResult {
@@ -395,8 +341,8 @@ fn do_send_tx_to_l1(
     let value = input.value;
     // Read the L1 block number recorded by StartBlock. `block_env.number` holds
     // the header's mix_hash L1 value, which can lag the StartBlock-updated one.
-    let l1_block_number = U256::from(crate::get_l1_block_number_for_evm());
-    let l2_block_number = U256::from(get_current_l2_block());
+    let l1_block_number = U256::from(ctx.block.l1_block_number_for_evm);
+    let l2_block_number = U256::from(ctx.block.l2_block_number);
     let timestamp = input.internals().block_timestamp();
 
     let mut gas_used = 0u64;
@@ -410,41 +356,34 @@ fn do_send_tx_to_l1(
     // Load the ArbOS state account.
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
+
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let arbos_version = arb_state.arbos_version();
 
     // ArbOS v41+: prevent sending value when native token owners exist.
-    if !value.is_zero() {
-        // Version read gas already covered by OpenArbosState overhead above.
-        let raw_version = internals
-            .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
-        let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
-        if arbos_version >= 41 {
-            let nt_key = derive_subspace_key(ROOT_STORAGE_KEY, NATIVE_TOKEN_SUBSPACE);
-            let nt_size_slot = map_slot(nt_key.as_slice(), 0);
-            gas_used += STORAGE_READ_COST;
-            let num_owners = internals
-                .sload(ARBOS_STATE_ADDRESS, nt_size_slot)
-                .map_err(|_| PrecompileError::other("sload failed"))?
-                .data;
-            if !num_owners.is_zero() {
-                return Err(PrecompileError::other(
-                    "not allowed to send value when native token owners exist",
-                ));
-            }
+    if !value.is_zero() && arbos_version >= 41 {
+        gas_used += STORAGE_READ_COST;
+        let num_owners = arb_state
+            .native_token_owners
+            .size(internals)
+            .map_err(ArbPrecompileError::fatal)?;
+        if num_owners != 0 {
+            return Err(ArbPrecompileError::empty_revert(outer_gas_used).into());
         }
     }
 
-    // Read current Merkle accumulator size.
-    let merkle_key = derive_subspace_key(ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE);
-    let size_slot = map_slot(merkle_key.as_slice(), 0);
+    // Read current Merkle accumulator size — accumulator's append() will also
+    // read+write this slot internally; the precompile charges Go-parity gas
+    // for two reads (one before, one phantom "post-append") plus the write.
     gas_used += STORAGE_READ_COST;
-    let current_size = internals
-        .sload(ARBOS_STATE_ADDRESS, size_slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?
-        .data;
-    let old_size: u64 = current_size.try_into().unwrap_or(0);
+    let old_size = arb_state
+        .send_merkle_accumulator
+        .size(internals)
+        .map_err(ArbPrecompileError::fatal)?;
 
     // Compute the send hash (arbosState.KeccakHash charges gas via burner).
     // Preimage: caller(20) + dest(20) + blockNum(32) + l1BlockNum(32) + time(32) + value(32) +
@@ -461,19 +400,26 @@ fn do_send_tx_to_l1(
         calldata,
     );
 
-    // Update Merkle accumulator: insert leaf and collect intermediate node events.
-    let (new_size, merkle_events, partials) =
-        update_merkle_accumulator(internals, &merkle_key, send_hash, old_size, &mut gas_used)?;
+    // Append leaf and collect intermediate node events for emission.
+    let merkle_events = arb_state
+        .send_merkle_accumulator
+        .append(internals, send_hash)
+        .map_err(ArbPrecompileError::fatal)?;
+    let new_size = old_size + 1;
 
-    // merkleAcc.Size() after Append does another storage read.
-    gas_used += STORAGE_READ_COST;
-
-    // Write new size.
-    let new_size_val = U256::from(new_size);
-    gas_used += storage_write_cost(new_size_val);
-    internals
-        .sstore(ARBOS_STATE_ADDRESS, size_slot, new_size_val)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
+    // Gas for the partial reads/writes inside append(), plus the new-size
+    // write and the phantom "post-append size read" tracked by Go's burner.
+    let num_partials_old = calc_num_partials(old_size);
+    let n_events = merkle_events.len() as u64;
+    let per_merge_gas = STORAGE_READ_COST + keccak_gas(64) + STORAGE_WRITE_ZERO_COST;
+    let terminator_gas = if n_events == num_partials_old {
+        STORAGE_WRITE_COST
+    } else {
+        STORAGE_READ_COST + STORAGE_WRITE_COST
+    };
+    gas_used += n_events * per_merge_gas + terminator_gas;
+    gas_used += STORAGE_WRITE_COST; // size.set inside append()
+    gas_used += STORAGE_READ_COST; // phantom "merkleAcc.Size() after Append"
 
     // Emit SendMerkleUpdate events (one per intermediate node, all topics, empty data).
     let update_topic = send_merkle_update_topic();
@@ -485,7 +431,7 @@ fn do_send_tx_to_l1(
             vec![
                 update_topic,
                 B256::from(U256::ZERO.to_be_bytes::<32>()), // reserved = 0
-                B256::from(evt.hash.to_be_bytes::<32>()),   // hash
+                evt.hash,                                   // hash
                 B256::from(position.to_be_bytes::<32>()),   // position
             ],
             Default::default(), // empty data (all fields indexed)
@@ -534,28 +480,8 @@ fn do_send_tx_to_l1(
     // Gas: 4 topics (event_id + 3 indexed), data = ABI-encoded non-indexed fields.
     gas_used += LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * l2l1_data_len;
 
-    // Store state for post-execution (value burn, etc.)
-    store_arbsys_state(ArbSysMerkleState {
-        new_size,
-        partials: partials
-            .iter()
-            .enumerate()
-            .map(|(i, h)| (i as u64, *h))
-            .collect(),
-        send_hash,
-        leaf_num,
-        value_to_burn: value,
-        block_number: l2_block_number.try_into().unwrap_or(0),
-    });
-
-    // Read ArbOS version for return value versioning (no gas — uses cached value).
-    let raw_version = internals
-        .sload(ARBOS_STATE_ADDRESS, root_slot(0))
-        .map_err(|_| PrecompileError::other("sload failed"))?
-        .data;
-    let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
-
-    // ArbOS >= 4: return leafNum; older versions return sendHash.
+    // ArbOS >= 4: return leafNum; older versions return sendHash. The version
+    // was already read above (no extra gas charged).
     let return_val = if arbos_version >= 4 {
         U256::from(leaf_num)
     } else {
@@ -569,48 +495,47 @@ fn do_send_tx_to_l1(
     Ok(PrecompileOutput::new(gas_used, output.into()))
 }
 
-fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_send_merkle_tree_state(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    outer_gas_used: u64,
+) -> PrecompileResult {
     // Only callable by address zero (for state export).
     if input.caller != Address::ZERO {
-        return Err(PrecompileError::other(
-            "method can only be called by address zero",
-        ));
+        return Err(ArbPrecompileError::empty_revert(outer_gas_used).into());
     }
     let mut gas_used = 0u64;
     let internals = input.internals_mut();
 
     internals
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
-    let merkle_key = derive_subspace_key(ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE);
-    let size_slot = map_slot(merkle_key.as_slice(), 0);
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+
     gas_used += STORAGE_READ_COST;
-    let size = internals
-        .sload(ARBOS_STATE_ADDRESS, size_slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?
-        .data;
-
-    let size_u64: u64 = size.try_into().unwrap_or(0);
+    let size_u64 = arb_state
+        .send_merkle_accumulator
+        .size(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let size = U256::from(size_u64);
 
     // Read partials — stored at offset (2 + level) in the accumulator storage.
     let num_partials = calc_num_partials(size_u64);
     let mut partials = Vec::new();
     for i in 0..num_partials {
-        let slot = map_slot(merkle_key.as_slice(), 2 + i);
         gas_used += STORAGE_READ_COST;
-        let val = internals
-            .sload(ARBOS_STATE_ADDRESS, slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
+        let val = arb_state
+            .send_merkle_accumulator
+            .partial_at(internals, i)
+            .map_err(ArbPrecompileError::fatal)?;
         partials.push(val);
     }
 
-    let b256_partials: Vec<B256> = partials
-        .iter()
-        .map(|p| B256::from(p.to_be_bytes::<32>()))
-        .collect();
-    let root = compute_merkle_root(&b256_partials, size_u64);
+    let root = compute_merkle_root(&partials, size_u64);
 
     // Return (size, root, partials...)
     // ABI: uint256 size, bytes32 root, bytes32[] partials
@@ -622,7 +547,7 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
     out.extend_from_slice(&U256::from(96u64).to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(num_partials).to_be_bytes::<32>());
     for p in &partials {
-        out.extend_from_slice(&p.to_be_bytes::<32>());
+        out.extend_from_slice(p.0.as_slice());
     }
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
@@ -654,111 +579,6 @@ fn compute_send_hash(
     preimage.extend_from_slice(&value.to_be_bytes::<32>());
     preimage.extend_from_slice(data);
     keccak256(&preimage)
-}
-
-/// Intermediate node event from merkle accumulator append.
-struct MerkleTreeNodeEvent {
-    level: u64,
-    num_leaves: u64,
-    hash: U256,
-}
-
-/// Append a leaf to the merkle accumulator (MerkleAccumulator.Append).
-///
-/// Returns (new_size, events, partials_for_root_computation).
-fn update_merkle_accumulator(
-    internals: &mut alloy_evm::EvmInternals<'_>,
-    merkle_key: &B256,
-    item_hash: B256,
-    old_size: u64,
-    gas_used: &mut u64,
-) -> Result<(u64, Vec<MerkleTreeNodeEvent>, Vec<B256>), PrecompileError> {
-    let new_size = old_size + 1;
-    let mut events = Vec::new();
-
-    // Hash the leaf before insertion: soFar = keccak256(itemHash).
-    let mut so_far = keccak256(item_hash.as_slice()).to_vec();
-
-    let num_partials_old = calc_num_partials(old_size);
-    let mut level = 0u64;
-
-    loop {
-        if level == num_partials_old {
-            // Store at new top level.
-            let h = U256::from_be_slice(&so_far);
-            let slot = map_slot(merkle_key.as_slice(), 2 + level);
-            *gas_used += storage_write_cost(h);
-            internals
-                .sstore(ARBOS_STATE_ADDRESS, slot, h)
-                .map_err(|_| PrecompileError::other("sstore failed"))?;
-            break;
-        }
-
-        // Read partial at this level.
-        let slot = map_slot(merkle_key.as_slice(), 2 + level);
-        *gas_used += STORAGE_READ_COST;
-        let this_level = internals
-            .sload(ARBOS_STATE_ADDRESS, slot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
-
-        if this_level.is_zero() {
-            // Empty slot: store and stop.
-            let h = U256::from_be_slice(&so_far);
-            *gas_used += storage_write_cost(h);
-            internals
-                .sstore(ARBOS_STATE_ADDRESS, slot, h)
-                .map_err(|_| PrecompileError::other("sstore failed"))?;
-            break;
-        }
-
-        // Combine: soFar = keccak256(thisLevel || soFar)
-        // Keccak charged via the burner: 30 + 6*2 = 42 for 64 bytes.
-        *gas_used += keccak_gas(64);
-        let mut preimage = [0u8; 64];
-        preimage[..32].copy_from_slice(&this_level.to_be_bytes::<32>());
-        preimage[32..].copy_from_slice(&so_far);
-        so_far = keccak256(preimage).to_vec();
-
-        // Clear the partial at this level.
-        *gas_used += STORAGE_WRITE_ZERO_COST;
-        internals
-            .sstore(ARBOS_STATE_ADDRESS, slot, U256::ZERO)
-            .map_err(|_| PrecompileError::other("sstore failed"))?;
-
-        level += 1;
-
-        // Record event for this intermediate node.
-        events.push(MerkleTreeNodeEvent {
-            level,
-            num_leaves: new_size - 1,
-            hash: U256::from_be_slice(&so_far),
-        });
-    }
-
-    // Read all partials for root computation.
-    // No gas charge here: Append doesn't read partials for root.
-    // The root is computed later in the block builder.
-    let num_partials = calc_num_partials(new_size);
-    let mut partials = Vec::with_capacity(num_partials as usize);
-    for i in 0..num_partials {
-        let pslot = map_slot(merkle_key.as_slice(), 2 + i);
-        let val = internals
-            .sload(ARBOS_STATE_ADDRESS, pslot)
-            .map_err(|_| PrecompileError::other("sload failed"))?
-            .data;
-        partials.push(B256::from(val.to_be_bytes::<32>()));
-    }
-
-    Ok((new_size, events, partials))
-}
-
-/// Calculate number of partials for a given size (Log2ceil).
-fn calc_num_partials(size: u64) -> u64 {
-    if size == 0 {
-        return 0;
-    }
-    64 - size.leading_zeros() as u64
 }
 
 /// Compute the merkle root from partials (MerkleAccumulator.Root()).

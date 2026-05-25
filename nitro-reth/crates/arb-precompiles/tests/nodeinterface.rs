@@ -2,20 +2,19 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::U256;
-use arb_precompiles::{
-    create_nodeinterface_precompile, set_cached_l1_block_number,
-    storage_slot::{
-        root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
+use arb_precompiles::create_nodeinterface_precompile;
+use arb_storage::{
+    layout::{root_slot, subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
+    ARBOS_STATE_ADDRESS,
+};
+use arbos::{
+    arbos_state::GENESIS_BLOCK_NUM_OFFSET, l1_pricing::PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,
+    l2_pricing::BASE_FEE_WEI_OFFSET as L2_BASE_FEE,
 };
 use common::{calldata, calldata_estimate, decode_u256, decode_word, word_u256, PrecompileTest};
 
-const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
-const L1_PRICE_PER_UNIT: u64 = 7;
-const L2_BASE_FEE: u64 = 2;
-
-fn nodeinterface() -> DynPrecompile {
-    create_nodeinterface_precompile()
+fn nodeinterface(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_nodeinterface_precompile(ctx)
 }
 
 #[test]
@@ -28,24 +27,27 @@ fn nitro_genesis_block_returns_root_field() {
             root_slot(GENESIS_BLOCK_NUM_OFFSET),
             U256::from(123_456_u64),
         )
-        .call(&nodeinterface(), &calldata("nitroGenesisBlock()", &[]));
+        .call(nodeinterface, &calldata("nitroGenesisBlock()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(123_456_u64));
 }
 
 #[test]
 fn block_l1_num_returns_cached_value() {
-    set_cached_l1_block_number(99, 7_777_777);
-    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
-    );
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(99, 7_777_777)
+        .call(
+            nodeinterface,
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
+        );
     assert_eq!(decode_u256(run.output()), U256::from(7_777_777_u64));
 }
 
 #[test]
 fn block_l1_num_returns_zero_for_unknown_l2_block() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
+        nodeinterface,
         &calldata(
             "blockL1Num(uint64)",
             &[word_u256(U256::from(99_999_999_u64))],
@@ -72,7 +74,7 @@ fn gas_estimate_components_returns_basefee_and_l1_price() {
             basefee,
         )
         .call(
-            &nodeinterface(),
+            nodeinterface,
             &calldata_estimate("gasEstimateComponents(address,bool,bytes)"),
         );
     let out = run.output();
@@ -99,7 +101,7 @@ fn gas_estimate_l1_component_returns_basefee_and_l1_price() {
             basefee,
         )
         .call(
-            &nodeinterface(),
+            nodeinterface,
             &calldata_estimate("gasEstimateL1Component(address,bool,bytes)"),
         );
     let out = run.output();
@@ -122,7 +124,7 @@ fn rpc_only_methods_still_revert() {
         let run = PrecompileTest::new()
             .arbos_version(30)
             .arbos_state()
-            .call(&nodeinterface(), &calldata(sig, &[word_u256(U256::ZERO)]));
+            .call(nodeinterface, &calldata(sig, &[word_u256(U256::ZERO)]));
         assert!(run.assert_ok().reverted, "{sig} must revert (RPC-only)",);
     }
 }

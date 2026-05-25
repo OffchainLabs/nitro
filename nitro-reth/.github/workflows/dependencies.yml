@@ -17,7 +17,34 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: recursive
+          submodules: false
+      - name: Init submodules with retry
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            if git submodule update --init --recursive --depth 1; then
+              echo "Submodules initialized"
+              exit 0
+            fi
+            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
+            sleep $((i*5))
+          done
+          echo "Submodule init failed after 3 attempts"
+          exit 1
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+      - uses: dtolnay/rust-toolchain@1.93
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      # The ignore list lives in .cargo/audit.toml and mirrors deny.toml.
+      - name: Run cargo audit
+        run: cargo audit

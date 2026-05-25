@@ -98,73 +98,93 @@ fn fresh() -> ArbosHarness {
 #[test]
 fn initial_pay_rewards_to_is_readable() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    let _ = ps.pay_rewards_to().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    let _ = ps.pay_rewards_to(b).unwrap();
 }
 
 #[test]
 fn set_and_get_pay_rewards_to() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
+    let b = unsafe { &mut *state_ptr };
     let new = address!("AABBCCDDEEFF00112233445566778899AABBCCDD");
-    ps.set_pay_rewards_to(new).unwrap();
-    assert_eq!(ps.pay_rewards_to().unwrap(), new);
+    ps.set_pay_rewards_to(b, new).unwrap();
+    assert_eq!(ps.pay_rewards_to(b).unwrap(), new);
 }
 
 #[test]
 fn set_and_get_equilibration_units() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    let initial = ps.equilibration_units().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    let initial = ps.equilibration_units(b).unwrap();
     assert_eq!(initial, U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
-    ps.set_equilibration_units(U256::from(999_999u64)).unwrap();
-    assert_eq!(ps.equilibration_units().unwrap(), U256::from(999_999u64));
+    ps.set_equilibration_units(b, U256::from(999_999u64))
+        .unwrap();
+    assert_eq!(ps.equilibration_units(b).unwrap(), U256::from(999_999u64));
 }
 
 #[test]
 fn set_and_get_inertia() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.inertia().unwrap(), INITIAL_INERTIA);
-    ps.set_inertia(42).unwrap();
-    assert_eq!(ps.inertia().unwrap(), 42);
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.inertia(b).unwrap(), INITIAL_INERTIA);
+    ps.set_inertia(b, 42).unwrap();
+    assert_eq!(ps.inertia(b).unwrap(), 42);
 }
 
 #[test]
 fn set_and_get_per_unit_reward() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.per_unit_reward().unwrap(), INITIAL_PER_UNIT_REWARD);
-    ps.set_per_unit_reward(33).unwrap();
-    assert_eq!(ps.per_unit_reward().unwrap(), 33);
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.per_unit_reward(b).unwrap(), INITIAL_PER_UNIT_REWARD);
+    ps.set_per_unit_reward(b, 33).unwrap();
+    assert_eq!(ps.per_unit_reward(b).unwrap(), 33);
 }
 
 #[test]
 fn units_since_update_add_and_subtract() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.units_since_update().unwrap(), 0);
-    ps.add_to_units_since_update(100).unwrap();
-    ps.add_to_units_since_update(50).unwrap();
-    assert_eq!(ps.units_since_update().unwrap(), 150);
-    ps.subtract_from_units_since_update(30).unwrap();
-    assert_eq!(ps.units_since_update().unwrap(), 120);
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.units_since_update(b).unwrap(), 0);
+    ps.add_to_units_since_update(b, 100).unwrap();
+    ps.add_to_units_since_update(b, 50).unwrap();
+    assert_eq!(ps.units_since_update(b).unwrap(), 150);
+    ps.subtract_from_units_since_update(b, 30).unwrap();
+    assert_eq!(ps.units_since_update(b).unwrap(), 120);
 }
 
 #[test]
 fn set_price_per_unit_stores_exact_u256() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
+    let b = unsafe { &mut *state_ptr };
     let big = U256::from(u64::MAX) * U256::from(1_000_000u64);
-    ps.set_price_per_unit(big).unwrap();
-    assert_eq!(ps.price_per_unit().unwrap(), big);
+    ps.set_price_per_unit(b, big).unwrap();
+    assert_eq!(ps.price_per_unit(b).unwrap(), big);
 }
 
 #[test]
 fn last_surplus_default_zero_positive() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    let (mag, neg) = ps.last_surplus().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    let (mag, neg) = ps.last_surplus(b).unwrap();
     assert_eq!(mag, U256::ZERO);
     assert!(!neg);
 }
@@ -172,19 +192,23 @@ fn last_surplus_default_zero_positive() {
 #[test]
 fn set_last_surplus_positive_and_negative() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_last_surplus(U256::from(1000u64), false).unwrap();
-    assert_eq!(ps.last_surplus().unwrap(), (U256::from(1000u64), false));
-    ps.set_last_surplus(U256::from(500u64), true).unwrap();
-    assert_eq!(ps.last_surplus().unwrap(), (U256::from(500u64), true));
+    let b = unsafe { &mut *state_ptr };
+    ps.set_last_surplus(b, U256::from(1000u64), false).unwrap();
+    assert_eq!(ps.last_surplus(b).unwrap(), (U256::from(1000u64), false));
+    ps.set_last_surplus(b, U256::from(500u64), true).unwrap();
+    assert_eq!(ps.last_surplus(b).unwrap(), (U256::from(500u64), true));
 }
 
 #[test]
 fn per_batch_gas_cost_default_is_initial() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
+    let b = unsafe { &mut *state_ptr };
     assert_eq!(
-        ps.per_batch_gas_cost().unwrap(),
+        ps.per_batch_gas_cost(b).unwrap(),
         INITIAL_PER_BATCH_GAS_COST_V12
     );
 }
@@ -192,77 +216,98 @@ fn per_batch_gas_cost_default_is_initial() {
 #[test]
 fn per_batch_gas_cost_set_accepts_negative() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_per_batch_gas_cost(-50_000).unwrap();
-    assert_eq!(ps.per_batch_gas_cost().unwrap(), -50_000);
+    let b = unsafe { &mut *state_ptr };
+    ps.set_per_batch_gas_cost(b, -50_000).unwrap();
+    assert_eq!(ps.per_batch_gas_cost(b).unwrap(), -50_000);
 }
 
 #[test]
 fn amortized_cost_cap_bips_default_zero_and_settable() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.amortized_cost_cap_bips().unwrap(), 0);
-    ps.set_amortized_cost_cap_bips(10_000).unwrap();
-    assert_eq!(ps.amortized_cost_cap_bips().unwrap(), 10_000);
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.amortized_cost_cap_bips(b).unwrap(), 0);
+    ps.set_amortized_cost_cap_bips(b, 10_000).unwrap();
+    assert_eq!(ps.amortized_cost_cap_bips(b).unwrap(), 10_000);
 }
 
 #[test]
 fn l1_fees_available_add_and_transfer() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.l1_fees_available().unwrap(), U256::ZERO);
-    ps.add_to_l1_fees_available(U256::from(1_000u64)).unwrap();
-    ps.add_to_l1_fees_available(U256::from(500u64)).unwrap();
-    assert_eq!(ps.l1_fees_available().unwrap(), U256::from(1_500u64));
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.l1_fees_available(b).unwrap(), U256::ZERO);
+    ps.add_to_l1_fees_available(b, U256::from(1_000u64))
+        .unwrap();
+    ps.add_to_l1_fees_available(b, U256::from(500u64)).unwrap();
+    assert_eq!(ps.l1_fees_available(b).unwrap(), U256::from(1_500u64));
     let taken = ps
-        .transfer_from_l1_fees_available(U256::from(200u64))
+        .transfer_from_l1_fees_available(b, U256::from(200u64))
         .unwrap();
     assert_eq!(taken, U256::from(200u64));
-    assert_eq!(ps.l1_fees_available().unwrap(), U256::from(1_300u64));
+    assert_eq!(ps.l1_fees_available(b).unwrap(), U256::from(1_300u64));
 }
 
 #[test]
 fn transfer_from_l1_fees_caps_at_available() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.add_to_l1_fees_available(U256::from(100u64)).unwrap();
+    let b = unsafe { &mut *state_ptr };
+    ps.add_to_l1_fees_available(b, U256::from(100u64)).unwrap();
     let taken = ps
-        .transfer_from_l1_fees_available(U256::from(500u64))
+        .transfer_from_l1_fees_available(b, U256::from(500u64))
         .unwrap();
     assert_eq!(taken, U256::from(100u64));
-    assert_eq!(ps.l1_fees_available().unwrap(), U256::ZERO);
+    assert_eq!(ps.l1_fees_available(b).unwrap(), U256::ZERO);
 }
 
 #[test]
 fn parent_gas_floor_per_token_zero_for_pre_v50() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.parent_gas_floor_per_token().unwrap(), 0);
-    assert!(ps.set_parent_gas_floor_per_token(400).is_err());
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.parent_gas_floor_per_token(b).unwrap(), 0);
+    assert!(ps.set_parent_gas_floor_per_token(b, 400).is_err());
 }
 
 #[test]
 fn parent_gas_floor_per_token_settable_at_v50() {
     let mut h = ArbosHarness::new().with_arbos_version(50).initialize();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_parent_gas_floor_per_token(400).unwrap();
-    assert_eq!(ps.parent_gas_floor_per_token().unwrap(), 400);
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    ps.set_parent_gas_floor_per_token(b, 400).unwrap();
+    assert_eq!(ps.parent_gas_floor_per_token(b).unwrap(), 400);
 }
 
 #[test]
 fn funds_due_for_rewards_set_get() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    assert_eq!(ps.funds_due_for_rewards().unwrap(), U256::ZERO);
-    ps.set_funds_due_for_rewards(U256::from(12_345u64)).unwrap();
-    assert_eq!(ps.funds_due_for_rewards().unwrap(), U256::from(12_345u64));
+    let b = unsafe { &mut *state_ptr };
+    assert_eq!(ps.funds_due_for_rewards(b).unwrap(), U256::ZERO);
+    ps.set_funds_due_for_rewards(b, U256::from(12_345u64))
+        .unwrap();
+    assert_eq!(ps.funds_due_for_rewards(b).unwrap(), U256::from(12_345u64));
 }
 
 #[test]
 fn surplus_default_is_zero_positive() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    let (mag, neg) = ps.get_l1_pricing_surplus().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    let (mag, neg) = ps.get_l1_pricing_surplus(b).unwrap();
     assert_eq!(mag, U256::ZERO);
     assert!(!neg);
 }
@@ -270,9 +315,12 @@ fn surplus_default_is_zero_positive() {
 #[test]
 fn surplus_is_negative_when_funds_due_exceeds_available() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_funds_due_for_rewards(U256::from(1_000u64)).unwrap();
-    let (mag, neg) = ps.get_l1_pricing_surplus().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    ps.set_funds_due_for_rewards(b, U256::from(1_000u64))
+        .unwrap();
+    let (mag, neg) = ps.get_l1_pricing_surplus(b).unwrap();
     assert!(neg, "surplus should be negative when funds_due > available");
     assert_eq!(mag, U256::from(1_000u64));
 }
@@ -280,9 +328,12 @@ fn surplus_is_negative_when_funds_due_exceeds_available() {
 #[test]
 fn surplus_is_positive_when_available_exceeds_funds_due() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.add_to_l1_fees_available(U256::from(1_000u64)).unwrap();
-    let (mag, neg) = ps.get_l1_pricing_surplus().unwrap();
+    let b = unsafe { &mut *state_ptr };
+    ps.add_to_l1_fees_available(b, U256::from(1_000u64))
+        .unwrap();
+    let (mag, neg) = ps.get_l1_pricing_surplus(b).unwrap();
     assert!(!neg);
     assert_eq!(mag, U256::from(1_000u64));
 }
@@ -290,34 +341,42 @@ fn surplus_is_positive_when_available_exceeds_funds_due() {
 #[test]
 fn poster_data_cost_adds_price_times_units_plus_per_batch_cost() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_price_per_unit(U256::from(10u64)).unwrap();
-    ps.set_per_batch_gas_cost(0).unwrap();
-    let c = ps.poster_data_cost(100).unwrap();
+    let b = unsafe { &mut *state_ptr };
+    ps.set_price_per_unit(b, U256::from(10u64)).unwrap();
+    ps.set_per_batch_gas_cost(b, 0).unwrap();
+    let c = ps.poster_data_cost(b, 100).unwrap();
     assert_eq!(c, U256::from(1_000u64));
-    ps.set_per_batch_gas_cost(500).unwrap();
-    assert_eq!(ps.poster_data_cost(100).unwrap(), U256::from(1_500u64));
+    ps.set_per_batch_gas_cost(b, 500).unwrap();
+    assert_eq!(ps.poster_data_cost(b, 100).unwrap(), U256::from(1_500u64));
 }
 
 #[test]
 fn poster_data_cost_subtracts_negative_per_batch_cost() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_price_per_unit(U256::from(10u64)).unwrap();
-    ps.set_per_batch_gas_cost(-200).unwrap();
-    assert_eq!(ps.poster_data_cost(100).unwrap(), U256::from(800u64));
+    let b = unsafe { &mut *state_ptr };
+    ps.set_price_per_unit(b, U256::from(10u64)).unwrap();
+    ps.set_per_batch_gas_cost(b, -200).unwrap();
+    assert_eq!(ps.poster_data_cost(b, 100).unwrap(), U256::from(800u64));
 }
 
 #[test]
 fn poster_data_cost_for_estimation_adds_padding() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    ps.set_price_per_unit(U256::from(10u64)).unwrap();
+    let b = unsafe { &mut *state_ptr };
+    ps.set_price_per_unit(b, U256::from(10u64)).unwrap();
     let tx_bytes = vec![0x42u8; 100];
     let (raw_cost, raw_units) = ps
-        .compute_poster_cost(BATCH_POSTER_ADDRESS, &tx_bytes, 11)
+        .compute_poster_cost(b, BATCH_POSTER_ADDRESS, &tx_bytes, 11)
         .unwrap();
-    let (padded_cost, padded_units) = ps.poster_data_cost_for_estimation(&tx_bytes, 11).unwrap();
+    let (padded_cost, padded_units) = ps
+        .poster_data_cost_for_estimation(b, &tx_bytes, 11)
+        .unwrap();
     assert!(padded_units > raw_units, "estimation pads raw units");
     assert!(padded_cost > raw_cost);
 }
@@ -325,8 +384,11 @@ fn poster_data_cost_for_estimation_adds_padding() {
 #[test]
 fn get_poster_info_returns_funds_due_and_pay_to() {
     let mut h = fresh();
+    let state_ptr = h.state_ptr();
     let ps = h.l1_pricing_state();
-    let (funds_due, pay_to) = ps.get_poster_info(BATCH_POSTER_ADDRESS).unwrap();
+    #[allow(unused_variables)]
+    let b = unsafe { &mut *state_ptr };
+    let (funds_due, pay_to) = ps.get_poster_info(b, BATCH_POSTER_ADDRESS).unwrap();
     assert_eq!(funds_due, U256::ZERO);
     assert_ne!(pay_to, Address::ZERO);
 }

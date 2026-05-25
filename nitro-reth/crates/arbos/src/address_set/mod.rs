@@ -1,24 +1,29 @@
 use alloy_primitives::{Address, B256, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedAddress, StorageBackedUint64};
+use arb_storage::{
+    Storage, StorageBackedAddress, StorageBackedUint64, StorageBackend, SystemStateBackend,
+};
+
+mod error;
+pub use error::AddressSetError;
 
 /// A set of addresses backed by ArbOS storage.
 ///
 /// Layout: slot 0 = size, slots 1..size = addresses (as StorageBackedAddress).
 /// Sub-storage at key ]0\] maps address_hash → slot index.
-pub struct AddressSet<D> {
-    backing_storage: Storage<D>,
-    size: StorageBackedUint64<D>,
-    by_address: Storage<D>,
+pub struct AddressSet<'a, D> {
+    backing_storage: Storage<'a, D>,
+    size: StorageBackedUint64,
+    by_address: Storage<'a, D>,
 }
 
-pub fn initialize_address_set<D: Database>(sto: &Storage<D>) -> Result<(), ()> {
-    sto.set_by_uint64(0, B256::ZERO)
+pub fn initialize_address_set<D: Database>(sto: &Storage<'_, D>) -> Result<(), AddressSetError> {
+    Ok(sto.set_by_uint64(0, B256::ZERO)?)
 }
 
-pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
-    let size = StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), 0);
+pub fn open_address_set<D>(sto: Storage<'_, D>) -> AddressSet<'_, D> {
+    let size = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[0u8]);
     AddressSet {
         backing_storage: sto,
@@ -27,135 +32,203 @@ pub fn open_address_set<D: Database>(sto: Storage<D>) -> AddressSet<D> {
     }
 }
 
-impl<D: Database> AddressSet<D> {
-    pub fn size(&self) -> Result<u64, ()> {
-        self.size.get()
+impl<D> AddressSet<'_, D> {
+    pub fn size<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, AddressSetError> {
+        Ok(self.size.get(backend)?)
     }
 
-    pub fn is_member(&self, addr: Address) -> Result<bool, ()> {
-        let addr_hash = address_to_hash(addr);
-        let value = self.by_address.get(addr_hash)?;
+    pub fn is_member<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<bool, AddressSetError> {
+        let value = self.by_address_get(backend, address_to_hash(addr))?;
         Ok(value != B256::ZERO)
     }
 
-    pub fn get_any_member(&self) -> Result<Option<Address>, ()> {
-        let size = self.size.get()?;
+    pub fn get_any_member<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Option<Address>, AddressSetError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(None);
         }
-        let sba = StorageBackedAddress::new(
-            self.backing_storage.state_ptr(),
-            self.backing_storage.base_key(),
-            1,
-        );
-        sba.get().map(Some)
+        let sba = StorageBackedAddress::new(self.backing_storage.base_key(), 1);
+        Ok(sba.get(backend).map(Some)?)
     }
 
-    pub fn clear(&self) -> Result<(), ()> {
-        let size = self.size.get()?;
+    pub fn clear<B: StorageBackend>(&self, backend: &mut B) -> Result<(), AddressSetError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(());
         }
         for i in 1..=size {
-            let contents = self.backing_storage.get_by_uint64(i)?;
-            self.backing_storage.set_by_uint64(i, B256::ZERO)?;
-            self.by_address.set(contents, B256::ZERO)?;
+            let contents = self.backing_get_by_uint64(backend, i)?;
+            self.backing_set_by_uint64(backend, i, B256::ZERO)?;
+            self.by_address_set(backend, contents, B256::ZERO)?;
         }
-        self.size.set(0)
+        Ok(self.size.set(backend, 0)?)
     }
 
-    pub fn all_members(&self, max_num: u64) -> Result<Vec<Address>, ()> {
-        let mut size = self.size.get()?;
+    pub fn all_members<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        max_num: u64,
+    ) -> Result<Vec<Address>, AddressSetError> {
+        let mut size = self.size.get(backend)?;
         if size > max_num {
             size = max_num;
         }
         let mut ret = Vec::with_capacity(size as usize);
         for i in 0..size {
-            let sba = StorageBackedAddress::new(
-                self.backing_storage.state_ptr(),
-                self.backing_storage.base_key(),
-                i + 1,
-            );
-            ret.push(sba.get()?);
+            let sba = StorageBackedAddress::new(self.backing_storage.base_key(), i + 1);
+            ret.push(sba.get(backend)?);
         }
         Ok(ret)
     }
 
-    pub fn clear_list(&self) -> Result<(), ()> {
-        let size = self.size.get()?;
+    pub fn clear_list<B: StorageBackend>(&self, backend: &mut B) -> Result<(), AddressSetError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(());
         }
         for i in 1..=size {
-            self.backing_storage.set_by_uint64(i, B256::ZERO)?;
+            self.backing_set_by_uint64(backend, i, B256::ZERO)?;
         }
-        self.size.set(0)
+        Ok(self.size.set(backend, 0)?)
     }
 
-    pub fn rectify_mapping(&self, addr: Address) -> Result<(), ()> {
-        let is_owner = self.is_member(addr)?;
-        if !is_owner {
-            return Err(());
+    pub fn rectify_mapping<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), AddressSetError> {
+        if !self.is_member(backend, addr)? {
+            return Err(AddressSetError::NotMember);
         }
 
         let addr_as_hash = address_to_hash(addr);
-        let slot = hash_to_uint64(self.by_address.get(addr_as_hash)?);
-        let at_slot = self.backing_storage.get_by_uint64(slot)?;
-        let size = self.size.get()?;
+        let slot = hash_to_uint64(self.by_address_get(backend, addr_as_hash)?);
+        let at_slot = self.backing_get_by_uint64(backend, slot)?;
+        let size = self.size.get(backend)?;
 
         if at_slot == addr_as_hash && slot <= size {
-            return Err(());
+            return Err(AddressSetError::MappingAlreadyConsistent);
         }
 
-        self.by_address.set(addr_as_hash, B256::ZERO)?;
-        self.add(addr)
+        self.by_address_set(backend, addr_as_hash, B256::ZERO)?;
+        self.add(backend, addr)
     }
 
-    pub fn add(&self, addr: Address) -> Result<(), ()> {
-        let present = self.is_member(addr)?;
+    pub fn add<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(), AddressSetError> {
+        let present = self.is_member(backend, addr)?;
         if present {
             return Ok(());
         }
 
-        let size = self.size.get()?;
+        let size = self.size.get(backend)?;
         let slot = uint_to_hash(1 + size);
         let addr_as_hash = address_to_hash(addr);
 
-        self.by_address.set(addr_as_hash, slot)?;
+        self.by_address_set(backend, addr_as_hash, slot)?;
 
-        let sba = StorageBackedAddress::new(
-            self.backing_storage.state_ptr(),
-            self.backing_storage.base_key(),
-            1 + size,
-        );
-        sba.set(addr)?;
+        let sba = StorageBackedAddress::new(self.backing_storage.base_key(), 1 + size);
+        sba.set(backend, addr)?;
 
-        self.size.set(size + 1)
+        Ok(self.size.set(backend, size + 1)?)
     }
 
-    pub fn remove(&self, addr: Address, arbos_version: u64) -> Result<(), ()> {
+    pub fn remove<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+        arbos_version: u64,
+    ) -> Result<(), AddressSetError> {
         let addr_as_hash = address_to_hash(addr);
-        let slot_hash = self.by_address.get(addr_as_hash)?;
+        let slot_hash = self.by_address_get(backend, addr_as_hash)?;
         let slot = hash_to_uint64(slot_hash);
 
         if slot == 0 {
             return Ok(());
         }
 
-        self.by_address.set(addr_as_hash, B256::ZERO)?;
+        self.by_address_set(backend, addr_as_hash, B256::ZERO)?;
 
-        let size = self.size.get()?;
+        let size = self.size.get(backend)?;
         if slot < size {
-            let at_size = self.backing_storage.get_by_uint64(size)?;
-            self.backing_storage.set_by_uint64(slot, at_size)?;
+            let at_size = self.backing_get_by_uint64(backend, size)?;
+            self.backing_set_by_uint64(backend, slot, at_size)?;
 
             if arbos_version >= 11 {
-                self.by_address.set(at_size, uint_to_hash(slot))?;
+                self.by_address_set(backend, at_size, uint_to_hash(slot))?;
             }
         }
 
-        self.backing_storage.set_by_uint64(size, B256::ZERO)?;
-        self.size.set(size - 1)
+        self.backing_set_by_uint64(backend, size, B256::ZERO)?;
+        Ok(self.size.set(backend, size - 1)?)
+    }
+
+    fn by_address_get<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        key: B256,
+    ) -> Result<B256, AddressSetError> {
+        let slot = self.by_address.slot_for_key(key);
+        let value = backend
+            .sload_system(self.by_address.account(), slot)
+            .map_err(Into::into)?;
+        Ok(B256::from(value.to_be_bytes::<32>()))
+    }
+
+    fn by_address_set<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        key: B256,
+        value: B256,
+    ) -> Result<(), AddressSetError> {
+        let slot = self.by_address.slot_for_key(key);
+        backend
+            .sstore(
+                self.by_address.account(),
+                slot,
+                U256::from_be_bytes(value.0),
+            )
+            .map_err(Into::into)?;
+        Ok(())
+    }
+
+    fn backing_get_by_uint64<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        offset: u64,
+    ) -> Result<B256, AddressSetError> {
+        let slot = self.backing_storage.new_slot(offset);
+        let value = backend
+            .sload_system(self.backing_storage.account(), slot)
+            .map_err(Into::into)?;
+        Ok(B256::from(value.to_be_bytes::<32>()))
+    }
+
+    fn backing_set_by_uint64<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        offset: u64,
+        value: B256,
+    ) -> Result<(), AddressSetError> {
+        let slot = self.backing_storage.new_slot(offset);
+        backend
+            .sstore(
+                self.backing_storage.account(),
+                slot,
+                U256::from_be_bytes(value.0),
+            )
+            .map_err(Into::into)?;
+        Ok(())
     }
 }
 

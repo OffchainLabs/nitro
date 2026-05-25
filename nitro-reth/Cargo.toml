@@ -2,7 +2,11 @@
 members = [
     "crates/arb-primitives",
     "crates/arb-chainspec",
+    "crates/arb-context",
+    "crates/arb-math",
     "crates/arb-storage",
+    "crates/arb-storage-errors",
+    "crates/arb-errors",
     "crates/arb-evm",
     "crates/arb-precompiles",
     "crates/arb-node",
@@ -33,7 +37,11 @@ license = "BUSL-1.1"
 # Internal crates
 arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
+arb-context = { path = "crates/arb-context" }
+arb-math = { path = "crates/arb-math" }
 arb-storage = { path = "crates/arb-storage" }
+arb-storage-errors = { path = "crates/arb-storage-errors" }
+arb-errors = { path = "crates/arb-errors" }
 arb-evm = { path = "crates/arb-evm" }
 arb-precompiles = { path = "crates/arb-precompiles" }
 arb-node = { path = "crates/arb-node" }
@@ -224,3 +232,9 @@ strip = "debuginfo"
 [profile.maxperf]
 inherits = "release"
 lto = "fat"
+
+[profile.fastdev]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true

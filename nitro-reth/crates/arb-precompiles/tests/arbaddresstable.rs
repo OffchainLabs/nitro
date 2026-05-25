@@ -2,17 +2,17 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbaddresstable_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ARBOS_STATE_ADDRESS,
-        ROOT_STORAGE_KEY,
+use arb_precompiles::create_arbaddresstable_precompile;
+use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ROOT_STORAGE_KEY,
     },
+    ARBOS_STATE_ADDRESS,
 };
 use common::{calldata, decode_u256, word_address, PrecompileTest};
 
-fn arbaddresstable() -> DynPrecompile {
-    create_arbaddresstable_precompile()
+fn arbaddresstable(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbaddresstable_precompile(ctx)
 }
 
 fn table_key() -> B256 {
@@ -36,7 +36,7 @@ fn size_returns_zero_for_empty_table() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&arbaddresstable(), &calldata("size()", &[]));
+        .call(arbaddresstable, &calldata("size()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -46,7 +46,7 @@ fn size_returns_stored_value() {
         .arbos_version(30)
         .arbos_state()
         .storage(ARBOS_STATE_ADDRESS, size_slot(), U256::from(42))
-        .call(&arbaddresstable(), &calldata("size()", &[]));
+        .call(arbaddresstable, &calldata("size()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(42));
 }
 
@@ -54,7 +54,7 @@ fn size_returns_stored_value() {
 fn address_exists_returns_false_for_unregistered() {
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("addressExists(address)", &[word_address(addr)]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -68,7 +68,7 @@ fn address_exists_returns_true_for_registered() {
         .arbos_state()
         .storage(ARBOS_STATE_ADDRESS, by_address_slot(addr), U256::from(1))
         .call(
-            &arbaddresstable(),
+            arbaddresstable,
             &calldata("addressExists(address)", &[word_address(addr)]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(1));
@@ -87,7 +87,7 @@ fn lookup_unregistered_address_reverts() {
     // gas_check converts PrecompileError::Other to a reverted output at ArbOS >= 11.
     let addr: Address = address!("00000000000000000000000000000000000000bb");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("lookup(address)", &[word_address(addr)]),
     );
     let out = run.assert_ok();
@@ -97,7 +97,7 @@ fn lookup_unregistered_address_reverts() {
 #[test]
 fn lookup_index_zero_in_empty_table_reverts() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata(
             "lookupIndex(uint256)",
             &[B256::from(U256::ZERO.to_be_bytes::<32>())],
@@ -113,7 +113,7 @@ fn register_returns_zero_for_first_address_and_increments_size() {
     // slot index 0 and increments size to 1.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("register(address)", &[word_address(addr)]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -129,7 +129,7 @@ fn compress_unregistered_returns_21_byte_raw_format() {
     // round-trip via the 21-byte RLP raw format.
     let addr: Address = address!("0123456789abcdef0123456789abcdef01234567");
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("compress(address)", &[word_address(addr)]),
     );
     let body = decode_dynamic_bytes(run.output());
@@ -151,7 +151,7 @@ fn compress_registered_returns_short_format() {
         // Slot value = 1-based index → index 0 in Compress's view.
         .storage(ARBOS_STATE_ADDRESS, by_address_slot(addr), U256::from(1));
     let run = test.call(
-        &arbaddresstable(),
+        arbaddresstable,
         &calldata("compress(address)", &[word_address(addr)]),
     );
     let body = decode_dynamic_bytes(run.output());
@@ -160,4 +160,74 @@ fn compress_registered_returns_short_format() {
         "registered addr should compress to <= 9 bytes, got {}",
         body.len()
     );
+}
+
+fn entry_slot(index: u64) -> U256 {
+    map_slot(table_key().as_slice(), index + 1)
+}
+
+fn decode_address_and_uint(out: &alloy_primitives::Bytes) -> (Address, U256) {
+    let addr = Address::from_slice(&out[12..32]);
+    let n = U256::from_be_slice(&out[32..64]);
+    (addr, n)
+}
+
+#[test]
+fn decompress_short_index_returns_registered_address() {
+    let addr: Address = address!("c5d2460186f7233c927e7db2dcc703c0e500b653");
+    let mut buf = vec![0u8; 32 * 4];
+    buf[31] = 0x40; // offset to bytes
+    buf[63] = 0x00; // offset arg
+    buf[95] = 0x01; // length = 1
+    buf[96] = 0x80; // RLP(0)
+    let mut data = vec![0x31, 0x86, 0x2a, 0xda];
+    data.extend_from_slice(&buf);
+
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .storage(ARBOS_STATE_ADDRESS, size_slot(), U256::from(1))
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            entry_slot(0),
+            U256::from_be_slice(&{
+                let mut padded = [0u8; 32];
+                padded[12..32].copy_from_slice(addr.as_slice());
+                padded
+            }),
+        )
+        .call(arbaddresstable, &data.into());
+
+    let out = run.assert_ok();
+    assert!(!out.reverted, "decompress short-index must not revert");
+    let (a, n) = decode_address_and_uint(run.output());
+    assert_eq!(a, addr);
+    assert_eq!(n, U256::from(1));
+}
+
+#[test]
+fn decompress_raw_21_byte_address_returns_raw() {
+    let addr: Address = address!("0123456789abcdef0123456789abcdef01234567");
+    let mut payload = Vec::with_capacity(21);
+    payload.push(0x94);
+    payload.extend_from_slice(addr.as_slice());
+
+    let mut buf = vec![0u8; 32 * 4];
+    buf[31] = 0x40;
+    buf[63] = 0x00;
+    buf[95] = 21;
+    buf[96..96 + 21].copy_from_slice(&payload);
+    let mut data = vec![0x31, 0x86, 0x2a, 0xda];
+    data.extend_from_slice(&buf);
+
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .call(arbaddresstable, &data.into());
+
+    let out = run.assert_ok();
+    assert!(!out.reverted, "decompress raw-21 must not revert");
+    let (a, n) = decode_address_and_uint(run.output());
+    assert_eq!(a, addr);
+    assert_eq!(n, U256::from(21));
 }

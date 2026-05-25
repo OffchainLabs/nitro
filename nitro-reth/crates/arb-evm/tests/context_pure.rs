@@ -133,16 +133,6 @@ fn add_stylus_pages_ever_is_direct_watermark_increase() {
 }
 
 #[test]
-fn tx_filter_default_false_then_toggle() {
-    let mut x = ArbitrumExtraData::default();
-    assert!(!x.is_tx_filtered());
-    x.filter_tx();
-    assert!(x.is_tx_filtered());
-    x.clear_tx_filter();
-    assert!(!x.is_tx_filtered());
-}
-
-#[test]
 fn zombie_default_empty_add_and_check() {
     let mut x = ArbitrumExtraData::default();
     let addr = Address::repeat_byte(0xAA);

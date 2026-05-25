@@ -1,12 +1,18 @@
 use alloy_primitives::{Address, B256, U256};
-use revm::Database;
+use arb_storage::{
+    set_account_nonce, Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackend,
+    ARBOS_STATE_ADDRESS,
+};
+use revm::{database::State, Database};
 
 use crate::{
     burn::Burner,
+    l1_pricing::L1PricingState,
+    l2_pricing::L2PricingState,
     retryables::{self, RetryableState},
 };
 
-use super::ArbosState;
+use super::{ArbosState, ArbosStateError};
 
 /// Genesis data for a retryable ticket.
 #[derive(Debug, Clone)]
@@ -91,15 +97,15 @@ pub fn make_genesis_block(
 /// Returns `(balance_credits, escrow_credits)` where:
 /// - `balance_credits`: expired retryable beneficiaries to credit
 /// - `escrow_credits`: (escrow_address, callvalue) for active retryable escrow funding
-pub fn initialize_retryables<D: Database>(
+pub fn initialize_retryables<D: Database, C: StorageBackend>(
+    backend: &mut C,
     rs: &RetryableState<D>,
     mut retryables_data: Vec<InitRetryableData>,
     current_timestamp: u64,
-) -> Result<(Vec<(Address, U256)>, Vec<(Address, U256)>), ()> {
+) -> Result<(Vec<(Address, U256)>, Vec<(Address, U256)>), ArbosStateError> {
     let mut balance_credits = Vec::new();
     let mut active_retryables = Vec::new();
 
-    // Separate expired from active retryables.
     for r in retryables_data.drain(..) {
         if r.timeout <= current_timestamp {
             balance_credits.push((r.beneficiary, r.callvalue));
@@ -108,7 +114,6 @@ pub fn initialize_retryables<D: Database>(
         active_retryables.push(r);
     }
 
-    // Sort by timeout, then by id for determinism.
     active_retryables.sort_by(|a, b| a.timeout.cmp(&b.timeout).then_with(|| a.id.cmp(&b.id)));
 
     let mut escrow_credits = Vec::new();
@@ -117,6 +122,7 @@ pub fn initialize_retryables<D: Database>(
         let escrow_addr = retryables::retryable_escrow_address(r.id);
         escrow_credits.push((escrow_addr, r.callvalue));
         rs.create_retryable(
+            backend,
             r.id,
             r.timeout,
             r.from,
@@ -134,16 +140,17 @@ pub fn initialize_retryables<D: Database>(
 ///
 /// If the account has aggregator info and is a known batch poster,
 /// sets the batch poster's pay-to (fee collector) address.
-pub fn initialize_arbos_account<D: Database, B: Burner>(
-    arbos_state: &ArbosState<D, B>,
+pub fn initialize_arbos_account<D: Database, B: Burner, C: StorageBackend>(
+    backend: &mut C,
+    arbos_state: &ArbosState<'_, D, B>,
     account: &AccountInitInfo,
-) -> Result<(), ()> {
+) -> Result<(), ArbosStateError> {
     if let Some(ref aggregator) = account.aggregator_info {
         let poster_table = arbos_state.l1_pricing_state.batch_poster_table();
-        let is_poster = poster_table.contains_poster(account.addr)?;
+        let is_poster = poster_table.contains_poster(backend, account.addr)?;
         if is_poster {
-            let poster = poster_table.open_poster(account.addr, false)?;
-            poster.set_pay_to(aggregator.fee_collector)?;
+            let poster = poster_table.open_poster(backend, account.addr, false)?;
+            poster.set_pay_to(backend, aggregator.fee_collector)?;
         }
     }
     Ok(())
@@ -176,41 +183,39 @@ pub struct GenesisInitResult {
 /// Creates the ArbOS state, adds the chain owner, imports address table
 /// entries, retryable tickets, and accounts. Returns a `GenesisInitResult`
 /// containing all balance operations the caller needs to execute.
-pub fn initialize_arbos_in_database<D: Database, B: Burner>(
-    arbos_state: &ArbosState<D, B>,
+pub fn initialize_arbos_in_database<D: Database, B: Burner, C: StorageBackend>(
+    backend: &mut C,
+    arbos_state: &ArbosState<'_, D, B>,
     chain_owner: Address,
     address_table_entries: Vec<Address>,
     retryable_data: Vec<InitRetryableData>,
     accounts: Vec<AccountInitInfo>,
     current_timestamp: u64,
-) -> Result<GenesisInitResult, ()> {
-    // Add chain owner.
+) -> Result<GenesisInitResult, ArbosStateError> {
     if chain_owner != Address::ZERO {
-        arbos_state.chain_owners.add(chain_owner)?;
+        arbos_state.chain_owners.add(backend, chain_owner)?;
     }
 
-    // Import address table entries.
-    let table_size = arbos_state.address_table.size()?;
+    let table_size = arbos_state.address_table.size(backend)?;
     if table_size != 0 {
-        return Err(());
+        return Err(ArbosStateError::AddressTableNotEmpty);
     }
     for (i, addr) in address_table_entries.iter().enumerate() {
-        let slot = arbos_state.address_table.register(*addr)?;
+        let (slot, _) = arbos_state.address_table.register(backend, *addr)?;
         if slot != i as u64 {
-            return Err(());
+            return Err(ArbosStateError::AddressTableSlotMismatch);
         }
     }
 
-    // Import retryable tickets.
     let (balance_credits, escrow_credits) = initialize_retryables(
+        backend,
         &arbos_state.retryable_state,
         retryable_data,
         current_timestamp,
     )?;
 
-    // Initialize per-account ArbOS state (batch poster config).
     for account in &accounts {
-        initialize_arbos_account(arbos_state, account)?;
+        initialize_arbos_account(backend, arbos_state, account)?;
     }
 
     Ok(GenesisInitResult {
@@ -218,4 +223,53 @@ pub fn initialize_arbos_in_database<D: Database, B: Burner>(
         escrow_credits,
         accounts,
     })
+}
+
+/// Bring a fresh database to a fully-initialised ArbOS state at the requested
+/// version, returning the opened state.
+pub fn bootstrap<'a, D: Database, B: Burner>(
+    state: &'a mut State<D>,
+    chain_id: u64,
+    network_fee_account: Address,
+    infra_fee_account: Address,
+    l1_initial_base_fee: U256,
+    target_arbos_version: u64,
+    burner: B,
+) -> Result<ArbosState<'a, D, B>, ArbosStateError> {
+    set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
+
+    {
+        let backing = Storage::<D>::new(state, B256::ZERO);
+        backing.set_by_uint64(super::VERSION_OFFSET, B256::from(U256::from(1u64)))?;
+        // SAFETY: see `Storage` struct-level invariant. The `&mut State`
+        // returned here is used transiently to drive `StorageBackend`-based
+        // setters and is dropped before any subsequent use of `backing`.
+        let s = unsafe { backing.state_mut() };
+        StorageBackedBigUint::new(B256::ZERO, super::CHAIN_ID_OFFSET)
+            .set(s, U256::from(chain_id))?;
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        StorageBackedAddress::new(B256::ZERO, super::NETWORK_FEE_ACCOUNT_OFFSET)
+            .set(s, network_fee_account)?;
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        StorageBackedAddress::new(B256::ZERO, super::INFRA_FEE_ACCOUNT_OFFSET)
+            .set(s, infra_fee_account)?;
+
+        let l1_sto = backing.open_sub_storage(super::L1_PRICING_SUBSPACE);
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        L1PricingState::initialize(&l1_sto, s, network_fee_account, l1_initial_base_fee)?;
+        let l2_sto = backing.open_sub_storage(super::L2_PRICING_SUBSPACE);
+        // SAFETY: see above.
+        let s = unsafe { backing.state_mut() };
+        L2PricingState::<D>::initialize(&l2_sto, s)?;
+        RetryableState::<D>::initialize(&backing.open_sub_storage(super::RETRYABLES_SUBSPACE))?;
+    }
+
+    let mut arbos = ArbosState::open(state, burner)?;
+    // SAFETY: see `Storage` struct-level invariant.
+    let s = unsafe { arbos.backing_storage.state_mut() };
+    arbos.upgrade_arbos_version(s, target_arbos_version, true)?;
+    Ok(arbos)
 }

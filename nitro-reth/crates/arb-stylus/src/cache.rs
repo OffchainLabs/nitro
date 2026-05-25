@@ -3,8 +3,16 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use wasmer::{Engine, Module, Store};
 
-use crate::config::CompileConfig;
+use crate::{config::CompileConfig, error::StylusError};
 
+// Process-wide compiled-WASM module cache. Module compilation through
+// Cranelift takes hundreds of milliseconds per program; entries are
+// content-addressed by `(module_hash, version, debug)` so the same Stylus
+// program always maps to the same compiled artifact regardless of block
+// or transaction. Caching per-block would discard valid entries and
+// re-pay compile cost on the next call. The `Mutex` provides internal
+// synchronisation across the (currently single) executor thread and any
+// future parallel callers. The cache holds no block/tx state.
 lazy_static::lazy_static! {
     static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new());
 }
@@ -110,11 +118,23 @@ pub fn deserialize_module(
     module: &[u8],
     version: u16,
     debug: bool,
-) -> eyre::Result<(Module, Engine, usize)> {
-    let compile = CompileConfig::version(version, debug);
+) -> Result<(Module, Engine, usize), StylusError> {
+    let compile = CompileConfig::version(version, debug)?;
     let engine = compile.engine();
-    let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
-    let asm_size_estimate_bytes = module.serialize()?.len();
+    // SAFETY: wasmer's `Module::deserialize_unchecked` requires that the
+    // bytes were produced by `Module::serialize` of a module compiled
+    // with a compatible engine. Inputs reach this path only after
+    // round-tripping through `deserialize_module`/`InitCache::insert`,
+    // which write artifacts from `Module::serialize` of an `engine`
+    // built by the same `CompileConfig::version` parameters.
+    let module = unsafe {
+        Module::deserialize_unchecked(&engine, module)
+            .map_err(|e| StylusError::Compile(e.to_string()))?
+    };
+    let asm_size_estimate_bytes = module
+        .serialize()
+        .map_err(|e| StylusError::Compile(e.to_string()))?
+        .len();
     let entry_size_estimate_bytes = asm_size_estimate_bytes + 128;
     Ok((module, engine, entry_size_estimate_bytes))
 }
@@ -220,7 +240,7 @@ impl InitCache {
         version: u16,
         long_term_tag: u32,
         debug: bool,
-    ) -> eyre::Result<(Module, Store)> {
+    ) -> Result<(Module, Store), StylusError> {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
 

@@ -1,3 +1,5 @@
+use core::convert::Infallible;
+
 use alloy_primitives::{Address, U256};
 
 use arb_primitives::{multigas::MultiGas, tx_types::ArbTxType};
@@ -104,17 +106,20 @@ pub trait ArbOsHooks {
 pub struct NoopArbOsHooks;
 
 impl ArbOsHooks for NoopArbOsHooks {
-    type Error = ();
+    type Error = Infallible;
 
-    fn start_tx(&mut self, _ctx: &StartTxContext) -> Result<(), ()> {
+    fn start_tx(&mut self, _ctx: &StartTxContext) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn gas_charging(&mut self, _ctx: &GasChargingContext) -> Result<GasChargingResult, ()> {
+    fn gas_charging(
+        &mut self,
+        _ctx: &GasChargingContext,
+    ) -> Result<GasChargingResult, Self::Error> {
         Ok(GasChargingResult::default())
     }
 
-    fn end_tx(&mut self, _ctx: &EndTxContext) -> Result<(), ()> {
+    fn end_tx(&mut self, _ctx: &EndTxContext) -> Result<(), Self::Error> {
         Ok(())
     }
 

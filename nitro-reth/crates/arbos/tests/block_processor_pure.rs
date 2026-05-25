@@ -1,8 +1,8 @@
 use alloy_primitives::{Address, B256, U256};
 use arbos::{
     block_processor::{
-        create_new_header, finalize_block_header_info, BlockProductionState, NoopSequencingHooks,
-        SequencingHooks, TxAction, TxOutcome, TxResult,
+        create_new_header, finalize_block_header_info, BlockProductionState, FilterReject,
+        NoopSequencingHooks, SequencingHooks, TxAction, TxOutcome, TxResult,
     },
     internal_tx::L1Info,
 };
@@ -94,11 +94,12 @@ fn create_new_header_pads_short_parent_extra_with_zeros() {
 
 #[test]
 fn finalize_block_header_info_preserves_all_fields() {
-    let info = finalize_block_header_info(B256::repeat_byte(0xAB), 7, 100, 30);
+    let info = finalize_block_header_info(B256::repeat_byte(0xAB), 7, 100, 30, false);
     assert_eq!(info.send_root, B256::repeat_byte(0xAB));
     assert_eq!(info.send_count, 7);
     assert_eq!(info.l1_block_number, 100);
     assert_eq!(info.arbos_format_version, 30);
+    assert!(!info.collect_tips);
 }
 
 #[test]
@@ -146,10 +147,10 @@ impl SequencingHooks for OneTx {
     fn next_tx_to_sequence(&mut self) -> Option<Vec<u8>> {
         self.0.take()
     }
-    fn pre_tx_filter(&self, _: &[u8]) -> Result<(), String> {
+    fn pre_tx_filter(&self, _: &[u8]) -> Result<(), FilterReject> {
         Ok(())
     }
-    fn post_tx_filter(&self, _: &[u8], _: &[u8]) -> Result<(), String> {
+    fn post_tx_filter(&self, _: &[u8], _: &[u8]) -> Result<(), FilterReject> {
         Ok(())
     }
     fn discard_invalid_txs_early(&self) -> bool {

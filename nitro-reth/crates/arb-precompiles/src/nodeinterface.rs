@@ -2,16 +2,13 @@ use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use alloy_sol_types::SolInterface;
-use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use arb_context::ArbPrecompileCtx;
+use arb_storage::ARBOS_STATE_ADDRESS;
 
-use crate::{
-    arbsys::get_cached_l1_block_number,
-    interfaces::INodeInterface,
-    storage_slot::{
-        root_slot, subspace_slot, ARBOS_STATE_ADDRESS, GENESIS_BLOCK_NUM_OFFSET,
-        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
-};
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+use std::sync::Arc;
+
+use crate::{interfaces::INodeInterface, ArbPrecompileError};
 
 /// NodeInterface virtual contract address (0xc8).
 pub const NODE_INTERFACE_ADDRESS: Address = Address::new([
@@ -19,24 +16,19 @@ pub const NODE_INTERFACE_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0xc8,
 ]);
 
-// L1 pricing field offsets.
-const L1_PRICE_PER_UNIT: u64 = 7;
-
-// L2 pricing field offsets.
-const L2_BASE_FEE: u64 = 2;
-const L2_MIN_BASE_FEE: u64 = 3;
-
-// Gas costs.
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
 
-pub fn create_nodeinterface_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("nodeinterface"), handler)
+pub fn create_nodeinterface_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("nodeinterface"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match INodeInterface::NodeInterfaceCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -45,49 +37,34 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     use INodeInterface::NodeInterfaceCalls as Calls;
     let result = match call {
-        Calls::gasEstimateComponents(_) => handle_gas_estimate_components(&mut input),
-        Calls::gasEstimateL1Component(_) => handle_gas_estimate_l1_component(&mut input),
-        Calls::nitroGenesisBlock(_) => handle_nitro_genesis_block(&mut input),
-        Calls::blockL1Num(c) => handle_block_l1_num(&input, c.l2BlockNum),
-        // Batch-fetcher-dependent methods: return 0 when no batch fetcher is
-        // wired so bridge tooling can distinguish "unknown/pending" from
-        // "not implemented".
+        Calls::gasEstimateComponents(_) => handle_gas_estimate_components(&mut input, ctx),
+        Calls::gasEstimateL1Component(_) => handle_gas_estimate_l1_component(&mut input, ctx),
+        Calls::nitroGenesisBlock(_) => handle_nitro_genesis_block(&mut input, ctx),
+        Calls::blockL1Num(c) => handle_block_l1_num(&input, ctx, c.l2BlockNum),
         Calls::getL1Confirmations(_) => handle_zero_u64(&input),
         Calls::findBatchContainingBlock(_) => handle_zero_u64(&input),
         Calls::legacyLookupMessageBatchProof(_) => handle_legacy_lookup_empty(&input),
         Calls::l2BlockRangeForL1(_)
         | Calls::estimateRetryableTicket(_)
-        | Calls::constructOutboxProof(_) => {
-            Err(PrecompileError::other("method only available via RPC"))
-        }
+        | Calls::constructOutboxProof(_) => Err(ArbPrecompileError::empty_revert(gas_used).into()),
     };
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
 /// gasEstimateComponents(address,bool,bytes) → (uint64, uint64, uint256, uint256)
 ///
-/// Returns: (gasEstimate, gasEstimateForL1, baseFee, l1BaseFeeEstimate)
-///
-/// The full gas estimate requires calling back into eth_estimateGas which
-/// is not possible from within a precompile. We return the L1 component
-/// and basefee; the total estimate is left as 0 (callers should use
-/// eth_estimateGas for the total).
-fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+/// Returns: (gasEstimate, gasEstimateForL1, baseFee, l1BaseFeeEstimate).
+/// `gasEstimate` is left as 0 — the full estimate requires eth_estimateGas
+/// which can't be invoked from a precompile.
+fn handle_gas_estimate_components(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
-    let min_basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
-    let chain_id_u256 = sload_field(input, root_slot(crate::storage_slot::CHAIN_ID_OFFSET))?;
-    let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
-    let brotli_level = sload_field(
-        input,
-        root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET),
-    )?
-    .try_into()
-    .unwrap_or(0u64);
-
+    let (l1_price, basefee, min_basefee, chain_id, brotli_level) =
+        read_estimate_fields(input, ctx)?;
     let gas_for_l1 = estimate_l1_gas(
         input,
         l1_price,
@@ -98,13 +75,9 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
     );
 
     let mut out = Vec::with_capacity(128);
-    // gasEstimate: 0 (full estimate requires eth_estimateGas)
     out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
-    // gasEstimateForL1
     out.extend_from_slice(&U256::from(gas_for_l1).to_be_bytes::<32>());
-    // baseFee
     out.extend_from_slice(&basefee.to_be_bytes::<32>());
-    // l1BaseFeeEstimate
     out.extend_from_slice(&l1_price.to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
@@ -115,23 +88,16 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
 
 /// gasEstimateL1Component(address,bool,bytes) → (uint64, uint256, uint256)
 ///
-/// Returns: (gasEstimateForL1, baseFee, l1BaseFeeEstimate)
-fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+/// Returns: (gasEstimateForL1, baseFee, l1BaseFeeEstimate).
+fn handle_gas_estimate_l1_component(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
-    let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
-    let min_basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
-    let chain_id_u256 = sload_field(input, root_slot(crate::storage_slot::CHAIN_ID_OFFSET))?;
-    let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
-    let brotli_level = sload_field(
-        input,
-        root_slot(crate::storage_slot::BROTLI_COMPRESSION_LEVEL_OFFSET),
-    )?
-    .try_into()
-    .unwrap_or(0u64);
-
+    let (l1_price, basefee, min_basefee, chain_id, brotli_level) =
+        read_estimate_fields(input, ctx)?;
     let gas_for_l1 = estimate_l1_gas(
         input,
         l1_price,
@@ -142,11 +108,8 @@ fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> Precompi
     );
 
     let mut out = Vec::with_capacity(96);
-    // gasEstimateForL1
     out.extend_from_slice(&U256::from(gas_for_l1).to_be_bytes::<32>());
-    // baseFee
     out.extend_from_slice(&basefee.to_be_bytes::<32>());
-    // l1BaseFeeEstimate
     out.extend_from_slice(&l1_price.to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
@@ -156,28 +119,44 @@ fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> Precompi
 }
 
 /// nitroGenesisBlock() → uint64
-fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_nitro_genesis_block(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let genesis_block_num = sload_field(input, root_slot(GENESIS_BLOCK_NUM_OFFSET))?;
+    let internals = input.internals_mut();
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let genesis_block_num = arb_state
+        .genesis_block_num
+        .get(internals)
+        .map_err(ArbPrecompileError::fatal)?;
 
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
-        genesis_block_num.to_be_bytes::<32>().to_vec().into(),
+        U256::from(genesis_block_num)
+            .to_be_bytes::<32>()
+            .to_vec()
+            .into(),
     ))
 }
 
-fn handle_block_l1_num(input: &PrecompileInput<'_>, block_num: u64) -> PrecompileResult {
-    let l1_block = get_cached_l1_block_number(block_num).unwrap_or(0);
+fn handle_block_l1_num(
+    input: &PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    block_num: u64,
+) -> PrecompileResult {
+    let l1_block = ctx.block.cached_l1_block_number(block_num).unwrap_or(0);
     Ok(PrecompileOutput::new(
         COPY_GAS.min(input.gas),
         U256::from(l1_block).to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
-/// Encode a single uint64/uint256 zero — used when batch-fetcher methods
-/// can't resolve data.
 fn handle_zero_u64(input: &PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(
         COPY_GAS.min(input.gas),
@@ -186,41 +165,60 @@ fn handle_zero_u64(input: &PrecompileInput<'_>) -> PrecompileResult {
 }
 
 /// legacyLookupMessageBatchProof returns the 9-value all-zero tuple —
-/// arbreth has no classic-chain outbox to look up.
+/// the classic-chain outbox isn't reachable from arbreth.
 ///
 /// ABI return:
 ///   (bytes32[] proof, uint256 path, address l2Sender, address l1Dest,
 ///    uint256 l2Block, uint256 l1Block, uint256 timestamp, uint256 amount,
 ///    bytes calldataForL1)
 fn handle_legacy_lookup_empty(input: &PrecompileInput<'_>) -> PrecompileResult {
-    // 9 head slots for the tuple + 1 slot each for the two dynamic arrays'
-    // length (proof and calldataForL1), emitted inline since length is 0.
-    // Head layout:
-    //   offset 0x00: proof offset (dynamic)       → points to trailing data
-    //   offset 0x20: path
-    //   offset 0x40: l2Sender
-    //   offset 0x60: l1Dest
-    //   offset 0x80: l2Block
-    //   offset 0xA0: l1Block
-    //   offset 0xC0: timestamp
-    //   offset 0xE0: amount
-    //   offset 0x100: calldataForL1 offset (dynamic)
-    //   offset 0x120: proof length (0)
-    //   offset 0x140: calldataForL1 length (0)
     let mut out = vec![0u8; 0x160];
-    // proof offset = 0x140 (after the 9 head words, points to proof length)
     U256::from(0x140u64)
         .to_be_bytes::<32>()
         .iter()
         .enumerate()
         .for_each(|(i, b)| out[i] = *b);
-    // calldataForL1 offset = 0x140 + 0x20 (after proof length = 0)
     U256::from(0x160u64)
         .to_be_bytes::<32>()
         .iter()
         .enumerate()
         .for_each(|(i, b)| out[0x100 + i] = *b);
     Ok(PrecompileOutput::new(COPY_GAS.min(input.gas), out.into()))
+}
+
+fn read_estimate_fields(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> Result<(U256, U256, U256, ChainId, u64), ArbPrecompileError> {
+    let internals = input.internals_mut();
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+
+    let l1_price = arb_state
+        .l1_pricing_state
+        .price_per_unit(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let basefee = arb_state
+        .l2_pricing_state
+        .base_fee_wei(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let min_basefee = arb_state
+        .l2_pricing_state
+        .min_base_fee_wei(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let chain_id_u256 = arb_state
+        .chain_id
+        .get(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+    let chain_id: ChainId = chain_id_u256.try_into().unwrap_or(0);
+    let brotli_level = arb_state
+        .brotli_compression_level
+        .get(internals)
+        .map_err(ArbPrecompileError::fatal)?;
+
+    Ok((l1_price, basefee, min_basefee, chain_id, brotli_level))
 }
 
 fn estimate_l1_gas(
@@ -360,19 +358,10 @@ pub fn build_fake_tx_bytes(
     envelope.encoded_2718()
 }
 
-fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
+fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError> {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
     Ok(())
-}
-
-fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
-    let val = input
-        .internals_mut()
-        .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
-    crate::charge_precompile_gas(SLOAD_GAS);
-    Ok(val.data)
 }

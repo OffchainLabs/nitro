@@ -22,7 +22,8 @@ pub use build::{
 };
 pub use config::ArbEvmConfig;
 pub use context::{
-    ActivatedWasm, ArbBlockExecutionCtx, ArbNextBlockEnvCtx, ArbitrumExtraData, RecentWasms,
+    ActivatedWasm, ArbBlockExecutionCtx, ArbNextBlockEnvCtx, ArbitrumExtraData,
+    InconsistentWasmTargets, RecentWasms,
 };
 pub use evm::{ArbEvm, ArbEvmFactory};
 pub use executor::DefaultArbOsHooks;

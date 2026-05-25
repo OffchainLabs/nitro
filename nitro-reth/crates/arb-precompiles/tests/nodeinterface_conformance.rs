@@ -12,20 +12,19 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{B256, U256};
-use arb_precompiles::{
-    create_nodeinterface_precompile, set_cached_l1_block_number,
-    storage_slot::{
-        root_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
+use arb_precompiles::create_nodeinterface_precompile;
+use arb_storage::{
+    layout::{root_slot, subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
+    ARBOS_STATE_ADDRESS,
+};
+use arbos::{
+    arbos_state::GENESIS_BLOCK_NUM_OFFSET, l1_pricing::PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,
+    l2_pricing::BASE_FEE_WEI_OFFSET as L2_BASE_FEE,
 };
 use common::{calldata, calldata_estimate, decode_u256, decode_word, word_u256, PrecompileTest};
 
-const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
-const L1_PRICE_PER_UNIT: u64 = 7;
-const L2_BASE_FEE: u64 = 2;
-
-fn nodeinterface() -> DynPrecompile {
-    create_nodeinterface_precompile()
+fn nodeinterface(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_nodeinterface_precompile(ctx)
 }
 
 // ======================================================================
@@ -37,7 +36,7 @@ fn nitro_genesis_block_default_is_zero() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&nodeinterface(), &calldata("nitroGenesisBlock()", &[]));
+        .call(nodeinterface, &calldata("nitroGenesisBlock()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
 }
 
@@ -51,7 +50,7 @@ fn nitro_genesis_block_returns_stored_value() {
             root_slot(GENESIS_BLOCK_NUM_OFFSET),
             U256::from(22_207_817_u64),
         )
-        .call(&nodeinterface(), &calldata("nitroGenesisBlock()", &[]));
+        .call(nodeinterface, &calldata("nitroGenesisBlock()", &[]));
     assert_eq!(decode_u256(run.output()), U256::from(22_207_817_u64));
 }
 
@@ -61,18 +60,21 @@ fn nitro_genesis_block_returns_stored_value() {
 
 #[test]
 fn block_l1_num_reads_cached_l1_block() {
-    set_cached_l1_block_number(1000, 18_000_000);
-    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(1000))]),
-    );
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(1000, 18_000_000)
+        .call(
+            nodeinterface,
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(1000))]),
+        );
     assert_eq!(decode_u256(run.output()), U256::from(18_000_000_u64));
 }
 
 #[test]
 fn block_l1_num_returns_zero_for_uncached_block() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
+        nodeinterface,
         &calldata(
             "blockL1Num(uint64)",
             &[word_u256(U256::from(99_999_999_u64))],
@@ -83,11 +85,14 @@ fn block_l1_num_returns_zero_for_uncached_block() {
 
 #[test]
 fn block_l1_num_truncates_uint64_input() {
-    set_cached_l1_block_number(42, 123);
-    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
-        &calldata("blockL1Num(uint64)", &[word_u256(U256::from(42))]),
-    );
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(42, 123)
+        .call(
+            nodeinterface,
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(42))]),
+        );
     assert_eq!(decode_u256(run.output()), U256::from(123));
 }
 
@@ -119,7 +124,7 @@ fn gas_estimate_components_returns_basefee_and_l1_price() {
             basefee,
         )
         .call(
-            &nodeinterface(),
+            nodeinterface,
             &calldata_estimate("gasEstimateComponents(address,bool,bytes)"),
         );
     let out = run.output();
@@ -147,7 +152,7 @@ fn gas_estimate_components_always_returns_128_bytes() {
             U256::from(1u64),
         )
         .call(
-            &nodeinterface(),
+            nodeinterface,
             &calldata_estimate("gasEstimateComponents(address,bool,bytes)"),
         );
     assert_eq!(run.output().len(), 128, "4 × uint256 = 128 bytes");
@@ -181,7 +186,7 @@ fn gas_estimate_l1_component_returns_basefee_and_l1_price() {
             basefee,
         )
         .call(
-            &nodeinterface(),
+            nodeinterface,
             &calldata_estimate("gasEstimateL1Component(address,bool,bytes)"),
         );
     let out = run.output();
@@ -205,7 +210,7 @@ fn gas_estimate_l1_component_returns_96_bytes() {
             U256::from(1u64),
         )
         .call(
-            &nodeinterface(),
+            nodeinterface,
             &calldata_estimate("gasEstimateL1Component(address,bool,bytes)"),
         );
     assert_eq!(run.output().len(), 96, "3 × uint256 = 96 bytes");
@@ -223,7 +228,7 @@ fn gas_estimate_l1_component_returns_96_bytes() {
 #[test]
 fn get_l1_confirmations_unknown_block_returns_zero_not_revert() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
+        nodeinterface,
         &calldata("getL1Confirmations(bytes32)", &[B256::repeat_byte(0xAB)]),
     );
     let execution = run.assert_ok();
@@ -245,7 +250,7 @@ fn get_l1_confirmations_unknown_block_returns_zero_not_revert() {
 #[test]
 fn find_batch_containing_block_without_batch_data_returns_zero() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
+        nodeinterface,
         &calldata(
             "findBatchContainingBlock(uint64)",
             &[word_u256(U256::from(1u64))],
@@ -309,7 +314,7 @@ fn construct_outbox_proof_builds_merkle_path() {}
 #[test]
 fn legacy_lookup_message_batch_proof_returns_empty_not_revert() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
+        nodeinterface,
         &calldata(
             "legacyLookupMessageBatchProof(uint256,uint64)",
             &[word_u256(U256::ZERO), word_u256(U256::ZERO)],
@@ -332,7 +337,7 @@ fn unknown_selector_reverts() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&nodeinterface(), &[0xDEu8, 0xAD, 0xBE, 0xEF].into());
+        .call(nodeinterface, &[0xDEu8, 0xAD, 0xBE, 0xEF].into());
     assert!(run.assert_ok().reverted);
 }
 
@@ -341,14 +346,14 @@ fn empty_calldata_reverts() {
     let run = PrecompileTest::new()
         .arbos_version(30)
         .arbos_state()
-        .call(&nodeinterface(), &[].into());
+        .call(nodeinterface, &[].into());
     assert!(run.assert_ok().reverted);
 }
 
 #[test]
 fn block_l1_num_short_input_reverts() {
     let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
-        &nodeinterface(),
+        nodeinterface,
         // selector + only 8 bytes instead of required 32
         &[0x6fu8, 0x27, 0x5e, 0xf2, 0, 0, 0, 0, 0, 0, 0, 1].into(),
     );

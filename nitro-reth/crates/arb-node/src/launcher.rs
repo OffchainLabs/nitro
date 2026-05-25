@@ -8,7 +8,10 @@
 //! This is the reth SDK-native approach: implement `LaunchNode` with custom
 //! orchestrator wiring while reusing all other engine infrastructure.
 
-use crate::engine::{build_arb_engine_orchestrator, TreeSender};
+use crate::{
+    engine::{build_arb_engine_orchestrator, TreeSender},
+    error::LauncherError,
+};
 use alloy_consensus::BlockHeader;
 use futures::{stream::FusedStream, stream_select, FutureExt, StreamExt};
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
@@ -67,7 +70,7 @@ pub enum PersistenceRequest {
     Flush(FlushRequest),
     Unwind {
         target: u64,
-        done: crossbeam_channel::Sender<Result<(), String>>,
+        done: crossbeam_channel::Sender<Result<(), LauncherError>>,
     },
 }
 
@@ -88,6 +91,7 @@ pub struct FlushResult {
 struct FlushHandle {
     sender: std::sync::mpsc::Sender<PersistenceRequest>,
     result_rx: crossbeam_channel::Receiver<FlushResult>,
+    flush_done: Arc<tokio::sync::Notify>,
 }
 
 /// Type-erased parallel state root function.
@@ -95,7 +99,8 @@ type ParallelStateRootFn = Box<
     dyn Fn(
             Arc<reth_trie_common::TrieInputSorted>,
             reth_trie_common::prefix_set::TriePrefixSets,
-        ) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), String>
+        )
+            -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), LauncherError>
         + Send
         + Sync,
 >;
@@ -121,7 +126,7 @@ pub fn start_flush(request: FlushRequest) {
 /// receiver for the result. Blocks from `target + 1` onward (and their
 /// execution state + trie state) are removed from disk. This runs on the
 /// same thread as flushes to avoid races with in-flight persistence.
-pub fn start_unwind(target: u64) -> Option<crossbeam_channel::Receiver<Result<(), String>>> {
+pub fn start_unwind(target: u64) -> Option<crossbeam_channel::Receiver<Result<(), LauncherError>>> {
     let handle = FLUSH_HANDLE.get()?;
     let (done_tx, done_rx) = crossbeam_channel::bounded(1);
     if let Err(e) = handle.sender.send(PersistenceRequest::Unwind {
@@ -141,13 +146,18 @@ pub fn try_flush_result() -> Option<FlushResult> {
         .and_then(|handle| handle.result_rx.try_recv().ok())
 }
 
+/// Returns the notifier signalled after each successful flush commit.
+pub fn flush_notifier() -> Option<Arc<tokio::sync::Notify>> {
+    FLUSH_HANDLE.get().map(|handle| handle.flush_done.clone())
+}
+
 pub fn compute_parallel_state_root(
     overlay: Arc<reth_trie_common::TrieInputSorted>,
     prefix_sets: reth_trie_common::prefix_set::TriePrefixSets,
-) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), String> {
+) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), LauncherError> {
     let f = PARALLEL_STATE_ROOT_FN
         .get()
-        .ok_or_else(|| "parallel_state_root not initialized".to_string())?;
+        .ok_or(LauncherError::ParallelStateRootNotInitialized)?;
     f(overlay, prefix_sets)
 }
 
@@ -354,6 +364,8 @@ impl ArbEngineLauncher {
             let pf = ctx.provider_factory().clone();
             let (req_tx, req_rx) = std::sync::mpsc::channel::<PersistenceRequest>();
             let (res_tx, res_rx) = crossbeam_channel::bounded::<FlushResult>(1);
+            let flush_done = Arc::new(tokio::sync::Notify::new());
+            let flush_done_thread = flush_done.clone();
 
             std::thread::Builder::new()
                 .name("arb-persistence".into())
@@ -365,14 +377,10 @@ impl ArbEngineLauncher {
                                 let count = flush.blocks.len();
                                 let last = flush.last_num_hash;
 
-                                let result = (|| -> Result<(), String> {
-                                    let provider_rw = pf
-                                        .database_provider_rw()
-                                        .map_err(|e| format!("database_provider_rw: {e}"))?;
-                                    provider_rw
-                                        .save_blocks(flush.blocks, SaveBlocksMode::Full)
-                                        .map_err(|e| format!("save_blocks: {e}"))?;
-                                    provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
+                                let result = (|| -> Result<(), LauncherError> {
+                                    let provider_rw = pf.database_provider_rw()?;
+                                    provider_rw.save_blocks(flush.blocks, SaveBlocksMode::Full)?;
+                                    provider_rw.commit()?;
                                     Ok(())
                                 })();
 
@@ -393,19 +401,14 @@ impl ArbEngineLauncher {
                                         });
                                     }
                                 }
+                                flush_done_thread.notify_one();
                             }
                             PersistenceRequest::Unwind { target, done } => {
                                 let start = std::time::Instant::now();
-                                let result = (|| -> Result<(), String> {
-                                    let provider_rw = pf
-                                        .database_provider_rw()
-                                        .map_err(|e| format!("database_provider_rw: {e}"))?;
-                                    provider_rw
-                                        .remove_block_and_execution_above(target)
-                                        .map_err(|e| {
-                                            format!("remove_block_and_execution_above: {e}")
-                                        })?;
-                                    provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
+                                let result = (|| -> Result<(), LauncherError> {
+                                    let provider_rw = pf.database_provider_rw()?;
+                                    provider_rw.remove_block_and_execution_above(target)?;
+                                    provider_rw.commit()?;
                                     Ok(())
                                 })();
                                 match &result {
@@ -432,6 +435,7 @@ impl ArbEngineLauncher {
             let _ = FLUSH_HANDLE.set(FlushHandle {
                 sender: req_tx,
                 result_rx: res_rx,
+                flush_done,
             });
         }
 
@@ -463,7 +467,7 @@ impl ArbEngineLauncher {
 
                 ParallelStateRoot::new(factory, prefix_sets, runtime.clone())
                     .incremental_root_with_updates()
-                    .map_err(|e| format!("parallel state root: {e}"))
+                    .map_err(LauncherError::from)
             });
             let _ = PARALLEL_STATE_ROOT_FN.set(state_root_fn);
         }

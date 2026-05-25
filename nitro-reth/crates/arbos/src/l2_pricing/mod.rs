@@ -1,30 +1,32 @@
+mod error;
 mod gas_constraint;
 mod model;
 mod multi_gas_constraint;
 mod multi_gas_fees;
 
+pub use error::L2PricingError;
 pub use gas_constraint::{open_gas_constraint, GasConstraint};
 pub use model::*;
 pub use multi_gas_constraint::{open_multi_gas_constraint, MultiGasConstraint};
 pub use multi_gas_fees::MultiGasFees;
 
 use alloy_primitives::U256;
-use revm::Database;
 
 use arb_primitives::multigas::NUM_RESOURCE_KIND;
 use arb_storage::{
-    open_sub_storage_vector, Storage, StorageBackedBigUint, StorageBackedUint64, SubStorageVector,
+    open_sub_storage_vector, Storage, StorageBackedBigUint, StorageBackedUint64, StorageBackend,
+    SubStorageVector, SystemStateBackend,
 };
 
 // Storage offsets for L2 pricing state.
-const SPEED_LIMIT_PER_SECOND_OFFSET: u64 = 0;
-const PER_BLOCK_GAS_LIMIT_OFFSET: u64 = 1;
-const BASE_FEE_WEI_OFFSET: u64 = 2;
-const MIN_BASE_FEE_WEI_OFFSET: u64 = 3;
-const GAS_BACKLOG_OFFSET: u64 = 4;
-const PRICING_INERTIA_OFFSET: u64 = 5;
-const BACKLOG_TOLERANCE_OFFSET: u64 = 6;
-const PER_TX_GAS_LIMIT_OFFSET: u64 = 7;
+pub const SPEED_LIMIT_PER_SECOND_OFFSET: u64 = 0;
+pub const PER_BLOCK_GAS_LIMIT_OFFSET: u64 = 1;
+pub const BASE_FEE_WEI_OFFSET: u64 = 2;
+pub const MIN_BASE_FEE_WEI_OFFSET: u64 = 3;
+pub const GAS_BACKLOG_OFFSET: u64 = 4;
+pub const PRICING_INERTIA_OFFSET: u64 = 5;
+pub const BACKLOG_TOLERANCE_OFFSET: u64 = 6;
+pub const PER_TX_GAS_LIMIT_OFFSET: u64 = 7;
 
 // Subspace keys for L2 pricing partitions.
 const GAS_CONSTRAINTS_KEY: &[u8] = &[0];
@@ -52,46 +54,44 @@ pub const INITIAL_BACKLOG_TOLERANCE: u64 = 10;
 pub const INITIAL_PER_TX_GAS_LIMIT_V50: u64 = 32_000_000;
 
 /// L2 pricing state manages gas pricing for L2 execution.
-pub struct L2PricingState<D> {
-    pub backing_storage: Storage<D>,
+pub struct L2PricingState<'a, D> {
+    pub backing_storage: Storage<'a, D>,
     pub arbos_version: u64,
-    speed_limit_per_second: StorageBackedUint64<D>,
-    per_block_gas_limit: StorageBackedUint64<D>,
-    base_fee_wei: StorageBackedBigUint<D>,
-    min_base_fee_wei: StorageBackedBigUint<D>,
-    gas_backlog: StorageBackedUint64<D>,
-    pricing_inertia: StorageBackedUint64<D>,
-    backlog_tolerance: StorageBackedUint64<D>,
-    per_tx_gas_limit: StorageBackedUint64<D>,
-    gas_constraints: SubStorageVector<D>,
-    multi_gas_constraints: SubStorageVector<D>,
-    multi_gas_base_fees: Storage<D>,
+    speed_limit_per_second: StorageBackedUint64,
+    per_block_gas_limit: StorageBackedUint64,
+    base_fee_wei: StorageBackedBigUint,
+    min_base_fee_wei: StorageBackedBigUint,
+    gas_backlog: StorageBackedUint64,
+    pricing_inertia: StorageBackedUint64,
+    backlog_tolerance: StorageBackedUint64,
+    per_tx_gas_limit: StorageBackedUint64,
+    gas_constraints: SubStorageVector,
+    multi_gas_constraints: SubStorageVector,
+    multi_gas_base_fees: Storage<'a, D>,
 }
 
-pub fn initialize_l2_pricing_state<D: Database>(sto: &Storage<D>) {
-    let state = sto.state_ptr();
+pub fn initialize_l2_pricing_state<D, B: StorageBackend>(
+    sto: &Storage<'_, D>,
+    backend: &mut B,
+) -> Result<(), L2PricingError> {
     let base_key = sto.base_key();
 
-    let _ = StorageBackedUint64::new(state, base_key, SPEED_LIMIT_PER_SECOND_OFFSET)
-        .set(INITIAL_SPEED_LIMIT_PER_SECOND_V0);
-    let _ = StorageBackedUint64::new(state, base_key, PER_BLOCK_GAS_LIMIT_OFFSET)
-        .set(INITIAL_PER_BLOCK_GAS_LIMIT_V0);
-    let _ =
-        StorageBackedUint64::new(state, base_key, BASE_FEE_WEI_OFFSET).set(INITIAL_BASE_FEE_WEI);
-    let _ = StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET)
-        .set(U256::from(INITIAL_MINIMUM_BASE_FEE_WEI));
-    let _ = StorageBackedUint64::new(state, base_key, GAS_BACKLOG_OFFSET).set(0);
-    let _ = StorageBackedUint64::new(state, base_key, PRICING_INERTIA_OFFSET)
-        .set(INITIAL_PRICING_INERTIA);
-    let _ = StorageBackedUint64::new(state, base_key, BACKLOG_TOLERANCE_OFFSET)
-        .set(INITIAL_BACKLOG_TOLERANCE);
+    StorageBackedUint64::new(base_key, SPEED_LIMIT_PER_SECOND_OFFSET)
+        .set(backend, INITIAL_SPEED_LIMIT_PER_SECOND_V0)?;
+    StorageBackedUint64::new(base_key, PER_BLOCK_GAS_LIMIT_OFFSET)
+        .set(backend, INITIAL_PER_BLOCK_GAS_LIMIT_V0)?;
+    StorageBackedUint64::new(base_key, BASE_FEE_WEI_OFFSET).set(backend, INITIAL_BASE_FEE_WEI)?;
+    StorageBackedBigUint::new(base_key, MIN_BASE_FEE_WEI_OFFSET)
+        .set(backend, U256::from(INITIAL_MINIMUM_BASE_FEE_WEI))?;
+    StorageBackedUint64::new(base_key, GAS_BACKLOG_OFFSET).set(backend, 0)?;
+    StorageBackedUint64::new(base_key, PRICING_INERTIA_OFFSET)
+        .set(backend, INITIAL_PRICING_INERTIA)?;
+    StorageBackedUint64::new(base_key, BACKLOG_TOLERANCE_OFFSET)
+        .set(backend, INITIAL_BACKLOG_TOLERANCE)?;
+    Ok(())
 }
 
-pub fn open_l2_pricing_state<D: Database>(
-    sto: Storage<D>,
-    arbos_version: u64,
-) -> L2PricingState<D> {
-    let state = sto.state_ptr();
+pub fn open_l2_pricing_state<D>(sto: Storage<'_, D>, arbos_version: u64) -> L2PricingState<'_, D> {
     let base_key = sto.base_key();
 
     let gc_sto = sto.open_sub_storage(GAS_CONSTRAINTS_KEY);
@@ -100,18 +100,14 @@ pub fn open_l2_pricing_state<D: Database>(
 
     L2PricingState {
         arbos_version,
-        speed_limit_per_second: StorageBackedUint64::new(
-            state,
-            base_key,
-            SPEED_LIMIT_PER_SECOND_OFFSET,
-        ),
-        per_block_gas_limit: StorageBackedUint64::new(state, base_key, PER_BLOCK_GAS_LIMIT_OFFSET),
-        base_fee_wei: StorageBackedBigUint::new(state, base_key, BASE_FEE_WEI_OFFSET),
-        min_base_fee_wei: StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET),
-        gas_backlog: StorageBackedUint64::new(state, base_key, GAS_BACKLOG_OFFSET),
-        pricing_inertia: StorageBackedUint64::new(state, base_key, PRICING_INERTIA_OFFSET),
-        backlog_tolerance: StorageBackedUint64::new(state, base_key, BACKLOG_TOLERANCE_OFFSET),
-        per_tx_gas_limit: StorageBackedUint64::new(state, base_key, PER_TX_GAS_LIMIT_OFFSET),
+        speed_limit_per_second: StorageBackedUint64::new(base_key, SPEED_LIMIT_PER_SECOND_OFFSET),
+        per_block_gas_limit: StorageBackedUint64::new(base_key, PER_BLOCK_GAS_LIMIT_OFFSET),
+        base_fee_wei: StorageBackedBigUint::new(base_key, BASE_FEE_WEI_OFFSET),
+        min_base_fee_wei: StorageBackedBigUint::new(base_key, MIN_BASE_FEE_WEI_OFFSET),
+        gas_backlog: StorageBackedUint64::new(base_key, GAS_BACKLOG_OFFSET),
+        pricing_inertia: StorageBackedUint64::new(base_key, PRICING_INERTIA_OFFSET),
+        backlog_tolerance: StorageBackedUint64::new(base_key, BACKLOG_TOLERANCE_OFFSET),
+        per_tx_gas_limit: StorageBackedUint64::new(base_key, PER_TX_GAS_LIMIT_OFFSET),
         gas_constraints: open_sub_storage_vector(gc_sto),
         multi_gas_constraints: open_sub_storage_vector(mgc_sto),
         multi_gas_base_fees: mgf_sto,
@@ -119,157 +115,234 @@ pub fn open_l2_pricing_state<D: Database>(
     }
 }
 
-impl<D: Database> L2PricingState<D> {
-    pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
+impl<'a, D> L2PricingState<'a, D> {
+    pub fn open(sto: Storage<'a, D>, arbos_version: u64) -> Self {
         open_l2_pricing_state(sto, arbos_version)
     }
 
-    pub fn initialize(sto: &Storage<D>) {
-        initialize_l2_pricing_state(sto);
+    pub fn initialize<B: StorageBackend>(
+        sto: &Storage<'_, D>,
+        backend: &mut B,
+    ) -> Result<(), L2PricingError> {
+        initialize_l2_pricing_state(sto, backend)
     }
 
     // --- Getters/Setters ---
 
-    pub fn base_fee_wei(&self) -> Result<U256, ()> {
-        self.base_fee_wei.get()
+    pub fn base_fee_wei<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L2PricingError> {
+        Ok(self.base_fee_wei.get(backend)?)
     }
 
-    pub fn set_base_fee_wei(&self, val: U256) -> Result<(), ()> {
-        self.base_fee_wei.set(val)
+    pub fn set_base_fee_wei<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.base_fee_wei.set(backend, val)?)
     }
 
-    pub fn min_base_fee_wei(&self) -> Result<U256, ()> {
-        self.min_base_fee_wei.get()
+    pub fn min_base_fee_wei<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L2PricingError> {
+        Ok(self.min_base_fee_wei.get(backend)?)
     }
 
-    pub fn set_min_base_fee_wei(&self, val: U256) -> Result<(), ()> {
-        self.min_base_fee_wei.set(val)
+    pub fn set_min_base_fee_wei<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: U256,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.min_base_fee_wei.set(backend, val)?)
     }
 
-    pub fn speed_limit_per_second(&self) -> Result<u64, ()> {
-        self.speed_limit_per_second.get()
+    pub fn speed_limit_per_second<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.speed_limit_per_second.get(backend)?)
     }
 
-    pub fn set_speed_limit_per_second(&self, limit: u64) -> Result<(), ()> {
-        self.speed_limit_per_second.set(limit)
+    pub fn set_speed_limit_per_second<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        limit: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.speed_limit_per_second.set(backend, limit)?)
     }
 
-    pub fn per_block_gas_limit(&self) -> Result<u64, ()> {
-        self.per_block_gas_limit.get()
+    pub fn per_block_gas_limit<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.per_block_gas_limit.get(backend)?)
     }
 
-    pub fn set_max_per_block_gas_limit(&self, limit: u64) -> Result<(), ()> {
-        self.per_block_gas_limit.set(limit)
+    pub fn set_max_per_block_gas_limit<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        limit: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.per_block_gas_limit.set(backend, limit)?)
     }
 
-    pub fn per_tx_gas_limit(&self) -> Result<u64, ()> {
-        self.per_tx_gas_limit.get()
+    pub fn per_tx_gas_limit<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.per_tx_gas_limit.get(backend)?)
     }
 
-    pub fn set_max_per_tx_gas_limit(&self, limit: u64) -> Result<(), ()> {
-        self.per_tx_gas_limit.set(limit)
+    pub fn set_max_per_tx_gas_limit<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        limit: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.per_tx_gas_limit.set(backend, limit)?)
     }
 
-    pub fn gas_backlog(&self) -> Result<u64, ()> {
-        self.gas_backlog.get()
+    pub fn gas_backlog<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.gas_backlog.get(backend)?)
     }
 
-    pub fn set_gas_backlog(&self, backlog: u64) -> Result<(), ()> {
-        self.gas_backlog.set(backlog)
+    pub fn set_gas_backlog<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        backlog: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.gas_backlog.set(backend, backlog)?)
     }
 
-    pub fn pricing_inertia(&self) -> Result<u64, ()> {
-        self.pricing_inertia.get()
+    pub fn pricing_inertia<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.pricing_inertia.get(backend)?)
     }
 
-    pub fn set_pricing_inertia(&self, val: u64) -> Result<(), ()> {
-        self.pricing_inertia.set(val)
+    pub fn set_pricing_inertia<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.pricing_inertia.set(backend, val)?)
     }
 
-    pub fn backlog_tolerance(&self) -> Result<u64, ()> {
-        self.backlog_tolerance.get()
+    pub fn backlog_tolerance<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.backlog_tolerance.get(backend)?)
     }
 
-    pub fn set_backlog_tolerance(&self, val: u64) -> Result<(), ()> {
-        self.backlog_tolerance.set(val)
+    pub fn set_backlog_tolerance<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        val: u64,
+    ) -> Result<(), L2PricingError> {
+        Ok(self.backlog_tolerance.set(backend, val)?)
     }
 
     // --- Gas Constraints ---
 
-    pub fn gas_constraints_length(&self) -> Result<u64, ()> {
-        self.gas_constraints.length()
+    pub fn gas_constraints_length<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.gas_constraints.length(backend)?)
     }
 
-    pub fn open_gas_constraint_at(&self, index: u64) -> GasConstraint<D> {
+    pub fn open_gas_constraint_at(&self, index: u64) -> GasConstraint {
         open_gas_constraint(self.gas_constraints.at(index))
     }
 
-    pub fn add_gas_constraint(
+    pub fn add_gas_constraint<B: StorageBackend>(
         &self,
+        backend: &mut B,
         target: u64,
         adjustment_window: u64,
         backlog: u64,
-    ) -> Result<(), ()> {
-        let sto = self.gas_constraints.push()?;
-        let c = open_gas_constraint(sto);
-        c.set_target(target)?;
-        c.set_adjustment_window(adjustment_window)?;
-        c.set_backlog(backlog)?;
+    ) -> Result<(), L2PricingError> {
+        let key = self.gas_constraints.push(backend)?;
+        let c = open_gas_constraint(key);
+        c.set_target(backend, target)?;
+        c.set_adjustment_window(backend, adjustment_window)?;
+        c.set_backlog(backend, backlog)?;
         Ok(())
     }
 
-    pub fn clear_gas_constraints(&self) -> Result<(), ()> {
-        let len = self.gas_constraints.length()?;
+    pub fn clear_gas_constraints<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(), L2PricingError> {
+        let len = self.gas_constraints.length(backend)?;
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
-            c.clear()?;
+            c.clear(backend)?;
         }
-        // Reset vector length by popping all
         for _ in 0..len {
-            self.gas_constraints.pop()?;
+            self.gas_constraints.pop(backend)?;
         }
         Ok(())
     }
 
     // --- Multi-Gas Constraints ---
 
-    pub fn multi_gas_constraints_length(&self) -> Result<u64, ()> {
-        self.multi_gas_constraints.length()
+    pub fn multi_gas_constraints_length<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
+        Ok(self.multi_gas_constraints.length(backend)?)
     }
 
-    pub fn open_multi_gas_constraint_at(&self, index: u64) -> MultiGasConstraint<D> {
+    pub fn open_multi_gas_constraint_at(&self, index: u64) -> MultiGasConstraint {
         open_multi_gas_constraint(self.multi_gas_constraints.at(index))
     }
 
-    pub fn add_multi_gas_constraint(
+    pub fn add_multi_gas_constraint<B: StorageBackend>(
         &self,
+        backend: &mut B,
         target: u64,
         adjustment_window: u32,
         backlog: u64,
         weights: &[u64; NUM_RESOURCE_KIND],
-    ) -> Result<(), ()> {
-        let sto = self.multi_gas_constraints.push()?;
-        let c = open_multi_gas_constraint(sto);
-        c.set_target(target)?;
-        c.set_adjustment_window(adjustment_window)?;
-        c.set_backlog(backlog)?;
-        c.set_resource_weights(weights)?;
+    ) -> Result<(), L2PricingError> {
+        let key = self.multi_gas_constraints.push(backend)?;
+        let c = open_multi_gas_constraint(key);
+        c.set_target(backend, target)?;
+        c.set_adjustment_window(backend, adjustment_window)?;
+        c.set_backlog(backend, backlog)?;
+        c.set_resource_weights(backend, weights)?;
         Ok(())
     }
 
-    pub fn clear_multi_gas_constraints(&self) -> Result<(), ()> {
-        let len = self.multi_gas_constraints.length()?;
+    pub fn clear_multi_gas_constraints<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(), L2PricingError> {
+        let len = self.multi_gas_constraints.length(backend)?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
-            c.clear()?;
+            c.clear(backend)?;
         }
         for _ in 0..len {
-            self.multi_gas_constraints.pop()?;
+            self.multi_gas_constraints.pop(backend)?;
         }
         Ok(())
     }
 
     pub fn restrict(&self, _err: ()) {
         // No-op restriction
+    }
+
+    /// Per-resource-kind base fee accessor for the current/next block.
+    pub fn multi_gas_fees(&self) -> MultiGasFees<'a, D> {
+        multi_gas_fees::open_multi_gas_fees(self.multi_gas_base_fees.clone())
     }
 }

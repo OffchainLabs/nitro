@@ -16,7 +16,10 @@ use revm::{
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use tiny_keccak::{Hasher, Keccak};
 
-use arb_precompiles::storage_slot::{root_slot, ARBOS_STATE_ADDRESS, VERSION_OFFSET};
+use arb_storage::{
+    layout::{root_slot, VERSION_OFFSET},
+    ARBOS_STATE_ADDRESS,
+};
 
 /// Serialises tests that share global state in arb-precompiles.
 fn test_lock() -> MutexGuard<'static, ()> {
@@ -101,6 +104,9 @@ pub struct PrecompileTest {
     evm_depth: usize,
     tx_is_aliased: bool,
     block_basefee: u64,
+    l1_block_cache: Vec<(u64, u64)>,
+    l2_block_hashes: Vec<(u64, B256)>,
+    allow_debug_precompiles: bool,
 }
 
 impl Default for PrecompileTest {
@@ -120,7 +126,10 @@ impl Default for PrecompileTest {
             gas_limit: 1_000_000,
             evm_depth: 1,
             tx_is_aliased: false,
-            block_basefee: 100_000_000, // 0.1 gwei, typical Arbitrum L2 base fee
+            block_basefee: 100_000_000,
+            l1_block_cache: Vec::new(),
+            l2_block_hashes: Vec::new(),
+            allow_debug_precompiles: false,
         }
     }
 }
@@ -188,6 +197,18 @@ impl PrecompileTest {
         self.block_basefee = fee;
         self
     }
+    pub fn cache_l1_block_number(mut self, l2_block: u64, l1_block: u64) -> Self {
+        self.l1_block_cache.push((l2_block, l1_block));
+        self
+    }
+    pub fn cache_l2_block_hash(mut self, l2_block: u64, hash: B256) -> Self {
+        self.l2_block_hashes.push((l2_block, hash));
+        self
+    }
+    pub fn allow_debug_precompiles(mut self, allow: bool) -> Self {
+        self.allow_debug_precompiles = allow;
+        self
+    }
 
     pub fn account(mut self, addr: Address, info: AccountInfo) -> Self {
         self.db.insert_account_info(addr, info);
@@ -234,15 +255,47 @@ impl PrecompileTest {
         self
     }
 
-    pub fn call(self, precompile: &DynPrecompile, input: &Bytes) -> PrecompileRun {
+    pub fn call<F>(self, factory: F, input: &Bytes) -> PrecompileRun
+    where
+        F: FnOnce(std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile,
+    {
+        let pre_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx::default());
+        self.call_with(factory, input, pre_ctx)
+    }
+
+    pub fn call_with<F>(
+        self,
+        factory: F,
+        input: &Bytes,
+        prior: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    ) -> PrecompileRun
+    where
+        F: FnOnce(std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile,
+    {
         let _guard = test_lock();
 
-        arb_precompiles::set_arbos_version(self.arbos_version);
-        arb_precompiles::set_l1_block_number_for_evm(self.block_number);
-        arb_precompiles::set_block_timestamp(self.block_timestamp);
-        arb_precompiles::set_evm_depth(self.evm_depth);
-        arb_precompiles::set_current_l2_block(self.block_number);
-        arb_precompiles::set_tx_is_aliased(self.tx_is_aliased);
+        let prior_tx = prior.tx.lock().clone();
+        let block_ctx = arb_context::BlockCtx::new(
+            self.arbos_version,
+            self.block_timestamp,
+            self.block_number,
+            self.block_number,
+            self.allow_debug_precompiles,
+        );
+        for (l2, l1) in &self.l1_block_cache {
+            block_ctx.cache_l1_block_number(*l2, *l1);
+        }
+        for (l2, hash) in &self.l2_block_hashes {
+            block_ctx.cache_l2_block_hash(*l2, *hash);
+        }
+        let pre_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
+            block: std::sync::Arc::new(block_ctx),
+            tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
+            evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
+            caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
+        });
+        pre_ctx.set_tx_is_aliased(self.tx_is_aliased);
+        let precompile = factory(pre_ctx.clone());
 
         let mut ctx = EthEvmContext::new(self.db, self.spec);
         ctx.cfg.chain_id = self.chain_id;

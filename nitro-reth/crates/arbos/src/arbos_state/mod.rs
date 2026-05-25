@@ -1,4 +1,7 @@
+mod error;
 pub mod initialize;
+
+pub use error::ArbosStateError;
 
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use revm::Database;
@@ -8,8 +11,9 @@ use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
 use arb_storage::{
-    get_account_balance, set_account_code, set_account_nonce, Storage, StorageBackedAddress,
-    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, FILTERED_TX_STATE_ADDRESS,
+    get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
+    StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
+    StorageBackend, SystemStateBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 
 use crate::{
@@ -27,18 +31,18 @@ use crate::{
 };
 
 // Storage offsets for root-level ArbOS state values.
-const VERSION_OFFSET: u64 = 0;
-const UPGRADE_VERSION_OFFSET: u64 = 1;
-const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
-const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
-const CHAIN_ID_OFFSET: u64 = 4;
-const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
-const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
-const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
-const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
-const TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
-const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
-const COLLECT_TIPS_OFFSET: u64 = 11;
+pub const VERSION_OFFSET: u64 = 0;
+pub const UPGRADE_VERSION_OFFSET: u64 = 1;
+pub const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
+pub const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
+pub const CHAIN_ID_OFFSET: u64 = 4;
+pub const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
+pub const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
+pub const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
+pub const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
+pub const TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
+pub const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
+pub const COLLECT_TIPS_OFFSET: u64 = 11;
 
 // Subspace IDs for partitioned storage.
 pub(crate) const L1_PRICING_SUBSPACE: &[u8] = &[0];
@@ -84,71 +88,267 @@ cached_root_key!(
 pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 60;
 
 /// Central ArbOS state aggregating all subsystem states.
-pub struct ArbosState<D, B: Burner> {
+pub struct ArbosState<'a, D, B: Burner> {
     pub arbos_version: u64,
     pub max_arbos_version_supported: u64,
-    pub upgrade_version: StorageBackedUint64<D>,
-    pub upgrade_timestamp: StorageBackedUint64<D>,
-    pub network_fee_account: StorageBackedAddress<D>,
-    pub l1_pricing_state: L1PricingState<D>,
-    pub l2_pricing_state: L2PricingState<D>,
-    pub retryable_state: RetryableState<D>,
-    pub address_table: AddressTable<D>,
-    pub chain_owners: AddressSet<D>,
-    pub send_merkle_accumulator: MerkleAccumulator<D>,
-    pub programs: Programs<D>,
-    pub blockhashes: Blockhashes<D>,
-    pub chain_id: StorageBackedBigUint<D>,
-    pub chain_config: StorageBackedBytes<D>,
-    pub genesis_block_num: StorageBackedUint64<D>,
-    pub infra_fee_account: StorageBackedAddress<D>,
-    pub brotli_compression_level: StorageBackedUint64<D>,
-    pub backing_storage: Storage<D>,
+    pub upgrade_version: StorageBackedUint64,
+    pub upgrade_timestamp: StorageBackedUint64,
+    pub network_fee_account: StorageBackedAddress,
+    pub l1_pricing_state: L1PricingState<'a, D>,
+    pub l2_pricing_state: L2PricingState<'a, D>,
+    pub retryable_state: RetryableState<'a, D>,
+    pub address_table: AddressTable<'a, D>,
+    pub chain_owners: AddressSet<'a, D>,
+    pub send_merkle_accumulator: MerkleAccumulator<'a, D>,
+    pub programs: Programs<'a, D>,
+    pub blockhashes: Blockhashes<'a, D>,
+    pub chain_id: StorageBackedBigUint,
+    pub chain_config: StorageBackedBytes,
+    pub genesis_block_num: StorageBackedUint64,
+    pub infra_fee_account: StorageBackedAddress,
+    pub brotli_compression_level: StorageBackedUint64,
+    pub backing_storage: Storage<'a, D>,
     pub burner: B,
-    pub native_token_enabled_from_time: StorageBackedUint64<D>,
-    pub native_token_owners: AddressSet<D>,
-    pub transaction_filtering_enabled_from_time: StorageBackedUint64<D>,
-    pub transaction_filterers: AddressSet<D>,
-    pub features: Features<D>,
-    pub filtered_funds_recipient: StorageBackedAddress<D>,
-    pub filtered_transactions: FilteredTransactionsState<D>,
-    pub collect_tips: StorageBackedUint64<D>,
+    pub native_token_enabled_from_time: StorageBackedUint64,
+    pub native_token_owners: AddressSet<'a, D>,
+    pub transaction_filtering_enabled_from_time: StorageBackedUint64,
+    pub transaction_filterers: AddressSet<'a, D>,
+    pub features: Features<'a, D>,
+    pub filtered_funds_recipient: StorageBackedAddress,
+    pub filtered_transactions: FilteredTransactionsState<'a, D>,
+    pub collect_tips: StorageBackedUint64,
 }
 
-impl<D: Database, B: Burner> ArbosState<D, B> {
+impl<'a, D, B: Burner> ArbosState<'a, D, B> {
+    // --- Accessor methods ---
+
+    pub fn arbos_version(&self) -> u64 {
+        self.arbos_version
+    }
+
+    pub fn backing_storage(&self) -> &Storage<'a, D> {
+        &self.backing_storage
+    }
+
+    pub fn brotli_compression_level<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.brotli_compression_level.get(backend)?)
+    }
+
+    pub fn set_brotli_compression_level<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        level: u64,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.brotli_compression_level.set(backend, level)?)
+    }
+
+    /// Whether tip collection is enabled. Always false before ArbOS 60.
+    pub fn collect_tips<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<bool, ArbosStateError> {
+        if self.arbos_version < 60 {
+            return Ok(false);
+        }
+        Ok(self.collect_tips.get(backend)? != 0)
+    }
+
+    pub fn set_collect_tips<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        enabled: bool,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.collect_tips.set(backend, u64::from(enabled))?)
+    }
+
+    pub fn chain_id<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<U256, ArbosStateError> {
+        Ok(self.chain_id.get(backend)?)
+    }
+
+    pub fn chain_config<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Vec<u8>, ArbosStateError> {
+        Ok(self.chain_config.get(backend)?)
+    }
+
+    pub fn set_chain_config<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        config: &[u8],
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.chain_config.set(backend, config)?)
+    }
+
+    pub fn genesis_block_num<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.genesis_block_num.get(backend)?)
+    }
+
+    pub fn network_fee_account<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        Ok(self.network_fee_account.get(backend)?)
+    }
+
+    pub fn set_network_fee_account<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        account: Address,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.network_fee_account.set(backend, account)?)
+    }
+
+    pub fn infra_fee_account<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        Ok(self.infra_fee_account.get(backend)?)
+    }
+
+    pub fn set_infra_fee_account<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        account: Address,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.infra_fee_account.set(backend, account)?)
+    }
+
+    pub fn filtered_funds_recipient<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        Ok(self.filtered_funds_recipient.get(backend)?)
+    }
+
+    pub fn filtered_funds_recipient_or_default<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<Address, ArbosStateError> {
+        let addr = self.filtered_funds_recipient.get(backend)?;
+        if addr == Address::ZERO {
+            self.network_fee_account(backend)
+        } else {
+            Ok(addr)
+        }
+    }
+
+    pub fn set_filtered_funds_recipient<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        addr: Address,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.filtered_funds_recipient.set(backend, addr)?)
+    }
+
+    pub fn native_token_management_from_time<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.native_token_enabled_from_time.get(backend)?)
+    }
+
+    pub fn set_native_token_management_from_time<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        time: u64,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self.native_token_enabled_from_time.set(backend, time)?)
+    }
+
+    pub fn transaction_filtering_from_time<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<u64, ArbosStateError> {
+        Ok(self.transaction_filtering_enabled_from_time.get(backend)?)
+    }
+
+    pub fn set_transaction_filtering_from_time<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        time: u64,
+    ) -> Result<(), ArbosStateError> {
+        Ok(self
+            .transaction_filtering_enabled_from_time
+            .set(backend, time)?)
+    }
+
+    pub fn get_scheduled_upgrade<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<(u64, u64), ArbosStateError> {
+        let version = self.upgrade_version.get(backend)?;
+        let timestamp = self.upgrade_timestamp.get(backend)?;
+        Ok((version, timestamp))
+    }
+
+    pub fn schedule_arbos_upgrade<C: StorageBackend>(
+        &self,
+        backend: &mut C,
+        version: u64,
+        timestamp: u64,
+    ) -> Result<(), ArbosStateError> {
+        self.upgrade_version.set(backend, version)?;
+        Ok(self.upgrade_timestamp.set(backend, timestamp)?)
+    }
+}
+
+impl<'a, D: Database, B: Burner> ArbosState<'a, D, B> {
+    pub fn set_format_version(&mut self, version: u64) -> Result<(), ArbosStateError> {
+        self.arbos_version = version;
+        Ok(self
+            .backing_storage
+            .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(version)))?)
+    }
+
     /// Open existing ArbOS state from storage.
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn open(state: *mut revm::database::State<D>, burner: B) -> Result<Self, ()> {
+    ///
+    /// Returns [`ArbosStateError::Uninitialised`] when the version slot reads
+    /// back as zero (expected only at genesis), [`ArbosStateError::Storage`]
+    /// when the backing storage layer fails, and
+    /// [`ArbosStateError::UnsupportedVersion`] when the stored version is
+    /// outside the range this build recognises.
+    pub fn open(
+        state: &'a mut revm::database::State<D>,
+        burner: B,
+    ) -> Result<Self, ArbosStateError> {
         let backing_storage = Storage::new(state, B256::ZERO);
 
         let arbos_version = backing_storage.get_uint64_by_uint64(VERSION_OFFSET)?;
         if arbos_version == 0 {
-            return Err(());
+            return Err(ArbosStateError::Uninitialised);
+        }
+        if arbos_version > MAX_ARBOS_VERSION_SUPPORTED {
+            return Err(ArbosStateError::UnsupportedVersion(arbos_version));
         }
 
         if arbos_version >= 60 {
-            unsafe {
-                set_account_nonce(&mut *state, FILTERED_TX_STATE_ADDRESS, 1);
-            }
+            // SAFETY: see `Storage` struct-level invariant. The transient
+            // `&mut State` produced by `state_mut()` is dropped at end of
+            // statement before any live borrow into `backing_storage` is used
+            // again.
+            let state_ref = unsafe { backing_storage.state_mut() };
+            set_account_nonce(state_ref, FILTERED_TX_STATE_ADDRESS, 1);
         }
 
-        let chain_config_sto = backing_storage.open_sub_storage_with_key(chain_config_root_key());
+        let chain_config_key = chain_config_root_key();
         let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
 
         Ok(Self {
             arbos_version,
             max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
-            upgrade_version: StorageBackedUint64::new(state, B256::ZERO, UPGRADE_VERSION_OFFSET),
-            upgrade_timestamp: StorageBackedUint64::new(
-                state,
-                B256::ZERO,
-                UPGRADE_TIMESTAMP_OFFSET,
-            ),
-            network_fee_account: StorageBackedAddress::new(
-                state,
-                B256::ZERO,
-                NETWORK_FEE_ACCOUNT_OFFSET,
-            ),
+            upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
+            upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
+            network_fee_account: StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET),
             l1_pricing_state: L1PricingState::open(
                 backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
                 arbos_version,
@@ -176,25 +376,15 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             blockhashes: blockhash::open_blockhashes(
                 backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
             ),
-            chain_id: StorageBackedBigUint::new(state, B256::ZERO, CHAIN_ID_OFFSET),
-            chain_config: StorageBackedBytes::new(chain_config_sto),
-            genesis_block_num: StorageBackedUint64::new(
-                state,
-                B256::ZERO,
-                GENESIS_BLOCK_NUM_OFFSET,
-            ),
-            infra_fee_account: StorageBackedAddress::new(
-                state,
-                B256::ZERO,
-                INFRA_FEE_ACCOUNT_OFFSET,
-            ),
+            chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
+            chain_config: StorageBackedBytes::new(chain_config_key),
+            genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
+            infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
             brotli_compression_level: StorageBackedUint64::new(
-                state,
                 B256::ZERO,
                 BROTLI_COMPRESSION_LEVEL_OFFSET,
             ),
             native_token_enabled_from_time: StorageBackedUint64::new(
-                state,
                 B256::ZERO,
                 NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
             ),
@@ -202,144 +392,35 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
             ),
             transaction_filtering_enabled_from_time: StorageBackedUint64::new(
-                state,
                 B256::ZERO,
                 TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
             ),
             transaction_filterers: address_set::open_address_set(
                 backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
             ),
-            features: features::open_features(state, features_sto.base_key(), 0),
+            features: features::open_features(features_sto.base_key(), 0),
             filtered_funds_recipient: StorageBackedAddress::new(
-                state,
                 B256::ZERO,
                 FILTERED_FUNDS_RECIPIENT_OFFSET,
             ),
-            filtered_transactions: FilteredTransactionsState::open(Storage::new_with_account(
-                state,
-                B256::ZERO,
-                FILTERED_TX_STATE_ADDRESS,
-            )),
-            collect_tips: StorageBackedUint64::new(state, B256::ZERO, COLLECT_TIPS_OFFSET),
+            filtered_transactions: FilteredTransactionsState::open(
+                backing_storage.open_account(FILTERED_TX_STATE_ADDRESS, B256::ZERO),
+            ),
+            collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
             backing_storage,
             burner,
         })
     }
 
-    // --- Accessor methods ---
-
-    pub fn arbos_version(&self) -> u64 {
-        self.arbos_version
-    }
-
-    pub fn backing_storage(&self) -> &Storage<D> {
-        &self.backing_storage
-    }
-
-    pub fn set_format_version(&mut self, version: u64) -> Result<(), ()> {
-        self.arbos_version = version;
-        self.backing_storage
-            .set_by_uint64(VERSION_OFFSET, B256::from(U256::from(version)))
-    }
-
-    pub fn brotli_compression_level(&self) -> Result<u64, ()> {
-        self.brotli_compression_level.get()
-    }
-
-    pub fn set_brotli_compression_level(&self, level: u64) -> Result<(), ()> {
-        self.brotli_compression_level.set(level)
-    }
-
-    /// Whether tip collection is enabled. Always false before ArbOS 60.
-    pub fn collect_tips(&self) -> Result<bool, ()> {
-        if self.arbos_version < 60 {
-            return Ok(false);
-        }
-        Ok(self.collect_tips.get()? != 0)
-    }
-
-    pub fn chain_id(&self) -> Result<U256, ()> {
-        self.chain_id.get()
-    }
-
-    pub fn chain_config(&self) -> Result<Vec<u8>, ()> {
-        self.chain_config.get()
-    }
-
-    pub fn set_chain_config(&self, config: &[u8]) -> Result<(), ()> {
-        self.chain_config.set(config)
-    }
-
-    pub fn genesis_block_num(&self) -> Result<u64, ()> {
-        self.genesis_block_num.get()
-    }
-
-    pub fn network_fee_account(&self) -> Result<Address, ()> {
-        self.network_fee_account.get()
-    }
-
-    pub fn set_network_fee_account(&self, account: Address) -> Result<(), ()> {
-        self.network_fee_account.set(account)
-    }
-
-    pub fn infra_fee_account(&self) -> Result<Address, ()> {
-        self.infra_fee_account.get()
-    }
-
-    pub fn set_infra_fee_account(&self, account: Address) -> Result<(), ()> {
-        self.infra_fee_account.set(account)
-    }
-
-    pub fn filtered_funds_recipient(&self) -> Result<Address, ()> {
-        self.filtered_funds_recipient.get()
-    }
-
-    pub fn filtered_funds_recipient_or_default(&self) -> Result<Address, ()> {
-        let addr = self.filtered_funds_recipient.get()?;
-        if addr == Address::ZERO {
-            self.network_fee_account()
-        } else {
-            Ok(addr)
-        }
-    }
-
-    pub fn set_filtered_funds_recipient(&self, addr: Address) -> Result<(), ()> {
-        self.filtered_funds_recipient.set(addr)
-    }
-
-    pub fn native_token_management_from_time(&self) -> Result<u64, ()> {
-        self.native_token_enabled_from_time.get()
-    }
-
-    pub fn set_native_token_management_from_time(&self, time: u64) -> Result<(), ()> {
-        self.native_token_enabled_from_time.set(time)
-    }
-
-    pub fn transaction_filtering_from_time(&self) -> Result<u64, ()> {
-        self.transaction_filtering_enabled_from_time.get()
-    }
-
-    pub fn set_transaction_filtering_from_time(&self, time: u64) -> Result<(), ()> {
-        self.transaction_filtering_enabled_from_time.set(time)
-    }
-
-    pub fn get_scheduled_upgrade(&self) -> Result<(u64, u64), ()> {
-        let version = self.upgrade_version.get()?;
-        let timestamp = self.upgrade_timestamp.get()?;
-        Ok((version, timestamp))
-    }
-
-    pub fn schedule_arbos_upgrade(&self, version: u64, timestamp: u64) -> Result<(), ()> {
-        self.upgrade_version.set(version)?;
-        self.upgrade_timestamp.set(timestamp)
-    }
-
     /// Checks and performs a scheduled ArbOS version upgrade if due.
-    pub fn upgrade_arbos_version_if_necessary(&mut self, current_timestamp: u64) -> Result<(), ()> {
-        let scheduled_version = self.upgrade_version.get()?;
-        let scheduled_timestamp = self.upgrade_timestamp.get()?;
+    pub fn upgrade_arbos_version_if_necessary<C: StorageBackend>(
+        &mut self,
+        backend: &mut C,
+        current_timestamp: u64,
+    ) -> Result<(), ArbosStateError> {
+        let scheduled_version = self.upgrade_version.get(backend)?;
+        let scheduled_timestamp = self.upgrade_timestamp.get(backend)?;
 
-        // Check: arbosVersion < upgradeTo && currentTimestamp >= flagday
         if scheduled_version == 0
             || self.arbos_version >= scheduled_version
             || current_timestamp < scheduled_timestamp
@@ -348,15 +429,14 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         }
 
         if scheduled_version > MAX_ARBOS_VERSION_SUPPORTED {
-            return Err(());
+            return Err(ArbosStateError::UnsupportedScheduledVersion {
+                version: scheduled_version,
+                max: MAX_ARBOS_VERSION_SUPPORTED,
+            });
         }
 
         let old_version = self.arbos_version;
-        self.upgrade_arbos_version(scheduled_version, false)?;
-
-        // The scheduled upgrade fields are NOT cleared after upgrade.
-        // They remain in storage and are simply ignored because the
-        // arbos_version >= scheduled_version check prevents re-upgrade.
+        self.upgrade_arbos_version(backend, scheduled_version, false)?;
 
         if old_version != self.arbos_version {
             tracing::info!(
@@ -370,120 +450,119 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     }
 
     /// Performs version upgrade steps from current version up to `upgrade_to`.
-    ///
-    /// `first_time` is true during genesis initialization, which affects
-    /// some initial parameter values.
-    pub fn upgrade_arbos_version(&mut self, upgrade_to: u64, first_time: bool) -> Result<(), ()> {
+    pub fn upgrade_arbos_version<C: StorageBackend>(
+        &mut self,
+        backend: &mut C,
+        upgrade_to: u64,
+        first_time: bool,
+    ) -> Result<(), ArbosStateError> {
         while self.arbos_version < upgrade_to {
             let next = self.arbos_version + 1;
 
             match next {
                 2 => {
-                    self.l1_pricing_state.set_last_surplus(U256::ZERO, false)?;
+                    self.l1_pricing_state
+                        .set_last_surplus(backend, U256::ZERO, false)?;
                 }
                 3 => {
-                    self.l1_pricing_state.set_per_batch_gas_cost(0)?;
+                    self.l1_pricing_state.set_per_batch_gas_cost(backend, 0)?;
                     self.l1_pricing_state
-                        .set_amortized_cost_cap_bips(u64::MAX)?;
+                        .set_amortized_cost_cap_bips(backend, u64::MAX)?;
                 }
-                4..=9 => {
-                    // No state changes needed
-                }
+                4..=9 => {}
                 10 => {
-                    let state = unsafe { &mut *self.backing_storage.state };
+                    // SAFETY: see `Storage` struct-level invariant.
+                    let state = unsafe { self.backing_storage.state_mut() };
                     let pool_balance =
                         get_account_balance(state, l1_pricing::L1_PRICER_FUNDS_POOL_ADDRESS);
-                    self.l1_pricing_state.set_l1_fees_available(pool_balance)?;
+                    self.l1_pricing_state
+                        .set_l1_fees_available(backend, pool_balance)?;
                 }
                 11 => {
-                    self.l1_pricing_state
-                        .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V12)?;
+                    self.l1_pricing_state.set_per_batch_gas_cost(
+                        backend,
+                        l1_pricing::INITIAL_PER_BATCH_GAS_COST_V12,
+                    )?;
 
-                    // Fix: math.MaxUint64 was incorrectly used for "disabled";
-                    // the correct disable value is 0.
-                    let old_cap = self.l1_pricing_state.amortized_cost_cap_bips()?;
+                    let old_cap = self.l1_pricing_state.amortized_cost_cap_bips(backend)?;
                     if old_cap == u64::MAX {
-                        self.l1_pricing_state.set_amortized_cost_cap_bips(0)?;
+                        self.l1_pricing_state
+                            .set_amortized_cost_cap_bips(backend, 0)?;
                     }
 
                     if !first_time {
-                        self.chain_owners.clear_list()?;
+                        self.chain_owners.clear_list(backend)?;
                     }
                 }
-                // 12..=19: reserved for Orbit chains
                 12..=19 => {}
                 20 => {
-                    self.set_brotli_compression_level(1)?;
+                    self.set_brotli_compression_level(backend, 1)?;
                 }
-                // 21..=29: reserved for Orbit chains
                 21..=29 => {}
                 30 => {
                     Programs::initialize(
                         next,
                         &self.backing_storage.open_sub_storage(PROGRAMS_SUBSPACE),
-                    );
+                        backend,
+                    )?;
                 }
                 31 => {
-                    let mut params = self.programs.params()?;
-                    params.upgrade_to_version(2).map_err(|_| ())?;
-                    params
-                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
-                        .map_err(|_| ())?;
+                    let mut params = self.programs.params(backend)?;
+                    params.upgrade_to_version(2)?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                 }
-                32 => {
-                    // No state changes needed
-                }
-                // 33..=39: reserved for Orbit chains
+                32 => {}
                 33..=39 => {}
                 40 => {
-                    // EIP-2935: historical block hashes
-                    let state = unsafe { &mut *self.backing_storage.state };
+                    // SAFETY: see `Storage` struct-level invariant.
+                    let state = unsafe { self.backing_storage.state_mut() };
                     set_account_nonce(state, HISTORY_STORAGE_ADDRESS, 1);
                     set_account_code(
                         state,
                         HISTORY_STORAGE_ADDRESS,
                         HISTORY_STORAGE_CODE_ARBITRUM.clone(),
                     );
-                    // Upgrade Stylus params for version 40
-                    let mut params = self.programs.params()?;
-                    params.upgrade_to_arbos_version(next).map_err(|_| ())?;
-                    params
-                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
-                        .map_err(|_| ())?;
+                    let mut params = self.programs.params(backend)?;
+                    params.upgrade_to_arbos_version(next)?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                 }
-                41 => {
-                    // No state changes needed
-                }
-                // 42..=49: reserved for Orbit chains
+                41 => {}
                 42..=49 => {}
                 50 => {
-                    let mut params = self.programs.params()?;
-                    params.upgrade_to_arbos_version(next).map_err(|_| ())?;
-                    params
-                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
-                        .map_err(|_| ())?;
-                    self.l2_pricing_state
-                        .set_max_per_tx_gas_limit(l2_pricing::INITIAL_PER_TX_GAS_LIMIT_V50)?;
+                    let mut params = self.programs.params(backend)?;
+                    params.upgrade_to_arbos_version(next)?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
+                    self.l2_pricing_state.set_max_per_tx_gas_limit(
+                        backend,
+                        l2_pricing::INITIAL_PER_TX_GAS_LIMIT_V50,
+                    )?;
                 }
-                51 => {
-                    // No state changes needed
-                }
-                // 52..=58: reserved for Orbit chains
+                51 => {}
                 52..=58 => {}
                 59 => {
-                    let mut params = self.programs.params()?;
-                    params.upgrade_to_version(3).map_err(|_| ())?;
-                    params
-                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
-                        .map_err(|_| ())?;
+                    let mut params = self.programs.params(backend)?;
+                    params.upgrade_to_version(3)?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                 }
                 60 => {
-                    let mut params = self.programs.params()?;
-                    params.upgrade_to_arbos_version(next).map_err(|_| ())?;
-                    params
-                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
-                        .map_err(|_| ())?;
-                    // Initialize transaction filtering address set
+                    let mut params = self.programs.params(backend)?;
+                    params.upgrade_to_arbos_version(next)?;
+                    params.save(
+                        &self.programs.backing_storage.open_sub_storage(&[0]),
+                        backend,
+                    )?;
                     crate::address_set::initialize_address_set(
                         &self
                             .backing_storage
@@ -492,15 +571,15 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 }
                 _ => {
                     tracing::error!(version = next, "unsupported ArbOS version");
-                    return Err(());
+                    return Err(ArbosStateError::UnsupportedRunningVersion(next));
                 }
             }
 
-            // Install precompile code for newly introduced precompiles
             for &(addr, version) in PRECOMPILE_MIN_ARBOS_VERSIONS {
                 if version == next {
-                    let state = unsafe { &mut *self.backing_storage.state };
-                    set_account_code(state, addr, Bytes::from_static(&[0xFE])); // INVALID opcode
+                    // SAFETY: see `Storage` struct-level invariant.
+                    let state = unsafe { self.backing_storage.state_mut() };
+                    set_account_code(state, addr, Bytes::from_static(&[0xFE]));
                 }
             }
 
@@ -510,23 +589,146 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             self.l2_pricing_state.arbos_version = next;
         }
 
-        // First-time initialization overrides
         if first_time && upgrade_to >= 6 {
             if upgrade_to < 11 {
                 self.l1_pricing_state
-                    .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V6)?;
+                    .set_per_batch_gas_cost(backend, l1_pricing::INITIAL_PER_BATCH_GAS_COST_V6)?;
             }
-            self.l1_pricing_state
-                .set_equilibration_units(U256::from(l1_pricing::INITIAL_EQUILIBRATION_UNITS_V6))?;
+            self.l1_pricing_state.set_equilibration_units(
+                backend,
+                U256::from(l1_pricing::INITIAL_EQUILIBRATION_UNITS_V6),
+            )?;
+            self.l2_pricing_state.set_speed_limit_per_second(
+                backend,
+                l2_pricing::INITIAL_SPEED_LIMIT_PER_SECOND_V6,
+            )?;
             self.l2_pricing_state
-                .set_speed_limit_per_second(l2_pricing::INITIAL_SPEED_LIMIT_PER_SECOND_V6)?;
-            self.l2_pricing_state
-                .set_max_per_block_gas_limit(l2_pricing::INITIAL_PER_BLOCK_GAS_LIMIT_V6)?;
+                .set_max_per_block_gas_limit(backend, l2_pricing::INITIAL_PER_BLOCK_GAS_LIMIT_V6)?;
         }
 
-        // Persist the final version
         self.set_format_version(self.arbos_version)?;
 
         Ok(())
     }
+}
+
+/// Open a detached [`ArbosState`] backed by any [`StorageBackend`].
+///
+/// Reads only the version slot up front; all subsequent access goes through
+/// `backend`. Intended for callers that have a storage view but no executor
+/// state pointer — precompile handlers via `EvmInternals`, RPC tools reading
+/// historical state through a `StateProvider`, etc. The version slot is read
+/// up front so divergence between the pinned build and the stored ArbOS
+/// version surfaces as [`ArbosStateError::UnsupportedVersion`] instead of
+/// silently reading the wrong slot.
+pub fn arbos_from_input<S: StorageBackend, B: Burner>(
+    backend: &mut S,
+    burner: B,
+) -> Result<ArbosState<'static, Detached, B>, ArbosStateError> {
+    let version_slot = storage_key_map(&[], VERSION_OFFSET);
+    let raw_version =
+        StorageBackend::sload(backend, ARBOS_STATE_ADDRESS, version_slot).map_err(Into::into)?;
+    open_detached(raw_version, burner)
+}
+
+/// Open a detached [`ArbosState`] backed by any [`SystemStateBackend`].
+///
+/// Behaviourally identical to [`arbos_from_input`] but reads the version slot
+/// via the non-journaled [`SystemStateBackend::sload_system`] path. Intended
+/// for callers that want to skip the EVM journal — typically precompile
+/// handlers caching the ArbosState across calls within a single block.
+pub fn arbos_from_input_system<S: SystemStateBackend, B: Burner>(
+    backend: &mut S,
+    burner: B,
+) -> Result<ArbosState<'static, Detached, B>, ArbosStateError> {
+    let version_slot = storage_key_map(&[], VERSION_OFFSET);
+    let raw_version = SystemStateBackend::sload_system(backend, ARBOS_STATE_ADDRESS, version_slot)
+        .map_err(Into::into)?;
+    open_detached(raw_version, burner)
+}
+
+fn open_detached<B: Burner>(
+    raw_version: U256,
+    burner: B,
+) -> Result<ArbosState<'static, Detached, B>, ArbosStateError> {
+    let arbos_version = u64::try_from(raw_version).unwrap_or(0);
+    if arbos_version == 0 {
+        return Err(ArbosStateError::Uninitialised);
+    }
+    if arbos_version > MAX_ARBOS_VERSION_SUPPORTED {
+        return Err(ArbosStateError::UnsupportedVersion(arbos_version));
+    }
+
+    let backing_storage = Storage::<Detached>::detached(ARBOS_STATE_ADDRESS, B256::ZERO);
+    let chain_config_key = chain_config_root_key();
+    let features_sto = backing_storage.open_sub_storage_with_key(features_root_key());
+
+    Ok(ArbosState {
+        arbos_version,
+        max_arbos_version_supported: MAX_ARBOS_VERSION_SUPPORTED,
+        upgrade_version: StorageBackedUint64::new(B256::ZERO, UPGRADE_VERSION_OFFSET),
+        upgrade_timestamp: StorageBackedUint64::new(B256::ZERO, UPGRADE_TIMESTAMP_OFFSET),
+        network_fee_account: StorageBackedAddress::new(B256::ZERO, NETWORK_FEE_ACCOUNT_OFFSET),
+        l1_pricing_state: L1PricingState::open(
+            backing_storage.open_sub_storage_with_key(l1_pricing_root_key()),
+            arbos_version,
+        ),
+        l2_pricing_state: L2PricingState::open(
+            backing_storage.open_sub_storage_with_key(l2_pricing_root_key()),
+            arbos_version,
+        ),
+        retryable_state: RetryableState::open(
+            backing_storage.open_sub_storage_with_key(retryables_root_key()),
+        ),
+        address_table: address_table::open_address_table(
+            backing_storage.open_sub_storage_with_key(address_table_root_key()),
+        ),
+        chain_owners: address_set::open_address_set(
+            backing_storage.open_sub_storage_with_key(chain_owner_root_key()),
+        ),
+        send_merkle_accumulator: merkle_accumulator::open_merkle_accumulator(
+            backing_storage.open_sub_storage_with_key(send_merkle_root_key()),
+        ),
+        programs: Programs::open(
+            arbos_version,
+            backing_storage.open_sub_storage_with_key(programs_root_key()),
+        ),
+        blockhashes: blockhash::open_blockhashes(
+            backing_storage.open_sub_storage_with_key(blockhashes_root_key()),
+        ),
+        chain_id: StorageBackedBigUint::new(B256::ZERO, CHAIN_ID_OFFSET),
+        chain_config: StorageBackedBytes::new(chain_config_key),
+        genesis_block_num: StorageBackedUint64::new(B256::ZERO, GENESIS_BLOCK_NUM_OFFSET),
+        infra_fee_account: StorageBackedAddress::new(B256::ZERO, INFRA_FEE_ACCOUNT_OFFSET),
+        brotli_compression_level: StorageBackedUint64::new(
+            B256::ZERO,
+            BROTLI_COMPRESSION_LEVEL_OFFSET,
+        ),
+        native_token_enabled_from_time: StorageBackedUint64::new(
+            B256::ZERO,
+            NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+        ),
+        native_token_owners: address_set::open_address_set(
+            backing_storage.open_sub_storage_with_key(native_token_owner_root_key()),
+        ),
+        transaction_filtering_enabled_from_time: StorageBackedUint64::new(
+            B256::ZERO,
+            TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET,
+        ),
+        transaction_filterers: address_set::open_address_set(
+            backing_storage.open_sub_storage_with_key(transaction_filtering_root_key()),
+        ),
+        features: features::open_features(features_sto.base_key(), 0),
+        filtered_funds_recipient: StorageBackedAddress::new(
+            B256::ZERO,
+            FILTERED_FUNDS_RECIPIENT_OFFSET,
+        ),
+        filtered_transactions: FilteredTransactionsState::open(Storage::<Detached>::detached(
+            FILTERED_TX_STATE_ADDRESS,
+            B256::ZERO,
+        )),
+        collect_tips: StorageBackedUint64::new(B256::ZERO, COLLECT_TIPS_OFFSET),
+        backing_storage,
+        burner,
+    })
 }

@@ -1,7 +1,10 @@
-use alloy_primitives::{keccak256, B256};
+use alloy_primitives::{keccak256, B256, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
+
+mod error;
+pub use error::MerkleAccumulatorError;
 
 /// Event emitted when a Merkle tree node is updated during append.
 #[derive(Debug, Clone)]
@@ -12,17 +15,17 @@ pub struct MerkleTreeNodeEvent {
 }
 
 /// Storage-backed Merkle accumulator.
-pub struct MerkleAccumulator<D> {
-    backing_storage: Storage<D>,
-    size: StorageBackedUint64<D>,
+pub struct MerkleAccumulator<'a, D> {
+    backing_storage: Storage<'a, D>,
+    size: StorageBackedUint64,
 }
 
-pub fn initialize_merkle_accumulator<D: Database>(_sto: &Storage<D>) {
+pub fn initialize_merkle_accumulator<D: Database>(_sto: &Storage<'_, D>) {
     // no-op
 }
 
-pub fn open_merkle_accumulator<D: Database>(sto: Storage<D>) -> MerkleAccumulator<D> {
-    let size = StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), 0);
+pub fn open_merkle_accumulator<D>(sto: Storage<'_, D>) -> MerkleAccumulator<'_, D> {
+    let size = StorageBackedUint64::new(sto.base_key(), 0);
     MerkleAccumulator {
         backing_storage: sto,
         size,
@@ -38,19 +41,48 @@ pub fn calc_num_partials(size: u64) -> u64 {
     64 - size.leading_zeros() as u64
 }
 
-impl<D: Database> MerkleAccumulator<D> {
-    fn get_partial(&self, level: u64) -> Result<B256, ()> {
-        self.backing_storage.get_by_uint64(2 + level)
+impl<D> MerkleAccumulator<'_, D> {
+    fn partial_slot(&self, level: u64) -> U256 {
+        self.backing_storage.new_slot(2 + level)
     }
 
-    fn set_partial(&self, level: u64, val: B256) -> Result<(), ()> {
-        self.backing_storage.set_by_uint64(2 + level, val)
+    fn read_partial<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        level: u64,
+    ) -> Result<B256, MerkleAccumulatorError> {
+        let slot = self.partial_slot(level);
+        let value = backend
+            .sload_system(self.backing_storage.account(), slot)
+            .map_err(Into::into)?;
+        Ok(B256::from(value.to_be_bytes::<32>()))
     }
 
-    pub fn append(&self, item_hash: B256) -> Result<Vec<MerkleTreeNodeEvent>, ()> {
-        let current_size = self.size.get()?;
+    fn write_partial<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        level: u64,
+        val: B256,
+    ) -> Result<(), MerkleAccumulatorError> {
+        let slot = self.partial_slot(level);
+        backend
+            .sstore(
+                self.backing_storage.account(),
+                slot,
+                U256::from_be_bytes(val.0),
+            )
+            .map_err(Into::into)?;
+        Ok(())
+    }
+
+    pub fn append<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        item_hash: B256,
+    ) -> Result<Vec<MerkleTreeNodeEvent>, MerkleAccumulatorError> {
+        let current_size = self.size.get(backend)?;
         let new_size = current_size + 1;
-        self.size.set(new_size)?;
+        self.size.set(backend, new_size)?;
 
         let mut events = Vec::new();
         let mut level = 0u64;
@@ -58,13 +90,13 @@ impl<D: Database> MerkleAccumulator<D> {
 
         loop {
             if level == calc_num_partials(current_size) {
-                self.set_partial(level, so_far)?;
+                self.write_partial(backend, level, so_far)?;
                 return Ok(events);
             }
 
-            let this_level = self.get_partial(level)?;
+            let this_level = self.read_partial(backend, level)?;
             if this_level == B256::ZERO {
-                self.set_partial(level, so_far)?;
+                self.write_partial(backend, level, so_far)?;
                 return Ok(events);
             }
 
@@ -73,7 +105,7 @@ impl<D: Database> MerkleAccumulator<D> {
             combined.extend_from_slice(so_far.as_slice());
             so_far = keccak256(&combined);
 
-            self.set_partial(level, B256::ZERO)?;
+            self.write_partial(backend, level, B256::ZERO)?;
 
             level += 1;
             events.push(MerkleTreeNodeEvent {
@@ -84,12 +116,27 @@ impl<D: Database> MerkleAccumulator<D> {
         }
     }
 
-    pub fn size(&self) -> Result<u64, ()> {
-        self.size.get()
+    pub fn size<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, MerkleAccumulatorError> {
+        Ok(self.size.get(backend)?)
     }
 
-    pub fn root(&self) -> Result<B256, ()> {
-        let size = self.size.get()?;
+    /// Read a single partial hash without re-reading the accumulator size.
+    pub fn partial_at<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        level: u64,
+    ) -> Result<B256, MerkleAccumulatorError> {
+        self.read_partial(backend, level)
+    }
+
+    pub fn root<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<B256, MerkleAccumulatorError> {
+        let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(B256::ZERO);
         }
@@ -99,7 +146,7 @@ impl<D: Database> MerkleAccumulator<D> {
         let mut capacity = 1u64;
 
         for level in 0..calc_num_partials(size) {
-            let partial = self.get_partial(level)?;
+            let partial = self.read_partial(backend, level)?;
             if partial != B256::ZERO {
                 if let Some(ref mut current) = hash_so_far {
                     while capacity_in_hash < capacity {
@@ -126,20 +173,26 @@ impl<D: Database> MerkleAccumulator<D> {
         Ok(hash_so_far.unwrap_or(B256::ZERO))
     }
 
-    pub fn get_partials(&self) -> Result<Vec<B256>, ()> {
-        let size = self.size.get()?;
+    pub fn get_partials<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Vec<B256>, MerkleAccumulatorError> {
+        let size = self.size.get(backend)?;
         let num = calc_num_partials(size);
         let mut partials = Vec::with_capacity(num as usize);
         for i in 0..num {
-            partials.push(self.get_partial(i)?);
+            partials.push(self.read_partial(backend, i)?);
         }
         Ok(partials)
     }
 
-    pub fn state_for_export(&self) -> Result<(u64, B256, Vec<B256>), ()> {
-        let root = self.root()?;
-        let size = self.size.get()?;
-        let partials = self.get_partials()?;
+    pub fn state_for_export<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<(u64, B256, Vec<B256>), MerkleAccumulatorError> {
+        let root = self.root(backend)?;
+        let size = self.size.get(backend)?;
+        let partials = self.get_partials(backend)?;
         Ok((size, root, partials))
     }
 }
@@ -263,8 +316,13 @@ impl InMemoryMerkleAccumulator {
         hash_so_far.unwrap_or(B256::ZERO)
     }
 
-    pub fn partials(&self) -> &[B256] {
-        &self.partials
+    pub fn get_partials(&self) -> Vec<B256> {
+        let num = calc_num_partials(self.size);
+        let mut partials = Vec::with_capacity(num as usize);
+        for i in 0..num {
+            partials.push(self.get_partial(i));
+        }
+        partials
     }
 }
 

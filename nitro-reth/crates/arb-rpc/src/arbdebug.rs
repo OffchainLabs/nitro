@@ -7,9 +7,12 @@ use std::sync::Arc;
 use alloy_consensus::BlockHeader;
 use alloy_primitives::{Address, StorageKey, B256, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
-use arb_precompiles::storage_slot::{
-    derive_subspace_key, map_slot, subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE,
-    L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+use arb_storage::{
+    layout::{
+        derive_subspace_key, map_slot, subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+        RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+    },
+    ARBOS_STATE_ADDRESS,
 };
 use arbos::retryables::{TIMEOUT_OFFSET, TIMEOUT_QUEUE_KEY};
 use jsonrpsee::{

@@ -1,7 +1,10 @@
 use alloy_primitives::U256;
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64};
+use arb_math::ONE_IN_BIPS;
+use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64, StorageBackend};
+
+use super::ProgramsError;
 
 const DEMAND_OFFSET: u64 = 0;
 const BYTES_PER_SECOND_OFFSET: u64 = 1;
@@ -20,50 +23,54 @@ const INITIAL_LAST_UPDATE_TIME: u64 = ARBITRUM_START_TIME;
 const INITIAL_MIN_PRICE: u32 = 82928201; // 5Mb = $1
 const INITIAL_INERTIA: u32 = 21360419; // expensive at 1Tb
 
-/// One in basis points (10000).
-const ONE_IN_BIPS: u64 = 10000;
-
 /// Stylus data pricing model using exponential demand curve.
-pub struct DataPricer<D> {
-    pub demand: StorageBackedUint32<D>,
-    pub bytes_per_second: StorageBackedUint32<D>,
-    pub last_update_time: StorageBackedUint64<D>,
-    pub min_price: StorageBackedUint32<D>,
-    pub inertia: StorageBackedUint32<D>,
+pub struct DataPricer {
+    pub demand: StorageBackedUint32,
+    pub bytes_per_second: StorageBackedUint32,
+    pub last_update_time: StorageBackedUint64,
+    pub min_price: StorageBackedUint32,
+    pub inertia: StorageBackedUint32,
 }
 
-pub fn init_data_pricer<D: Database>(sto: &Storage<D>) {
-    let state = sto.state_ptr();
+pub fn init_data_pricer<D: Database, B: StorageBackend>(
+    sto: &Storage<'_, D>,
+    backend: &mut B,
+) -> Result<(), ProgramsError> {
     let base_key = sto.base_key();
-    let _ = StorageBackedUint32::new(state, base_key, DEMAND_OFFSET).set(INITIAL_DEMAND);
-    let _ = StorageBackedUint32::new(state, base_key, BYTES_PER_SECOND_OFFSET)
-        .set(INITIAL_BYTES_PER_SECOND);
-    let _ = StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET)
-        .set(INITIAL_LAST_UPDATE_TIME);
-    let _ = StorageBackedUint32::new(state, base_key, MIN_PRICE_OFFSET).set(INITIAL_MIN_PRICE);
-    let _ = StorageBackedUint32::new(state, base_key, INERTIA_OFFSET).set(INITIAL_INERTIA);
+    StorageBackedUint32::new(base_key, DEMAND_OFFSET).set(backend, INITIAL_DEMAND)?;
+    StorageBackedUint32::new(base_key, BYTES_PER_SECOND_OFFSET)
+        .set(backend, INITIAL_BYTES_PER_SECOND)?;
+    StorageBackedUint64::new(base_key, LAST_UPDATE_TIME_OFFSET)
+        .set(backend, INITIAL_LAST_UPDATE_TIME)?;
+    StorageBackedUint32::new(base_key, MIN_PRICE_OFFSET).set(backend, INITIAL_MIN_PRICE)?;
+    StorageBackedUint32::new(base_key, INERTIA_OFFSET).set(backend, INITIAL_INERTIA)?;
+    Ok(())
 }
 
-pub fn open_data_pricer<D: Database>(sto: &Storage<D>) -> DataPricer<D> {
-    let state = sto.state_ptr();
+pub fn open_data_pricer<D>(sto: &Storage<'_, D>) -> DataPricer {
     let base_key = sto.base_key();
     DataPricer {
-        demand: StorageBackedUint32::new(state, base_key, DEMAND_OFFSET),
-        bytes_per_second: StorageBackedUint32::new(state, base_key, BYTES_PER_SECOND_OFFSET),
-        last_update_time: StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET),
-        min_price: StorageBackedUint32::new(state, base_key, MIN_PRICE_OFFSET),
-        inertia: StorageBackedUint32::new(state, base_key, INERTIA_OFFSET),
+        demand: StorageBackedUint32::new(base_key, DEMAND_OFFSET),
+        bytes_per_second: StorageBackedUint32::new(base_key, BYTES_PER_SECOND_OFFSET),
+        last_update_time: StorageBackedUint64::new(base_key, LAST_UPDATE_TIME_OFFSET),
+        min_price: StorageBackedUint32::new(base_key, MIN_PRICE_OFFSET),
+        inertia: StorageBackedUint32::new(base_key, INERTIA_OFFSET),
     }
 }
 
-impl<D: Database> DataPricer<D> {
+impl DataPricer {
     /// Update the pricing model with new data usage and return cost in wei.
-    pub fn update_model(&self, temp_bytes: u32, time: u64) -> Result<U256, ()> {
-        let demand = self.demand.get().unwrap_or(0);
-        let bytes_per_second = self.bytes_per_second.get().unwrap_or(0);
-        let last_update_time = self.last_update_time.get().unwrap_or(0);
-        let min_price = self.min_price.get().unwrap_or(0);
-        let inertia = self.inertia.get()?;
+    pub fn update_model<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        temp_bytes: u32,
+        time: u64,
+    ) -> Result<U256, ProgramsError> {
+        let demand = self.demand.get(backend).unwrap_or(0);
+        let bytes_per_second = self.bytes_per_second.get(backend).unwrap_or(0);
+        let last_update_time = self.last_update_time.get(backend).unwrap_or(0);
+        let min_price = self.min_price.get(backend).unwrap_or(0);
+        let inertia = self.inertia.get(backend)?;
 
         if inertia == 0 {
             return Ok(U256::ZERO);
@@ -73,34 +80,15 @@ impl<D: Database> DataPricer<D> {
         let credit = bytes_per_second.saturating_mul(passed);
         let demand = demand.saturating_sub(credit).saturating_add(temp_bytes);
 
-        self.demand.set(demand)?;
-        self.last_update_time.set(time)?;
+        self.demand.set(backend, demand)?;
+        self.last_update_time.set(backend, time)?;
 
         let exponent = ONE_IN_BIPS * (demand as u64) / (inertia as u64);
-        let multiplier = approx_exp_basis_points(exponent, 12);
+        let multiplier = arb_math::approx_exp_basis_points(exponent, 12);
         let cost_per_byte = saturating_mul_by_bips(min_price as u64, multiplier);
         let cost_in_wei = cost_per_byte.saturating_mul(temp_bytes as u64);
         Ok(U256::from(cost_in_wei))
     }
-}
-
-/// Approximate e^(x/10000) * 10000 using a Taylor series with `terms` terms.
-fn approx_exp_basis_points(x: u64, terms: u32) -> u64 {
-    if x == 0 {
-        return ONE_IN_BIPS;
-    }
-
-    let mut result = ONE_IN_BIPS;
-    let mut term = ONE_IN_BIPS;
-
-    for k in 1..=terms {
-        term = term * x / (ONE_IN_BIPS * k as u64);
-        result = result.saturating_add(term);
-        if term == 0 {
-            break;
-        }
-    }
-    result
 }
 
 /// Multiply a u64 by a bips value, saturating on overflow.

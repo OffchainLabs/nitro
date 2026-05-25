@@ -1,4 +1,4 @@
-use arb_precompiles::storage_slot::*;
+use arb_storage::layout::*;
 
 #[test]
 fn print_key_slots() {

@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, B256, U256};
 use std::collections::HashMap;
 
-use crate::{l1_pricing, retryables};
+use crate::{l1_pricing, retryables, util::BalanceError};
 use arb_chainspec::arbos_version as arb_ver;
 
 /// ArbOS system address (0x00000000000000000000000000000000000a4b05).
@@ -374,7 +374,7 @@ impl TxProcessor {
         mut transfer_fn: F,
     ) -> EndTxRetryableResult
     where
-        F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     {
         let effective_base_fee = params.effective_base_fee;
         let gas_left = params.gas_left;
@@ -736,9 +736,13 @@ fn refund_with_pool<F>(
     from: Address,
     transfer_fn: &mut F,
 ) where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
 {
     let to_refund_addr = take_funds(max_refund, amount);
+    // Refunds run inside end-tx bookkeeping where the network/infra fee
+    // accounts always hold what we just collected from the same tx; a
+    // typed shortfall here would only signal an accounting bug and must
+    // not abort the rest of the refund.
     let _ = transfer_fn(refund_from, refund_to, to_refund_addr);
     let remainder = amount.saturating_sub(to_refund_addr);
     let _ = transfer_fn(refund_from, from, remainder);

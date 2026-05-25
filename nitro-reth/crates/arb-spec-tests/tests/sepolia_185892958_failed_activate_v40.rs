@@ -7,13 +7,17 @@ use arb_spec_tests::runner::{fixtures_root, run_execution_fixture};
 /// Canon receipt: status=0, gasUsed=0x19abd0 (=1,682,384). Locks the
 /// non-Solidity revert path fixed in a8a0d46.
 #[test]
+#[cfg_attr(
+    not(feature = "spec-binary"),
+    ignore = "requires `--features spec-binary` plus ARB_SPEC_BINARY"
+)]
 fn sepolia_block_185_892_958_failed_activate_v40() {
     let path = fixtures_root()
         .join("stylus/regression/sepolia_block_185_892_958_failed_activate_v40.json");
-    if std::env::var("ARB_SPEC_BINARY").is_err() {
-        eprintln!("skipping: set ARB_SPEC_BINARY=path/to/arb-reth");
-        return;
-    }
+    assert!(
+        std::env::var("ARB_SPEC_BINARY").is_ok(),
+        "ARB_SPEC_BINARY must point at a built `arb-reth` binary"
+    );
     if let Err(e) = run_execution_fixture(&path, None) {
         panic!("fixture failed: {e}");
     }

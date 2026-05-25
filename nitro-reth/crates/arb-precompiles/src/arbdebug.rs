@@ -1,18 +1,16 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
+use arb_context::ArbPrecompileCtx;
+use arb_storage::ARBOS_STATE_ADDRESS;
+
 use revm::{
-    precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult},
+    precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
+use std::sync::Arc;
 
-use crate::{
-    interfaces::IArbDebug,
-    storage_slot::{
-        derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, CHAIN_OWNER_SUBSPACE,
-        ROOT_STORAGE_KEY,
-    },
-};
+use crate::{interfaces::IArbDebug, ArbPrecompileError};
 
 /// ArbDebug precompile address (0xff).
 pub const ARBDEBUG_ADDRESS: Address = Address::new([
@@ -27,16 +25,19 @@ const LOG_GAS: u64 = 375;
 const LOG_TOPIC_GAS: u64 = 375;
 const LOG_DATA_GAS: u64 = 8;
 
-pub fn create_arbdebug_precompile() -> DynPrecompile {
-    DynPrecompile::new_stateful(PrecompileId::custom("arbdebug"), handler)
+pub fn create_arbdebug_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbdebug"), move |input| {
+        handler(input, &ctx)
+    })
 }
 
-fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+    let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    if !crate::allow_debug_precompiles() {
+    if !ctx.block.allow_debug_precompiles {
         return crate::burn_all_revert(gas_limit);
     }
-    crate::init_precompile_gas(input.data.len());
+    crate::init_precompile_gas(&mut gas_used, input.data.len());
 
     let call = match IArbDebug::ArbDebugCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -46,19 +47,24 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     use IArbDebug::ArbDebugCalls;
     let input_len = input.data.len();
     let result = match call {
-        ArbDebugCalls::becomeChainOwner(_) => handle_become_chain_owner(&mut input),
+        ArbDebugCalls::becomeChainOwner(_) => {
+            handle_become_chain_owner(&mut input, &mut gas_used, ctx)
+        }
         ArbDebugCalls::events(c) => handle_events(&mut input, c.flag, c.value),
-        ArbDebugCalls::eventsView(_) => handle_events_view(&mut input),
+        ArbDebugCalls::eventsView(_) => handle_events_view(&mut input, ctx, gas_used),
         ArbDebugCalls::customRevert(c) => {
-            crate::init_precompile_gas_pure(input_len);
-            handle_custom_revert(c.number, gas_limit)
+            gas_used = 0;
+            crate::init_precompile_gas_pure(&mut gas_used, input_len);
+            handle_custom_revert(&mut gas_used, c.number, gas_limit)
         }
         ArbDebugCalls::legacyError(_) => {
-            crate::init_precompile_gas_pure(input_len);
-            Err(PrecompileError::other("example legacy error"))
+            gas_used = 0;
+            crate::init_precompile_gas_pure(&mut gas_used, input_len);
+            Err(ArbPrecompileError::empty_revert(gas_used).into())
         }
         ArbDebugCalls::panic(_) => {
             if let Some(r) = crate::check_method_version(
+                ctx,
                 gas_limit,
                 arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
                 0,
@@ -68,45 +74,52 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             panic!("called ArbDebug's debug-only Panic method")
         }
         ArbDebugCalls::overwriteContractCode(c) => {
-            handle_overwrite_contract_code(&mut input, c.target, c.newCode)
+            handle_overwrite_contract_code(&mut input, &mut gas_used, c.target, c.newCode)
         }
     };
 
-    crate::gas_check(gas_limit, result)
+    crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
-fn handle_become_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_become_chain_owner(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let caller = input.caller;
     let gas_limit = input.gas;
 
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
-    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
-    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
-    let addr_hash = B256::left_padding_from(caller.as_slice());
-    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let internals = input.internals_mut();
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
+        .map_err(ArbPrecompileError::fatal)?;
 
-    let existing = sload(input, member_slot)?;
-    let gas_used = if existing == U256::ZERO {
-        let size_slot = map_slot(set_key.as_slice(), 0);
-        let size = sload(input, size_slot)?;
-        let new_size = u64::try_from(size).unwrap_or(0) + 1;
+    let was_member = arb_state
+        .chain_owners
+        .is_member(internals, caller)
+        .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
 
-        let new_pos_slot = map_slot(set_key.as_slice(), new_size);
-        sstore(input, new_pos_slot, U256::from_be_slice(caller.as_slice()))?;
-        sstore(input, member_slot, U256::from(new_size))?;
-        sstore(input, size_slot, U256::from(new_size))?;
-
+    let gas_cost = if !was_member {
+        arb_state
+            .chain_owners
+            .add(internals, caller)
+            .map_err(ArbPrecompileError::fatal)?;
+        crate::charge_precompile_gas(gas_used, SLOAD_GAS + 3 * SSTORE_GAS);
         4 * SLOAD_GAS + 3 * SSTORE_GAS
     } else {
+        crate::charge_precompile_gas(gas_used, SLOAD_GAS);
         2 * SLOAD_GAS
     };
 
     Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
+        gas_cost.min(gas_limit),
         Vec::new().into(),
     ))
 }
@@ -120,7 +133,7 @@ fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> Pr
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     emit_basic_event(input, !flag, value);
     emit_mixed_event(input, flag, !flag, value, ARBDEBUG_ADDRESS, caller);
@@ -139,11 +152,15 @@ fn handle_events(input: &mut PrecompileInput<'_>, flag: bool, value: B256) -> Pr
     Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
 }
 
-fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_events_view(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    gas_used: u64,
+) -> PrecompileResult {
     // v < 11: view-method log writes are permitted; emit and succeed.
     // v >= 11: framework rejects with ErrWriteProtection.
-    if crate::get_arbos_version() >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
-        return Err(PrecompileError::other("cannot emit logs in a view method"));
+    if ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_11 {
+        return Err(ArbPrecompileError::empty_revert(gas_used).into());
     }
 
     let gas_limit = input.gas;
@@ -153,7 +170,7 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     input
         .internals_mut()
         .load_account(ARBOS_STATE_ADDRESS)
-        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        .map_err(ArbPrecompileError::fatal)?;
 
     let value = B256::ZERO;
     let flag = true;
@@ -171,32 +188,14 @@ fn handle_events_view(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_custom_revert(number: u64, gas_limit: u64) -> PrecompileResult {
+fn handle_custom_revert(gas_used: &mut u64, number: u64, gas_limit: u64) -> PrecompileResult {
     let payload = IArbDebug::Custom {
         _0: number,
         _1: "This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\".to_string(),
         _2: true,
     }
     .abi_encode();
-    crate::sol_error_revert(payload, gas_limit)
-}
-
-fn sload(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, PrecompileError> {
-    let v = input
-        .internals_mut()
-        .sload(ARBOS_STATE_ADDRESS, slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?;
-    crate::charge_precompile_gas(SLOAD_GAS);
-    Ok(v.data)
-}
-
-fn sstore(input: &mut PrecompileInput<'_>, slot: U256, value: U256) -> Result<(), PrecompileError> {
-    input
-        .internals_mut()
-        .sstore(ARBOS_STATE_ADDRESS, slot, value)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
-    crate::charge_precompile_gas(SSTORE_GAS);
-    Ok(())
+    crate::sol_error_revert(gas_used, payload, gas_limit)
 }
 
 fn emit_basic_event(input: &mut PrecompileInput<'_>, flag: bool, value: B256) {
@@ -218,6 +217,7 @@ fn emit_basic_event(input: &mut PrecompileInput<'_>, flag: bool, value: B256) {
 /// previous code, without any code-size or EIP-3541 checks (debug-only).
 fn handle_overwrite_contract_code(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     target: Address,
     new_code: Bytes,
 ) -> PrecompileResult {
@@ -229,12 +229,12 @@ fn handle_overwrite_contract_code(
             .code()
             .map(|bc| bc.original_byte_slice().to_vec())
             .unwrap_or_default(),
-        Err(e) => return Err(PrecompileError::other(format!("load_account_code: {e:?}"))),
+        Err(e) => return Err(ArbPrecompileError::fatal(e).into()),
     };
 
     let bytecode = revm::bytecode::Bytecode::new_raw(new_code.clone());
     if let Err(e) = input.internals_mut().set_code(target, bytecode) {
-        return Err(PrecompileError::other(format!("set_code: {e:?}")));
+        return Err(ArbPrecompileError::fatal(e).into());
     }
 
     // ABI-encode `bytes memory oldCode`: offset(0x20) | length(N) | data padded.
@@ -247,9 +247,11 @@ fn handle_overwrite_contract_code(
     out.resize(64 + padded_len, 0);
 
     let result_words = (out.len() as u64).div_ceil(32);
-    crate::charge_precompile_gas(COPY_GAS.saturating_mul(result_words));
-    let gas_used = crate::get_precompile_gas().min(gas_limit);
-    Ok(PrecompileOutput::new(gas_used, out.into()))
+    crate::charge_precompile_gas(gas_used, COPY_GAS.saturating_mul(result_words));
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        out.into(),
+    ))
 }
 
 fn emit_mixed_event(

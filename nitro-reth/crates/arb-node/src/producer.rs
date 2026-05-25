@@ -33,7 +33,7 @@ use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
 
-use arb_evm::config::{arbos_version_from_mix_hash, ArbEvmConfig};
+use arb_evm::config::{arbos_version_from_mix_hash, l1_block_number_from_mix_hash, ArbEvmConfig};
 use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
@@ -82,6 +82,51 @@ fn max_inflight() -> usize {
     })
 }
 
+/// Fixed-interval flush scheduler with an EMA of commit latency tracked for
+/// observability. The interval is set at construction and does not change.
+pub struct FlushScheduler {
+    interval: u64,
+    ema_commit_latency_ms: u64,
+}
+
+impl FlushScheduler {
+    pub fn new(interval: u64) -> Self {
+        Self {
+            interval,
+            ema_commit_latency_ms: 0,
+        }
+    }
+
+    pub fn should_flush(&self, since_last: u64) -> bool {
+        since_last >= self.interval
+    }
+
+    pub fn observe(&mut self, commit_latency_ms: u64) {
+        self.ema_commit_latency_ms = (self.ema_commit_latency_ms * 7 + commit_latency_ms * 3) / 10;
+    }
+
+    pub fn current_interval(&self) -> u64 {
+        self.interval
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn read_dirty_pages_mb() -> Option<u64> {
+    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("Dirty:") {
+            let kb: u64 = rest.trim().trim_end_matches(" kB").trim().parse().ok()?;
+            return Some(kb / 1024);
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_dirty_pages_mb() -> Option<u64> {
+    None
+}
+
 /// Block producer using reth's save_blocks(Full) for persistence.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
@@ -90,11 +135,11 @@ pub struct ArbBlockProducer<Provider> {
     in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
     head_block_num: AtomicU64,
     blocks_since_flush: AtomicU64,
-    flush_interval: u64,
+    scheduler: Mutex<FlushScheduler>,
     accumulated_trie_input: Mutex<Arc<TrieInputSorted>>,
     flushing_trie_input: Mutex<Option<Arc<TrieInputSorted>>>,
     pending_flush: AtomicBool,
-    produce_lock: Mutex<()>,
+    produce_lock: tokio::sync::Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
     /// Finality markers propagated by `nitroexecution_setFinalityData`.
     finality: Mutex<FinalityMarkers>,
@@ -145,11 +190,11 @@ where
             in_memory_state,
             head_block_num: AtomicU64::new(head),
             blocks_since_flush: AtomicU64::new(0),
-            flush_interval,
+            scheduler: Mutex::new(FlushScheduler::new(flush_interval)),
             accumulated_trie_input: Mutex::new(Arc::new(TrieInputSorted::default())),
             flushing_trie_input: Mutex::new(None),
             pending_flush: AtomicBool::new(false),
-            produce_lock: Mutex::new(()),
+            produce_lock: tokio::sync::Mutex::new(()),
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
@@ -308,17 +353,32 @@ where
         self.pending_flush.store(false, Ordering::SeqCst);
         self.invalidate_cached_overlay();
         self.invalidate_cached_prestate();
+        let commit_latency_ms = result.duration.as_millis() as u64;
+        let flush_interval_current = {
+            let mut sched = self.scheduler.lock();
+            sched.observe(commit_latency_ms);
+            sched.current_interval()
+        };
+        let dirty_pages_mb = read_dirty_pages_mb().unwrap_or(0);
+        let chain_len_unflushed = self
+            .in_memory_state
+            .head_state()
+            .map(|s| s.chain().count())
+            .unwrap_or(0) as u64;
         info!(
             target: "block_producer",
             flushed = result.count,
             last_block = result.last_num_hash.number,
-            duration_ms = result.duration.as_millis(),
-            "Background flush completed"
+            mdbx_commit_latency_ms = commit_latency_ms,
+            dirty_pages_mb,
+            flush_interval_current,
+            chain_len_unflushed,
+            "block flush"
         );
         true
     }
 
-    fn apply_backpressure(&self) {
+    async fn apply_backpressure(&self) {
         let chain_len = self
             .in_memory_state
             .head_state()
@@ -332,17 +392,31 @@ where
             self.start_async_flush();
         }
         let start = std::time::Instant::now();
-        let mut last_log = start;
-        while !self.drain_completed_flush() {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            if last_log.elapsed() >= std::time::Duration::from_secs(5) {
-                warn!(
-                    target: "block_producer",
-                    chain_len,
-                    waited_ms = start.elapsed().as_millis() as u64,
-                    "Backpressure: still waiting on flush"
-                );
-                last_log = std::time::Instant::now();
+        let notifier = crate::launcher::flush_notifier();
+        loop {
+            if let Some(n) = notifier.as_ref() {
+                // Register interest before checking, so notifications fired
+                // between the check and the await are not missed.
+                let notified = n.notified();
+                if self.drain_completed_flush() {
+                    break;
+                }
+                let waited = tokio::time::timeout(std::time::Duration::from_secs(30), notified)
+                    .await
+                    .is_ok();
+                if !waited {
+                    warn!(
+                        target: "block_producer",
+                        chain_len,
+                        waited_ms = start.elapsed().as_millis() as u64,
+                        "Backpressure: flush notification timed out, polling once"
+                    );
+                }
+            } else {
+                if self.drain_completed_flush() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
         }
         warn!(
@@ -360,7 +434,6 @@ where
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.drain_completed_flush();
-        self.apply_backpressure();
 
         let head_num = self.head_block_number()?;
         let l2_block_number = head_num + 1;
@@ -372,8 +445,10 @@ where
         let parent_mix_hash = parent_header.mix_hash().unwrap_or_default();
         let parent_arbos_version = arbos_version_from_mix_hash(&parent_mix_hash);
 
-        // Build the EVM environment for this block.
+        // The StartBlock tx carries the reported value verbatim; the EVM sees
+        // the monotonic one.
         let l1_block_number = input.l1_block_number;
+        let block_l1_block_number = monotonic_l1_block_number(l1_block_number, &parent_mix_hash);
         let arbos_version = parent_arbos_version; // May upgrade during StartBlock
 
         // Construct a provisional mix_hash for the EVM environment.
@@ -382,7 +457,8 @@ where
             buf.copy_from_slice(&parent_mix_hash.0[0..8]);
             u64::from_be_bytes(buf)
         };
-        let provisional_mix_hash = compute_mix_hash(send_count, l1_block_number, arbos_version);
+        let provisional_mix_hash =
+            compute_mix_hash(send_count, block_l1_block_number, arbos_version);
 
         // Open state at parent block via block hash.
         let raw_state_provider = self
@@ -503,7 +579,7 @@ where
                     genesis::DEFAULT_CHAIN_OWNER,
                     genesis::ArbOSInit::default(),
                 )
-                .map_err(BlockProducerError::Execution)?;
+                .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
             } else {
                 use arbos::{arbos_state::ArbosState, burn::SystemBurner};
                 info!(
@@ -511,32 +587,35 @@ where
                     initial_l1_base_fee = %init_msg.initial_l1_base_fee,
                     "ArbOS already initialized; overriding L1 price_per_unit from Init message"
                 );
-                let state_ptr = &mut db as *mut _;
-                if let Ok(mut arb_state) =
-                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                {
-                    let _ = arb_state
-                        .l1_pricing_state
-                        .set_price_per_unit(init_msg.initial_l1_base_fee);
-                    // Optional ArbOS upgrade hook for benchmarking: lets the
-                    // bench's subprocess boot at any target ArbOS version
-                    // without needing to schedule an on-chain upgrade.
-                    if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION") {
-                        if let Ok(target_version) = target.parse::<u64>() {
-                            let current = arb_state.arbos_version();
-                            if target_version > current {
-                                if let Err(e) =
-                                    arb_state.upgrade_arbos_version(target_version, true)
-                                {
-                                    info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                                } else {
-                                    info!(
-                                        target: "block_producer",
-                                        from = current,
-                                        to = target_version,
-                                        "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
-                                    );
-                                }
+                // SAFETY: `state_ptr` points at the local `db` owned by
+                // this scope; reads through it are sequential and the
+                // `&mut *state_ptr` re-borrows are dropped at each call
+                // site before the next one, so the type-level aliasing
+                // does not overlap at runtime.
+                let state_ptr: *mut _ = &mut db;
+                let mut arb_state =
+                    ArbosState::open(unsafe { &mut *state_ptr }, SystemBurner::new(None, false))
+                        .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
+                let _ = arb_state
+                    .l1_pricing_state
+                    .set_price_per_unit(unsafe { &mut *state_ptr }, init_msg.initial_l1_base_fee);
+                if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION") {
+                    if let Ok(target_version) = target.parse::<u64>() {
+                        let current = arb_state.arbos_version();
+                        if target_version > current {
+                            if let Err(e) = arb_state.upgrade_arbos_version(
+                                unsafe { &mut *state_ptr },
+                                target_version,
+                                true,
+                            ) {
+                                info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
+                            } else {
+                                info!(
+                                    target: "block_producer",
+                                    from = current,
+                                    to = target_version,
+                                    "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
+                                );
                             }
                         }
                     }
@@ -569,38 +648,53 @@ where
             .block_executor_factory()
             .create_arb_executor(evm, exec_ctx, chain_id);
         executor.arb_ctx.l2_block_number = l2_block_number;
-        executor.arb_ctx.l1_block_number = l1_block_number;
+        executor.arb_ctx.l1_block_number = block_l1_block_number;
 
-        // Populate L2 block hash cache for arbBlockHash().
-        {
+        // 256-ancestor populate only fires on a cold cache.
+        let l2_hash_entries = {
+            let mut entries = Vec::new();
             let parent_num = l2_block_number.saturating_sub(1);
-            arb_precompiles::set_l2_block_hash(parent_num, parent_header.hash());
-
-            // If cache is mostly empty (first block or after restart), do a full populate.
-            if arb_precompiles::get_l2_block_hash(parent_num.saturating_sub(1)).is_none()
-                && parent_num > 1
-            {
+            entries.push((parent_num, parent_header.hash()));
+            let cache_cold = parent_num > 1
+                && self
+                    .evm_config
+                    .executor_factory
+                    .arb_evm_factory()
+                    .chain_caches()
+                    .l2_block_hashes
+                    .lock()
+                    .get(&parent_num.saturating_sub(1))
+                    .is_none();
+            if cache_cold {
                 let mut hash = parent_header.parent_hash();
                 for i in 2..=256u64 {
-                    let n = l2_block_number.checked_sub(i);
-                    if let Some(n) = n {
-                        arb_precompiles::set_l2_block_hash(n, hash);
-                        match self
-                            .provider
-                            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(n))
-                        {
-                            Ok(Some(h)) => hash = h.parent_hash(),
-                            _ => break,
-                        }
+                    let Some(n) = l2_block_number.checked_sub(i) else {
+                        break;
+                    };
+                    entries.push((n, hash));
+                    match self
+                        .provider
+                        .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(n))
+                    {
+                        Ok(Some(h)) => hash = h.parent_hash(),
+                        _ => break,
                     }
                 }
             }
-        }
+            entries
+        };
 
         // Apply pre-execution changes (loads ArbOS state, fee accounts, block hashes).
         executor
             .apply_pre_execution_changes()
             .map_err(|e| BlockProducerError::Execution(format!("pre-exec: {e}")))?;
+
+        for (l2_num, hash) in l2_hash_entries {
+            executor
+                .precompile_ctx
+                .block
+                .cache_l2_block_hash(l2_num, hash);
+        }
 
         let mut all_txs: Vec<ArbTransactionSigned> = Vec::new();
 
@@ -1043,9 +1137,9 @@ where
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
-        // Start async flush when buffer threshold reached (non-blocking).
         let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
-        if since_flush >= self.flush_interval && !self.pending_flush.load(Ordering::SeqCst) {
+        let should_flush = self.scheduler.lock().should_flush(since_flush);
+        if should_flush && !self.pending_flush.load(Ordering::SeqCst) {
             self.start_async_flush();
         }
 
@@ -1106,16 +1200,6 @@ where
             "Started async flush"
         );
     }
-
-    /// Produce a minimal block for messages with no transactions.
-    #[allow(dead_code)]
-    fn produce_empty_block(
-        &self,
-        input: &BlockProductionInput,
-    ) -> Result<ProducedBlock, BlockProducerError> {
-        // Empty blocks still need StartBlock execution for ArbOS state updates.
-        self.produce_block_with_execution(input, vec![])
-    }
 }
 
 #[async_trait::async_trait]
@@ -1149,7 +1233,7 @@ where
         msg_idx: u64,
         input: BlockProductionInput,
     ) -> Result<ProducedBlock, BlockProducerError> {
-        let _lock = self.produce_lock.lock();
+        let _lock = self.produce_lock.lock().await;
 
         // Validate that this message is the next expected one.
         let head_num = self.head_block_number()?;
@@ -1186,11 +1270,12 @@ where
             "Parsed L1 message"
         );
 
+        self.apply_backpressure().await;
         self.produce_block_with_execution(&input, parsed_txs)
     }
 
     async fn reset_to_block(&self, target_block_number: u64) -> Result<(), BlockProducerError> {
-        let _lock = self.produce_lock.lock();
+        let _lock = self.produce_lock.lock().await;
         let current = self.head_block_num.load(Ordering::SeqCst);
         if target_block_number > current {
             return Err(BlockProducerError::Unexpected(format!(
@@ -1371,13 +1456,14 @@ where
     Ok(())
 }
 
-/// Construct a mix_hash from send_count, l1_block_number, and arbos_version.
 fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
-    let mut bytes = [0u8; 32];
-    bytes[0..8].copy_from_slice(&send_count.to_be_bytes());
-    bytes[8..16].copy_from_slice(&l1_block_number.to_be_bytes());
-    bytes[16..24].copy_from_slice(&arbos_version.to_be_bytes());
-    B256::from(bytes)
+    arbos::header::compute_arbos_mixhash(send_count, l1_block_number, arbos_version, false)
+}
+
+/// L1 block number for the `NUMBER` opcode: monotonic, so a reported value
+/// below the parent's (recovered from its mix_hash) is clamped up to it.
+fn monotonic_l1_block_number(reported: u64, parent_mix_hash: &B256) -> u64 {
+    reported.max(l1_block_number_from_mix_hash(parent_mix_hash))
 }
 
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
@@ -1547,5 +1633,22 @@ fn augment_bundle_from_cache(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arbos::header::compute_arbos_mixhash;
+
+    #[test]
+    fn l1_block_number_clamps_to_parent() {
+        let parent = compute_arbos_mixhash(0, 10_538_022, 51, false);
+        // A lower sequencer-reported value is clamped up to the parent's.
+        assert_eq!(monotonic_l1_block_number(10_537_967, &parent), 10_538_022);
+        // A higher value advances normally.
+        assert_eq!(monotonic_l1_block_number(10_538_099, &parent), 10_538_099);
+        // Equal stays put.
+        assert_eq!(monotonic_l1_block_number(10_538_022, &parent), 10_538_022);
     }
 }

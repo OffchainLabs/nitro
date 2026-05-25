@@ -1,13 +1,16 @@
 use std::cell::RefCell;
 
 use alloy_primitives::{address, Address, U256};
-use arbos::util::{burn_balance, mint_balance, transfer_balance};
+use arbos::util::{burn_balance, mint_balance, transfer_balance, BalanceError};
+
+const fn assert_send_sync_static<T: Send + Sync + 'static>() {}
+const _: () = assert_send_sync_static::<BalanceError>();
 
 type TransferLog = RefCell<Vec<(Option<Address>, Option<Address>, U256)>>;
 
 fn record(
     log: &TransferLog,
-) -> impl FnMut(Option<&Address>, Option<&Address>, U256) -> Result<(), ()> + '_ {
+) -> impl FnMut(Option<&Address>, Option<&Address>, U256) -> Result<(), BalanceError> + '_ {
     move |from, to, amount| {
         log.borrow_mut().push((from.copied(), to.copied(), amount));
         Ok(())
@@ -41,11 +44,21 @@ fn burn_passes_none_to() {
 
 #[test]
 fn transfer_propagates_state_fn_error() {
+    let account = address!("AAAA000000000000000000000000000000000000");
     let result = transfer_balance(
-        Some(&address!("AAAA000000000000000000000000000000000000")),
+        Some(&account),
         Some(&address!("BBBB000000000000000000000000000000000000")),
         U256::from(1u64),
-        |_, _, _| Err(()),
+        |_, _, amount| {
+            Err(BalanceError::InsufficientBalance {
+                account,
+                available: U256::ZERO,
+                requested: amount,
+            })
+        },
     );
-    assert!(result.is_err());
+    assert!(matches!(
+        result,
+        Err(BalanceError::InsufficientBalance { .. })
+    ));
 }

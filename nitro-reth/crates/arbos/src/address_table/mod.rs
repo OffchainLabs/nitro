@@ -1,26 +1,29 @@
 use alloy_primitives::{Address, B256, U256};
-use alloy_rlp::{Decodable, Encodable};
+use alloy_rlp::{Decodable, Encodable, Header};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
+
+mod error;
+pub use error::AddressTableError;
 
 /// A mapping between addresses and compact integer indices.
 ///
 /// Allows compressing addresses to small integers for more efficient on-chain encoding.
 /// Slot 0 = number of items, slots 1..N = address hashes.
 /// Sub-storage at key [] maps address_hash → 1-based index.
-pub struct AddressTable<D> {
-    backing_storage: Storage<D>,
-    by_address: Storage<D>,
-    num_items: StorageBackedUint64<D>,
+pub struct AddressTable<'a, D> {
+    backing_storage: Storage<'a, D>,
+    by_address: Storage<'a, D>,
+    num_items: StorageBackedUint64,
 }
 
-pub fn initialize_address_table<D: Database>(_sto: &Storage<D>) {
+pub fn initialize_address_table<D: Database>(_sto: &Storage<'_, D>) {
     // no-op
 }
 
-pub fn open_address_table<D: Database>(sto: Storage<D>) -> AddressTable<D> {
-    let num_items = StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), 0);
+pub fn open_address_table<D>(sto: Storage<'_, D>) -> AddressTable<'_, D> {
+    let num_items = StorageBackedUint64::new(sto.base_key(), 0);
     let by_address = sto.open_sub_storage(&[]);
     AddressTable {
         backing_storage: sto,
@@ -29,31 +32,39 @@ pub fn open_address_table<D: Database>(sto: Storage<D>) -> AddressTable<D> {
     }
 }
 
-impl<D: Database> AddressTable<D> {
-    pub fn register(&self, addr: Address) -> Result<u64, ()> {
+impl<D> AddressTable<'_, D> {
+    /// Registers `addr` if not already present and returns its 0-based index
+    /// together with a flag indicating whether the address was already
+    /// registered.
+    pub fn register<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(u64, bool), AddressTableError> {
         let addr_hash = address_to_hash(addr);
-        let rev = self.by_address.get(addr_hash)?;
+        let rev = self.by_address_get(backend, addr_hash)?;
 
         if rev != B256::ZERO {
-            return Ok(U256::from_be_bytes(rev.0).to::<u64>() - 1);
+            return Ok((U256::from_be_bytes(rev.0).to::<u64>() - 1, true));
         }
 
-        // Address isn't in the table, add it
-        let current = self.num_items.get()?;
+        let current = self.num_items.get(backend)?;
         let new_num_items = current + 1;
-        self.num_items.set(new_num_items)?;
+        self.num_items.set(backend, new_num_items)?;
 
-        self.backing_storage
-            .set_by_uint64(new_num_items, addr_hash)?;
-        self.by_address
-            .set(addr_hash, uint_to_hash(new_num_items))?;
+        self.backing_set_by_uint64(backend, new_num_items, addr_hash)?;
+        self.by_address_set(backend, addr_hash, uint_to_hash(new_num_items))?;
 
-        Ok(new_num_items - 1)
+        Ok((new_num_items - 1, false))
     }
 
-    pub fn lookup(&self, addr: Address) -> Result<(u64, bool), ()> {
+    pub fn lookup<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<(u64, bool), AddressTableError> {
         let addr_hash = address_to_hash(addr);
-        let res_hash = self.by_address.get(addr_hash)?;
+        let res_hash = self.by_address_get(backend, addr_hash)?;
         let res = U256::from_be_bytes(res_hash.0).to::<u64>();
 
         if res == 0 {
@@ -63,29 +74,41 @@ impl<D: Database> AddressTable<D> {
         }
     }
 
-    pub fn address_exists(&self, addr: Address) -> Result<bool, ()> {
-        let (_, exists) = self.lookup(addr)?;
+    pub fn address_exists<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<bool, AddressTableError> {
+        let (_, exists) = self.lookup(backend, addr)?;
         Ok(exists)
     }
 
-    pub fn size(&self) -> Result<u64, ()> {
-        self.num_items.get()
+    pub fn size<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, AddressTableError> {
+        Ok(self.num_items.get(backend)?)
     }
 
-    pub fn lookup_index(&self, index: u64) -> Result<Option<Address>, ()> {
-        let items = self.num_items.get()?;
+    pub fn lookup_index<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        index: u64,
+    ) -> Result<Option<Address>, AddressTableError> {
+        let items = self.num_items.get(backend)?;
         if index >= items {
             return Ok(None);
         }
-        let value = self.backing_storage.get_by_uint64(index + 1)?;
+        let value = self.backing_get_by_uint64(backend, index + 1)?;
         let mut addr_bytes = [0u8; 20];
         addr_bytes.copy_from_slice(&value.0[12..32]);
         Ok(Some(Address::from(addr_bytes)))
     }
 
     /// Compress an address into an RLP-encoded index or raw address bytes.
-    pub fn compress(&self, addr: Address) -> Result<Vec<u8>, ()> {
-        let (index, exists) = self.lookup(addr)?;
+    pub fn compress<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        addr: Address,
+    ) -> Result<Vec<u8>, AddressTableError> {
+        let (index, exists) = self.lookup(backend, addr)?;
         if exists {
             let mut buf = Vec::new();
             index.encode(&mut buf);
@@ -97,26 +120,99 @@ impl<D: Database> AddressTable<D> {
         }
     }
 
-    /// Decompress RLP-encoded data back to an address.
-    /// Returns (address, number_of_bytes_read).
-    pub fn decompress(&self, buf: &[u8]) -> Result<(Address, u64), ()> {
-        // Try decoding as bytes first
-        let mut cursor = buf;
-        let input = <Vec<u8> as Decodable>::decode(&mut cursor).map_err(|_| ())?;
-        let bytes_read = (buf.len() - cursor.len()) as u64;
-
-        if input.len() == 20 {
-            let mut addr_bytes = [0u8; 20];
-            addr_bytes.copy_from_slice(&input);
-            Ok((Address::from(addr_bytes), bytes_read))
-        } else {
-            // Re-decode as u64 index
-            let mut cursor = buf;
-            let index = u64::decode(&mut cursor).map_err(|_| ())?;
-            let bytes_read = (buf.len() - cursor.len()) as u64;
-            let addr = self.lookup_index(index)?.ok_or(())?;
-            Ok((addr, bytes_read))
+    /// Decompress RLP-encoded data back to an address. Returns the
+    /// resolved address, the number of bytes consumed, and whether the
+    /// encoding was a raw 20-byte address (vs. a table index).
+    pub fn decompress<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        buf: &[u8],
+    ) -> Result<(Address, u64, bool), AddressTableError> {
+        if buf.is_empty() {
+            return Err(AddressTableError::InvalidEncoding);
         }
+        let mut header_cursor = buf;
+        let header =
+            Header::decode(&mut header_cursor).map_err(|_| AddressTableError::InvalidEncoding)?;
+        if header.list {
+            return Err(AddressTableError::InvalidEncoding);
+        }
+
+        if header.payload_length == 20 {
+            if header_cursor.len() < 20 {
+                return Err(AddressTableError::InvalidEncoding);
+            }
+            let mut addr_bytes = [0u8; 20];
+            addr_bytes.copy_from_slice(&header_cursor[..20]);
+            let consumed = buf.len() - header_cursor.len() + 20;
+            Ok((Address::from(addr_bytes), consumed as u64, true))
+        } else {
+            let mut cursor = buf;
+            let index = u64::decode(&mut cursor).map_err(|_| AddressTableError::InvalidEncoding)?;
+            let bytes_read = (buf.len() - cursor.len()) as u64;
+            let addr = self
+                .lookup_index(backend, index)?
+                .ok_or(AddressTableError::IndexOutOfRange(index))?;
+            Ok((addr, bytes_read, false))
+        }
+    }
+
+    fn by_address_get<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        key: B256,
+    ) -> Result<B256, AddressTableError> {
+        let slot = self.by_address.slot_for_key(key);
+        let value = backend
+            .sload_system(self.by_address.account(), slot)
+            .map_err(Into::into)?;
+        Ok(B256::from(value.to_be_bytes::<32>()))
+    }
+
+    fn by_address_set<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        key: B256,
+        value: B256,
+    ) -> Result<(), AddressTableError> {
+        let slot = self.by_address.slot_for_key(key);
+        backend
+            .sstore(
+                self.by_address.account(),
+                slot,
+                U256::from_be_bytes(value.0),
+            )
+            .map_err(Into::into)?;
+        Ok(())
+    }
+
+    fn backing_get_by_uint64<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+        offset: u64,
+    ) -> Result<B256, AddressTableError> {
+        let slot = self.backing_storage.new_slot(offset);
+        let value = backend
+            .sload_system(self.backing_storage.account(), slot)
+            .map_err(Into::into)?;
+        Ok(B256::from(value.to_be_bytes::<32>()))
+    }
+
+    fn backing_set_by_uint64<B: StorageBackend>(
+        &self,
+        backend: &mut B,
+        offset: u64,
+        value: B256,
+    ) -> Result<(), AddressTableError> {
+        let slot = self.backing_storage.new_slot(offset);
+        backend
+            .sstore(
+                self.backing_storage.account(),
+                slot,
+                U256::from_be_bytes(value.0),
+            )
+            .map_err(Into::into)?;
+        Ok(())
     }
 }
 

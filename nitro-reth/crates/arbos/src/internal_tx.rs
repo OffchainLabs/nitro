@@ -1,15 +1,57 @@
 use alloy_primitives::{Address, B256, U256};
+use arb_storage::{StorageBackend, StorageError};
 
 use arb_chainspec::arbos_version;
 
 use crate::{
-    arbos_state::ArbosState,
+    arbos_state::{ArbosState, ArbosStateError},
     arbos_types::{legacy_cost_for_stats, BatchDataStats},
+    blockhash::BlockhashesError,
     burn::Burner,
+    util::BalanceError,
 };
 
 /// Standard Ethereum base transaction gas.
 const TX_GAS: u64 = 21_000;
+
+/// Errors raised while decoding or applying an ArbOS internal transaction.
+#[derive(thiserror::Error, Debug)]
+pub enum InternalTxDecodeError {
+    /// The raw calldata was shorter than the ABI layout requires.
+    #[error("internal tx data too short: expected at least {expected} bytes, got {got}")]
+    Length {
+        /// Minimum number of bytes the ABI expects.
+        expected: usize,
+        /// Number of bytes actually supplied.
+        got: usize,
+    },
+
+    /// A `uint256` field did not fit in `u64`.
+    #[error("internal tx field `{field}` does not fit in u64")]
+    U256Overflow {
+        /// Name of the offending ABI field.
+        field: &'static str,
+    },
+
+    /// The 4-byte selector did not match any known internal tx method.
+    #[error("unknown internal tx selector: {selector:02x?}")]
+    UnknownSelector {
+        /// The unrecognized 4-byte selector.
+        selector: [u8; 4],
+    },
+
+    /// Reading the L1 block number from the ring buffer failed.
+    #[error(transparent)]
+    Blockhashes(#[from] BlockhashesError),
+
+    /// An ArbOS upgrade step failed (e.g. unsupported scheduled version).
+    #[error(transparent)]
+    ArbosState(#[from] ArbosStateError),
+
+    /// A bare storage failure surfaced from a typed accessor.
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+}
 
 // ---------------------------------------------------------------------------
 // Method selectors (keccak256 of ABI signatures)
@@ -203,12 +245,13 @@ pub fn encode_batch_posting_report_v2(
 // ---------------------------------------------------------------------------
 
 /// Decode startBlock data from raw internal tx bytes.
-pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, String> {
-    if data.len() < 4 + 32 * 4 {
-        return Err(format!(
-            "start block data too short: expected >= 132, got {}",
-            data.len()
-        ));
+pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, InternalTxDecodeError> {
+    const EXPECTED: usize = 4 + 32 * 4;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
     }
     let args = &data[4..];
     let l1_block_number = u256_to_u64(&args[32..64], "l1_block_number")?;
@@ -222,19 +265,22 @@ pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, String> {
     })
 }
 
-fn u256_to_u64(slice: &[u8], field: &str) -> Result<u64, String> {
+fn u256_to_u64(slice: &[u8], field: &'static str) -> Result<u64, InternalTxDecodeError> {
     U256::from_be_slice(slice)
         .try_into()
-        .map_err(|_| format!("{field} does not fit in u64"))
+        .map_err(|_| InternalTxDecodeError::U256Overflow { field })
 }
 
-fn decode_batch_posting_report(data: &[u8]) -> Result<BatchPostingReportData, String> {
+fn decode_batch_posting_report(
+    data: &[u8],
+) -> Result<BatchPostingReportData, InternalTxDecodeError> {
     // 5 ABI words: uint256, address, uint64, uint64, uint256
-    if data.len() < 4 + 32 * 5 {
-        return Err(format!(
-            "batch posting report data too short: expected >= 164, got {}",
-            data.len()
-        ));
+    const EXPECTED: usize = 4 + 32 * 5;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
     }
     let args = &data[4..];
     Ok(BatchPostingReportData {
@@ -245,13 +291,16 @@ fn decode_batch_posting_report(data: &[u8]) -> Result<BatchPostingReportData, St
     })
 }
 
-fn decode_batch_posting_report_v2(data: &[u8]) -> Result<BatchPostingReportV2Data, String> {
+fn decode_batch_posting_report_v2(
+    data: &[u8],
+) -> Result<BatchPostingReportV2Data, InternalTxDecodeError> {
     // 7 ABI words: uint256, address, uint64, uint64, uint64, uint64, uint256
-    if data.len() < 4 + 32 * 7 {
-        return Err(format!(
-            "batch posting report v2 data too short: expected >= 228, got {}",
-            data.len()
-        ));
+    const EXPECTED: usize = 4 + 32 * 7;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
     }
     let args = &data[4..];
     Ok(BatchPostingReportV2Data {
@@ -281,22 +330,24 @@ pub struct InternalTxContext {
 /// - StartBlock: records L1 block hashes, reaps expired retryables, updates L2 pricing, and checks
 ///   for ArbOS upgrades.
 /// - BatchPostingReport (v1 and v2): updates L1 pricing based on batch poster spending.
-pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G>(
+pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G, C>(
+    backend: &mut C,
     data: &[u8],
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     mut transfer_fn: F,
     mut balance_of: G,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     G: FnMut(Address) -> U256,
+    C: StorageBackend,
 {
     if data.len() < 4 {
-        return Err(format!(
-            "internal tx data too short ({} bytes, need at least 4)",
-            data.len()
-        ));
+        return Err(InternalTxDecodeError::Length {
+            expected: 4,
+            got: data.len(),
+        });
     }
 
     let selector: [u8; 4] = data[0..4].try_into().unwrap();
@@ -304,106 +355,109 @@ where
     match selector {
         INTERNAL_TX_START_BLOCK_METHOD_ID => {
             let inputs = decode_start_block_data(data)?;
-            apply_start_block(inputs, state, ctx, &mut transfer_fn, &mut balance_of)
+            apply_start_block(
+                backend,
+                inputs,
+                state,
+                ctx,
+                &mut transfer_fn,
+                &mut balance_of,
+            )
         }
         INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID => {
             let inputs = decode_batch_posting_report(data)?;
-            apply_batch_posting_report(inputs, state, ctx, &mut transfer_fn)
+            apply_batch_posting_report(backend, inputs, state, ctx, &mut transfer_fn)
         }
         INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID => {
             let inputs = decode_batch_posting_report_v2(data)?;
-            apply_batch_posting_report_v2(inputs, state, ctx, &mut transfer_fn)
+            apply_batch_posting_report_v2(backend, inputs, state, ctx, &mut transfer_fn)
         }
-        _ => Err(format!(
-            "unknown internal tx selector: {:02x}{:02x}{:02x}{:02x}",
-            selector[0], selector[1], selector[2], selector[3]
-        )),
+        _ => Err(InternalTxDecodeError::UnknownSelector { selector }),
     }
 }
 
-fn apply_start_block<D: revm::Database, B: Burner, F, G>(
+fn apply_start_block<D: revm::Database, B: Burner, F, G, C>(
+    backend: &mut C,
     inputs: StartBlockData,
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
     balance_of: &mut G,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
     G: FnMut(Address) -> U256,
+    C: StorageBackend,
 {
     let arbos_version = state.arbos_version();
 
     let mut l1_block_number = inputs.l1_block_number;
     let mut time_passed = inputs.time_passed;
 
-    // Before ArbOS v3, incorrectly used the L2 block number as time_passed.
     if arbos_version < arbos_version::ARBOS_VERSION_3 {
         time_passed = inputs.l2_block_number;
     }
 
-    // Before ArbOS v8, incorrectly used L1 block number one too high.
     if arbos_version < arbos_version::ARBOS_VERSION_8 {
         l1_block_number = l1_block_number.saturating_add(1);
     }
 
-    // Record L1 block hashes if L1 block number advanced.
-    let old_l1_block_number = state
-        .blockhashes
-        .l1_block_number()
-        .map_err(|_| "failed to read l1 block number")?;
+    let old_l1_block_number = state.blockhashes.l1_block_number(backend)?;
 
     if l1_block_number > old_l1_block_number {
-        state
-            .blockhashes
-            .record_new_l1_block(l1_block_number - 1, ctx.prev_hash, arbos_version)
-            .map_err(|_| "failed to record L1 block")?;
+        state.blockhashes.record_new_l1_block(
+            backend,
+            l1_block_number - 1,
+            ctx.prev_hash,
+            arbos_version,
+        )?;
     }
 
-    // Try to reap 2 expired retryables.
     let _ = state.retryable_state.try_to_reap_one_retryable(
+        backend,
         ctx.current_time,
         &mut *transfer_fn,
         &mut *balance_of,
     );
     let _ = state.retryable_state.try_to_reap_one_retryable(
+        backend,
         ctx.current_time,
         &mut *transfer_fn,
         &mut *balance_of,
     );
 
-    // Update L2 pricing model.
     let _ = state
         .l2_pricing_state
-        .update_pricing_model(time_passed, arbos_version);
+        .update_pricing_model(backend, time_passed, arbos_version);
 
-    // Check for scheduled ArbOS upgrade.
-    state
-        .upgrade_arbos_version_if_necessary(ctx.current_time)
-        .map_err(|_| "ArbOS upgrade failed (node may be out of date)")?;
+    state.upgrade_arbos_version_if_necessary(backend, ctx.current_time)?;
 
     Ok(())
 }
 
-fn apply_batch_posting_report<D: revm::Database, B: Burner, F>(
+fn apply_batch_posting_report<D: revm::Database, B: Burner, F, C>(
+    backend: &mut C,
     inputs: BatchPostingReportData,
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+    C: StorageBackend,
 {
-    let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
+    let per_batch_gas = state
+        .l1_pricing_state
+        .per_batch_gas_cost(backend)
+        .unwrap_or(0);
 
-    // gasSpent = SaturatingAdd(perBatchGas, SaturatingCast[int64](batchDataGas))
-    // Then SaturatingUCast[uint64](gasSpent) — clamps negative result to 0.
     let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas).unwrap_or(i64::MAX);
     let gas_spent_signed = per_batch_gas.saturating_add(batch_data_gas_i64);
     let gas_spent = gas_spent_signed.max(0) as u64;
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
+        backend,
         inputs.batch_timestamp,
         ctx.current_time,
         inputs.batch_poster,
@@ -417,18 +471,19 @@ where
     Ok(())
 }
 
-fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F>(
+fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F, C>(
+    backend: &mut C,
     inputs: BatchPostingReportV2Data,
-    state: &mut ArbosState<D, B>,
+    state: &mut ArbosState<'_, D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
-) -> Result<(), String>
+) -> Result<(), InternalTxDecodeError>
 where
-    F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+    C: StorageBackend,
 {
     let arbos_version = state.arbos_version();
 
-    // Compute gas from calldata stats (legacy cost model).
     let mut gas_spent = legacy_cost_for_stats(&BatchDataStats {
         length: inputs.batch_calldata_length,
         non_zeros: inputs.batch_calldata_non_zeros,
@@ -436,16 +491,17 @@ where
 
     gas_spent = gas_spent.saturating_add(inputs.batch_extra_gas);
 
-    // Add per-batch gas overhead.
-    let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
+    let per_batch_gas = state
+        .l1_pricing_state
+        .per_batch_gas_cost(backend)
+        .unwrap_or(0);
 
     gas_spent = gas_spent.saturating_add(per_batch_gas.max(0) as u64);
 
-    // Floor gas computation (ArbOS v50+).
     if arbos_version >= arbos_version::ARBOS_VERSION_50 {
         let gas_floor_per_token = state
             .l1_pricing_state
-            .parent_gas_floor_per_token()
+            .parent_gas_floor_per_token(backend)
             .unwrap_or(0);
 
         let total_tokens = inputs
@@ -465,6 +521,7 @@ where
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
+        backend,
         inputs.batch_timestamp,
         ctx.current_time,
         inputs.batch_poster,

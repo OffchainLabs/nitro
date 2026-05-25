@@ -14,4 +14,4 @@ pub use serialization::{
     uint_to_hash,
 };
 pub use tracing_info::{TracingInfo, TracingScenario};
-pub use transfer::{burn_balance, mint_balance, transfer_balance};
+pub use transfer::{burn_balance, mint_balance, transfer_balance, BalanceError};

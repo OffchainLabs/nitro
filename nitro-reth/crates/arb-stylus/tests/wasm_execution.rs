@@ -1,9 +1,16 @@
 //! Additional WASM execution tests covering surfaces not in wavm.rs/codegen.rs:
 //! memory operations, branching ink cost, mutable globals, and trap behaviour.
 
+/// Stack-probe shim for x86_64 test binaries that link wasmer's vm crate,
+/// which references the LLVM `__rust_probestack` intrinsic. Recent
+/// `compiler-builtins` no longer exports it. Empty body is fine in tests:
+/// stack size is bounded and no actual probing is required.
+///
+/// # Safety
+///
+/// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;
@@ -17,7 +24,7 @@ use wasmer::{
 use wasmer_compiler::CompilerConfig;
 
 fn make_store() -> Store {
-    let mut compile = CompileConfig::version(1, true);
+    let mut compile = CompileConfig::version(1, true).expect("version 1 is supported");
     compile.debug.debug_funcs = true;
     compile.debug.debug_info = true;
 

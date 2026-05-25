@@ -10,7 +10,11 @@ doctest = false
 
 [dependencies]
 arb-chainspec = { workspace = true }
+arb-context = { workspace = true }
+arb-math = { workspace = true }
 arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arb-storage-errors = { workspace = true }
 arb-stylus = { workspace = true }
 arbos = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
@@ -26,8 +30,12 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+arb-context = { workspace = true }
+arb-storage-errors = { workspace = true }
 hex = { workspace = true }
+parking_lot = { workspace = true }
 rstest = { workspace = true }
+thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
 
 [lints]

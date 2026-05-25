@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
-use arbos::programs::types::EvmData;
+use arbos::programs::{memory::MemoryModel, types::EvmData};
 use wasmer::{FunctionEnvMut, Global, Memory, MemoryView, Pages, StoreMut, Value};
 
 use crate::{
     config::{CompileConfig, StylusConfig},
-    error::Escape,
+    error::StylusError,
     evm_api::EvmApi,
     ink::Ink,
     meter::{GasMeteredMachine, MachineMeter, MeteredMachine, HOSTIO_INK},
@@ -41,6 +41,10 @@ pub struct WasmEnv<E: EvmApi> {
     pub ink_global: Option<Global>,
     /// WASM global for ink status (set after instantiation).
     pub ink_status_global: Option<Global>,
+    pub pages_open: u16,
+    pub pages_ever: u16,
+    pub free_pages: u16,
+    pub page_gas: u16,
     _phantom: PhantomData<E>,
 }
 
@@ -63,22 +67,45 @@ impl<E: EvmApi> WasmEnv<E> {
             ink_global: None,
             ink_status_global: None,
             evm_return_data_len: 0,
+            pages_open: 0,
+            pages_ever: 0,
+            free_pages: 0,
+            page_gas: 0,
             _phantom: PhantomData,
         }
+    }
+
+    /// Initialise page tracking with the parent call's values and a per-instance
+    /// `MemoryModel` configuration.
+    pub fn set_pages(&mut self, open: u16, ever: u16, free_pages: u16, page_gas: u16) {
+        self.pages_open = open;
+        self.pages_ever = ever;
+        self.free_pages = free_pages;
+        self.page_gas = page_gas;
+    }
+
+    /// Charge for allocating `new_pages`, updating the open/ever counters and
+    /// returning the gas cost.
+    pub fn add_pages_charge(&mut self, new_pages: u16) -> u64 {
+        let model = MemoryModel::new(self.free_pages, self.page_gas);
+        let cost = model.gas_cost(new_pages, self.pages_open, self.pages_ever);
+        self.pages_open = self.pages_open.saturating_add(new_pages);
+        self.pages_ever = self.pages_ever.max(self.pages_open);
+        cost
     }
 
     /// Create a HostioInfo and charge the standard hostio cost plus `ink`.
     pub fn start<'a>(
         env: &'a mut WasmEnvMut<'_, E>,
         ink: Ink,
-    ) -> Result<HostioInfo<'a, E>, Escape> {
+    ) -> Result<HostioInfo<'a, E>, StylusError> {
         let mut info = Self::program(env)?;
         info.buy_ink(HOSTIO_INK.saturating_add(ink))?;
         Ok(info)
     }
 
     /// Create a HostioInfo for accessing host functionality.
-    pub fn program<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
+    pub fn program<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, StylusError> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().expect("WASM memory not initialized");
         let mut info = HostioInfo {
@@ -136,8 +163,6 @@ impl MeterData {
         self.ink_status = status;
     }
 }
-
-unsafe impl Send for MeterData {}
 
 /// Wrapper providing access to host I/O operations during WASM execution.
 ///
@@ -216,7 +241,7 @@ impl<E: EvmApi> MeteredMachine for HostioInfo<'_, E> {
 
     // Override buy_ink to read current value from WASM globals first,
     // then deduct and write back to both globals and MeterData.
-    fn buy_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+    fn buy_ink(&mut self, ink: Ink) -> Result<(), StylusError> {
         // Read current ink from WASM globals (reflects middleware charges).
         let current = if let Some(ref g) = self.env.ink_global {
             if let Value::I64(v) = g.get(&mut self.store) {
@@ -229,13 +254,13 @@ impl<E: EvmApi> MeteredMachine for HostioInfo<'_, E> {
         };
         if current < ink {
             self.set_meter(MachineMeter::Exhausted);
-            return Escape::out_of_ink();
+            return StylusError::out_of_ink();
         }
         self.set_meter(MachineMeter::Ready(current - ink));
         Ok(())
     }
 
-    fn require_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+    fn require_ink(&mut self, ink: Ink) -> Result<(), StylusError> {
         let current = if let Some(ref g) = self.env.ink_global {
             if let Value::I64(v) = g.get(&mut self.store) {
                 Ink(v as u64)
@@ -246,7 +271,7 @@ impl<E: EvmApi> MeteredMachine for HostioInfo<'_, E> {
             self.ink_ready()?
         };
         if current < ink {
-            return Escape::out_of_ink();
+            return StylusError::out_of_ink();
         }
         Ok(())
     }

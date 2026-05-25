@@ -153,7 +153,12 @@ fn gas_backlog_persists_across_block_boundary() {
     )
     .expect("block 1");
 
-    let backlog_after_b1 = s.harness.l2_pricing_state().gas_backlog().unwrap();
+    let state_ptr_b1 = s.harness.state_ptr();
+    let backlog_after_b1 = s
+        .harness
+        .l2_pricing_state()
+        .gas_backlog(unsafe { &mut *state_ptr_b1 })
+        .unwrap();
 
     let tx_b2 = sign_legacy(
         s.chain_id,
@@ -175,7 +180,12 @@ fn gas_backlog_persists_across_block_boundary() {
     )
     .expect("block 2");
 
-    let backlog_after_b2 = s.harness.l2_pricing_state().gas_backlog().unwrap();
+    let state_ptr_b2 = s.harness.state_ptr();
+    let backlog_after_b2 = s
+        .harness
+        .l2_pricing_state()
+        .gas_backlog(unsafe { &mut *state_ptr_b2 })
+        .unwrap();
     let _ = backlog_after_b1;
     let _ = backlog_after_b2;
 }

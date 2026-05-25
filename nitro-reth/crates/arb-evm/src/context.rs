@@ -127,12 +127,23 @@ pub struct ArbitrumExtraData {
     pub activated_wasms: HashMap<B256, ActivatedWasm>,
     /// Recently activated WASM modules (LRU).
     pub recent_wasms: RecentWasms,
-    /// Whether transaction filtering is active.
-    pub arb_tx_filter: bool,
     /// Zombie accounts: addresses that were self-destructed then touched by
     /// a zero-value transfer on pre-Stylus ArbOS (< v30). These must be
     /// preserved as empty accounts during finalization to match canonical behavior.
     pub zombie_accounts: HashSet<Address>,
+}
+
+/// Two activations of the same Stylus module within a single block disagreed
+/// on the set of compilation targets.
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
+#[error("inconsistent WASM targets for module {module_hash}: existing has {existing:?}, requested {requested:?}")]
+pub struct InconsistentWasmTargets {
+    /// Module hash that disagreed.
+    pub module_hash: B256,
+    /// Targets recorded by the previous activation in this block.
+    pub existing: Vec<String>,
+    /// Targets supplied by the current activation request.
+    pub requested: Vec<String>,
 }
 
 impl ArbitrumExtraData {
@@ -146,7 +157,7 @@ impl ArbitrumExtraData {
         module_hash: B256,
         asm: HashMap<String, Vec<u8>>,
         module: Vec<u8>,
-    ) -> Result<(), String> {
+    ) -> Result<(), InconsistentWasmTargets> {
         if let Some(existing) = self.activated_wasms.get(&module_hash) {
             // Validate target consistency: the new activation must have the
             // same set of targets as the prior one.
@@ -155,12 +166,11 @@ impl ArbitrumExtraData {
             if existing_targets.len() != new_targets.len()
                 || !new_targets.iter().all(|t| existing.asm.contains_key(*t))
             {
-                return Err(format!(
-                    "inconsistent WASM targets for module {module_hash}: \
-                     existing has {:?}, new has {:?}",
-                    existing.asm.keys().collect::<Vec<_>>(),
-                    asm.keys().collect::<Vec<_>>(),
-                ));
+                return Err(InconsistentWasmTargets {
+                    module_hash,
+                    existing: existing.asm.keys().cloned().collect(),
+                    requested: asm.keys().cloned().collect(),
+                });
             }
         }
         self.activated_wasms
@@ -226,23 +236,6 @@ impl ArbitrumExtraData {
     pub fn reset_stylus_pages(&mut self) {
         self.open_wasm_pages = 0;
         self.ever_wasm_pages = 0;
-    }
-
-    // --- Transaction filter ---
-
-    /// Mark transaction as filtered (will be excluded at commit).
-    pub fn filter_tx(&mut self) {
-        self.arb_tx_filter = true;
-    }
-
-    /// Clear the transaction filter flag.
-    pub fn clear_tx_filter(&mut self) {
-        self.arb_tx_filter = false;
-    }
-
-    /// Returns whether a transaction is currently filtered.
-    pub fn is_tx_filtered(&self) -> bool {
-        self.arb_tx_filter
     }
 
     // --- Zombie accounts ---

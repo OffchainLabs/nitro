@@ -15,6 +15,11 @@ use crate::{
 
 pub const RPC_URL_ENV: &str = "ARB_SPEC_RPC_URL";
 pub const BINARY_ENV: &str = "ARB_SPEC_BINARY";
+/// When set, the harness panics rather than skipping any binary-driven
+/// fixture. CI sets this together with `--features spec-binary` so a
+/// missing/misnamed binary fails the job loudly instead of silently
+/// pruning coverage.
+pub const REQUIRE_BINARY_ENV: &str = "ARB_SPEC_REQUIRE_BINARY";
 
 pub fn run_fixture(path: &Path) -> Result<(), SpecError> {
     let case = SpecCase::load(path)?;
@@ -65,22 +70,14 @@ pub fn run_execution_dir(dir: &Path) {
     let rpc_url = std::env::var(RPC_URL_ENV).ok();
     let has_binary = std::env::var(BINARY_ENV).is_ok();
     if rpc_url.is_none() && !has_binary {
-        // The dedicated spec-tests workflow opts in to running execution
-        // fixtures by setting ARB_SPEC_REQUIRE_BINARY=1; if it's set and
-        // we got here the workflow is misconfigured, so panic. The generic
-        // workspace test job and local runs without a release binary fall
-        // through to the skip notice.
-        if std::env::var("ARB_SPEC_REQUIRE_BINARY").is_ok() {
-            panic!(
-                "execution fixtures under {} need {RPC_URL_ENV} or {BINARY_ENV} set",
-                dir.display()
-            );
-        }
-        eprintln!(
-            "skipping execution fixtures under {}: set {RPC_URL_ENV} (static node) and/or {BINARY_ENV} (per-fixture genesis)",
+        panic!(
+            "execution fixtures under {} need {RPC_URL_ENV} (static node) or {BINARY_ENV} \
+             (per-fixture genesis) set. Build the release binary with `cargo build --release \
+             -p arb-reth --bin arb-reth` and re-run with \
+             `ARB_SPEC_BINARY=$PWD/target/release/arb-reth cargo test -p arb-spec-tests \
+             --features spec-binary`. See crates/arb-spec-tests/README.md for details.",
             dir.display()
         );
-        return;
     }
     assert!(dir.exists(), "fixture dir missing: {}", dir.display());
     let filter = std::env::var("ARB_SPEC_FILTER").ok();
@@ -175,6 +172,13 @@ struct SpawnedNode {
 
 impl SpawnedNode {
     fn start(fixture: &ExecutionFixture, binary: &Path) -> Result<Self, SpecError> {
+        if !binary.exists() {
+            return Err(SpecError::Action(format!(
+                "{BINARY_ENV} points to {} which does not exist. \
+                 Build with `cargo build --release -p arb-reth --bin arb-reth`.",
+                binary.display()
+            )));
+        }
         let http_port = pick_free_port()?;
         let auth_port = pick_free_port()?;
 
@@ -231,7 +235,9 @@ impl SpawnedNode {
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err))
             .spawn()
-            .map_err(|e| SpecError::Action(format!("spawn arbreth: {e}")))?;
+            .map_err(|e| {
+                SpecError::Action(format!("spawn arb-reth at {}: {e}", binary.display()))
+            })?;
 
         let rpc_url = format!("http://127.0.0.1:{http_port}");
         let timeout_secs: u64 = std::env::var("ARB_SPEC_STARTUP_TIMEOUT")

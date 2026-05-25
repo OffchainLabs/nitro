@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 arb-alloy-consensus = { workspace = true }
 arb-chainspec = { workspace = true }
+arb-math = { workspace = true }
 arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 alloy-eips = { workspace = true }
@@ -23,6 +24,9 @@ cc = "1"
 [dev-dependencies]
 arb-test-utils = { workspace = true }
 proptest = { workspace = true }
+revm-database = { workspace = true }
+revm-database-interface = { workspace = true }
+revm-state = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

@@ -2,17 +2,15 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
-use arb_precompiles::{
-    create_arbfilteredtxmanager_precompile,
-    storage_slot::{
-        derive_subspace_key, map_slot_b256, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
-        ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
-    },
+use arb_precompiles::create_arbfilteredtxmanager_precompile;
+use arb_storage::{
+    layout::{derive_subspace_key, map_slot_b256, ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE},
+    ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 use common::{calldata, decode_u256, PrecompileTest};
 
-fn arbfilteredtxmanager() -> DynPrecompile {
-    create_arbfilteredtxmanager_precompile()
+fn arbfilteredtxmanager(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_arbfilteredtxmanager_precompile(ctx)
 }
 
 fn filterer_member_slot(addr: Address) -> U256 {
@@ -32,7 +30,7 @@ fn filtered_tx_slot(tx_hash: &B256) -> U256 {
 fn precompile_gated_below_v60() {
     let tx = B256::from([0x42; 32]);
     let run = PrecompileTest::new().arbos_version(59).arbos_state().call(
-        &arbfilteredtxmanager(),
+        arbfilteredtxmanager,
         &calldata("isTransactionFiltered(bytes32)", &[tx]),
     );
     let out = run.assert_ok();
@@ -43,7 +41,7 @@ fn precompile_gated_below_v60() {
 fn is_filtered_returns_false_for_unknown_tx() {
     let tx = B256::from([0x33; 32]);
     let run = PrecompileTest::new().arbos_version(60).arbos_state().call(
-        &arbfilteredtxmanager(),
+        arbfilteredtxmanager,
         &calldata("isTransactionFiltered(bytes32)", &[tx]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -61,7 +59,7 @@ fn is_filtered_returns_true_for_known_tx() {
             U256::from(1),
         )
         .call(
-            &arbfilteredtxmanager(),
+            arbfilteredtxmanager,
             &calldata("isTransactionFiltered(bytes32)", &[tx]),
         );
     assert_eq!(decode_u256(run.output()), U256::from(1));
@@ -76,7 +74,7 @@ fn add_rejects_non_filterer_caller() {
         .caller(intruder)
         .arbos_state()
         .call(
-            &arbfilteredtxmanager(),
+            arbfilteredtxmanager,
             &calldata("addFilteredTransaction(bytes32)", &[tx]),
         );
     assert!(run.assert_ok().reverted);
@@ -96,7 +94,7 @@ fn add_succeeds_for_authorized_filterer() {
             U256::from(1),
         )
         .call(
-            &arbfilteredtxmanager(),
+            arbfilteredtxmanager,
             &calldata("addFilteredTransaction(bytes32)", &[tx]),
         );
     run.assert_ok();
@@ -129,7 +127,7 @@ fn nitro_parity_add_delete_round_trip_for_filterer() {
 
     // Add: must succeed, must write the filtered-tx slot.
     let add = base().call(
-        &arbfilteredtxmanager(),
+        arbfilteredtxmanager,
         &calldata("addFilteredTransaction(bytes32)", &[tx_hash]),
     );
     let _ = add.assert_ok();
@@ -142,7 +140,7 @@ fn nitro_parity_add_delete_round_trip_for_filterer() {
     // isTransactionFiltered(tx_hash) after add → true.
     let check = add.continue_into(base(), FILTERED_TX_STATE_ADDRESS);
     let run = check.call(
-        &arbfilteredtxmanager(),
+        arbfilteredtxmanager,
         &calldata("isTransactionFiltered(bytes32)", &[tx_hash]),
     );
     assert_eq!(decode_u256(run.output()), U256::from(1));
@@ -150,7 +148,7 @@ fn nitro_parity_add_delete_round_trip_for_filterer() {
     // Delete: must succeed, must clear the slot.
     let base_after_add = add.continue_into(base(), FILTERED_TX_STATE_ADDRESS);
     let del = base_after_add.call(
-        &arbfilteredtxmanager(),
+        arbfilteredtxmanager,
         &calldata("deleteFilteredTransaction(bytes32)", &[tx_hash]),
     );
     let _ = del.assert_ok();
@@ -163,7 +161,7 @@ fn nitro_parity_add_delete_round_trip_for_filterer() {
     // isTransactionFiltered(tx_hash) after delete → false.
     let check = del.continue_into(base(), FILTERED_TX_STATE_ADDRESS);
     let run = check.call(
-        &arbfilteredtxmanager(),
+        arbfilteredtxmanager,
         &calldata("isTransactionFiltered(bytes32)", &[tx_hash]),
     );
     assert_eq!(decode_u256(run.output()), U256::ZERO);
