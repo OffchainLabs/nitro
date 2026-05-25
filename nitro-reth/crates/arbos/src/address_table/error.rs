@@ -1,7 +1,7 @@
 use arb_storage::StorageError;
 
 /// Errors raised by the address-table storage container.
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum AddressTableError {
     /// Underlying storage failure.
     #[error(transparent)]

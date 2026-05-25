@@ -3,7 +3,7 @@ use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{address_set::AddressSetError, arbos_state::arbos_from_input, burn::SystemBurner};
+use arbos::address_set::AddressSetError;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use IArbOwnerPublic::ArbOwnerPublicCalls as Calls;
     let result = match call {
-        Calls::getNetworkFeeAccount(_) => read_network_fee_account(&mut input),
+        Calls::getNetworkFeeAccount(_) => read_network_fee_account(&mut input, ctx),
         Calls::getInfraFeeAccount(_) => {
             if let Some(r) = crate::check_method_version(
                 ctx,
@@ -59,7 +59,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_brotli_compression_level(&mut input)
+            read_brotli_compression_level(&mut input, ctx)
         }
         Calls::getScheduledUpgrade(_) => {
             if let Some(r) = crate::check_method_version(
@@ -70,10 +70,10 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_scheduled_upgrade(&mut input)
+            handle_scheduled_upgrade(&mut input, ctx)
         }
-        Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, c.addr),
-        Calls::getAllChainOwners(_) => handle_get_all_chain_owners(&mut input),
+        Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, c.addr, ctx),
+        Calls::getAllChainOwners(_) => handle_get_all_chain_owners(&mut input, ctx),
         Calls::rectifyChainOwner(c) => {
             if let Some(r) = crate::check_method_version(
                 ctx,
@@ -83,7 +83,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_rectify_chain_owner(&mut input, &mut gas_used, c.ownerToRectify)
+            handle_rectify_chain_owner(&mut input, &mut gas_used, c.ownerToRectify, ctx)
         }
         Calls::isNativeTokenOwner(c) => {
             if let Some(r) = crate::check_method_version(
@@ -94,7 +94,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_is_native_token_owner(&mut input, c.addr)
+            handle_is_native_token_owner(&mut input, c.addr, ctx)
         }
         Calls::isTransactionFilterer(c) => {
             if let Some(r) = crate::check_method_version(
@@ -105,7 +105,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_is_transaction_filterer(&mut input, c.filterer)
+            handle_is_transaction_filterer(&mut input, c.filterer, ctx)
         }
         Calls::getAllNativeTokenOwners(_) => {
             if let Some(r) = crate::check_method_version(
@@ -116,7 +116,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_get_all_native_token_owners(&mut input)
+            handle_get_all_native_token_owners(&mut input, ctx)
         }
         Calls::getAllTransactionFilterers(_) => {
             if let Some(r) = crate::check_method_version(
@@ -127,7 +127,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_get_all_transaction_filterers(&mut input)
+            handle_get_all_transaction_filterers(&mut input, ctx)
         }
         Calls::getNativeTokenManagementFrom(_) => {
             if let Some(r) = crate::check_method_version(
@@ -138,7 +138,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_native_token_management_from(&mut input)
+            read_native_token_management_from(&mut input, ctx)
         }
         Calls::getTransactionFilteringFrom(_) => {
             if let Some(r) = crate::check_method_version(
@@ -149,7 +149,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_transaction_filtering_from(&mut input)
+            read_transaction_filtering_from(&mut input, ctx)
         }
         Calls::getFilteredFundsRecipient(_) => {
             if let Some(r) = crate::check_method_version(
@@ -160,7 +160,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_filtered_funds_recipient(&mut input)
+            read_filtered_funds_recipient(&mut input, ctx)
         }
         Calls::isCalldataPriceIncreaseEnabled(_) => {
             if let Some(r) = crate::check_method_version(
@@ -171,7 +171,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_is_calldata_price_increase_enabled(&mut input)
+            handle_is_calldata_price_increase_enabled(&mut input, ctx)
         }
         Calls::getParentGasFloorPerToken(_) => {
             if let Some(r) = crate::check_method_version(
@@ -182,7 +182,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_parent_gas_floor_per_token(&mut input)
+            read_parent_gas_floor_per_token(&mut input, ctx)
         }
         Calls::getMaxStylusContractFragments(_) => {
             if let Some(r) = crate::check_method_version(
@@ -193,7 +193,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_max_stylus_fragments(&mut input)
+            handle_max_stylus_fragments(&mut input, ctx)
         }
         Calls::getCollectTips(_) => {
             if let Some(r) = crate::check_method_version(
@@ -204,7 +204,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_get_collect_tips(&mut input, &mut gas_used)
+            handle_get_collect_tips(&mut input, &mut gas_used, ctx)
         }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -225,11 +225,16 @@ fn field_read_output(gas_limit: u64, value: U256) -> PrecompileResult {
     ))
 }
 
-fn read_network_fee_account(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_network_fee_account(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let addr = arb_state
         .network_fee_account(internals)
@@ -244,7 +249,9 @@ fn read_infra_fee_account(
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let addr = if ctx.block.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_6 {
         arb_state
@@ -258,11 +265,16 @@ fn read_infra_fee_account(
     field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
 }
 
-fn read_brotli_compression_level(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_brotli_compression_level(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let value = arb_state
         .brotli_compression_level(internals)
@@ -270,11 +282,16 @@ fn read_brotli_compression_level(input: &mut PrecompileInput<'_>) -> PrecompileR
     field_read_output(gas_limit, U256::from(value))
 }
 
-fn read_native_token_management_from(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_native_token_management_from(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let value = arb_state
         .native_token_management_from_time(internals)
@@ -282,11 +299,16 @@ fn read_native_token_management_from(input: &mut PrecompileInput<'_>) -> Precomp
     field_read_output(gas_limit, U256::from(value))
 }
 
-fn read_transaction_filtering_from(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_transaction_filtering_from(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let value = arb_state
         .transaction_filtering_from_time(internals)
@@ -294,11 +316,16 @@ fn read_transaction_filtering_from(input: &mut PrecompileInput<'_>) -> Precompil
     field_read_output(gas_limit, U256::from(value))
 }
 
-fn read_filtered_funds_recipient(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_filtered_funds_recipient(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let addr = arb_state
         .filtered_funds_recipient(internals)
@@ -306,11 +333,16 @@ fn read_filtered_funds_recipient(input: &mut PrecompileInput<'_>) -> PrecompileR
     field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
 }
 
-fn read_parent_gas_floor_per_token(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn read_parent_gas_floor_per_token(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let value = arb_state
         .l1_pricing_state
@@ -319,11 +351,16 @@ fn read_parent_gas_floor_per_token(input: &mut PrecompileInput<'_>) -> Precompil
     field_read_output(gas_limit, U256::from(value))
 }
 
-fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_scheduled_upgrade(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let (version, timestamp) = arb_state
         .get_scheduled_upgrade(internals)
@@ -339,11 +376,17 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     ))
 }
 
-fn handle_is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_is_chain_owner(
+    input: &mut PrecompileInput<'_>,
+    addr: Address,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let is_owner = arb_state
         .chain_owners
@@ -364,11 +407,14 @@ fn handle_is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> Prec
 fn handle_is_native_token_owner(
     input: &mut PrecompileInput<'_>,
     addr: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let is_member = arb_state
         .native_token_owners
@@ -389,11 +435,14 @@ fn handle_is_native_token_owner(
 fn handle_is_transaction_filterer(
     input: &mut PrecompileInput<'_>,
     addr: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let is_member = arb_state
         .transaction_filterers
@@ -417,27 +466,39 @@ enum AddressSetKind {
     TransactionFilterers,
 }
 
-fn handle_get_all_chain_owners(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    handle_get_all_set_members(input, AddressSetKind::ChainOwners, 256)
+fn handle_get_all_chain_owners(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    handle_get_all_set_members(input, AddressSetKind::ChainOwners, 256, ctx)
 }
 
-fn handle_get_all_native_token_owners(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    handle_get_all_set_members(input, AddressSetKind::NativeTokenOwners, 65_536)
+fn handle_get_all_native_token_owners(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    handle_get_all_set_members(input, AddressSetKind::NativeTokenOwners, 65_536, ctx)
 }
 
-fn handle_get_all_transaction_filterers(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    handle_get_all_set_members(input, AddressSetKind::TransactionFilterers, 65_536)
+fn handle_get_all_transaction_filterers(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    handle_get_all_set_members(input, AddressSetKind::TransactionFilterers, 65_536, ctx)
 }
 
 fn handle_get_all_set_members(
     input: &mut PrecompileInput<'_>,
     kind: AddressSetKind,
     cap: u64,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let set = match kind {
         AddressSetKind::ChainOwners => &arb_state.chain_owners,
@@ -468,12 +529,15 @@ fn handle_rectify_chain_owner(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     addr: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     match arb_state.chain_owners.rectify_mapping(internals, addr) {
@@ -504,11 +568,16 @@ fn handle_rectify_chain_owner(
     ))
 }
 
-fn handle_is_calldata_price_increase_enabled(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_is_calldata_price_increase_enabled(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let enabled = arb_state
         .features
@@ -525,13 +594,18 @@ fn handle_is_calldata_price_increase_enabled(input: &mut PrecompileInput<'_>) ->
     ))
 }
 
-fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_max_stylus_fragments(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
 
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
@@ -552,11 +626,14 @@ fn handle_max_stylus_fragments(input: &mut PrecompileInput<'_>) -> PrecompileRes
 fn handle_get_collect_tips(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let value = arb_state
         .collect_tips(internals)

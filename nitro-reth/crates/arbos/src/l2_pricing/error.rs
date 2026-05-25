@@ -1,7 +1,7 @@
 use arb_storage::StorageError;
 
 /// Errors raised by the L2 pricing subsystem.
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum L2PricingError {
     /// Underlying storage failure.
     #[error(transparent)]

@@ -2,7 +2,9 @@ use alloy_primitives::{Address, U256};
 use revm::Database;
 
 use crate::address_set::AddressSet;
-use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackend};
+use arb_storage::{
+    Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackend, SystemStateBackend,
+};
 
 use super::L1PricingError;
 
@@ -76,7 +78,7 @@ impl<'a, D> BatchPostersTable<'a, D> {
         open_batch_posters_table(l1_pricing_storage)
     }
 
-    pub fn total_funds_due<B: StorageBackend>(
+    pub fn total_funds_due<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<U256, L1PricingError> {
@@ -93,7 +95,7 @@ impl<'a, D> BatchPostersTable<'a, D> {
 }
 
 impl<D> BatchPostersTable<'_, D> {
-    pub fn contains_poster<B: StorageBackend>(
+    pub fn contains_poster<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         poster: Address,
@@ -135,14 +137,14 @@ impl<D> BatchPostersTable<'_, D> {
         Ok(bp_state)
     }
 
-    pub fn all_posters<B: StorageBackend>(
+    pub fn all_posters<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Vec<Address>, L1PricingError> {
         Ok(self.poster_addrs.all_members(backend, u64::MAX)?)
     }
 
-    pub fn all_posters_capped<B: StorageBackend>(
+    pub fn all_posters_capped<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         max: u64,
@@ -150,7 +152,7 @@ impl<D> BatchPostersTable<'_, D> {
         Ok(self.poster_addrs.all_members(backend, max)?)
     }
 
-    pub fn get_funds_due_list<B: StorageBackend>(
+    pub fn get_funds_due_list<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Vec<FundsDueItem>, L1PricingError> {
@@ -171,7 +173,10 @@ impl<D> BatchPostersTable<'_, D> {
 }
 
 impl BatchPosterState {
-    pub fn funds_due<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, L1PricingError> {
+    pub fn funds_due<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L1PricingError> {
         Ok(self.funds_due.get_raw(backend)?)
     }
 
@@ -188,7 +193,10 @@ impl BatchPosterState {
         Ok(self.funds_due.set(backend, value)?)
     }
 
-    pub fn pay_to<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, L1PricingError> {
+    pub fn pay_to<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Address, L1PricingError> {
         Ok(self.pay_to.get(backend)?)
     }
 

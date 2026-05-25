@@ -10,6 +10,8 @@ doctest = false
 
 [dependencies]
 alloy-primitives = { workspace = true, features = ["std"] }
+arb-storage = { workspace = true }
+arbos = { workspace = true }
 parking_lot = { workspace = true }
 
 [lints]

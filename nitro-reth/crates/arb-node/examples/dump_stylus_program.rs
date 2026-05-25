@@ -35,7 +35,7 @@ use reth_chainspec::ChainSpec;
 use reth_provider::providers::{ProviderFactoryBuilder, ReadOnlyConfig};
 use reth_storage_api::StateProvider;
 
-use arb_storage::{StorageBackend, StorageError};
+use arb_storage::{StorageBackend, StorageError, SystemStateBackend};
 use arbos::{arbos_state::arbos_from_input, burn::SystemBurner, programs::Programs};
 
 #[derive(Parser, Debug)]
@@ -90,10 +90,10 @@ struct StateProviderBackend<'a> {
     inner: &'a dyn StateProvider,
 }
 
-impl StorageBackend for StateProviderBackend<'_> {
+impl SystemStateBackend for StateProviderBackend<'_> {
     type Error = StorageError;
 
-    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
+    fn sload_system(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
         let slot_b = B256::from(slot);
         match self.inner.storage(account, slot_b) {
             Ok(Some(v)) => Ok(v),
@@ -103,8 +103,14 @@ impl StorageBackend for StateProviderBackend<'_> {
             ))),
         }
     }
+}
 
-    fn sstore(&mut self, _account: Address, _slot: U256, _value: U256) -> Result<(), Self::Error> {
+impl StorageBackend for StateProviderBackend<'_> {
+    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, StorageError> {
+        self.sload_system(account, slot)
+    }
+
+    fn sstore(&mut self, _account: Address, _slot: U256, _value: U256) -> Result<(), StorageError> {
         unreachable!("dump_stylus_program runs read-only against StateProvider")
     }
 }

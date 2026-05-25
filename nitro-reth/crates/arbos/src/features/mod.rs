@@ -1,7 +1,7 @@
 use alloy_primitives::U256;
 use std::marker::PhantomData;
 
-use arb_storage::{StorageBackedBigUint, StorageBackend};
+use arb_storage::{StorageBackedBigUint, StorageBackend, SystemStateBackend};
 
 mod error;
 pub use error::FeaturesError;
@@ -30,7 +30,7 @@ impl<D> Features<'_, D> {
         self.set_bit(backend, INCREASED_CALLDATA, enabled)
     }
 
-    pub fn is_increased_calldata_price_enabled<B: StorageBackend>(
+    pub fn is_increased_calldata_price_enabled<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<bool, FeaturesError> {
@@ -52,7 +52,7 @@ impl<D> Features<'_, D> {
         Ok(self.features.set(backend, val)?)
     }
 
-    fn is_set<B: StorageBackend>(
+    fn is_set<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         index: usize,

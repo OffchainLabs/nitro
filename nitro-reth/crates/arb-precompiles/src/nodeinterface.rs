@@ -4,7 +4,7 @@ use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
+
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -37,9 +37,9 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use INodeInterface::NodeInterfaceCalls as Calls;
     let result = match call {
-        Calls::gasEstimateComponents(_) => handle_gas_estimate_components(&mut input),
-        Calls::gasEstimateL1Component(_) => handle_gas_estimate_l1_component(&mut input),
-        Calls::nitroGenesisBlock(_) => handle_nitro_genesis_block(&mut input),
+        Calls::gasEstimateComponents(_) => handle_gas_estimate_components(&mut input, ctx),
+        Calls::gasEstimateL1Component(_) => handle_gas_estimate_l1_component(&mut input, ctx),
+        Calls::nitroGenesisBlock(_) => handle_nitro_genesis_block(&mut input, ctx),
         Calls::blockL1Num(c) => handle_block_l1_num(&input, ctx, c.l2BlockNum),
         Calls::getL1Confirmations(_) => handle_zero_u64(&input),
         Calls::findBatchContainingBlock(_) => handle_zero_u64(&input),
@@ -56,11 +56,15 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 /// Returns: (gasEstimate, gasEstimateForL1, baseFee, l1BaseFeeEstimate).
 /// `gasEstimate` is left as 0 — the full estimate requires eth_estimateGas
 /// which can't be invoked from a precompile.
-fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_gas_estimate_components(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let (l1_price, basefee, min_basefee, chain_id, brotli_level) = read_estimate_fields(input)?;
+    let (l1_price, basefee, min_basefee, chain_id, brotli_level) =
+        read_estimate_fields(input, ctx)?;
     let gas_for_l1 = estimate_l1_gas(
         input,
         l1_price,
@@ -85,11 +89,15 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
 /// gasEstimateL1Component(address,bool,bytes) → (uint64, uint256, uint256)
 ///
 /// Returns: (gasEstimateForL1, baseFee, l1BaseFeeEstimate).
-fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_gas_estimate_l1_component(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let (l1_price, basefee, min_basefee, chain_id, brotli_level) = read_estimate_fields(input)?;
+    let (l1_price, basefee, min_basefee, chain_id, brotli_level) =
+        read_estimate_fields(input, ctx)?;
     let gas_for_l1 = estimate_l1_gas(
         input,
         l1_price,
@@ -111,12 +119,17 @@ fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> Precompi
 }
 
 /// nitroGenesisBlock() → uint64
-fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_nitro_genesis_block(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let genesis_block_num = arb_state
         .genesis_block_num
@@ -175,9 +188,12 @@ fn handle_legacy_lookup_empty(input: &PrecompileInput<'_>) -> PrecompileResult {
 
 fn read_estimate_fields(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
 ) -> Result<(U256, U256, U256, ChainId, u64), ArbPrecompileError> {
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let l1_price = arb_state

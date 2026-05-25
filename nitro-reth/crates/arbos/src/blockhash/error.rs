@@ -1,7 +1,7 @@
 use arb_storage::StorageError;
 
 /// Errors raised by the L1 blockhashes ring buffer.
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum BlockhashesError {
     /// Underlying storage failure.
     #[error(transparent)]

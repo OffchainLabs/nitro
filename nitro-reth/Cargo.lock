@@ -1087,6 +1087,8 @@ name = "arb-context"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "arb-storage",
+ "arbos",
  "parking_lot",
 ]
 

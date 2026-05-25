@@ -1,6 +1,6 @@
 use alloy_primitives::U256;
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
-use arb_storage::StorageBackend;
+use arb_storage::{StorageBackend, SystemStateBackend};
 use revm::Database;
 
 use arb_chainspec::arbos_version as version;
@@ -29,7 +29,7 @@ pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 20_800;
 
 impl<D: Database> L2PricingState<'_, D> {
     /// Determine which gas model to use based on ArbOS version and stored constraints.
-    pub fn gas_model_to_use<B: StorageBackend>(
+    pub fn gas_model_to_use<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<GasModel, L2PricingError> {
@@ -332,7 +332,7 @@ impl<D: Database> L2PricingState<'_, D> {
         }
     }
 
-    pub fn get_multi_gas_base_fee_per_resource<B: StorageBackend>(
+    pub fn get_multi_gas_base_fee_per_resource<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
@@ -355,7 +355,7 @@ impl<D: Database> L2PricingState<'_, D> {
     /// `commit_next_to_current`, which runs before any tx in the block.
     /// Zero is kept (not substituted to base_fee_wei) so the caller can do the
     /// substitution with a fresh base_fee read on every use.
-    pub fn get_current_multi_gas_fees<B: StorageBackend>(
+    pub fn get_current_multi_gas_fees<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<[U256; NUM_RESOURCE_KIND], L2PricingError> {
@@ -383,7 +383,7 @@ impl<D: Database> L2PricingState<'_, D> {
     }
 
     /// Calculate the cost for a backlog update operation.
-    pub fn backlog_update_cost<B: StorageBackend>(
+    pub fn backlog_update_cost<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -460,7 +460,7 @@ impl<D: Database> L2PricingState<'_, D> {
     /// Compute total cost for a multi-gas usage, for refund calculations.
     ///
     /// Returns `sum(gas_used[kind] * base_fee[kind])` across all resource kinds.
-    pub fn multi_dimensional_price_for_refund<B: StorageBackend>(
+    pub fn multi_dimensional_price_for_refund<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         gas_used: MultiGas,
@@ -482,7 +482,7 @@ impl<D: Database> L2PricingState<'_, D> {
     /// `base_fee_wei` is still read from state to handle rare mid-block
     /// `setL2BaseFee` owner writes. Zero cached values are substituted with the
     /// live base_fee, matching `get_multi_gas_base_fee_per_resource` exactly.
-    pub fn multi_dimensional_price_for_refund_with_fees<B: StorageBackend>(
+    pub fn multi_dimensional_price_for_refund_with_fees<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         gas_used: MultiGas,

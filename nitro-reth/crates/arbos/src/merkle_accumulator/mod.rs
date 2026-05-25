@@ -1,7 +1,7 @@
 use alloy_primitives::{keccak256, B256, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
 
 mod error;
 pub use error::MerkleAccumulatorError;
@@ -46,14 +46,14 @@ impl<D> MerkleAccumulator<'_, D> {
         self.backing_storage.new_slot(2 + level)
     }
 
-    fn read_partial<B: StorageBackend>(
+    fn read_partial<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         level: u64,
     ) -> Result<B256, MerkleAccumulatorError> {
         let slot = self.partial_slot(level);
         let value = backend
-            .sload(self.backing_storage.account(), slot)
+            .sload_system(self.backing_storage.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -116,12 +116,15 @@ impl<D> MerkleAccumulator<'_, D> {
         }
     }
 
-    pub fn size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, MerkleAccumulatorError> {
+    pub fn size<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, MerkleAccumulatorError> {
         Ok(self.size.get(backend)?)
     }
 
     /// Read a single partial hash without re-reading the accumulator size.
-    pub fn partial_at<B: StorageBackend>(
+    pub fn partial_at<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         level: u64,
@@ -129,7 +132,10 @@ impl<D> MerkleAccumulator<'_, D> {
         self.read_partial(backend, level)
     }
 
-    pub fn root<B: StorageBackend>(&self, backend: &mut B) -> Result<B256, MerkleAccumulatorError> {
+    pub fn root<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<B256, MerkleAccumulatorError> {
         let size = self.size.get(backend)?;
         if size == 0 {
             return Ok(B256::ZERO);
@@ -167,7 +173,7 @@ impl<D> MerkleAccumulator<'_, D> {
         Ok(hash_so_far.unwrap_or(B256::ZERO))
     }
 
-    pub fn get_partials<B: StorageBackend>(
+    pub fn get_partials<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Vec<B256>, MerkleAccumulatorError> {
@@ -180,7 +186,7 @@ impl<D> MerkleAccumulator<'_, D> {
         Ok(partials)
     }
 
-    pub fn state_for_export<B: StorageBackend>(
+    pub fn state_for_export<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<(u64, B256, Vec<B256>), MerkleAccumulatorError> {

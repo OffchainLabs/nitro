@@ -1,7 +1,7 @@
 use alloy_primitives::{B256, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackend};
+use arb_storage::{Storage, StorageBackend, SystemStateBackend};
 
 mod error;
 pub use error::FilteredTxError;
@@ -43,13 +43,13 @@ impl<'a, D> FilteredTransactionsState<'a, D> {
         Ok(())
     }
 
-    pub fn is_filtered<B: StorageBackend>(
+    pub fn is_filtered<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         tx_hash: B256,
     ) -> Result<bool, FilteredTxError> {
         let value = backend
-            .sload(self.store.account(), self.store.slot_for_key(tx_hash))
+            .sload_system(self.store.account(), self.store.slot_for_key(tx_hash))
             .map_err(Into::into)?;
         Ok(value == U256::from_be_bytes(PRESENT_HASH.0))
     }

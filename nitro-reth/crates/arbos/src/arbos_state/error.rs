@@ -14,7 +14,7 @@ use crate::{
 /// `#[from]` so cross-module call chains in `arbos_state` (e.g. running an
 /// ArbOS version upgrade hook that touches programs, l2 pricing, and the
 /// transaction filtering address set in one go) can use `?` ergonomically.
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum ArbosStateError {
     /// Underlying storage failure.
     #[error(transparent)]

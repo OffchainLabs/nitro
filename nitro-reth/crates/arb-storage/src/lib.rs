@@ -24,7 +24,7 @@ pub use backed_types::{
     StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigInt, StorageBackedBigUint,
     StorageBackedInt64, StorageBackedUint64,
 };
-pub use backend::StorageBackend;
+pub use backend::{StorageBackend, SystemStateBackend};
 pub use bytes_storage::StorageBackedBytes;
 pub use extra_types::{
     StorageBackedBips, StorageBackedUBips, StorageBackedUint16, StorageBackedUint24,

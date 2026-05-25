@@ -1,7 +1,7 @@
 use alloy_primitives::U256;
 
 use arb_primitives::multigas::{ResourceKind, NUM_RESOURCE_KIND};
-use arb_storage::{Storage, StorageBackedBigUint, StorageBackend};
+use arb_storage::{Storage, StorageBackedBigUint, StorageBackend, SystemStateBackend};
 
 use super::L2PricingError;
 
@@ -23,7 +23,7 @@ pub fn open_multi_gas_fees<D>(sto: Storage<'_, D>) -> MultiGasFees<'_, D> {
 }
 
 impl<D> MultiGasFees<'_, D> {
-    pub fn get_current_block_fee<B: StorageBackend>(
+    pub fn get_current_block_fee<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         kind: ResourceKind,
@@ -35,7 +35,7 @@ impl<D> MultiGasFees<'_, D> {
         Ok(sbu.get(backend)?)
     }
 
-    pub fn get_next_block_fee<B: StorageBackend>(
+    pub fn get_next_block_fee<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         kind: ResourceKind,

@@ -1,7 +1,9 @@
 use alloy_primitives::{Address, B256, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedAddress, StorageBackedUint64, StorageBackend};
+use arb_storage::{
+    Storage, StorageBackedAddress, StorageBackedUint64, StorageBackend, SystemStateBackend,
+};
 
 mod error;
 pub use error::AddressSetError;
@@ -31,11 +33,11 @@ pub fn open_address_set<D>(sto: Storage<'_, D>) -> AddressSet<'_, D> {
 }
 
 impl<D> AddressSet<'_, D> {
-    pub fn size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, AddressSetError> {
+    pub fn size<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, AddressSetError> {
         Ok(self.size.get(backend)?)
     }
 
-    pub fn is_member<B: StorageBackend>(
+    pub fn is_member<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         addr: Address,
@@ -44,7 +46,7 @@ impl<D> AddressSet<'_, D> {
         Ok(value != B256::ZERO)
     }
 
-    pub fn get_any_member<B: StorageBackend>(
+    pub fn get_any_member<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Option<Address>, AddressSetError> {
@@ -69,7 +71,7 @@ impl<D> AddressSet<'_, D> {
         Ok(self.size.set(backend, 0)?)
     }
 
-    pub fn all_members<B: StorageBackend>(
+    pub fn all_members<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         max_num: u64,
@@ -171,14 +173,14 @@ impl<D> AddressSet<'_, D> {
         Ok(self.size.set(backend, size - 1)?)
     }
 
-    fn by_address_get<B: StorageBackend>(
+    fn by_address_get<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         key: B256,
     ) -> Result<B256, AddressSetError> {
         let slot = self.by_address.slot_for_key(key);
         let value = backend
-            .sload(self.by_address.account(), slot)
+            .sload_system(self.by_address.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -200,14 +202,14 @@ impl<D> AddressSet<'_, D> {
         Ok(())
     }
 
-    fn backing_get_by_uint64<B: StorageBackend>(
+    fn backing_get_by_uint64<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         offset: u64,
     ) -> Result<B256, AddressSetError> {
         let slot = self.backing_storage.new_slot(offset);
         let value = backend
-            .sload(self.backing_storage.account(), slot)
+            .sload_system(self.backing_storage.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }

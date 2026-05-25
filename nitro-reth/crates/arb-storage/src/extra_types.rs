@@ -1,7 +1,11 @@
 use alloy_primitives::{B256, U256};
 use arb_storage_errors::StorageError;
 
-use crate::{backend::StorageBackend, slot::storage_key_map, state_ops::ARBOS_STATE_ADDRESS};
+use crate::{
+    backend::{StorageBackend, SystemStateBackend},
+    slot::storage_key_map,
+    state_ops::ARBOS_STATE_ADDRESS,
+};
 
 fn compute_slot(base_key: B256, offset: u64) -> U256 {
     if base_key == B256::ZERO {
@@ -24,9 +28,9 @@ impl StorageBackedBips {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<i64, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<i64, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         let value_u64: u64 = value.try_into().unwrap_or(0);
         Ok(value_u64 as i64)
@@ -52,9 +56,9 @@ impl StorageBackedUBips {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         Ok(value.try_into().unwrap_or(0))
     }
@@ -79,9 +83,9 @@ impl StorageBackedUint16 {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<u16, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u16, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         Ok(value.try_into().unwrap_or(0))
     }
@@ -106,9 +110,9 @@ impl StorageBackedUint24 {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<u32, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u32, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         let raw: u32 = value.try_into().unwrap_or(0);
         Ok(raw & 0xFF_FFFF)
@@ -138,9 +142,9 @@ impl StorageBackedUint32 {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<u32, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u32, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         Ok(value.try_into().unwrap_or(0))
     }

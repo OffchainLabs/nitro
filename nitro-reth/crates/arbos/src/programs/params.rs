@@ -1,4 +1,4 @@
-use arb_storage::{Storage, StorageBackend};
+use arb_storage::{Storage, StorageBackend, SystemStateBackend};
 
 use super::ProgramsError;
 
@@ -56,8 +56,8 @@ pub struct StylusParams {
 }
 
 impl StylusParams {
-    /// Deserialize params from a storage substorage through a [`StorageBackend`].
-    pub fn load<D, B: StorageBackend>(
+    /// Deserialize params from a storage substorage through a [`SystemStateBackend`].
+    pub fn load<D, B: SystemStateBackend>(
         arbos_version: u64,
         sto: &Storage<'_, D>,
         backend: &mut B,
@@ -265,7 +265,7 @@ trait PackedRead {
     fn take_u32(&mut self) -> Result<u32, ProgramsError>;
 }
 
-struct PackedReader<'a, 'b, 'c, D, B: StorageBackend> {
+struct PackedReader<'a, 'b, 'c, D, B: SystemStateBackend> {
     sto: &'a Storage<'c, D>,
     backend: &'b mut B,
     slot: u64,
@@ -273,7 +273,7 @@ struct PackedReader<'a, 'b, 'c, D, B: StorageBackend> {
     pos: usize,
 }
 
-impl<'a, 'b, 'c, D, B: StorageBackend> PackedReader<'a, 'b, 'c, D, B> {
+impl<'a, 'b, 'c, D, B: SystemStateBackend> PackedReader<'a, 'b, 'c, D, B> {
     fn new(sto: &'a Storage<'c, D>, backend: &'b mut B) -> Self {
         Self {
             sto,
@@ -289,7 +289,7 @@ impl<'a, 'b, 'c, D, B: StorageBackend> PackedReader<'a, 'b, 'c, D, B> {
             let slot = self.sto.new_slot(self.slot);
             let value = self
                 .backend
-                .sload(self.sto.account(), slot)
+                .sload_system(self.sto.account(), slot)
                 .map_err(Into::into)?;
             self.buf = value.to_be_bytes::<32>();
             self.slot += 1;
@@ -306,7 +306,7 @@ impl<'a, 'b, 'c, D, B: StorageBackend> PackedReader<'a, 'b, 'c, D, B> {
     }
 }
 
-impl<D, B: StorageBackend> PackedRead for PackedReader<'_, '_, '_, D, B> {
+impl<D, B: SystemStateBackend> PackedRead for PackedReader<'_, '_, '_, D, B> {
     fn take_u8(&mut self) -> Result<u8, ProgramsError> {
         let bytes = self.take_bytes(1)?;
         Ok(bytes[0])

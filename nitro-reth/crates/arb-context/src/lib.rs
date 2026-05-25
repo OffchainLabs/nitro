@@ -1,12 +1,17 @@
 //! Per-block and per-tx context threaded into Arbitrum precompile handlers.
 
 use alloy_primitives::{Address, B256, U256};
+use arb_storage::{Detached, SystemStateBackend};
+use arbos::{
+    arbos_state::{arbos_from_input_system, ArbosState, ArbosStateError},
+    burn::SystemBurner,
+};
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicU64, AtomicUsize},
-        Arc,
+        Arc, OnceLock,
     },
 };
 
@@ -47,7 +52,7 @@ impl RecentWasms {
 }
 
 /// Per-block parameters populated once at block start.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct BlockCtx {
     pub arbos_version: u64,
     pub block_timestamp: u64,
@@ -63,6 +68,25 @@ pub struct BlockCtx {
     /// L2 block number -> L2 block hash, populated for `arbBlockHash` lookups.
     pub l2_blockhash_cache: Mutex<HashMap<u64, B256>>,
     pub recent_wasms: Mutex<RecentWasms>,
+    /// Per-block descriptor cache for the detached [`ArbosState`].
+    arbos_state: OnceLock<Result<ArbosState<'static, Detached, SystemBurner>, ArbosStateError>>,
+}
+
+impl std::fmt::Debug for BlockCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlockCtx")
+            .field("arbos_version", &self.arbos_version)
+            .field("block_timestamp", &self.block_timestamp)
+            .field("l1_block_number_for_evm", &self.l1_block_number_for_evm)
+            .field("l2_block_number", &self.l2_block_number)
+            .field("allow_debug_precompiles", &self.allow_debug_precompiles)
+            .field("current_gas_backlog", &self.current_gas_backlog)
+            .field("l1_block_cache", &self.l1_block_cache)
+            .field("l2_blockhash_cache", &self.l2_blockhash_cache)
+            .field("recent_wasms", &self.recent_wasms)
+            .field("arbos_state_cached", &self.arbos_state.get().is_some())
+            .finish()
+    }
 }
 
 impl BlockCtx {
@@ -83,7 +107,22 @@ impl BlockCtx {
             l1_block_cache: Mutex::new(HashMap::new()),
             l2_blockhash_cache: Mutex::new(HashMap::new()),
             recent_wasms: Mutex::new(RecentWasms::default()),
+            arbos_state: OnceLock::new(),
         }
+    }
+
+    /// Borrow the cached [`ArbosState`], constructing it on first call via
+    /// [`arbos_from_input_system`]. Returns a clone of the cached error if
+    /// the first call failed; the cache is not cleared on error since the
+    /// version slot does not change within a single block.
+    pub fn arbos_state<S: SystemStateBackend>(
+        &self,
+        backend: &mut S,
+    ) -> Result<&ArbosState<'static, Detached, SystemBurner>, ArbosStateError> {
+        self.arbos_state
+            .get_or_init(|| arbos_from_input_system(backend, SystemBurner::new(None, false)))
+            .as_ref()
+            .map_err(Clone::clone)
     }
 
     pub fn current_gas_backlog(&self) -> u64 {

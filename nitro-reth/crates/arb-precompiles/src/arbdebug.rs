@@ -3,7 +3,7 @@ use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
+
 use revm::{
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
@@ -47,7 +47,9 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
     use IArbDebug::ArbDebugCalls;
     let input_len = input.data.len();
     let result = match call {
-        ArbDebugCalls::becomeChainOwner(_) => handle_become_chain_owner(&mut input, &mut gas_used),
+        ArbDebugCalls::becomeChainOwner(_) => {
+            handle_become_chain_owner(&mut input, &mut gas_used, ctx)
+        }
         ArbDebugCalls::events(c) => handle_events(&mut input, c.flag, c.value),
         ArbDebugCalls::eventsView(_) => handle_events_view(&mut input, ctx, gas_used),
         ArbDebugCalls::customRevert(c) => {
@@ -82,6 +84,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 fn handle_become_chain_owner(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let caller = input.caller;
     let gas_limit = input.gas;
@@ -92,7 +95,9 @@ fn handle_become_chain_owner(
         .map_err(ArbPrecompileError::fatal)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let was_member = arb_state

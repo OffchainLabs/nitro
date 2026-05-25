@@ -8,7 +8,7 @@ use alloy_primitives::{Address, U256};
 
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint, StorageBackedInt64,
-    StorageBackedUint64, StorageBackend,
+    StorageBackedUint64, StorageBackend, SystemStateBackend,
 };
 
 use crate::util::BalanceError;
@@ -131,7 +131,7 @@ impl<'a, D> L1PricingState<'a, D> {
 
     // --- Getters/Setters ---
 
-    pub fn pay_rewards_to<B: StorageBackend>(
+    pub fn pay_rewards_to<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Address, L1PricingError> {
@@ -146,7 +146,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.pay_rewards_to.set(backend, addr)?)
     }
 
-    pub fn equilibration_units<B: StorageBackend>(
+    pub fn equilibration_units<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<U256, L1PricingError> {
@@ -161,7 +161,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.equilibration_units.set(backend, units)?)
     }
 
-    pub fn inertia<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L1PricingError> {
+    pub fn inertia<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, L1PricingError> {
         Ok(self.inertia.get(backend)?)
     }
 
@@ -173,7 +173,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.inertia.set(backend, val)?)
     }
 
-    pub fn per_unit_reward<B: StorageBackend>(
+    pub fn per_unit_reward<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L1PricingError> {
@@ -188,7 +188,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.per_unit_reward.set(backend, val)?)
     }
 
-    pub fn last_update_time<B: StorageBackend>(
+    pub fn last_update_time<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L1PricingError> {
@@ -203,7 +203,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.last_update_time.set(backend, time)?)
     }
 
-    pub fn funds_due_for_rewards<B: StorageBackend>(
+    pub fn funds_due_for_rewards<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<U256, L1PricingError> {
@@ -218,7 +218,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.funds_due_for_rewards.set(backend, val)?)
     }
 
-    pub fn units_since_update<B: StorageBackend>(
+    pub fn units_since_update<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L1PricingError> {
@@ -255,7 +255,7 @@ impl<'a, D> L1PricingState<'a, D> {
             .set(backend, current.saturating_sub(units))?)
     }
 
-    pub fn price_per_unit<B: StorageBackend>(
+    pub fn price_per_unit<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<U256, L1PricingError> {
@@ -270,7 +270,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.price_per_unit.set(backend, val)?)
     }
 
-    pub fn last_surplus<B: StorageBackend>(
+    pub fn last_surplus<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<(U256, bool), L1PricingError> {
@@ -293,7 +293,7 @@ impl<'a, D> L1PricingState<'a, D> {
         }
     }
 
-    pub fn per_batch_gas_cost<B: StorageBackend>(
+    pub fn per_batch_gas_cost<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<i64, L1PricingError> {
@@ -308,7 +308,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.per_batch_gas_cost.set(backend, val)?)
     }
 
-    pub fn amortized_cost_cap_bips<B: StorageBackend>(
+    pub fn amortized_cost_cap_bips<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L1PricingError> {
@@ -323,7 +323,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(self.amortized_cost_cap_bips.set(backend, val)?)
     }
 
-    pub fn l1_fees_available<B: StorageBackend>(
+    pub fn l1_fees_available<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<U256, L1PricingError> {
@@ -361,7 +361,7 @@ impl<'a, D> L1PricingState<'a, D> {
         Ok(transfer)
     }
 
-    pub fn parent_gas_floor_per_token<B: StorageBackend>(
+    pub fn parent_gas_floor_per_token<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L1PricingError> {
@@ -384,7 +384,7 @@ impl<'a, D> L1PricingState<'a, D> {
 
     // --- Pricing logic ---
 
-    pub fn get_l1_pricing_surplus<B: StorageBackend>(
+    pub fn get_l1_pricing_surplus<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<(U256, bool), L1PricingError> {
@@ -401,7 +401,7 @@ impl<'a, D> L1PricingState<'a, D> {
         }
     }
 
-    pub fn poster_data_cost<B: StorageBackend>(
+    pub fn poster_data_cost<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         calldata_units: u64,
@@ -418,7 +418,7 @@ impl<'a, D> L1PricingState<'a, D> {
     }
 
     /// Compute poster cost and units for a transaction on-chain.
-    pub fn compute_poster_cost<B: StorageBackend>(
+    pub fn compute_poster_cost<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         poster: Address,
@@ -434,7 +434,7 @@ impl<'a, D> L1PricingState<'a, D> {
     }
 
     /// Compute poster data cost for gas estimation (with padding).
-    pub fn poster_data_cost_for_estimation<B: StorageBackend>(
+    pub fn poster_data_cost_for_estimation<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         tx_bytes: &[u8],

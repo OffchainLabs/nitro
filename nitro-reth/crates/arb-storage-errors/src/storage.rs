@@ -7,7 +7,7 @@ use alloy_primitives::U256;
 /// block. The remaining variants signal that the stored bytes do not match
 /// the layout the type expects, which indicates either corrupted state or a
 /// version skew between layout code and on-chain data; both abort the block.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum StorageError {
     /// The underlying state database returned an error.
     #[error(transparent)]

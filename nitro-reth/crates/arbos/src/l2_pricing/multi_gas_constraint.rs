@@ -2,7 +2,8 @@ use alloy_primitives::{B256, U256};
 
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
 use arb_storage::{
-    storage_key_map, StorageBackedUint32, StorageBackedUint64, StorageBackend, ARBOS_STATE_ADDRESS,
+    storage_key_map, StorageBackedUint32, StorageBackedUint64, StorageBackend, SystemStateBackend,
+    ARBOS_STATE_ADDRESS,
 };
 
 use super::L2PricingError;
@@ -43,7 +44,7 @@ fn weight_slot(base_key: B256, kind_index: u64) -> U256 {
 }
 
 impl MultiGasConstraint {
-    pub fn target<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+    pub fn target<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
         Ok(self.target.get(backend)?)
     }
 
@@ -55,7 +56,7 @@ impl MultiGasConstraint {
         Ok(self.target.set(backend, val)?)
     }
 
-    pub fn adjustment_window<B: StorageBackend>(
+    pub fn adjustment_window<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u32, L2PricingError> {
@@ -70,7 +71,7 @@ impl MultiGasConstraint {
         Ok(self.adjustment_window.set(backend, val)?)
     }
 
-    pub fn backlog<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+    pub fn backlog<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
         Ok(self.backlog.get(backend)?)
     }
 
@@ -82,18 +83,21 @@ impl MultiGasConstraint {
         Ok(self.backlog.set(backend, val)?)
     }
 
-    pub fn max_weight<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+    pub fn max_weight<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
         Ok(self.max_weight.get(backend)?)
     }
 
-    pub fn resource_weight<B: StorageBackend>(
+    pub fn resource_weight<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         kind: ResourceKind,
     ) -> Result<u64, L2PricingError> {
         let slot = weight_slot(self.base_key, kind as u64);
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, slot)
+            .sload_system(ARBOS_STATE_ADDRESS, slot)
             .map_err(Into::into)?;
         Ok(value.try_into().unwrap_or(0))
     }
@@ -117,7 +121,7 @@ impl MultiGasConstraint {
     }
 
     /// Returns pairs of (ResourceKind, weight) for all resources with non-zero weight.
-    pub fn resources_with_weights<B: StorageBackend>(
+    pub fn resources_with_weights<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Vec<(ResourceKind, u64)>, L2PricingError> {
@@ -132,7 +136,7 @@ impl MultiGasConstraint {
     }
 
     /// Compute the weighted total of used resources.
-    pub fn used_resources<B: StorageBackend>(
+    pub fn used_resources<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         gas: MultiGas,

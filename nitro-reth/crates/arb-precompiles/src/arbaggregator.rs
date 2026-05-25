@@ -3,7 +3,7 @@ use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
+
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -70,14 +70,18 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             vec![].into(),
         )),
         Calls::getFeeCollector(c) => {
-            handle_get_fee_collector(&mut input, &mut gas_used, c.batchPoster)
+            handle_get_fee_collector(&mut input, &mut gas_used, c.batchPoster, ctx)
         }
-        Calls::setFeeCollector(c) => {
-            handle_set_fee_collector(&mut input, &mut gas_used, c.batchPoster, c.newFeeCollector)
-        }
-        Calls::getBatchPosters(_) => handle_get_batch_posters(&mut input),
+        Calls::setFeeCollector(c) => handle_set_fee_collector(
+            &mut input,
+            &mut gas_used,
+            c.batchPoster,
+            c.newFeeCollector,
+            ctx,
+        ),
+        Calls::getBatchPosters(_) => handle_get_batch_posters(&mut input, ctx),
         Calls::addBatchPoster(c) => {
-            handle_add_batch_poster(&mut input, &mut gas_used, c.newBatchPoster)
+            handle_add_batch_poster(&mut input, &mut gas_used, c.newBatchPoster, ctx)
         }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -95,11 +99,14 @@ fn handle_get_fee_collector(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     poster: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
@@ -126,12 +133,15 @@ fn handle_set_fee_collector(
     gas_used: &mut u64,
     poster: Address,
     new_collector: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
@@ -166,11 +176,16 @@ fn handle_set_fee_collector(
     ))
 }
 
-fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_get_batch_posters(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
@@ -198,12 +213,15 @@ fn handle_add_batch_poster(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     new_poster: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let is_owner = arb_state

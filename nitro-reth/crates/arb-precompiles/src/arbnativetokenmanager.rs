@@ -3,7 +3,7 @@ use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner};
+
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -49,9 +49,9 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use IArbNativeTokenManager::ArbNativeTokenManagerCalls;
     let result = match call {
-        ArbNativeTokenManagerCalls::mintNativeToken(c) => handle_mint(&mut input, c.amount),
+        ArbNativeTokenManagerCalls::mintNativeToken(c) => handle_mint(&mut input, c.amount, ctx),
         ArbNativeTokenManagerCalls::burnNativeToken(c) => {
-            handle_burn(&mut input, gas_used, c.amount)
+            handle_burn(&mut input, gas_used, c.amount, ctx)
         }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -71,9 +71,12 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
 fn is_native_token_owner(
     input: &mut PrecompileInput<'_>,
     addr: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> Result<bool, ArbPrecompileError> {
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     arb_state
         .native_token_owners
@@ -81,12 +84,16 @@ fn is_native_token_owner(
         .map_err(ArbPrecompileError::fatal)
 }
 
-fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResult {
+fn handle_mint(
+    input: &mut PrecompileInput<'_>,
+    amount: U256,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
 
-    if !is_native_token_owner(input, caller)? {
+    if !is_native_token_owner(input, caller, ctx)? {
         // Burn-out on unauthorized: consume all gas, not a soft revert.
         return crate::burn_all_revert(gas_limit);
     }
@@ -111,12 +118,17 @@ fn handle_mint(input: &mut PrecompileInput<'_>, amount: U256) -> PrecompileResul
     Ok(PrecompileOutput::new(gas_cost, vec![].into()))
 }
 
-fn handle_burn(input: &mut PrecompileInput<'_>, gas_used: u64, amount: U256) -> PrecompileResult {
+fn handle_burn(
+    input: &mut PrecompileInput<'_>,
+    gas_used: u64,
+    amount: U256,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
     load_arbos(input)?;
 
-    if !is_native_token_owner(input, caller)? {
+    if !is_native_token_owner(input, caller, ctx)? {
         // Burn-out on unauthorized: consume all gas.
         return crate::burn_all_revert(gas_limit);
     }

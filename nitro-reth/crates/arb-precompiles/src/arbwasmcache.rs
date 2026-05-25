@@ -3,11 +3,7 @@ use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{
-    arbos_state::arbos_from_input,
-    burn::SystemBurner,
-    programs::{params::StylusParams, Program},
-};
+use arbos::programs::{params::StylusParams, Program};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -67,8 +63,8 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         ArbWasmCacheCalls::evictCodehash(c) => {
             handle_evict_codehash(&mut input, ctx, &mut gas_used, c.codehash)
         }
-        ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager),
-        ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input),
+        ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager, ctx),
+        ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input, ctx),
         ArbWasmCacheCalls::codehashIsCached(c) => {
             handle_codehash_is_cached(&mut input, ctx, c.codehash)
         }
@@ -90,12 +86,18 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn handle_is_cache_manager(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_is_cache_manager(
+    input: &mut PrecompileInput<'_>,
+    addr: Address,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let data_len = input.data.len();
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let is_member = arb_state
         .programs
@@ -117,11 +119,16 @@ fn handle_is_cache_manager(input: &mut PrecompileInput<'_>, addr: Address) -> Pr
 }
 
 /// Return all cache manager addresses.
-fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_all_cache_managers(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let members = arb_state
         .programs
@@ -156,7 +163,9 @@ fn handle_codehash_is_cached(
 
     let time = ctx.block.block_timestamp;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let program = arb_state
         .programs
@@ -182,9 +191,12 @@ fn handle_codehash_is_cached(
 fn caller_has_cache_access(
     input: &mut PrecompileInput<'_>,
     caller: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> Result<(bool, u64), ArbPrecompileError> {
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     if arb_state
         .programs
@@ -205,9 +217,12 @@ fn read_params_and_program(
     input: &mut PrecompileInput<'_>,
     codehash: B256,
     time: u64,
+    ctx: &ArbPrecompileCtx,
 ) -> Result<(StylusParams, Program), ArbPrecompileError> {
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
@@ -239,13 +254,13 @@ fn set_program_cached(
 
     load_arbos(input)?;
 
-    let (has_access, access_gas) = caller_has_cache_access(input, caller)?;
+    let (has_access, access_gas) = caller_has_cache_access(input, caller, ctx)?;
     crate::charge_precompile_gas(gas_used, access_gas);
     if !has_access {
         return crate::burn_all_revert(input.gas);
     }
 
-    let (params, mut program) = read_params_and_program(input, codehash, now)?;
+    let (params, mut program) = read_params_and_program(input, codehash, now, ctx)?;
     crate::charge_precompile_gas(gas_used, SLOAD_GAS + SLOAD_GAS);
     let already_cached = program.cached;
     let expiry_seconds = (params.expiry_days as u64).saturating_mul(86_400);
@@ -279,7 +294,9 @@ fn set_program_cached(
     let prog_init_cost = program.init_cost;
     {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs

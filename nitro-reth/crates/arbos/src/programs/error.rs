@@ -1,7 +1,7 @@
 use arb_storage::StorageError;
 
 /// Errors raised by the Stylus programs subsystem.
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum ProgramsError {
     /// Underlying storage failure.
     #[error(transparent)]

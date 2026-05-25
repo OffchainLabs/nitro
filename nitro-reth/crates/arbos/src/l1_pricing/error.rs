@@ -4,7 +4,7 @@ use crate::address_set::AddressSetError;
 
 /// Errors raised by the L1 pricing subsystem (batch poster table and update
 /// model).
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum L1PricingError {
     /// Underlying storage failure.
     #[error(transparent)]

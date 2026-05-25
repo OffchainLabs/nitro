@@ -3,7 +3,7 @@ use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{address_table::AddressTableError, arbos_state::arbos_from_input, burn::SystemBurner};
+use arbos::address_table::AddressTableError;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -37,13 +37,13 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use IArbAddressTable::ArbAddressTableCalls as Calls;
     let result = match call {
-        Calls::size(_) => handle_size(&mut input),
-        Calls::addressExists(c) => handle_address_exists(&mut input, c.addr),
-        Calls::lookup(c) => handle_lookup(&mut input, &mut gas_used, c.addr),
-        Calls::lookupIndex(c) => handle_lookup_index(&mut input, &mut gas_used, c.index),
-        Calls::register(c) => handle_register(&mut input, &mut gas_used, c.addr),
-        Calls::compress(c) => handle_compress(&mut input, c.addr),
-        Calls::decompress(c) => handle_decompress(&mut input, &mut gas_used, &c.buf, c.offset),
+        Calls::size(_) => handle_size(&mut input, ctx),
+        Calls::addressExists(c) => handle_address_exists(&mut input, c.addr, ctx),
+        Calls::lookup(c) => handle_lookup(&mut input, &mut gas_used, c.addr, ctx),
+        Calls::lookupIndex(c) => handle_lookup_index(&mut input, &mut gas_used, c.index, ctx),
+        Calls::register(c) => handle_register(&mut input, &mut gas_used, c.addr, ctx),
+        Calls::compress(c) => handle_compress(&mut input, c.addr, ctx),
+        Calls::decompress(c) => handle_decompress(&mut input, &mut gas_used, &c.buf, c.offset, ctx),
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
 }
@@ -56,11 +56,13 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_size(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let size = arb_state
         .address_table
@@ -73,11 +75,17 @@ fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_address_exists(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_address_exists(
+    input: &mut PrecompileInput<'_>,
+    addr: Address,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let exists = arb_state
         .address_table
@@ -95,11 +103,14 @@ fn handle_lookup(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     addr: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let (index, exists) = arb_state
         .address_table
@@ -119,6 +130,7 @@ fn handle_lookup_index(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     index_u256: U256,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let index: u64 = index_u256
@@ -126,7 +138,9 @@ fn handle_lookup_index(
         .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let addr = arb_state
         .address_table
@@ -147,11 +161,14 @@ fn handle_register(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     addr: Address,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let (index, already_registered) = arb_state
@@ -174,11 +191,17 @@ fn handle_register(
     ))
 }
 
-fn handle_compress(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_compress(
+    input: &mut PrecompileInput<'_>,
+    addr: Address,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let rlp_bytes = arb_state
         .address_table
@@ -204,6 +227,7 @@ fn handle_decompress(
     gas_used: &mut u64,
     buf: &Bytes,
     offset: U256,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let data_len = input.data.len();
@@ -218,7 +242,9 @@ fn handle_decompress(
 
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let (addr, bytes_read, raw_address) = arb_state

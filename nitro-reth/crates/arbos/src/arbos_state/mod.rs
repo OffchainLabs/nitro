@@ -13,7 +13,7 @@ use arb_primitives::arbos_versions::{
 use arb_storage::{
     get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
     StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
-    StorageBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+    StorageBackend, SystemStateBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
 };
 
 use crate::{
@@ -130,7 +130,7 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         &self.backing_storage
     }
 
-    pub fn brotli_compression_level<C: StorageBackend>(
+    pub fn brotli_compression_level<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<u64, ArbosStateError> {
@@ -146,7 +146,7 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
     }
 
     /// Whether tip collection is enabled. Always false before ArbOS 60.
-    pub fn collect_tips<C: StorageBackend>(
+    pub fn collect_tips<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<bool, ArbosStateError> {
@@ -164,11 +164,14 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         Ok(self.collect_tips.set(backend, u64::from(enabled))?)
     }
 
-    pub fn chain_id<C: StorageBackend>(&self, backend: &mut C) -> Result<U256, ArbosStateError> {
+    pub fn chain_id<C: SystemStateBackend>(
+        &self,
+        backend: &mut C,
+    ) -> Result<U256, ArbosStateError> {
         Ok(self.chain_id.get(backend)?)
     }
 
-    pub fn chain_config<C: StorageBackend>(
+    pub fn chain_config<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<Vec<u8>, ArbosStateError> {
@@ -183,14 +186,14 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         Ok(self.chain_config.set(backend, config)?)
     }
 
-    pub fn genesis_block_num<C: StorageBackend>(
+    pub fn genesis_block_num<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<u64, ArbosStateError> {
         Ok(self.genesis_block_num.get(backend)?)
     }
 
-    pub fn network_fee_account<C: StorageBackend>(
+    pub fn network_fee_account<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<Address, ArbosStateError> {
@@ -205,7 +208,7 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         Ok(self.network_fee_account.set(backend, account)?)
     }
 
-    pub fn infra_fee_account<C: StorageBackend>(
+    pub fn infra_fee_account<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<Address, ArbosStateError> {
@@ -220,14 +223,14 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         Ok(self.infra_fee_account.set(backend, account)?)
     }
 
-    pub fn filtered_funds_recipient<C: StorageBackend>(
+    pub fn filtered_funds_recipient<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<Address, ArbosStateError> {
         Ok(self.filtered_funds_recipient.get(backend)?)
     }
 
-    pub fn filtered_funds_recipient_or_default<C: StorageBackend>(
+    pub fn filtered_funds_recipient_or_default<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<Address, ArbosStateError> {
@@ -247,7 +250,7 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         Ok(self.filtered_funds_recipient.set(backend, addr)?)
     }
 
-    pub fn native_token_management_from_time<C: StorageBackend>(
+    pub fn native_token_management_from_time<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<u64, ArbosStateError> {
@@ -262,7 +265,7 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         Ok(self.native_token_enabled_from_time.set(backend, time)?)
     }
 
-    pub fn transaction_filtering_from_time<C: StorageBackend>(
+    pub fn transaction_filtering_from_time<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<u64, ArbosStateError> {
@@ -279,7 +282,7 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
             .set(backend, time)?)
     }
 
-    pub fn get_scheduled_upgrade<C: StorageBackend>(
+    pub fn get_scheduled_upgrade<C: SystemStateBackend>(
         &self,
         backend: &mut C,
     ) -> Result<(u64, u64), ArbosStateError> {
@@ -625,6 +628,29 @@ pub fn arbos_from_input<S: StorageBackend, B: Burner>(
     let version_slot = storage_key_map(&[], VERSION_OFFSET);
     let raw_version =
         StorageBackend::sload(backend, ARBOS_STATE_ADDRESS, version_slot).map_err(Into::into)?;
+    open_detached(raw_version, burner)
+}
+
+/// Open a detached [`ArbosState`] backed by any [`SystemStateBackend`].
+///
+/// Behaviourally identical to [`arbos_from_input`] but reads the version slot
+/// via the non-journaled [`SystemStateBackend::sload_system`] path. Intended
+/// for callers that want to skip the EVM journal — typically precompile
+/// handlers caching the ArbosState across calls within a single block.
+pub fn arbos_from_input_system<S: SystemStateBackend, B: Burner>(
+    backend: &mut S,
+    burner: B,
+) -> Result<ArbosState<'static, Detached, B>, ArbosStateError> {
+    let version_slot = storage_key_map(&[], VERSION_OFFSET);
+    let raw_version = SystemStateBackend::sload_system(backend, ARBOS_STATE_ADDRESS, version_slot)
+        .map_err(Into::into)?;
+    open_detached(raw_version, burner)
+}
+
+fn open_detached<B: Burner>(
+    raw_version: U256,
+    burner: B,
+) -> Result<ArbosState<'static, Detached, B>, ArbosStateError> {
     let arbos_version = u64::try_from(raw_version).unwrap_or(0);
     if arbos_version == 0 {
         return Err(ArbosStateError::Uninitialised);

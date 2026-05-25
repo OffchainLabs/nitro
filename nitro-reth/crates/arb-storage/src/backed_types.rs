@@ -1,7 +1,11 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_storage_errors::StorageError;
 
-use crate::{backend::StorageBackend, slot::storage_key_map, state_ops::ARBOS_STATE_ADDRESS};
+use crate::{
+    backend::{StorageBackend, SystemStateBackend},
+    slot::storage_key_map,
+    state_ops::ARBOS_STATE_ADDRESS,
+};
 
 fn compute_slot(base_key: B256, offset: u64) -> U256 {
     if base_key == B256::ZERO {
@@ -39,9 +43,9 @@ impl StorageBackedUint64 {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         Ok(value.try_into().unwrap_or(0))
     }
@@ -68,9 +72,9 @@ impl StorageBackedBigUint {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<U256, StorageError> {
         backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)
     }
 
@@ -94,9 +98,9 @@ impl StorageBackedAddress {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<Address, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         decode_address(self.slot, value)
     }
@@ -131,9 +135,9 @@ impl StorageBackedInt64 {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<i64, StorageError> {
+    pub fn get<B: SystemStateBackend>(&self, backend: &mut B) -> Result<i64, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         let value_u64: u64 = value.try_into().unwrap_or(0);
         Ok(value_u64 as i64)
@@ -159,18 +163,21 @@ impl StorageBackedBigInt {
         }
     }
 
-    pub fn get_raw<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, StorageError> {
+    pub fn get_raw<B: SystemStateBackend>(&self, backend: &mut B) -> Result<U256, StorageError> {
         backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)
     }
 
-    pub fn is_negative<B: StorageBackend>(&self, backend: &mut B) -> Result<bool, StorageError> {
+    pub fn is_negative<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<bool, StorageError> {
         Ok(self.get_raw(backend)?.bit(255))
     }
 
     /// Returns `(magnitude, is_negative)` decoded from two's complement.
-    pub fn get_signed<B: StorageBackend>(
+    pub fn get_signed<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<(U256, bool), StorageError> {
@@ -217,9 +224,12 @@ impl StorageBackedAddressOrNil {
         }
     }
 
-    pub fn get<B: StorageBackend>(&self, backend: &mut B) -> Result<Option<Address>, StorageError> {
+    pub fn get<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Option<Address>, StorageError> {
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, self.slot)
+            .sload_system(ARBOS_STATE_ADDRESS, self.slot)
             .map_err(Into::into)?;
         if value == nil_address_representation() {
             return Ok(None);

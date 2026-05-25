@@ -1,7 +1,7 @@
 use alloy_primitives::{keccak256, B256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
 
 mod error;
 pub use error::BlockhashesError;
@@ -24,14 +24,14 @@ pub fn open_blockhashes<D>(backing_storage: Storage<'_, D>) -> Blockhashes<'_, D
 }
 
 impl<D: Database> Blockhashes<'_, D> {
-    pub fn l1_block_number<B: StorageBackend>(
+    pub fn l1_block_number<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, BlockhashesError> {
         Ok(self.l1_block_number.get(backend)?)
     }
 
-    pub fn block_hash<B: StorageBackend>(
+    pub fn block_hash<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         number: u64,

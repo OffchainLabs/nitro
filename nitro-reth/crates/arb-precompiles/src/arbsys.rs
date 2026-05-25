@@ -3,9 +3,7 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{
-    arbos_state::arbos_from_input, burn::SystemBurner, merkle_accumulator::calc_num_partials,
-};
+use arbos::merkle_accumulator::calc_num_partials;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -77,7 +75,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             handle_arb_block_hash(&mut input, ctx, gas_used, c.arbBlockNum)
         }
         ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input),
-        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input),
+        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input, ctx),
         ArbSysCalls::getStorageGasAvailable(_) => handle_get_storage_gas(&mut input),
         ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input, ctx),
         ArbSysCalls::mapL1SenderContractAddressToL2Alias(c) => {
@@ -93,7 +91,9 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         ArbSysCalls::sendTxToL1(c) => {
             handle_send_tx_to_l1(&mut input, ctx, gas_used, c.destination, c.data.as_ref())
         }
-        ArbSysCalls::sendMerkleTreeState(_) => handle_send_merkle_tree_state(&mut input, gas_used),
+        ArbSysCalls::sendMerkleTreeState(_) => {
+            handle_send_merkle_tree_state(&mut input, ctx, gas_used)
+        }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
 }
@@ -170,14 +170,19 @@ fn arbos_version_from_format(format_version: U256) -> U256 {
     format_version + U256::from(55)
 }
 
-fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_arbos_version(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let internals = input.internals_mut();
 
     internals
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let version = arbos_version_from_format(U256::from(arb_state.arbos_version()));
 
@@ -209,7 +214,9 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -
     internals
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(ArbPrecompileError::fatal)?;
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let arbos_version = arb_state.arbos_version();
 
@@ -351,7 +358,9 @@ fn do_send_tx_to_l1(
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let arbos_version = arb_state.arbos_version();
 
@@ -472,7 +481,7 @@ fn do_send_tx_to_l1(
     gas_used += LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * l2l1_data_len;
 
     // ArbOS >= 4: return leafNum; older versions return sendHash. The version
-    // was already read by `arbos_from_input` above (no extra gas charged).
+    // was already read above (no extra gas charged).
     let return_val = if arbos_version >= 4 {
         U256::from(leaf_num)
     } else {
@@ -488,6 +497,7 @@ fn do_send_tx_to_l1(
 
 fn handle_send_merkle_tree_state(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
     outer_gas_used: u64,
 ) -> PrecompileResult {
     // Only callable by address zero (for state export).
@@ -501,7 +511,9 @@ fn handle_send_merkle_tree_state(
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     gas_used += STORAGE_READ_COST;

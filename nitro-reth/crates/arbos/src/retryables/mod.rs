@@ -4,6 +4,7 @@ use revm::Database;
 use arb_storage::{
     initialize_queue, open_queue, Queue, Storage, StorageBackedAddress, StorageBackedAddressOrNil,
     StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
+    SystemStateBackend,
 };
 
 use crate::util::BalanceError;
@@ -89,7 +90,7 @@ impl<'a, D> RetryableState<'a, D> {
     }
 
     /// Opens an existing retryable if it exists and hasn't expired.
-    pub fn open_retryable<B: StorageBackend>(
+    pub fn open_retryable<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         id: B256,
@@ -105,7 +106,7 @@ impl<'a, D> RetryableState<'a, D> {
     }
 
     /// Gets the size in bytes a retryable occupies in storage.
-    pub fn retryable_size_bytes<B: StorageBackend>(
+    pub fn retryable_size_bytes<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         id: B256,
@@ -154,7 +155,7 @@ impl<'a, D> RetryableState<'a, D> {
     /// Reads the effective timeout of an open retryable.
     ///
     /// Returns `NoTicketWithId` if the ticket does not exist or has expired.
-    pub fn get_timeout<B: StorageBackend>(
+    pub fn get_timeout<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         ticket_id: B256,
@@ -169,7 +170,7 @@ impl<'a, D> RetryableState<'a, D> {
     /// Reads the beneficiary of an open retryable.
     ///
     /// Returns `NoTicketWithId` if the ticket does not exist or has expired.
-    pub fn get_beneficiary<B: StorageBackend>(
+    pub fn get_beneficiary<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         ticket_id: B256,
@@ -185,7 +186,7 @@ impl<'a, D> RetryableState<'a, D> {
     /// expired. The lookup never fails the way `get_timeout` does so the
     /// precompile can use it to size its gas reservation regardless of
     /// liveness.
-    pub fn calldata_size_for<B: StorageBackend>(
+    pub fn calldata_size_for<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         ticket_id: B256,
@@ -310,13 +311,16 @@ impl<'a, D> RetryableState<'a, D> {
     }
 
     /// Total number of pending retryables in the timeout queue.
-    pub fn queue_size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
+    pub fn queue_size<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, RetryableError> {
         Ok(self.timeout_queue.size(backend)?)
     }
 
     /// Walk the timeout queue and yield `(ticket_id, timeout_seconds)`
     /// for each non-expired retryable.
-    pub fn snapshot_queue<B: StorageBackend>(
+    pub fn snapshot_queue<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         current_time: u64,
@@ -399,7 +403,7 @@ fn clear_ticket_fields<D, B: StorageBackend>(
 }
 
 impl<D> Retryable<'_, D> {
-    pub fn num_tries<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
+    pub fn num_tries<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
         Ok(self.num_tries.get(backend)?)
     }
 
@@ -413,14 +417,14 @@ impl<D> Retryable<'_, D> {
         Ok(new_val)
     }
 
-    pub fn beneficiary<B: StorageBackend>(
+    pub fn beneficiary<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Address, RetryableError> {
         Ok(self.beneficiary.get(backend)?)
     }
 
-    pub fn calculate_timeout<B: StorageBackend>(
+    pub fn calculate_timeout<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, RetryableError> {
@@ -437,7 +441,7 @@ impl<D> Retryable<'_, D> {
         Ok(self.timeout.set(backend, val)?)
     }
 
-    pub fn timeout_windows_left<B: StorageBackend>(
+    pub fn timeout_windows_left<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, RetryableError> {
@@ -454,32 +458,41 @@ impl<D> Retryable<'_, D> {
         Ok(new_val)
     }
 
-    pub fn from<B: StorageBackend>(&self, backend: &mut B) -> Result<Address, RetryableError> {
+    pub fn from<B: SystemStateBackend>(&self, backend: &mut B) -> Result<Address, RetryableError> {
         Ok(self.from.get(backend)?)
     }
 
-    pub fn to<B: StorageBackend>(
+    pub fn to<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<Option<Address>, RetryableError> {
         Ok(self.to.get(backend)?)
     }
 
-    pub fn callvalue<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, RetryableError> {
+    pub fn callvalue<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, RetryableError> {
         Ok(self.callvalue.get(backend)?)
     }
 
-    pub fn calldata<B: StorageBackend>(&self, backend: &mut B) -> Result<Vec<u8>, RetryableError> {
+    pub fn calldata<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Vec<u8>, RetryableError> {
         Ok(self.calldata.get(backend)?)
     }
 
-    pub fn calldata_size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, RetryableError> {
+    pub fn calldata_size<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, RetryableError> {
         Ok(self.calldata.size(backend)?)
     }
 
     /// Constructs a retry transaction from this retryable's stored fields
     /// combined with the provided runtime parameters.
-    pub fn make_tx<B: StorageBackend>(
+    pub fn make_tx<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         chain_id: U256,

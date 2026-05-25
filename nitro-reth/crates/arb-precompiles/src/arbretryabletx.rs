@@ -3,11 +3,7 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{
-    arbos_state::arbos_from_input,
-    burn::SystemBurner,
-    retryables::{RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE},
-};
+use arbos::retryables::{RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -88,7 +84,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             let data = IArbRetryableTx::NotCallable {}.abi_encode();
             return crate::sol_error_revert(&mut gas_used, data, gas_limit);
         }
-        Calls::getTimeout(c) => handle_get_timeout(&mut input, &mut gas_used, c.ticketId),
+        Calls::getTimeout(c) => handle_get_timeout(&mut input, &mut gas_used, c.ticketId, ctx),
         Calls::getBeneficiary(c) => {
             handle_get_beneficiary(&mut input, ctx, &mut gas_used, c.ticketId)
         }
@@ -143,13 +139,16 @@ fn handle_get_timeout(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
     ticket_id: B256,
+    ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let now = current_timestamp(input);
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let effective_timeout = match arb_state
@@ -185,7 +184,9 @@ fn handle_get_beneficiary(
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
     let beneficiary = match arb_state
@@ -228,7 +229,9 @@ fn handle_redeem(
 
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let retryable_state = &arb_state.retryable_state;
 
@@ -333,7 +336,9 @@ fn handle_keepalive(
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let retryable_state = &arb_state.retryable_state;
 
@@ -392,7 +397,9 @@ fn handle_cancel(
     load_arbos(input)?;
 
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let retryable_state = &arb_state.retryable_state;
 
@@ -446,7 +453,7 @@ fn compute_backlog_update_cost(
         result += SLOAD_GAS;
     }
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
-        let len = read_gas_constraints_length(input)?;
+        let len = read_gas_constraints_length(input, ctx)?;
         crate::charge_precompile_gas(gas_used, SLOAD_GAS);
         if len > 0 {
             result += SLOAD_GAS;
@@ -470,7 +477,9 @@ fn compute_actual_backlog_cost(
     }
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         let len = arb_state
             .l2_pricing_state
@@ -515,9 +524,14 @@ fn constraint_actual_backlog_cost(current_backlog: u64, gas_to_donate: u64) -> u
     SLOAD_GAS + write_cost
 }
 
-fn read_gas_constraints_length(input: &mut PrecompileInput<'_>) -> Result<u64, ArbPrecompileError> {
+fn read_gas_constraints_length(
+    input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+) -> Result<u64, ArbPrecompileError> {
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     arb_state
         .l2_pricing_state

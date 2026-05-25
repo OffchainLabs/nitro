@@ -2,8 +2,11 @@ use alloy_primitives::{B256, U256};
 use arb_storage_errors::StorageError;
 
 use crate::{
-    backed_types::StorageBackedUint64, backend::StorageBackend, slot::storage_key_map,
-    state_ops::ARBOS_STATE_ADDRESS, storage::Storage,
+    backed_types::StorageBackedUint64,
+    backend::{StorageBackend, SystemStateBackend},
+    slot::storage_key_map,
+    state_ops::ARBOS_STATE_ADDRESS,
+    storage::Storage,
 };
 
 /// FIFO queue backed by ArbOS storage.
@@ -44,14 +47,14 @@ pub(crate) fn open_queue_at(base_key: B256) -> Queue {
 }
 
 impl Queue {
-    fn load_slot<B: StorageBackend>(
+    fn load_slot<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         offset: u64,
     ) -> Result<B256, StorageError> {
         let slot = compute_slot(self.base_key, offset);
         let value = backend
-            .sload(ARBOS_STATE_ADDRESS, slot)
+            .sload_system(ARBOS_STATE_ADDRESS, slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
@@ -68,19 +71,22 @@ impl Queue {
             .map_err(Into::into)
     }
 
-    pub fn is_empty<B: StorageBackend>(&self, backend: &mut B) -> Result<bool, StorageError> {
+    pub fn is_empty<B: SystemStateBackend>(&self, backend: &mut B) -> Result<bool, StorageError> {
         let put = self.next_put.get(backend)?;
         let get = self.next_get.get(backend)?;
         Ok(put == get)
     }
 
-    pub fn size<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
+    pub fn size<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, StorageError> {
         let put = self.next_put.get(backend)?;
         let get = self.next_get.get(backend)?;
         Ok(put.saturating_sub(get))
     }
 
-    pub fn peek<B: StorageBackend>(&self, backend: &mut B) -> Result<Option<B256>, StorageError> {
+    pub fn peek<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<Option<B256>, StorageError> {
         if self.is_empty(backend)? {
             return Ok(None);
         }
@@ -124,7 +130,7 @@ impl Queue {
     where
         F: FnMut(B256) -> Result<(), E>,
         E: From<StorageError>,
-        B: StorageBackend,
+        B: SystemStateBackend,
     {
         let get = self.next_get.get(backend)?;
         let put = self.next_put.get(backend)?;

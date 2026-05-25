@@ -12,7 +12,7 @@ use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES;
 use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64, StorageBackend};
+use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
 
 pub use self::types::{
     evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, RequestType, UserOutcome,
@@ -144,7 +144,7 @@ impl<'a, D> Programs<'a, D> {
 
 impl<D> Programs<'_, D> {
     /// Load the current Stylus parameters.
-    pub fn params<B: StorageBackend>(
+    pub fn params<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<StylusParams, ProgramsError> {
@@ -153,7 +153,10 @@ impl<D> Programs<'_, D> {
     }
 
     /// Read the configured Wasm activation gas cost.
-    pub fn activation_gas<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, ProgramsError> {
+    pub fn activation_gas<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, ProgramsError> {
         Ok(self.activation_gas.get(backend)?)
     }
 
@@ -178,7 +181,7 @@ impl<D> Programs<'_, D> {
     }
 
     /// Retrieve a program entry (may be expired or unactivated).
-    pub fn get_program<B: StorageBackend>(
+    pub fn get_program<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -186,7 +189,7 @@ impl<D> Programs<'_, D> {
     ) -> Result<Program, ProgramsError> {
         let slot = self.programs.slot_for_key(code_hash);
         let value = backend
-            .sload(self.programs.account(), slot)
+            .sload_system(self.programs.account(), slot)
             .map_err(Into::into)?;
         let data = B256::from(value.to_be_bytes::<32>());
         Ok(Program::from_storage(data, time))
@@ -223,20 +226,20 @@ impl<D> Programs<'_, D> {
     }
 
     /// Read the module hash for a code hash.
-    pub fn get_module_hash<B: StorageBackend>(
+    pub fn get_module_hash<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
     ) -> Result<B256, ProgramsError> {
         let slot = self.module_hashes.slot_for_key(code_hash);
         let value = backend
-            .sload(self.module_hashes.account(), slot)
+            .sload_system(self.module_hashes.account(), slot)
             .map_err(Into::into)?;
         Ok(B256::from(value.to_be_bytes::<32>()))
     }
 
     /// Retrieve and validate an active program.
-    pub fn get_active_program<B: StorageBackend>(
+    pub fn get_active_program<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -260,7 +263,7 @@ impl<D> Programs<'_, D> {
     }
 
     /// Check if a program exists and its status.
-    pub fn program_exists<B: StorageBackend>(
+    pub fn program_exists<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,
@@ -353,7 +356,7 @@ impl<D: Database> Programs<'_, D> {
     /// Compute gas costs for calling a Stylus program.
     ///
     /// Returns `(call_gas_cost, memory_model)`.
-    pub fn call_gas_cost<B: StorageBackend>(
+    pub fn call_gas_cost<B: SystemStateBackend>(
         &self,
         backend: &mut B,
         code_hash: B256,

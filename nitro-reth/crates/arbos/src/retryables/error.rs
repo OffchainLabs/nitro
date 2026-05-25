@@ -3,7 +3,7 @@ use arb_storage::StorageError;
 use crate::util::BalanceError;
 
 /// Errors raised by the retryable ticket subsystem.
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum RetryableError {
     /// Underlying storage failure.
     #[error(transparent)]

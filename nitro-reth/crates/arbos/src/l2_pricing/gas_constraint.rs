@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 
-use arb_storage::{StorageBackedUint64, StorageBackend};
+use arb_storage::{StorageBackedUint64, StorageBackend, SystemStateBackend};
 
 use super::L2PricingError;
 
@@ -25,7 +25,7 @@ pub fn open_gas_constraint(base_key: B256) -> GasConstraint {
 }
 
 impl GasConstraint {
-    pub fn target<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+    pub fn target<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
         Ok(self.target.get(backend)?)
     }
 
@@ -37,7 +37,7 @@ impl GasConstraint {
         Ok(self.target.set(backend, val)?)
     }
 
-    pub fn adjustment_window<B: StorageBackend>(
+    pub fn adjustment_window<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -52,7 +52,7 @@ impl GasConstraint {
         Ok(self.adjustment_window.set(backend, val)?)
     }
 
-    pub fn backlog<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+    pub fn backlog<B: SystemStateBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
         Ok(self.backlog.get(backend)?)
     }
 

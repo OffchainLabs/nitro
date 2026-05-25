@@ -15,7 +15,7 @@ use alloy_primitives::U256;
 use arb_primitives::multigas::NUM_RESOURCE_KIND;
 use arb_storage::{
     open_sub_storage_vector, Storage, StorageBackedBigUint, StorageBackedUint64, StorageBackend,
-    SubStorageVector,
+    SubStorageVector, SystemStateBackend,
 };
 
 // Storage offsets for L2 pricing state.
@@ -129,7 +129,10 @@ impl<'a, D> L2PricingState<'a, D> {
 
     // --- Getters/Setters ---
 
-    pub fn base_fee_wei<B: StorageBackend>(&self, backend: &mut B) -> Result<U256, L2PricingError> {
+    pub fn base_fee_wei<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<U256, L2PricingError> {
         Ok(self.base_fee_wei.get(backend)?)
     }
 
@@ -141,7 +144,7 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.base_fee_wei.set(backend, val)?)
     }
 
-    pub fn min_base_fee_wei<B: StorageBackend>(
+    pub fn min_base_fee_wei<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<U256, L2PricingError> {
@@ -156,7 +159,7 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.min_base_fee_wei.set(backend, val)?)
     }
 
-    pub fn speed_limit_per_second<B: StorageBackend>(
+    pub fn speed_limit_per_second<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -171,7 +174,7 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.speed_limit_per_second.set(backend, limit)?)
     }
 
-    pub fn per_block_gas_limit<B: StorageBackend>(
+    pub fn per_block_gas_limit<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -186,7 +189,7 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.per_block_gas_limit.set(backend, limit)?)
     }
 
-    pub fn per_tx_gas_limit<B: StorageBackend>(
+    pub fn per_tx_gas_limit<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -201,7 +204,10 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.per_tx_gas_limit.set(backend, limit)?)
     }
 
-    pub fn gas_backlog<B: StorageBackend>(&self, backend: &mut B) -> Result<u64, L2PricingError> {
+    pub fn gas_backlog<B: SystemStateBackend>(
+        &self,
+        backend: &mut B,
+    ) -> Result<u64, L2PricingError> {
         Ok(self.gas_backlog.get(backend)?)
     }
 
@@ -213,7 +219,7 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.gas_backlog.set(backend, backlog)?)
     }
 
-    pub fn pricing_inertia<B: StorageBackend>(
+    pub fn pricing_inertia<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -228,7 +234,7 @@ impl<'a, D> L2PricingState<'a, D> {
         Ok(self.pricing_inertia.set(backend, val)?)
     }
 
-    pub fn backlog_tolerance<B: StorageBackend>(
+    pub fn backlog_tolerance<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -245,7 +251,7 @@ impl<'a, D> L2PricingState<'a, D> {
 
     // --- Gas Constraints ---
 
-    pub fn gas_constraints_length<B: StorageBackend>(
+    pub fn gas_constraints_length<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {
@@ -288,7 +294,7 @@ impl<'a, D> L2PricingState<'a, D> {
 
     // --- Multi-Gas Constraints ---
 
-    pub fn multi_gas_constraints_length<B: StorageBackend>(
+    pub fn multi_gas_constraints_length<B: SystemStateBackend>(
         &self,
         backend: &mut B,
     ) -> Result<u64, L2PricingError> {

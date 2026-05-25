@@ -327,7 +327,7 @@ use arb_storage::{
         PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
     DatabaseError, DatabaseErrorInfo, Detached, Storage, StorageBackend, StorageError,
-    ARBOS_STATE_ADDRESS,
+    SystemStateBackend, ARBOS_STATE_ADDRESS,
 };
 use arbos::programs::{memory::MemoryModel, params::StylusParams, Program};
 
@@ -358,10 +358,36 @@ impl<'a, DB: Database> JournalBackend<'a, DB> {
     }
 }
 
-impl<DB: Database> StorageBackend for JournalBackend<'_, DB> {
+impl<DB: Database> SystemStateBackend for JournalBackend<'_, DB> {
     type Error = StorageError;
 
-    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
+    fn sload_system(&mut self, account: Address, slot: U256) -> Result<U256, Self::Error> {
+        // Route through the journal so in-flight writes within the current
+        // call are observed; the perf win comes from the per-block
+        // ArbosState cache, not from bypassing the journal here.
+        let journal = &mut *self.journal;
+        journal
+            .inner
+            .load_account(&mut journal.database, account)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        let value = journal
+            .inner
+            .sload(&mut journal.database, account, slot, false)
+            .map_err(|e| {
+                StorageError::Database(DatabaseError::Read(DatabaseErrorInfo::new(format!(
+                    "{e:?}"
+                ))))
+            })?;
+        Ok(value.data)
+    }
+}
+
+impl<DB: Database> StorageBackend for JournalBackend<'_, DB> {
+    fn sload(&mut self, account: Address, slot: U256) -> Result<U256, StorageError> {
         let journal = &mut *self.journal;
         journal
             .inner
@@ -382,7 +408,7 @@ impl<DB: Database> StorageBackend for JournalBackend<'_, DB> {
         Ok(value.data)
     }
 
-    fn sstore(&mut self, account: Address, slot: U256, value: U256) -> Result<(), Self::Error> {
+    fn sstore(&mut self, account: Address, slot: U256, value: U256) -> Result<(), StorageError> {
         let journal = &mut *self.journal;
         journal
             .inner

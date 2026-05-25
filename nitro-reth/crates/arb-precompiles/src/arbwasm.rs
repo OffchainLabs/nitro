@@ -3,11 +3,7 @@ use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::{
-    arbos_state::arbos_from_input,
-    burn::SystemBurner,
-    programs::{hours_since_arbitrum, hours_to_age, params::StylusParams, Program},
-};
+use arbos::programs::{hours_since_arbitrum, hours_to_age, params::StylusParams, Program};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -64,7 +60,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     let result = match call {
         Calls::stylusVersion(_) => {
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(
                 SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS,
                 U256::from(params.version),
@@ -72,37 +68,37 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         }
         Calls::inkPrice(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.ink_price))
         }
         Calls::maxStackDepth(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.max_stack_depth))
         }
         Calls::freePages(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.free_pages))
         }
         Calls::pageGas(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.page_gas))
         }
         Calls::pageRamp(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.page_ramp))
         }
         Calls::pageLimit(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.page_limit))
         }
         Calls::minInitGas(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + 2 * COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             if ctx.block.arbos_version
                 < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES
             {
@@ -118,7 +114,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         }
         Calls::initCostScalar(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             let scalar = params.init_cost_scalar as u64;
             ok_u256(
                 METHOD_GAS,
@@ -127,17 +123,17 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         }
         Calls::expiryDays(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.expiry_days))
         }
         Calls::keepaliveDays(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.keepalive_days))
         }
         Calls::blockCacheSize(_) => {
             const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-            let params = load_params(&mut input, &mut gas_used)?;
+            let params = load_params(&mut input, &mut gas_used, ctx)?;
             ok_u256(METHOD_GAS, U256::from(params.block_cache_size))
         }
         Calls::activationGas(_) => {
@@ -151,7 +147,9 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             }
             load_arbos(&mut input)?;
             let internals = input.internals_mut();
-            let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+            let arb_state = ctx
+                .block
+                .arbos_state(internals)
                 .map_err(ArbPrecompileError::fatal)?;
             let gas = arb_state
                 .programs
@@ -285,10 +283,13 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
 fn load_params(
     input: &mut PrecompileInput<'_>,
     gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
 ) -> Result<StylusParams, ArbPrecompileError> {
     load_arbos(input)?;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
@@ -307,7 +308,9 @@ fn load_params_and_program(
     load_arbos(input)?;
     let time = ctx.block.block_timestamp;
     let internals = input.internals_mut();
-    let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+    let arb_state = ctx
+        .block
+        .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let params = arb_state
         .programs
@@ -419,7 +422,9 @@ fn handle_activate_program(
     if ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
         load_arbos(&mut input)?;
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         let _activation_gas = arb_state
             .programs
@@ -456,7 +461,9 @@ fn handle_activate_program(
     crate::charge_precompile_gas(&mut gas_used, WARM_SLOAD_GAS);
     let (params, existing_program) = {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         let params = arb_state
             .programs
@@ -547,7 +554,9 @@ fn handle_activate_program(
 
     {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
@@ -558,7 +567,9 @@ fn handle_activate_program(
 
     let data_fee = {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
@@ -581,7 +592,9 @@ fn handle_activate_program(
     };
     {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
@@ -613,7 +626,9 @@ fn handle_activate_program(
         let caller = input.caller;
         let network_addr = {
             let internals = input.internals_mut();
-            let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+            let arb_state = ctx
+                .block
+                .arbos_state(internals)
                 .map_err(ArbPrecompileError::fatal)?;
             arb_state
                 .network_fee_account(internals)
@@ -686,7 +701,9 @@ fn handle_codehash_keepalive(
     let time = ctx.block.block_timestamp;
     let (params, mut program) = {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         let params = arb_state
             .programs
@@ -738,7 +755,9 @@ fn handle_codehash_keepalive(
 
     let data_fee = {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
@@ -752,7 +771,9 @@ fn handle_codehash_keepalive(
     program.age_seconds = 0;
     {
         let internals = input.internals_mut();
-        let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+        let arb_state = ctx
+            .block
+            .arbos_state(internals)
             .map_err(ArbPrecompileError::fatal)?;
         arb_state
             .programs
@@ -784,7 +805,9 @@ fn handle_codehash_keepalive(
         let caller = input.caller;
         let network_addr = {
             let internals = input.internals_mut();
-            let arb_state = arbos_from_input(internals, SystemBurner::new(None, false))
+            let arb_state = ctx
+                .block
+                .arbos_state(internals)
                 .map_err(ArbPrecompileError::fatal)?;
             arb_state
                 .network_fee_account(internals)
