@@ -25,11 +25,11 @@ import (
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/clock"
 	"github.com/offchainlabs/nitro/bold/containers/events"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -148,11 +148,11 @@ func New(
 	return m, nil
 }
 
-func (m *Manager) GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*tracker.Tracker] {
+func (m *Manager) GetEdgeTracker(edgeId protocol.EdgeId) containers.Option[*tracker.Tracker] {
 	if m.IsTrackingEdge(edgeId) {
-		return option.Some(m.trackedEdgeIds.Get(edgeId))
+		return containers.Some(m.trackedEdgeIds.Get(edgeId))
 	}
-	return option.None[*tracker.Tracker]()
+	return containers.None[*tracker.Tracker]()
 }
 
 // IsTrackingEdge returns true if we are currently tracking a specified edge id

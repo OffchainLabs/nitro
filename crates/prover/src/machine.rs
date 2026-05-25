@@ -10,21 +10,16 @@ use std::{
     fs::File,
     hash::Hash,
     io::{BufReader, BufWriter, Write},
-    num::Wrapping,
-    ops::Add,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
-#[cfg(feature = "native")]
-use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
-use num::{Zero, traits::PrimInt};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -33,9 +28,20 @@ use sha3::Keccak256;
 use smallvec::SmallVec;
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
-
 #[cfg(feature = "native")]
-use crate::kzg::prove_kzg_preimage;
+use {
+    crate::{
+        kzg::prove_kzg_preimage,
+        programs::meter::MeteredMachine,
+        reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
+        value::IntegerValType,
+        wavm::{IBinOpType, IRelOpType, IUnOpType, unpack_cross_module_call},
+    },
+    c_kzg::BYTES_PER_BLOB,
+    num::{Zero, traits::PrimInt},
+    std::{num::Wrapping, ops::Add},
+};
+
 use crate::{
     binary::{
         self, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary, parse,
@@ -43,14 +49,10 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{ModuleMod, StylusData, config::CompileConfig, meter::MeteredMachine},
-    reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
+    programs::{ModuleMod, StylusData, config::CompileConfig},
     utils::{CBytes, RemoteTableType, file_bytes},
-    value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
-    wavm::{
-        self, FloatingPointImpls, IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
-        pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm,
-    },
+    value::{ArbValueType, FunctionType, ProgramCounter, Value},
+    wavm::{self, FloatingPointImpls, Instruction, Opcode, pack_cross_module_call, wasm_to_wavm},
 };
 
 #[cfg(feature = "counters")]
@@ -165,6 +167,7 @@ impl Function {
         func
     }
 
+    #[cfg(feature = "native")]
     const CHUNK_SIZE: usize = 64;
 
     fn set_code_merkle(&mut self) {
@@ -181,6 +184,7 @@ impl Function {
         self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
     }
 
+    #[cfg(feature = "native")]
     fn serialize_body_for_proof(&self, pc: ProgramCounter) -> Vec<u8> {
         let start = pc.inst() / 64 * 64;
         let end = (start + 64).min(self.code.len());
@@ -220,6 +224,7 @@ impl StackFrame {
         h.finalize().into()
     }
 
+    #[cfg(feature = "native")]
     fn serialize_for_proof(&self) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend(self.return_ref.serialize_for_proof());
@@ -272,6 +277,7 @@ pub(crate) struct Table {
 }
 
 impl Table {
+    #[cfg(feature = "native")]
     fn serialize_for_proof(&self) -> Result<Vec<u8>> {
         let mut data = vec![ArbValueType::try_from(self.ty.element_type)?.serialize()];
         data.extend((self.elems.len() as u64).to_be_bytes());
@@ -664,6 +670,7 @@ impl Module {
         h.finalize().into()
     }
 
+    #[cfg(feature = "native")]
     fn serialize_for_proof(&self, mem_merkle: &Merkle) -> Vec<u8> {
         let mut data = Vec::new();
 
@@ -809,12 +816,14 @@ impl From<Function> for FunctionSerdeAll {
     }
 }
 
-// Globalstate holds:
+// GlobalState holds:
 // bytes32 - last_block_hash
 // bytes32 - send_root
+// bytes32 - mel_state_hash
+// bytes32 - mel_message_hash
 // uint64 - inbox_position
 // uint64 - position_within_message
-pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 4;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -839,8 +848,9 @@ impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Global state:");
-        for item in self.bytes32_vals {
-            h.update(item)
+        let end_idx = self.bytes32_last_non_zero_index();
+        for i in 0..=end_idx {
+            h.update(self.bytes32_vals[i]);
         }
         for item in self.u64_vals {
             h.update(item.to_be_bytes())
@@ -848,15 +858,36 @@ impl GlobalState {
         h.finalize().into()
     }
 
+    #[cfg(feature = "native")]
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        for item in self.bytes32_vals {
-            data.extend(item)
+        let end_idx = self.bytes32_last_non_zero_index();
+        for i in 0..=end_idx {
+            data.extend(self.bytes32_vals[i]);
         }
         for item in self.u64_vals {
             data.extend(item.to_be_bytes())
         }
         data
+    }
+    /// Returns the index of the last non-zero bytes32 value, or 1 if all values
+    /// past index 1 are zero (and 1 also when every value is zero). Always
+    /// returns at least 1, so the first two slots (block_hash, send_root) are
+    /// always serialized — preserving the pre-MEL GlobalState hash format for
+    /// backwards compatibility.
+    fn bytes32_last_non_zero_index(&self) -> usize {
+        let last_non_zero_idx = self
+            .bytes32_vals
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|&(_, &val)| val != Bytes32::default())
+            .map(|(i, _)| i);
+
+        match last_non_zero_idx {
+            Some(idx) => std::cmp::max(1, idx),
+            None => 1,
+        }
     }
 }
 
@@ -951,6 +982,7 @@ pub type PreimageResolver = Arc<dyn Fn(u64, PreimageType, Bytes32) -> Option<CBy
 #[derive(Clone)]
 struct PreimageResolverWrapper {
     resolver: PreimageResolver,
+    #[cfg(feature = "native")]
     last_resolved: Option<(Bytes32, CBytes)>,
 }
 
@@ -964,6 +996,7 @@ impl PreimageResolverWrapper {
     pub fn new(resolver: PreimageResolver) -> PreimageResolverWrapper {
         PreimageResolverWrapper {
             resolver,
+            #[cfg(feature = "native")]
             last_resolved: None,
         }
     }
@@ -1011,6 +1044,7 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    end_parent_chain_block_hash: Bytes32, // Used for MEL proving.
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
@@ -1590,6 +1624,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info,
         };
@@ -1623,6 +1658,7 @@ impl Machine {
             stylus_modules: Default::default(),
             initial_hash: Default::default(),
             context: Default::default(),
+            end_parent_chain_block_hash: Default::default(),
             debug_info: Default::default(),
         }
     }
@@ -1676,6 +1712,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
         };
@@ -2496,6 +2533,15 @@ impl Machine {
                         error!();
                     } else {
                         self.global_state.u64_vals[idx] = val
+                    }
+                }
+                Opcode::GetEndParentChainBlockHash => {
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    if !module
+                        .memory
+                        .store_slice_aligned(ptr.into(), &*self.end_parent_chain_block_hash)
+                    {
+                        error!();
                     }
                 }
                 Opcode::ValidateCertificate => {
@@ -3327,6 +3373,10 @@ impl Machine {
         self.global_state = gs;
     }
 
+    pub fn set_end_parent_chain_block_hash(&mut self, hash: Bytes32) {
+        self.end_parent_chain_block_hash = hash;
+    }
+
     pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {
         self.preimage_resolver.resolver = resolver;
     }
@@ -3384,5 +3434,113 @@ impl Machine {
         if frame_stack.len() > 25 {
             print(format!("  ... and {} more", frame_stack.len() - 25).grey());
         }
+    }
+}
+
+#[cfg(test)]
+mod global_state_hash_tests {
+    use super::*;
+
+    fn bytes32(byte: u8) -> Bytes32 {
+        let mut b = [0u8; 32];
+        b[0] = byte;
+        b.into()
+    }
+
+    // Recomputes hash() the way the pre-MEL 2-slot GlobalState did: always
+    // exactly two bytes32 followed by the u64 values. Every existing
+    // assertion proof was generated against this format, so hash() for a
+    // state with slots 2 and 3 zero must still match byte-for-byte.
+    fn legacy_two_slot_hash(gs: &GlobalState) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Global state:");
+        h.update(gs.bytes32_vals[0]);
+        h.update(gs.bytes32_vals[1]);
+        for item in gs.u64_vals {
+            h.update(item.to_be_bytes());
+        }
+        h.finalize().into()
+    }
+
+    // Recomputes hash() including all 4 bytes32 slots unconditionally. Used
+    // as the golden vector for states where slot 3 is non-zero (so all four
+    // slots must be serialized).
+    fn full_four_slot_hash(gs: &GlobalState) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Global state:");
+        for v in gs.bytes32_vals {
+            h.update(v);
+        }
+        for item in gs.u64_vals {
+            h.update(item.to_be_bytes());
+        }
+        h.finalize().into()
+    }
+
+    #[test]
+    fn all_zeros_matches_legacy_two_slot_layout() {
+        let gs = GlobalState::default();
+        assert_eq!(gs.bytes32_last_non_zero_index(), 1);
+        assert_eq!(gs.serialize().len(), 2 * 32 + 2 * 8);
+        assert_eq!(gs.hash(), legacy_two_slot_hash(&gs));
+    }
+
+    #[test]
+    fn only_slot_0_set_matches_legacy() {
+        let mut gs = GlobalState::default();
+        gs.bytes32_vals[0] = bytes32(0xAA);
+        gs.u64_vals = [7, 11];
+        assert_eq!(gs.bytes32_last_non_zero_index(), 1);
+        assert_eq!(gs.serialize().len(), 2 * 32 + 2 * 8);
+        assert_eq!(gs.hash(), legacy_two_slot_hash(&gs));
+    }
+
+    #[test]
+    fn only_slot_1_set_matches_legacy() {
+        let mut gs = GlobalState::default();
+        gs.bytes32_vals[1] = bytes32(0xBB);
+        gs.u64_vals = [42, 0];
+        assert_eq!(gs.bytes32_last_non_zero_index(), 1);
+        assert_eq!(gs.serialize().len(), 2 * 32 + 2 * 8);
+        assert_eq!(gs.hash(), legacy_two_slot_hash(&gs));
+    }
+
+    #[test]
+    fn slot_2_set_extends_serialization_and_preserves_intermediate_zeros() {
+        let mut gs = GlobalState::default();
+        gs.bytes32_vals[0] = bytes32(0x01);
+        // intermediate slot 1 left zero on purpose
+        gs.bytes32_vals[2] = bytes32(0x03);
+        gs.u64_vals = [1, 2];
+        assert_eq!(gs.bytes32_last_non_zero_index(), 2);
+        let bytes = gs.serialize();
+        assert_eq!(bytes.len(), 3 * 32 + 2 * 8);
+        // slot 1 (the intermediate zero) must still be present in the prefix
+        assert_eq!(&bytes[32..64], &[0u8; 32]);
+        // and slot 2 should appear next
+        assert_eq!(&bytes[64..96], gs.bytes32_vals[2].as_slice());
+    }
+
+    #[test]
+    fn slot_3_set_serializes_all_four_slots() {
+        let mut gs = GlobalState::default();
+        gs.bytes32_vals[0] = bytes32(0x01);
+        gs.bytes32_vals[3] = bytes32(0x04);
+        gs.u64_vals = [5, 9];
+        assert_eq!(gs.bytes32_last_non_zero_index(), 3);
+        assert_eq!(gs.serialize().len(), 4 * 32 + 2 * 8);
+        assert_eq!(gs.hash(), full_four_slot_hash(&gs));
+    }
+
+    #[test]
+    fn padded_legacy_state_hashes_equal_unpadded_legacy_state() {
+        // {a, b, 0, 0} must hash identically to the pre-MEL {a, b} layout —
+        // this is the backwards-compatibility invariant that every existing
+        // on-chain assertion depends on.
+        let mut gs = GlobalState::default();
+        gs.bytes32_vals[0] = bytes32(0xDE);
+        gs.bytes32_vals[1] = bytes32(0xAD);
+        gs.u64_vals = [123, 456];
+        assert_eq!(gs.hash(), legacy_two_slot_hash(&gs));
     }
 }

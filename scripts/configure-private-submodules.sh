@@ -157,6 +157,29 @@ done <<EOF
 $existing
 EOF
 
+# Broad parent-local HTTPS→SSH rewrite extending SSH routing to every
+# submodule (not just conf-listed -private ones), for SSO setups whose
+# only SSH signal is the origin clone. Cleanup is value-pattern scoped
+# so a developer's other values on the same key survive; redundant with
+# a global rule is harmless. rc=5 is "no such key"; rc=1 covers older
+# git's "no value matched".
+broad_key='url.git@github.com:.insteadof'
+rc=0
+git config --unset-all "$broad_key" '^https://github\.com/$' || rc=$?
+case "$rc" in
+  0|1|5) ;;
+  *)
+    echo "ERROR: Failed to clear stale broad HTTPS→SSH rewrite (rc=$rc)" >&2
+    exit 1
+    ;;
+esac
+if [ "$prefers_ssh" = "1" ]; then
+  if ! git config --add "$broad_key" 'https://github.com/'; then
+    echo "ERROR: Failed to add broad HTTPS→SSH rewrite at parent scope" >&2
+    exit 1
+  fi
+fi
+
 conf_list=" "
 while IFS= read -r repo || [ -n "$repo" ]; do
   repo=${repo#"${repo%%[![:space:]]*}"}
@@ -198,6 +221,36 @@ while IFS= read -r key; do
     exit 1
   fi
 
+  # Probe once; both the apply and cleanup branches below need to know
+  # whether the submodule has a working git dir (file-gitlink or dir).
+  submodule_initialized=0
+  if [ -e "$path/.git" ] && git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
+    submodule_initialized=1
+  fi
+
+  # Mirror the broad HTTPS→SSH rewrite into each submodule's own config:
+  # parent-local config is invisible to git run from inside a submodule,
+  # so without this a later fetch from e.g. brotli/ falls back to HTTPS.
+  # Runs before the OffchainLabs filter so non-conf, non-OCL submodules
+  # are covered too. Value-pattern cleanup preserves unrelated entries.
+  if [ "$submodule_initialized" = "1" ]; then
+    rc=0
+    git -C "$path" config --unset-all "$broad_key" '^https://github\.com/$' || rc=$?
+    case "$rc" in
+      0|1|5) ;;
+      *)
+        echo "ERROR: Failed to clear stale broad HTTPS→SSH rewrite in '$path' (rc=$rc)" >&2
+        exit 1
+        ;;
+    esac
+    if [ "$prefers_ssh" = "1" ]; then
+      if ! git -C "$path" config --add "$broad_key" 'https://github.com/'; then
+        echo "ERROR: Failed to add broad HTTPS→SSH rewrite in '$path'" >&2
+        exit 1
+      fi
+    fi
+  fi
+
   case "$url" in
     *OffchainLabs/*) ;;
     *) continue ;;
@@ -227,13 +280,6 @@ while IFS= read -r key; do
   # the pair is fixed.
   ssh_public="git@github.com:OffchainLabs/${repo}.git"
   ssh_private="git@github.com:OffchainLabs/${repo}-private.git"
-
-  # Probe once; both the apply and cleanup branches below need to know
-  # whether the submodule has a working git dir (file-gitlink or dir).
-  submodule_initialized=0
-  if [ -e "$path/.git" ] && git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
-    submodule_initialized=1
-  fi
 
   case "$conf_list" in
     *" $repo "*) in_conf=1 ;;
