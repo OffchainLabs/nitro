@@ -196,6 +196,9 @@ func TestDangerousAlwaysFallback_SyncingReadsFromCommittee(t *testing.T) {
 
 	waitForAnyTrustBatchOnL1(t, ctx, builder, 30*time.Second)
 
+	sequencerBatchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
+	Require(t, err)
+
 	nodeBFatalErrChan := make(chan error, 10)
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.BlockValidator.Enable = false
@@ -212,6 +215,8 @@ func TestDangerousAlwaysFallback_SyncingReadsFromCommittee(t *testing.T) {
 	})
 	defer cleanupB()
 
+	waitForNodeBatchCount(t, l2B.ConsensusNode, sequencerBatchCount, nodeBFatalErrChan, 30*time.Second)
+
 	checkBatchPosting(t, ctx, builder, l2B.Client)
 
 	// Window > inbox reader poll cadence so a trailing fatal can't slip past the check.
@@ -220,6 +225,26 @@ func TestDangerousAlwaysFallback_SyncingReadsFromCommittee(t *testing.T) {
 		t.Fatalf("node B unexpectedly fataled: %v", err)
 	case <-time.After(2 * time.Second):
 	}
+}
+
+func waitForNodeBatchCount(t *testing.T, node *arbnode.Node, target uint64, fatalErrChan <-chan error, timeout time.Duration) {
+	t.Helper()
+	pcds := node.GetParentChainDataSource()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-fatalErrChan:
+			t.Fatalf("node fataled while waiting for historic batch %d: %v", target, err)
+		default:
+		}
+		count, err := pcds.GetBatchCount()
+		Require(t, err)
+		if count >= target {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("node did not reach batch count %d within %s", target, timeout)
 }
 
 func TestDangerousAlwaysFallback_RejectsMessageExtractionCombo(t *testing.T) {
@@ -250,6 +275,22 @@ func TestDangerousAlwaysFallback_RejectsAnyTrustDisabled(t *testing.T) {
 	}
 }
 
+func TestDangerousAlwaysFallback_RejectsBlockValidatorWithoutRestAggregator(t *testing.T) {
+	cfg := arbnode.ConfigDefaultL1Test()
+	cfg.Dangerous.AlwaysFallbackToParentChainDA = true
+	cfg.DA.AnyTrust.Enable = true
+	cfg.DA.AnyTrust.RestAggregator.Enable = false
+	cfg.BlockValidator.Enable = true
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "block-validator.enable=true") {
+		t.Fatalf("expected error to mention block-validator.enable=true, got: %v", err)
+	}
+}
+
 func assertNoAnyTrustBatchesOnL1(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	t.Helper()
 	pcds := builder.L2.ConsensusNode.GetParentChainDataSource()
@@ -258,7 +299,7 @@ func assertNoAnyTrustBatchesOnL1(t *testing.T, ctx context.Context, builder *Nod
 	if batchCount == 0 {
 		t.Fatal("no batches posted")
 	}
-	checkedAny := false
+	var fallbackPayloadBatches int
 	for seqNum := uint64(0); seqNum < batchCount; seqNum++ {
 		batchData, _, err := pcds.GetSequencerMessageBytes(ctx, seqNum)
 		Require(t, err)
@@ -269,10 +310,12 @@ func assertNoAnyTrustBatchesOnL1(t *testing.T, ctx context.Context, builder *Nod
 		if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
 			t.Fatalf("batch %d posted with AnyTrust header byte 0x%02x", seqNum, headerByte)
 		}
-		checkedAny = true
+		if daprovider.IsBlobHashesHeaderByte(headerByte) || daprovider.IsBrotliMessageHeaderByte(headerByte) {
+			fallbackPayloadBatches++
+		}
 	}
-	if !checkedAny {
-		t.Fatal("no batch contained a DA payload to inspect")
+	if fallbackPayloadBatches == 0 {
+		t.Fatal("no batch carried a calldata (brotli) or blob payload; cannot confirm fallback to parent-chain DA happened")
 	}
 }
 

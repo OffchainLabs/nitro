@@ -139,12 +139,12 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if errors.As(err, &fallbackErr) {
 				log.Error("inbox reader halting", "batch", fallbackErr.BatchNum, "err", err)
 				wrapped := fmt.Errorf("inbox reader: %w", err)
-				select {
-				case r.fatalErrChan <- wrapped:
-				default:
-				}
 				runFatalCause = wrapped
 				close(runChan)
+				select {
+				case r.fatalErrChan <- wrapped:
+				case <-ctx.Done():
+				}
 				return time.Hour
 			}
 			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {

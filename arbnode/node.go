@@ -141,6 +141,9 @@ func (c *Config) Validate() error {
 	if c.Dangerous.AlwaysFallbackToParentChainDA && !c.DA.AnyTrust.Enable {
 		return errors.New("dangerous always-fallback-to-parent-chain-da requires da.anytrust.enable=true (the flag skips factory wiring but the chain config still requires AnyTrust)")
 	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && !c.DA.AnyTrust.RestAggregator.Enable && c.BlockValidator.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da with da.anytrust.rest-aggregator.enable=false is incompatible with block-validator.enable=true: the validator cannot fetch preimages for historical AnyTrust batches and will stall silently")
+	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -661,7 +664,16 @@ func getDAProviders(
 		}
 
 		alwaysFallback := config.Dangerous.AlwaysFallbackToParentChainDA
-		enableWriter := config.BatchPoster.Enable && !alwaysFallback
+
+		var mode anytrust.FactoryMode
+		switch {
+		case alwaysFallback:
+			mode = anytrust.ModeRetiring
+		case config.BatchPoster.Enable:
+			mode = anytrust.ModeWriter
+		default:
+			mode = anytrust.ModeReader
+		}
 
 		if alwaysFallback {
 			if config.DA.AnyTrust.RestAggregator.Enable {
@@ -671,22 +683,20 @@ func getDAProviders(
 			}
 		}
 
-		log.Info("Creating AnyTrust DA provider", "enableWriter", enableWriter, "alwaysFallback", alwaysFallback)
+		log.Info("Creating AnyTrust DA provider", "mode", mode)
 
-		daFactory := anytrust.NewFactory(
+		daFactory, err := anytrust.NewFactory(
 			&config.DA.AnyTrust,
 			dataSigner,
 			l1client,
 			l1Reader,
 			deployInfo.SequencerInbox,
-			enableWriter,
-			alwaysFallback,
+			mode,
 		)
-		log.Info("Created AnyTrust DA factory")
-
-		if err := daFactory.ValidateConfig(); err != nil {
+		if err != nil {
 			return nil, nil, nil, err
 		}
+		log.Info("Created AnyTrust DA factory")
 
 		var localCleanupFuncs []func()
 		reader, readerCleanup, err := daFactory.CreateReader(ctx)
@@ -698,7 +708,7 @@ func getDAProviders(
 		}
 
 		var writer daprovider.Writer
-		if enableWriter {
+		if mode == anytrust.ModeWriter {
 			var writerCleanup func()
 			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
 			if err != nil {
