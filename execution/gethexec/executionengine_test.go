@@ -6,6 +6,7 @@ package gethexec
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -57,4 +58,22 @@ func TestSequencerWrapperMutexReleasedOnSuccess(t *testing.T) {
 		t.Fatal("createBlocksMutex is still locked after normal return")
 	}
 	engine.createBlocksMutex.Unlock()
+}
+
+// Uses a zero-value ExecutionEngine so createBlockFromNextMessage nil-derefs;
+// the test asserts the recover swallows it and the goroutine returns.
+func TestPrefetchNextBlockRecoversFromPanic(t *testing.T) {
+	engine := &ExecutionEngine{}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		engine.prefetchNextBlock(nil)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("prefetch goroutine did not complete; panic was not recovered")
+	}
 }
