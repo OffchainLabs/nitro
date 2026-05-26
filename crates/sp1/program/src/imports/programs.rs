@@ -14,10 +14,9 @@ use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use crate::{
-    Escape, JitConfig, MaybeEscape, replay::CustomEnvData,
+    Escape, JitConfig, MaybeEscape, replay::CustomEnvData, state::sp1_env,
     stylus::MessageToCothread,
 };
-use crate::state::sp1_env;
 
 /// Hardcoded message ID used by the Arbitrator protocol for program communication.
 const ARBITRATOR_MSG_ID: u32 = 0x33333333;

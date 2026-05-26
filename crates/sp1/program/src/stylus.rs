@@ -18,10 +18,9 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
-use caller_env::{GuestPtr, MemAccess};
+use caller_env::{GuestPtr, MemAccess, wasmer_traits::WasmerMem};
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
-use caller_env::wasmer_traits::WasmerMem;
 use prover::programs::{
     STYLUS_ENTRY_POINT,
     config::PricingParams,

@@ -2,8 +2,10 @@ use caller_env::{GuestPtr, MemAccess};
 use prover::value::Value;
 use wasmer::FunctionEnvMut;
 
-use crate::{Escape, MaybeEscape, stylus::StylusCustomEnvData};
-use crate::stylus::stylus_env;
+use crate::{
+    Escape, MaybeEscape,
+    stylus::{StylusCustomEnvData, stylus_env},
+};
 
 pub fn console_log_text(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,

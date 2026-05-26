@@ -94,9 +94,7 @@ impl MemAccess for WasmerMem<'_> {
 
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
         let mut data = vec![0u8; len];
-        self.view()
-            .read(ptr.into(), &mut data)
-            .expect("read slice");
+        self.view().read(ptr.into(), &mut data).expect("read slice");
         data
     }
 

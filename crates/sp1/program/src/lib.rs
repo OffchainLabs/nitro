@@ -12,7 +12,7 @@ use arbutil::{
 };
 use prover::programs::config::{CompileConfig, StylusConfig};
 use thiserror::Error;
-use wasmer::{MemoryAccessError};
+use wasmer::MemoryAccessError;
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
 

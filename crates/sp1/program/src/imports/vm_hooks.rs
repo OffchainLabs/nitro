@@ -6,12 +6,16 @@ use arbutil::{
     },
     pricing::{EVM_API_INK, hostio},
 };
-use caller_env::{GuestPtr, MemAccess};
+use caller_env::{GuestPtr, MemAccess, wasmer_traits::WasmerMem};
 use eyre::eyre;
+use num_traits::Unsigned;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 use wasmer::FunctionEnvMut;
 
-use crate::{CallInputs, Escape, MaybeEscape, keccak, stylus::StylusCustomEnvData};
+use crate::{
+    CallInputs, Escape, MaybeEscape, keccak,
+    stylus::{StylusCustomEnvData, stylus_env},
+};
 
 pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32, Escape> {
     let data = ctx.data_mut();
@@ -685,11 +689,6 @@ pub fn native_keccak256(
 
     Ok(())
 }
-
-use caller_env::wasmer_traits::WasmerMem;
-use num_traits::Unsigned;
-
-use crate::stylus::stylus_env;
 
 fn slice_with_runoff<T, I>(data: &impl AsRef<[T]>, start: I, end: I) -> &[T]
 where
