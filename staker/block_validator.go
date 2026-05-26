@@ -919,6 +919,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			log.Error("failed writing new validated to database", "pos", pos, "err", err)
 		}
 		atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
+		v.pruneBlockRecordingsBefore(ctx, pos+1)
 		v.validations.Delete(pos)
 		nonBlockingTrigger(v.createNodesChan)
 		nonBlockingTrigger(v.sendRecordChan)

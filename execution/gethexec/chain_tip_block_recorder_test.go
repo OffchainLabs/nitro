@@ -824,6 +824,60 @@ func testBlockRecordsFreezerAdvancesOverGapWhenEmpty(t *testing.T, newFreezer fu
 	}
 }
 
+func TestBlockRecordsFreezerPrunesRecordings(t *testing.T) {
+	for _, firstPos := range []arbutil.MessageIndex{0, 1000} {
+		freezer := newTestBlockRecordsFreezer(t, "")
+		store := newBlockRecordsFreezer(freezer)
+		latestPos := firstPos + 10
+		for pos := firstPos; pos <= latestPos; pos++ {
+			if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if err := store.pruneRecordingsBefore(firstPos + 1); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := store.readRecording(firstPos); err == nil || !strings.Contains(err.Error(), "below the freezer tail") {
+			t.Fatalf("expected recording %d to be pruned, got err=%v", firstPos, err)
+		}
+		loaded, err := store.readRecording(firstPos + 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded == nil || loaded.record.Pos != firstPos+1 {
+			t.Fatalf("expected recording %d to remain, got loaded=%+v", firstPos+1, loaded)
+		}
+		tail, err := freezer.Tail()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tail != uint64(firstPos)+1 {
+			t.Fatalf("expected freezer tail %d, got %d", uint64(firstPos)+1, tail)
+		}
+
+		// Pruning beyond the last recording empties the freezer without error.
+		if err := store.pruneRecordingsBefore(latestPos + 100); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.readRecording(latestPos); err == nil || !strings.Contains(err.Error(), "below the freezer tail") {
+			t.Fatalf("expected all recordings pruned, got err=%v", err)
+		}
+		head, err := freezer.Ancients()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tail, err = freezer.Tail()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tail != head || head != uint64(latestPos)+1 {
+			t.Fatalf("expected empty freezer at %d, got tail %d head %d", uint64(latestPos)+1, tail, head)
+		}
+	}
+}
+
 func TestChainTipRecorderReadsPersistedRecording(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
 	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
