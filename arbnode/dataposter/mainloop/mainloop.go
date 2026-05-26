@@ -11,6 +11,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	datapostermetrics "github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/txs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -86,10 +87,10 @@ func Tick(ctx context.Context, p dataPoster) time.Duration {
 		if now.After(tx.NextReplacement) {
 			weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 			nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
-			err := ReplaceTx(ctx, p, lockedState, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
+			err := txs.ReplaceTx(ctx, p, lockedState, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
 			lifecycle.MaybeLogError(err, lockedState, tx, "failed to replace-by-fee transaction")
 		} else {
-			err := SendTx(ctx, p, lockedState, tx, tx)
+			err := txs.SendTx(ctx, p, lockedState, tx, tx)
 			lifecycle.MaybeLogError(err, lockedState, tx, "failed to re-send transaction")
 		}
 		nonce := tx.FullTx.Nonce()

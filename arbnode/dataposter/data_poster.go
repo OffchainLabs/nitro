@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,8 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/mainloop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
@@ -35,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -168,8 +164,13 @@ func (p *DataPoster) ExtraBacklog() uint64 {
 func (p *DataPoster) MaxFeeCapExpression() *govaluate.EvaluableExpression {
 	return p.maxFeeCapExpression
 }
+
 func (p *DataPoster) ParentChain() *parent.ParentChain {
 	return p.parentChain
+}
+
+func (p *DataPoster) ParentChainID256() *uint256.Int {
+	return p.parentChainID256
 }
 
 func (p *DataPoster) Auth() *bind.TransactOpts {
@@ -206,126 +207,6 @@ func (p *DataPoster) InternalState() *state.InternalState {
 
 func (p *DataPoster) RetrieveMetadata(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 	return p.metadataRetriever(ctx, blockNum)
-}
-
-func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	lockedState := p.internalState.Lock()
-	defer p.internalState.Unlock()
-	nonce, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, p, lockedState, 1)
-	if err != nil {
-		return nil, err
-	}
-	return p.postTransaction(ctx, lockedState, time.Now(), nonce.Nonce, nil, to, calldata, gasLimit, value, nil, nil)
-}
-
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
-	lockedState := p.internalState.Lock()
-	defer p.internalState.Unlock()
-	return p.postTransaction(ctx, lockedState, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
-}
-
-func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInternalState, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
-	if p.config().DisableNewTx {
-		return nil, fmt.Errorf("posting new transaction is disabled")
-	}
-
-	var weight uint64 = 1
-	if len(kzgBlobs) > 0 {
-		weight = uint64(len(kzgBlobs))
-	}
-	expectedNonce, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, p, s, weight)
-	if err != nil {
-		return nil, err
-	}
-	if nonce != expectedNonce.Nonce {
-		return nil, fmt.Errorf("%w: data poster expected next transaction to have nonce %v but was requested to post transaction with nonce %v", storage.ErrStorageRace, expectedNonce.Nonce, nonce)
-	}
-
-	err = lifecycle.UpdateBalance(ctx, p, s)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
-	}
-
-	latestHeader, err := p.headerReader.LastHeader(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	caps, err := fees.FeeAndTipCaps(ctx, p, s, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
-	if err != nil {
-		return nil, err
-	}
-
-	var deprecatedData types.DynamicFeeTx
-	var inner types.TxData
-	replacementTimes := p.config().ReplacementTimes
-	if len(kzgBlobs) > 0 {
-		replacementTimes = p.config().BlobTxReplacementTimes
-		value256, overflow := uint256.FromBig(value)
-		if overflow {
-			return nil, fmt.Errorf("blob transaction callvalue %v overflows uint256", value)
-		}
-		// Intentionally break out of date data poster redis clients,
-		// so they don't try to replace by fee a tx they don't understand
-		deprecatedData.Nonce = ^uint64(0)
-		commitments, blobHashes, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
-		}
-		proofs, version, err := blobs.ComputeProofs(kzgBlobs, commitments)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
-		}
-		inner = &types.BlobTx{
-			Nonce: nonce,
-			Gas:   gasLimit,
-			To:    to,
-			Value: value256,
-			Data:  calldata,
-			Sidecar: &types.BlobTxSidecar{
-				Version:     version,
-				Blobs:       kzgBlobs,
-				Commitments: commitments,
-				Proofs:      proofs,
-			},
-			BlobHashes: blobHashes,
-			AccessList: accessList,
-			ChainID:    p.parentChainID256,
-		}
-		// reuse the code to convert gas fee and tip caps to uint256s
-		err = fees.UpdateTxDataGasCaps(inner, caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		deprecatedData = types.DynamicFeeTx{
-			Nonce:      nonce,
-			GasFeeCap:  caps.Fee.NonBlob,
-			GasTipCap:  caps.Tip,
-			Gas:        gasLimit,
-			To:         &to,
-			Value:      value,
-			Data:       calldata,
-			AccessList: accessList,
-			ChainID:    p.parentChain.ChainID,
-		}
-		inner = &deprecatedData
-	}
-	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(inner))
-	if err != nil {
-		return nil, fmt.Errorf("signing transaction: %w", err)
-	}
-	cumulativeWeight := expectedNonce.CumulativeWeight + weight
-	queuedTx := storage.QueuedTransaction{
-		DeprecatedData:         deprecatedData,
-		FullTx:                 fullTx,
-		Meta:                   meta,
-		Sent:                   false,
-		Created:                dataCreatedAt,
-		NextReplacement:        time.Now().Add(replacementTimes[0]),
-		StoredCumulativeWeight: &cumulativeWeight,
-	}
-	return fullTx, mainloop.SendTx(ctx, p, s, nil, &queuedTx)
 }
 
 // Tries to acquire redis lock, updates balance and nonce,

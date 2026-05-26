@@ -31,9 +31,9 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/mainloop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/txs"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -1150,7 +1150,7 @@ func TestSendTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1180,7 +1180,7 @@ func TestSendTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Errorf("expected nil (nonce too low treated as already known), got: %v", err)
 		}
@@ -1204,7 +1204,7 @@ func TestSendTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err == nil {
 			t.Error("expected error to be propagated")
 		} else if !strings.Contains(err.Error(), "connection refused") {
@@ -1237,7 +1237,7 @@ func TestSendTx(t *testing.T) {
 		// New tx at nonce 1: BlobTx (different type!), not yet sent
 		newTx := makeTestBlobQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), big.NewInt(1*params.GWei), 1, false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1272,7 +1272,7 @@ func TestSendTx(t *testing.T) {
 		// New tx at nonce 1: same type (DynamicFeeTx), not yet sent
 		newTx := makeTestQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1292,7 +1292,7 @@ func TestSendTx(t *testing.T) {
 		// New tx at nonce 5
 		newTx := makeTestQueuedTx(5, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1447,7 +1447,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx.Created = time.Now().Add(-2 * time.Minute) // some elapsed time
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := mainloop.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1499,7 +1499,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx.Created = time.Now() // just created, so elapsed time is tiny → low fee formula result
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := mainloop.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1539,7 +1539,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx.Created = time.Now().Add(-30 * time.Second)
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := mainloop.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1568,7 +1568,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), true)
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := mainloop.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
 		if err == nil {
 			t.Error("expected error when header unavailable")
 		}
@@ -1590,7 +1590,7 @@ func TestSaveTx(t *testing.T) {
 		prevTx := makeTestQueuedTx(5, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), true)
 		newTx := makeTestQueuedTx(6, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SaveTx(ctx, dp, s, prevTx, newTx)
+		err := txs.SaveTx(ctx, dp, s, prevTx, newTx)
 		if err == nil {
 			t.Error("expected error for nonce mismatch")
 		} else if !strings.Contains(err.Error(), "doesn't match") {
@@ -1610,7 +1610,7 @@ func TestSaveTx(t *testing.T) {
 
 		// Pass the same tx as both prevTx and newTx — RLP should be identical
 		identical := *tx
-		err := mainloop.SaveTx(ctx, dp, s, tx, &identical)
+		err := txs.SaveTx(ctx, dp, s, tx, &identical)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1637,7 +1637,7 @@ func TestSaveTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(20*params.GWei), big.NewInt(2*params.GWei), true)
 
-		err := mainloop.SaveTx(ctx, dp, s, prevTx, newTx)
+		err := txs.SaveTx(ctx, dp, s, prevTx, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1734,7 +1734,7 @@ func TestSendTx_NonceGap_UnsentPreceding(t *testing.T) {
 		// New tx at nonce 1: same type, also not sent
 		newTx := makeTestQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1761,7 +1761,7 @@ func TestSendTx_NonceGap_UnsentPreceding(t *testing.T) {
 		// New tx at nonce 1: nonce 1 <= reorgResistantCount 5, so send proceeds
 		newTx := makeTestQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := mainloop.SendTx(ctx, dp, s, nil, newTx)
+		err := txs.SendTx(ctx, dp, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1796,7 +1796,7 @@ func TestSendTx_PrevTxSentBypassesGapCheck(t *testing.T) {
 	prevTxForReplace := makeTestQueuedTx(1, big.NewInt(5*params.GWei), big.NewInt(500_000_000), true) // Sent=true
 	putTxInQueue(t, ctx, s, 1, nil, prevTxForReplace)
 
-	err := mainloop.SendTx(ctx, dp, s, prevTxForReplace, newTx)
+	err := txs.SendTx(ctx, dp, s, prevTxForReplace, newTx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1852,7 +1852,7 @@ func TestSaveTx_NilPrevTx(t *testing.T) {
 
 	newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-	err := mainloop.SaveTx(ctx, dp, s, nil, newTx)
+	err := txs.SaveTx(ctx, dp, s, nil, newTx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
