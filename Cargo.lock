@@ -376,7 +376,6 @@ dependencies = [
  "num_enum 0.7.6",
  "ruint2",
  "serde",
- "siphasher 0.3.11",
  "tiny-keccak",
  "wasmparser 0.245.1",
 ]
@@ -3457,7 +3456,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "sha3",
  "stylus",
  "thiserror 1.0.69",
  "validation",
@@ -4626,7 +4624,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
- "siphasher 1.0.3",
+ "siphasher",
 ]
 
 [[package]]
@@ -4971,9 +4969,9 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.10.9",
- "sha3",
  "smallvec",
  "structopt",
+ "tiny-keccak",
  "validation",
  "wasmer",
  "wasmer-compiler-singlepass",
@@ -6253,12 +6251,6 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
 ]
-
-[[package]]
-name = "siphasher"
-version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
 name = "siphasher"

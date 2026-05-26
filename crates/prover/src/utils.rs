@@ -9,7 +9,10 @@ use wasmparser::{RefType, TableType};
 #[cfg(feature = "kzg")]
 use {crate::kzg::ETHEREUM_KZG_SETTINGS, c_kzg::Blob};
 #[cfg(feature = "native")]
-use {arbutil::PreimageType, digest::Digest, sha2::Sha256, sha3::Keccak256};
+use {
+    arbutil::{PreimageType, crypto},
+    sha2::{Digest as _, Sha256},
+};
 
 pub use crate::cbytes::CBytes;
 #[cfg(feature = "libc")]
@@ -74,7 +77,7 @@ pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
 #[cfg(feature = "native")]
 pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
     match ty {
-        PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),
+        PreimageType::Keccak256 => Ok(crypto::keccak(preimage)),
         PreimageType::Sha2_256 => Ok(Sha256::digest(preimage).into()),
         #[cfg(feature = "kzg")]
         PreimageType::EthVersionedHash => {
