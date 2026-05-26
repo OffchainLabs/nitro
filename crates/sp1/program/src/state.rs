@@ -1,11 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{ExecEnv, wavmio::WavmIo};
+use caller_env::{ExecEnv, wasmer_traits::WasmerMem, wavmio::WavmIo};
 use rand::Rng;
 use wasmer::FunctionEnvMut;
 
-use crate::{memory::Sp1MemAccess, replay::CustomEnvData};
+use crate::replay::CustomEnvData;
 
 impl ExecEnv for CustomEnvData {
     fn advance_time(&mut self, ns: u64) {
@@ -73,11 +73,11 @@ impl WavmIo for CustomEnvData {
     }
 }
 
-/// Extracts (Sp1MemAccess, &mut CustomEnvData) from a FunctionEnvMut in place.
+/// Extracts (WasmerMem, &mut CustomEnvData) from a FunctionEnvMut in place.
 pub(crate) fn sp1_env<'a>(
     ctx: &'a mut FunctionEnvMut<'_, CustomEnvData>,
-) -> (Sp1MemAccess<'a>, &'a mut CustomEnvData) {
+) -> (WasmerMem<'a>, &'a mut CustomEnvData) {
     let memory = ctx.data().memory.clone().unwrap();
     let (data, store) = ctx.data_and_store_mut();
-    (Sp1MemAccess { memory, store }, data)
+    (WasmerMem::new(memory, store), data)
 }

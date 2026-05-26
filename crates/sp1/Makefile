@@ -105,6 +105,7 @@ PROFILE_DELTA_SCRIPT ?= $(CURDIR)/profile_delta.py
 
 .PHONY: profile
 profile: # Profile bootloading, stylus compilation, and reexecution across all block types.
+profile: build
 	@cargo build --release -p sp1-runner --features profiling
 	@cp $(TOP)/target/release/sp1-runner $(OUTPUT_DIR)/sp1-runner-profiling
 	@python3 $(PROFILE_SCRIPT) \

@@ -1,52 +1,24 @@
 pub mod imports;
-mod memory;
 pub mod platform;
 pub mod replay;
 mod state;
 pub mod stylus;
 
-use std::{
-    io,
-    mem::{self, MaybeUninit},
-    ptr::NonNull,
-};
+use std::{io, ptr::NonNull};
 
 use arbutil::{
     Bytes20, Bytes32,
     evm::api::{Gas, Ink},
 };
-use caller_env::GuestPtr;
 use prover::programs::config::{CompileConfig, StylusConfig};
 use thiserror::Error;
-use wasmer::{MemoryAccessError, MemoryView};
+use wasmer::MemoryAccessError;
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
 
 pub use crate::replay::run;
 
 pub const STACK_SIZE: usize = 1024 * 1024;
-
-pub(crate) fn read_slice(
-    ptr: GuestPtr,
-    len: usize,
-    memory: &MemoryView,
-) -> Result<Vec<u8>, Escape> {
-    let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
-    // SAFETY: read_uninit fills all available space
-    Ok(unsafe {
-        data.set_len(len);
-        memory.read_uninit(ptr.into(), &mut data)?;
-        mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(data)
-    })
-}
-
-pub(crate) fn read_bytes20(ptr: GuestPtr, memory: &MemoryView) -> Result<Bytes20, Escape> {
-    read_slice(ptr, 20, memory).map(|data| data.try_into().unwrap())
-}
-
-pub(crate) fn read_bytes32(ptr: GuestPtr, memory: &MemoryView) -> Result<Bytes32, Escape> {
-    read_slice(ptr, 32, memory).map(|data| data.try_into().unwrap())
-}
 
 fn keccak<T: AsRef<[u8]>>(preimage: T) -> [u8; 32] {
     use std::mem::MaybeUninit;
@@ -81,7 +53,7 @@ pub enum Escape {
 }
 
 impl Escape {
-    pub fn logical<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
+    pub fn logical<T, S: AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::Logical(message.as_ref().to_string()))
     }
 }

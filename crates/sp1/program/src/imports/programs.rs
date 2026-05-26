@@ -9,12 +9,12 @@
 #![allow(clippy::too_many_arguments)]
 
 use arbutil::evm::{EvmData, api::Gas};
-use caller_env::GuestPtr;
+use caller_env::{GuestPtr, MemAccess};
 use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use crate::{
-    Escape, JitConfig, MaybeEscape, read_bytes20, read_bytes32, read_slice, replay::CustomEnvData,
+    Escape, JitConfig, MaybeEscape, replay::CustomEnvData, state::sp1_env,
     stylus::MessageToCothread,
 };
 
@@ -30,11 +30,9 @@ pub fn new_program(
     evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
-
-    let compiled_hash = read_bytes32(compiled_hash_ptr, &memory)?;
-    let calldata = read_slice(calldata_ptr, calldata_size as usize, &memory)?;
+    let (mem, data) = sp1_env(&mut ctx);
+    let compiled_hash = mem.read_bytes32(compiled_hash_ptr);
+    let calldata = mem.read_slice(calldata_ptr, calldata_size as usize);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
     let config: JitConfig = unsafe { *Box::from_raw(stylus_config_handler as *mut JitConfig) };
 
@@ -58,15 +56,14 @@ pub fn set_response(
     raw_data_ptr: GuestPtr,
     raw_data_len: u32,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, data) = sp1_env(&mut ctx);
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
     assert_eq!(id, ARBITRATOR_MSG_ID);
 
-    let result = read_slice(result_ptr, result_len as usize, &memory)?;
-    let raw_data = read_slice(raw_data_ptr, raw_data_len as usize, &memory)?;
+    let result = mem.read_slice(result_ptr, result_len as usize);
+    let raw_data = mem.read_slice(raw_data_ptr, raw_data_len as usize);
 
     data.send_to_cothread(MessageToCothread {
         result,
@@ -82,8 +79,7 @@ pub fn get_request(
     id: u32,
     len_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = sp1_env(&mut ctx);
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
@@ -95,7 +91,7 @@ pub fn get_request(
         .len()
         .try_into()
         .expect("req_data length exceeds u32::MAX");
-    memory.write(len_ptr.into(), &len.to_le_bytes())?;
+    mem.write_u32(len_ptr, len);
 
     Ok(msg.req_type)
 }
@@ -105,15 +101,14 @@ pub fn get_request_data(
     id: u32,
     data_ptr: GuestPtr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mut mem, data) = sp1_env(&mut ctx);
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
     assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let msg = data.get_last_msg();
-    memory.write(data_ptr.into(), &msg.req_data)?;
+    mem.write_slice(data_ptr, &msg.req_data);
 
     Ok(())
 }
@@ -216,24 +211,23 @@ pub fn create_evm_data_v2(
     cached: u32,
     reentrant: u32,
 ) -> Result<u64, Escape> {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
+    let (mem, _) = sp1_env(&mut ctx);
 
     let evm_data = EvmData {
         arbos_version,
-        block_basefee: read_bytes32(block_basefee_ptr, &memory)?,
+        block_basefee: mem.read_bytes32(block_basefee_ptr),
         cached: cached != 0,
         chainid,
-        block_coinbase: read_bytes20(block_coinbase_ptr, &memory)?,
+        block_coinbase: mem.read_bytes20(block_coinbase_ptr),
         block_gas_limit,
         block_number,
         block_timestamp,
-        contract_address: read_bytes20(contract_address_ptr, &memory)?,
-        module_hash: read_bytes32(module_hash_ptr, &memory)?,
-        msg_sender: read_bytes20(msg_sender_ptr, &memory)?,
-        msg_value: read_bytes32(msg_value_ptr, &memory)?,
-        tx_gas_price: read_bytes32(tx_gas_price_ptr, &memory)?,
-        tx_origin: read_bytes20(tx_origin_ptr, &memory)?,
+        contract_address: mem.read_bytes20(contract_address_ptr),
+        module_hash: mem.read_bytes32(module_hash_ptr),
+        msg_sender: mem.read_bytes20(msg_sender_ptr),
+        msg_value: mem.read_bytes32(msg_value_ptr),
+        tx_gas_price: mem.read_bytes32(tx_gas_price_ptr),
+        tx_origin: mem.read_bytes20(tx_origin_ptr),
         reentrant,
         return_data_len: 0,
         tracing: false,

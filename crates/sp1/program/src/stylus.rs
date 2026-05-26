@@ -18,7 +18,7 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
-use caller_env::GuestPtr;
+use caller_env::{GuestPtr, MemAccess, wasmer_traits::WasmerMem};
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
 use prover::programs::{
@@ -28,7 +28,7 @@ use prover::programs::{
     meter::{GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS},
 };
 use wasmer::{
-    AsStoreMut, Engine, Function, FunctionEnv, Imports, Instance, Memory, MemoryView, Module,
+    AsStoreMut, Engine, Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory, Module,
     RuntimeError, Store, StoreObjects, imports, sys::NativeEngineExt,
 };
 use wasmer_vm::{UnwindReason, VMExtern, install_unwinder};
@@ -36,7 +36,6 @@ use wasmer_vm::{UnwindReason, VMExtern, install_unwinder};
 use crate::{
     CallInputs, Escape, JitConfig, MeterData, STACK_SIZE,
     imports::{debug, vm_hooks},
-    read_bytes20, read_bytes32, read_slice,
     replay::SendYielder,
 };
 
@@ -460,7 +459,7 @@ impl StylusCustomEnvData {
 
     pub fn parse_call_inputs(
         &mut self,
-        memory: &MemoryView,
+        memory: &WasmerMem,
         contract: GuestPtr,
         data: GuestPtr,
         gas: Gas,
@@ -469,9 +468,9 @@ impl StylusCustomEnvData {
     ) -> Result<CallInputs, Escape> {
         let gas_left = self.gas_left()?;
         let gas_req = gas.min(gas_left);
-        let contract = read_bytes20(contract, memory)?;
-        let input = read_slice(data, data_len as usize, memory)?;
-        let value = value.map(|x| read_bytes32(x, memory)).transpose()?;
+        let contract = memory.read_bytes20(contract);
+        let input = memory.read_slice(data, data_len as usize);
+        let value = value.map(|x| memory.read_bytes32(x));
         Ok(CallInputs {
             contract,
             input,
@@ -590,6 +589,15 @@ impl GasMeteredMachine for StylusCustomEnvData {
     fn pricing(&self) -> PricingParams {
         self.config.stylus.pricing
     }
+}
+
+/// Extracts (WasmerMem, &mut StylusCustomEnvData) from a FunctionEnvMut in place.
+pub(crate) fn stylus_env<'a>(
+    ctx: &'a mut FunctionEnvMut<'_, StylusCustomEnvData>,
+) -> (WasmerMem<'a>, &'a mut StylusCustomEnvData) {
+    let memory = ctx.data().memory.clone().unwrap();
+    let (data, store) = ctx.data_and_store_mut();
+    (WasmerMem::new(memory, store), data)
 }
 
 fn build_imports(
