@@ -373,13 +373,12 @@ fn handle_cache_program(
     ) {
         return r;
     }
-    let codehash = {
-        let acct = input
-            .internals_mut()
+    let codehash = crate::without_access_list_effect(input.internals_mut(), |internals| {
+        internals
             .load_account(addr)
-            .map_err(ArbPrecompileError::fatal)?;
-        acct.data.info.code_hash
-    };
+            .map(|acct| acct.data.info.code_hash)
+            .map_err(ArbPrecompileError::fatal)
+    })?;
     set_program_cached(
         input,
         ctx,
