@@ -40,6 +40,7 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = ARBOS_VERSION_32;
     /// ArbOS version 40 — Prague EVM rules.
     pub const ARBOS_VERSION_40: u64 = 40;
+    pub const ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX: u64 = ARBOS_VERSION_40;
     pub const ARBOS_VERSION_41: u64 = 41;
     /// ArbOS version 50 — Dia upgrade.
     pub const ARBOS_VERSION_50: u64 = 50;
