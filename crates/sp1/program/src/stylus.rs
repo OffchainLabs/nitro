@@ -18,6 +18,7 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
+use caller_env::GuestPtr;
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
 use prover::programs::{
@@ -33,7 +34,7 @@ use wasmer::{
 use wasmer_vm::{UnwindReason, VMExtern, install_unwinder};
 
 use crate::{
-    CallInputs, Escape, JitConfig, MeterData, Ptr, STACK_SIZE,
+    CallInputs, Escape, JitConfig, MeterData, STACK_SIZE,
     imports::{debug, vm_hooks},
     read_bytes20, read_bytes32, read_slice,
     replay::SendYielder,
@@ -460,11 +461,11 @@ impl StylusCustomEnvData {
     pub fn parse_call_inputs(
         &mut self,
         memory: &MemoryView,
-        contract: Ptr,
-        data: Ptr,
+        contract: GuestPtr,
+        data: GuestPtr,
         gas: Gas,
         data_len: u32,
-        value: Option<Ptr>,
+        value: Option<GuestPtr>,
     ) -> Result<CallInputs, Escape> {
         let gas_left = self.gas_left()?;
         let gas_req = gas.min(gas_left);

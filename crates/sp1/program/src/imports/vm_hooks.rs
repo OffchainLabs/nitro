@@ -6,12 +6,13 @@ use arbutil::{
     },
     pricing::{EVM_API_INK, hostio},
 };
+use caller_env::GuestPtr;
 use eyre::eyre;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 use wasmer::{FunctionEnvMut, MemoryView};
 
 use crate::{
-    CallInputs, Escape, MaybeEscape, Ptr, keccak, read_bytes20, read_bytes32, read_slice,
+    CallInputs, Escape, MaybeEscape, keccak, read_bytes20, read_bytes32, read_slice,
     stylus::StylusCustomEnvData,
 };
 
@@ -22,22 +23,22 @@ pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32
     Ok(data.evm_data.reentrant)
 }
 
-pub fn read_args(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn read_args(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::READ_ARGS_BASE_INK)?;
     data.pay_for_write(data.calldata.len() as u32)?;
 
-    memory.write(ptr.offset() as u64, &data.calldata)?;
+    memory.write(ptr.into(), &data.calldata)?;
 
     Ok(())
 }
 
 pub fn storage_load_bytes32(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    key: Ptr,
-    dest: Ptr,
+    key: GuestPtr,
+    dest: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -56,15 +57,15 @@ pub fn storage_load_bytes32(
 
     let (value, gas_cost) = data.get_bytes32(key, evm_api_gas_to_use);
     data.buy_gas(gas_cost)?;
-    memory.write(dest.offset() as u64, value.as_slice())?;
+    memory.write(dest.into(), value.as_slice())?;
 
     Ok(())
 }
 
 pub fn transient_load_bytes32(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    key: Ptr,
-    dest: Ptr,
+    key: GuestPtr,
+    dest: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -74,15 +75,15 @@ pub fn transient_load_bytes32(
 
     let key = read_bytes32(key, &memory)?;
     let value = data.get_transient_bytes32(key);
-    memory.write(dest.offset() as u64, value.as_slice())?;
+    memory.write(dest.into(), value.as_slice())?;
 
     Ok(())
 }
 
 pub fn storage_cache_bytes32(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    key: Ptr,
-    value: Ptr,
+    key: GuestPtr,
+    value: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -101,8 +102,8 @@ pub fn storage_cache_bytes32(
 
 pub fn transient_store_bytes32(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    key: Ptr,
-    value: Ptr,
+    key: GuestPtr,
+    value: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -141,7 +142,7 @@ pub fn storage_flush_cache(
 
 pub fn write_result(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    ptr: Ptr,
+    ptr: GuestPtr,
     len: u32,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
@@ -178,12 +179,12 @@ pub fn exit_early(_ctx: FunctionEnvMut<StylusCustomEnvData>, status: u32) -> May
 
 pub fn call_contract(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    contract: Ptr,
-    data: Ptr,
+    contract: GuestPtr,
+    data: GuestPtr,
     data_len: u32,
-    value: Ptr,
+    value: GuestPtr,
     gas: u64,
-    ret_len: Ptr,
+    ret_len: GuestPtr,
 ) -> Result<u8, Escape> {
     let (ctx_data, store) = ctx.data_and_store_mut();
     let memory = ctx_data.memory.clone().unwrap().view(&store);
@@ -205,18 +206,18 @@ pub fn call_contract(
 
     ctx_data.buy_gas(gas_cost)?;
     ctx_data.evm_data.return_data_len = outs_len;
-    ret_len.write(&memory, outs_len)?;
+    memory.write(ret_len.into(), &outs_len.to_le_bytes())?;
 
     Ok(status as u8)
 }
 
 pub fn delegate_call_contract(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    contract: Ptr,
-    data: Ptr,
+    contract: GuestPtr,
+    data: GuestPtr,
     data_len: u32,
     gas: u64,
-    ret_len: Ptr,
+    ret_len: GuestPtr,
 ) -> Result<u8, Escape> {
     let (ctx_data, store) = ctx.data_and_store_mut();
     let memory = ctx_data.memory.clone().unwrap().view(&store);
@@ -237,18 +238,18 @@ pub fn delegate_call_contract(
 
     ctx_data.buy_gas(gas_cost)?;
     ctx_data.evm_data.return_data_len = outs_len;
-    ret_len.write(&memory, outs_len)?;
+    memory.write(ret_len.into(), &outs_len.to_le_bytes())?;
 
     Ok(status as u8)
 }
 
 pub fn static_call_contract(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    contract: Ptr,
-    data: Ptr,
+    contract: GuestPtr,
+    data: GuestPtr,
     data_len: u32,
     gas: u64,
-    ret_len: Ptr,
+    ret_len: GuestPtr,
 ) -> Result<u8, Escape> {
     let (ctx_data, store) = ctx.data_and_store_mut();
     let memory = ctx_data.memory.clone().unwrap().view(&store);
@@ -269,18 +270,18 @@ pub fn static_call_contract(
 
     ctx_data.buy_gas(gas_cost)?;
     ctx_data.evm_data.return_data_len = outs_len;
-    ret_len.write(&memory, outs_len)?;
+    memory.write(ret_len.into(), &outs_len.to_le_bytes())?;
 
     Ok(status as u8)
 }
 
 pub fn create1(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    code: Ptr,
+    code: GuestPtr,
     code_len: u32,
-    endowment: Ptr,
-    contract: Ptr,
-    revert_data_len: Ptr,
+    endowment: GuestPtr,
+    contract: GuestPtr,
+    revert_data_len: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -298,20 +299,20 @@ pub fn create1(
 
     data.buy_gas(gas_cost)?;
     data.evm_data.return_data_len = ret_len;
-    revert_data_len.write(&memory, ret_len)?;
-    memory.write(contract.offset() as u64, result.as_slice())?;
+    memory.write(revert_data_len.into(), &ret_len.to_le_bytes())?;
+    memory.write(contract.into(), result.as_slice())?;
 
     Ok(())
 }
 
 pub fn create2(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    code: Ptr,
+    code: GuestPtr,
     code_len: u32,
-    endowment: Ptr,
-    salt: Ptr,
-    contract: Ptr,
-    revert_data_len: Ptr,
+    endowment: GuestPtr,
+    salt: GuestPtr,
+    contract: GuestPtr,
+    revert_data_len: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -330,15 +331,15 @@ pub fn create2(
 
     data.buy_gas(gas_cost)?;
     data.evm_data.return_data_len = ret_len;
-    revert_data_len.write(&memory, ret_len)?;
-    memory.write(contract.offset() as u64, result.as_slice())?;
+    memory.write(revert_data_len.into(), &ret_len.to_le_bytes())?;
+    memory.write(contract.into(), result.as_slice())?;
 
     Ok(())
 }
 
 pub fn read_return_data(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    dest: Ptr,
+    dest: GuestPtr,
     offset: u32,
     size: u32,
 ) -> Result<u32, Escape> {
@@ -358,7 +359,7 @@ pub fn read_return_data(
 
     let out_len = out_slice.len() as u32;
     if out_len > 0 {
-        memory.write(dest.offset() as u64, out_slice)?;
+        memory.write(dest.into(), out_slice)?;
     }
     Ok(out_len)
 }
@@ -372,7 +373,7 @@ pub fn return_data_size(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<
 
 pub fn emit_log(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    log_data: Ptr,
+    log_data: GuestPtr,
     len: u32,
     topics: u32,
 ) -> MaybeEscape {
@@ -392,8 +393,8 @@ pub fn emit_log(
 
 pub fn account_balance(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    address: Ptr,
-    ptr: Ptr,
+    address: GuestPtr,
+    ptr: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -404,17 +405,17 @@ pub fn account_balance(
 
     let (balance, gas_cost) = data.account_balance(address);
     data.buy_gas(gas_cost)?;
-    memory.write(ptr.offset() as u64, balance.as_slice())?;
+    memory.write(ptr.into(), balance.as_slice())?;
 
     Ok(())
 }
 
 pub fn account_code(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    address: Ptr,
+    address: GuestPtr,
     offset: u32,
     size: u32,
-    dest: Ptr,
+    dest: GuestPtr,
 ) -> Result<u32, Escape> {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -433,15 +434,15 @@ pub fn account_code(
 
     let out_slice = slice_with_runoff(&code, offset, offset.saturating_add(size));
     let out_len = out_slice.len() as u32;
-    memory.write(dest.offset() as u64, out_slice)?;
+    memory.write(dest.into(), out_slice)?;
 
     Ok(out_len)
 }
 
 pub fn account_codehash(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    address: Ptr,
-    ptr: Ptr,
+    address: GuestPtr,
+    ptr: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -452,14 +453,14 @@ pub fn account_codehash(
 
     let (hash, gas_cost) = data.account_codehash(address);
     data.buy_gas(gas_cost)?;
-    memory.write(ptr.offset() as u64, hash.as_slice())?;
+    memory.write(ptr.into(), hash.as_slice())?;
 
     Ok(())
 }
 
 pub fn account_code_size(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    address: Ptr,
+    address: GuestPtr,
 ) -> Result<u32, Escape> {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -491,12 +492,12 @@ pub fn evm_ink_left(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u64,
     Ok(data.ink_ready()?.0)
 }
 
-pub fn block_basefee(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn block_basefee(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::BLOCK_BASEFEE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.block_basefee.as_slice())?;
+    memory.write(ptr.into(), data.evm_data.block_basefee.as_slice())?;
 
     Ok(())
 }
@@ -508,12 +509,12 @@ pub fn chainid(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u64, Esca
     Ok(data.evm_data.chainid)
 }
 
-pub fn block_coinbase(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn block_coinbase(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::BLOCK_COINBASE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.block_coinbase.as_slice())?;
+    memory.write(ptr.into(), data.evm_data.block_coinbase.as_slice())?;
 
     Ok(())
 }
@@ -539,30 +540,30 @@ pub fn block_timestamp(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u
     Ok(data.evm_data.block_timestamp)
 }
 
-pub fn contract_address(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn contract_address(
+    mut ctx: FunctionEnvMut<StylusCustomEnvData>,
+    ptr: GuestPtr,
+) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::ADDRESS_BASE_INK)?;
-    memory.write(
-        ptr.offset() as u64,
-        data.evm_data.contract_address.as_slice(),
-    )?;
+    memory.write(ptr.into(), data.evm_data.contract_address.as_slice())?;
 
     Ok(())
 }
 
 type U256 = ruint2::Uint<256, 4>;
 
-fn read_u256(ptr: Ptr, memory: &MemoryView) -> Result<(U256, Bytes32), Escape> {
+fn read_u256(ptr: GuestPtr, memory: &MemoryView) -> Result<(U256, Bytes32), Escape> {
     let bytes = read_bytes32(ptr, memory)?;
     Ok((bytes.into(), bytes))
 }
 
 pub fn math_div(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    value: Ptr,
-    divisor: Ptr,
+    value: GuestPtr,
+    divisor: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -572,15 +573,15 @@ pub fn math_div(
     let (b, _) = read_u256(divisor, &memory)?;
 
     let result: Bytes32 = a.checked_div(b).unwrap_or_default().into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    memory.write(value.into(), result.as_slice())?;
 
     Ok(())
 }
 
 pub fn math_mod(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    value: Ptr,
-    modulus: Ptr,
+    value: GuestPtr,
+    modulus: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -590,15 +591,15 @@ pub fn math_mod(
     let (b, _) = read_u256(modulus, &memory)?;
 
     let result: Bytes32 = a.checked_rem(b).unwrap_or_default().into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    memory.write(value.into(), result.as_slice())?;
 
     Ok(())
 }
 
 pub fn math_pow(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    value: Ptr,
-    exponent: Ptr,
+    value: GuestPtr,
+    exponent: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -609,16 +610,16 @@ pub fn math_pow(
 
     data.pay_for_pow(&b32)?;
     let result: Bytes32 = a.wrapping_pow(b).into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    memory.write(value.into(), result.as_slice())?;
 
     Ok(())
 }
 
 pub fn math_add_mod(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    value: Ptr,
-    addend: Ptr,
-    modulus: Ptr,
+    value: GuestPtr,
+    addend: GuestPtr,
+    modulus: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -629,16 +630,16 @@ pub fn math_add_mod(
     let (c, _) = read_u256(modulus, &memory)?;
 
     let result: Bytes32 = a.add_mod(b, c).into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    memory.write(value.into(), result.as_slice())?;
 
     Ok(())
 }
 
 pub fn math_mul_mod(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    value: Ptr,
-    multiplier: Ptr,
-    modulus: Ptr,
+    value: GuestPtr,
+    multiplier: GuestPtr,
+    modulus: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -649,37 +650,37 @@ pub fn math_mul_mod(
     let (c, _) = read_u256(modulus, &memory)?;
 
     let result: Bytes32 = a.mul_mod(b, c).into();
-    memory.write(value.offset() as u64, result.as_slice())?;
+    memory.write(value.into(), result.as_slice())?;
 
     Ok(())
 }
 
-pub fn msg_sender(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn msg_sender(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::MSG_SENDER_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.msg_sender.as_slice())?;
+    memory.write(ptr.into(), data.evm_data.msg_sender.as_slice())?;
 
     Ok(())
 }
 
-pub fn msg_value(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn msg_value(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::MSG_VALUE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.msg_value.as_slice())?;
+    memory.write(ptr.into(), data.evm_data.msg_value.as_slice())?;
 
     Ok(())
 }
 
-pub fn tx_gas_price(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn tx_gas_price(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::TX_GAS_PRICE_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.tx_gas_price.as_slice())?;
+    memory.write(ptr.into(), data.evm_data.tx_gas_price.as_slice())?;
 
     Ok(())
 }
@@ -691,21 +692,21 @@ pub fn tx_ink_price(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32,
     Ok(data.pricing().ink_price)
 }
 
-pub fn tx_origin(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {
+pub fn tx_origin(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: GuestPtr) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     data.buy_ink(hostio::TX_ORIGIN_BASE_INK)?;
-    memory.write(ptr.offset() as u64, data.evm_data.tx_origin.as_slice())?;
+    memory.write(ptr.into(), data.evm_data.tx_origin.as_slice())?;
 
     Ok(())
 }
 
 pub fn native_keccak256(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,
-    input: Ptr,
+    input: GuestPtr,
     len: u32,
-    output: Ptr,
+    output: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -713,7 +714,7 @@ pub fn native_keccak256(
     data.pay_for_keccak(len)?;
     let preimage = read_slice(input, len as usize, &memory)?;
     let digest = keccak(&preimage);
-    memory.write(output.offset() as u64, &digest)?;
+    memory.write(output.into(), &digest)?;
 
     Ok(())
 }

@@ -6,7 +6,7 @@ edition = "2024"
 
 [dependencies]
 arbutil = { workspace = true }
-caller-env = { workspace = true, features = ["brotli"] }
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits"] }
 prover = { workspace = true, features = ["native"] }
 sp1-zkvm = { workspace = true, features = ["may_dump_elf", "untrusted_programs"] }
 validation = { workspace = true, features = ["rkyv"] }

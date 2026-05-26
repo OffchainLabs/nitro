@@ -1,39 +1,30 @@
+use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    Escape, MaybeEscape, Ptr, platform,
-    replay::CustomEnvData,
-    state::{gp, sp1_env},
-};
+use crate::{Escape, MaybeEscape, platform, replay::CustomEnvData, state::sp1_env};
 
 pub fn ecrecover(
     mut ctx: FunctionEnvMut<CustomEnvData>,
-    hash: Ptr,
+    hash: GuestPtr,
     hash_len: u32,
-    sig: Ptr,
+    sig: GuestPtr,
     sig_len: u32,
-    output: Ptr,
+    output: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::arbcrypto::ecrecovery(
-        &mut mem,
-        state,
-        gp(hash),
-        hash_len,
-        gp(sig),
-        sig_len,
-        gp(output),
+        &mut mem, state, hash, hash_len, sig, sig_len, output,
     ))
 }
 
 pub fn keccak256(
     mut ctx: FunctionEnvMut<CustomEnvData>,
-    input: Ptr,
+    input: GuestPtr,
     input_length: u32,
-    output: Ptr,
+    output: GuestPtr,
 ) -> MaybeEscape {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::arbcrypto::keccak256(&mut mem, state, gp(input), input_length, gp(output));
+    caller_env::arbcrypto::keccak256(&mut mem, state, input, input_length, output);
     Ok(())
 }
 

@@ -9,12 +9,13 @@
 #![allow(clippy::too_many_arguments)]
 
 use arbutil::evm::{EvmData, api::Gas};
+use caller_env::GuestPtr;
 use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use crate::{
-    Escape, JitConfig, MaybeEscape, Ptr, read_bytes20, read_bytes32, read_slice,
-    replay::CustomEnvData, stylus::MessageToCothread,
+    Escape, JitConfig, MaybeEscape, read_bytes20, read_bytes32, read_slice, replay::CustomEnvData,
+    stylus::MessageToCothread,
 };
 
 /// Hardcoded message ID used by the Arbitrator protocol for program communication.
@@ -22,8 +23,8 @@ const ARBITRATOR_MSG_ID: u32 = 0x33333333;
 
 pub fn new_program(
     mut ctx: FunctionEnvMut<CustomEnvData>,
-    compiled_hash_ptr: Ptr,
-    calldata_ptr: Ptr,
+    compiled_hash_ptr: GuestPtr,
+    calldata_ptr: GuestPtr,
     calldata_size: u32,
     stylus_config_handler: u64,
     evm_data_handler: u64,
@@ -52,9 +53,9 @@ pub fn set_response(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     id: u32,
     gas: u64,
-    result_ptr: Ptr,
+    result_ptr: GuestPtr,
     result_len: u32,
-    raw_data_ptr: Ptr,
+    raw_data_ptr: GuestPtr,
     raw_data_len: u32,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
@@ -79,7 +80,7 @@ pub fn set_response(
 pub fn get_request(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     id: u32,
-    len_ptr: Ptr,
+    len_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -89,7 +90,12 @@ pub fn get_request(
     assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let msg = data.get_last_msg();
-    len_ptr.write(&memory, msg.req_data.len() as u32)?;
+    let len: u32 = msg
+        .req_data
+        .len()
+        .try_into()
+        .expect("req_data length exceeds u32::MAX");
+    memory.write(len_ptr.into(), &len.to_le_bytes())?;
 
     Ok(msg.req_type)
 }
@@ -97,7 +103,7 @@ pub fn get_request(
 pub fn get_request_data(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     id: u32,
-    data_ptr: Ptr,
+    data_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -107,7 +113,7 @@ pub fn get_request_data(
     assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let msg = data.get_last_msg();
-    memory.write(data_ptr.offset() as u64, &msg.req_data)?;
+    memory.write(data_ptr.into(), &msg.req_data)?;
 
     Ok(())
 }
@@ -157,18 +163,18 @@ const DEFAULT_STYLUS_ARBOS_VERSION: u64 = 31;
 
 pub fn create_evm_data(
     ctx: FunctionEnvMut<CustomEnvData>,
-    block_basefee_ptr: Ptr,
+    block_basefee_ptr: GuestPtr,
     chainid: u64,
-    block_coinbase_ptr: Ptr,
+    block_coinbase_ptr: GuestPtr,
     block_gas_limit: u64,
     block_number: u64,
     block_timestamp: u64,
-    contract_address_ptr: Ptr,
-    module_hash_ptr: Ptr,
-    msg_sender_ptr: Ptr,
-    msg_value_ptr: Ptr,
-    tx_gas_price_ptr: Ptr,
-    tx_origin_ptr: Ptr,
+    contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
     cached: u32,
     reentrant: u32,
 ) -> Result<u64, Escape> {
@@ -195,18 +201,18 @@ pub fn create_evm_data(
 pub fn create_evm_data_v2(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     arbos_version: u64,
-    block_basefee_ptr: Ptr,
+    block_basefee_ptr: GuestPtr,
     chainid: u64,
-    block_coinbase_ptr: Ptr,
+    block_coinbase_ptr: GuestPtr,
     block_gas_limit: u64,
     block_number: u64,
     block_timestamp: u64,
-    contract_address_ptr: Ptr,
-    module_hash_ptr: Ptr,
-    msg_sender_ptr: Ptr,
-    msg_value_ptr: Ptr,
-    tx_gas_price_ptr: Ptr,
-    tx_origin_ptr: Ptr,
+    contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
     cached: u32,
     reentrant: u32,
 ) -> Result<u64, Escape> {
@@ -239,18 +245,18 @@ pub fn create_evm_data_v2(
 
 pub fn activate(
     ctx: FunctionEnvMut<CustomEnvData>,
-    wasm_ptr: Ptr,
+    wasm_ptr: GuestPtr,
     wasm_size: u32,
     pages_ptr: WasmPtr<u16>,
-    asm_estimate_ptr: Ptr,
+    asm_estimate_ptr: GuestPtr,
     init_cost_ptr: WasmPtr<u16>,
     cached_init_cost_ptr: WasmPtr<u16>,
     stylus_version: u16,
     debug: u32,
-    codehash: Ptr,
-    module_hash_ptr: Ptr,
+    codehash: GuestPtr,
+    module_hash_ptr: GuestPtr,
     gas_ptr: WasmPtr<u64>,
-    err_buf: Ptr,
+    err_buf: GuestPtr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
     activate_v2(
@@ -274,19 +280,19 @@ pub fn activate(
 
 pub fn activate_v2(
     _ctx: FunctionEnvMut<CustomEnvData>,
-    _wasm_ptr: Ptr,
+    _wasm_ptr: GuestPtr,
     _wasm_size: u32,
     _pages_ptr: WasmPtr<u16>,
-    _asm_estimate_ptr: Ptr,
+    _asm_estimate_ptr: GuestPtr,
     _init_cost_ptr: WasmPtr<u16>,
     _cached_init_cost_ptr: WasmPtr<u16>,
     _stylus_version: u16,
     _arbos_version_for_gas: u64,
     _debug: u32,
-    _codehash: Ptr,
-    _module_hash_ptr: Ptr,
+    _codehash: GuestPtr,
+    _module_hash_ptr: GuestPtr,
     _gas_ptr: WasmPtr<u64>,
-    _err_buf: Ptr,
+    _err_buf: GuestPtr,
     _err_buf_len: u32,
 ) -> Result<u32, Escape> {
     // TODO: per offline discussion with the Arbitrum team, we will call
