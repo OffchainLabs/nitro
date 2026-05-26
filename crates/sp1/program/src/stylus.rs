@@ -18,9 +18,10 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
-use caller_env::{MemAccess, wasmer_traits::WasmerMem};
+use caller_env::{GuestPtr, MemAccess};
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
+use caller_env::wasmer_traits::WasmerMem;
 use prover::programs::{
     STYLUS_ENTRY_POINT,
     config::PricingParams,
@@ -34,10 +35,9 @@ use wasmer::{
 use wasmer_vm::{UnwindReason, VMExtern, install_unwinder};
 
 use crate::{
-    CallInputs, Escape, JitConfig, MeterData, Ptr, STACK_SIZE,
+    CallInputs, Escape, JitConfig, MeterData, STACK_SIZE,
     imports::{debug, vm_hooks},
     replay::SendYielder,
-    state::gp,
 };
 
 /// A cothread wraps a stylus program. Actually we run the stylus
@@ -460,18 +460,18 @@ impl StylusCustomEnvData {
 
     pub fn parse_call_inputs(
         &mut self,
-        mem: &WasmerMem,
-        contract: Ptr,
-        data: Ptr,
+        memory: &WasmerMem,
+        contract: GuestPtr,
+        data: GuestPtr,
         gas: Gas,
         data_len: u32,
-        value: Option<Ptr>,
+        value: Option<GuestPtr>,
     ) -> Result<CallInputs, Escape> {
         let gas_left = self.gas_left()?;
         let gas_req = gas.min(gas_left);
-        let contract = mem.read_bytes20(gp(contract));
-        let input = mem.read_slice(gp(data), data_len as usize);
-        let value = value.map(|x| mem.read_bytes32(gp(x)));
+        let contract = memory.read_bytes20(contract);
+        let input = memory.read_slice(data, data_len as usize);
+        let value = value.map(|x| memory.read_bytes32(x));
         Ok(CallInputs {
             contract,
             input,

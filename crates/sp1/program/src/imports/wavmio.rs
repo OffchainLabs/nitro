@@ -2,31 +2,27 @@
 
 use core::ops::Deref;
 
-use ::caller_env::{MemAccess, wasmer_traits::WasmerMem, wavmio as caller_env};
+use ::caller_env::{GuestPtr, MemAccess, wasmer_traits::WasmerMem, wavmio as caller_env};
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    Escape, MaybeEscape, Ptr,
-    replay::CustomEnvData,
-    state::{gp, sp1_env},
-};
+use crate::{Escape, MaybeEscape, replay::CustomEnvData, state::sp1_env};
 
 pub fn get_global_state_bytes32(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     idx: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::get_global_state_bytes32(&mut mem, state, idx, gp(out_ptr)).map_err(Escape::Logical)
+    caller_env::get_global_state_bytes32(&mut mem, state, idx, out_ptr).map_err(Escape::Logical)
 }
 
 pub fn set_global_state_bytes32(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     idx: u32,
-    src_ptr: Ptr,
+    src_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mem, state) = sp1_env(&mut ctx);
-    caller_env::set_global_state_bytes32(&mem, state, idx, gp(src_ptr)).map_err(Escape::Logical)
+    caller_env::set_global_state_bytes32(&mem, state, idx, src_ptr).map_err(Escape::Logical)
 }
 
 pub fn get_global_state_u64(
@@ -50,10 +46,10 @@ pub fn read_inbox_message(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     msg_num: u64,
     offset: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::read_inbox_message(&mut mem, state, msg_num, offset, gp(out_ptr))
+    caller_env::read_inbox_message(&mut mem, state, msg_num, offset, out_ptr)
         .map_err(Escape::Logical)
 }
 
@@ -61,27 +57,27 @@ pub fn read_delayed_inbox_message(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     msg_num: u64,
     offset: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::read_delayed_inbox_message(&mut mem, state, msg_num, offset, gp(out_ptr))
+    caller_env::read_delayed_inbox_message(&mut mem, state, msg_num, offset, out_ptr)
         .map_err(Escape::Logical)
 }
 
 pub fn resolve_keccak_preimage(
     mut ctx: FunctionEnvMut<CustomEnvData>,
-    hash_ptr: Ptr,
+    hash_ptr: GuestPtr,
     offset: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
     caller_env::resolve_preimage(
         &mut mem,
         state,
         0,
-        gp(hash_ptr),
+        hash_ptr,
         offset,
-        gp(out_ptr),
+        out_ptr,
         "wavmio.ResolvePreImage",
     )
     .map_err(Escape::Logical)
@@ -90,18 +86,18 @@ pub fn resolve_keccak_preimage(
 pub fn resolve_typed_preimage(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     preimage_type: u8,
-    hash_ptr: Ptr,
+    hash_ptr: GuestPtr,
     offset: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
     caller_env::resolve_preimage(
         &mut mem,
         state,
         preimage_type,
-        gp(hash_ptr),
+        hash_ptr,
         offset,
-        gp(out_ptr),
+        out_ptr,
         "wavmio.ResolveTypedPreimage",
     )
     .map_err(Escape::Logical)
@@ -110,14 +106,14 @@ pub fn resolve_typed_preimage(
 pub fn validate_certificate(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     preimage_type: u8,
-    hash_ptr: Ptr,
+    hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::validate_certificate(
         &mem,
         state,
         preimage_type,
-        gp(hash_ptr),
+        hash_ptr,
     ))
 }
 
@@ -126,10 +122,10 @@ pub fn validate_certificate(
 pub fn greedy_resolve_typed_preimage(
     ctx: FunctionEnvMut<CustomEnvData>,
     preimage_type: u8,
-    hash_ptr: Ptr,
+    hash_ptr: GuestPtr,
     offset: u32,
     available: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     greedy_resolve_typed_preimage_impl(
         ctx,
@@ -147,29 +143,29 @@ fn greedy_read(
     mem: &mut WasmerMem,
     offset: usize,
     available: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let full_len = data.len().saturating_sub(offset) as u32;
     let len = std::cmp::min(available, full_len);
     let read = data
         .get(offset..(offset + len as usize))
         .unwrap_or_default();
-    mem.write_slice(gp(out_ptr), read);
+    mem.write_slice(out_ptr, read);
     Ok(full_len)
 }
 
 fn greedy_resolve_typed_preimage_impl(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     preimage_type: u8,
-    hash_ptr: Ptr,
+    hash_ptr: GuestPtr,
     offset: u32,
     available: u32,
-    out_ptr: Ptr,
+    out_ptr: GuestPtr,
     name: &str,
 ) -> Result<u32, Escape> {
     let (mut mem, data) = sp1_env(&mut ctx);
     let offset = offset as usize;
-    let hash = mem.read_bytes32(gp(hash_ptr));
+    let hash = mem.read_bytes32(hash_ptr);
     let Some(preimage) = data
         .input()
         .preimages

@@ -12,16 +12,13 @@ use arbutil::{
 };
 use prover::programs::config::{CompileConfig, StylusConfig};
 use thiserror::Error;
-use wasmer::{MemoryAccessError, WasmPtr};
+use wasmer::{MemoryAccessError};
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
 
 pub use crate::replay::run;
 
 pub const STACK_SIZE: usize = 1024 * 1024;
-
-// nitro uses 32-bit memory space
-pub(crate) type Ptr = WasmPtr<u32>;
 
 fn keccak<T: AsRef<[u8]>>(preimage: T) -> [u8; 32] {
     use std::mem::MaybeUninit;
@@ -56,7 +53,7 @@ pub enum Escape {
 }
 
 impl Escape {
-    pub fn logical<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
+    pub fn logical<T, S: AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::Logical(message.as_ref().to_string()))
     }
 }

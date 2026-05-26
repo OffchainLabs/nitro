@@ -1,12 +1,9 @@
 //! WASI stubs — thin wrappers delegating to caller_env::wasip1_stub.
 
+use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    Ptr, platform,
-    replay::CustomEnvData,
-    state::{gp, sp1_env},
-};
+use crate::{platform, replay::CustomEnvData, state::sp1_env};
 
 pub fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
     let (data, _store) = ctx.data_and_store_mut();
@@ -33,17 +30,16 @@ macro_rules! wrap {
             caller_env::wasip1_stub::$name(&mut mem, state, $(wrap!(@conv $arg $ty)),*).0
         }
     };
-    (@conv $arg:ident Ptr) => { gp($arg) };
     (@conv $arg:ident $ty:tt) => { $arg };
 }
 
-wrap!(fn clock_time_get(_clock_id: u32, _precision: u64, time_ptr: Ptr));
-wrap!(fn random_get(buf: Ptr, len: u32));
-wrap!(fn environ_get(a: Ptr, b: Ptr));
-wrap!(fn environ_sizes_get(length_ptr: Ptr, data_size_ptr: Ptr));
+wrap!(fn clock_time_get(_clock_id: u32, _precision: u64, time_ptr: GuestPtr));
+wrap!(fn random_get(buf: GuestPtr, len: u32));
+wrap!(fn environ_get(a: GuestPtr, b: GuestPtr));
+wrap!(fn environ_sizes_get(length_ptr: GuestPtr, data_size_ptr: GuestPtr));
 wrap!(fn fd_read(a: u32, b: u32, c: u32, d: u32));
 wrap!(fn fd_close(fd: u32));
-wrap!(fn fd_write(fd: u32, iovecs_ptr: Ptr, iovecs_len: u32, ret_ptr: Ptr));
+wrap!(fn fd_write(fd: u32, iovecs_ptr: GuestPtr, iovecs_len: u32, ret_ptr: GuestPtr));
 wrap!(fn fd_readdir(fd: u32, a: u32, b: u32, c: u64, d: u32));
 wrap!(fn fd_sync(a: u32));
 wrap!(fn fd_seek(fd: u32, offset: u64, whence: u8, filesize: u32));
@@ -64,8 +60,8 @@ wrap!(fn fd_pwrite(fd: u32, a: u32, b: u32, c: u64, d: u32));
 wrap!(fn sock_accept(_fd: u32, a: u32, b: u32));
 wrap!(fn sock_shutdown(a: u32, b: u32));
 wrap!(fn sched_yield());
-wrap!(fn args_sizes_get(length_ptr: Ptr, data_size_ptr: Ptr));
-wrap!(fn args_get(argv_buf: Ptr, data_buf: Ptr));
+wrap!(fn args_sizes_get(length_ptr: GuestPtr, data_size_ptr: GuestPtr));
+wrap!(fn args_get(argv_buf: GuestPtr, data_buf: GuestPtr));
 wrap!(fn fd_fdstat_get(a: u32, b: u32));
 wrap!(fn fd_fdstat_set_flags(a: u32, b: u32));
-wrap!(fn poll_oneoff(in_subs: Ptr, out_evt: Ptr, nsubscriptions: u32, nevents_ptr: Ptr));
+wrap!(fn poll_oneoff(in_subs: GuestPtr, out_evt: GuestPtr, nsubscriptions: u32, nevents_ptr: GuestPtr));

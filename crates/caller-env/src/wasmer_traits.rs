@@ -12,11 +12,11 @@ unsafe impl FromToNativeWasmType for GuestPtr {
     type Native = i32;
 
     fn from_native(native: i32) -> Self {
-        Self(u32::from_native(native))
+        Self::new(u32::from_native(native))
     }
 
     fn to_native(self) -> i32 {
-        self.0.to_native()
+        u32::from(self).to_native()
     }
 }
 
@@ -34,7 +34,7 @@ unsafe impl FromToNativeWasmType for Errno {
 
 impl<T> From<GuestPtr> for WasmPtr<T> {
     fn from(value: GuestPtr) -> Self {
-        WasmPtr::new(value.0)
+        WasmPtr::new(value.into())
     }
 }
 
@@ -95,7 +95,7 @@ impl MemAccess for WasmerMem<'_> {
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
         let mut data = vec![0u8; len];
         self.view()
-            .read(ptr.to_u64(), &mut data)
+            .read(ptr.into(), &mut data)
             .expect("read slice");
         data
     }
@@ -103,12 +103,12 @@ impl MemAccess for WasmerMem<'_> {
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
         let mut buf = [0u8; N];
         self.view()
-            .read(ptr.to_u64(), &mut buf)
+            .read(ptr.into(), &mut buf)
             .expect("read fixed bytes");
         buf
     }
 
     fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]) {
-        self.view().write(ptr.to_u64(), data).expect("write slice");
+        self.view().write(ptr.into(), data).expect("write slice");
     }
 }

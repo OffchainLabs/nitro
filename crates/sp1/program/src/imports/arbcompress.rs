@@ -1,20 +1,17 @@
 //! This module implements arbcompression functions required by Arbitrum.
 
+use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
-use crate::{
-    Escape, Ptr,
-    replay::CustomEnvData,
-    state::{gp, sp1_env},
-};
+use crate::{Escape, replay::CustomEnvData, state::sp1_env};
 
 #[allow(clippy::too_many_arguments)]
 pub fn brotli_compress(
     mut ctx: FunctionEnvMut<CustomEnvData>,
-    in_buf_ptr: Ptr,
+    in_buf_ptr: GuestPtr,
     in_buf_len: u32,
-    out_buf_ptr: Ptr,
-    out_len_ptr: Ptr,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
     level: u32,
     window_size: u32,
     dictionary: u8,
@@ -23,10 +20,10 @@ pub fn brotli_compress(
     Ok(caller_env::brotli::brotli_compress(
         &mut mem,
         state,
-        gp(in_buf_ptr),
+        in_buf_ptr,
         in_buf_len,
-        gp(out_buf_ptr),
-        gp(out_len_ptr),
+        out_buf_ptr,
+        out_len_ptr,
         level,
         window_size,
         dictionary.try_into().expect("unknown dictionary"),
@@ -36,20 +33,20 @@ pub fn brotli_compress(
 
 pub fn brotli_decompress(
     mut ctx: FunctionEnvMut<CustomEnvData>,
-    in_buf_ptr: Ptr,
+    in_buf_ptr: GuestPtr,
     in_buf_len: u32,
-    out_buf_ptr: Ptr,
-    out_len_ptr: Ptr,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
     dictionary: u8,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::brotli::brotli_decompress(
         &mut mem,
         state,
-        gp(in_buf_ptr),
+        in_buf_ptr,
         in_buf_len,
-        gp(out_buf_ptr),
-        gp(out_len_ptr),
+        out_buf_ptr,
+        out_len_ptr,
         dictionary.try_into().expect("unknown dictionary"),
     )
     .into())
