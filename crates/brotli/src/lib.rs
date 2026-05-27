@@ -17,9 +17,6 @@ pub mod cgo;
 mod dicts;
 mod types;
 
-#[cfg(feature = "wasmer_traits")]
-mod wasmer_traits;
-
 pub use dicts::Dictionary;
 use types::*;
 pub use types::{BrotliStatus, DEFAULT_WINDOW_SIZE};

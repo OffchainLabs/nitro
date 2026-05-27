@@ -12,7 +12,6 @@ rust-version.workspace = true
 [dependencies]
 lazy_static = { workspace = true }
 num_enum = { workspace = true }
-wasmer = { workspace = true, optional = true }
 
 [build-dependencies]
 cc = { version = "1.0", optional = true }
@@ -21,5 +20,4 @@ cc = { version = "1.0", optional = true }
 crate-type = ["lib"]
 
 [features]
-wasmer_traits = ["dep:wasmer"]
 cc_brotli = ["dep:cc"]
