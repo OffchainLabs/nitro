@@ -1,5 +1,6 @@
 //! This module implements arbcompression functions required by Arbitrum.
 
+use brotli::{BrotliStatus, Dictionary};
 use caller_env::GuestPtr;
 use wasmer::FunctionEnvMut;
 
@@ -14,8 +15,8 @@ pub fn brotli_compress(
     out_len_ptr: GuestPtr,
     level: u32,
     window_size: u32,
-    dictionary: u8,
-) -> Result<u32, Escape> {
+    dictionary: Dictionary,
+) -> Result<BrotliStatus, Escape> {
     let (mut mem, _) = sp1_env(&mut ctx);
     Ok(caller_env::brotli::brotli_compress(
         &mut mem,
@@ -25,9 +26,8 @@ pub fn brotli_compress(
         out_len_ptr,
         level,
         window_size,
-        dictionary.try_into().expect("unknown dictionary"),
-    )
-    .into())
+        dictionary,
+    ))
 }
 
 pub fn brotli_decompress(
@@ -36,8 +36,8 @@ pub fn brotli_decompress(
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
     out_len_ptr: GuestPtr,
-    dictionary: u8,
-) -> Result<u32, Escape> {
+    dictionary: Dictionary,
+) -> Result<BrotliStatus, Escape> {
     let (mut mem, _) = sp1_env(&mut ctx);
     Ok(caller_env::brotli::brotli_decompress(
         &mut mem,
@@ -45,7 +45,6 @@ pub fn brotli_decompress(
         in_buf_len,
         out_buf_ptr,
         out_len_ptr,
-        dictionary.try_into().expect("unknown dictionary"),
-    )
-    .into())
+        dictionary,
+    ))
 }
