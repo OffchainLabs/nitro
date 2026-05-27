@@ -1021,6 +1021,7 @@ dependencies = [
  "cc",
  "lazy_static",
  "num_enum 0.7.6",
+ "wasmer",
 ]
 
 [[package]]

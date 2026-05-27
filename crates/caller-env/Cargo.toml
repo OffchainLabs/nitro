@@ -24,5 +24,5 @@ wasmer = { workspace = true, optional = true }
 default = ["brotli"]
 brotli = ["dep:brotli"]
 static_caller = []
-wasmer_traits = ["dep:wasmer", "dep:arbutil"]
+wasmer_traits = ["dep:wasmer", "dep:arbutil", "brotli?/wasmer_traits"]
 cc_brotli = ["brotli?/cc_brotli"]

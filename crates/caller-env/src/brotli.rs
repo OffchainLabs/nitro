@@ -6,7 +6,6 @@
 use alloc::vec::Vec;
 
 use brotli::{BrotliStatus, Dictionary};
-use wasmer::FromToNativeWasmType;
 use crate::{GuestPtr, MemAccess};
 
 /// Brotli compresses a go slice
@@ -68,31 +67,5 @@ pub fn brotli_decompress<M: MemAccess>(
             BrotliStatus::Success
         }
         Err(status) => status,
-    }
-}
-
-#[cfg(feature = "wasmer_traits")]
-unsafe impl FromToNativeWasmType for Dictionary {
-    type Native = i32;
-
-    fn from_native(native: i32) -> Self {
-        Self::try_from(u32::from_native(native)).expect("unknown brotli dictionary")
-    }
-
-    fn to_native(self) -> i32 {
-        (self as u32).to_native()
-    }
-}
-
-#[cfg(feature = "wasmer_traits")]
-unsafe impl FromToNativeWasmType for BrotliStatus {
-    type Native = i32;
-
-    fn from_native(native: i32) -> Self {
-        Self::try_from(u32::from_native(native)).expect("unknown brotli status")
-    }
-
-    fn to_native(self) -> i32 {
-        (self as u32).to_native()
     }
 }
