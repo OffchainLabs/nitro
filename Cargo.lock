@@ -348,7 +348,6 @@ version = "0.1.0"
 dependencies = [
  "brotli",
  "caller-env",
- "paste",
 ]
 
 [[package]]

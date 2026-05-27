@@ -16,4 +16,3 @@ crate-type = ["cdylib"]
 [dependencies]
 brotli = { workspace = true }
 caller-env = { workspace = true, features = ["brotli", "static_caller"] }
-paste =  { workspace = true }

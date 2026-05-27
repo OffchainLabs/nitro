@@ -6,42 +6,45 @@
 use brotli::{BrotliStatus, Dictionary};
 use caller_env::{
     self, GuestPtr,
-    static_caller::{StaticExecEnv, StaticMem},
+    static_caller::StaticMem
 };
-use paste::paste;
 
-macro_rules! wrap {
-    ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {
-        paste! {
-            $(
-                #[unsafe(no_mangle)]
-                pub unsafe extern "C" fn [<arbcompress__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
-                    caller_env::brotli::$func_name(
-                        &mut StaticMem,
-                        $($arg_name),*
-                    )
-                }
-            )*
-        }
-    };
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbcompress__brotli_compress(
+    in_buf_ptr: GuestPtr,
+    in_buf_len: u32,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+    level: u32,
+    window_size: u32,
+    dictionary: Dictionary,
+) -> BrotliStatus {
+    caller_env::brotli::brotli_compress(
+        &mut StaticMem,
+        in_buf_ptr,
+        in_buf_len,
+        out_buf_ptr,
+        out_len_ptr,
+        level,
+        window_size,
+        dictionary,
+    )
 }
 
-wrap! {
-    fn brotli_compress(
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        level: u32,
-        window_size: u32,
-        dictionary: Dictionary
-    ) -> BrotliStatus;
-
-    fn brotli_decompress(
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        dictionary: Dictionary
-    ) -> BrotliStatus
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbcompress__brotli_decompress(
+    in_buf_ptr: GuestPtr,
+    in_buf_len: u32,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+    dictionary: Dictionary,
+) -> BrotliStatus {
+    caller_env::brotli::brotli_decompress(
+        &mut StaticMem,
+        in_buf_ptr,
+        in_buf_len,
+        out_buf_ptr,
+        out_len_ptr,
+        dictionary,
+    )
 }
