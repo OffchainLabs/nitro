@@ -62,7 +62,10 @@ pub use nodeinterface_debug::{
     create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
 };
 
-use alloy_evm::precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap};
+use alloy_evm::{
+    precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap},
+    EvmInternals,
+};
 use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
@@ -106,6 +109,19 @@ fn create_modexp_osaka_precompile() -> DynPrecompile {
 
 pub fn charge_precompile_gas(gas_used: &mut u64, gas: u64) {
     *gas_used = gas_used.saturating_add(gas);
+}
+
+/// Runs `f`, reverting the access-list warming its loads record so a touched
+/// address stays cold for the caller's later EIP-2929 access. For precompile
+/// reads of account code/balance, which must not warm the address.
+pub(crate) fn without_access_list_effect<R>(
+    internals: &mut EvmInternals<'_>,
+    f: impl FnOnce(&mut EvmInternals<'_>) -> R,
+) -> R {
+    let checkpoint = internals.checkpoint();
+    let result = f(internals);
+    internals.checkpoint_revert(checkpoint);
+    result
 }
 
 /// Initialize gas tracking for a precompile call: charge argsCost

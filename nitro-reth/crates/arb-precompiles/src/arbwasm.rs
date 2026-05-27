@@ -329,11 +329,14 @@ fn get_account_codehash(
     input: &mut PrecompileInput<'_>,
     address: Address,
 ) -> Result<B256, ArbPrecompileError> {
-    let account = input
-        .internals_mut()
-        .load_account(address)
-        .map_err(ArbPrecompileError::fatal)?;
-    Ok(account.data.info.code_hash)
+    crate::without_access_list_effect(input.internals_mut(), |internals| {
+        Ok(internals
+            .load_account(address)
+            .map_err(ArbPrecompileError::fatal)?
+            .data
+            .info
+            .code_hash)
+    })
 }
 
 /// Returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
@@ -435,26 +438,24 @@ fn handle_activate_program(
 
     crate::charge_precompile_gas(&mut gas_used, ACTIVATION_UPFRONT_GAS);
 
-    let code_hash = {
-        let account = input
-            .internals_mut()
-            .load_account(program_address)
-            .map_err(ArbPrecompileError::fatal)?;
-        account.data.info.code_hash
-    };
-
-    let code_bytes = {
-        let code_account = input
-            .internals_mut()
-            .load_account_code(program_address)
-            .map_err(ArbPrecompileError::fatal)?;
-        code_account
-            .data
-            .code()
-            .map(|c| c.original_bytes())
-            .unwrap_or_default()
-            .to_vec()
-    };
+    let (code_hash, code_bytes) =
+        crate::without_access_list_effect(input.internals_mut(), |internals| {
+            let code_hash = internals
+                .load_account(program_address)
+                .map_err(ArbPrecompileError::fatal)?
+                .data
+                .info
+                .code_hash;
+            let code_bytes = internals
+                .load_account_code(program_address)
+                .map_err(ArbPrecompileError::fatal)?
+                .data
+                .code()
+                .map(|c| c.original_bytes())
+                .unwrap_or_default()
+                .to_vec();
+            Ok::<_, ArbPrecompileError>((code_hash, code_bytes))
+        })?;
 
     load_arbos(&mut input)?;
     let time = ctx.block.block_timestamp;

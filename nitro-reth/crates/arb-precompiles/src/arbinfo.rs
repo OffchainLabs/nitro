@@ -42,13 +42,12 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
 fn handle_get_balance(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
     let gas_limit = input.gas;
-    let internals = input.internals_mut();
-
-    let acct = internals
-        .load_account(addr)
-        .map_err(ArbPrecompileError::fatal)?;
-
-    let balance = acct.data.info.balance;
+    let balance = crate::without_access_list_effect(input.internals_mut(), |internals| {
+        internals
+            .load_account(addr)
+            .map(|acct| acct.data.info.balance)
+            .map_err(ArbPrecompileError::fatal)
+    })?;
     // OpenArbosState (800) + argsCost (3) + BalanceGasEIP1884 (700) + resultCost (3).
     let gas_cost = (SLOAD_GAS + 3 + 700 + COPY_GAS).min(gas_limit);
 
@@ -60,17 +59,17 @@ fn handle_get_balance(input: &mut PrecompileInput<'_>, addr: Address) -> Precomp
 
 fn handle_get_code(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
     let gas_limit = input.gas;
-    let internals = input.internals_mut();
-
-    let acct = internals
-        .load_account_code(addr)
-        .map_err(ArbPrecompileError::fatal)?;
-
-    let code = acct
-        .data
-        .code()
-        .map(|c| c.original_bytes())
-        .unwrap_or_default();
+    let code = crate::without_access_list_effect(input.internals_mut(), |internals| {
+        internals
+            .load_account_code(addr)
+            .map(|acct| {
+                acct.data
+                    .code()
+                    .map(|c| c.original_bytes())
+                    .unwrap_or_default()
+            })
+            .map_err(ArbPrecompileError::fatal)
+    })?;
 
     let pad = (32 - code.len() % 32) % 32;
     let mut out = Vec::with_capacity(64 + code.len() + pad);
