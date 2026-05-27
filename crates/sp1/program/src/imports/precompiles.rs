@@ -11,9 +11,9 @@ pub fn ecrecover(
     sig_len: u32,
     output: GuestPtr,
 ) -> Result<u32, Escape> {
-    let (mut mem, state) = sp1_env(&mut ctx);
+    let (mut mem, _) = sp1_env(&mut ctx);
     Ok(caller_env::arbcrypto::ecrecovery(
-        &mut mem, state, hash, hash_len, sig, sig_len, output,
+        &mut mem, hash, hash_len, sig, sig_len, output,
     ))
 }
 
@@ -23,8 +23,8 @@ pub fn keccak256(
     input_length: u32,
     output: GuestPtr,
 ) -> MaybeEscape {
-    let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::arbcrypto::keccak256(&mut mem, state, input, input_length, output);
+    let (mut mem, _) = sp1_env(&mut ctx);
+    caller_env::arbcrypto::keccak256(&mut mem, input, input_length, output);
     Ok(())
 }
 

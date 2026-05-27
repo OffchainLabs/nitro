@@ -7,15 +7,14 @@ use alloc::vec::Vec;
 
 use brotli::{BrotliStatus, Dictionary};
 
-use crate::{ExecEnv, GuestPtr, MemAccess};
+use crate::{GuestPtr, MemAccess};
 
 /// Brotli compresses a go slice
 ///
 /// The output buffer must be sufficiently large.
 /// The pointers must not be null.
-pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
+pub fn brotli_compress<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
@@ -50,9 +49,8 @@ pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
 ///
 /// The output buffer must be sufficiently large.
 /// The pointers must not be null.
-pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
+pub fn brotli_decompress<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,

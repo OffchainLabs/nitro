@@ -14,9 +14,8 @@ macro_rules! wrap {
         $(
             #[allow(clippy::too_many_arguments)]
             pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
-                let (mut mem, wenv) = src.jit_env();
-
-                Ok(caller_env::brotli::$func_name(&mut mem, &mut JitExecEnv { wenv }, $($arg_name),*))
+                let (mut mem, _) = src.jit_env();
+                Ok(caller_env::brotli::$func_name(&mut mem, $($arg_name),*))
             }
         )*
     };

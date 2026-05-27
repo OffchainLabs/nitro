@@ -47,9 +47,8 @@ fn ecrecover_core(
     Ok(out)
 }
 
-pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
+pub fn ecrecovery<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     hash_ptr: GuestPtr,
     hash_len: u32,
     sig_ptr: GuestPtr,
@@ -159,9 +158,8 @@ mod tests {
     }
 }
 
-pub fn keccak256<M: MemAccess, E: ExecEnv>(
+pub fn keccak256<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,

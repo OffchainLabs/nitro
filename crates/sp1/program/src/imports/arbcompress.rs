@@ -16,10 +16,9 @@ pub fn brotli_compress(
     window_size: u32,
     dictionary: u8,
 ) -> Result<u32, Escape> {
-    let (mut mem, state) = sp1_env(&mut ctx);
+    let (mut mem, _) = sp1_env(&mut ctx);
     Ok(caller_env::brotli::brotli_compress(
         &mut mem,
-        state,
         in_buf_ptr,
         in_buf_len,
         out_buf_ptr,
@@ -39,10 +38,9 @@ pub fn brotli_decompress(
     out_len_ptr: GuestPtr,
     dictionary: u8,
 ) -> Result<u32, Escape> {
-    let (mut mem, state) = sp1_env(&mut ctx);
+    let (mut mem, _) = sp1_env(&mut ctx);
     Ok(caller_env::brotli::brotli_decompress(
         &mut mem,
-        state,
         in_buf_ptr,
         in_buf_len,
         out_buf_ptr,

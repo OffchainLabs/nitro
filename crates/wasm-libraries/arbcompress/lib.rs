@@ -18,7 +18,6 @@ macro_rules! wrap {
                 pub unsafe extern "C" fn [<arbcompress__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
                     caller_env::brotli::$func_name(
                         &mut StaticMem,
-                        &mut StaticExecEnv,
                         $($arg_name),*
                     )
                 }

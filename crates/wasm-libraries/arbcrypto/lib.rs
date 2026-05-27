@@ -5,7 +5,7 @@
 
 use caller_env::{
     self, GuestPtr,
-    static_caller::{StaticExecEnv, StaticMem},
+    static_caller::{StaticMem},
 };
 
 #[unsafe(no_mangle)]
@@ -18,7 +18,6 @@ pub unsafe extern "C" fn arbcrypto__ecrecovery(
 ) -> u32 {
     caller_env::arbcrypto::ecrecovery(
         &mut StaticMem,
-        &mut StaticExecEnv,
         hash_ptr,
         hash_len,
         sig_ptr,
@@ -35,7 +34,6 @@ pub unsafe extern "C" fn arbcrypto__keccak256(
 ) {
     caller_env::arbcrypto::keccak256(
         &mut StaticMem,
-        &mut StaticExecEnv,
         in_buf_ptr,
         in_buf_len,
         out_buf_ptr,
