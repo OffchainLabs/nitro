@@ -20,7 +20,7 @@ use wasmer_vm::install_unwinder;
 
 use crate::{
     Escape, JitConfig, STACK_SIZE,
-    imports::{arbcompress, precompiles, programs, wasi_stub, wavmio},
+    imports::{precompiles, programs, wasi_stub, wavmio},
     platform::{exit, read_input},
     stylus::{Cothread, MessageFromCothread, MessageToCothread},
 };
@@ -96,6 +96,12 @@ pub struct CustomEnvData {
 
     input: Lazy<ValidationInput>,
     yielder: SendYielder<(), MainYieldMessage>,
+}
+
+impl caller_env::wasmer_traits::HasMemory for CustomEnvData {
+    fn memory(&self) -> Memory {
+        self.memory.clone().expect("memory not set in CustomEnvData")
+    }
 }
 
 impl CustomEnvData {
@@ -327,12 +333,12 @@ fn build_imports(
     (
         imports! {
             "arbcompress" => {
-                "brotli_compress" => func!(arbcompress::brotli_compress),
-                "brotli_decompress" => func!(arbcompress::brotli_decompress),
+                "brotli_compress" => func!(caller_env::brotli::host::brotli_compress::<CustomEnvData>),
+                "brotli_decompress" => func!(caller_env::brotli::host::brotli_decompress::<CustomEnvData>),
             },
             "arbcrypto" => {
-                "ecrecovery" => func!(precompiles::ecrecovery),
-                "keccak256" => func!(precompiles::keccak256),
+                "ecrecovery" => func!(caller_env::arbcrypto::host::ecrecovery::<CustomEnvData>),
+                "keccak256" => func!(caller_env::arbcrypto::host::keccak256::<CustomEnvData>),
             },
             "hooks" => {
                 "beforeFirstIO" => func!(precompiles::dump_elf),
