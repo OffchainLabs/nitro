@@ -1,8 +1,14 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{collections::HashMap, path::Path, sync::Arc};
+
 use eyre::Result;
-use prover::programs::{prelude::*, start::StartMover};
+use prover::{
+    binary::parse,
+    machine::{GlobalState, MachineStatus},
+    programs::{prelude::*, start::StartMover},
+};
 use wasmer::{Function, imports, sys::Target};
 
 use super::test_configs;
@@ -132,6 +138,48 @@ fn test_bulk_memory_oob() -> Result<()> {
     assert_eq!("0102", hex::encode(native.read_slice("memory", 0xfffe, 2)?));
     assert_eq!("0102", hex::encode(machine.read_memory(module, 0xfffe, 2)?));
     check_instrumentation(native, machine)
+}
+
+/// Runs a WAT file through the prover machine (WAVM interpreter with soft-float)
+/// and asserts that execution finishes cleanly (no `unreachable` traps).
+fn run_wat_prover(path: &str) -> Result<()> {
+    let sf_bytes = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
+    let soft_float = parse(&sf_bytes, Path::new("soft-float"))?;
+
+    let wat = std::fs::read(path)?;
+    let wasm = wasmer::wat2wasm(&wat)?;
+    let bin = parse(&wasm, Path::new("main"))?;
+
+    let mut mach = prover::Machine::from_binaries(
+        &[soft_float],
+        bin,
+        false,
+        true,
+        false,
+        false,
+        GlobalState::default(),
+        HashMap::default(),
+        Arc::new(|_, _, _| None),
+        None,
+        0,
+    )?;
+    mach.step_n(prover::Machine::MAX_STEPS)?;
+    assert_eq!(
+        mach.get_status(),
+        MachineStatus::Finished,
+        "{path}: machine errored — NaN canonicalization assertion likely failed"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_float32_nan_canonicalization() -> Result<()> {
+    run_wat_prover("../prover/test-cases/float32.wat")
+}
+
+#[test]
+fn test_float64_nan_canonicalization() -> Result<()> {
+    run_wat_prover("../prover/test-cases/float64.wat")
 }
 
 #[test]

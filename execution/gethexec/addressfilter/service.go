@@ -25,12 +25,7 @@ type FilterService struct {
 }
 
 // NewFilterService creates a new address-filteress service.
-// Returns nil if the service is not enabled in the configuration.
 func NewFilterService(config *Config) (*FilterService, error) {
-	if !config.Enable {
-		return nil, nil
-	}
-
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -92,37 +87,22 @@ func (s *FilterService) Start(ctx context.Context) {
 }
 
 func (s *FilterService) GetHashCount() int {
-	if !s.config.Enable {
-		return 0
-	}
 	return s.hashStore.Size()
 }
 
 // GetHashStoreDigest GetETag returns the S3 ETag Digest of the currently loaded hash list.
 func (s *FilterService) GetHashStoreDigest() string {
-	if !s.config.Enable {
-		return ""
-	}
 	return s.hashStore.Digest()
 }
 
 func (s *FilterService) GetLoadedAt() time.Time {
-	if !s.config.Enable {
-		return time.Time{}
-	}
 	return s.hashStore.LoadedAt()
 }
 
 func (s *FilterService) GetHashStore() *HashStore {
-	if !s.config.Enable {
-		return nil
-	}
 	return s.hashStore
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {
-	if !s.config.Enable {
-		return nil
-	}
 	return s.addressChecker
 }
