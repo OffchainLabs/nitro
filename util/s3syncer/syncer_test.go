@@ -4,10 +4,41 @@
 package s3syncer
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/offchainlabs/nitro/util/s3client"
 )
+
+func TestSyncer_FailedETagTracking(t *testing.T) {
+	handlerErr := errors.New("parse boom")
+	var handlerReturn error
+	s := &Syncer{
+		handleData: func(data []byte, digest string) error { return handlerReturn },
+	}
+
+	handlerReturn = handlerErr
+	if err := s.applyHandled("etag-bad", []byte("x")); err == nil {
+		t.Fatal("expected handler error to propagate")
+	}
+	if s.failedETag != "etag-bad" {
+		t.Fatalf("failedETag should be set after handler error, got %q", s.failedETag)
+	}
+	if s.digestETag != "" {
+		t.Fatalf("digestETag must not advance on handler error, got %q", s.digestETag)
+	}
+
+	handlerReturn = nil
+	if err := s.applyHandled("etag-good", []byte("y")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.digestETag != "etag-good" {
+		t.Fatalf("digestETag should advance on success, got %q", s.digestETag)
+	}
+	if s.failedETag != "" {
+		t.Fatalf("failedETag should clear on success, got %q", s.failedETag)
+	}
+}
 
 func TestConfigValidate(t *testing.T) {
 	tests := []struct {

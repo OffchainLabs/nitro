@@ -47,7 +47,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	}
 
 	// Store the hashes
-	store.Store(uuid.New(), salt, hashes, "test-etag")
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
 
 	// Test restricted addresses
 	for _, addr := range addresses {
@@ -76,10 +76,10 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 
 	salt1, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	hash1 := HashWithPrefix(GetHashInputPrefix(salt1), addr1)
+	hash1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr1)
 
 	// Store first set
-	store.Store(uuid.New(), salt1, []common.Hash{hash1}, "etag1")
+	store.Store(uuid.New(), salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1")
 	if !store.IsRestricted(addr1) {
 		t.Error("addr1 should be restricted after first load")
 	}
@@ -87,9 +87,9 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	// Store second set with different salt (simulating hourly rotation)
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
-	hash2 := HashWithPrefix(GetHashInputPrefix(salt2), addr2)
+	hash2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr2)
 
-	store.Store(uuid.New(), salt2, []common.Hash{hash2}, "etag2")
+	store.Store(uuid.New(), salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
 	if store.IsRestricted(addr1) {
@@ -115,10 +115,10 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		addr := common.BigToAddress(common.Big1)
 		addr[18] = byte(i)
 		addresses = append(addresses, addr)
-		hash := HashWithPrefix(GetHashInputPrefix(salt1), addr)
+		hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr)
 		hashes1 = append(hashes1, hash)
 	}
-	store.Store(uuid.New(), salt1, hashes1, "etag")
+	store.Store(uuid.New(), salt1, HashingSchemeStringInput, hashes1, "etag")
 
 	// prepare second set for swapping
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
@@ -128,8 +128,17 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		addr := common.BigToAddress(common.Big2)
 		addr[18] = byte(i)
 		addresses2 = append(addresses2, addr)
-		hash := HashWithPrefix(GetHashInputPrefix(salt2), addr)
+		hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr)
 		hashes2 = append(hashes2, hash)
+	}
+
+	rawHashes1 := make([]common.Hash, len(addresses))
+	for i, addr := range addresses {
+		rawHashes1[i] = HashRawBytesInput(salt1, addr)
+	}
+	rawHashes2 := make([]common.Hash, len(addresses2))
+	for i, addr := range addresses2 {
+		rawHashes2[i] = HashRawBytesInput(salt2, addr)
 	}
 
 	// Run concurrent reads
@@ -154,15 +163,19 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		}()
 	}
 
-	// Run concurrent swap
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 10; i++ {
-			if i%2 == 0 {
-				store.Store(uuid.New(), salt1, hashes1, "etag")
-			} else {
-				store.Store(uuid.New(), salt2, hashes2, "new-etag")
+		for i := 0; i < 20; i++ {
+			switch i % 4 {
+			case 0:
+				store.Store(uuid.New(), salt1, HashingSchemeStringInput, hashes1, "salt1-str")
+			case 1:
+				store.Store(uuid.New(), salt2, HashingSchemeStringInput, hashes2, "salt2-str")
+			case 2:
+				store.Store(uuid.New(), salt1, HashingSchemeRawBytesInput, rawHashes1, "salt1-raw")
+			case 3:
+				store.Store(uuid.New(), salt2, HashingSchemeRawBytesInput, rawHashes2, "salt2-raw")
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -264,8 +277,26 @@ func TestParseHashListJSON(t *testing.T) {
 	if len(parsedJson.Hashes) != 1 {
 		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
+	if parsedJson.Scheme != HashingSchemeStringInput {
+		t.Errorf("expected scheme %q, got %q", HashingSchemeStringInput, parsedJson.Scheme)
+	}
 
-	// Test with unknown hashing_scheme (should parse but log warning - we can't easily verify log in test)
+	// Test with hashing_scheme: sha256-rawbytesinput
+	rawBytesPayload := map[string]interface{}{
+		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
+		"hashing_scheme": "sha256-rawbytesinput",
+		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
+	}
+	rawBytesJSON, err := json.Marshal(rawBytesPayload)
+	require.NoError(t, err)
+	parsedJson, err = parseHashListJSON(rawBytesJSON)
+	require.NoError(t, err)
+	if parsedJson.Scheme != HashingSchemeRawBytesInput {
+		t.Errorf("expected scheme %q, got %q", HashingSchemeRawBytesInput, parsedJson.Scheme)
+	}
+
+	// Test with unknown hashing_scheme — hard error
 	unknownSchemePayload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"id":             uuid.NewString(),
@@ -273,12 +304,20 @@ func TestParseHashListJSON(t *testing.T) {
 		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
-	parsedJson, err = parseHashListJSON(unknownSchemeJSON)
-	if err != nil {
-		t.Fatalf("failed to parse JSON with unknown hashing_scheme: %v", err)
+	if _, err := parseHashListJSON(unknownSchemeJSON); err == nil {
+		t.Error("expected error for unknown hashing_scheme")
 	}
-	if len(parsedJson.Hashes) != 1 {
-		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
+
+	// Case-sensitivity: uppercase scheme must hard-error too (spec is lowercase).
+	upperSchemePayload := map[string]interface{}{
+		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
+		"hashing_scheme": "SHA256-RAWBYTESINPUT",
+		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
+	}
+	upperSchemeJSON, _ := json.Marshal(upperSchemePayload)
+	if _, err := parseHashListJSON(upperSchemeJSON); err == nil {
+		t.Error("expected error for uppercased hashing_scheme")
 	}
 
 	// Test with 0x-prefixed hashes (lowercase)
@@ -315,24 +354,20 @@ func TestParseHashListJSON(t *testing.T) {
 	if len(parsedJson.Hashes) != 1 {
 		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
+	if parsedJson.Scheme != HashingSchemeStringInput {
+		t.Errorf("missing scheme should default to %q, got %q", HashingSchemeStringInput, parsedJson.Scheme)
+	}
 }
 
 func TestConfig_Validate(t *testing.T) {
-	// Test disabled config (should always be valid)
-	disabledConfig := Config{Enable: false}
-	if err := disabledConfig.Validate(); err != nil {
-		t.Errorf("disabled config should be valid: %v", err)
+	// Test config with missing fields
+	emptyConfig := Config{}
+	if err := emptyConfig.Validate(); err == nil {
+		t.Error("config with missing fields should be invalid")
 	}
 
-	// Test enabled config with missing fields
-	enabledConfig := Config{Enable: true}
-	if err := enabledConfig.Validate(); err == nil {
-		t.Error("enabled config with missing fields should be invalid")
-	}
-
-	// Test valid enabled config
+	// Test valid config
 	validConfig := Config{
-		Enable: true,
 		S3: s3syncer.Config{
 			Config:    s3client.Config{Region: "us-east-1"},
 			Bucket:    "test-bucket",
@@ -383,12 +418,12 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	// Pre-compute hashes
 	hashes := make([]common.Hash, 0, len(addresses))
 	for _, addr := range addresses {
-		hash := HashWithPrefix(GetHashInputPrefix(salt), addr)
+		hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
 		hashes = append(hashes, hash)
 	}
 
 	// Store the hashes
-	store.Store(uuid.New(), salt, hashes, "test-etag")
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
 
 	// Verify store works correctly with custom size
 	if !store.IsRestricted(addresses[0]) {
@@ -415,7 +450,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	// After load, should have current time
 	before := time.Now()
 	salt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
-	store.Store(uuid.New(), salt, nil, "etag")
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, nil, "etag")
 	after := time.Now()
 
 	loadedAt := store.LoadedAt()
@@ -440,8 +475,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithPrefix(data.hashInputPrefix, addr)
-		_, restricted := data.hashes[hash]
+		_, restricted := data.hashes[data.hashAddress(addr)]
 		data.cache.Add(addr, restricted)
 		if !restricted {
 			return false
@@ -466,12 +500,79 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithPrefix(data.hashInputPrefix, addr)
-		_, restricted := data.hashes[hash]
+		_, restricted := data.hashes[data.hashAddress(addr)]
 		data.cache.Add(addr, restricted)
 		if restricted {
 			return true
 		}
 	}
 	return false
+}
+
+func TestHashRawBytesInputVendorVector(t *testing.T) {
+	salt, err := uuid.Parse("ce823987-8c5b-42c8-9d44-11df313b91e9")
+	require.NoError(t, err)
+	addr := common.HexToAddress("0xddfabcdc4d8ffc6d5beaf154f18b778f892a0740")
+	expected := common.HexToHash("0xc148590f0f751bcd1cccdc5876433aaf8acf38a31483f426da0d43043b27f193")
+	got := HashRawBytesInput(salt, addr)
+	if got != expected {
+		t.Fatalf("HashRawBytesInput mismatch: got %s, want %s", got.Hex(), expected.Hex())
+	}
+}
+
+func TestHashStore_RawBytesScheme(t *testing.T) {
+	store := NewHashStore(100)
+
+	salt, err := uuid.Parse("ce823987-8c5b-42c8-9d44-11df313b91e9")
+	require.NoError(t, err)
+	addrRestricted := common.HexToAddress("0xddfabcdc4d8ffc6d5beaf154f18b778f892a0740")
+	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
+	hashRestricted := HashRawBytesInput(salt, addrRestricted)
+
+	store.Store(uuid.New(), salt, HashingSchemeRawBytesInput, []common.Hash{hashRestricted}, "raw")
+
+	if !store.IsRestricted(addrRestricted) {
+		t.Fatal("restricted address should match under raw bytes scheme")
+	}
+	if store.IsRestricted(addrAllowed) {
+		t.Fatal("allowed address must not match under raw bytes scheme")
+	}
+
+	// Same hash bytes reloaded under string scheme must not match: scheme drives the lookup function.
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{hashRestricted}, "str")
+	if store.IsRestricted(addrRestricted) {
+		t.Fatal("raw-bytes hash should not match under string input scheme")
+	}
+}
+
+// End-to-end: vendor JSON with sha256-rawbytesinput parses, loads into HashStore via Store,
+// and IsRestricted matches the vendor-vector address.
+func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
+	salt, err := uuid.Parse("ce823987-8c5b-42c8-9d44-11df313b91e9")
+	require.NoError(t, err)
+	addr := common.HexToAddress("0xddfabcdc4d8ffc6d5beaf154f18b778f892a0740")
+	hash := HashRawBytesInput(salt, addr)
+
+	payload := map[string]any{
+		"id":             uuid.NewString(),
+		"salt":           salt.String(),
+		"hashing_scheme": string(HashingSchemeRawBytesInput),
+		"hashes":         []string{hex.EncodeToString(hash[:])},
+	}
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	parsed, err := parseHashListJSON(raw)
+	require.NoError(t, err)
+
+	store := NewHashStore(8)
+	store.Store(parsed.Id, parsed.Salt, parsed.Scheme, parsed.Hashes, "etag")
+
+	if !store.IsRestricted(addr) {
+		t.Fatal("vendor address must be restricted after parse+Store under raw bytes scheme")
+	}
+	otherAddr := common.HexToAddress("0x000000000000000000000000000000000000beef")
+	if store.IsRestricted(otherAddr) {
+		t.Fatal("non-listed address must not be restricted")
+	}
 }

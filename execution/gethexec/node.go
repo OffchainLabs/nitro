@@ -144,6 +144,7 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type TransactionFilteringConfig struct {
+	Enable                         bool                          `koanf:"enable"`
 	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
 	EnableETHCallFilter            bool                          `koanf:"enable-ethcall-filter"`
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
@@ -153,6 +154,9 @@ type TransactionFilteringConfig struct {
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
 	if err := c.EventFilter.Validate(); err != nil {
 		return fmt.Errorf("invalid event filter config: %w", err)
 	}
@@ -169,6 +173,7 @@ func (c *TransactionFilteringConfig) Validate() error {
 }
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	Enable:                         false,
 	DisableDelayedSequencingFilter: false,
 	EnableETHCallFilter:            false,
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
@@ -178,6 +183,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTransactionFilteringConfig.Enable, "enable transaction filtering")
 	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
 	f.Bool(prefix+".enable-ethcall-filter", DefaultTransactionFilteringConfig.EnableETHCallFilter, "enable address filtering for eth_estimateGas and eth_call")
 	EventFilterAddOptions(prefix+".event-filter", f)
@@ -366,12 +372,14 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create address filter service: %w", err)
-	}
+	var addressFilterService *addressfilter.FilterService
 	var addressChecker state.AddressChecker
-	if addressFilterService != nil {
+	// Tests bypass the service by injecting via ExecEngine.SetAddressChecker.
+	if config.TransactionFiltering.Enable {
+		addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create address filter service: %w", err)
+		}
 		addressChecker = addressFilterService.GetAddressChecker()
 	}
 
@@ -434,7 +442,13 @@ func CreateExecutionNode(
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 
-	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	var precheckerFilterer core.TxFilterer
+	// Sequencer filters via block-production hooks; skip prechecker dry-run when it is the publisher.
+	if config.TransactionFiltering.Enable && txPublisher != sequencer {
+		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+	}
+
+	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher, precheckerFilterer)
 	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
