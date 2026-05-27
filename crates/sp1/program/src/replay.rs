@@ -331,7 +331,7 @@ fn build_imports(
                 "brotli_decompress" => func!(arbcompress::brotli_decompress),
             },
             "arbcrypto" => {
-                "ecrecovery" => func!(precompiles::ecrecover),
+                "ecrecovery" => func!(precompiles::ecrecovery),
                 "keccak256" => func!(precompiles::keccak256),
             },
             "hooks" => {

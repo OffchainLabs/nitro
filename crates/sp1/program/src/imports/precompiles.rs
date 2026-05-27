@@ -3,7 +3,7 @@ use wasmer::FunctionEnvMut;
 
 use crate::{Escape, MaybeEscape, platform, replay::CustomEnvData, state::sp1_env};
 
-pub fn ecrecover(
+pub fn ecrecovery(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     hash: GuestPtr,
     hash_len: u32,
