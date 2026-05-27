@@ -115,8 +115,8 @@ pub trait HasMemory {
     fn memory(&self) -> Memory;
 }
 
-impl<'m, T: HasMemory + Send + 'static> GetMemAccess<'m> for FunctionEnvMut<'_, T> {
-    fn get_memory_access(&'m mut self) -> impl MemAccess {
+impl<T: HasMemory + Send + 'static> GetMemAccess for FunctionEnvMut<'_, T> {
+    fn get_memory_access(& mut self) -> impl MemAccess {
         let memory = self.data().memory();
         let (_, store) = self.data_and_store_mut();
         WasmerMem::new(memory, store)

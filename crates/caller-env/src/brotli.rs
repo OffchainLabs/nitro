@@ -12,8 +12,8 @@ use crate::{GetMemAccess, GuestPtr, MemAccess};
 ///
 /// The output buffer must be sufficiently large.
 /// The pointers must not be null.
-pub fn brotli_compress<'c, Ctx: GetMemAccess<'c>>(
-    ctx: &'c mut Ctx,
+pub fn brotli_compress<Ctx: GetMemAccess>(
+    ctx: &mut Ctx,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,

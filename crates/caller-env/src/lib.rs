@@ -51,8 +51,8 @@ pub trait MemAccess {
     fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]);
 }
 
-pub trait GetMemAccess<'a> {
-    fn get_memory_access(&'a mut self) -> impl MemAccess;
+pub trait GetMemAccess {
+    fn get_memory_access(&mut self) -> impl MemAccess;
 }
 
 /// Update the Host environment.

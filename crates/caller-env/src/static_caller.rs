@@ -99,8 +99,8 @@ impl MemAccess for StaticMem {
     }
 }
 
-impl<'m> GetMemAccess<'m> for StaticMem {
-    fn get_memory_access(&'m mut self) -> Self {
+impl GetMemAccess for StaticMem {
+    fn get_memory_access(&mut self) -> impl MemAccess {
         Self
     }
 }
