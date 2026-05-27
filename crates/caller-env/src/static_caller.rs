@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use rand::Rng;
 use spin::{Lazy, Mutex, MutexGuard};
 
-use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
+use crate::{ExecEnv, GetMemAccess, GoRuntimeState, GuestPtr, MemAccess};
 
 extern crate alloc;
 
@@ -96,6 +96,12 @@ impl MemAccess for StaticMem {
             self.write_u8(ptr, byte);
             ptr += 1;
         }
+    }
+}
+
+impl<'m> GetMemAccess<'m> for StaticMem {
+    fn get_memory_access(&'m mut self) -> Self {
+        Self
     }
 }
 

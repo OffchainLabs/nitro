@@ -5,7 +5,7 @@ use core::mem::MaybeUninit;
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use tiny_keccak::{Hasher, Keccak};
 
-use crate::{ExecEnv, GuestPtr, MemAccess, arbcrypto::ECRecoveryStatus::*};
+use crate::{GuestPtr, MemAccess, arbcrypto::ECRecoveryStatus::*};
 
 #[derive(Debug, PartialEq)]
 #[repr(u32)]
@@ -155,6 +155,35 @@ mod tests {
         let (hash, mut sig_with_id) = random_low_s();
         sig_with_id[RECOVERY_ID_INDEX] = 4; // only 0–3 are valid
         assert_eq!(ecrecover_core(&hash, &sig_with_id), Err(InvalidRecoveryId));
+    }
+}
+
+#[cfg(feature = "wasmer_traits")]
+pub mod host {
+    use wasmer::FunctionEnvMut;
+
+    use crate::{GetMemAccess, GuestPtr, wasmer_traits::HasMemory};
+
+    pub fn ecrecovery<T: HasMemory + Send + 'static>(
+        mut ctx: FunctionEnvMut<T>,
+        hash_ptr: GuestPtr,
+        hash_len: u32,
+        sig_ptr: GuestPtr,
+        sig_len: u32,
+        pub_ptr: GuestPtr,
+    ) -> u32 {
+        let mut mem = ctx.get_memory_access();
+        super::ecrecovery(&mut mem, hash_ptr, hash_len, sig_ptr, sig_len, pub_ptr)
+    }
+
+    pub fn keccak256<T: HasMemory + Send + 'static>(
+        mut ctx: FunctionEnvMut<T>,
+        in_buf_ptr: GuestPtr,
+        in_buf_len: u32,
+        out_buf_ptr: GuestPtr,
+    ) {
+        let mut mem = ctx.get_memory_access();
+        super::keccak256(&mut mem, in_buf_ptr, in_buf_len, out_buf_ptr)
     }
 }
 

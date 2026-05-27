@@ -14,6 +14,7 @@ use arbutil::{Bytes32, PreimageType, crypto};
 use caller_env::GoRuntimeState;
 use eyre::{ErrReport, Report, Result, bail};
 use thiserror::Error;
+use caller_env::wasmer_traits::HasMemory;
 use validation::local_target;
 use wasmer::{
     Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store,
@@ -22,7 +23,7 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, arbcompress, arbcrypto, program,
+    InputMode, LocalInput, Opts, ValidatorOpts, program,
     stylus_backend::CothreadHandler, wasip1_stub, wavmio,
 };
 
@@ -119,12 +120,12 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
     }
     imports! {
         "arbcompress" => {
-            "brotli_compress" => func!(arbcompress::brotli_compress),
-            "brotli_decompress" => func!(arbcompress::brotli_decompress),
+            "brotli_compress" => func!(caller_env::brotli::host::brotli_compress::<WasmEnv>),
+            "brotli_decompress" => func!(caller_env::brotli::host::brotli_decompress::<WasmEnv>),
         },
         "arbcrypto" => {
-            "ecrecovery" => func!(arbcrypto::ecrecovery),
-            "keccak256" => func!(arbcrypto::keccak256),
+            "ecrecovery" => func!(caller_env::arbcrypto::host::ecrecovery::<WasmEnv>),
+            "keccak256" => func!(caller_env::arbcrypto::host::keccak256::<WasmEnv>),
         },
         "hooks" => {
             "beforeFirstIO" => func!(|_: WasmEnvMut|{}),
@@ -254,6 +255,12 @@ pub struct WasmEnv {
     pub process: ProcessEnv,
     // threads
     pub threads: Vec<CothreadHandler>,
+}
+
+impl HasMemory for WasmEnv {
+    fn memory(&self) -> Memory {
+        self.memory.clone().expect("memory not set in WasmEnv")
+    }
 }
 
 impl TryFrom<&Opts> for WasmEnv {
