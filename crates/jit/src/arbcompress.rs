@@ -5,38 +5,50 @@ use brotli::{BrotliStatus, Dictionary};
 use caller_env::{self, GuestPtr};
 
 use crate::{
-    caller_env::{JitEnv, JitExecEnv},
+    caller_env::JitEnv,
     machine::{Escape, WasmEnvMut},
 };
 
-macro_rules! wrap {
-    ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {
-        $(
-            #[allow(clippy::too_many_arguments)]
-            pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
-                let (mut mem, _) = src.jit_env();
-                Ok(caller_env::brotli::$func_name(&mut mem, $($arg_name),*))
-            }
-        )*
-    };
+#[allow(clippy::too_many_arguments)]
+pub fn brotli_compress(
+    mut src: WasmEnvMut,
+    in_buf_ptr: GuestPtr,
+    in_buf_len: u32,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+    level: u32,
+    window_size: u32,
+    dictionary: Dictionary,
+) -> Result<BrotliStatus, Escape> {
+    let (mut mem, _) = src.jit_env();
+    Ok(caller_env::brotli::brotli_compress(
+        &mut mem,
+        in_buf_ptr,
+        in_buf_len,
+        out_buf_ptr,
+        out_len_ptr,
+        level,
+        window_size,
+        dictionary,
+    ))
 }
 
-wrap! {
-    fn brotli_compress(
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        level: u32,
-        window_size: u32,
-        dictionary: Dictionary
-    ) -> BrotliStatus;
-
-    fn brotli_decompress(
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        dictionary: Dictionary
-    ) -> BrotliStatus
+#[allow(clippy::too_many_arguments)]
+pub fn brotli_decompress(
+    mut src: WasmEnvMut,
+    in_buf_ptr: GuestPtr,
+    in_buf_len: u32,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+    dictionary: Dictionary,
+) -> Result<BrotliStatus, Escape> {
+    let (mut mem, _) = src.jit_env();
+    Ok(caller_env::brotli::brotli_decompress(
+        &mut mem,
+        in_buf_ptr,
+        in_buf_len,
+        out_buf_ptr,
+        out_len_ptr,
+        dictionary,
+    ))
 }
