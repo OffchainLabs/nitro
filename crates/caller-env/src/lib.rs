@@ -17,6 +17,24 @@ pub mod static_caller;
 #[cfg(feature = "wasmer_traits")]
 pub mod wasmer_traits;
 
+/// Generates a wasmer host function that owns `FunctionEnvMut<T>`, extracts memory
+/// via `get_memory_access()`, and delegates to the `super::` function of the same
+/// name which takes `&mut impl MemAccess` as its first argument.
+#[cfg(feature = "wasmer_traits")]
+macro_rules! wasmer_host_fn {
+    ($(#[$attr:meta])* fn $name:ident($($arg:ident : $ty:ty),*) $(-> $ret:ty)?) => {
+        $(#[$attr])*
+        pub fn $name<T: $crate::wasmer_traits::HasMemory + Send + 'static>(
+            mut ctx: wasmer::FunctionEnvMut<T>,
+            $($arg: $ty,)*
+        ) $(-> $ret)? {
+            use $crate::GetMemAccess as _;
+            let mut mem = ctx.get_memory_access();
+            super::$name(&mut mem, $($arg,)*)
+        }
+    };
+}
+
 #[cfg(feature = "brotli")]
 pub mod brotli;
 

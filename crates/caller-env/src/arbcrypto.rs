@@ -160,31 +160,10 @@ mod tests {
 
 #[cfg(feature = "wasmer_traits")]
 pub mod host {
-    use wasmer::FunctionEnvMut;
+    use crate::GuestPtr;
 
-    use crate::{GetMemAccess, GuestPtr, wasmer_traits::HasMemory};
-
-    pub fn ecrecovery<T: HasMemory + Send + 'static>(
-        mut ctx: FunctionEnvMut<T>,
-        hash_ptr: GuestPtr,
-        hash_len: u32,
-        sig_ptr: GuestPtr,
-        sig_len: u32,
-        pub_ptr: GuestPtr,
-    ) -> u32 {
-        let mut mem = ctx.get_memory_access();
-        super::ecrecovery(&mut mem, hash_ptr, hash_len, sig_ptr, sig_len, pub_ptr)
-    }
-
-    pub fn keccak256<T: HasMemory + Send + 'static>(
-        mut ctx: FunctionEnvMut<T>,
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-    ) {
-        let mut mem = ctx.get_memory_access();
-        super::keccak256(&mut mem, in_buf_ptr, in_buf_len, out_buf_ptr)
-    }
+    wasmer_host_fn!(fn ecrecovery(hash_ptr: GuestPtr, hash_len: u32, sig_ptr: GuestPtr, sig_len: u32, pub_ptr: GuestPtr) -> u32);
+    wasmer_host_fn!(fn keccak256(in_buf_ptr: GuestPtr, in_buf_len: u32, out_buf_ptr: GuestPtr));
 }
 
 pub fn keccak256<M: MemAccess>(

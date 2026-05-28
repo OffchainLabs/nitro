@@ -6,14 +6,10 @@
 use alloc::vec::Vec;
 
 use brotli::{BrotliStatus, Dictionary};
-use crate::{GetMemAccess, GuestPtr, MemAccess as _};
+use crate::{GuestPtr, MemAccess};
 
-/// Brotli compresses a go slice
-///
-/// The output buffer must be sufficiently large.
-/// The pointers must not be null.
-pub fn brotli_compress<Ctx: GetMemAccess>(
-    ctx: &mut Ctx,
+pub fn brotli_compress<M: MemAccess>(
+    mem: &mut M,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
@@ -22,7 +18,6 @@ pub fn brotli_compress<Ctx: GetMemAccess>(
     window_size: u32,
     dictionary: Dictionary,
 ) -> BrotliStatus {
-    let mut mem = ctx.get_memory_access();
     let input = mem.read_slice(in_buf_ptr, in_buf_len as usize);
     let mut output = Vec::with_capacity(mem.read_u32(out_len_ptr) as usize);
 
@@ -43,61 +38,14 @@ pub fn brotli_compress<Ctx: GetMemAccess>(
     }
 }
 
-#[cfg(feature = "wasmer_traits")]
-pub mod host {
-    use wasmer::FunctionEnvMut;
-
-    use super::{BrotliStatus, Dictionary};
-    use crate::{GuestPtr, wasmer_traits::HasMemory};
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn brotli_compress<T: HasMemory + Send + 'static>(
-        mut ctx: FunctionEnvMut<T>,
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        level: u32,
-        window_size: u32,
-        dictionary: Dictionary,
-    ) -> BrotliStatus {
-        super::brotli_compress(
-            &mut ctx,
-            in_buf_ptr,
-            in_buf_len,
-            out_buf_ptr,
-            out_len_ptr,
-            level,
-            window_size,
-            dictionary,
-        )
-    }
-
-    pub fn brotli_decompress<T: HasMemory + Send + 'static>(
-        mut ctx: FunctionEnvMut<T>,
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        dictionary: Dictionary,
-    ) -> BrotliStatus {
-        super::brotli_decompress(&mut ctx, in_buf_ptr, in_buf_len, out_buf_ptr, out_len_ptr, dictionary)
-    }
-}
-
-/// Brotli decompresses a go slice using a custom dictionary.
-///
-/// The output buffer must be sufficiently large.
-/// The pointers must not be null.
-pub fn brotli_decompress<Ctx: GetMemAccess>(
-    ctx: &mut Ctx,
+pub fn brotli_decompress<M: MemAccess>(
+    mem: &mut M,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
     out_len_ptr: GuestPtr,
     dictionary: Dictionary,
 ) -> BrotliStatus {
-    let mut mem = ctx.get_memory_access();
     let input = mem.read_slice(in_buf_ptr, in_buf_len as usize);
     let mut output = Vec::with_capacity(mem.read_u32(out_len_ptr) as usize);
 
@@ -110,4 +58,13 @@ pub fn brotli_decompress<Ctx: GetMemAccess>(
         }
         Err(status) => status,
     }
+}
+
+#[cfg(feature = "wasmer_traits")]
+pub mod host {
+    use brotli::{BrotliStatus, Dictionary};
+    use crate::GuestPtr;
+
+    wasmer_host_fn!(fn brotli_compress(in_buf_ptr: GuestPtr, in_buf_len: u32, out_buf_ptr: GuestPtr, out_len_ptr: GuestPtr, level: u32, window_size: u32, dictionary: Dictionary) -> BrotliStatus);
+    wasmer_host_fn!(fn brotli_decompress(in_buf_ptr: GuestPtr, in_buf_len: u32, out_buf_ptr: GuestPtr, out_len_ptr: GuestPtr, dictionary: Dictionary) -> BrotliStatus);
 }
