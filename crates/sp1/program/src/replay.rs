@@ -11,6 +11,8 @@ use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
 use prover::programs::meter::MeteredMachine;
 use rand_pcg::Pcg32;
+use caller_env::arbcrypto::host::{ecrecovery, keccak256};
+use caller_env::brotli::host::{brotli_compress, brotli_decompress};
 use validation::ValidationInput;
 use wasmer::{
     Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value,
@@ -333,12 +335,12 @@ fn build_imports(
     (
         imports! {
             "arbcompress" => {
-                "brotli_compress" => func!(caller_env::brotli::host::brotli_compress::<CustomEnvData>),
-                "brotli_decompress" => func!(caller_env::brotli::host::brotli_decompress::<CustomEnvData>),
+                "brotli_compress" => func!(brotli_compress::<CustomEnvData>),
+                "brotli_decompress" => func!(brotli_decompress::<CustomEnvData>),
             },
             "arbcrypto" => {
-                "ecrecovery" => func!(caller_env::arbcrypto::host::ecrecovery::<CustomEnvData>),
-                "keccak256" => func!(caller_env::arbcrypto::host::keccak256::<CustomEnvData>),
+                "ecrecovery" => func!(ecrecovery::<CustomEnvData>),
+                "keccak256" => func!(keccak256::<CustomEnvData>),
             },
             "hooks" => {
                 "beforeFirstIO" => func!(precompiles::dump_elf),
