@@ -152,7 +152,7 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "validateCertificate" => func!(wavmio::validate_certificate),
         },
         "wasi_snapshot_preview1" => {
-            "proc_exit" => func!(proc_exit),
+            "proc_exit" => func!(|_: WasmEnvMut, code: u32|Err::<(), Escape>(Escape::Exit(code))),
             "environ_sizes_get" => func!(wasi::environ_sizes_get::<WasmEnv>),
             "fd_write" => func!(wasi::fd_write::<WasmEnv>),
             "environ_get" => func!(wasi::environ_get::<WasmEnv>),

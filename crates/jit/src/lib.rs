@@ -14,7 +14,6 @@ pub mod machine;
 pub mod program;
 pub mod stylus_backend;
 mod test;
-mod wasip1_stub;
 mod wavmio;
 
 pub use machine::CompiledModule;

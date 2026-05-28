@@ -352,7 +352,7 @@ fn build_imports(
                 "beforeFirstIO" => func!(dump_elf),
             },
             "wasi_snapshot_preview1" => {
-                "proc_exit" => func!(wasi_stub::proc_exit),
+                "proc_exit" => func!(proc_exit),
                 "sched_yield" => func!(wasi::sched_yield::<CustomEnvData>),
                 "clock_time_get" => func!(wasi::clock_time_get::<CustomEnvData>),
                 "random_get" => func!(wasi::random_get::<CustomEnvData>),
@@ -424,6 +424,21 @@ fn dump_elf(mut ctx: FunctionEnvMut<CustomEnvData>) {
     assert!(!data.input_initialized());
     platform::dump_elf();
 }
+
+fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
+    if code == 0 {
+        let (data, _) = ctx.data_and_store_mut();
+        platform::print_string(
+            1,
+            format!(
+                "Validation succeeds with hash 0x{}",
+                hex::encode(data.input().large_globals[0])
+            ).as_bytes(),
+        );
+    }
+    exit(code);
+}
+
 
 /// Copies `data` into 8-byte-aligned memory and returns it as `Bytes`.
 /// SP1's wasmer fork requires aligned memory for `Module::deserialize`.
