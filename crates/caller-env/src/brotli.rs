@@ -29,14 +29,7 @@ pub fn brotli_compress<M: MemAccess>(
         window_size,
         dictionary,
     );
-    match result {
-        Ok(slice) => {
-            mem.write_slice(out_buf_ptr, slice);
-            mem.write_u32(out_len_ptr, slice.len() as u32);
-            BrotliStatus::Success
-        }
-        Err(status) => status,
-    }
+    write_output(mem, out_buf_ptr, out_len_ptr, result)
 }
 
 pub fn brotli_decompress<M: MemAccess>(
@@ -51,6 +44,15 @@ pub fn brotli_decompress<M: MemAccess>(
     let mut output = Vec::with_capacity(mem.read_u32(out_len_ptr) as usize);
 
     let result = brotli::decompress_fixed(&input, output.spare_capacity_mut(), dictionary);
+    write_output(mem, out_buf_ptr, out_len_ptr, result)
+}
+
+fn write_output<M: MemAccess>(
+    mem: &mut M,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+    result: Result<&[u8], BrotliStatus>,
+) -> BrotliStatus {
     match result {
         Ok(slice) => {
             mem.write_slice(out_buf_ptr, slice);
