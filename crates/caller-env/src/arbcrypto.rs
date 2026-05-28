@@ -96,8 +96,8 @@ pub fn keccak256<M: MemAccess>(
 pub mod host {
     use crate::GuestPtr;
 
-    wasmer_host_fn!(fn ecrecovery(a: GuestPtr, b: u32, c: GuestPtr, d: u32, e: GuestPtr) -> u32);
-    wasmer_host_fn!(fn keccak256(a: GuestPtr, b: u32, c: GuestPtr));
+    host_fn!(fn ecrecovery(a: GuestPtr, b: u32, c: GuestPtr, d: u32, e: GuestPtr) -> u32);
+    host_fn!(fn keccak256(a: GuestPtr, b: u32, c: GuestPtr));
 }
 
 #[cfg(test)]

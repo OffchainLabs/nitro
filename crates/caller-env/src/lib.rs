@@ -21,7 +21,7 @@ pub mod wasmer_traits;
 /// via `get_memory_access()`, and delegates to the `super::` function of the same
 /// name which takes `&mut impl MemAccess` as its first argument.
 #[cfg(feature = "wasmer_traits")]
-macro_rules! wasmer_host_fn {
+macro_rules! host_fn {
     ($(#[$attr:meta])* fn $name:ident($($arg:ident : $ty:ty),*) $(-> $ret:ty)?) => {
         $(#[$attr])*
         pub fn $name<T: $crate::wasmer_traits::HasMemory + Send + 'static>(
@@ -35,10 +35,10 @@ macro_rules! wasmer_host_fn {
     };
 }
 
-/// Like [`wasmer_host_fn!`] but for WASI stubs that take both `&mut impl MemAccess` and
+/// Like [`host_fn!`] but for WASI stubs that take both `&mut impl MemAccess` and
 /// `&mut impl ExecEnv`. The env data type `T` must implement both `HasMemory` and `ExecEnv`.
 #[cfg(feature = "wasmer_traits")]
-macro_rules! wasmer_host_fn_wasi {
+macro_rules! host_fn_exec {
     (fn $name:ident($($arg:ident : $ty:ty),*)) => {
         pub fn $name<T: $crate::wasmer_traits::HasMemory + $crate::ExecEnv + Send + 'static>(
             mut ctx: wasmer::FunctionEnvMut<T>,

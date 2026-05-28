@@ -67,6 +67,6 @@ pub mod host {
 
     use crate::GuestPtr;
 
-    wasmer_host_fn!(fn brotli_compress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: u32, f: u32, g: Dictionary) -> BrotliStatus);
-    wasmer_host_fn!(fn brotli_decompress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: Dictionary) -> BrotliStatus);
+    host_fn!(fn brotli_compress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: u32, f: u32, g: Dictionary) -> BrotliStatus);
+    host_fn!(fn brotli_decompress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: Dictionary) -> BrotliStatus);
 }
