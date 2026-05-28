@@ -7,7 +7,7 @@ package casttest
 import (
 	"testing"
 
-	"github.com/ccoveille/go-safecast"
+	"github.com/ccoveille/go-safecast/v2"
 	"github.com/stretchr/testify/require"
 )
 
