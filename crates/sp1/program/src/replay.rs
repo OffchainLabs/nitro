@@ -96,7 +96,7 @@ pub struct CustomEnvData {
     /// * Use imports to initialize Instance
     /// * Extract memory from instance's exports
     /// * Set the memory back in CustomEnvData.
-    pub memory: Option<Memory>,
+    memory: Option<Memory>,
     pub time: u64,
     pub pcg: Pcg32,
 

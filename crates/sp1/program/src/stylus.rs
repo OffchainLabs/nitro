@@ -18,7 +18,10 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
-use caller_env::{GuestPtr, MemAccess, wasmer_traits::{HasMemory, WasmerMem}};
+use caller_env::{
+    GuestPtr, MemAccess,
+    wasmer_traits::{HasMemory, WasmerMem},
+};
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
 use prover::programs::{
@@ -249,7 +252,9 @@ pub struct StylusCustomEnvData {
 
 impl HasMemory for StylusCustomEnvData {
     fn memory(&self) -> wasmer::Memory {
-        self.memory.clone().expect("memory not set in StylusCustomEnvData")
+        self.memory
+            .clone()
+            .expect("memory not set in StylusCustomEnvData")
     }
 }
 
