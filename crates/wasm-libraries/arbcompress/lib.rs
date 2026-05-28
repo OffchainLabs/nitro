@@ -4,10 +4,7 @@
 #![allow(clippy::missing_safety_doc)] // TODO: add safety docs
 
 use brotli::{BrotliStatus, Dictionary};
-use caller_env::{
-    self, GuestPtr,
-    static_caller::{StaticMem},
-};
+use caller_env::{self, GuestPtr, static_caller::StaticMem};
 use paste::paste;
 
 macro_rules! wrap {

@@ -3,10 +3,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use caller_env::{
-    self, GuestPtr,
-    static_caller::{StaticMem},
-};
+use caller_env::{self, GuestPtr, static_caller::StaticMem};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbcrypto__ecrecovery(
@@ -32,10 +29,5 @@ pub unsafe extern "C" fn arbcrypto__keccak256(
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
 ) {
-    caller_env::arbcrypto::keccak256(
-        &mut StaticMem,
-        in_buf_ptr,
-        in_buf_len,
-        out_buf_ptr,
-    )
+    caller_env::arbcrypto::keccak256(&mut StaticMem, in_buf_ptr, in_buf_len, out_buf_ptr)
 }

@@ -7,17 +7,28 @@ use std::{
 
 use arbutil::{Bytes32, evm::EvmData};
 use bytes::Bytes;
+use caller_env::{
+    arbcrypto::host::{ecrecovery, keccak256},
+    brotli::host::{brotli_compress, brotli_decompress},
+};
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
 use prover::programs::meter::MeteredMachine;
 use rand_pcg::Pcg32;
-use caller_env::arbcrypto::host::{ecrecovery, keccak256};
-use caller_env::brotli::host::{brotli_compress, brotli_decompress};
 use validation::ValidationInput;
-use wasmer::{Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value, imports, sys::NativeEngineExt, FunctionEnvMut};
+use wasmer::{
+    Engine, Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory, Module, RuntimeError,
+    Store, Value, imports, sys::NativeEngineExt,
+};
 use wasmer_vm::install_unwinder;
 
-use crate::{Escape, JitConfig, STACK_SIZE, imports::{precompiles, programs, wasi_stub, wavmio}, platform::{exit, read_input}, stylus::{Cothread, MessageFromCothread, MessageToCothread}, MaybeEscape, platform};
+use crate::{
+    Escape, JitConfig, MaybeEscape, STACK_SIZE,
+    imports::{precompiles, programs, wasi_stub, wavmio},
+    platform,
+    platform::{exit, read_input},
+    stylus::{Cothread, MessageFromCothread, MessageToCothread},
+};
 
 // Coroutine is not Send, so we cannot keep it in CustomEnvData.
 // As SP1 is single-threaded, it won't hurt if we use a few static variables.
@@ -94,7 +105,9 @@ pub struct CustomEnvData {
 
 impl caller_env::wasmer_traits::HasMemory for CustomEnvData {
     fn memory(&self) -> Memory {
-        self.memory.clone().expect("memory not set in CustomEnvData")
+        self.memory
+            .clone()
+            .expect("memory not set in CustomEnvData")
     }
 }
 

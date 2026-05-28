@@ -6,6 +6,7 @@
 use alloc::vec::Vec;
 
 use brotli::{BrotliStatus, Dictionary};
+
 use crate::{GuestPtr, MemAccess};
 
 pub fn brotli_compress<M: MemAccess>(
@@ -63,6 +64,7 @@ pub fn brotli_decompress<M: MemAccess>(
 #[cfg(feature = "wasmer_traits")]
 pub mod host {
     use brotli::{BrotliStatus, Dictionary};
+
     use crate::GuestPtr;
 
     wasmer_host_fn!(fn brotli_compress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: u32, f: u32, g: Dictionary) -> BrotliStatus);

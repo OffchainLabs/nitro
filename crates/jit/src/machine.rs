@@ -11,12 +11,14 @@ use std::{
 };
 
 use arbutil::{Bytes32, PreimageType, crypto};
-use caller_env::GoRuntimeState;
+use caller_env::{
+    GoRuntimeState,
+    arbcrypto::host::{ecrecovery, keccak256},
+    brotli::host::{brotli_compress, brotli_decompress},
+    wasmer_traits::HasMemory,
+};
 use eyre::{ErrReport, Report, Result, bail};
 use thiserror::Error;
-use caller_env::arbcrypto::host::{ecrecovery, keccak256};
-use caller_env::brotli::host::{brotli_compress, brotli_decompress};
-use caller_env::wasmer_traits::HasMemory;
 use validation::local_target;
 use wasmer::{
     Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store,
@@ -25,8 +27,8 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler,
+    wasip1_stub, wavmio,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
