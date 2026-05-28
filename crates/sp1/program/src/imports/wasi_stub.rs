@@ -33,7 +33,7 @@ macro_rules! wrap {
     (@conv $arg:ident $ty:tt) => { $arg };
 }
 
-wrap!(fn clock_time_get(_clock_id: u32, _precision: u64, time_ptr: GuestPtr));
+wrap!(fn clock_time_get(clock_id: u32, precision: u64, time_ptr: GuestPtr));
 wrap!(fn random_get(buf: GuestPtr, len: u32));
 wrap!(fn environ_get(a: GuestPtr, b: GuestPtr));
 wrap!(fn environ_sizes_get(length_ptr: GuestPtr, data_size_ptr: GuestPtr));

@@ -6,10 +6,6 @@ use rand::Rng;
 
 use crate::machine::{WasmEnv, WasmEnvMut};
 
-pub struct JitExecEnv<'s> {
-    pub wenv: &'s mut WasmEnv,
-}
-
 pub(crate) trait JitEnv<'a> {
     fn jit_env(&mut self) -> (WasmerMem<'_>, &mut WasmEnv);
 }
@@ -22,17 +18,17 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     }
 }
 
-impl ExecEnv for JitExecEnv<'_> {
+impl ExecEnv for WasmEnv {
     fn advance_time(&mut self, ns: u64) {
-        self.wenv.go_state.time += ns;
+        self.go_state.time += ns;
     }
 
     fn get_time(&self) -> u64 {
-        self.wenv.go_state.time
+        self.go_state.time
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        self.wenv.go_state.rng.next_u32()
+        self.go_state.rng.next_u32()
     }
 
     fn print_string(&mut self, bytes: &[u8]) {
