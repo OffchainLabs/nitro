@@ -6,7 +6,7 @@
 use brotli::{BrotliStatus, Dictionary};
 use caller_env::{
     self, GuestPtr,
-    static_caller::{StaticExecEnv, StaticMem},
+    static_caller::{StaticMem},
 };
 use paste::paste;
 

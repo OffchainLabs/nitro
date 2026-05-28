@@ -28,9 +28,9 @@ macro_rules! wasmer_host_fn {
             mut ctx: wasmer::FunctionEnvMut<T>,
             $($arg: $ty,)*
         ) $(-> $ret)? {
-            use $crate::GetMemAccess as _;
-            let mut mem = ctx.get_memory_access();
-            super::$name(&mut mem, $($arg,)*)
+            let memory = ctx.data().memory();
+            let (_, store) = ctx.data_and_store_mut();
+            super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), $($arg,)*)
         }
     };
 }
@@ -67,10 +67,6 @@ pub trait MemAccess {
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N];
 
     fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]);
-}
-
-pub trait GetMemAccess {
-    fn get_memory_access(&mut self) -> impl MemAccess;
 }
 
 /// Update the Host environment.

@@ -4,9 +4,9 @@
 use alloc::vec::Vec;
 
 use arbutil::{Bytes20, Bytes32};
-use wasmer::{FromToNativeWasmType, FunctionEnvMut, Memory, MemoryView, StoreMut, WasmPtr};
+use wasmer::{FromToNativeWasmType, Memory, MemoryView, StoreMut, WasmPtr};
 
-use crate::{Errno, GetMemAccess, GuestPtr, MemAccess};
+use crate::{Errno, GuestPtr, MemAccess};
 
 unsafe impl FromToNativeWasmType for GuestPtr {
     type Native = i32;
@@ -113,12 +113,4 @@ impl MemAccess for WasmerMem<'_> {
 
 pub trait HasMemory {
     fn memory(&self) -> Memory;
-}
-
-impl<T: HasMemory + Send + 'static> GetMemAccess for FunctionEnvMut<'_, T> {
-    fn get_memory_access(& mut self) -> impl MemAccess {
-        let memory = self.data().memory();
-        let (_, store) = self.data_and_store_mut();
-        WasmerMem::new(memory, store)
-    }
 }
