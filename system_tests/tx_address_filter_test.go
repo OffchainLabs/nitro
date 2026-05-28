@@ -33,16 +33,26 @@ func isFilteredError(err error) bool {
 }
 
 func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
+	return newHashedCheckerWithScheme(addrs, addressfilter.HashingSchemeStringInput)
+}
+
+func newHashedCheckerWithScheme(addrs []common.Address, scheme addressfilter.HashingScheme) *addressfilter.HashedAddressChecker {
 	const cacheSize = 100
 	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
 		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
-		hashPrefix := addressfilter.GetHashInputPrefix(salt)
-		for i, addr := range addrs {
-			hashes[i] = addressfilter.HashWithPrefix(hashPrefix, addr)
+		if scheme == addressfilter.HashingSchemeRawBytesInput {
+			for i, addr := range addrs {
+				hashes[i] = addressfilter.HashRawBytesInput(salt, addr)
+			}
+		} else {
+			hashPrefix := addressfilter.GetHashStringInputPrefix(salt)
+			for i, addr := range addrs {
+				hashes[i] = addressfilter.HashStringInputWithPrefix(hashPrefix, addr)
+			}
 		}
-		store.Store(uuid.New(), salt, hashes, "test")
+		store.Store(uuid.New(), salt, scheme, hashes, "test")
 	}
 	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -733,9 +743,8 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 		t.Fatal("SyncMonitor.Synced should return true after pushing sync data")
 	}
 
-	// Create a filter service with enabled config but without loaded rules
+	// Create a filter service with valid config but without loaded rules
 	filterCfg := &addressfilter.Config{
-		Enable: true,
 		S3: s3syncer.Config{
 			Config:    s3client.Config{Region: "us-east-1"},
 			Bucket:    "test-bucket",
@@ -762,7 +771,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Store hashes to the hashstore so FilteringReady returns true
 	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	Require(t, err)
-	filterService.GetHashStore().Store(uuid.New(), salt, nil, "test-digest")
+	filterService.GetHashStore().Store(uuid.New(), salt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -771,4 +780,51 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	if !execNode.Synced(ctx) {
 		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
 	}
+}
+
+// Exercises an end-to-end filtering tx flow under the raw-bytes hashing scheme:
+// the checker's HashStore is loaded with sha256-rawbytesinput hashes and the
+// sequencer must still reject txs to/from a listed address.
+func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	addrFilter := newHashedCheckerWithScheme([]common.Address{filteredAddr}, addressfilter.HashingSchemeRawBytesInput)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil {
+		t.Fatal("expected transaction to filtered address to be rejected under raw-bytes scheme")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+
+	// Sanity check: tx between non-filtered addresses succeeds.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	builder.L2Info.GenerateAccount("AnotherUser")
+	builder.L2.TransferBalance(t, "Owner", "AnotherUser", big.NewInt(1e18), builder.L2Info)
+	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
 }
