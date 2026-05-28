@@ -25,7 +25,7 @@ use wasmer_vm::install_unwinder;
 
 use crate::{
     Escape, JitConfig, STACK_SIZE,
-    imports::{programs, wasi_stub, wavmio},
+    imports::{programs, wavmio},
     platform,
     platform::{exit, read_input},
     stylus::{Cothread, MessageFromCothread, MessageToCothread},
@@ -433,12 +433,12 @@ fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
             format!(
                 "Validation succeeds with hash 0x{}",
                 hex::encode(data.input().large_globals[0])
-            ).as_bytes(),
+            )
+            .as_bytes(),
         );
     }
     exit(code);
 }
-
 
 /// Copies `data` into 8-byte-aligned memory and returns it as `Bytes`.
 /// SP1's wasmer fork requires aligned memory for `Module::deserialize`.

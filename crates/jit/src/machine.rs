@@ -28,8 +28,7 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler,
-    wasip1_stub::proc_exit, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler, wavmio,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
