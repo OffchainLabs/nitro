@@ -35,6 +35,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -189,7 +191,7 @@ type BatchPosterConfig struct {
 	CompressionLevels              CompressionLevelStepList    `koanf:"compression-levels" reload:"hot"`
 	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
 	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	DataPoster                     dataposterconfig.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                       string                      `koanf:"redis-url"`
 	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
@@ -292,7 +294,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
 	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig, dataposter.DataPosterUsageBatchPoster)
+	dataposterconfig.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposterconfig.DefaultDataPosterConfig, dataposterconfig.DataPosterUsageBatchPoster)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
 	DangerousBatchPosterConfigAddOptions(prefix+".dangerous", f)
 }
@@ -317,7 +319,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
 	IgnoreBlobPrice:                false,
-	DataPoster:                     dataposter.DefaultDataPosterConfig,
+	DataPoster:                     dataposterconfig.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
 	L1BlockBoundBypass:             time.Hour,
@@ -357,7 +359,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      10_000,
 	Post4844Blobs:                      false,
 	IgnoreBlobPrice:                    false,
-	DataPoster:                         dataposter.TestDataPosterConfig,
+	DataPoster:                         dataposterconfig.TestDataPosterConfig,
 	ParentChainWallet:                  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                       "",
 	L1BlockBoundBypass:                 time.Hour,
@@ -449,7 +451,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
-	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
+	dataPosterConfigFetcher := func() *dataposterconfig.DataPosterConfig {
 		dpCfg := opts.Config().DataPoster
 		dpCfg.Post4844Blobs = opts.Config().Post4844Blobs
 		return &dpCfg
@@ -1413,10 +1415,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
-	nonce, batchPositionBytes, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	nonceAndMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
 	}
+	nonce := nonceAndMeta.Nonce
+	batchPositionBytes := nonceAndMeta.Meta
 	var batchPosition batchPosterPosition
 	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
 		return false, fmt.Errorf("decoding batch position: %w", err)
@@ -1756,11 +1760,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, errAttemptLockFailed
 		}
 
-		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		gotNonceAndMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 		if err != nil {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, err
 		}
+		gotNonce, gotMeta := gotNonceAndMeta.Nonce, gotNonceAndMeta.Meta
 		if nonce != gotNonce {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
@@ -2078,7 +2083,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
-	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute)
+	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, lifecycle.ErrExceedsMaxMempoolSize.Error(), time.Minute)
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
 	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
 	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)

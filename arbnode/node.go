@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
@@ -398,7 +399,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 	ctx context.Context,
 	l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts,
-	cfg *dataposter.DataPosterConfig,
+	cfg *dataposterconfig.DataPosterConfig,
 	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
 	cfg.UseNoOpStorage = true
@@ -406,7 +407,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 		&dataposter.DataPosterOpts{
 			HeaderReader: l1Reader,
 			Auth:         transactOpts,
-			Config: func() *dataposter.DataPosterConfig {
+			Config: func() *dataposterconfig.DataPosterConfig {
 				return cfg
 			},
 			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
@@ -433,7 +434,7 @@ func StakerDataposter(
 	if err != nil {
 		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
-	dpCfg := func() *dataposter.DataPosterConfig {
+	dpCfg := func() *dataposterconfig.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
 	var sender string
