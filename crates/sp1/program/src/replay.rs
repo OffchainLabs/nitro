@@ -14,18 +14,10 @@ use rand_pcg::Pcg32;
 use caller_env::arbcrypto::host::{ecrecovery, keccak256};
 use caller_env::brotli::host::{brotli_compress, brotli_decompress};
 use validation::ValidationInput;
-use wasmer::{
-    Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value,
-    imports, sys::NativeEngineExt,
-};
+use wasmer::{Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value, imports, sys::NativeEngineExt, FunctionEnvMut};
 use wasmer_vm::install_unwinder;
 
-use crate::{
-    Escape, JitConfig, STACK_SIZE,
-    imports::{precompiles, programs, wasi_stub, wavmio},
-    platform::{exit, read_input},
-    stylus::{Cothread, MessageFromCothread, MessageToCothread},
-};
+use crate::{Escape, JitConfig, STACK_SIZE, imports::{precompiles, programs, wasi_stub, wavmio}, platform::{exit, read_input}, stylus::{Cothread, MessageFromCothread, MessageToCothread}, MaybeEscape, platform};
 
 // Coroutine is not Send, so we cannot keep it in CustomEnvData.
 // As SP1 is single-threaded, it won't hurt if we use a few static variables.
@@ -343,7 +335,7 @@ fn build_imports(
                 "keccak256" => func!(keccak256::<CustomEnvData>),
             },
             "hooks" => {
-                "beforeFirstIO" => func!(precompiles::dump_elf),
+                "beforeFirstIO" => func!(dump_elf),
             },
             "wasi_snapshot_preview1" => {
                 "proc_exit" => func!(wasi_stub::proc_exit),
@@ -411,6 +403,12 @@ fn build_imports(
         },
         func_env,
     )
+}
+
+fn dump_elf(mut ctx: FunctionEnvMut<CustomEnvData>) {
+    let data = ctx.data_mut();
+    assert!(!data.input_initialized());
+    platform::dump_elf();
 }
 
 /// Copies `data` into 8-byte-aligned memory and returns it as `Bytes`.
