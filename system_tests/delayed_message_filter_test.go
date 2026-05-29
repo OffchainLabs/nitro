@@ -13,11 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	filterTypes "github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -53,8 +55,14 @@ func CheckCommonReportFields(t *testing.T, ctx context.Context, builder *NodeBui
 	require.False(t, report.FilteredAt.IsZero(), "filteredAt must be populated")
 	require.WithinDuration(t, time.Now().UTC(), report.FilteredAt, 5*time.Minute, "filteredAt must be recent")
 
+	// MarshalBinary writes the raw EIP-2718 envelope (type byte + payload) but
+	// types.Transaction.UnmarshalBinary doesn't enable Arbitrum-aware parsing.
+	// Re-wrap the bytes as an RLP byte-string so DecodeRLP (which does enable it)
+	// can decode Arbitrum tx types like ArbitrumSubmitRetryableTx.
+	encoded, err := rlp.EncodeToBytes(report.TxRLP)
+	require.NoError(t, err, "wrapping TxRLP for RLP decode")
 	var decoded types.Transaction
-	require.NoError(t, decoded.UnmarshalBinary(report.TxRLP), "txRLP should decode")
+	require.NoError(t, rlp.DecodeBytes(encoded, &decoded), "TxRLP should decode to a transaction")
 	require.Equal(t, decoded.Hash(), report.TxHash, "decoded txRLP hash should match txHash field")
 
 	if tx != nil {
@@ -65,6 +73,15 @@ func CheckCommonReportFields(t *testing.T, ctx context.Context, builder *NodeBui
 	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
 	require.NoError(t, err)
 	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash, "parent block hash should match hash of block N-1")
+}
+
+// checkDelayedReportFields asserts FilteredTxReport fields specific to delayed messages.
+func checkDelayedReportFields(t *testing.T, report *addressfilter.FilteredTxReport) {
+	t.Helper()
+	require.True(t, report.IsDelayed)
+	require.NotNil(t, report.DelayedReportData, "delayed report data should be set")
+	require.NotEqual(t, common.Hash{}, report.DelayedReportData.InboxRequestId,
+		"InboxRequestId should be populated")
 }
 
 // sendDelayedTx sends a transaction via L1 delayed inbox.
@@ -192,11 +209,11 @@ func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndp
 	t.Helper()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	externalEndpoint := forwarder.NewMockExternalEndpoint(t)
+	pemPath, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
 
 	stack := filteringreportapi.NewTestStack(t, queueClient)
 
-	fwd := forwarder.NewTestForwarder(t, queueClient, externalEndpoint.URL())
+	fwd := forwarder.NewTestForwarder(t, queueClient, externalEndpoint.URL(), pemPath)
 	fwd.Start(t.Context())
 	t.Cleanup(func() { fwd.StopAndWait() })
 
@@ -291,6 +308,8 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	filteringReportStack, reportAPI := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -324,6 +343,26 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, finalBalance, "filtered address balance should not change")
+
+	// Verify filtering-report service received the report
+	report := reportAPI.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, delayedTx)
+	checkDelayedReportFields(t, report)
+	// Position 1: internal ArbOS start-block tx is at 0, delayed user tx follows at 1
+	require.Equal(t, uint64(1), report.PositionInBlock, "positionInBlock should be 1 (first user tx after internal start-block tx)")
+
+	require.NotEmpty(t, report.FilteredAddresses)
+	foundTo := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredAddr && addr.Reason == filterTypes.ReasonTo {
+			require.Nil(t, addr.EventRuleMatch,
+				"direct address filter should not have EventRuleMatch")
+			foundTo = true
+			break
+		}
+	}
+	require.True(t, foundTo,
+		"report should contain filtered address with reason 'to'")
 }
 
 // TestDelayedMessageFilterBypass verifies that adding tx hash to onchain filter allows tx to proceed.
@@ -2624,6 +2663,9 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	builder.isSequencer = true
 	builder.nodeConfig.DelayedSequencer.Enable = true
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+
+	filteringReportStack, reportAPI := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -2663,6 +2705,43 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	// Sequencer should halt because event filter detects the Transfer event
 	// with the filtered address in a topic
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
+
+	// Verify filtering report
+	report := reportAPI.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, delayedTx)
+	checkDelayedReportFields(t, report)
+	// Position 1: internal ArbOS start-block tx is at 0, delayed user tx follows at 1
+	require.Equal(t, uint64(1), report.PositionInBlock, "positionInBlock should be 1 (first user tx after internal start-block tx)")
+
+	foundEventRule := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredAddr && addr.Reason == filterTypes.ReasonEventRule {
+			require.NotNil(t, addr.EventRuleMatch, "event rule match should be populated")
+			require.Equal(t, "Transfer(address,address,uint256)", addr.EventRuleMatch.MatchedEvent)
+			require.Equal(t, 2, addr.EventRuleMatch.MatchedTopicIndex,
+				"filteredAddr is in topic index 2 (the 'to' parameter)")
+			require.NotNil(t, addr.EventRuleMatch.RawLog, "raw log should be populated")
+
+			rawLog := addr.EventRuleMatch.RawLog
+			require.Equal(t, contractAddr, rawLog.Address,
+				"raw log emitter should be the contract")
+			require.Len(t, rawLog.Topics, 3, "Transfer has selector + 2 indexed params")
+			require.Equal(t, crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)")), rawLog.Topics[0],
+				"first topic should be Transfer event selector")
+			require.Equal(t, common.BytesToHash(senderAddr.Bytes()), rawLog.Topics[1],
+				"second topic should be sender (from)")
+			require.Equal(t, common.BytesToHash(filteredAddr.Bytes()), rawLog.Topics[2],
+				"third topic should be filtered target (to)")
+			expectedData := common.BigToHash(big.NewInt(1))
+			require.Equal(t, expectedData.Bytes(), []byte(rawLog.Data),
+				"data should be ABI-encoded uint256(1)")
+
+			foundEventRule = true
+			break
+		}
+	}
+	require.True(t, foundEventRule,
+		"report should contain filtered address with event_rule reason")
 
 	// Add tx hash to onchain filter to allow it through
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")

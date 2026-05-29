@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -26,6 +27,7 @@ type Config struct {
 	PollInterval       time.Duration                `koanf:"poll-interval"`
 	SQSWaitTimeSeconds int32                        `koanf:"sqs-wait-time-seconds"`
 	ExternalEndpoint   genericconf.HTTPClientConfig `koanf:"external-endpoint"`
+	Signer             signer.Config                `koanf:"signer"`
 }
 
 var DefaultConfig = Config{
@@ -33,6 +35,7 @@ var DefaultConfig = Config{
 	PollInterval:       1 * time.Second,
 	SQSWaitTimeSeconds: 5,
 	ExternalEndpoint:   genericconf.HTTPClientConfigDefault,
+	Signer:             signer.DefaultConfig,
 }
 
 func (c *Config) Validate() error {
@@ -42,7 +45,10 @@ func (c *Config) Validate() error {
 	if c.SQSWaitTimeSeconds < 0 {
 		return fmt.Errorf("sqs-wait-time-seconds must be non-negative, got %d", c.SQSWaitTimeSeconds)
 	}
-	return c.ExternalEndpoint.Validate()
+	if err := c.ExternalEndpoint.Validate(); err != nil {
+		return err
+	}
+	return c.Signer.Validate()
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -50,6 +56,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between SQS polls when queue is empty")
 	f.Int32(prefix+".sqs-wait-time-seconds", DefaultConfig.SQSWaitTimeSeconds, "SQS long polling wait time in seconds")
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
+	signer.ConfigAddOptions(prefix+".signer", f)
 }
 
 type Forwarder struct {
@@ -57,6 +64,7 @@ type Forwarder struct {
 	config      *Config
 	queueClient sqsclient.QueueClient
 	httpClient  *http.Client
+	signer      *signer.Signer
 }
 
 func New(config *Config, queueClient sqsclient.QueueClient) (*Forwarder, error) {
@@ -66,15 +74,21 @@ func New(config *Config, queueClient sqsclient.QueueClient) (*Forwarder, error) 
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
 	}
+	sgn, err := signer.NewSigner(&config.Signer)
+	if err != nil {
+		return nil, fmt.Errorf("create signer: %w", err)
+	}
 	return &Forwarder{
 		config:      config,
 		queueClient: queueClient,
 		httpClient:  &http.Client{Timeout: config.ExternalEndpoint.Timeout},
+		signer:      sgn,
 	}, nil
 }
 
 func (r *Forwarder) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
+	r.StartAndTrackChild(r.signer)
 	for i := uint(0); i < r.config.Workers; i++ {
 		r.CallIteratively(r.pollAndForward)
 	}
@@ -94,7 +108,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
 		return 0
 	}
-	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
+	if err := r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
 		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)
 	}
 	return 0
@@ -103,12 +117,13 @@ func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.ExternalEndpoint.URL, strings.NewReader(body))
 	if err != nil {
-		return err
+		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	r.signer.SignHTTPRequest(req, []byte(body), time.Now())
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("send request: %w", err)
 	}
 	defer func() {
 		if _, drainErr := io.Copy(io.Discard, resp.Body); drainErr != nil {

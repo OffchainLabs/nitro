@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -145,6 +144,7 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type TransactionFilteringConfig struct {
+	Enable                         bool                          `koanf:"enable"`
 	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
 	EnableETHCallFilter            bool                          `koanf:"enable-ethcall-filter"`
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
@@ -154,6 +154,9 @@ type TransactionFilteringConfig struct {
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
 	if err := c.EventFilter.Validate(); err != nil {
 		return fmt.Errorf("invalid event filter config: %w", err)
 	}
@@ -170,8 +173,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 }
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	Enable:                         false,
 	DisableDelayedSequencingFilter: false,
-	EnableETHCallFilter:            true,
+	EnableETHCallFilter:            false,
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
@@ -179,6 +183,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTransactionFilteringConfig.Enable, "enable transaction filtering")
 	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
 	f.Bool(prefix+".enable-ethcall-filter", DefaultTransactionFilteringConfig.EnableETHCallFilter, "enable address filtering for eth_estimateGas and eth_call")
 	EventFilterAddOptions(prefix+".event-filter", f)
@@ -209,6 +214,7 @@ type Config struct {
 	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
 	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
+	LegacyZeroBaseFeeUntil      uint64                     `koanf:"legacy-zero-base-fee-until"`
 
 	forwardingTarget string
 }
@@ -265,6 +271,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
+	f.Uint64(prefix+".legacy-zero-base-fee-until", ConfigDefault.LegacyZeroBaseFeeUntil, "orbit-chain compat: re-enables the pre-v3.7 behavior of treating ArbOS<=40 blocks with zero base fee as non-arbitrum, for blocks with unix timestamp strictly less than this value (0 disables; set to a timestamp past the last zero-basefee block on the chain)")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
@@ -306,6 +313,7 @@ var ConfigDefault = Config{
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
 	DisableArbOwnerEthCall:      false,
+	LegacyZeroBaseFeeUntil:      0,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -351,7 +359,7 @@ func CreateExecutionNode(
 	stack *node.Node,
 	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
-	l1client *ethclient.Client,
+	l1client containers.Option[*ethclient.Client],
 	configFetcher ConfigFetcher,
 	syncTillBlock uint64,
 	seqParentChain *parent.ParentChain,
@@ -364,12 +372,14 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create address filter service: %w", err)
-	}
+	var addressFilterService *addressfilter.FilterService
 	var addressChecker state.AddressChecker
-	if addressFilterService != nil {
+	// Tests bypass the service by injecting via ExecEngine.SetAddressChecker.
+	if config.TransactionFiltering.Enable {
+		addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create address filter service: %w", err)
+		}
 		addressChecker = addressFilterService.GetAddressChecker()
 	}
 
@@ -394,9 +404,10 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
-	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
-		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
+	if l1client.IsSome() {
+		l1clientUnwrapped := l1client.Unwrap()
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1clientUnwrapped)
+		parentChainReader, err = headerreader.New(ctx, l1clientUnwrapped, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
@@ -431,7 +442,13 @@ func CreateExecutionNode(
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 
-	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	var precheckerFilterer core.TxFilterer
+	// Sequencer filters via block-production hooks; skip prechecker dry-run when it is the publisher.
+	if config.TransactionFiltering.Enable && txPublisher != sequencer {
+		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+	}
+
+	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher, precheckerFilterer)
 	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
