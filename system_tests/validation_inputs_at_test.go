@@ -277,9 +277,9 @@ func storageCacheFlushOutOfGasInboxPos(t *testing.T, ctx context.Context, builde
 	tx := builder.L2Info.PrepareTxTo("Owner", &multicall, 2_210_000, nil, argsMulticall(50))
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	receipt, err = WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
+	receipt, err := WaitForTx(ctx, testClient2ndNode.Client, tx.Hash(), time.Second*15)
 	Require(t, err)
 	if receipt.GasUsedForL1 != 0 {
 		t.Fatalf("expected 0 gas used, got %d", receipt.GasUsedForL1)

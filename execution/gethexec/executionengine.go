@@ -760,7 +760,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
 		recordingChainContext = arbitrum.NewRecordingChainContext(s.bc, lastBlockHeader)
 		chainContext = recordingChainContext
-		statedb, err = state.NewDeterministic(lastBlockHeader.Root, tipRecordingStateDatabase)
+		statedb, err = state.NewRecording(lastBlockHeader.Root, tipRecordingStateDatabase)
 		if err != nil {
 			return nil, err
 		}
@@ -1006,7 +1006,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
 		recordingChainContext = arbitrum.NewRecordingChainContext(s.bc, currentHeader)
 		chainContext = recordingChainContext
-		statedb, err = state.NewDeterministic(currentHeader.Root, tipRecordingStateDatabase)
+		statedb, err = state.NewRecording(currentHeader.Root, tipRecordingStateDatabase)
 		if err != nil {
 			return nil, nil, nil, err
 		}
