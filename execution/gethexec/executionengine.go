@@ -1136,7 +1136,12 @@ func (s *ExecutionEngine) recordChainTipCandidate(block *types.Block, statedb *s
 	// Record before consensus/block side effects; canonical validation prevents
 	// serving this candidate if a later side effect fails.
 	tipRecordingStateDatabase.StopRecording()
-	return s.tipRecorder.RecordTip(block, tipRecordingStateDatabase.Preimages(), recordingChainContext.GetMinBlockNumberAccessed(), tipRecordingStateDatabase.CodeHashes(), statedb.UserWasms())
+	preimages := tipRecordingStateDatabase.Preimages()
+	// StateDB owns VM SHA3 preimages and ArbOS preimages added during finalization.
+	for hash, preimage := range statedb.Preimages() {
+		preimages[hash] = preimage
+	}
+	return s.tipRecorder.RecordTip(block, preimages, recordingChainContext.GetMinBlockNumberAccessed(), tipRecordingStateDatabase.CodeHashes(), statedb.UserWasms())
 }
 
 func recordReplayInitialStatePreimages(statedb *state.StateDB) error {
