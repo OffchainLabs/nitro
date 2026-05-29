@@ -230,6 +230,84 @@
 	(i64.lt_s (i64.const 0))
 	(call $assert_true)
 
+	;; NaN canonicalization: soft-float must produce canonical quiet NaN (0x7FC00000)
+
+	;; f32.min / f32.max with a signaling NaN operand (0x7F800001)
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.const 1)
+	(f32.min)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.const 1)
+	(f32.max)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	;; f32.add(+∞, -∞) generates a NaN from scratch; SoftFloat 8086 default is
+	;; 0xFFC00000 (negative), canonical is 0x7FC00000 (positive)
+	(f32.const inf)
+	(f32.const -inf)
+	(f32.add)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	;; unary ops: sNaN input must produce canonical NaN
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.ceil)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.floor)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.trunc)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.nearest)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.sqrt)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	;; binary ops: sNaN operand must produce canonical NaN
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.const 1)
+	(f32.sub)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.const 1)
+	(f32.mul)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f32.const 1)
+	(f32.div)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
 	(call $wavm_halt_and_set_finished)
 )
 
