@@ -96,13 +96,20 @@ func saveAndRestoreNativeStackGlobals(t *testing.T) {
 // It deploys a WAT program that recurses 1,000 times and configures a small
 // initial native stack size (64KB) so the first call overflows.
 func TestProgramNativeStackOverflowRecovery(t *testing.T) {
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramNativeStackOverflowRecovery(t, recorderOpt)
+	})
+}
+
+func testProgramNativeStackOverflowRecovery(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	saveAndRestoreNativeStackGlobals(t)
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.DontParalellise()                                   // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024 // 64 KB
 		b.execConfig.StylusTarget.AllowFallback = true
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -144,13 +151,20 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 // fallback is disabled. No cranelift retry or stack doubling is attempted
 // and the call panics with a native stack overflow error.
 func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramNativeStackOverflowNoFallback(t, recorderOpt)
+	})
+}
+
+func testProgramNativeStackOverflowNoFallback(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	saveAndRestoreNativeStackGlobals(t)
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.DontParalellise() // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024
 		b.execConfig.StylusTarget.AllowFallback = false
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -194,13 +208,20 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 //  3. Cranelift ASM is persisted to the wasm store
 //  4. A second on-chain tx reuses the persisted cranelift ASM (no recompilation)
 func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramCraneliftPersistenceIntegration(t, recorderOpt)
+	})
+}
+
+func testProgramCraneliftPersistenceIntegration(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	saveAndRestoreNativeStackGlobals(t)
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.DontParalellise() // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024
 		b.execConfig.StylusTarget.AllowFallback = true
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -265,13 +286,20 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 // side fails with "arch not set", cranelift compilation fails, and the
 // overflow cannot be recovered — causing a panic.
 func TestProgramCraneliftTargetCacheRegistration(t *testing.T) {
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramCraneliftTargetCacheRegistration(t, recorderOpt)
+	})
+}
+
+func testProgramCraneliftTargetCacheRegistration(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	saveAndRestoreNativeStackGlobals(t)
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.DontParalellise()                                   // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024 // small stack to trigger overflow
 		b.execConfig.StylusTarget.AllowFallback = true
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()

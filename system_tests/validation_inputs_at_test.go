@@ -29,7 +29,9 @@ import (
 )
 
 func TestValidationInputsAtWithWasmTarget(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, false)
+	builder, auth, cleanup := setupProgramTest(t, false, func(builder *NodeBuilder) {
+		builder.WithLegacyBlockRecorder()
+	})
 	ctx := builder.ctx
 	defer cleanup()
 

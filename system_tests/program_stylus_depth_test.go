@@ -12,11 +12,15 @@ import (
 )
 
 func TestProgramMaxStylusCallDepth(t *testing.T) {
-	testMaxStylusCallDepth(t, true)
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusCallDepth(t, true, recorderOpt)
+	})
 }
 
 func TestProgramMaxStylusCallDepthNative(t *testing.T) {
-	testMaxStylusCallDepth(t, false)
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusCallDepth(t, false, recorderOpt)
+	})
 }
 
 // testMaxStylusCallDepth asserts that setting
@@ -27,11 +31,12 @@ func TestProgramMaxStylusCallDepthNative(t *testing.T) {
 // Execution shape (depth N comes from N-1 argsForMulticall wraps around a
 // 0-call leaf): eth_call → Stylus (depth 1) → contract_call → Stylus (depth 2)
 // → ... → Stylus (depth N).
-func testMaxStylusCallDepth(t *testing.T, jit bool) {
+func testMaxStylusCallDepth(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const depthLimit uint16 = 3
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.execConfig.StylusTarget.MaxStylusCallDepth = depthLimit
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	defer cleanup()
 	ctx := builder.ctx
 	l2client := builder.L2.Client

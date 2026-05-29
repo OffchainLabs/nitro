@@ -19,8 +19,14 @@ import (
 )
 
 func TestStylusTracer(t *testing.T) {
+	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusTracer(t, recorderOpt)
+	})
+}
+
+func testStylusTracer(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
