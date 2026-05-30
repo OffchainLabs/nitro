@@ -119,6 +119,7 @@ func TestBlockValidatorTimeoutRetry(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// PathDB is not supported for block validation
+	builder.WithLegacyBlockRecorder()
 	builder.RequireScheme(t, rawdb.HashScheme)
 	cleanup := builder.Build(t)
 	defer cleanup()
