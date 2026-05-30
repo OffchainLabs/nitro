@@ -71,6 +71,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
 	// For now PathDB is not supported when using block validation
+	builder.WithLegacyBlockRecorder()
 	builder.RequireScheme(t, rawdb.HashScheme)
 
 	builder.nodeConfig = l1NodeConfigA
@@ -292,6 +293,7 @@ func TestBlockRecordSimple(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.WithLegacyBlockRecorder()
 	builder.nodeConfig.BlockValidator.Enable = true
 	cleanup := builder.Build(t)
 	defer cleanup()

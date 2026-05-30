@@ -28,6 +28,7 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	// 1st node with sequencer, stays up all the time.
 	databaseEngine := rawdb.DBPebble
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(databaseEngine)
+	builder.WithLegacyBlockRecorder()
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.L2Info = NewBlockChainTestInfo(
 		t,

@@ -98,6 +98,7 @@ func testEcrecoverHighSDivergence(t *testing.T, useJit bool) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.WithLegacyBlockRecorder()
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.BatchPoster.Enable = true
