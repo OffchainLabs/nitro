@@ -58,6 +58,7 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
+	builder.WithLegacyBlockRecorder()
 	builder.RequireScheme(t, rawdb.HashScheme)
 
 	builder.nodeConfig.ParentChainReader.UseFinalityData = true

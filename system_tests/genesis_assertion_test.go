@@ -291,6 +291,7 @@ func createL2NodeWithRollupAddresses(
 	fatalErrChan := make(chan error, 10)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
 
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
