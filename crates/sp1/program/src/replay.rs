@@ -223,13 +223,17 @@ pub fn run(m: Bytes) -> ! {
                 let mapping_bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
                 let mapping: Vec<Option<String>> =
                     serde_json::from_slice(&mapping_bytes[..]).expect("parse mapping");
-                let infos = module.as_sys().local_function_infos();
+                let artifact = module.sys_artifact().expect("sys artifact");
+                let extents = artifact
+                    .finished_function_extents()
+                    .expect("function extents");
                 // ptr => (function name, size), for precision, all usizes are casted to string
                 let mut profiler_data: std::collections::HashMap<String, (String, String)> =
                     std::collections::HashMap::default();
-                for (index, ptr, size) in infos {
-                    if let Some(Some(name)) = mapping.get(index as usize) {
-                        profiler_data.insert(ptr.to_string(), (name.clone(), size.to_string()));
+                for (index, extent) in &extents {
+                    if let Some(Some(name)) = mapping.get(index.as_u32() as usize) {
+                        let ptr = *extent.ptr as usize;
+                        profiler_data.insert(ptr.to_string(), (name.clone(), extent.length.to_string()));
                     }
                 }
                 let profiler_data_str =
