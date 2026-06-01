@@ -8,6 +8,7 @@ use std::{
 use arbutil::{Bytes32, evm::EvmData};
 use bytes::Bytes;
 use caller_env::{
+    GoRuntimeState,
     arbcrypto::host::{ecrecovery, keccak256},
     brotli::host::{brotli_compress, brotli_decompress},
     wasip1_stub::host as wasi,
@@ -15,7 +16,6 @@ use caller_env::{
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
 use prover::programs::meter::MeteredMachine;
-use rand_pcg::Pcg32;
 use validation::ValidationInput;
 use wasmer::{
     Engine, Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory, Module, RuntimeError,
@@ -97,8 +97,7 @@ pub struct CustomEnvData {
     /// * Extract memory from instance's exports
     /// * Set the memory back in CustomEnvData.
     memory: Option<Memory>,
-    pub time: u64,
-    pub pcg: Pcg32,
+    pub go_state: GoRuntimeState,
 
     input: Lazy<ValidationInput>,
     yielder: SendYielder<(), MainYieldMessage>,
@@ -114,15 +113,9 @@ impl caller_env::wasmer_traits::HasMemory for CustomEnvData {
 
 impl CustomEnvData {
     pub fn new(yielder: &Yielder<(), MainYieldMessage>) -> Self {
-        // See https://github.com/OffchainLabs/nitro/blob/7e5c0bb3cfd55ef2d99abff8b3875c97f85eb1c8/arbitrator/caller-env/src/lib.rs#L27-L31
-        const PCG_INIT_STATE: u64 = 0xcafef00dd15ea5e5;
-        const PCG_INIT_STREAM: u64 = 0xa02bdbf7bb3c0a7;
-        let pcg = Pcg32::new(PCG_INIT_STATE, PCG_INIT_STREAM);
-
         Self {
             memory: None,
-            time: 0,
-            pcg,
+            go_state: GoRuntimeState::default(),
             input: Lazy::new(read_input),
             yielder: SendYielder::new(yielder),
         }
