@@ -1603,6 +1603,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
+	var l1BoundDisabledCount uint64
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -1610,14 +1611,17 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			break
 		}
 		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
-			log.Error(
-				"disabling L1 bound as batch posting message is close to the maximum delay",
-				"blockNumber", msg.Message.Header.BlockNumber,
-				"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
-				"timestamp", msg.Message.Header.Timestamp,
-				"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
-				"l1BlockBoundBypass", config.L1BlockBoundBypass,
-			)
+			l1BoundDisabledCount++
+			if l1BoundDisabledCount == 1 {
+				log.Error(
+					"disabling L1 bound as batch posting message is close to the maximum delay",
+					"blockNumber", msg.Message.Header.BlockNumber,
+					"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
+					"timestamp", msg.Message.Header.Timestamp,
+					"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
+					"l1BlockBoundBypass", config.L1BlockBoundBypass,
+				)
+			}
 			l1BoundMaxBlockNumber = math.MaxUint64
 			l1BoundMaxTimestamp = math.MaxUint64
 		}
@@ -1673,6 +1677,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			b.building.firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
+	}
+	if l1BoundDisabledCount > 1 {
+		log.Error("L1 bound was disabled for additional messages", "count", l1BoundDisabledCount-1)
 	}
 
 	feeEscalationBaseTime := time.Now()
