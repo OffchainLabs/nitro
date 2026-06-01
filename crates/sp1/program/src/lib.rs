@@ -64,6 +64,12 @@ impl From<String> for Escape {
     }
 }
 
+impl From<caller_env::LogicalError> for Escape {
+    fn from(e: caller_env::LogicalError) -> Self {
+        Self::Logical(e.0)
+    }
+}
+
 impl From<eyre::ErrReport> for Escape {
     fn from(err: eyre::ErrReport) -> Self {
         Self::Internal(err.to_string())

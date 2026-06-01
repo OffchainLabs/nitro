@@ -22,28 +22,28 @@ pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
     caller_env::wavmio::get_global_state_bytes32(&mut mem, exec, idx, out_ptr)
-        .map_err(Escape::HostIO)
+        .map_err(Into::into)
 }
 
 /// Writes 32-bytes of global state.
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Escape::HostIO)
+    caller_env::wavmio::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Into::into)
 }
 
 /// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
     let (_, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::get_global_state_u64(exec, idx).map_err(Escape::HostIO)
+    caller_env::wavmio::get_global_state_u64(exec, idx).map_err(Into::into)
 }
 
 /// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
     let (_, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::set_global_state_u64(exec, idx, val).map_err(Escape::HostIO)
+    caller_env::wavmio::set_global_state_u64(exec, idx, val).map_err(Into::into)
 }
 
 /// Reads an inbox message.
@@ -56,7 +56,7 @@ pub fn read_inbox_message(
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
     caller_env::wavmio::read_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
-        .map_err(Escape::HostIO)
+        .map_err(Into::into)
 }
 
 /// Reads a delayed inbox message.
@@ -69,7 +69,7 @@ pub fn read_delayed_inbox_message(
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
     caller_env::wavmio::read_delayed_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
-        .map_err(Escape::HostIO)
+        .map_err(Into::into)
 }
 
 /// Retrieves the preimage of the given hash.
@@ -156,7 +156,7 @@ pub fn resolve_preimage_impl(
         out_ptr,
         name,
     )
-    .map_err(Escape::HostIO)
+    .map_err(Into::into)
 }
 
 pub fn validate_certificate(

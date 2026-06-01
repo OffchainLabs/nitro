@@ -232,6 +232,12 @@ impl Escape {
     }
 }
 
+impl From<caller_env::LogicalError> for Escape {
+    fn from(e: caller_env::LogicalError) -> Self {
+        Self::HostIO(e.0)
+    }
+}
+
 impl From<RuntimeError> for Escape {
     fn from(outcome: RuntimeError) -> Self {
         outcome

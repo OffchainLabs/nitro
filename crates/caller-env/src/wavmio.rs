@@ -1,10 +1,10 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use alloc::{format, string::String};
+use alloc::format;
 use core::cmp::min;
 
-use crate::{GuestPtr, MemAccess};
+use crate::{GuestPtr, LogicalError, MemAccess};
 
 /// Read validation inputs and set outputs for the `wavmio` host functions.
 pub trait WavmIo {
@@ -23,7 +23,7 @@ pub fn get_global_state_bytes32(
     io: &impl WavmIo,
     idx: u32,
     out_ptr: GuestPtr,
-) -> Result<(), String> {
+) -> Result<(), LogicalError> {
     let Some(global) = io.get_bytes32_global(idx as usize) else {
         return Err("global read out of bounds in wavmio.getGlobalStateBytes32".into());
     };
@@ -37,7 +37,7 @@ pub fn set_global_state_bytes32(
     io: &mut impl WavmIo,
     idx: u32,
     src_ptr: GuestPtr,
-) -> Result<(), String> {
+) -> Result<(), LogicalError> {
     let val = mem.read_fixed(src_ptr);
     if !io.set_bytes32_global(idx as usize, val) {
         return Err("global write oob in wavmio.setGlobalStateBytes32".into());
@@ -46,7 +46,7 @@ pub fn set_global_state_bytes32(
 }
 
 /// Reads 8-bytes of global state.
-pub fn get_global_state_u64(io: &impl WavmIo, idx: u32) -> Result<u64, String> {
+pub fn get_global_state_u64(io: &impl WavmIo, idx: u32) -> Result<u64, LogicalError> {
     match io.get_u64_global(idx as usize) {
         Some(val) => Ok(val),
         None => Err("global read out of bounds in wavmio.getGlobalStateU64".into()),
@@ -54,7 +54,7 @@ pub fn get_global_state_u64(io: &impl WavmIo, idx: u32) -> Result<u64, String> {
 }
 
 /// Writes 8-bytes of global state.
-pub fn set_global_state_u64(io: &mut impl WavmIo, idx: u32, val: u64) -> Result<(), String> {
+pub fn set_global_state_u64(io: &mut impl WavmIo, idx: u32, val: u64) -> Result<(), LogicalError> {
     if !io.set_u64_global(idx as usize, val) {
         return Err("global write out of bounds in wavmio.setGlobalStateU64".into());
     }
@@ -68,7 +68,7 @@ pub fn read_inbox_message(
     msg_num: u64,
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, String> {
+) -> Result<u32, LogicalError> {
     let message = io
         .get_sequencer_message(msg_num)
         .ok_or(format!("missing sequencer inbox message {msg_num}"))?;
@@ -82,7 +82,7 @@ pub fn read_delayed_inbox_message(
     msg_num: u64,
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, String> {
+) -> Result<u32, LogicalError> {
     let message = io
         .get_delayed_message(msg_num)
         .ok_or(format!("missing delayed inbox message {msg_num}"))?;
@@ -94,7 +94,7 @@ fn read_message(
     message: &[u8],
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, String> {
+) -> Result<u32, LogicalError> {
     let offset = offset as usize;
     let len = min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -111,7 +111,7 @@ pub fn resolve_preimage(
     offset: u32,
     out_ptr: GuestPtr,
     name: &str,
-) -> Result<u32, String> {
+) -> Result<u32, LogicalError> {
     let hash = mem.read_fixed(hash_ptr);
     let offset = offset as usize;
 
@@ -119,11 +119,11 @@ pub fn resolve_preimage(
         let hash_hex = hex::encode(hash);
         return Err(format!(
             "Missing requested preimage for hash {hash_hex} in {name}"
-        ));
+        ).into());
     };
 
     if !offset.is_multiple_of(32) {
-        return Err(format!("bad offset {offset} in {name}"));
+        return Err(format!("bad offset {offset} in {name}").into());
     }
 
     let len = min(32, preimage.len().saturating_sub(offset));

@@ -5,9 +5,26 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 
 pub use guest_ptr::GuestPtr;
+
+/// A protocol-level error from a host function — distinct from infrastructure
+/// failures (sockets, threads) that are runtime-specific.
+#[derive(Debug)]
+pub struct LogicalError(pub String);
+
+impl From<String> for LogicalError {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for LogicalError {
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
+}
 use rand_pcg::Pcg32;
 pub use wasip1_stub::Errno;
 

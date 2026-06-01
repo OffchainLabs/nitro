@@ -13,7 +13,7 @@ pub fn get_global_state_bytes32(
     out_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::get_global_state_bytes32(&mut mem, state, idx, out_ptr).map_err(Escape::Logical)
+    caller_env::get_global_state_bytes32(&mut mem, state, idx, out_ptr).map_err(Into::into)
 }
 
 pub fn set_global_state_bytes32(
@@ -22,7 +22,7 @@ pub fn set_global_state_bytes32(
     src_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mem, state) = sp1_env(&mut ctx);
-    caller_env::set_global_state_bytes32(&mem, state, idx, src_ptr).map_err(Escape::Logical)
+    caller_env::set_global_state_bytes32(&mem, state, idx, src_ptr).map_err(Into::into)
 }
 
 pub fn get_global_state_u64(
@@ -30,7 +30,7 @@ pub fn get_global_state_u64(
     idx: u32,
 ) -> Result<u64, Escape> {
     let (_mem, state) = sp1_env(&mut ctx);
-    caller_env::get_global_state_u64(state, idx).map_err(Escape::Logical)
+    caller_env::get_global_state_u64(state, idx).map_err(Into::into)
 }
 
 pub fn set_global_state_u64(
@@ -39,7 +39,7 @@ pub fn set_global_state_u64(
     val: u64,
 ) -> MaybeEscape {
     let (_mem, state) = sp1_env(&mut ctx);
-    caller_env::set_global_state_u64(state, idx, val).map_err(Escape::Logical)
+    caller_env::set_global_state_u64(state, idx, val).map_err(Into::into)
 }
 
 pub fn read_inbox_message(
@@ -49,8 +49,7 @@ pub fn read_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::read_inbox_message(&mut mem, state, msg_num, offset, out_ptr)
-        .map_err(Escape::Logical)
+    caller_env::read_inbox_message(&mut mem, state, msg_num, offset, out_ptr).map_err(Into::into)
 }
 
 pub fn read_delayed_inbox_message(
@@ -61,7 +60,7 @@ pub fn read_delayed_inbox_message(
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
     caller_env::read_delayed_inbox_message(&mut mem, state, msg_num, offset, out_ptr)
-        .map_err(Escape::Logical)
+        .map_err(Into::into)
 }
 
 pub fn resolve_keccak_preimage(
@@ -80,7 +79,7 @@ pub fn resolve_keccak_preimage(
         out_ptr,
         "wavmio.ResolvePreImage",
     )
-    .map_err(Escape::Logical)
+    .map_err(Into::into)
 }
 
 pub fn resolve_typed_preimage(
@@ -100,7 +99,7 @@ pub fn resolve_typed_preimage(
         out_ptr,
         "wavmio.ResolveTypedPreimage",
     )
-    .map_err(Escape::Logical)
+    .map_err(Into::into)
 }
 
 pub fn validate_certificate(
