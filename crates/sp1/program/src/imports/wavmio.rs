@@ -13,7 +13,7 @@ pub fn get_global_state_bytes32(
     out_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::get_global_state_bytes32(&mut mem, state, idx, out_ptr).map_err(Into::into)
+    Ok(caller_env::get_global_state_bytes32(&mut mem, state, idx, out_ptr)?)
 }
 
 pub fn set_global_state_bytes32(
@@ -22,7 +22,7 @@ pub fn set_global_state_bytes32(
     src_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mem, state) = sp1_env(&mut ctx);
-    caller_env::set_global_state_bytes32(&mem, state, idx, src_ptr).map_err(Into::into)
+    Ok(caller_env::set_global_state_bytes32(&mem, state, idx, src_ptr)?)
 }
 
 pub fn get_global_state_u64(
@@ -30,7 +30,7 @@ pub fn get_global_state_u64(
     idx: u32,
 ) -> Result<u64, Escape> {
     let (_mem, state) = sp1_env(&mut ctx);
-    caller_env::get_global_state_u64(state, idx).map_err(Into::into)
+    Ok(caller_env::get_global_state_u64(state, idx)?)
 }
 
 pub fn set_global_state_u64(
@@ -39,7 +39,7 @@ pub fn set_global_state_u64(
     val: u64,
 ) -> MaybeEscape {
     let (_mem, state) = sp1_env(&mut ctx);
-    caller_env::set_global_state_u64(state, idx, val).map_err(Into::into)
+    Ok(caller_env::set_global_state_u64(state, idx, val)?)
 }
 
 pub fn read_inbox_message(
@@ -49,7 +49,7 @@ pub fn read_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::read_inbox_message(&mut mem, state, msg_num, offset, out_ptr).map_err(Into::into)
+    Ok(caller_env::read_inbox_message(&mut mem, state, msg_num, offset, out_ptr)?)
 }
 
 pub fn read_delayed_inbox_message(
@@ -59,8 +59,7 @@ pub fn read_delayed_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::read_delayed_inbox_message(&mut mem, state, msg_num, offset, out_ptr)
-        .map_err(Into::into)
+    Ok(caller_env::read_delayed_inbox_message(&mut mem, state, msg_num, offset, out_ptr)?)
 }
 
 pub fn resolve_keccak_preimage(
@@ -70,7 +69,7 @@ pub fn resolve_keccak_preimage(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::resolve_preimage(
+    Ok(caller_env::resolve_preimage(
         &mut mem,
         state,
         0,
@@ -78,8 +77,7 @@ pub fn resolve_keccak_preimage(
         offset,
         out_ptr,
         "wavmio.ResolvePreImage",
-    )
-    .map_err(Into::into)
+    )?)
 }
 
 pub fn resolve_typed_preimage(
@@ -90,7 +88,7 @@ pub fn resolve_typed_preimage(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    caller_env::resolve_preimage(
+    Ok(caller_env::resolve_preimage(
         &mut mem,
         state,
         preimage_type,
@@ -98,8 +96,7 @@ pub fn resolve_typed_preimage(
         offset,
         out_ptr,
         "wavmio.ResolveTypedPreimage",
-    )
-    .map_err(Into::into)
+    )?)
 }
 
 pub fn validate_certificate(
@@ -108,12 +105,7 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::validate_certificate(
-        &mem,
-        state,
-        preimage_type,
-        hash_ptr,
-    ))
+    Ok(caller_env::validate_certificate(&mem, state, preimage_type, hash_ptr))
 }
 
 // Greedy preimage resolution — kept separate, will be refactored independently.
