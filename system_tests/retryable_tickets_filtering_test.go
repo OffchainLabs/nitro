@@ -147,7 +147,7 @@ func verifyTicketExistsWithNumTries(
 	require.NoError(t, err, "retryable ticket %s should exist", ticketId.Hex())
 
 	// Clear filter for a clean redeem
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
 
 	redeemerName := "Redeemer_" + ticketId.Hex()[:4]
 	builder.L2Info.GenerateAccount(redeemerName)
@@ -200,7 +200,7 @@ func verifyTicketDeleted(t *testing.T, ctx context.Context, builder *NodeBuilder
 // chain works once the filter is cleared.
 func manualRedeemSucceeds(t *testing.T, ctx context.Context, builder *NodeBuilder, ticketId common.Hash) {
 	t.Helper()
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
 
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(
 		common.HexToAddress("6e"), builder.L2.Client)
@@ -249,7 +249,7 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1(t *testing.T) {
 
 	// Set filter on filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=callerAddr, data=callTarget(filteredTarget)). Advance L1.
 	retryData, err := callerABI.Pack("callTarget", filteredTarget)
@@ -302,7 +302,7 @@ func TestRetryableFilteringAutoRedeemCascadeDepth2(t *testing.T) {
 
 	// Set filter for filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -366,7 +366,7 @@ func TestRetryableFilteringAutoRedeemCascadeDepth3(t *testing.T) {
 
 	// Set filter for filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -439,7 +439,7 @@ func TestRetryableFilteringAutoRedeemCascadeDepth4(t *testing.T) {
 
 	// Set filter for filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -508,13 +508,14 @@ func TestRetryableFilteringL2ManualRedeemCascadeDepth2(t *testing.T) {
 
 	// Set filter for filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send L2 manual redeem of A
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
 		"manual redeem should fail with cascading redeem filter error")
@@ -577,13 +578,14 @@ func TestRetryableFilteringL2ManualRedeemCascadeDepth3(t *testing.T) {
 
 	// Set filter
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send L2 manual redeem of A
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
 		"manual redeem should fail with cascading redeem filter error")
@@ -644,7 +646,7 @@ func TestRetryableFilteringL1DelayedManualRedeemCascadeDepth2(t *testing.T) {
 
 	// Set filter
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send delayed manual redeem (signed L2 tx via L1 inbox calling ArbRetryableTx.redeem(ticketA))
 	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketIdA)
@@ -725,7 +727,7 @@ func TestRetryableFilteringL1DelayedManualRedeemCascadeDepth3(t *testing.T) {
 
 	// Set filter
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send delayed manual redeem of A
 	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketIdA)
@@ -799,7 +801,7 @@ func TestRetryableFilteringAutoRedeemCascadeDepth2_EventFilter(t *testing.T) {
 
 	// Set address filter
 	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -870,7 +872,7 @@ func TestRetryableFilteringAutoRedeemCascadeDepth3_EventFilter(t *testing.T) {
 
 	// Set address filter
 	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -914,7 +916,7 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1_Create2(t *testing.T) {
 
 	// Set filter for computed address
 	filter := newHashedChecker([]common.Address{create2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -937,7 +939,7 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1_Create2(t *testing.T) {
 	// After clearing filter + manual redeem, contract IS created.
 	// Note: we inline the redeem instead of using manualRedeemSucceeds because
 	// we need to verify code != empty at the CREATE2 address after redeem.
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
 
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(
 		common.HexToAddress("6e"), builder.L2.Client)
@@ -994,7 +996,7 @@ func TestRetryableFilteringAutoRedeemCascadeWithCallValue(t *testing.T) {
 
 	// Set filter
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, callValue=0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -1077,13 +1079,14 @@ func TestRetryableFilteringL2ManualRedeemCascadeWithCallValue(t *testing.T) {
 
 	// Set filter
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send L2 manual redeem of A
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
 		"manual redeem should fail with cascading redeem filter error")
@@ -1158,7 +1161,7 @@ func TestRetryableFilteringStorageRollbackAtIntermediateChainLevel(t *testing.T)
 
 	// Set filter
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -1244,7 +1247,7 @@ func TestRetryableFilteringCleanRetryableBeforeDeepDirtyChain(t *testing.T) {
 
 	// Set filter for dirty chain
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -1316,7 +1319,7 @@ func TestRetryableFilteringAutoRedeemCascadeDepth3_NumTriesReset(t *testing.T) {
 
 	// Set filter on filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit A (gasLimit>0, destAddr=0x6e, data=redeem(ticketB)). Advance L1.
 	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
@@ -1391,7 +1394,7 @@ func TestRetryableFilteringL2ContractChainToRedeemFiltered(t *testing.T) {
 
 	// Set the address filter on filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Build the nested call chain:
 	// Inner: ArbRetryableTx.redeem(ticketId) — what contractB will call on 0x6e
@@ -1405,6 +1408,7 @@ func TestRetryableFilteringL2ContractChainToRedeemFiltered(t *testing.T) {
 	// Send L2 tx from EOA: contractA.forwardCall(contractB, middleCalldata)
 	// This creates: EOA → contractA → contractB → 0x6e.Redeem(ticketId)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+
 	_, err = contractA.ForwardCall(&redeemOpts, contractBAddr, middleCalldata)
 	require.ErrorContains(t, err, "cascading redeem filtered",
 		"L2 contract chain to redeem should fail with cascading redeem filter error")
@@ -1467,7 +1471,7 @@ func TestRetryableFilteringFanoutAutoRedeemDirtyLast(t *testing.T) {
 
 	// Set filter on filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Build A's calldata: redeemAllAndCreateAddresses([ticketIdB, ticketIdC], [])
 	aRetryData, err := simpleABI.Pack("redeemAllAndCreateAddresses",
@@ -1540,7 +1544,7 @@ func TestRetryableFilteringFanoutAutoRedeemDirtyFirst(t *testing.T) {
 
 	// Set filter on filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Build A's calldata: redeemAllAndCreateAddresses([ticketIdC, ticketIdB], []) — reversed order
 	aRetryData, err := simpleABI.Pack("redeemAllAndCreateAddresses",
@@ -1626,7 +1630,7 @@ func TestRetryableFilteringFanoutL2ManualRedeemDirtyLast(t *testing.T) {
 
 	// Set filter on filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// L2 EOA manually redeems A
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(

@@ -4,6 +4,8 @@
 package prefix
 
 import (
+	"math/bits"
+
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -18,7 +20,7 @@ func (me MerkleExpansion) Clone() MerkleExpansion {
 }
 
 func (me MerkleExpansion) Compact() ([]common.Hash, uint64) {
-	var comp []common.Hash
+	comp := make([]common.Hash, 0, len(me))
 	size := uint64(0)
 	for level, h := range me {
 		if h != (common.Hash{}) {
@@ -30,7 +32,7 @@ func (me MerkleExpansion) Compact() ([]common.Hash, uint64) {
 }
 
 func MerkleExpansionFromCompact(comp []common.Hash, size uint64) (MerkleExpansion, uint64) {
-	var me []common.Hash
+	me := make([]common.Hash, 0, bits.Len64(size))
 	numRead := uint64(0)
 	i := uint64(1)
 	for i <= size {

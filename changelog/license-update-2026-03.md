@@ -1,2 +1,0 @@
-### Ignored
-- Update license headers

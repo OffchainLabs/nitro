@@ -7,6 +7,7 @@ members = [
     "crates/jit",
     "crates/validation",
     "crates/prover",
+    "crates/prover-ffi",
     "crates/stylus",
     "crates/validator",
     "crates/wasm-libraries/arbcompress",
@@ -33,7 +34,7 @@ resolver = "2"
 
 [workspace.package]
 authors = ["Offchain Labs"]
-edition = "2021"
+edition = "2024"
 homepage = "https://arbitrum.io"
 license = "BSL"
 publish = false
@@ -71,8 +72,8 @@ num-traits = { version = "0.2.17" }
 once_cell = { version = "1.19.0" }
 parking_lot = { version = "0.12.1" }
 paste = { version = "1.0.15" }
-rand = { version = "0.8.4", default-features = false }
-rand_pcg = { version = "0.3.1", default-features = false }
+rand = { version = "0.10.1", default-features = false }
+rand_pcg = { version = "0.10.2", default-features = false }
 rayon = { version = "1.5.1" }
 rkyv = { version = "0.8.8" }
 reqwest = { version = "0.13.1" }
@@ -105,6 +106,7 @@ caller-env = { path = "crates/caller-env", default-features = false }
 forward = { path = "crates/wasm-libraries/forward" }
 jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
+prover-ffi = { path = "crates/prover-ffi" }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
 validation = { path = "crates/validation" }

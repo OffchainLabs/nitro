@@ -3,9 +3,12 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::caller_env::{JitEnv, JitExecEnv};
-use crate::machine::{Escape, WasmEnvMut};
-use caller_env::{self, wasip1_stub::Errno, GuestPtr};
+use caller_env::{self, GuestPtr, wasip1_stub::Errno};
+
+use crate::{
+    caller_env::{JitEnv, JitExecEnv},
+    machine::{Escape, WasmEnvMut},
+};
 
 pub fn proc_exit(mut _env: WasmEnvMut, code: u32) -> Result<(), Escape> {
     Err(Escape::Exit(code))

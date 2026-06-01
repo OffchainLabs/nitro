@@ -1,10 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
-use rand::RngCore;
+
+use rand::Rng;
 use spin::{Lazy, Mutex, MutexGuard};
+
+use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 
 extern crate alloc;
 
@@ -15,7 +17,7 @@ pub struct StaticExecEnv;
 
 static GO_RUNTIME_STATE: Lazy<Mutex<GoRuntimeState>> = Lazy::new(Default::default);
 
-extern "C" {
+unsafe extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
     fn wavm_caller_load32(ptr: GuestPtr) -> u32;
     fn wavm_caller_store8(ptr: GuestPtr, val: u8);

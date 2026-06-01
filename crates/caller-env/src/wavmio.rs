@@ -1,10 +1,10 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{GuestPtr, MemAccess};
-use alloc::format;
-use alloc::string::String;
+use alloc::{format, string::String};
 use core::cmp::min;
+
+use crate::{GuestPtr, MemAccess};
 
 /// Read validation inputs and set outputs for the `wavmio` host functions.
 pub trait WavmIo {

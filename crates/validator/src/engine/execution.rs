@@ -5,25 +5,24 @@
 //!
 //! This module implements the two primary validation strategies:
 //!
-//! 1. **Native Mode (`validate_native`):** Runs validation in-process using the
-//!    embedded `jit` crate. This utilizes the `jit::InputMode::Native` configuration
-//!    and is typically used for direct, low-overhead validation.
+//! 1. **Native Mode (`validate_native`):** Runs validation in-process using the embedded `jit`
+//!    crate. This utilizes the `jit::InputMode::Native` configuration and is typically used for
+//!    direct, low-overhead validation.
 //!
-//! 2. **Continuous Mode (`validate_continuous`):** Orchestrates an external "JIT Machine"
-//!    process (via `JitMachine`). This mode spawns a separate binary to handle
-//!    validation, isolating the execution environment and allowing for specific
-//!    binary version targeting.
+//! 2. **Continuous Mode (`validate_continuous`):** Orchestrates an external "JIT Machine" process
+//!    (via `JitMachine`). This mode spawns a separate binary to handle validation, isolating the
+//!    execution environment and allowing for specific binary version targeting.
 
 use std::collections::HashMap;
 
 use axum::Json;
 use jit::CompiledModule;
 use tracing::info;
-use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
+use validation::{GoGlobalState, ValidationInput, ValidationRequest, local_target};
 
 use crate::engine::{
-    machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
-    DEFAULT_JIT_CRANELIFT,
+    DEFAULT_JIT_CRANELIFT, ModuleRoot, machine::JitProcessManager, machine_locator::MachineLocator,
+    replay_binary,
 };
 
 pub async fn validate_native(
@@ -42,7 +41,8 @@ pub async fn validate_native(
         validator: jit::ValidatorOpts {
             binary: binary.clone(),
             cranelift: DEFAULT_JIT_CRANELIFT,
-            debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
+            debug: false, /* JIT's debug messages are using printlns, which would clutter the
+                           * server logs */
             require_success: false, // Relevant for JIT binary only.
         },
         input_mode: jit::InputMode::Native(

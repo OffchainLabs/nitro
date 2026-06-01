@@ -68,7 +68,7 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 		require.NoError(t, err)
 
 		existingAssertion, err := chain.NewStakeOnNewAssertion(ctx, genesisInfo, postState)
-		require.NoError(t, err)
+		require.ErrorIs(t, err, sol.ErrAlreadyExists)
 		require.Equal(t, assertion.Id(), existingAssertion.Id())
 	})
 	t.Run("can create fork", func(t *testing.T) {
@@ -516,6 +516,22 @@ func TestIsChallengeComplete(t *testing.T) {
 	chalComplete, err = chain.IsChallengeComplete(ctx, challengeParentAssertionHash)
 	require.NoError(t, err)
 	require.Equal(t, true, chalComplete)
+}
+
+func Test_autoDepositFunds_NonWethStakeToken(t *testing.T) {
+	setupCfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	chain := setupCfg.Chains[0]
+
+	// Mark the stake token as non-WETH to simulate a plain ERC20 stake token.
+	chain.SetStakeTokenIsWeth(false)
+
+	// Request more than the current balance to trigger the auto-deposit path.
+	// Since the token is not WETH-compatible, this should fail with a descriptive error.
+	err = chain.AutoDepositTokenForStaking(ctx, new(big.Int).SetUint64(1e18))
+	require.ErrorContains(t, err, "auto-deposit is only supported for WETH-compatible tokens")
 }
 
 func Test_autoDepositFunds(t *testing.T) {

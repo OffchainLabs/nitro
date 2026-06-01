@@ -10,11 +10,13 @@ import (
 	"math/big"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -26,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -1356,4 +1359,86 @@ func TestArbDebugOverwriteContractCode(t *testing.T) {
 	if !bytes.Equal(code, testCodeB) {
 		t.Fatal("expected code B to be", testCodeB, "got", code)
 	}
+}
+
+func TestDisableArbOwnerEthCall(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	builder.execConfig.DisableArbOwnerEthCall = true
+	cleanup := builder.Build(t)
+	// The DisableArbOwnerEthCall flag is set on the global OwnerPrecompile singleton,
+	// so it persists across tests running in the same process. We must:
+	// 1. Not run in parallel (DontParalellise above) to avoid affecting concurrent tests
+	// 2. Reset the flag on cleanup to avoid affecting subsequent tests
+	defer func() {
+		gethhook.GetOwnerPrecompile().SetDisableEthCall(false)
+		cleanup()
+	}()
+
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	calldata, err := arbOwnerABI.Pack("getAllChainOwners")
+	Require(t, err)
+	arbOwnerAddr := types.ArbOwnerAddress
+
+	expectedErrMsg := "ArbOwner precompile is disabled outside on-chain execution"
+
+	// eth_call should fail
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), expectedErrMsg) {
+		Fatal(t, "eth_call to ArbOwner expected error containing", expectedErrMsg, "got", err)
+	}
+
+	// eth_estimateGas should fail
+	_, err = builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	})
+	if err == nil || !strings.Contains(err.Error(), expectedErrMsg) {
+		Fatal(t, "eth_estimateGas to ArbOwner expected error containing", expectedErrMsg, "got", err)
+	}
+
+	// On-chain transaction should still succeed
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	auth.GasLimit = 32_000_000
+	arbOwner, err := precompilesgen.NewArbOwner(arbOwnerAddr, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.AddChainOwner(&auth, common.HexToAddress("0xdeadbeef"))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
+func TestArbOwnerEthCallEnabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	calldata, err := arbOwnerABI.Pack("getAllChainOwners")
+	Require(t, err)
+	arbOwnerAddr := types.ArbOwnerAddress
+
+	// eth_call should succeed when DisableArbOwnerEthCall is false (default)
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	}, nil)
+	Require(t, err)
+
+	// eth_estimateGas should succeed when DisableArbOwnerEthCall is false (default)
+	_, err = builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	})
+	Require(t, err)
 }

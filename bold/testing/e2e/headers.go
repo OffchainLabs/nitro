@@ -42,10 +42,6 @@ func (s *simpleHeaderProvider) listenToHeaders(ctx context.Context) {
 	}
 }
 
-func (s *simpleHeaderProvider) StopAndWait() {
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *simpleHeaderProvider) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	ch := make(chan *types.Header, 100)
 	s.chs = append(s.chs, ch)

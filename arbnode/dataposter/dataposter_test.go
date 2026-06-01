@@ -200,6 +200,8 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		t.Fatalf("error creating govaluate evaluable expression: %v", err)
 	}
 
+	ctx := context.Background()
+
 	p := DataPoster{
 		config:           conf,
 		extraBacklog:     func() uint64 { return 0 },
@@ -213,14 +215,9 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 			From: common.Address{},
 		},
 		maxFeeCapExpression: expression,
-		parentChainID:       big.NewInt(1337),
-		parentChain: &parent.ParentChain{
-			ChainID:  big.NewInt(1337),
-			L1Reader: nil,
-		},
+		parentChain:         parent.NewParentChain(ctx, big.NewInt(1337), nil),
 	}
 
-	ctx := context.Background()
 	var nonce uint64 = 1
 	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
 	var numBlobs uint64 = 6
@@ -341,6 +338,8 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		t.Fatalf("error creating govaluate evaluable expression: %v", err)
 	}
 
+	ctx := context.Background()
+
 	p := DataPoster{
 		config:           conf,
 		extraBacklog:     func() uint64 { return 0 },
@@ -354,14 +353,9 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 			From: common.Address{},
 		},
 		maxFeeCapExpression: expression,
-		parentChainID:       big.NewInt(1337),
-		parentChain: &parent.ParentChain{
-			ChainID:  big.NewInt(1337),
-			L1Reader: nil,
-		},
+		parentChain:         parent.NewParentChain(ctx, big.NewInt(1337), nil),
 	}
 
-	ctx := context.Background()
 	var nonce uint64 = 1
 	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
 	var numBlobs uint64 = 6

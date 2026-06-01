@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestConstants(t *testing.T) {
@@ -51,5 +53,152 @@ func TestCompileArch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestNativeStackSize(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testNativeStackSize()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeStackSizeMaxCap(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testNativeStackSizeMaxCap()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHandleNativeStackOverflow(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testHandleNativeStackOverflow()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRetryRestoresStylusPages(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testRetryRestoresStylusPages()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetCraneliftAsmErrors(t *testing.T) {
+	err := testGetCraneliftAsmErrors()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftCompilationAndCache(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testCraneliftCompilationAndCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHandleNativeStackOverflowAtMax(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testHandleNativeStackOverflowAtMax()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSelectLocalAsm(t *testing.T) {
+	localTarget := rawdb.LocalTarget()
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	singlepassAsm := []byte("singlepass-asm")
+	craneliftAsm := []byte("cranelift-asm")
+	savedFallback := GetAllowFallback()
+	defer SetAllowFallback(savedFallback)
+
+	// When both exist and allowFallback=true: cranelift wins (avoids repeated overflows).
+	SetAllowFallback(true)
+	asmMap := map[rawdb.WasmTarget][]byte{
+		localTarget:     singlepassAsm,
+		craneliftTarget: craneliftAsm,
+	}
+	asm, ok := selectLocalAsm(asmMap)
+	if !ok || string(asm) != "cranelift-asm" {
+		t.Fatalf("expected cranelift precedence with allowFallback=true, got ok=%v asm=%q", ok, asm)
+	}
+
+	// When both exist and allowFallback=false: singlepass wins.
+	SetAllowFallback(false)
+	asm, ok = selectLocalAsm(asmMap)
+	if !ok || string(asm) != "singlepass-asm" {
+		t.Fatalf("expected singlepass precedence with allowFallback=false, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Singlepass-only: returned regardless of allowFallback.
+	SetAllowFallback(true)
+	asmMap = map[rawdb.WasmTarget][]byte{
+		localTarget: singlepassAsm,
+	}
+	asm, ok = selectLocalAsm(asmMap)
+	if !ok || string(asm) != "singlepass-asm" {
+		t.Fatalf("expected singlepass when cranelift absent, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Cranelift-only with allowFallback=true: returned.
+	SetAllowFallback(true)
+	asmMap = map[rawdb.WasmTarget][]byte{
+		craneliftTarget: craneliftAsm,
+	}
+	asm, ok = selectLocalAsm(asmMap)
+	if !ok || string(asm) != "cranelift-asm" {
+		t.Fatalf("expected cranelift when singlepass absent and fallback=true, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Cranelift-only with allowFallback=false: not returned.
+	SetAllowFallback(false)
+	_, ok = selectLocalAsm(asmMap)
+	if ok {
+		t.Fatal("expected ok=false for cranelift-only with allowFallback=false")
+	}
+
+	// Neither exists: returns false.
+	asmMap = map[rawdb.WasmTarget][]byte{}
+	_, ok = selectLocalAsm(asmMap)
+	if ok {
+		t.Fatal("expected ok=false for empty map")
+	}
+
+	// Nil map: returns false.
+	_, ok = selectLocalAsm(nil)
+	if ok {
+		t.Fatal("expected ok=false for nil map")
+	}
+}
+
+func TestActivateWithCraneliftTarget(t *testing.T) {
+	err := testActivateWithCraneliftTarget()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftFallbackTargetKeyMismatch(t *testing.T) {
+	err := testCraneliftFallbackTargetKeyMismatch()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftFallbackActivateWasmConsistency(t *testing.T) {
+	err := testCraneliftFallbackActivateWasmConsistency()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

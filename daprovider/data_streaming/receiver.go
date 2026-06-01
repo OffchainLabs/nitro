@@ -205,7 +205,11 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 		message, stillExists := ms.messages[id]
 		if !stillExists {
 			return
-		} else if time.Since(message.lastUpdateTime) > ms.messageCollectionExpiry {
+		}
+		message.mutex.Lock()
+		lastUpdate := message.lastUpdateTime
+		message.mutex.Unlock()
+		if time.Since(lastUpdate) > ms.messageCollectionExpiry {
 			if ms.expirationCallback != nil {
 				ms.expirationCallback(id)
 			}

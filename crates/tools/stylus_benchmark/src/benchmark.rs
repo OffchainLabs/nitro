@@ -1,12 +1,15 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::evm::{api::Ink, EvmData};
 use core::time::Duration;
-use jit::machine::WasmEnv;
-use jit::program::JitConfig;
-use prover::programs::{config::CompileConfig, config::PricingParams, prelude::StylusConfig};
 use std::str;
+
+use arbutil::evm::{EvmData, api::Ink};
+use jit::{machine::WasmEnv, program::JitConfig};
+use prover::programs::{
+    config::{CompileConfig, PricingParams},
+    prelude::StylusConfig,
+};
 use stylus::native;
 use wasmer::sys::Target;
 

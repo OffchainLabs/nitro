@@ -60,4 +60,6 @@ func (w *NoOp) Start(ctx context.Context) {}
 
 func (b *NoOp) StopAndWait() {}
 
+func (b *NoOp) StopOnly() {}
+
 func (b *NoOp) DataPoster() *dataposter.DataPoster { return nil }

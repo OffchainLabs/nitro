@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    evm::{self, api::Ink},
     Bytes32,
+    evm::{self, api::Ink},
 };
 
 /// For hostios that may return something.

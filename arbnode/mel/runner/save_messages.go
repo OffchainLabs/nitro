@@ -18,7 +18,6 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 	if !ok {
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 	}
-	saveAction.postState.GetDelayedMessageBacklog().CommitDirties()
 	if err := m.melDB.SaveBatchMetas(saveAction.postState, saveAction.batchMetas); err != nil {
 		return m.config.RetryInterval, err
 	}
@@ -32,6 +31,7 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 		log.Error("Error saving latest state as head state to db", "err", err)
 		return m.config.RetryInterval, err
 	}
+	msgsPushedCounter.Inc(int64(len(saveAction.messages)))
 	return 0, m.fsm.Do(processNextBlock{
 		melState: saveAction.postState,
 	})

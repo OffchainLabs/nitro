@@ -98,7 +98,8 @@ func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethd
 
 	return inboxTrackerDb, transactionStreamerDb, &MessagePruner{
 		transactionStreamer: &TransactionStreamer{db: transactionStreamerDb},
-		inboxTracker:        &InboxTracker{db: inboxTrackerDb},
+		consensusDB:         inboxTrackerDb,
+		batchMetaFetcher:    &InboxTracker{db: inboxTrackerDb},
 	}
 }
 

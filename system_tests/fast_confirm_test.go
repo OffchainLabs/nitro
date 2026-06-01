@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
@@ -229,7 +230,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		l2node.L1Reader,
 		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2node.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -266,9 +267,10 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcds := l2node.GetParentChainDataSource()
 	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
+		pcds,
+		pcds,
 		l2node.TxStreamer,
 		execNode,
 		l2node.ConsensusDB,
@@ -293,9 +295,9 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		nil,
 		l2node.DeployInfo.ValidatorUtils,
 		l2node.DeployInfo.Rollup,
-		l2node.InboxTracker,
+		pcds,
 		l2node.TxStreamer,
-		l2node.InboxReader,
+		pcds,
 		nil,
 	)
 	Require(t, err)
@@ -424,7 +426,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeA.L1Reader,
 		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeA.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -462,9 +464,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcdsA := l2nodeA.GetParentChainDataSource()
 	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
+		pcdsA,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		execNodeA,
 		l2nodeA.ConsensusDB,
@@ -489,9 +492,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		l2nodeA.DeployInfo.Rollup,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		nil,
 	)
 	Require(t, err)
@@ -509,7 +512,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeB.L1Reader,
 		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeB.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -519,9 +522,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
 	valConfigB.Strategy = "watchtower"
+	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
+		pcdsB,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		execNodeB,
 		l2nodeB.ConsensusDB,
@@ -546,9 +550,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
 		l2nodeB.DeployInfo.Rollup,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
-		l2nodeB.InboxReader,
+		pcdsB,
 		nil,
 	)
 	Require(t, err)

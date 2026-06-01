@@ -25,12 +25,12 @@ func ParseBatchesFromBlock(
 	logsFetcher LogsFetcher,
 	eventUnpacker EventUnpacker,
 ) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
-	batches := make([]*mel.SequencerInboxBatch, 0)
-	batchTxs := make([]*types.Transaction, 0)
 	logs, err := logsFetcher.LogsForBlockHash(ctx, parentChainHeader.Hash())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch logs from parent chain block %v: %w", parentChainHeader.Hash(), err)
 	}
+	batches := make([]*mel.SequencerInboxBatch, 0, len(logs))
+	batchTxs := make([]*types.Transaction, 0, len(logs))
 	var lastSeqNum *uint64
 	for _, log := range logs {
 		if log == nil || log.Topics[0] != BatchDeliveredID {

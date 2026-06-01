@@ -1,23 +1,23 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+#[cfg(feature = "counters")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{borrow::Cow, collections::HashSet};
+
+use arbutil::Bytes32;
+use digest::Digest;
+use eyre::{Result, bail};
+use parking_lot::Mutex;
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use sha3::Keccak256;
+
 use crate::{
     merkle::{Merkle, MerkleType},
     value::{ArbValueType, Value},
 };
-use arbutil::Bytes32;
-use digest::Digest;
-use eyre::{bail, Result};
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
-use std::{borrow::Cow, collections::HashSet};
-
-#[cfg(feature = "counters")]
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
 
 #[cfg(feature = "counters")]
 static MEM_HASH_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -111,7 +111,8 @@ impl Memory {
             }
             return Cow::Borrowed(m);
         }
-        // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
+        // Round the size up to 8 byte long leaves, then round up to the next power of two number of
+        // leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
 
         #[cfg(feature = "rayon")]
@@ -341,10 +342,8 @@ pub mod testing {
 mod test {
     use arbutil::Bytes32;
 
-    use crate::memory::round_up_to_power_of_two;
-    use crate::memory::testing;
-
     use super::Memory;
+    use crate::memory::{round_up_to_power_of_two, testing};
 
     #[test]
     pub fn fixed_memory_hash() {

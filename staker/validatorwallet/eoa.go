@@ -115,6 +115,10 @@ func (b *EOA) StopAndWait() {
 	b.dataPoster.StopAndWait()
 }
 
+func (b *EOA) StopOnly() {
+	b.dataPoster.StopOnly()
+}
+
 func (b *EOA) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }

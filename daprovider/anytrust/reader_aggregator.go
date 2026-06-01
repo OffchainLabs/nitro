@@ -230,7 +230,7 @@ func (a *SimpleReaderAggregator) GetByHash(ctx context.Context, hash common.Hash
 		}
 	}()
 
-	var errorCollection []error
+	errorCollection := make([]error, 0, len(a.readers))
 	for i := 0; i < len(a.readers); i++ {
 		select {
 		case <-ctx.Done():

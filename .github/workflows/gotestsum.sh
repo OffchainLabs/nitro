@@ -17,7 +17,9 @@ junitfile=""
 log=true
 race=false
 cover=false
+coverprofile=""
 consensus_execution_in_same_process_use_rpc=false
+test_mel=false
 flaky=false
 reduce_parallelism=false
 while [[ $# -gt 0 ]]; do
@@ -66,8 +68,18 @@ while [[ $# -gt 0 ]]; do
       cover=true
       shift
       ;;
+    --coverprofile)
+      shift
+      check_missing_value $# "$1" "--coverprofile"
+      coverprofile=$1
+      shift
+      ;;
     --consensus_execution_in_same_process_use_rpc)
      consensus_execution_in_same_process_use_rpc=true
+      shift
+      ;;
+    --test_mel)
+      test_mel=true
       shift
       ;;
     --nolog)
@@ -138,7 +150,11 @@ if [ "$race" == true ]; then
 fi
 
 if [ "$cover" == true ]; then
-  cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+  if [ "$coverprofile" == "" ]; then
+    coverprofile="coverage.txt"
+  fi
+  printf -v escaped_coverprofile '%q' "$coverprofile"
+  cmd="$cmd -coverprofile=$escaped_coverprofile -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
 if [ "$reduce_parallelism" == true ]; then
@@ -153,6 +169,10 @@ fi
 
 if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
     cmd="$cmd --consensus_execution_in_same_process_use_rpc=true"
+fi
+
+if [ "$test_mel" == true ]; then
+    cmd="$cmd --test_mel=true"
 fi
 
 if [ "$test_database_engine" != "" ]; then

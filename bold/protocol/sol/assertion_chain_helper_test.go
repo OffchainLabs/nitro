@@ -8,3 +8,7 @@ import "github.com/offchainlabs/nitro/bold/protocol"
 func (a *AssertionChain) SetBackend(b protocol.ChainBackend) {
 	a.backend = b
 }
+
+func (a *AssertionChain) SetStakeTokenIsWeth(v bool) {
+	a.stakeTokenIsWeth = v
+}

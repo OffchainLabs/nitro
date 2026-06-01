@@ -30,10 +30,14 @@ func messagesFromBatchSegments(
 	seqMsg *arbstate.SequencerMessage,
 	delayedMsgDB DelayedMessageDatabase,
 ) ([]*arbostypes.MessageWithMetadata, error) {
-	messages := make([]*arbostypes.MessageWithMetadata, 0)
+	messages := make([]*arbostypes.MessageWithMetadata, 0, len(seqMsg.Segments))
 	timestamp := uint64(0)
 	blockNumber := uint64(0)
-	for idx, segment := range seqMsg.Segments {
+	segments := seqMsg.Segments
+	if len(segments) == 0 {
+		segments = [][]byte{{arbstate.BatchSegmentKindDelayedMessages}}
+	}
+	for idx, segment := range segments {
 		msg, newBlockNumber, newTimestamp, err := messageFromSegment(
 			ctx,
 			melState,
@@ -49,7 +53,7 @@ func messagesFromBatchSegments(
 				continue // We ignore being able to parse an advance segment.
 			}
 			return nil, fmt.Errorf(
-				"error parsing segment %d: %w", idx, err,
+				"error parsing segment %d, delayedSeen: %d delayedRead: %d, err: %w", idx, melState.DelayedMessagesSeen, melState.DelayedMessagesRead, err,
 			)
 		}
 		timestamp = newTimestamp
@@ -204,7 +208,7 @@ func extractDelayedMessageFromSegment(
 		return nil, err
 	}
 	if delayed == nil {
-		log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead)
+		log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead, "delayedMessagesSeen", melState.DelayedMessagesSeen)
 		return nil, fmt.Errorf("no more delayed messages in db")
 	}
 

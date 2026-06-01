@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -45,18 +45,20 @@ type MultiProtocolStaker struct {
 	stakedNotifiers         []legacystaker.LatestStakedNotifier
 	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
 	statelessBlockValidator *staker.StatelessBlockValidator
-	wallet                  legacystaker.ValidatorWalletInterface
-	l1Reader                *headerreader.HeaderReader
-	blockValidator          *staker.BlockValidator
-	callOpts                bind.CallOpts
-	boldConfig              *bold.BoldConfig
-	stakeTokenAddress       common.Address
-	stack                   *node.Node
-	inboxTracker            staker.InboxTrackerInterface
-	inboxStreamer           staker.TransactionStreamerInterface
-	inboxReader             staker.InboxReaderInterface
-	dapRegistry             *daprovider.DAProviderRegistry
-	fatalErr                chan<- error
+	// wallet is started externally (with the raw ctxIn so it outlives StopOnly during
+	// protocol switches) but owned and stopped by MultiProtocolStaker.StopAndWait.
+	wallet            legacystaker.ValidatorWalletInterface
+	l1Reader          *headerreader.HeaderReader
+	blockValidator    *staker.BlockValidator
+	callOpts          bind.CallOpts
+	boldConfig        *bold.BoldConfig
+	stakeTokenAddress common.Address
+	stack             *node.Node
+	inboxTracker      staker.InboxTrackerInterface
+	inboxStreamer     staker.TransactionStreamerInterface
+	inboxReader       staker.InboxReaderInterface
+	dapRegistry       *daprovider.DAProviderRegistry
+	fatalErr          chan<- error
 }
 
 func NewMultiProtocolStaker(
@@ -152,13 +154,16 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 
 func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
+	// Wallet is started with the external context because it must outlive
+	// a potential old→bold staker switch (which calls m.StopOnly).
+	// It is NOT tracked via TrackChild — its lifecycle is managed explicitly in StopAndWait.
 	m.wallet.Start(ctxIn)
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
-		m.boldStaker.Start(ctxIn)
+		m.StartAndTrackChild(m.boldStaker)
 	} else {
 		log.Info("Starting pre-BOLD staker")
-		m.oldStaker.Start(ctxIn)
+		m.StartAndTrackChild(m.oldStaker)
 		stakerSwitchInterval := m.boldConfig.CheckStakerSwitchInterval
 		m.LaunchThread(func(ctx context.Context) {
 			ticker := time.NewTicker(stakerSwitchInterval)
@@ -178,16 +183,6 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 			}
 		})
 	}
-}
-
-func (m *MultiProtocolStaker) StopAndWait() {
-	if m.boldStaker != nil {
-		m.boldStaker.StopAndWait()
-	}
-	if m.oldStaker != nil {
-		m.oldStaker.StopAndWait()
-	}
-	m.StopWaiter.StopAndWait()
 }
 
 func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend *ethclient.Client) (bool, common.Address, error) {
@@ -225,11 +220,36 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) er
 		return err
 	}
 	log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
+	// boldStaker is intentionally NOT tracked as a child: it must outlive the StopOnly call
+	// below (which cancels m's managed context and stops tracked children like oldStaker).
+	// StopAndWait will stop it explicitly after all goroutines have exited.
 	m.boldStaker.Start(ctx)
-	// Ready to stop the old staker.
-	m.oldStaker.StopOnly()
+	// Cancel m's managed context and stop tracked children (i.e. oldStaker).
+	// After this call the calling goroutine's context is also cancelled, so the
+	// goroutine must return promptly to allow wg.Wait() to complete.
 	m.StopOnly()
 	return nil
+}
+
+func (m *MultiProtocolStaker) StopAndWait() {
+	// oldStaker may have been started dynamically and stopped via StopOnly (TrackChild),
+	// but its goroutines still need waiting. Explicit StopAndWait is idempotent if it
+	// was already fully stopped.
+	if m.oldStaker != nil {
+		m.oldStaker.StopAndWait()
+	}
+	// Wait for m's own goroutines (including the potential switch goroutine) to exit.
+	// This must happen before reading m.boldStaker: the switch goroutine writes
+	// m.boldStaker and calling StopWaiter.StopAndWait() guarantees it has exited,
+	// making the subsequent read below race-free without requiring a mutex.
+	m.StopWaiter.StopAndWait()
+	// boldStaker is not tracked (see checkAndSwitchToBoldStaker), so stop it explicitly.
+	// Safe to read m.boldStaker here because the switch goroutine has already exited.
+	if m.boldStaker != nil {
+		m.boldStaker.StopAndWait()
+	}
+	// Wallet is started with external context, so stop it last.
+	m.wallet.StopAndWait()
 }
 
 func (m *MultiProtocolStaker) getCallOpts(ctx context.Context) *bind.CallOpts {

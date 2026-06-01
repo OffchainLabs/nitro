@@ -1,12 +1,13 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use arbutil::{Bytes32, PreimageType};
-use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, As, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, BufRead},
 };
+
+use arbutil::{Bytes32, PreimageType};
+use serde::{Deserialize, Serialize};
+use serde_with::{As, DisplayFromStr, base64::Base64};
 
 pub mod transfer;
 
@@ -128,7 +129,8 @@ pub struct BatchInfo {
 
 /// `UserWasm` is a wrapper around `Vec<u8>`. It contains `brotli`-decompressed wasm module.
 ///
-/// Note: The wrapped `Vec<u8>` is already `Base64` decoded before `from(Vec<u8>)` is called by `serde`.
+/// Note: The wrapped `Vec<u8>` is already `Base64` decoded before `from(Vec<u8>)` is called by
+/// `serde`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserWasm(Vec<u8>);
 

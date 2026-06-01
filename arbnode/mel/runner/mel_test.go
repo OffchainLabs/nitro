@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 )
@@ -37,7 +38,7 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 		&mockParentChainReader{},
 		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
-		NewDatabase(rawdb.NewMemoryDatabase()),
+		func() *Database { d, _ := NewDatabase(rawdb.NewMemoryDatabase()); return d }(),
 		daprovider.NewDAProviderRegistry(),
 		nil,
 		nil,
@@ -72,7 +73,8 @@ func TestMessageExtractor(t *testing.T) {
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		DefaultMessageExtractionConfig,
@@ -118,7 +120,6 @@ func TestMessageExtractor(t *testing.T) {
 		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
 		processBlockAction, ok := extractor.fsm.Current().SourceEvent.(processNextBlock)
 		require.True(t, ok)
-		melState.SetDelayedMessageBacklog(processBlockAction.melState.GetDelayedMessageBacklog())
 		require.Equal(t, processBlockAction.melState, melState)
 	})
 	t.Run("ProcessingNextBlock", func(t *testing.T) {
@@ -194,7 +195,7 @@ func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.I
 		return nil, m.returnErr
 	}
 	if number == nil || number.Int64() == rpc.FinalizedBlockNumber.Int64() {
-		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized to prevent issues dealing with delayed message backlog, it is tested separately
+		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
 	if !ok {
@@ -269,7 +270,8 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 	defer cancel()
 
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 	parentChainReader := &mockParentChainReader{
 		blocks:  map[common.Hash]*types.Block{},
 		headers: map[common.Hash]*types.Header{},
@@ -295,7 +297,6 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 		ParentChainBlockNumber: 10,
 		ParentChainBlockHash:   common.HexToHash("0xaa"),
 	}
-	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	var prevAcc common.Hash
 	for i := range delayedMsgs {
 		requestID := common.BigToHash(big.NewInt(int64(i)))
@@ -374,5 +375,294 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 		// Block 999 has no state in the DB, so GetDelayedCountAtParentChainBlock returns db not-found
 		_, _, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 999, common.Hash{}, 0)
 		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
+	})
+}
+
+// newTestExtractor creates a MessageExtractor backed by an in-memory DB for unit tests.
+func newTestExtractor(t *testing.T) (*MessageExtractor, *Database) {
+	t.Helper()
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
+	extractor, err := NewMessageExtractor(
+		DefaultMessageExtractionConfig,
+		&mockParentChainReader{
+			blocks:  map[common.Hash]*types.Block{},
+			headers: map[common.Hash]*types.Header{},
+		},
+		chaininfo.ArbitrumDevTestChainConfig(),
+		&chaininfo.RollupAddresses{},
+		melDB,
+		daprovider.NewDAProviderRegistry(),
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	return extractor, melDB
+}
+
+func TestFindInboxBatchContainingMessage(t *testing.T) {
+	t.Parallel()
+
+	// Setup: create an extractor with 5 batches.
+	// Batch 0: messages [0, 3)  → MessageCount = 3
+	// Batch 1: messages [3, 7)  → MessageCount = 7
+	// Batch 2: messages [7, 10) → MessageCount = 10
+	// Batch 3: messages [10, 10) (empty) → MessageCount = 10
+	// Batch 4: messages [10, 15) → MessageCount = 15
+	extractor, melDB := newTestExtractor(t)
+	batchMessageCounts := []uint64{3, 7, 10, 10, 15}
+	state := &mel.State{
+		ParentChainBlockNumber: 100,
+		ParentChainBlockHash:   common.HexToHash("0xaa"),
+		BatchCount:             uint64(len(batchMessageCounts)),
+	}
+	require.NoError(t, melDB.SaveState(state))
+	batchMetas := make([]*mel.BatchMetadata, len(batchMessageCounts))
+	for i, mc := range batchMessageCounts {
+		batchMetas[i] = &mel.BatchMetadata{MessageCount: arbutil.MessageIndex(mc)}
+	}
+	require.NoError(t, melDB.SaveBatchMetas(state, batchMetas))
+
+	t.Run("zero batch count", func(t *testing.T) {
+		emptyExtractor, emptyDB := newTestExtractor(t)
+		emptyState := &mel.State{
+			ParentChainBlockNumber: 1,
+			ParentChainBlockHash:   common.HexToHash("0xbb"),
+			BatchCount:             0,
+		}
+		require.NoError(t, emptyDB.SaveState(emptyState))
+		batch, found, err := emptyExtractor.FindInboxBatchContainingMessage(0)
+		require.NoError(t, err)
+		require.False(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+
+	t.Run("pos beyond last batch", func(t *testing.T) {
+		batch, found, err := extractor.FindInboxBatchContainingMessage(15)
+		require.NoError(t, err)
+		require.False(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+
+	t.Run("pos well beyond last batch", func(t *testing.T) {
+		batch, found, err := extractor.FindInboxBatchContainingMessage(100)
+		require.NoError(t, err)
+		require.False(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+
+	t.Run("pos in first batch", func(t *testing.T) {
+		batch, found, err := extractor.FindInboxBatchContainingMessage(0)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+
+	t.Run("pos at first batch boundary", func(t *testing.T) {
+		// pos=2 is the last message in batch 0 (msgCount=3, messages 0-2)
+		batch, found, err := extractor.FindInboxBatchContainingMessage(2)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+
+	t.Run("pos exactly at batch boundary (count==pos)", func(t *testing.T) {
+		// pos=3 → batch 0 has count=3, so count==pos → return batch 1
+		batch, found, err := extractor.FindInboxBatchContainingMessage(3)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(1), batch)
+	})
+
+	t.Run("pos in middle batch", func(t *testing.T) {
+		batch, found, err := extractor.FindInboxBatchContainingMessage(5)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(1), batch)
+	})
+
+	t.Run("pos at last message of last batch", func(t *testing.T) {
+		batch, found, err := extractor.FindInboxBatchContainingMessage(14)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(4), batch)
+	})
+
+	t.Run("pos in batch after empty batch", func(t *testing.T) {
+		// Batch 3 is empty (count=10, same as batch 2). The binary search finds
+		// count(2)==pos and returns mid+1=3. This is the first batch after the
+		// "full" batch, which is correct for non-empty batch sequences and an
+		// acceptable edge case for empty batches (which don't occur in practice).
+		batch, found, err := extractor.FindInboxBatchContainingMessage(10)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(3), batch)
+	})
+
+	t.Run("single batch containing pos", func(t *testing.T) {
+		singleExtractor, singleDB := newTestExtractor(t)
+		singleState := &mel.State{
+			ParentChainBlockNumber: 1,
+			ParentChainBlockHash:   common.HexToHash("0xcc"),
+			BatchCount:             1,
+		}
+		require.NoError(t, singleDB.SaveState(singleState))
+		require.NoError(t, singleDB.SaveBatchMetas(singleState, []*mel.BatchMetadata{
+			{MessageCount: 5},
+		}))
+		batch, found, err := singleExtractor.FindInboxBatchContainingMessage(3)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+
+	t.Run("single batch pos beyond", func(t *testing.T) {
+		singleExtractor, singleDB := newTestExtractor(t)
+		singleState := &mel.State{
+			ParentChainBlockNumber: 1,
+			ParentChainBlockHash:   common.HexToHash("0xdd"),
+			BatchCount:             1,
+		}
+		require.NoError(t, singleDB.SaveState(singleState))
+		require.NoError(t, singleDB.SaveBatchMetas(singleState, []*mel.BatchMetadata{
+			{MessageCount: 5},
+		}))
+		batch, found, err := singleExtractor.FindInboxBatchContainingMessage(5)
+		require.NoError(t, err)
+		require.False(t, found)
+		require.Equal(t, uint64(0), batch)
+	})
+}
+
+func TestSaveMessagesErrorPaths(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	emptyblk0 := types.NewBlock(&types.Header{Number: common.Big1}, nil, nil, nil)
+	emptyblk1 := types.NewBlock(&types.Header{Number: common.Big2, ParentHash: emptyblk0.Hash()}, nil, nil, nil)
+	parentChainReader := &mockParentChainReader{
+		blocks: map[common.Hash]*types.Block{
+			{}:                            {},
+			common.BigToHash(common.Big1): emptyblk0,
+			common.BigToHash(common.Big2): emptyblk1,
+			emptyblk1.Hash():              emptyblk1,
+		},
+		headers: map[common.Hash]*types.Header{
+			{}: {},
+		},
+	}
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
+	consumer := &mockMessageConsumer{}
+	extractor, err := NewMessageExtractor(
+		DefaultMessageExtractionConfig,
+		parentChainReader,
+		chaininfo.ArbitrumDevTestChainConfig(),
+		&chaininfo.RollupAddresses{},
+		melDB,
+		daprovider.NewDAProviderRegistry(),
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NoError(t, extractor.SetMessageConsumer(consumer))
+	extractor.StopWaiter.Start(ctx, extractor)
+
+	// Initialize state and advance FSM to SavingMessages
+	melState := &mel.State{
+		ParentChainBlockNumber: 1,
+		ParentChainBlockHash:   emptyblk0.Hash(),
+	}
+	require.NoError(t, melDB.SaveState(melState))
+	// Start → ProcessingNextBlock
+	_, err = extractor.Act(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ProcessingNextBlock, extractor.CurrentFSMState())
+	// ProcessingNextBlock → SavingMessages
+	_, err = extractor.Act(ctx)
+	require.NoError(t, err)
+	require.Equal(t, SavingMessages, extractor.CurrentFSMState())
+
+	t.Run("PushMessages error keeps FSM in SavingMessages", func(t *testing.T) {
+		consumer.returnErr = errors.New("push failed")
+		_, err := extractor.Act(ctx)
+		require.ErrorContains(t, err, "push failed")
+		require.Equal(t, SavingMessages, extractor.CurrentFSMState())
+	})
+
+	t.Run("PushMessages retry succeeds after error clears", func(t *testing.T) {
+		consumer.returnErr = nil
+		_, err := extractor.Act(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ProcessingNextBlock, extractor.CurrentFSMState())
+	})
+}
+
+func TestSetMessageConsumerGuards(t *testing.T) {
+	t.Parallel()
+	extractor, _ := newTestExtractor(t)
+
+	t.Run("set consumer succeeds initially", func(t *testing.T) {
+		err := extractor.SetMessageConsumer(&mockMessageConsumer{})
+		require.NoError(t, err)
+	})
+
+	t.Run("set consumer twice returns error", func(t *testing.T) {
+		err := extractor.SetMessageConsumer(&mockMessageConsumer{})
+		require.ErrorContains(t, err, "already set")
+	})
+
+	t.Run("set consumer after start returns error", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		fresh, _ := newTestExtractor(t)
+		require.NoError(t, fresh.SetMessageConsumer(&mockMessageConsumer{}))
+		require.NoError(t, fresh.Start(ctx))
+		err := fresh.SetMessageConsumer(&mockMessageConsumer{})
+		require.ErrorContains(t, err, "cannot set message consumer after start")
+	})
+}
+
+func TestMessageExtractionConfigValidate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid latest", func(t *testing.T) {
+		cfg := DefaultMessageExtractionConfig
+		cfg.ReadMode = "latest"
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("valid safe", func(t *testing.T) {
+		cfg := DefaultMessageExtractionConfig
+		cfg.ReadMode = "safe"
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("valid finalized", func(t *testing.T) {
+		cfg := DefaultMessageExtractionConfig
+		cfg.ReadMode = "finalized"
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("case normalization", func(t *testing.T) {
+		cfg := DefaultMessageExtractionConfig
+		cfg.ReadMode = "LATEST"
+		require.NoError(t, cfg.Validate())
+		require.Equal(t, "latest", cfg.ReadMode)
+	})
+
+	t.Run("invalid read mode", func(t *testing.T) {
+		cfg := DefaultMessageExtractionConfig
+		cfg.ReadMode = "unsafe"
+		require.ErrorContains(t, cfg.Validate(), "invalid")
+	})
+
+	t.Run("zero log frequency", func(t *testing.T) {
+		cfg := DefaultMessageExtractionConfig
+		cfg.LogExtractionStatusFrequencyBlocks = 0
+		require.ErrorContains(t, cfg.Validate(), "must be greater than 0")
 	})
 }

@@ -60,16 +60,17 @@ type Request struct {
 }
 
 type InputJSON struct {
-	Id              uint64
-	HasDelayedMsg   bool
-	DelayedMsgNr    uint64
-	PreimagesB64    map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo       []BatchInfoJson
-	DelayedMsgB64   string
-	StartState      validator.GoGlobalState
-	UserWasms       map[rawdb.WasmTarget]map[common.Hash]string
-	DebugChain      bool
-	MaxUserWasmSize uint64 `json:"max-user-wasmSize,omitempty"`
+	Id               uint64
+	HasDelayedMsg    bool
+	DelayedMsgNr     uint64
+	PreimagesB64     map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo        []BatchInfoJson
+	DelayedMsgB64    string
+	StartState       validator.GoGlobalState
+	UserWasms        map[rawdb.WasmTarget]map[common.Hash]string
+	DebugChain       bool
+	MaxUserWasmSize  uint64                   `json:"max-user-wasmSize,omitempty"`
+	ExpectedEndState *validator.GoGlobalState `json:",omitempty"`
 }
 
 // Marshal returns the JSON encoding of the InputJSON.

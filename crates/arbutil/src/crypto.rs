@@ -1,8 +1,9 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use siphasher::sip::SipHasher24;
 use std::mem::MaybeUninit;
+
+use siphasher::sip::SipHasher24;
 use tiny_keccak::{Hasher, Keccak};
 
 pub fn keccak<T: AsRef<[u8]>>(preimage: T) -> [u8; 32] {

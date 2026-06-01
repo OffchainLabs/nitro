@@ -1,19 +1,21 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::binary::FloatType;
-use arbutil::{Bytes32, Color};
-use digest::Digest;
-use eyre::{bail, ErrReport, Result};
-use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, TryFromInto};
-use sha3::Keccak256;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
     ops::Add,
 };
+
+use arbutil::{Bytes32, Color};
+use digest::Digest;
+use eyre::{ErrReport, Result, bail};
+use serde::{Deserialize, Serialize};
+use serde_with::{TryFromInto, serde_as};
+use sha3::Keccak256;
 use wasmparser::{FuncType, RefType, ValType};
+
+use crate::binary::FloatType;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -72,7 +74,8 @@ impl From<ArbValueType> for ValType {
             V::F64 => Self::F64,
             V::RefNull => Self::Ref(RefType::NULLREF),
             V::FuncRef => Self::Ref(RefType::FUNCREF),
-            V::InternalRef => Self::Ref(RefType::FUNCREF), // not analogous, but essentially a func pointer
+            V::InternalRef => Self::Ref(RefType::FUNCREF), /* not analogous, but essentially a
+                                                            * func pointer */
         }
     }
 }
@@ -286,12 +289,10 @@ impl Display for Value {
         let rparem = ")".grey();
 
         macro_rules! single {
-            ($ty:expr, $value:expr) => {{
-                write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
-            }};
+            ($ty:expr_2021, $value:expr_2021) => {{ write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem) }};
         }
         macro_rules! pair {
-            ($ty:expr, $left:expr, $right:expr) => {{
+            ($ty:expr_2021, $left:expr_2021, $right:expr_2021) => {{
                 let eq = "=".grey();
                 write!(
                     f,

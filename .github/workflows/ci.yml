@@ -40,6 +40,13 @@ jobs:
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
+  # --- MEL test modes: opt-in per-PR via the `test-mel` label. ---
+  # MEL triples runner contention on arbitrator-ci; see _mel-go-test-suite.yml.
+  mel-tests:
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test-mel')
+    uses: ./.github/workflows/_mel-go-test-suite.yml
+    secrets: inherit
+
   # --- Validation tests (not required by can_proceed) ---
   validation-tests:
     uses: ./.github/workflows/_validation-tests.yml

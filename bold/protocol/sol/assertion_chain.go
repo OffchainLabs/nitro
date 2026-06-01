@@ -7,6 +7,7 @@
 package sol
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -112,6 +113,7 @@ type AssertionChain struct {
 	transactor                               Transactor
 	withdrawalAddress                        common.Address
 	stakeTokenAddr                           common.Address
+	stakeTokenIsWeth                         bool
 	autoDeposit                              bool
 	enableFastConfirmation                   bool
 	fastConfirmSafe                          *FastConfirmSafe
@@ -237,6 +239,10 @@ func NewAssertionChain(
 		return nil, fmt.Errorf("stake token address %#x has no code", stakeTokenAddr)
 	}
 	chain.stakeTokenAddr = stakeTokenAddr
+	// Check if the stake token supports WETH-style deposits by looking for
+	// the deposit() function selector (0xd0e30db0) in the contract bytecode.
+	wethDepositSelector := []byte{0xd0, 0xe3, 0x0d, 0xb0}
+	chain.stakeTokenIsWeth = bytes.Contains(code, wethDepositSelector)
 	log.Info("Minimum assertion period", "blocks", minPeriod.Uint64())
 	chain.minAssertionPeriodBlocks = minPeriod.Uint64()
 	chain.userLogic = assertionChainBinding
@@ -455,11 +461,17 @@ func (a *AssertionChain) autoDepositFunds(ctx context.Context, amount *big.Int) 
 		return nil
 	}
 	diff := new(big.Int).Sub(amount, balance)
+	if !a.stakeTokenIsWeth {
+		return fmt.Errorf(
+			"insufficient staking token balance: have %s, need %s, and auto-deposit is only supported for WETH-compatible tokens",
+			balance.String(), amount.String(),
+		)
+	}
 	weth, err := mocksgen.NewIWETH9(a.stakeTokenAddr, a.backend)
 	if err != nil {
 		return err
 	}
-	// Otherwise, we deposit the difference.
+	// Otherwise, we deposit the difference by wrapping ETH to WETH.
 	receipt, err := a.transact(ctx, a.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		opts.Value = diff
 		return weth.Deposit(opts)
@@ -622,7 +634,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	existingAssertion, err := a.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, protocol.AssertionHash{Hash: computedHash})
 	switch {
 	case err == nil:
-		return existingAssertion, nil
+		return existingAssertion, ErrAlreadyExists
 	case !errors.Is(err, ErrNotFound):
 		return nil, errors.Wrapf(err, "could not fetch assertion with computed hash %#x", computedHash)
 	default:
@@ -665,7 +677,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 			if err2 != nil {
 				return nil, err2
 			}
-			return assertionItem, nil
+			return assertionItem, ErrAlreadyExists
 		}
 		return nil, fmt.Errorf("could not create assertion: %w", createErr)
 	}

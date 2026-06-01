@@ -3,12 +3,18 @@
 
 #![allow(clippy::redundant_closure_call)]
 
+use arbutil::evm::{
+    api::{DataReader, EvmApi, Ink},
+    user::UserOutcome,
+};
+use eyre::{Result, eyre};
+use prover::{
+    machine::Machine,
+    programs::{STYLUS_ENTRY_POINT, prelude::*},
+};
+use wasmer_types::TrapCode;
+
 use crate::{env::Escape, native::NativeInstance};
-use arbutil::evm::api::{DataReader, EvmApi, Ink};
-use arbutil::evm::user::UserOutcome;
-use eyre::{eyre, Result};
-use prover::machine::Machine;
-use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
@@ -17,10 +23,10 @@ pub trait RunProgram {
 impl RunProgram for Machine {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome> {
         macro_rules! call {
-            ($module:expr, $func:expr, $args:expr) => {
+            ($module:expr_2021, $func:expr_2021, $args:expr_2021) => {
                 call!($module, $func, $args, |error| UserOutcome::Failure(error))
             };
-            ($module:expr, $func:expr, $args:expr, $error:expr) => {{
+            ($module:expr_2021, $func:expr_2021, $args:expr_2021, $error:expr_2021) => {{
                 match self.call_function($module, $func, $args) {
                     Ok(value) => value[0].try_into().unwrap(),
                     Err(error) => return Ok($error(error)),
@@ -88,6 +94,14 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
+                // Detect native stack overflow FIRST — it takes priority because
+                // the DepthChecker counter may also be at zero when SIGSEGV fires,
+                // and we need the Go-side retry logic (handleNativeStackOverflow) to see
+                // NativeStackOverflow.
+                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
+                    return Ok(NativeStackOverflow);
+                }
+
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }

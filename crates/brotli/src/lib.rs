@@ -7,7 +7,6 @@ extern crate alloc;
 
 #[cfg(target_arch = "wasm32")]
 use alloc::vec::Vec;
-
 use core::{
     ffi::c_void,
     mem::{self, MaybeUninit},
@@ -32,7 +31,7 @@ type CustomAllocator = c_void;
 type HeapItem = c_void;
 
 // compression API
-extern "C" {
+unsafe extern "C" {
     fn BrotliEncoderCreateInstance(
         alloc: Option<extern "C" fn(opaque: *const CustomAllocator, size: usize) -> *mut HeapItem>,
         free: Option<extern "C" fn(opaque: *const CustomAllocator, address: *mut HeapItem)>,
@@ -69,7 +68,7 @@ extern "C" {
 }
 
 // decompression API
-extern "C" {
+unsafe extern "C" {
     fn BrotliDecoderCreateInstance(
         alloc: Option<extern "C" fn(opaque: *const CustomAllocator, size: usize) -> *mut HeapItem>,
         free: Option<extern "C" fn(opaque: *const CustomAllocator, address: *mut HeapItem)>,
@@ -146,7 +145,7 @@ pub fn compress_fixed<'a>(
         let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
 
         macro_rules! check {
-            ($ret:expr) => {
+            ($ret:expr_2021) => {
                 if $ret.is_err() {
                     BrotliEncoderDestroyInstance(state);
                     return Err(BrotliStatus::Failure);
@@ -204,7 +203,7 @@ pub fn decompress(input: &[u8], dictionary: Dictionary) -> Result<Vec<u8>, Brotl
         let mut output: Vec<u8> = Vec::with_capacity(4 * input.len());
 
         macro_rules! check {
-            ($ret:expr) => {
+            ($ret:expr_2021) => {
                 if $ret.is_err() {
                     BrotliDecoderDestroyInstance(state);
                     return Err(BrotliStatus::Failure);
@@ -267,7 +266,7 @@ pub fn decompress_fixed<'a>(
         let state = BrotliDecoderCreateInstance(None, None, ptr::null_mut());
 
         macro_rules! check {
-            ($cond:expr) => {
+            ($cond:expr_2021) => {
                 if !$cond {
                     BrotliDecoderDestroyInstance(state);
                     return Err(BrotliStatus::Failure);

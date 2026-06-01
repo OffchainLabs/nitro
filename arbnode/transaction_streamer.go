@@ -29,7 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -45,6 +45,15 @@ import (
 var (
 	messageTimer = metrics.NewRegisteredHistogram("arb/txstreamer/message/duration", nil, metrics.NewBoundedHistogramSample())
 )
+
+type BatchDataProvider interface {
+	GetBatchCount() (uint64, error)
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+	GetDelayedAcc(seqNum uint64) (common.Hash, error)
+	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
+	GetSequencerMessageBytesForParentBlock(ctx context.Context, seqNum uint64, parentChainBlock uint64) ([]byte, common.Hash, error)
+	FindParentChainBlockContainingDelayed(ctx context.Context, index uint64) (uint64, error)
+}
 
 // TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
@@ -70,11 +79,10 @@ type TransactionStreamer struct {
 	broadcasterQueuedMessagesFirstMsgIdx atomic.Uint64
 	broadcasterQueuedMessagesActiveReorg bool
 
-	coordinator     *SeqCoordinator
-	broadcastServer *broadcaster.Broadcaster
-	inboxReader     *InboxReader
-	msgExtractor    *melrunner.MessageExtractor
-	delayedBridge   *DelayedBridge
+	coordinator       *SeqCoordinator
+	broadcastServer   *broadcaster.Broadcaster
+	batchDataProvider BatchDataProvider
+	delayedBridge     *DelayedBridge
 
 	trackBlockMetadataFrom arbutil.MessageIndex
 	syncTillMessage        arbutil.MessageIndex
@@ -188,32 +196,15 @@ func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) err
 	return nil
 }
 
-func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedBridge *DelayedBridge) error {
+func (s *TransactionStreamer) SetBatchDataProvider(provider BatchDataProvider, delayedBridge *DelayedBridge) error {
 	if s.Started() {
-		return errors.New("trying to set inbox reader after start")
+		return errors.New("trying to set batch data provider after start")
 	}
-	if s.inboxReader != nil || s.delayedBridge != nil {
-		return errors.New("trying to set inbox reader when already set")
+	if s.batchDataProvider != nil || s.delayedBridge != nil {
+		return errors.New("trying to set batch data provider when already set")
 	}
-	if s.msgExtractor != nil {
-		return errors.New("cannot set inbox reader: message extractor is already set")
-	}
-	s.inboxReader = inboxReader
+	s.batchDataProvider = provider
 	s.delayedBridge = delayedBridge
-	return nil
-}
-
-func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) error {
-	if s.Started() {
-		return errors.New("trying to set message extractor after start")
-	}
-	if s.msgExtractor != nil {
-		return errors.New("trying to set message extractor when already set")
-	}
-	if s.inboxReader != nil {
-		return errors.New("cannot set message extractor: inbox reader is already set")
-	}
-	s.msgExtractor = msgExtractor
 	return nil
 }
 
@@ -273,7 +264,7 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 	batch := db.NewBatch()
 	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
 	defer startIter.Release()
-	var prunedKeysRange []uint64
+	prunedKeysRange := make([]uint64, 0, 2) // at most 2 elements: range start and end
 	for startIter.Next() {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -354,15 +345,9 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		header := oldMessage.Message.Header
 
 		if header.RequestId != nil {
-			// When using MEL:
-			// This is a delayed message and concerns delayedMessages 'Seen' and not 'Read' so not including any delayed messages in
-			// resequencing is fair- since they will anyway be re-added by MEL later and the corresponding merkle partials would have changed
 			delayedMsgIdx := header.RequestId.Big().Uint64()
 			if delayedMsgIdx+1 != oldMessage.DelayedMessagesRead {
 				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", oldMessage.Message.Header, "delayedMessagesRead", oldMessage.DelayedMessagesRead)
-				continue
-			}
-			if s.msgExtractor != nil {
 				continue
 			}
 
@@ -371,10 +356,10 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 				continue
 			}
 
-			if s.inboxReader != nil {
+			if s.batchDataProvider != nil && s.delayedBridge != nil {
 				// this is a delayed message. Should be resequenced if all 3 agree:
 				// oldMessage, accumulator stored in tracker, and the message re-read from l1
-				expectedAcc, err := s.inboxReader.tracker.GetDelayedAcc(delayedMsgIdx)
+				expectedAcc, err := s.batchDataProvider.GetDelayedAcc(delayedMsgIdx)
 				if err != nil {
 					if !strings.Contains(err.Error(), "not found") {
 						log.Error("reorg-resequence: failed to read expected accumulator", "err", err)
@@ -505,37 +490,43 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	var parentChainBlockNumber *uint64
-	if message.DelayedMessagesRead != 0 && s.inboxReader != nil && s.inboxReader.tracker != nil {
-		_, _, localParentChainBlockNumber, err := s.inboxReader.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, message.DelayedMessagesRead-1)
-		if err != nil {
-			log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
-		} else {
-			parentChainBlockNumber = &localParentChainBlockNumber
-		}
-	}
-
-	if s.inboxReader != nil {
-		err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-			ctx, err := s.GetContextSafe()
+	if message.Message.IsBatchGasFieldsMissing() {
+		var parentChainBlockNumber *uint64
+		if message.DelayedMessagesRead != 0 && s.batchDataProvider != nil {
+			localParentChainBlockNumber, err := s.batchDataProvider.FindParentChainBlockContainingDelayed(ctx, message.DelayedMessagesRead-1)
 			if err != nil {
-				return nil, err
-			}
-
-			var data []byte
-			if parentChainBlockNumber != nil {
-				data, _, err = s.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
+				if errors.Is(err, melrunner.ErrFindDelayedNotImplementedByMEL) {
+					log.Debug("MEL: using BatchMetadata fallback for parent chain block number", "idx", message.DelayedMessagesRead-1)
+				} else {
+					log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1, "err", err)
+				}
 			} else {
-				data, _, err = s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+				parentChainBlockNumber = &localParentChainBlockNumber
 			}
+		}
+
+		if s.batchDataProvider != nil {
+			err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+				ctx, err := s.GetContextSafe()
+				if err != nil {
+					return nil, err
+				}
+
+				var data []byte
+				if parentChainBlockNumber != nil {
+					data, _, err = s.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
+				} else {
+					data, _, err = s.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
+				}
+				if err != nil {
+					return nil, err
+				}
+
+				return data, err
+			})
 			if err != nil {
 				return nil, err
 			}
-
-			return data, err
-		})
-		if err != nil {
-			return nil, err
 		}
 	}
 	return &message, nil
@@ -641,7 +632,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 		return nil
 	}
 	broadcastFirstMsgIdx := feedMessages[0].SequenceNumber
-	var messages []arbostypes.MessageWithMetadataAndBlockInfo
+	messages := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(feedMessages))
 	expectedMsgIdx := broadcastFirstMsgIdx
 	for _, feedMessage := range feedMessages {
 		if expectedMsgIdx != feedMessage.SequenceNumber {
@@ -1184,16 +1175,10 @@ func (s *TransactionStreamer) ResumeReorgs() {
 }
 
 func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
-	if s.broadcastServer == nil {
+	if s.broadcastServer == nil || s.batchDataProvider == nil {
 		return nil
 	}
-	if s.inboxReader != nil {
-		return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
-	}
-	if s.msgExtractor == nil {
-		return nil
-	}
-	batchCount, err := s.msgExtractor.GetBatchCount()
+	batchCount, err := s.batchDataProvider.GetBatchCount()
 	if err != nil {
 		return fmt.Errorf("error getting batch count: %w", err)
 	}
@@ -1203,7 +1188,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
 		// `batchCount - 2` is the index of the batch before the last batch.
 		batchIndex := batchCount - 2
-		startMessage, err = s.msgExtractor.GetBatchMessageCount(batchIndex)
+		startMessage, err = s.batchDataProvider.GetBatchMessageCount(batchIndex)
 		if err != nil {
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
@@ -1212,7 +1197,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
 	}
-	var feedMessages []*message.BroadcastFeedMessage
+	feedMessages := make([]*message.BroadcastFeedMessage, 0, arbmath.SaturatingUSub(messageCount, startMessage))
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
 		message, err := s.GetMessage(seqNum)
 		if err != nil {

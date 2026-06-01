@@ -1,8 +1,9 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::evm::api::Ink;
 use std::time::{Duration, Instant};
+
+use crate::evm::api::Ink;
 
 // Benchmark is used to track the performance of blocks of code in stylus
 #[derive(Clone, Copy, Debug, Default)]

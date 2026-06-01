@@ -168,12 +168,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	lastEstimate, err := arbGasInfo.GetL1BaseFeeEstimate(&bind.CallOpts{Context: ctx})
 	Require(t, err)
-	var lastBatchCount uint64
-	if builder.L2.ConsensusNode.MessageExtractor != nil {
-		lastBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
-	} else {
-		lastBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-	}
+	lastBatchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 	Require(t, err)
 	l1Header, err := builder.L1.Client.HeaderByNumber(ctx, nil)
 	Require(t, err)
@@ -247,12 +242,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			// Wait for the batch poster to post a new batch. Under -race
 			// each poll cycle is significantly slower, so allow more retries.
 			for j := 50; j > 0; j-- {
-				var newBatchCount uint64
-				if builder.L2.ConsensusNode.MessageExtractor != nil {
-					newBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
-				} else {
-					newBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-				}
+				newBatchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 				Require(t, err)
 				if newBatchCount > lastBatchCount {
 					colors.PrintGrey("posted new batch ", newBatchCount)

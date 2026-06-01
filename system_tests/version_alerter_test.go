@@ -26,7 +26,7 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 	upgradeDeadline := time.Now().Add(time.Hour).Format(time.RFC3339)
 	msg := "Node version or date is below the minimum requirement, please upgrade"
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.nodeConfig.VersionAlerterServer.Enable = true
 	builder.nodeConfig.VersionAlerterServer.MinRequiredNitroByVersion = reqNodeVersion
 	builder.nodeConfig.VersionAlerterServer.MinRequiredNitroByDate = reqNodeVersionDate

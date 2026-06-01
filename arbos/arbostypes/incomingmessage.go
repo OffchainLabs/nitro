@@ -188,15 +188,23 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 	return gas
 }
 
+// IsBatchGasFieldsMissing returns true for only L1MessageType_BatchPostingReport when batch gas fields are not filled in
+func (msg *L1IncomingMessage) IsBatchGasFieldsMissing() bool {
+	if msg.Header.Kind != L1MessageType_BatchPostingReport {
+		return false
+	}
+	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
+		return false
+	}
+	return true
+}
+
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
 	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
-	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
-		return nil
-	}
-	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
+	if batchFetcher == nil || !msg.IsBatchGasFieldsMissing() {
 		return nil
 	}
 	if msg.BatchDataStats == nil {

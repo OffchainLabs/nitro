@@ -59,8 +59,10 @@ func TestRequestForwardingToArchiveNodes(t *testing.T) {
 		})
 		listener, srv, err := rpc.StartIPCEndpoint(ipcPath, apis)
 		Require(t, err)
-		defer srv.Stop()
-		defer listener.Close()
+		t.Cleanup(func() {
+			srv.Stop()
+			listener.Close()
+		})
 		archiveConfigs = append(archiveConfigs, arbitrum.BlockRedirectConfig{
 			URL:       ipcPath,
 			Timeout:   time.Second,

@@ -1,23 +1,23 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::Bytes32;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use prover::merkle::{Merkle, MerkleType};
-use rand::Rng;
+use rand::RngExt;
 
 fn resize_and_set_leaves(merkle: Merkle, rng: &mut rand::rngs::ThreadRng) {
     for _ in 0..100 {
         merkle.resize(merkle.len() + 5).expect("resize failed");
         for _ in 0..(merkle.len() / 10) {
-            let random_index = rng.gen_range(0..merkle.len());
-            merkle.set(random_index, Bytes32::from([rng.gen_range(0u8..9); 32]));
+            let random_index = rng.random_range(0..merkle.len());
+            merkle.set(random_index, Bytes32::from([rng.random_range(0u8..9); 32]));
         }
     }
     merkle.root();
 }
 
 fn merkle_benchmark(c: &mut Criterion) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let leaves = vec![
         Bytes32::from([1; 32]),
         Bytes32::from([2; 32]),
@@ -36,10 +36,10 @@ fn merkle_benchmark(c: &mut Criterion) {
 }
 
 fn merkle_construction(c: &mut Criterion) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut leaves: Vec<Bytes32> = Vec::with_capacity(1 << 20);
     for _ in 0..(1 << 20) {
-        leaves.push(Bytes32::from([rng.gen_range(0u8..9); 32]));
+        leaves.push(Bytes32::from([rng.random_range(0u8..9); 32]));
     }
 
     c.bench_function("merkle_construction", |b| {

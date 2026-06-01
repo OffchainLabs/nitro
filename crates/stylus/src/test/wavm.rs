@@ -1,10 +1,11 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::test::{new_test_machine, test_compile_config};
 use arbutil::evm::api::Ink;
 use eyre::Result;
-use prover::{programs::prelude::*, Machine};
+use prover::{Machine, programs::prelude::*};
+
+use crate::test::{new_test_machine, test_compile_config};
 
 #[test]
 fn test_ink() -> Result<()> {
@@ -15,7 +16,7 @@ fn test_ink() -> Result<()> {
     let call = |mech: &mut Machine, v: u32| mech.call_function("user", "add_one", vec![v.into()]);
 
     macro_rules! exhaust {
-        ($ink:expr) => {
+        ($ink:expr_2021) => {
             machine.set_ink(Ink($ink));
             assert_eq!(machine.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(call(machine, 32).is_err());

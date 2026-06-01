@@ -13,39 +13,44 @@
 //! exchange of validation inputs (batches, preimages, WASM binaries) and outputs
 //! (new state) via a hybrid IPC mechanism:
 //!
-//! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its
-//!    address to the subprocess's Standard Input.
-//! 2. **Data Transport (TCP):** The subprocess connects back to the provided address.
-//!    This TCP stream is then used for data transfer of the `ValidationRequest` and
-//!    the resulting `GlobalState`.
+//! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its address to
+//!    the subprocess's Standard Input.
+//! 2. **Data Transport (TCP):** The subprocess connects back to the provided address. This TCP
+//!    stream is then used for data transfer of the `ValidationRequest` and the resulting
+//!    `GlobalState`.
 
-use crate::config::get_jit_path;
-use crate::engine::machine_locator::MachineLocator;
-use crate::engine::{
-    replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT,
-};
-use anyhow::{anyhow, Context, Result};
-use std::collections::HashMap;
-use std::net::TcpListener;
-use std::thread::sleep;
-use std::time::Duration;
 use std::{
+    collections::HashMap,
+    net::TcpListener,
     path::PathBuf,
     process::Stdio,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
+    thread::sleep,
+    time::Duration,
 };
-use tokio::io::AsyncWriteExt;
-use tokio::sync::RwLock;
+
+use anyhow::{Context, Result, anyhow};
 use tokio::{
+    io::AsyncWriteExt,
     process::{Child, ChildStdin, Command},
-    sync::Mutex,
+    sync::{Mutex, RwLock},
 };
 use tracing::{debug, error, info, warn};
-use validation::transfer::{receive_response, send_validation_input};
-use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
+use validation::{
+    GoGlobalState, ValidationInput, ValidationRequest, local_target,
+    transfer::{receive_response, send_validation_input},
+};
+
+use crate::{
+    config::get_jit_path,
+    engine::{
+        DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT, ModuleRoot,
+        machine_locator::MachineLocator, replay_binary,
+    },
+};
 
 #[derive(Debug)]
 pub struct JitMachine {
@@ -174,7 +179,11 @@ impl JitProcessManager {
                 // Clone the Arc while holding the read lock, then drop the lock immediately.
                 // This allows other threads to access the HashMap while we perform I/O operations.
                 Some(machine) => machine.clone(),
-                None => return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"))
+                None => {
+                    return Err(anyhow!(
+                        "Trying to feed machine when no machine for module root {module_root} is available/running"
+                    ));
+                }
             }
         };
 

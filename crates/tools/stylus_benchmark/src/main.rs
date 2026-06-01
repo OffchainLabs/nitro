@@ -5,9 +5,10 @@ mod benchmark;
 mod scenario;
 mod scenarios;
 
+use std::path::PathBuf;
+
 use clap::{Parser, ValueEnum};
 use scenario::Scenario;
-use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

@@ -81,7 +81,6 @@ type DataPoster struct {
 	usingNoOpStorage  bool
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	extraBacklog      func() uint64
-	parentChainID     *big.Int
 	parentChainID256  *uint256.Int
 	parentChain       *parent.ParentChain
 
@@ -104,7 +103,7 @@ type DataPosterOpts struct {
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
-	ParentChainID     *big.Int
+	ParentChain       *parent.ParentChain
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
@@ -161,13 +160,12 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		internalState:       state.NewInternalState(queue),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
-		parentChainID:       opts.ParentChainID,
-		parentChain:         &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.HeaderReader},
+		parentChain:         opts.ParentChain,
 	}
 	var overflow bool
-	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
+	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChain.ChainID)
 	if overflow {
-		return nil, fmt.Errorf("parent chain ID %v overflows uint256 (necessary for blob transactions)", opts.ParentChainID)
+		return nil, fmt.Errorf("parent chain ID %v overflows uint256 (necessary for blob transactions)", opts.ParentChain.ChainID)
 	}
 	if dp.extraBacklog == nil {
 		dp.extraBacklog = func() uint64 { return 0 }
@@ -847,7 +845,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInterna
 			Value:      value,
 			Data:       calldata,
 			AccessList: accessList,
-			ChainID:    p.parentChainID,
+			ChainID:    p.parentChain.ChainID,
 		}
 		inner = &deprecatedData
 	}

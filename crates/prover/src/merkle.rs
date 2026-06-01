@@ -1,22 +1,23 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use core::panic;
+use std::{
+    cmp::max,
+    convert::{TryFrom, TryInto},
+};
+
 use arbutil::Bytes32;
 use bitvec::prelude::*;
-use core::panic;
 use digest::Digest;
 use enum_iterator::Sequence;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
-use std::cmp::max;
-use std::convert::{TryFrom, TryInto};
-
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use sha3::Keccak256;
 
 mod zerohashes;
-use self::zerohashes::{EMPTY_HASH, ZERO_HASHES};
 #[cfg(feature = "counters")]
 use {
     enum_iterator::all,
@@ -24,6 +25,8 @@ use {
     std::collections::HashMap,
     std::sync::atomic::{AtomicUsize, Ordering},
 };
+
+use self::zerohashes::{EMPTY_HASH, ZERO_HASHES};
 
 #[cfg(feature = "counters")]
 fn create_counters_hashmap() -> HashMap<MerkleType, AtomicUsize> {
@@ -420,11 +423,13 @@ pub mod mutex_sedre {
 
 #[cfg(test)]
 mod test {
+    use core::panic;
+
+    use arbutil::Bytes32;
+    use enum_iterator::all;
+
     use super::*;
     use crate::memory;
-    use arbutil::Bytes32;
-    use core::panic;
-    use enum_iterator::all;
 
     #[test]
     fn resize_works() {

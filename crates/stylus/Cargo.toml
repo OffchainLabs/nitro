@@ -20,6 +20,7 @@ hex = { workspace = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 prover = { workspace = true, features = ["native"] }
+prover-ffi = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 user-host-trait = { workspace = true }
@@ -32,7 +33,7 @@ wasmer-vm = { workspace = true }
 
 [dev-dependencies]
 num-bigint = { workspace = true }
-rand = { workspace = true, default-features = true }
+rand = { workspace = true, features = ["default", "thread_rng"] }
 
 [features]
 default = ["rayon", "singlepass_rayon"]

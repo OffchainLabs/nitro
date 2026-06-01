@@ -4,7 +4,7 @@
 #![cfg(test)]
 
 use eyre::Result;
-use wasmer::{imports, Instance, Module, Store, Value};
+use wasmer::{Instance, Module, Store, Value, imports};
 
 #[test]
 fn test_crate() -> Result<()> {

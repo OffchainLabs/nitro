@@ -1,14 +1,20 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::machine::{argument_data_to_inbox, GlobalState, Machine};
-use crate::utils::CBytes;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::BufReader,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use arbutil::{Bytes32, PreimageType};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use validation::ValidationRequest;
+
+use crate::{
+    machine::{GlobalState, Machine, argument_data_to_inbox},
+    utils::CBytes,
+};
 
 pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;

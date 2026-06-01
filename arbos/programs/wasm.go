@@ -197,6 +197,9 @@ func callProgram(
 	params *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
+	_ []byte,
+	_ *StylusParams,
+	_ Program,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)

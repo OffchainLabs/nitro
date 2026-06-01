@@ -3,25 +3,27 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
+use std::{
+    borrow::Cow,
+    fmt::Display,
+    mem::{self, MaybeUninit},
+};
+
 use arbutil::{
+    Color,
     benchmark::Benchmark,
     evm::{
-        api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
+        api::{DataReader, EvmApi, Gas, Ink},
     },
-    Color,
 };
 use caller_env::GuestPtr;
 use eyre::Result;
 use prover::value::Value;
-use std::borrow::Cow;
-use std::{
-    fmt::Display,
-    mem::{self, MaybeUninit},
-};
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
+
+use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 
 impl<DR, A> UserHost<DR> for HostioInfo<'_, DR, A>
 where
@@ -100,7 +102,7 @@ where
 }
 
 macro_rules! hostio {
-    ($env:expr, $($func:tt)*) => {
+    ($env:expr_2021, $($func:tt)*) => {
         WasmEnv::program(&mut $env)?.$($func)*
     };
 }

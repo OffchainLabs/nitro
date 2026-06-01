@@ -1,16 +1,16 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use eyre::Result;
+use prover::programs::{prelude::*, start::StartMover};
+use wasmer::{Function, imports, sys::Target};
+
 use super::test_configs;
 use crate::{
     env::{Escape, MaybeEscape},
     native::NativeInstance,
     test::{check_instrumentation, new_test_machine},
 };
-use eyre::Result;
-use prover::programs::{prelude::*, start::StartMover};
-use wasmer::sys::Target;
-use wasmer::{imports, Function};
 
 #[test]
 fn test_bulk_memory() -> Result<()> {

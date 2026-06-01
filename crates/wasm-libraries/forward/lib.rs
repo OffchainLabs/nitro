@@ -1,8 +1,9 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use eyre::Result;
 use std::io::Write;
+
+use eyre::Result;
 
 /// order matters!
 const HOSTIOS: [[&str; 3]; 42] = [
@@ -67,7 +68,7 @@ pub fn forward<W: Write>(file: &mut W) -> Result<()> {
     );
 
     macro_rules! group {
-        ($list:expr, $kind:expr) => {
+        ($list:expr_2021, $kind:expr_2021) => {
             (!$list.is_empty())
                 .then(|| format!(" ({} {})", $kind, $list))
                 .unwrap_or_default()
@@ -142,7 +143,7 @@ pub fn forward_stub<W: Write>(file: &mut W) -> Result<()> {
     );
 
     macro_rules! group {
-        ($list:expr, $kind:expr) => {
+        ($list:expr_2021, $kind:expr_2021) => {
             (!$list.is_empty())
                 .then(|| format!(" ({} {})", $kind, $list))
                 .unwrap_or_default()

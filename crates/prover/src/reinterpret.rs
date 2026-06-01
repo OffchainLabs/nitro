@@ -1,11 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use num::Zero;
 use std::{
     num::Wrapping,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
 };
+
+use num::Zero;
 
 pub trait ReinterpretAsSigned:
     Sized

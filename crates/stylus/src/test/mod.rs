@@ -1,29 +1,30 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
+use std::{collections::HashMap, path::Path, sync::Arc};
+
 use arbutil::{
+    Bytes20, Bytes32, Color,
     evm::{
         api::{Ink, VecReader},
         user::UserOutcome,
     },
-    Bytes20, Bytes32, Color,
 };
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use prover::{
+    Machine,
     machine::GlobalState,
     programs::{config::SigMap, prelude::*},
-    Machine,
 };
 use rand::prelude::*;
-use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
-    imports,
+    Function, FunctionEnv, Imports, Instance, Module, Store, imports,
     sys::{CompilerConfig, EngineBuilder, Target},
     wasmparser::Operator,
-    Function, FunctionEnv, Imports, Instance, Module, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
+
+use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 
 mod api;
 mod misc;
@@ -116,18 +117,18 @@ fn expensive_add(op: &Operator, _tys: &SigMap) -> u64 {
 }
 
 pub fn random_ink(min: u64) -> Ink {
-    Ink(rand::thread_rng().gen_range(min..=u64::MAX))
+    Ink(rand::rng().random_range(min..=u64::MAX))
 }
 
 pub fn random_bytes20() -> Bytes20 {
     let mut data = [0; 20];
-    rand::thread_rng().fill_bytes(&mut data);
+    rand::rng().fill_bytes(&mut data);
     data.into()
 }
 
 fn random_bytes32() -> Bytes32 {
     let mut data = [0; 32];
-    rand::thread_rng().fill_bytes(&mut data);
+    rand::rng().fill_bytes(&mut data);
     data.into()
 }
 

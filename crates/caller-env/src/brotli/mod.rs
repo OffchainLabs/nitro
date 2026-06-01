@@ -3,9 +3,11 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::{ExecEnv, GuestPtr, MemAccess};
 use alloc::vec::Vec;
+
 use brotli::{BrotliStatus, Dictionary};
+
+use crate::{ExecEnv, GuestPtr, MemAccess};
 
 /// Brotli compresses a go slice
 ///

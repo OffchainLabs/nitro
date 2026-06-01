@@ -1,10 +1,12 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::binary;
+use std::path::Path;
+
 use brotli::Dictionary;
 use eyre::Result;
-use std::path::Path;
+
+use crate::binary;
 
 fn as_wasm(wat: &str) -> Vec<u8> {
     let wasm = wasmer::wat2wasm(wat.as_bytes());

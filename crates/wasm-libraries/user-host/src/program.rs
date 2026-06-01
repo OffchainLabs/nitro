@@ -1,29 +1,28 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use core::sync::atomic::{Ordering, compiler_fence};
+use std::{borrow::Cow, cell::UnsafeCell, fmt::Display};
+
 use arbutil::{
+    Color,
     benchmark::Benchmark,
     evm::{
-        api::{EvmApiMethod, Gas, Ink, VecReader, EVM_API_METHOD_REQ_OFFSET},
+        EvmData,
+        api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas, Ink, VecReader},
         req::{EvmApiRequestor, RequestHandler},
         user::UserOutcomeKind,
-        EvmData,
     },
-    Color,
 };
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
-use core::sync::atomic::{compiler_fence, Ordering};
-use eyre::{eyre, Result};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
+use eyre::{Result, eyre};
 use prover::programs::prelude::*;
-use std::borrow::Cow;
-use std::cell::UnsafeCell;
-use std::fmt::Display;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 
 // allows introspection into user modules
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_memory_size(module: u32) -> u32;
 }
 
@@ -97,12 +96,12 @@ pub(crate) struct Program {
 }
 
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_request(status: u32) -> u32;
 }
 
 impl UserHostRequester {
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub unsafe fn set_response(
         &mut self,
         req_id: u32,
@@ -118,12 +117,14 @@ impl UserHostRequester {
     }
 
     pub unsafe fn set_request(&mut self, req_type: u32, data: &[u8]) -> u32 {
-        *LAST_REQUEST_ID.0.get() += 1;
-        self.id = *LAST_REQUEST_ID.0.get();
-        self.req_type = req_type;
-        self.data = Some(data.to_vec());
-        self.answer = None;
-        self.id
+        unsafe {
+            *LAST_REQUEST_ID.0.get() += 1;
+            self.id = *LAST_REQUEST_ID.0.get();
+            self.req_type = req_type;
+            self.data = Some(data.to_vec());
+            self.answer = None;
+            self.id
+        }
     }
 
     pub unsafe fn get_request_meta(&self, id: u32) -> (u32, usize) {
@@ -142,18 +143,20 @@ impl UserHostRequester {
         (self.req_type, data)
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe fn send_request(&mut self, req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, Gas) {
-        let req_id = self.set_request(req_type, &data);
-        compiler_fence(Ordering::SeqCst);
+        unsafe {
+            let req_id = self.set_request(req_type, &data);
+            compiler_fence(Ordering::SeqCst);
 
-        let got_id = program_request(req_id);
-        compiler_fence(Ordering::SeqCst);
+            let got_id = program_request(req_id);
+            compiler_fence(Ordering::SeqCst);
 
-        if got_id != req_id {
-            panic!("bad req id returning from send_request")
+            if got_id != req_id {
+                panic!("bad req id returning from send_request")
+            }
+            self.answer.take().unwrap()
         }
-        self.answer.take().unwrap()
     }
 }
 

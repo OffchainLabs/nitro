@@ -6,9 +6,9 @@
 #![cfg_attr(not(feature = "export-abi"), no_main, no_std)]
 extern crate alloc;
 
-use crate::erc20::{Erc20, Erc20Params};
+use crate::erc20::{Erc20, Erc20Error, Erc20Params, IErc20};
 use alloc::{string::String, vec, vec::Vec};
-use stylus_sdk::{alloy_primitives::U256, call::transfer::transfer_eth, prelude::*};
+use stylus_sdk::{alloy_primitives::{Address, U256}, call::transfer::transfer_eth, prelude::*};
 
 mod erc20;
 
@@ -23,9 +23,8 @@ impl Erc20Params for WethParams {
 
 // The contract
 sol_storage! {
-    #[entrypoint] // Makes Weth the entrypoint
+    #[entrypoint]
     struct Weth {
-        #[borrow] // Allows erc20 to access Weth's storage and make calls
         Erc20<WethParams> erc20;
     }
 }
@@ -38,7 +37,7 @@ sol_interface! {
 }
 
 #[public]
-#[inherit(Erc20<WethParams>)]
+#[implements(IErc20)]
 impl Weth {
     #[payable]
     pub fn mint(&mut self) -> Result<(), Vec<u8>> {
@@ -64,5 +63,45 @@ impl Weth {
         let (text, sum) = helper.sum_values(self.vm(), Call::new(), values)?;
         assert_eq!(&text, "sum");
         Ok(sum)
+    }
+}
+
+#[public]
+impl IErc20 for Weth {
+    fn name(&self) -> String {
+        Erc20::<WethParams>::name()
+    }
+
+    fn symbol(&self) -> String {
+        Erc20::<WethParams>::symbol()
+    }
+
+    fn decimals(&self) -> u8 {
+        Erc20::<WethParams>::decimals()
+    }
+
+    fn balance_of(&self, address: Address) -> U256 {
+        self.erc20.balance_of(address)
+    }
+
+    fn transfer(&mut self, to: Address, value: U256) -> Result<bool, Erc20Error> {
+        self.erc20.transfer(to, value)
+    }
+
+    fn approve(&mut self, spender: Address, value: U256) -> bool {
+        self.erc20.approve(spender, value)
+    }
+
+    fn transfer_from(
+        &mut self,
+        from: Address,
+        to: Address,
+        value: U256,
+    ) -> Result<bool, Erc20Error> {
+        self.erc20.transfer_from(from, to, value)
+    }
+
+    fn allowance(&self, owner: Address, spender: Address) -> U256 {
+        self.erc20.allowance(owner, spender)
     }
 }

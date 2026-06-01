@@ -24,11 +24,10 @@ func (m *MessageExtractor) reorg(ctx context.Context, current *fsm.CurrentState[
 	if err != nil {
 		return m.config.RetryInterval, err
 	}
-	// This adjusts delayedMessageBacklog
-	if err := currentDirtyState.ReorgTo(previousState); err != nil {
-		return m.config.RetryInterval, err
-	}
 	m.logsAndHeadersPreFetcher.reset()
+
+	// Update metrics.
+	reorgCounter.Inc(1)
 	return 0, m.fsm.Do(processNextBlock{
 		prevStepWasReorg: true,
 		melState:         previousState,

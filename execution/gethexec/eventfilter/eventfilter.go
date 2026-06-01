@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -205,10 +207,12 @@ func (f *EventFilter) HasRules() bool {
 	return len(f.rules) > 0
 }
 
-// AddressesForFiltering returns all addresses referenced by this event rule verbatim.
-func (f *EventFilter) AddressesForFiltering(topics []common.Hash, _data []byte, _emitter common.Address, _sender common.Address) []common.Address {
+// AddressesForFiltering returns FilteredAddressRecords for all addresses
+// referenced by the matching event rule. Each record includes the event rule
+// match details (event name, topic index, raw log).
+func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address, _sender common.Address) []filter.FilteredAddressRecord {
 	if len(topics) == 0 {
-		return []common.Address{}
+		return nil
 	}
 
 	var selector [eventSelectorSize]byte
@@ -216,36 +220,43 @@ func (f *EventFilter) AddressesForFiltering(topics []common.Hash, _data []byte, 
 
 	rule, ok := f.rules[selector]
 	if !ok {
-		return []common.Address{}
+		return nil
 	}
 
 	if rule.Bypass != nil {
 		idx := rule.Bypass.TopicIndex
 		if idx > 0 && idx < len(topics) {
 			if common.BytesToAddress(topics[idx][abiAddressOffset:]) == rule.Bypass.Equals {
-				return []common.Address{}
+				return nil
 			}
 		}
 	}
 
-	seen := make(map[common.Address]struct{})
+	rawLog := &filter.RawLog{
+		Address: emitter,
+		Topics:  topics,
+		Data:    hexutil.Bytes(data),
+	}
 
-	// Extract from topics
+	var out []filter.FilteredAddressRecord
+
 	for _, idx := range rule.TopicAddresses {
 		if idx > 0 && idx < len(topics) {
 			address := common.BytesToAddress(topics[idx][abiAddressOffset:])
-			seen[address] = struct{}{}
+			out = append(out, filter.FilteredAddressRecord{
+				Address: address,
+				FilterReason: filter.FilterReason{
+					Reason: filter.ReasonEventRule,
+					EventRuleMatch: &filter.EventRuleMatch{
+						MatchedEvent:      rule.Event,
+						MatchedTopicIndex: idx,
+						RawLog:            rawLog,
+					},
+				},
+			})
 		}
 	}
 
-	if len(seen) == 0 {
-		return []common.Address{}
-	}
-
-	out := make([]common.Address, 0, len(seen))
-	for addr := range seen {
-		out = append(out, addr)
-	}
 	return out
 }
 

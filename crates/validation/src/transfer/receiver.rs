@@ -1,13 +1,20 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::transfer::primitives::{read_bytes, read_u32, read_u64, read_u8};
-use crate::transfer::{markers, IOResult};
-use crate::{GoGlobalState, Inbox, Preimages, ValidationInput};
+use std::{
+    collections::BTreeMap,
+    io,
+    io::{ErrorKind::InvalidData, Read},
+};
+
 use io::Error;
-use std::collections::BTreeMap;
-use std::io;
-use std::io::ErrorKind::InvalidData;
-use std::io::Read;
+
+use crate::{
+    GoGlobalState, Inbox, Preimages, ValidationInput,
+    transfer::{
+        IOResult, markers,
+        primitives::{read_bytes, read_u8, read_u32, read_u64},
+    },
+};
 
 pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationInput> {
     let (small_globals, large_globals) = receive_globals(reader)?;

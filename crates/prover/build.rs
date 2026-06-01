@@ -1,7 +1,6 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use std::fs::File;
-use std::io::Write;
+use std::{fs::File, io::Write};
 
 fn main() {
     println!("cargo:rerun-if-changed=../wasm-libraries/forward");

@@ -29,7 +29,8 @@ impl MemoryModel {
         }
     }
 
-    /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
+    /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have
+    /// ever been.
     pub fn gas_cost(&self, new: u16, open: u16, ever: u16) -> Gas {
         let new_open = open.saturating_add(new);
         let new_ever = ever.max(new_open);

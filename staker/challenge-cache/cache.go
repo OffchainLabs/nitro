@@ -263,7 +263,7 @@ for a given filesystem challenge cache will look as follows:
 				hashes.bin
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
-	key := make([]string, 0)
+	key := make([]string, 0, 3+len(lookup.StepHeights)) // 3 = wavmModuleRoot + messageNumAndRollupBlockHash + hashesFileName
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
 	key = append(key, fmt.Sprintf("%s-%d-%s-%s", messageNumberPrefix, lookup.MessageHeight, rollupBlockHashPrefix, lookup.RollupBlockHash.Hex()))
 	for challengeLevel, height := range lookup.StepHeights {

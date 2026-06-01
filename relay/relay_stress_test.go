@@ -149,7 +149,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 			t.FailNow()
 		}
 		client.Start(ctx)
-		defer client.StopOnly()
+		t.Cleanup(client.StopOnly)
 	}
 
 	// wait for all clients to atleast connect once

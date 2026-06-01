@@ -12,7 +12,7 @@ use stylus_sdk::{
 extern crate alloc;
 
 #[link(wasm_import_module = "vm_hooks")]
-extern "C" {
+unsafe extern "C" {
     fn math_div(value: *mut u8, divisor: *const u8);
     fn math_mod(value: *mut u8, modulus: *const u8);
     fn math_pow(value: *mut u8, exponent: *const u8);

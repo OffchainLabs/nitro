@@ -111,7 +111,3 @@ func (b *BulkBlockMetadataFetcher) Start(ctx context.Context) {
 		_ = stopwaiter.CallWhenTriggeredWith[struct{}](&b.StopWaiterSafe, b.ClearCache, b.reorgDetector)
 	}
 }
-
-func (b *BulkBlockMetadataFetcher) StopAndWait() {
-	b.StopWaiter.StopAndWait()
-}
