@@ -1,4 +1,4 @@
-//! All wasmer import functions
+//! Wasmer import functions specific to the SP1 program.
 
 pub mod debug;
 pub mod programs;

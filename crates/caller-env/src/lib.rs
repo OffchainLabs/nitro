@@ -18,7 +18,7 @@ pub mod static_caller;
 pub mod wasmer_traits;
 
 /// Generates a wasmer host function that owns `FunctionEnvMut<T>`, extracts memory
-/// via `get_memory_access()`, and delegates to the `super::` function of the same
+/// via `HasMemory::memory()`, and delegates to the `super::` function of the same
 /// name which takes `&mut impl MemAccess` as its first argument.
 #[cfg(feature = "wasmer_traits")]
 macro_rules! host_fn {

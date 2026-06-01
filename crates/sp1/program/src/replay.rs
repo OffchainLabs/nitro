@@ -233,7 +233,8 @@ pub fn run(m: Bytes) -> ! {
                 for (index, extent) in &extents {
                     if let Some(Some(name)) = mapping.get(index.as_u32() as usize) {
                         let ptr = *extent.ptr as usize;
-                        profiler_data.insert(ptr.to_string(), (name.clone(), extent.length.to_string()));
+                        profiler_data
+                            .insert(ptr.to_string(), (name.clone(), extent.length.to_string()));
                     }
                 }
                 let profiler_data_str =
