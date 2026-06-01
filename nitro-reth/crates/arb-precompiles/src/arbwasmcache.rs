@@ -272,8 +272,8 @@ fn set_program_cached(
     }
 
     let (params, mut program) = read_params_and_program(input, codehash, now, ctx)?;
-    // `programs.params` (one SLOAD) + `get_program` (one SLOAD).
-    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS + SLOAD_GAS);
+    // `programs.params` is a warm read; `get_program` is one SLOAD.
+    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS);
     let already_cached = program.cached;
     let expiry_seconds = (params.expiry_days as u64).saturating_mul(86_400);
     let expired = program.age_seconds > expiry_seconds;
@@ -294,8 +294,7 @@ fn set_program_cached(
         return crate::sol_error_revert(gas_used, ctx, data, gas_limit);
     }
     if already_cached == cache {
-        // Original formula's pre-set-write tail: WARM_SLOAD + SLOAD, both Read.
-        crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS);
+        // The cache state is unchanged; return without any further read.
         return Ok(PrecompileOutput::new(
             (*gas_used).min(gas_limit),
             Vec::new().into(),
@@ -335,9 +334,9 @@ fn set_program_cached(
         event_data.into(),
     ));
 
-    // Tail: WARM_SLOAD + SLOAD (reads), prog_init_cost (compute warm-up), emit
-    // log (HistoryGrowth), final SLOAD + SSTORE for the program write.
-    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS + SLOAD_GAS);
+    // Re-caching reads the previous module hash (one SLOAD), then charges the
+    // init cost (compute), the cache-update event, and the program write.
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
     crate::charge_computation(gas_used, ctx, prog_init_cost as u64);
     crate::charge_history_growth(gas_used, ctx, EMIT_UPDATE_PROGRAM_CACHE_GAS);
     crate::charge_storage_write(gas_used, ctx, sstore_gas);

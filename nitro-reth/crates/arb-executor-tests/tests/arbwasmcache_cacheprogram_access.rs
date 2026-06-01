@@ -1,7 +1,7 @@
 //! `ArbWasmCache.cacheProgram` must not warm the program address (resolving its
 //! code hash is a pure state read), so a later `CALL` still pays cold access.
 //! Caching `P` then calling `P` must cost the same as caching `P` then calling
-//! its identical-bytecode twin `Q`.
+//! its identical-bytecode twin `Q`, and a fresh cache charges a fixed gas.
 
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
@@ -176,4 +176,11 @@ fn cache_program_does_not_warm_program_for_subsequent_call() {
         "calling the just-cached program cost {} less than calling its twin",
         call_twin as i64 - call_cached as i64,
     );
+}
+
+#[test]
+fn cache_program_charges_expected_gas() {
+    let (ok, gas) = run(PROGRAM);
+    assert!(ok, "cacheProgram should succeed");
+    assert_eq!(gas, 51_433);
 }
