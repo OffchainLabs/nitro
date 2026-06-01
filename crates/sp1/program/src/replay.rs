@@ -393,7 +393,6 @@ fn build_imports(
                 "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
                 "resolvePreImage" => func!(wavmio::resolve_keccak_preimage),
                 "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
-                "greedyResolveTypedPreimage" => func!(wavmio::greedy_resolve_typed_preimage),
                 "validateCertificate" => func!(wavmio::validate_certificate),
             },
             "programs" => {

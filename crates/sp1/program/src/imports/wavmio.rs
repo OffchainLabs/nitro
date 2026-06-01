@@ -1,8 +1,6 @@
 //! wavmio functions — thin wrappers delegating to caller_env::wavmio.
 
-use core::ops::Deref;
-
-use ::caller_env::{GuestPtr, MemAccess, wasmer_traits::WasmerMem, wavmio as caller_env};
+use ::caller_env::{GuestPtr, wavmio as caller_env};
 use wasmer::FunctionEnvMut;
 
 use crate::{Escape, MaybeEscape, replay::CustomEnvData, state::sp1_env};
@@ -106,67 +104,4 @@ pub fn validate_certificate(
 ) -> Result<u8, Escape> {
     let (mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::validate_certificate(&mem, state, preimage_type, hash_ptr))
-}
-
-// Greedy preimage resolution — kept separate, will be refactored independently.
-
-pub fn greedy_resolve_typed_preimage(
-    ctx: FunctionEnvMut<CustomEnvData>,
-    preimage_type: u8,
-    hash_ptr: GuestPtr,
-    offset: u32,
-    available: u32,
-    out_ptr: GuestPtr,
-) -> Result<u32, Escape> {
-    greedy_resolve_typed_preimage_impl(
-        ctx,
-        preimage_type,
-        hash_ptr,
-        offset,
-        available,
-        out_ptr,
-        "wavmio.ResolveTypedPreimage2",
-    )
-}
-
-fn greedy_read(
-    data: &[u8],
-    mem: &mut WasmerMem,
-    offset: usize,
-    available: u32,
-    out_ptr: GuestPtr,
-) -> Result<u32, Escape> {
-    let full_len = data.len().saturating_sub(offset) as u32;
-    let len = std::cmp::min(available, full_len);
-    let read = data
-        .get(offset..(offset + len as usize))
-        .unwrap_or_default();
-    mem.write_slice(out_ptr, read);
-    Ok(full_len)
-}
-
-fn greedy_resolve_typed_preimage_impl(
-    mut ctx: FunctionEnvMut<CustomEnvData>,
-    preimage_type: u8,
-    hash_ptr: GuestPtr,
-    offset: u32,
-    available: u32,
-    out_ptr: GuestPtr,
-    name: &str,
-) -> Result<u32, Escape> {
-    let (mut mem, data) = sp1_env(&mut ctx);
-    let offset = offset as usize;
-    let hash = mem.read_bytes32(hash_ptr);
-    let Some(preimage) = data
-        .input()
-        .preimages
-        .get(&preimage_type)
-        .and_then(|m| m.get(hash.deref()))
-    else {
-        return Escape::logical(format!(
-            "Missing requested preimage for hash {} in {name}",
-            hex::encode(hash)
-        ));
-    };
-    greedy_read(preimage, &mut mem, offset, available, out_ptr)
 }
