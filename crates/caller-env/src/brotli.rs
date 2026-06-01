@@ -7,15 +7,10 @@ use alloc::vec::Vec;
 
 use brotli::{BrotliStatus, Dictionary};
 
-use crate::{ExecEnv, GuestPtr, MemAccess};
+use crate::{GuestPtr, MemAccess};
 
-/// Brotli compresses a go slice
-///
-/// The output buffer must be sufficiently large.
-/// The pointers must not be null.
-pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
+pub fn brotli_compress<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
@@ -34,25 +29,11 @@ pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
         window_size,
         dictionary,
     );
-    match result {
-        Ok(slice) => {
-            mem.write_slice(out_buf_ptr, slice);
-            mem.write_u32(out_len_ptr, slice.len() as u32);
-            BrotliStatus::Success
-        }
-        Err(status) => status,
-    }
+    write_output(mem, out_buf_ptr, out_len_ptr, result)
 }
 
-/// Brotli decompresses a go slice using a custom dictionary.
-///
-/// # Safety
-///
-/// The output buffer must be sufficiently large.
-/// The pointers must not be null.
-pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
+pub fn brotli_decompress<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,
     out_buf_ptr: GuestPtr,
@@ -63,6 +44,15 @@ pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
     let mut output = Vec::with_capacity(mem.read_u32(out_len_ptr) as usize);
 
     let result = brotli::decompress_fixed(&input, output.spare_capacity_mut(), dictionary);
+    write_output(mem, out_buf_ptr, out_len_ptr, result)
+}
+
+fn write_output<M: MemAccess>(
+    mem: &mut M,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+    result: Result<&[u8], BrotliStatus>,
+) -> BrotliStatus {
     match result {
         Ok(slice) => {
             mem.write_slice(out_buf_ptr, slice);
@@ -71,4 +61,14 @@ pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
         }
         Err(status) => status,
     }
+}
+
+#[cfg(feature = "wasmer_traits")]
+pub mod host {
+    use brotli::{BrotliStatus, Dictionary};
+
+    use crate::GuestPtr;
+
+    host_fn!(fn brotli_compress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: u32, f: u32, g: Dictionary) -> BrotliStatus);
+    host_fn!(fn brotli_decompress(a: GuestPtr, b: u32, c: GuestPtr, d: GuestPtr, e: Dictionary) -> BrotliStatus);
 }

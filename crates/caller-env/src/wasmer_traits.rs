@@ -110,3 +110,7 @@ impl MemAccess for WasmerMem<'_> {
         self.view().write(ptr.into(), data).expect("write slice");
     }
 }
+
+pub trait HasMemory {
+    fn memory(&self) -> Memory;
+}

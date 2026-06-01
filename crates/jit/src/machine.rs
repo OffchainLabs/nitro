@@ -11,7 +11,13 @@ use std::{
 };
 
 use arbutil::{Bytes32, PreimageType, crypto};
-use caller_env::GoRuntimeState;
+use caller_env::{
+    GoRuntimeState,
+    arbcrypto::host::{ecrecovery, keccak256},
+    brotli::host::{brotli_compress, brotli_decompress},
+    wasip1_stub::host as wasi,
+    wasmer_traits::HasMemory,
+};
 use eyre::{ErrReport, Report, Result, bail};
 use thiserror::Error;
 use validation::local_target;
@@ -22,8 +28,7 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, arbcompress, arbcrypto, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler, wavmio,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
@@ -119,12 +124,12 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
     }
     imports! {
         "arbcompress" => {
-            "brotli_compress" => func!(arbcompress::brotli_compress),
-            "brotli_decompress" => func!(arbcompress::brotli_decompress),
+            "brotli_compress" => func!(brotli_compress::<WasmEnv>),
+            "brotli_decompress" => func!(brotli_decompress::<WasmEnv>),
         },
         "arbcrypto" => {
-            "ecrecovery" => func!(arbcrypto::ecrecovery),
-            "keccak256" => func!(arbcrypto::keccak256),
+            "ecrecovery" => func!(ecrecovery::<WasmEnv>),
+            "keccak256" => func!(keccak256::<WasmEnv>),
         },
         "hooks" => {
             "beforeFirstIO" => func!(|_: WasmEnvMut|{}),
@@ -146,39 +151,39 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "validateCertificate" => func!(wavmio::validate_certificate),
         },
         "wasi_snapshot_preview1" => {
-            "proc_exit" => func!(wasip1_stub::proc_exit),
-            "environ_sizes_get" => func!(wasip1_stub::environ_sizes_get),
-            "fd_write" => func!(wasip1_stub::fd_write),
-            "environ_get" => func!(wasip1_stub::environ_get),
-            "fd_close" => func!(wasip1_stub::fd_close),
-            "fd_read" => func!(wasip1_stub::fd_read),
-            "fd_readdir" => func!(wasip1_stub::fd_readdir),
-            "fd_sync" => func!(wasip1_stub::fd_sync),
-            "fd_seek" => func!(wasip1_stub::fd_seek),
-            "fd_datasync" => func!(wasip1_stub::fd_datasync),
-            "path_open" => func!(wasip1_stub::path_open),
-            "path_create_directory" => func!(wasip1_stub::path_create_directory),
-            "path_remove_directory" => func!(wasip1_stub::path_remove_directory),
-            "path_readlink" => func!(wasip1_stub::path_readlink),
-            "path_rename" => func!(wasip1_stub::path_rename),
-            "path_filestat_get" => func!(wasip1_stub::path_filestat_get),
-            "path_unlink_file" => func!(wasip1_stub::path_unlink_file),
-            "fd_prestat_get" => func!(wasip1_stub::fd_prestat_get),
-            "fd_prestat_dir_name" => func!(wasip1_stub::fd_prestat_dir_name),
-            "fd_filestat_get" => func!(wasip1_stub::fd_filestat_get),
-            "fd_filestat_set_size" => func!(wasip1_stub::fd_filestat_set_size),
-            "fd_pread" => func!(wasip1_stub::fd_pread),
-            "fd_pwrite" => func!(wasip1_stub::fd_pwrite),
-            "sock_accept" => func!(wasip1_stub::sock_accept),
-            "sock_shutdown" => func!(wasip1_stub::sock_shutdown),
-            "sched_yield" => func!(wasip1_stub::sched_yield),
-            "clock_time_get" => func!(wasip1_stub::clock_time_get),
-            "random_get" => func!(wasip1_stub::random_get),
-            "args_sizes_get" => func!(wasip1_stub::args_sizes_get),
-            "args_get" => func!(wasip1_stub::args_get),
-            "poll_oneoff" => func!(wasip1_stub::poll_oneoff),
-            "fd_fdstat_get" => func!(wasip1_stub::fd_fdstat_get),
-            "fd_fdstat_set_flags" => func!(wasip1_stub::fd_fdstat_set_flags),
+            "proc_exit" => func!(|_: WasmEnvMut, code: u32|Err::<(), Escape>(Escape::Exit(code))),
+            "environ_sizes_get" => func!(wasi::environ_sizes_get::<WasmEnv>),
+            "fd_write" => func!(wasi::fd_write::<WasmEnv>),
+            "environ_get" => func!(wasi::environ_get::<WasmEnv>),
+            "fd_close" => func!(wasi::fd_close::<WasmEnv>),
+            "fd_read" => func!(wasi::fd_read::<WasmEnv>),
+            "fd_readdir" => func!(wasi::fd_readdir::<WasmEnv>),
+            "fd_sync" => func!(wasi::fd_sync::<WasmEnv>),
+            "fd_seek" => func!(wasi::fd_seek::<WasmEnv>),
+            "fd_datasync" => func!(wasi::fd_datasync::<WasmEnv>),
+            "path_open" => func!(wasi::path_open::<WasmEnv>),
+            "path_create_directory" => func!(wasi::path_create_directory::<WasmEnv>),
+            "path_remove_directory" => func!(wasi::path_remove_directory::<WasmEnv>),
+            "path_readlink" => func!(wasi::path_readlink::<WasmEnv>),
+            "path_rename" => func!(wasi::path_rename::<WasmEnv>),
+            "path_filestat_get" => func!(wasi::path_filestat_get::<WasmEnv>),
+            "path_unlink_file" => func!(wasi::path_unlink_file::<WasmEnv>),
+            "fd_prestat_get" => func!(wasi::fd_prestat_get::<WasmEnv>),
+            "fd_prestat_dir_name" => func!(wasi::fd_prestat_dir_name::<WasmEnv>),
+            "fd_filestat_get" => func!(wasi::fd_filestat_get::<WasmEnv>),
+            "fd_filestat_set_size" => func!(wasi::fd_filestat_set_size::<WasmEnv>),
+            "fd_pread" => func!(wasi::fd_pread::<WasmEnv>),
+            "fd_pwrite" => func!(wasi::fd_pwrite::<WasmEnv>),
+            "sock_accept" => func!(wasi::sock_accept::<WasmEnv>),
+            "sock_shutdown" => func!(wasi::sock_shutdown::<WasmEnv>),
+            "sched_yield" => func!(wasi::sched_yield::<WasmEnv>),
+            "clock_time_get" => func!(wasi::clock_time_get::<WasmEnv>),
+            "random_get" => func!(wasi::random_get::<WasmEnv>),
+            "args_sizes_get" => func!(wasi::args_sizes_get::<WasmEnv>),
+            "args_get" => func!(wasi::args_get::<WasmEnv>),
+            "poll_oneoff" => func!(wasi::poll_oneoff::<WasmEnv>),
+            "fd_fdstat_get" => func!(wasi::fd_fdstat_get::<WasmEnv>),
+            "fd_fdstat_set_flags" => func!(wasi::fd_fdstat_set_flags::<WasmEnv>),
         },
         "programs" => {
             "program_prepare" => func!(program::program_prepare),
@@ -254,6 +259,12 @@ pub struct WasmEnv {
     pub process: ProcessEnv,
     // threads
     pub threads: Vec<CothreadHandler>,
+}
+
+impl HasMemory for WasmEnv {
+    fn memory(&self) -> Memory {
+        self.memory.clone().expect("memory not set in WasmEnv")
+    }
 }
 
 impl TryFrom<&Opts> for WasmEnv {

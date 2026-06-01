@@ -18,7 +18,10 @@ use arbutil::{
     },
 };
 use bytes::Bytes;
-use caller_env::{GuestPtr, MemAccess, wasmer_traits::WasmerMem};
+use caller_env::{
+    GuestPtr, MemAccess,
+    wasmer_traits::{HasMemory, WasmerMem},
+};
 use corosensei::{Coroutine, Yielder, stack::DefaultStack};
 use eyre::{bail, eyre};
 use prover::programs::{
@@ -245,6 +248,14 @@ pub struct StylusCustomEnvData {
     queue: Arc<Mutex<MessageQueue>>,
     /// Value will be set every time current coroutine is invoked.
     pub yielder: Option<SendYielder<CothreadInput, CothreadYield>>,
+}
+
+impl HasMemory for StylusCustomEnvData {
+    fn memory(&self) -> wasmer::Memory {
+        self.memory
+            .clone()
+            .expect("memory not set in StylusCustomEnvData")
+    }
 }
 
 impl StylusCustomEnvData {
@@ -595,7 +606,7 @@ impl GasMeteredMachine for StylusCustomEnvData {
 pub(crate) fn stylus_env<'a>(
     ctx: &'a mut FunctionEnvMut<'_, StylusCustomEnvData>,
 ) -> (WasmerMem<'a>, &'a mut StylusCustomEnvData) {
-    let memory = ctx.data().memory.clone().unwrap();
+    let memory = ctx.data().memory();
     let (data, store) = ctx.data_and_store_mut();
     (WasmerMem::new(memory, store), data)
 }

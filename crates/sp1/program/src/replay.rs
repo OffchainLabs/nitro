@@ -7,20 +7,26 @@ use std::{
 
 use arbutil::{Bytes32, evm::EvmData};
 use bytes::Bytes;
+use caller_env::{
+    arbcrypto::host::{ecrecovery, keccak256},
+    brotli::host::{brotli_compress, brotli_decompress},
+    wasip1_stub::host as wasi,
+};
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
 use prover::programs::meter::MeteredMachine;
 use rand_pcg::Pcg32;
 use validation::ValidationInput;
 use wasmer::{
-    Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value,
-    imports, sys::NativeEngineExt,
+    Engine, Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory, Module, RuntimeError,
+    Store, Value, imports, sys::NativeEngineExt,
 };
 use wasmer_vm::install_unwinder;
 
 use crate::{
     Escape, JitConfig, STACK_SIZE,
-    imports::{arbcompress, precompiles, programs, wasi_stub, wavmio},
+    imports::{programs, wavmio},
+    platform,
     platform::{exit, read_input},
     stylus::{Cothread, MessageFromCothread, MessageToCothread},
 };
@@ -90,12 +96,20 @@ pub struct CustomEnvData {
     /// * Use imports to initialize Instance
     /// * Extract memory from instance's exports
     /// * Set the memory back in CustomEnvData.
-    pub memory: Option<Memory>,
+    memory: Option<Memory>,
     pub time: u64,
     pub pcg: Pcg32,
 
     input: Lazy<ValidationInput>,
     yielder: SendYielder<(), MainYieldMessage>,
+}
+
+impl caller_env::wasmer_traits::HasMemory for CustomEnvData {
+    fn memory(&self) -> Memory {
+        self.memory
+            .clone()
+            .expect("memory not set in CustomEnvData")
+    }
 }
 
 impl CustomEnvData {
@@ -209,13 +223,18 @@ pub fn run(m: Bytes) -> ! {
                 let mapping_bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
                 let mapping: Vec<Option<String>> =
                     serde_json::from_slice(&mapping_bytes[..]).expect("parse mapping");
-                let infos = module.as_sys().local_function_infos();
+                let artifact = module.sys_artifact().expect("sys artifact");
+                let extents = artifact
+                    .finished_function_extents()
+                    .expect("function extents");
                 // ptr => (function name, size), for precision, all usizes are casted to string
                 let mut profiler_data: std::collections::HashMap<String, (String, String)> =
                     std::collections::HashMap::default();
-                for (index, ptr, size) in infos {
-                    if let Some(Some(name)) = mapping.get(index as usize) {
-                        profiler_data.insert(ptr.to_string(), (name.clone(), size.to_string()));
+                for (index, extent) in &extents {
+                    if let Some(Some(name)) = mapping.get(index.as_u32() as usize) {
+                        let ptr = *extent.ptr as usize;
+                        profiler_data
+                            .insert(ptr.to_string(), (name.clone(), extent.length.to_string()));
                     }
                 }
                 let profiler_data_str =
@@ -327,50 +346,50 @@ fn build_imports(
     (
         imports! {
             "arbcompress" => {
-                "brotli_compress" => func!(arbcompress::brotli_compress),
-                "brotli_decompress" => func!(arbcompress::brotli_decompress),
+                "brotli_compress" => func!(brotli_compress::<CustomEnvData>),
+                "brotli_decompress" => func!(brotli_decompress::<CustomEnvData>),
             },
             "arbcrypto" => {
-                "ecrecovery" => func!(precompiles::ecrecover),
-                "keccak256" => func!(precompiles::keccak256),
+                "ecrecovery" => func!(ecrecovery::<CustomEnvData>),
+                "keccak256" => func!(keccak256::<CustomEnvData>),
             },
             "hooks" => {
-                "beforeFirstIO" => func!(precompiles::dump_elf),
+                "beforeFirstIO" => func!(dump_elf),
             },
             "wasi_snapshot_preview1" => {
-                "proc_exit" => func!(wasi_stub::proc_exit),
-                "sched_yield" => func!(wasi_stub::sched_yield),
-                "clock_time_get" => func!(wasi_stub::clock_time_get),
-                "random_get" => func!(wasi_stub::random_get),
-                "poll_oneoff" => func!(wasi_stub::poll_oneoff),
-                "args_sizes_get" => func!(wasi_stub::args_sizes_get),
-                "args_get" => func!(wasi_stub::args_get),
-                "environ_sizes_get" => func!(wasi_stub::environ_sizes_get),
-                "environ_get" => func!(wasi_stub::environ_get),
-                "fd_write" => func!(wasi_stub::fd_write),
-                "fd_close" => func!(wasi_stub::fd_close),
-                "fd_read" => func!(wasi_stub::fd_read),
-                "fd_readdir" => func!(wasi_stub::fd_readdir),
-                "fd_sync" => func!(wasi_stub::fd_sync),
-                "fd_seek" => func!(wasi_stub::fd_seek),
-                "fd_datasync" => func!(wasi_stub::fd_datasync),
-                "fd_prestat_get" => func!(wasi_stub::fd_prestat_get),
-                "fd_prestat_dir_name" => func!(wasi_stub::fd_prestat_dir_name),
-                "fd_filestat_get" => func!(wasi_stub::fd_filestat_get),
-                "fd_filestat_set_size" => func!(wasi_stub::fd_filestat_set_size),
-                "fd_pread" => func!(wasi_stub::fd_pread),
-                "fd_pwrite" => func!(wasi_stub::fd_pwrite),
-                "fd_fdstat_get" => func!(wasi_stub::fd_fdstat_get),
-                "fd_fdstat_set_flags" => func!(wasi_stub::fd_fdstat_set_flags),
-                "path_open" => func!(wasi_stub::path_open),
-                "path_create_directory" => func!(wasi_stub::path_create_directory),
-                "path_remove_directory" => func!(wasi_stub::path_remove_directory),
-                "path_readlink" => func!(wasi_stub::path_readlink),
-                "path_rename" => func!(wasi_stub::path_rename),
-                "path_filestat_get" => func!(wasi_stub::path_filestat_get),
-                "path_unlink_file" => func!(wasi_stub::path_unlink_file),
-                "sock_accept" => func!(wasi_stub::sock_accept),
-                "sock_shutdown" => func!(wasi_stub::sock_shutdown),
+                "proc_exit" => func!(proc_exit),
+                "sched_yield" => func!(wasi::sched_yield::<CustomEnvData>),
+                "clock_time_get" => func!(wasi::clock_time_get::<CustomEnvData>),
+                "random_get" => func!(wasi::random_get::<CustomEnvData>),
+                "poll_oneoff" => func!(wasi::poll_oneoff::<CustomEnvData>),
+                "args_sizes_get" => func!(wasi::args_sizes_get::<CustomEnvData>),
+                "args_get" => func!(wasi::args_get::<CustomEnvData>),
+                "environ_sizes_get" => func!(wasi::environ_sizes_get::<CustomEnvData>),
+                "environ_get" => func!(wasi::environ_get::<CustomEnvData>),
+                "fd_write" => func!(wasi::fd_write::<CustomEnvData>),
+                "fd_close" => func!(wasi::fd_close::<CustomEnvData>),
+                "fd_read" => func!(wasi::fd_read::<CustomEnvData>),
+                "fd_readdir" => func!(wasi::fd_readdir::<CustomEnvData>),
+                "fd_sync" => func!(wasi::fd_sync::<CustomEnvData>),
+                "fd_seek" => func!(wasi::fd_seek::<CustomEnvData>),
+                "fd_datasync" => func!(wasi::fd_datasync::<CustomEnvData>),
+                "fd_prestat_get" => func!(wasi::fd_prestat_get::<CustomEnvData>),
+                "fd_prestat_dir_name" => func!(wasi::fd_prestat_dir_name::<CustomEnvData>),
+                "fd_filestat_get" => func!(wasi::fd_filestat_get::<CustomEnvData>),
+                "fd_filestat_set_size" => func!(wasi::fd_filestat_set_size::<CustomEnvData>),
+                "fd_pread" => func!(wasi::fd_pread::<CustomEnvData>),
+                "fd_pwrite" => func!(wasi::fd_pwrite::<CustomEnvData>),
+                "fd_fdstat_get" => func!(wasi::fd_fdstat_get::<CustomEnvData>),
+                "fd_fdstat_set_flags" => func!(wasi::fd_fdstat_set_flags::<CustomEnvData>),
+                "path_open" => func!(wasi::path_open::<CustomEnvData>),
+                "path_create_directory" => func!(wasi::path_create_directory::<CustomEnvData>),
+                "path_remove_directory" => func!(wasi::path_remove_directory::<CustomEnvData>),
+                "path_readlink" => func!(wasi::path_readlink::<CustomEnvData>),
+                "path_rename" => func!(wasi::path_rename::<CustomEnvData>),
+                "path_filestat_get" => func!(wasi::path_filestat_get::<CustomEnvData>),
+                "path_unlink_file" => func!(wasi::path_unlink_file::<CustomEnvData>),
+                "sock_accept" => func!(wasi::sock_accept::<CustomEnvData>),
+                "sock_shutdown" => func!(wasi::sock_shutdown::<CustomEnvData>),
             },
             "wavmio" => {
                 "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
@@ -403,6 +422,27 @@ fn build_imports(
         },
         func_env,
     )
+}
+
+fn dump_elf(mut ctx: FunctionEnvMut<CustomEnvData>) {
+    let data = ctx.data_mut();
+    assert!(!data.input_initialized());
+    platform::dump_elf();
+}
+
+fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
+    if code == 0 {
+        let (data, _) = ctx.data_and_store_mut();
+        platform::print_string(
+            1,
+            format!(
+                "Validation succeeds with hash 0x{}",
+                hex::encode(data.input().large_globals[0])
+            )
+            .as_bytes(),
+        );
+    }
+    exit(code);
 }
 
 /// Copies `data` into 8-byte-aligned memory and returns it as `Bytes`.

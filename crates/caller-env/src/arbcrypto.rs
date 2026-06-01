@@ -5,7 +5,7 @@ use core::mem::MaybeUninit;
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use tiny_keccak::{Hasher, Keccak};
 
-use crate::{ExecEnv, GuestPtr, MemAccess, arbcrypto::ECRecoveryStatus::*};
+use crate::{GuestPtr, MemAccess, arbcrypto::ECRecoveryStatus::*};
 
 #[derive(Debug, PartialEq)]
 #[repr(u32)]
@@ -47,9 +47,8 @@ fn ecrecover_core(
     Ok(out)
 }
 
-pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
+pub fn ecrecovery<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     hash_ptr: GuestPtr,
     hash_len: u32,
     sig_ptr: GuestPtr,
@@ -72,6 +71,33 @@ pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
         }
         Err(e) => e as u32,
     }
+}
+
+pub fn keccak256<M: MemAccess>(
+    mem: &mut M,
+    in_buf_ptr: GuestPtr,
+    in_buf_len: u32,
+    out_buf_ptr: GuestPtr,
+) {
+    let input = mem.read_slice(in_buf_ptr, in_buf_len as usize);
+
+    let mut output = MaybeUninit::<[u8; 32]>::uninit();
+    let mut hasher = Keccak::v256();
+    hasher.update(input.as_ref());
+
+    // SAFETY: finalize() writes 32 bytes
+    unsafe {
+        hasher.finalize(&mut *output.as_mut_ptr());
+        mem.write_slice(out_buf_ptr, output.assume_init().as_slice());
+    }
+}
+
+#[cfg(feature = "wasmer_traits")]
+pub mod host {
+    use crate::GuestPtr;
+
+    host_fn!(fn ecrecovery(a: GuestPtr, b: u32, c: GuestPtr, d: u32, e: GuestPtr) -> u32);
+    host_fn!(fn keccak256(a: GuestPtr, b: u32, c: GuestPtr));
 }
 
 #[cfg(test)]
@@ -156,25 +182,5 @@ mod tests {
         let (hash, mut sig_with_id) = random_low_s();
         sig_with_id[RECOVERY_ID_INDEX] = 4; // only 0–3 are valid
         assert_eq!(ecrecover_core(&hash, &sig_with_id), Err(InvalidRecoveryId));
-    }
-}
-
-pub fn keccak256<M: MemAccess, E: ExecEnv>(
-    mem: &mut M,
-    _env: &mut E,
-    in_buf_ptr: GuestPtr,
-    in_buf_len: u32,
-    out_buf_ptr: GuestPtr,
-) {
-    let input = mem.read_slice(in_buf_ptr, in_buf_len as usize);
-
-    let mut output = MaybeUninit::<[u8; 32]>::uninit();
-    let mut hasher = Keccak::v256();
-    hasher.update(input.as_ref());
-
-    // SAFETY: finalize() writes 32 bytes
-    unsafe {
-        hasher.finalize(&mut *output.as_mut_ptr());
-        mem.write_slice(out_buf_ptr, output.assume_init().as_slice());
     }
 }

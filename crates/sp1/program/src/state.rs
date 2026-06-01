@@ -1,7 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{ExecEnv, wasmer_traits::WasmerMem, wavmio::WavmIo};
+use caller_env::{
+    ExecEnv,
+    wasmer_traits::{HasMemory, WasmerMem},
+    wavmio::WavmIo,
+};
 use rand::Rng;
 use wasmer::FunctionEnvMut;
 
@@ -77,7 +81,7 @@ impl WavmIo for CustomEnvData {
 pub(crate) fn sp1_env<'a>(
     ctx: &'a mut FunctionEnvMut<'_, CustomEnvData>,
 ) -> (WasmerMem<'a>, &'a mut CustomEnvData) {
-    let memory = ctx.data().memory.clone().unwrap();
+    let memory = ctx.data().memory();
     let (data, store) = ctx.data_and_store_mut();
     (WasmerMem::new(memory, store), data)
 }

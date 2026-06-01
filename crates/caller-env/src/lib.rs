@@ -17,6 +17,40 @@ pub mod static_caller;
 #[cfg(feature = "wasmer_traits")]
 pub mod wasmer_traits;
 
+/// Generates a wasmer host function that owns `FunctionEnvMut<T>`, extracts memory
+/// via `HasMemory::memory()`, and delegates to the `super::` function of the same
+/// name which takes `&mut impl MemAccess` as its first argument.
+#[cfg(feature = "wasmer_traits")]
+macro_rules! host_fn {
+    ($(#[$attr:meta])* fn $name:ident($($arg:ident : $ty:ty),*) $(-> $ret:ty)?) => {
+        $(#[$attr])*
+        pub fn $name<T: $crate::wasmer_traits::HasMemory + Send + 'static>(
+            mut ctx: wasmer::FunctionEnvMut<T>,
+            $($arg: $ty,)*
+        ) $(-> $ret)? {
+            let memory = ctx.data().memory();
+            let (_, store) = ctx.data_and_store_mut();
+            super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), $($arg,)*)
+        }
+    };
+}
+
+/// Like [`host_fn!`] but for WASI stubs that take both `&mut impl MemAccess` and
+/// `&mut impl ExecEnv`. The env data type `T` must implement both `HasMemory` and `ExecEnv`.
+#[cfg(feature = "wasmer_traits")]
+macro_rules! host_fn_exec {
+    (fn $name:ident($($arg:ident : $ty:ty),*)) => {
+        pub fn $name<T: $crate::wasmer_traits::HasMemory + $crate::ExecEnv + Send + 'static>(
+            mut ctx: wasmer::FunctionEnvMut<T>,
+            $($arg: $ty,)*
+        ) -> $crate::wasip1_stub::Errno {
+            let memory = ctx.data().memory();
+            let (data, store) = ctx.data_and_store_mut();
+            super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), data, $($arg,)*)
+        }
+    };
+}
+
 #[cfg(feature = "brotli")]
 pub mod brotli;
 
