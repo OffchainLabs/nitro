@@ -19,6 +19,7 @@ jobs:
   image:
     name: image (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
+    needs: [binaries]
     permissions:
       contents: read
       packages: write
@@ -28,24 +29,27 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-latest
+            arch: x86_64-unknown-linux-gnu
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
+            arch: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: false
-      - name: Init submodules with retry
-        shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then exit 0; fi
-            echo "submodule init attempt $i failed; sleeping $((i*5))s"; sleep $((i*5))
-          done
-          exit 1
       - name: Platform pair
         run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
         env:
           platform: ${{ matrix.platform }}
+      - name: Download prebuilt binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-${{ matrix.arch }}
+          path: /tmp/bin
+      - name: Unpack binary into build context
+        run: |
+          tar -xzf /tmp/bin/arb-reth-*.tar.gz -C .
+          test -x ./arb-reth
       - uses: docker/setup-buildx-action@v3
       - name: Log in to ghcr
         uses: docker/login-action@v3
@@ -65,9 +69,8 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          build-args: BINARY_STAGE=prebuilt
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |
