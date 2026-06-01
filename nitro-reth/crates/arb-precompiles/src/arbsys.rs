@@ -61,38 +61,58 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     let data = input.data;
-    crate::init_precompile_gas(&mut gas_used, data.len());
 
     let call = match IArbSys::ArbSysCalls::abi_decode(data) {
         Ok(c) => c,
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
 
+    // `mapL1SenderContractAddressToL2Alias` is `pure` (no state access), so
+    // the framework skips the `OpenArbosState` SLOAD; every other method is at
+    // least `view` and pays for it.
+    let is_pure = matches!(
+        call,
+        IArbSys::ArbSysCalls::mapL1SenderContractAddressToL2Alias(_)
+    );
+    if is_pure {
+        crate::init_precompile_gas_pure(&mut gas_used, ctx, data.len());
+    } else {
+        crate::init_precompile_gas(&mut gas_used, ctx, data.len());
+    }
+
     use IArbSys::ArbSysCalls;
     let result = match call {
-        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input, ctx),
+        ArbSysCalls::arbBlockNumber(_) => handle_arb_block_number(&mut input, &mut gas_used, ctx),
         ArbSysCalls::arbBlockHash(c) => {
-            handle_arb_block_hash(&mut input, ctx, gas_used, c.arbBlockNum)
+            handle_arb_block_hash(&mut input, &mut gas_used, ctx, c.arbBlockNum)
         }
-        ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input),
-        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input, ctx),
-        ArbSysCalls::getStorageGasAvailable(_) => handle_get_storage_gas(&mut input),
-        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input, ctx),
+        ArbSysCalls::arbChainID(_) => handle_arb_chain_id(&mut input, &mut gas_used, ctx),
+        ArbSysCalls::arbOSVersion(_) => handle_arbos_version(&mut input, &mut gas_used, ctx),
+        ArbSysCalls::getStorageGasAvailable(_) => {
+            handle_get_storage_gas(&mut input, &mut gas_used, ctx)
+        }
+        ArbSysCalls::isTopLevelCall(_) => handle_is_top_level_call(&mut input, &mut gas_used, ctx),
         ArbSysCalls::mapL1SenderContractAddressToL2Alias(c) => {
-            handle_map_l1_sender(&mut input, c.sender)
+            handle_map_l1_sender(&mut input, &mut gas_used, ctx, c.sender)
         }
-        ArbSysCalls::wasMyCallersAddressAliased(_) => handle_was_aliased(&mut input, ctx),
+        ArbSysCalls::wasMyCallersAddressAliased(_) => {
+            handle_was_aliased(&mut input, &mut gas_used, ctx)
+        }
         ArbSysCalls::myCallersAddressWithoutAliasing(_) => {
-            handle_caller_without_alias(&mut input, ctx)
+            handle_caller_without_alias(&mut input, &mut gas_used, ctx)
         }
         ArbSysCalls::withdrawEth(c) => {
-            handle_withdraw_eth(&mut input, ctx, gas_used, c.destination)
+            handle_withdraw_eth(&mut input, &mut gas_used, ctx, c.destination)
         }
-        ArbSysCalls::sendTxToL1(c) => {
-            handle_send_tx_to_l1(&mut input, ctx, gas_used, c.destination, c.data.as_ref())
-        }
+        ArbSysCalls::sendTxToL1(c) => handle_send_tx_to_l1(
+            &mut input,
+            &mut gas_used,
+            ctx,
+            c.destination,
+            c.data.as_ref(),
+        ),
         ArbSysCalls::sendMerkleTreeState(_) => {
-            handle_send_merkle_tree_state(&mut input, ctx, gas_used)
+            handle_send_merkle_tree_state(&mut input, &mut gas_used, ctx)
         }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -102,25 +122,34 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
 fn handle_arb_block_number(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let block_num = U256::from(ctx.block.l2_block_number);
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    let gas_limit = input.gas;
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         block_num.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("arbBlockHash: L2 block {requested} hash unavailable (current {current})")]
+struct MissingL2BlockHash {
+    requested: u64,
+    current: u64,
+}
+
 fn handle_arb_block_hash(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
-    gas_used: u64,
     requested_u256: U256,
 ) -> PrecompileResult {
     let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
     let current = ctx.block.l2_block_number;
+    let gas_limit = input.gas;
 
     if requested >= current || requested + 256 < current {
         let arbos_version = ctx.block.arbos_version;
@@ -130,37 +159,45 @@ fn handle_arb_block_hash(
                 current: U256::from(current),
             }
             .abi_encode();
-            let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-            let result_cost = COPY_GAS * words_for_bytes(revert_data.len() as u64);
+            crate::charge_computation(
+                gas_used,
+                ctx,
+                COPY_GAS * words_for_bytes(revert_data.len() as u64),
+            );
             return Ok(PrecompileOutput::new_reverted(
-                STORAGE_READ_COST + args_cost + result_cost,
+                (*gas_used).min(gas_limit),
                 revert_data.into(),
             ));
         }
-        return Err(ArbPrecompileError::empty_revert(gas_used).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
-    // L2 block hashes come from the header chain cache — the journal's
-    // block_hashes map is pre-populated with L1 hashes for the BLOCKHASH opcode.
-    let hash = ctx
-        .block
-        .cached_l2_block_hash(requested)
-        .unwrap_or(B256::ZERO);
+    // The window is populated before execution, so an in-range miss is an
+    // internal inconsistency — fail loudly instead of returning a zero hash.
+    let hash = match ctx.block.cached_l2_block_hash(requested) {
+        Some(hash) => hash,
+        None => {
+            return Err(ArbPrecompileError::fatal(MissingL2BlockHash { requested, current }).into())
+        }
+    };
 
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         hash.0.to_vec().into(),
     ))
 }
 
-fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+fn handle_arb_chain_id(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let chain_id = input.internals().chain_id();
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    let gas_limit = input.gas;
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         U256::from(chain_id).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -172,8 +209,10 @@ fn arbos_version_from_format(format_version: U256) -> U256 {
 
 fn handle_arbos_version(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
+    let gas_limit = input.gas;
     let internals = input.internals_mut();
 
     internals
@@ -186,30 +225,35 @@ fn handle_arbos_version(
         .map_err(ArbPrecompileError::fatal)?;
     let version = arbos_version_from_format(U256::from(arb_state.arbos_version()));
 
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         version.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_is_top_level_call(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let depth = ctx.evm_depth();
     let is_top = depth <= 2;
     let val = if is_top { U256::from(1) } else { U256::ZERO };
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    let gas_limit = input.gas;
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         val.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
-fn handle_was_aliased(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+fn handle_was_aliased(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let gas_limit = input.gas;
     let internals = input.internals_mut();
     internals
         .load_account(ARBOS_STATE_ADDRESS)
@@ -234,18 +278,19 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -
 
     let aliased = is_top_level && ctx.tx_is_aliased();
     let val = if aliased { U256::from(1) } else { U256::ZERO };
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         val.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_caller_without_alias(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
+    let gas_limit = input.gas;
     let depth = ctx.evm_depth();
     let address = if depth > 1 {
         ctx.caller_at_depth(depth - 1).unwrap_or(Address::ZERO)
@@ -271,34 +316,43 @@ fn handle_caller_without_alias(
         address
     };
 
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
     let mut out = [0u8; 32];
     out[12..32].copy_from_slice(result_addr.as_slice());
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         out.to_vec().into(),
     ))
 }
 
-fn handle_map_l1_sender(input: &mut PrecompileInput<'_>, l1_addr: Address) -> PrecompileResult {
+fn handle_map_l1_sender(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    l1_addr: Address,
+) -> PrecompileResult {
     let aliased = apply_l1_alias(l1_addr);
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    let gas_limit = input.gas;
     let mut out = [0u8; 32];
     out[12..32].copy_from_slice(aliased.as_slice());
+    // `mapL1SenderContractAddressToL2Alias` is `pure` — no OpenArbosState read,
+    // init already charged argsCost only. Body adds result_cost as Computation.
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         out.to_vec().into(),
     ))
 }
 
-fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Returns 0 — ArbOS has no concept of storage gas.
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+fn handle_get_storage_gas(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
+    let gas_limit = input.gas;
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        STORAGE_READ_COST + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         U256::ZERO.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -307,53 +361,47 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 fn handle_withdraw_eth(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
-    gas_used: u64,
     destination: Address,
 ) -> PrecompileResult {
     if input.is_static {
-        return Err(ArbPrecompileError::empty_revert(gas_used).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
-    do_send_tx_to_l1(input, ctx, gas_used, destination, &[])
+    do_send_tx_to_l1(input, gas_used, ctx, destination, &[])
 }
 
 fn handle_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
-    gas_used: u64,
     destination: Address,
     calldata: &[u8],
 ) -> PrecompileResult {
     if input.is_static {
-        return Err(ArbPrecompileError::empty_revert(gas_used).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
-    do_send_tx_to_l1(input, ctx, gas_used, destination, calldata)
+    do_send_tx_to_l1(input, gas_used, ctx, destination, calldata)
 }
 
 fn do_send_tx_to_l1(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
-    outer_gas_used: u64,
     destination: Address,
     calldata: &[u8],
 ) -> PrecompileResult {
     let caller = input.caller;
     let value = input.value;
+    let gas_limit = input.gas;
     // Read the L1 block number recorded by StartBlock. `block_env.number` holds
     // the header's mix_hash L1 value, which can lag the StartBlock-updated one.
     let l1_block_number = U256::from(ctx.block.l1_block_number_for_evm);
     let l2_block_number = U256::from(ctx.block.l2_block_number);
     let timestamp = input.internals().block_timestamp();
 
-    let mut gas_used = 0u64;
-    // Argument copy cost.
-    gas_used += COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    // OpenArbosState overhead: makeContext reads version (800 gas) for all non-pure methods.
-    gas_used += STORAGE_READ_COST;
-
     let internals = input.internals_mut();
 
-    // Load the ArbOS state account.
     internals
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(ArbPrecompileError::fatal)?;
@@ -366,30 +414,26 @@ fn do_send_tx_to_l1(
 
     // ArbOS v41+: prevent sending value when native token owners exist.
     if !value.is_zero() && arbos_version >= 41 {
-        gas_used += STORAGE_READ_COST;
+        crate::charge_storage_read(gas_used, ctx, STORAGE_READ_COST);
         let num_owners = arb_state
             .native_token_owners
             .size(internals)
             .map_err(ArbPrecompileError::fatal)?;
         if num_owners != 0 {
-            return Err(ArbPrecompileError::empty_revert(outer_gas_used).into());
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
     }
 
-    // Read current Merkle accumulator size — accumulator's append() will also
-    // read+write this slot internally; the precompile charges Go-parity gas
-    // for two reads (one before, one phantom "post-append") plus the write.
-    gas_used += STORAGE_READ_COST;
+    // Merkle accumulator size: one read before append, one phantom read after.
+    crate::charge_storage_read(gas_used, ctx, STORAGE_READ_COST);
     let old_size = arb_state
         .send_merkle_accumulator
         .size(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
-    // Compute the send hash (arbosState.KeccakHash charges gas via burner).
-    // Preimage: caller(20) + dest(20) + blockNum(32) + l1BlockNum(32) + time(32) + value(32) +
-    // calldata
+    // keccak hash burn — pure computation.
     let send_hash_input_len = 20 + 20 + 32 * 4 + calldata.len() as u64;
-    gas_used += keccak_gas(send_hash_input_len);
+    crate::charge_computation(gas_used, ctx, keccak_gas(send_hash_input_len));
     let send_hash = compute_send_hash(
         caller,
         destination,
@@ -400,26 +444,29 @@ fn do_send_tx_to_l1(
         calldata,
     );
 
-    // Append leaf and collect intermediate node events for emission.
     let merkle_events = arb_state
         .send_merkle_accumulator
         .append(internals, send_hash)
         .map_err(ArbPrecompileError::fatal)?;
     let new_size = old_size + 1;
 
-    // Gas for the partial reads/writes inside append(), plus the new-size
-    // write and the phantom "post-append size read" tracked by Go's burner.
+    // Per-level merge: one read + one keccak + one write at the reset price.
+    // The append's outer terminator is either an extra read+write or just a
+    // write depending on whether the last merge consumed all old partials.
     let num_partials_old = calc_num_partials(old_size);
     let n_events = merkle_events.len() as u64;
-    let per_merge_gas = STORAGE_READ_COST + keccak_gas(64) + STORAGE_WRITE_ZERO_COST;
-    let terminator_gas = if n_events == num_partials_old {
-        STORAGE_WRITE_COST
+    let per_merge_keccak = keccak_gas(64);
+    crate::charge_storage_read(gas_used, ctx, n_events * STORAGE_READ_COST);
+    crate::charge_computation(gas_used, ctx, n_events * per_merge_keccak);
+    crate::charge_storage_write(gas_used, ctx, n_events * STORAGE_WRITE_ZERO_COST);
+    if n_events == num_partials_old {
+        crate::charge_storage_write(gas_used, ctx, STORAGE_WRITE_COST);
     } else {
-        STORAGE_READ_COST + STORAGE_WRITE_COST
-    };
-    gas_used += n_events * per_merge_gas + terminator_gas;
-    gas_used += STORAGE_WRITE_COST; // size.set inside append()
-    gas_used += STORAGE_READ_COST; // phantom "merkleAcc.Size() after Append"
+        crate::charge_storage_read(gas_used, ctx, STORAGE_READ_COST);
+        crate::charge_storage_write(gas_used, ctx, STORAGE_WRITE_COST);
+    }
+    crate::charge_storage_write(gas_used, ctx, STORAGE_WRITE_COST); // size.set
+    crate::charge_storage_read(gas_used, ctx, STORAGE_READ_COST); // phantom post-Append size
 
     // Emit SendMerkleUpdate events (one per intermediate node, all topics, empty data).
     let update_topic = send_merkle_update_topic();
@@ -430,14 +477,14 @@ fn do_send_tx_to_l1(
             ARBSYS_ADDRESS,
             vec![
                 update_topic,
-                B256::from(U256::ZERO.to_be_bytes::<32>()), // reserved = 0
-                evt.hash,                                   // hash
-                B256::from(position.to_be_bytes::<32>()),   // position
+                B256::from(U256::ZERO.to_be_bytes::<32>()),
+                evt.hash,
+                B256::from(position.to_be_bytes::<32>()),
             ],
-            Default::default(), // empty data (all fields indexed)
+            Default::default(),
         ));
-        // Gas: 4 topics (event_id + 3 indexed), 0 data bytes.
-        gas_used += LOG_GAS + LOG_TOPIC_GAS * 4;
+        // 4 topics (event_id + 3 indexed), 0 data bytes.
+        crate::charge_history_growth(gas_used, ctx, LOG_GAS + LOG_TOPIC_GAS * 4);
     }
 
     let leaf_num = new_size - 1;
@@ -451,23 +498,16 @@ fn do_send_tx_to_l1(
     let position_topic = B256::from(U256::from(leaf_num).to_be_bytes::<32>());
 
     let mut event_data = Vec::with_capacity(256);
-    // address caller (left-padded to 32 bytes)
     let mut caller_padded = [0u8; 32];
     caller_padded[12..32].copy_from_slice(caller.as_slice());
     event_data.extend_from_slice(&caller_padded);
-    // uint256 arbBlockNum (L2 block number)
     event_data.extend_from_slice(&l2_block_number.to_be_bytes::<32>());
-    // uint256 ethBlockNum (L1 block number)
     event_data.extend_from_slice(&l1_block_number.to_be_bytes::<32>());
-    // uint256 timestamp
     event_data.extend_from_slice(&timestamp.to_be_bytes::<32>());
-    // uint256 callvalue
     event_data.extend_from_slice(&value.to_be_bytes::<32>());
-    // bytes data (ABI dynamic type: offset, then length, then data, then padding)
-    event_data.extend_from_slice(&U256::from(6 * 32).to_be_bytes::<32>()); // offset = 6 words
+    event_data.extend_from_slice(&U256::from(6 * 32).to_be_bytes::<32>());
     event_data.extend_from_slice(&U256::from(calldata.len()).to_be_bytes::<32>());
     event_data.extend_from_slice(calldata);
-    // Pad to 32-byte boundary.
     let pad = (32 - calldata.len() % 32) % 32;
     event_data.extend(std::iter::repeat_n(0u8, pad));
 
@@ -477,34 +517,41 @@ fn do_send_tx_to_l1(
         vec![l2l1_topic, dest_topic, hash_topic, position_topic],
         event_data.into(),
     ));
-    // Gas: 4 topics (event_id + 3 indexed), data = ABI-encoded non-indexed fields.
-    gas_used += LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * l2l1_data_len;
+    crate::charge_history_growth(
+        gas_used,
+        ctx,
+        LOG_GAS + LOG_TOPIC_GAS * 4 + LOG_DATA_GAS * l2l1_data_len,
+    );
 
-    // ArbOS >= 4: return leafNum; older versions return sendHash. The version
-    // was already read above (no extra gas charged).
     let return_val = if arbos_version >= 4 {
         U256::from(leaf_num)
     } else {
         U256::from_be_bytes(send_hash.0)
     };
 
-    // Result copy cost.
     let output = return_val.to_be_bytes::<32>().to_vec();
-    gas_used += COPY_GAS * words_for_bytes(output.len() as u64);
+    crate::charge_computation(
+        gas_used,
+        ctx,
+        COPY_GAS * words_for_bytes(output.len() as u64),
+    );
 
-    Ok(PrecompileOutput::new(gas_used, output.into()))
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        output.into(),
+    ))
 }
 
 fn handle_send_merkle_tree_state(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
-    outer_gas_used: u64,
 ) -> PrecompileResult {
     // Only callable by address zero (for state export).
     if input.caller != Address::ZERO {
-        return Err(ArbPrecompileError::empty_revert(outer_gas_used).into());
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
-    let mut gas_used = 0u64;
+    let gas_limit = input.gas;
     let internals = input.internals_mut();
 
     internals
@@ -516,18 +563,17 @@ fn handle_send_merkle_tree_state(
         .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
-    gas_used += STORAGE_READ_COST;
+    crate::charge_storage_read(gas_used, ctx, STORAGE_READ_COST);
     let size_u64 = arb_state
         .send_merkle_accumulator
         .size(internals)
         .map_err(ArbPrecompileError::fatal)?;
     let size = U256::from(size_u64);
 
-    // Read partials — stored at offset (2 + level) in the accumulator storage.
     let num_partials = calc_num_partials(size_u64);
     let mut partials = Vec::new();
     for i in 0..num_partials {
-        gas_used += STORAGE_READ_COST;
+        crate::charge_storage_read(gas_used, ctx, STORAGE_READ_COST);
         let val = arb_state
             .send_merkle_accumulator
             .partial_at(internals, i)
@@ -537,23 +583,20 @@ fn handle_send_merkle_tree_state(
 
     let root = compute_merkle_root(&partials, size_u64);
 
-    // Return (size, root, partials...)
     // ABI: uint256 size, bytes32 root, bytes32[] partials
     let num_partials = partials.len();
     let mut out = Vec::with_capacity(96 + num_partials * 32);
     out.extend_from_slice(&size.to_be_bytes::<32>());
     out.extend_from_slice(&root.0);
-    // Dynamic array: offset, length, elements
     out.extend_from_slice(&U256::from(96u64).to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(num_partials).to_be_bytes::<32>());
     for p in &partials {
         out.extend_from_slice(p.0.as_slice());
     }
 
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(out.len() as u64);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(out.len() as u64));
     Ok(PrecompileOutput::new(
-        gas_used + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }

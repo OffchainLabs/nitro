@@ -38,23 +38,34 @@ pub fn create_arbowner_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+    // Access-controlled methods report zero gas at the receipt; the per-tx
+    // multi-gas accumulator must also reflect that so they cannot escalate the
+    // v60 backlog. Snapshot here and restore on every return path.
+    let mg_snapshot = ctx.snapshot_precompile_multi_gas();
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
+        ctx.restore_precompile_multi_gas(mg_snapshot);
         return crate::burn_all_revert(gas_limit);
     }
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    verify_owner(&mut input, &mut gas_used, ctx)?;
+    if let Err(e) = verify_owner(&mut input, &mut gas_used, ctx) {
+        ctx.restore_precompile_multi_gas(mg_snapshot);
+        return Err(e.into());
+    }
 
     let call = match IArbOwner::ArbOwnerCalls::abi_decode(data) {
         Ok(c) => c,
-        Err(_) => return crate::burn_all_revert(gas_limit),
+        Err(_) => {
+            ctx.restore_precompile_multi_gas(mg_snapshot);
+            return crate::burn_all_revert(gas_limit);
+        }
     };
 
     gas_used = 0;
-    crate::init_precompile_gas(&mut gas_used, data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, data.len());
 
     use IArbOwner::ArbOwnerCalls as Calls;
     let is_read_only = matches!(
@@ -515,6 +526,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         }
         Err(_) => Ok(PrecompileOutput::new_reverted(0, Default::default())),
     };
+    ctx.restore_precompile_multi_gas(mg_snapshot);
     crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
@@ -1844,8 +1856,8 @@ fn handle_set_gas_pricing_constraints(
             .map_err(ArbPrecompileError::fatal)?;
     }
 
-    let extra = SLOAD_GAS + (count * 4 + 2) * SSTORE_GAS + count * SLOAD_GAS + COPY_GAS;
-    crate::charge_precompile_gas(gas_used, extra);
+    // The constraint storage is written through the system burner, so it costs
+    // no EVM gas to the transaction, matching `setMultiGasPricingConstraints`.
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         Vec::new().into(),
@@ -1956,8 +1968,8 @@ fn handle_set_multi_gas_pricing_constraints(
         validate_multi_gas_exponents(internals, arb_state, (i as u64) + 1, *gas_used)?;
     }
 
-    let extra = (count * 16 + 2) * SSTORE_GAS + (count * 12 + 2) * SLOAD_GAS + COPY_GAS;
-    crate::charge_precompile_gas(gas_used, extra);
+    // The constraint storage is written through the system burner, so it costs
+    // no EVM gas to the transaction.
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         Vec::new().into(),

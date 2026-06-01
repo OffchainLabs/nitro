@@ -45,14 +45,12 @@ type SignersForRpc<Provider, Rpc> = parking_lot::RwLock<
     Vec<Box<dyn EthSigner<<Provider as TransactionsProvider>::Transaction, RpcTxReq<Rpc>>>>,
 >;
 
-/// L1 pricing field offset for price per unit.
-const L1_PRICE_PER_UNIT: u64 = 7;
-
-/// L2 pricing field offset for base fee.
-const L2_BASE_FEE: u64 = 2;
-
-/// L2 pricing field offset for minimum base fee.
-const L2_MIN_BASE_FEE: u64 = 3;
+use arbos::{
+    l1_pricing::{
+        PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT, UNITS_SINCE_OFFSET as L1_UNITS_SINCE_UPDATE,
+    },
+    l2_pricing::{BASE_FEE_WEI_OFFSET as L2_BASE_FEE, MIN_BASE_FEE_WEI_OFFSET as L2_MIN_BASE_FEE},
+};
 
 /// Non-zero calldata gas cost per byte (EIP-2028).
 const TX_DATA_NON_ZERO_GAS: u64 = 16;
@@ -80,9 +78,6 @@ fn apply_l1_to_l2_alias(addr: Address) -> Address {
 
 /// Selector for `ArbGasInfo.getL1PricingUnitsSinceUpdate()`.
 const SEL_GET_L1_PRICING_UNITS_SINCE_UPDATE: &[u8] = &[0xef, 0xf0, 0x13, 0x06];
-
-/// L1 pricing field offset for units-since-update.
-const L1_UNITS_SINCE_UPDATE: u64 = 6;
 
 /// Arbitrum Eth API wrapping the standard reth EthApiInner.
 ///

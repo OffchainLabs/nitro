@@ -5,8 +5,9 @@ use alloy_primitives::{address, Address, B256, U256};
 use arb_precompiles::create_arbwasmcache_precompile;
 use arb_storage::{
     layout::{
-        derive_subspace_key, map_slot, map_slot_b256, CACHE_MANAGERS_KEY, CHAIN_OWNER_SUBSPACE,
-        PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, map_slot_b256,
+        programs::{CACHE_MANAGERS_KEY, PARAMS_KEY, PROGRAM_DATA_KEY},
+        CHAIN_OWNER_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
     ARBOS_STATE_ADDRESS,
 };
@@ -58,7 +59,7 @@ fn is_cache_manager_returns_true_for_member() {
 fn codehash_is_cached_reads_program_word_byte_14() {
     let codehash = B256::from([0x42; 32]);
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
+    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAM_DATA_KEY);
     let slot = map_slot_b256(data_key.as_slice(), &codehash);
     let mut word = [0u8; 32];
     word[14] = 1;
@@ -93,13 +94,13 @@ fn hours_since_start(time: u64) -> u32 {
 
 fn programs_params_slot() -> U256 {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
+    let params_key = derive_subspace_key(programs_key.as_slice(), PARAMS_KEY);
     map_slot(params_key.as_slice(), 0)
 }
 
 fn program_slot(codehash: B256) -> U256 {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
+    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAM_DATA_KEY);
     map_slot_b256(data_key.as_slice(), &codehash)
 }
 

@@ -25,51 +25,6 @@ impl UserOutcome {
     }
 }
 
-/// Host I/O request types for Stylus WASM programs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-pub enum RequestType {
-    GetBytes32 = 0,
-    SetTrieSlots = 1,
-    GetTransientBytes32 = 2,
-    SetTransientBytes32 = 3,
-    ContractCall = 4,
-    DelegateCall = 5,
-    StaticCall = 6,
-    Create1 = 7,
-    Create2 = 8,
-    EmitLog = 9,
-    AccountBalance = 10,
-    AccountCode = 11,
-    AccountCodeHash = 12,
-    AddPages = 13,
-    CaptureHostIO = 14,
-}
-
-impl RequestType {
-    /// Convert a raw u32 to a RequestType.
-    pub fn from_u32(val: u32) -> Option<Self> {
-        match val {
-            0 => Some(Self::GetBytes32),
-            1 => Some(Self::SetTrieSlots),
-            2 => Some(Self::GetTransientBytes32),
-            3 => Some(Self::SetTransientBytes32),
-            4 => Some(Self::ContractCall),
-            5 => Some(Self::DelegateCall),
-            6 => Some(Self::StaticCall),
-            7 => Some(Self::Create1),
-            8 => Some(Self::Create2),
-            9 => Some(Self::EmitLog),
-            10 => Some(Self::AccountBalance),
-            11 => Some(Self::AccountCode),
-            12 => Some(Self::AccountCodeHash),
-            13 => Some(Self::AddPages),
-            14 => Some(Self::CaptureHostIO),
-            _ => None,
-        }
-    }
-}
-
 /// EVM context data passed to the Stylus runtime during program execution.
 #[derive(Debug, Clone)]
 pub struct EvmData {

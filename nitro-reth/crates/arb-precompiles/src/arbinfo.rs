@@ -14,7 +14,6 @@ pub const ARBINFO_ADDRESS: Address = Address::new([
 ]);
 
 const COPY_GAS: u64 = 3;
-const SLOAD_GAS: u64 = 800;
 
 pub fn create_arbinfo_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbinfo"), move |input| {
@@ -25,7 +24,7 @@ pub fn create_arbinfo_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbInfo::ArbInfoCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -34,13 +33,20 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use IArbInfo::ArbInfoCalls;
     let result = match call {
-        ArbInfoCalls::getBalance(c) => handle_get_balance(&mut input, c.account),
-        ArbInfoCalls::getCode(c) => handle_get_code(&mut input, c.account),
+        ArbInfoCalls::getBalance(c) => {
+            handle_get_balance(&mut input, &mut gas_used, ctx, c.account)
+        }
+        ArbInfoCalls::getCode(c) => handle_get_code(&mut input, &mut gas_used, ctx, c.account),
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
-fn handle_get_balance(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_get_balance(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let balance = crate::without_access_list_effect(input.internals_mut(), |internals| {
         internals
@@ -48,16 +54,21 @@ fn handle_get_balance(input: &mut PrecompileInput<'_>, addr: Address) -> Precomp
             .map(|acct| acct.data.info.balance)
             .map_err(ArbPrecompileError::fatal)
     })?;
-    // OpenArbosState (800) + argsCost (3) + BalanceGasEIP1884 (700) + resultCost (3).
-    let gas_cost = (SLOAD_GAS + 3 + 700 + COPY_GAS).min(gas_limit);
-
+    // BalanceGasEIP1884 (700) is an account read; resultCost (3) is the return copy.
+    crate::charge_storage_read(gas_used, ctx, 700);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        gas_cost,
+        (*gas_used).min(gas_limit),
         balance.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
-fn handle_get_code(input: &mut PrecompileInput<'_>, addr: Address) -> PrecompileResult {
+fn handle_get_code(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    addr: Address,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     let code = crate::without_access_list_effect(input.internals_mut(), |internals| {
         internals
@@ -78,10 +89,14 @@ fn handle_get_code(input: &mut PrecompileInput<'_>, addr: Address) -> Precompile
     out.extend_from_slice(&code);
     out.extend(std::iter::repeat_n(0u8, pad));
 
-    // OpenArbosState(800) + args(3) + ColdSloadCostEIP2929(2100) + code + result copy.
+    // ColdSloadCostEIP2929 (2100) is the cold account access; the copy costs
+    // (over the code + result) are pure computation.
     let code_words = (code.len() as u64).div_ceil(32);
     let result_words = (out.len() as u64).div_ceil(32);
-    let gas_cost =
-        (SLOAD_GAS + 3 + 2100 + COPY_GAS * code_words + COPY_GAS * result_words).min(gas_limit);
-    Ok(PrecompileOutput::new(gas_cost, out.into()))
+    crate::charge_storage_read(gas_used, ctx, 2100);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * (code_words + result_words));
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        out.into(),
+    ))
 }

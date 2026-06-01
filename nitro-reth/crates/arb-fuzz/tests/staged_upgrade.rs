@@ -19,7 +19,7 @@ use arbitrary::{Arbitrary, Unstructured};
 
 use arb_fuzz::arbitrary_impls::{MessageStep, SignedKind};
 use arb_test_harness::{
-    dual_exec::{DiffReport, DualExec},
+    dual_exec::DualExec,
     genesis::GenesisBuilder,
     messaging::{
         retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder},
@@ -125,49 +125,6 @@ impl StagedRig {
         StagedRig {
             dual: DualExec::new(nitro, arbreth),
         }
-    }
-}
-
-/// Strip block-0 `state_root` / `block_hash` divergences from a report.
-///
-/// Nitro's geth fork persists zombie trie nodes that produce a different
-/// genesis state_root from standard reth even when every account's
-/// balance/nonce/code matches. The shared fuzz harness sidesteps this by
-/// loading a captured genesis JSON pre-computed against Nitro; we can't,
-/// because we're booting at a custom (chain id, chain owner). All
-/// downstream blocks (n ≥ 1) include real Arbitrum execution and must
-/// match in full, so we only filter genesis-specific noise.
-fn filter_genesis_noise(report: DiffReport) -> DiffReport {
-    let DiffReport {
-        block_diffs,
-        tx_diffs,
-        state_diffs,
-        log_diffs,
-    } = report;
-    let block_diffs = block_diffs
-        .into_iter()
-        .filter(|d| {
-            // Nitro's geth fork persists zombie trie nodes that produce a
-            // different genesis state_root from standard reth even when
-            // every account's balance/nonce/code matches. That root then
-            // cascades into every later block's `parent_hash`, `block_hash`,
-            // and post-state `state_root` even when downstream execution
-            // is byte-identical. We can't get a captured genesis here
-            // because the chain id (412347) and chain owner are
-            // test-specific, so suppress these three fields wholesale and
-            // verify equivalence via the execution fields that DO match
-            // (receipts_root, transactions_root, gas_used, timestamp, plus
-            // per-tx receipt diffs).
-            let trie_noise =
-                d.field == "parent_hash" || d.field == "block_hash" || d.field == "state_root";
-            !trie_noise
-        })
-        .collect();
-    DiffReport {
-        block_diffs,
-        tx_diffs,
-        state_diffs,
-        log_diffs,
     }
 }
 
@@ -331,8 +288,7 @@ fn block0_parity_zero_chain_owner_v40() {
         },
         steps: Vec::new(),
     };
-    let raw = rig.dual.run(&scenario).expect("dual run");
-    let report = filter_genesis_noise(raw);
+    let report = rig.dual.run(&scenario).expect("dual run");
     if !report.is_clean() {
         eprintln!(
             "[zero_owner_parity] DIVERGENCE blocks={} txs={}",
@@ -370,8 +326,7 @@ fn block0_parity_with_custom_chain_owner_v40() {
         },
         steps: Vec::new(),
     };
-    let raw = rig.dual.run(&scenario).expect("dual run");
-    let report = filter_genesis_noise(raw);
+    let report = rig.dual.run(&scenario).expect("dual run");
     if !report.is_clean() {
         eprintln!(
             "[block0_parity] DIVERGENCE blocks={} txs={} state={} logs={}",
@@ -558,8 +513,7 @@ fn staged_upgrade_v40_to_v50_to_v60() {
         eprintln!("[staged] wrote scenario to {path}");
     }
 
-    let raw = rig.dual.run(&scenario).expect("dual run");
-    let report = filter_genesis_noise(raw);
+    let report = rig.dual.run(&scenario).expect("dual run");
     if !report.is_clean() {
         eprintln!(
             "[staged] DIVERGENCE blocks={} txs={} state={} logs={}",
@@ -592,11 +546,9 @@ fn staged_upgrade_v40_to_v50_to_v60() {
         diff_arbos_state_at(&rig, latest);
     }
     assert!(report.is_clean(), "staged upgrade must produce no diffs");
-    // Hardening: filter_genesis_noise strips state_root, so block-level
-    // checks alone don't prove account/storage parity. Compare ArbOS state
-    // slots directly via eth_getStorageAt across all subspaces at the
-    // latest block. Any divergence here means execution paths drift even
-    // if receipts/logs match.
+    // Belt-and-suspenders on top of the full block-hash comparison: compare
+    // ArbOS state slots directly via eth_getStorageAt across all subspaces at
+    // the latest block, for per-subspace divergence diagnostics.
     let latest = rig.dual.left.block(BlockId::Latest).expect("left latest");
     assert_arbos_slots_match(&rig, latest.number);
 }
@@ -928,8 +880,7 @@ fn fuzz_staged_upgrade_post_v60_traffic() {
         let mut rig = StagedRig::spawn(40, owner);
         let scenario = build_fuzz_scenario(owner_sk, owner, &extra);
         match rig.dual.run(&scenario) {
-            Ok(raw) => {
-                let report = filter_genesis_noise(raw);
+            Ok(report) => {
                 if report.is_clean() {
                     // Harden: verify ArbOS state slots match too (filter
                     // strips state_root, so execution-field parity alone

@@ -29,5 +29,18 @@ filter = 'package(arb-spec-tests)'
 test-group = 'spec-tests-serial'
 slow-timeout = { period = "10m", terminate-after = 3 }
 
+# arb-fuzz scenarios boot a Nitro container and compile Stylus WASM per test.
+# Cap concurrency so the Docker VM is never oversubscribed by parallel nodes.
+[[profile.default.overrides]]
+filter = 'package(arb-fuzz)'
+test-group = 'fuzz-docker'
+slow-timeout = { period = "180s", terminate-after = 2 }
+
+[[profile.ci.overrides]]
+filter = 'package(arb-fuzz)'
+test-group = 'fuzz-docker'
+slow-timeout = { period = "180s", terminate-after = 2 }
+
 [test-groups]
 spec-tests-serial = { max-threads = 1 }
+fuzz-docker = { max-threads = 2 }

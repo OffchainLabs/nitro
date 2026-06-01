@@ -22,7 +22,8 @@ cargo +nightly fmt --all          # format
 cargo clippy --workspace \
   --all-targets -- -D warnings    # lint
 cargo test --workspace            # test
-cargo doc --workspace --no-deps   # docs
+RUSTDOCFLAGS="-D warnings" \
+  cargo doc --workspace --no-deps # docs
 ```
 
 4. Open a pull request against `master`

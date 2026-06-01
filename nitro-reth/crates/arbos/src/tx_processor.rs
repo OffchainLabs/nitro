@@ -903,3 +903,60 @@ fn tx_data_non_zero_count(data: &[u8]) -> usize {
 fn tx_data_zero_count(data: &[u8]) -> usize {
     data.iter().filter(|&&b| b == 0).count()
 }
+
+#[cfg(test)]
+mod block1_retryable_repro {
+    use super::{compute_submit_retryable_fees, SubmitRetryableParams};
+    use alloy_primitives::{address, b256, keccak256, Address, Bytes, U256};
+    use arb_alloy_consensus::tx::{ArbRetryTx, ArbTxType};
+
+    // Arbitrum Sepolia block 1 (ArbOS v10) SubmitRetryable inputs from a real
+    // node; drives our fee computation to the canonical auto-redeem tx hash.
+    #[test]
+    fn canonical_block1_auto_redeem_hash() {
+        let params = SubmitRetryableParams {
+            ticket_id: b256!("13cb79b086a427f3db7ebe6ec2bb90a806a3b0368ecee6020144f352e37dbdf6"),
+            from: address!("b8787d8f23e176a5d32135d746b69886e03313be"),
+            fee_refund_addr: address!("11155ca9bbf7be58e27f3309e629c847996b43c8"),
+            deposit_value: U256::from(0x23e3dbb7b88ab8u64),
+            retry_value: U256::from(0x2386f26fc10000u64),
+            gas_fee_cap: U256::from(0x3b9aca00u64),
+            gas: 100_000,
+            max_submission_fee: U256::from(0x1f6377d4ab8u64),
+            retry_data_len: 0,
+            l1_base_fee: U256::from(0x5bd57bd9u64),
+            effective_base_fee: U256::from(0x5f5e100u64),
+            current_time: 0,
+            balance_after_mint: U256::from(1_000_000_000_000_000_000u64),
+            infra_fee_account: Address::ZERO,
+            min_base_fee: U256::ZERO,
+            arbos_version: 10,
+        };
+        let fees = compute_submit_retryable_fees(&params);
+        assert!(fees.can_pay_for_gas, "expected auto-redeem path");
+        let retry = ArbRetryTx {
+            chain_id: U256::from(421614u64),
+            nonce: 0,
+            from: params.from,
+            gas_fee_cap: params.effective_base_fee,
+            gas: params.gas,
+            to: Some(address!("3fab184622dc19b6109349b94811493bf2a45362")),
+            value: params.retry_value,
+            data: Bytes::new(),
+            ticket_id: params.ticket_id,
+            refund_to: params.fee_refund_addr,
+            max_refund: fees.available_refund,
+            submission_fee_refund: fees.submission_fee,
+        };
+        let mut enc = Vec::new();
+        enc.push(ArbTxType::ArbitrumRetryTx.as_u8());
+        alloy_rlp::Encodable::encode(&retry, &mut enc);
+        assert_eq!(
+            keccak256(&enc),
+            b256!("873c5ee3092c40336006808e249293bf5f4cb3235077a74cac9cafa7cf73cb8b"),
+            "mismatch: available_refund=0x{:x} submission_fee=0x{:x}",
+            fees.available_refund,
+            fees.submission_fee
+        );
+    }
+}

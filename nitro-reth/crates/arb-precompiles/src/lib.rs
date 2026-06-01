@@ -124,19 +124,76 @@ pub(crate) fn without_access_list_effect<R>(
     result
 }
 
-/// Initialize gas tracking for a precompile call: charge argsCost
-/// (CopyGas * input words) and OpenArbosState (1 SLOAD = 800).
-pub fn init_precompile_gas(gas_used: &mut u64, input_len: usize) {
+/// Charge precompile gas for an ArbOS state read, recording it as
+/// `StorageAccessRead` for the v60 multi-dimensional pricing backlog (mirrors
+/// the reference, which dimensions every state `Get` as a storage read). The
+/// single-gas total is unchanged; only the resource breakdown is recorded.
+pub fn charge_storage_read(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCtx, gas: u64) {
+    charge_precompile_gas(gas_used, gas);
+    ctx.add_precompile_multi_gas(
+        arb_primitives::multigas::ResourceKind::StorageAccessRead,
+        gas,
+    );
+}
+
+/// Charge precompile gas for an ArbOS state write, recording it as
+/// `StorageAccessWrite`. See [`charge_storage_read`].
+pub fn charge_storage_write(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCtx, gas: u64) {
+    charge_precompile_gas(gas_used, gas);
+    ctx.add_precompile_multi_gas(
+        arb_primitives::multigas::ResourceKind::StorageAccessWrite,
+        gas,
+    );
+}
+
+/// Charge precompile gas for calldata processing (the framework `argsCost` and
+/// any per-call copy fees on caller-supplied data), recording it as
+/// `L2Calldata`. The single-gas total is unchanged; only the resource
+/// breakdown is recorded.
+pub fn charge_l2_calldata(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCtx, gas: u64) {
+    charge_precompile_gas(gas_used, gas);
+    ctx.add_precompile_multi_gas(arb_primitives::multigas::ResourceKind::L2Calldata, gas);
+}
+
+/// Charge precompile gas for emitting a log, recording it as `HistoryGrowth`.
+pub fn charge_history_growth(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCtx, gas: u64) {
+    charge_precompile_gas(gas_used, gas);
+    ctx.add_precompile_multi_gas(arb_primitives::multigas::ResourceKind::HistoryGrowth, gas);
+}
+
+/// Charge precompile gas attributed to pure computation: constant per-method
+/// work, the framework `resultCost` for encoding return data, and any other
+/// non-resource-bound costs. Mirrors the reference framework's
+/// `Burn(Computation, ...)` calls.
+pub fn charge_computation(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCtx, gas: u64) {
+    charge_precompile_gas(gas_used, gas);
+    ctx.add_precompile_multi_gas(arb_primitives::multigas::ResourceKind::Computation, gas);
+}
+
+/// Initialize gas tracking for a precompile call: charge `argsCost` as
+/// `L2Calldata` and the `OpenArbosState` read (1 SLOAD = 800) as
+/// `StorageAccessRead`, mirroring the reference framework's per-call
+/// dimensioned framework gas.
+pub fn init_precompile_gas(
+    gas_used: &mut u64,
+    ctx: &arb_context::ArbPrecompileCtx,
+    input_len: usize,
+) {
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
-    charge_precompile_gas(gas_used, args_cost + 800);
+    charge_l2_calldata(gas_used, ctx, args_cost);
+    charge_storage_read(gas_used, ctx, 800);
 }
 
 /// Initialize gas tracking for a `pure` precompile method: like
-/// `init_precompile_gas` but skips the OpenArbosState SLOAD (800), matching the
+/// [`init_precompile_gas`] but skips the `OpenArbosState` SLOAD, matching the
 /// reference framework's pure-method path which does not open ArbOS state.
-pub fn init_precompile_gas_pure(gas_used: &mut u64, input_len: usize) {
+pub fn init_precompile_gas_pure(
+    gas_used: &mut u64,
+    ctx: &arb_context::ArbPrecompileCtx,
+    input_len: usize,
+) {
     let args_cost = 3u64 * (input_len as u64).saturating_sub(4).div_ceil(32);
-    charge_precompile_gas(gas_used, args_cost);
+    charge_l2_calldata(gas_used, ctx, args_cost);
 }
 
 fn check_precompile_version(ctx: &ArbPrecompileCtx, min_version: u64) -> Option<PrecompileResult> {
@@ -156,10 +213,17 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
 }
 
 /// Emit a pre-encoded Solidity custom-error payload (selector + ABI args)
-/// as a revert. Adds the copy cost for the payload to the accumulated gas.
-pub fn sol_error_revert(gas_used: &mut u64, payload: Vec<u8>, gas_limit: u64) -> PrecompileResult {
+/// as a revert. Adds the copy cost for the payload to the accumulated gas,
+/// attributed to `Computation` to mirror the reference framework's
+/// `resultCost` burn.
+pub fn sol_error_revert(
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    payload: Vec<u8>,
+    gas_limit: u64,
+) -> PrecompileResult {
     let result_cost = 3u64 * (payload.len() as u64).div_ceil(32); // CopyGas * words
-    charge_precompile_gas(gas_used, result_cost);
+    charge_computation(gas_used, ctx, result_cost);
     Ok(PrecompileOutput::new_reverted(
         (*gas_used).min(gas_limit),
         payload.into(),
@@ -172,8 +236,10 @@ fn gas_check(
     gas_used: u64,
     result: PrecompileResult,
 ) -> PrecompileResult {
+    if gas_used > gas_limit {
+        return Err(PrecompileError::OutOfGas);
+    }
     match result {
-        Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
         Err(PrecompileError::Other(_)) if ctx.block.arbos_version >= 11 => Ok(
             PrecompileOutput::new_reverted(gas_used.min(gas_limit), Default::default()),
         ),

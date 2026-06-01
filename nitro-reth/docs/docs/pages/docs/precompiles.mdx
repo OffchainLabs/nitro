@@ -51,7 +51,7 @@ Exposes the full gas pricing state:
 
 Manages the retryable ticket lifecycle:
 
-- **`redeem(ticketId)`** - manually redeem an expired auto-redeem
+- **`redeem(ticketId)`** - manually redeem a retryable ticket whose initial auto-redeem did not complete (the ticket must still be within its lifetime)
 - **`getTimeout(ticketId)`** - returns the ticket's expiry timestamp
 - **`getLifetime()`** - returns the default ticket lifetime (7 days)
 - **`keepalive(ticketId)`** - extends the ticket's expiry by one lifetime period

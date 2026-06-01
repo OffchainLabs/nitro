@@ -146,6 +146,16 @@ where
     }
 }
 
+/// EVM config and consensus for reth's offline commands (`re-execute`,
+/// `import`, `stage`), so they run the node's ArbOS logic, not stock Ethereum.
+pub fn cli_components(chain_spec: Arc<ChainSpec>) -> (ArbEvmConfig, Arc<ArbConsensus<ChainSpec>>) {
+    let allow_debug = chainspec::allow_debug_precompiles(&chain_spec);
+    (
+        ArbEvmConfig::for_offline_execution(chain_spec.clone(), allow_debug),
+        Arc::new(ArbConsensus::new_verifying(chain_spec)),
+    )
+}
+
 /// Builder for the Arbitrum EVM executor component.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ArbExecutorBuilder;

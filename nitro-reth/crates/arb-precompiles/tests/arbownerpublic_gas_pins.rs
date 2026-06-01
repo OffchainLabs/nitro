@@ -211,8 +211,6 @@ fn rectify_chain_owner_below_v11_reverts() {
 
 #[test]
 fn rectify_chain_owner_v11_reverts_when_not_member_with_accumulated_gas() {
-    // Not a member → empty_revert with the boilerplate gas accumulated so
-    // far (OpenArbosState via init_precompile_gas + 1 word args).
     let target: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture(11).gas(50_000).call(
         arbownerpublic,
@@ -220,6 +218,7 @@ fn rectify_chain_owner_v11_reverts_when_not_member_with_accumulated_gas() {
     );
     let out = run.assert_ok();
     assert!(out.reverted);
-    // init_precompile_gas(800 + 1*3) = 803.
-    assert_eq!(out.gas_used, SLOAD + COPY);
+    // OpenArbosState (800) + args copy (3) + the chain-owner membership read
+    // (800) that finds the target absent.
+    assert_eq!(out.gas_used, 2 * SLOAD + COPY);
 }

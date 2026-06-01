@@ -8,7 +8,7 @@
 //! on a Sepolia-style upgrade path.
 
 use arb_storage::{
-    layout::{derive_subspace_key, PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY},
+    layout::{derive_subspace_key, programs::PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY},
     Detached, Storage, ARBOS_STATE_ADDRESS,
 };
 use arb_test_utils::ArbosHarness;
@@ -44,7 +44,7 @@ fn baseline_params(arbos_version: u64) -> StylusParams {
 /// EVM inner-call dispatch path.
 fn params_storage() -> Storage<'static, Detached> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
+    let params_key = derive_subspace_key(programs_key.as_slice(), PARAMS_KEY);
     Storage::detached(ARBOS_STATE_ADDRESS, params_key)
 }
 

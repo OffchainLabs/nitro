@@ -171,6 +171,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             touched_accounts: rustc_hash::FxHashSet::default(),
             multi_gas_current_fees: std::sync::OnceLock::new(),
             state_overlay: StateOverlay::new(),
+            multi_gas_sink: crate::multi_gas::MultiGasSink::default(),
         }
     }
 }
@@ -239,6 +240,7 @@ where
             touched_accounts: rustc_hash::FxHashSet::default(),
             multi_gas_current_fees: std::sync::OnceLock::new(),
             state_overlay: StateOverlay::new(),
+            multi_gas_sink: crate::multi_gas::MultiGasSink::default(),
         }
     }
 }
@@ -332,6 +334,10 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// start of each tx and drained into the state's transition set when the
     /// tx commits.
     state_overlay: StateOverlay,
+    /// Shared slot the EVM's multi-gas inspector publishes each transaction's
+    /// per-dimension gas to. Empty unless a [`MultiGasInspector`] is installed,
+    /// in which case it drives the v60 multi-gas backlog.
+    multi_gas_sink: crate::multi_gas::MultiGasSink,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -345,6 +351,12 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     pub fn with_arb_ctx(mut self, ctx: ArbBlockExecutionCtx) -> Self {
         self.arb_ctx = ctx;
         self
+    }
+
+    /// Install the shared slot the EVM's multi-gas inspector publishes to. Must
+    /// be the same slot held by the [`MultiGasInspector`] installed on `evm`.
+    pub fn set_multi_gas_sink(&mut self, sink: crate::multi_gas::MultiGasSink) {
+        self.multi_gas_sink = sink;
     }
 
     /// Returns the set of zombie account addresses.
@@ -474,6 +486,33 @@ fn load_state_params<D: Database>(
         collect_tips_enabled,
     );
     *arb_hooks = Some(hooks);
+}
+
+/// Fill the `arbBlockHash` window `[current_l2-256, current_l2-1]`: parent from the
+/// header, deeper committed ancestors from `lookup`, stopping at the first gap.
+/// Entries already present (chunk-internal predecessors) are kept.
+fn populate_l2_block_hash_window(
+    block: &arb_context::BlockCtx,
+    current_l2: u64,
+    parent_hash: B256,
+    mut lookup: impl FnMut(u64) -> Option<B256>,
+) {
+    let Some(parent) = current_l2.checked_sub(1) else {
+        return;
+    };
+    block.cache_l2_block_hash(parent, parent_hash);
+    for offset in 2..=256u64 {
+        let Some(n) = current_l2.checked_sub(offset) else {
+            break;
+        };
+        if block.cached_l2_block_hash(n).is_some() {
+            continue;
+        }
+        match lookup(n) {
+            Some(hash) => block.cache_l2_block_hash(n, hash),
+            None => break,
+        }
+    }
 }
 
 impl<'db, DB, E, Spec, R> ArbBlockExecutor<'_, E, Spec, R>
@@ -897,7 +936,7 @@ where
             poster_gas: 0,
             evm_gas_used: gas_used,
             charged_multi_gas: if fees.can_pay_for_gas {
-                MultiGas::l2_calldata_gas(user_gas)
+                MultiGas::single_dim_gas(user_gas)
             } else {
                 MultiGas::default()
             },
@@ -976,6 +1015,13 @@ where
             }
             self.arb_ctx.coinbase = revm::context::Block::beneficiary(block);
             self.arb_ctx.basefee = U256::from(revm::context::Block::basefee(block));
+            // The block env carries no chain id, so the generic execution path
+            // (e.g. re-execute) leaves it defaulted; the producer sets it via
+            // with_arb_ctx. Source it from the EVM cfg when unset so retryable
+            // auto-redeem tx hashes are correct.
+            if self.arb_ctx.chain_id == 0 {
+                self.arb_ctx.chain_id = self.inner.evm().chain_id();
+            }
             if let Some(prevrandao) = revm::context::Block::prevrandao(block) {
                 if self.arb_ctx.l1_block_number == 0 {
                     self.arb_ctx.l1_block_number =
@@ -1034,8 +1080,20 @@ where
             }
         }
 
-        // L2 block hash cache for arbBlockHash() is populated by the producer
-        // (which has access to the state provider's header chain).
+        // L2 block hashes for arbBlockHash(): parent from the header, deeper
+        // committed ancestors from the state provider. The producer additionally
+        // surfaces unflushed in-memory ancestors via its own header-chain walk.
+        {
+            let parent_hash = self.arb_ctx.parent_hash;
+            let current_l2 = self.arb_ctx.l2_block_number;
+            let block = std::sync::Arc::clone(&self.precompile_ctx.block);
+            populate_l2_block_hash_window(&block, current_l2, parent_hash, |n| {
+                match state_ref.database.block_hash(n) {
+                    Ok(hash) if hash != B256::ZERO => Some(hash),
+                    _ => None,
+                }
+            });
+        }
 
         tracing::trace!(
             target: "arb::executor",
@@ -1062,6 +1120,22 @@ where
         let tx_gas_limit = recovered.tx().gas_limit();
         let tx_value = recovered.tx().value();
         let envelope_tx_type = recovered.tx().tx_type();
+        let intrinsic_multi_gas = tx_intrinsic_multi_gas(
+            recovered.tx(),
+            arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version),
+        );
+        // EIP-7623 calldata floor, charged only when the increase is enabled
+        // (the flag already encodes the version gate).
+        let calldata_floor_gas = if self
+            .arb_hooks
+            .as_ref()
+            .map(|h| h.is_calldata_pricing_increase_enabled())
+            .unwrap_or(false)
+        {
+            tx_floor_data_gas(recovered.tx())
+        } else {
+            0
+        };
 
         // Classify the transaction type.
         let arb_tx_type = ArbTxType::from_u8(tx_type_raw).ok();
@@ -1351,8 +1425,6 @@ where
 
             let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            // Mint deposit value to sender, then transfer to recipient.
-            // The deposit mint always covers the value transfer that follows.
             let _ = arb_util::mint_balance(&sender, value, |f, t, a| {
                 apply_balance_op(db, overlay, f, t, a)
             });
@@ -2047,6 +2119,15 @@ where
         // Capture gas_used as reported by reth's EVM (before our adjustments).
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
+        // The EIP-3529 gas refund reduces the single-dimensional gas the sender
+        // pays, but the per-resource multi-gas tracks the raw (pre-refund) usage
+        // — the refund applies only to the single-gas pool, not the resource
+        // dimensions. Carry it so the multi-gas can be reconstituted raw for the
+        // v60 refund and backlog, which reconcile against pre-refund usage.
+        let gas_refunded = match &output.result.result {
+            ExecutionResult::Success { gas_refunded, .. } => *gas_refunded,
+            _ => 0,
+        };
 
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
@@ -2185,8 +2266,55 @@ where
             U256::ZERO
         };
 
-        let charged_multi_gas = MultiGas::single_dim_gas(poster_gas)
-            .saturating_add(MultiGas::computation_gas(evm_gas_used));
+        // EVM opcode gas comes from the inspector, Stylus host gas and
+        // dimensioned precompile gas from the per-tx accumulators; each carries
+        // its own dimensions. The intrinsic is added here. Whatever the
+        // dimensioned amounts don't cover is folded into computation as the
+        // remainder, so the split totals evm_gas_used. Poster gas is separate.
+        let stylus_multi_gas = self.precompile_ctx.stylus_multi_gas();
+        let precompile_multi_gas = self.precompile_ctx.precompile_multi_gas();
+        let dimensioned = stylus_multi_gas.saturating_add(precompile_multi_gas);
+        // Target the raw (pre-EIP-3529-refund) gas. The reference tracks
+        // per-resource usage before applying the single-gas refund, so the
+        // multi-gas total reconciles to `evm_gas_used + gas_refunded`. The
+        // inspector already reports raw per-opcode gas (the refund only adjusts
+        // the single-gas pool), so the computation remainder fills the gap on
+        // the no-inspector path without double-counting on the inspector path.
+        let raw_gas_used = evm_gas_used.saturating_add(gas_refunded);
+        let execution_multi_gas = match self.multi_gas_sink.lock().take() {
+            Some(opcode_gas) => {
+                let observed = intrinsic_multi_gas
+                    .saturating_add(opcode_gas)
+                    .saturating_add(dimensioned);
+                let remainder = raw_gas_used.saturating_sub(observed.single_gas());
+                observed.saturating_add(MultiGas::computation_gas(remainder))
+            }
+            None => {
+                let remainder = raw_gas_used.saturating_sub(dimensioned.single_gas());
+                dimensioned.saturating_add(MultiGas::computation_gas(remainder))
+            }
+        };
+        // The per-dimension split must total the raw pre-refund gas. Over-
+        // attribution (more single-gas than the tx actually used) would inflate
+        // the multi-dimensional cost and corrupt the v60 refund.
+        debug_assert_eq!(
+            execution_multi_gas.single_gas(),
+            raw_gas_used,
+            "multi-gas split must total the raw pre-refund gas",
+        );
+        let mut charged_multi_gas =
+            MultiGas::single_dim_gas(poster_gas).saturating_add(execution_multi_gas);
+
+        // EIP-7623: a data-heavy tx pays the calldata floor. The receipt gas is
+        // raised to the floor and the top-up is priced as L2 calldata, keeping
+        // charged_multi_gas.single_gas() == gas_used (so the v60 refund stays
+        // exact). The sender pays the floor via the existing sender_extra_gas.
+        let gas_before_floor = output.result.result.gas_used();
+        if calldata_floor_gas > gas_before_floor {
+            let top_up = calldata_floor_gas - gas_before_floor;
+            adjust_result_gas_used(&mut output.result.result, top_up);
+            charged_multi_gas = charged_multi_gas.saturating_add(MultiGas::l2_calldata_gas(top_up));
+        }
 
         // Capture effective tip per gas (gas_price - base_fee, clamped >= 0).
         // The effective tip per gas captured before EVM execution. Used by
@@ -2649,35 +2777,34 @@ where
                             });
                             // SAFETY: see `Storage::state_mut()` invariant.
                             let state_ref = unsafe { arb_state_post.backing_storage.state_mut() };
-                            if let Ok(multi_cost) = arb_state_post
+                            let multi_cost = arb_state_post
                                 .l2_pricing_state
                                 .multi_dimensional_price_for_refund_with_fees(
                                     state_ref,
                                     charged_multi_gas,
                                     cached,
                                 )
-                            {
-                                if total_cost > multi_cost {
-                                    let refund_amount = total_cost.saturating_sub(multi_cost);
-                                    let _ = arb_util::transfer_balance(
-                                        Some(&dist.network_fee_account),
-                                        Some(&pending.sender),
-                                        refund_amount,
-                                        |f, t, a| {
-                                            // SAFETY: see `Storage::state_mut()` invariant.
-                                            unsafe {
-                                                apply_balance_op(
-                                                    refund_storage.state_mut(),
-                                                    &mut *overlay_ptr,
-                                                    f,
-                                                    t,
-                                                    a,
-                                                )
-                                            }
-                                        },
-                                    );
-                                    refund_done = true;
-                                }
+                                .unwrap_or(total_cost);
+                            if total_cost > multi_cost {
+                                let refund_amount = total_cost.saturating_sub(multi_cost);
+                                let _ = arb_util::transfer_balance(
+                                    Some(&dist.network_fee_account),
+                                    Some(&pending.sender),
+                                    refund_amount,
+                                    |f, t, a| {
+                                        // SAFETY: see `Storage::state_mut()` invariant.
+                                        unsafe {
+                                            apply_balance_op(
+                                                refund_storage.state_mut(),
+                                                &mut *overlay_ptr,
+                                                f,
+                                                t,
+                                                a,
+                                            )
+                                        }
+                                    },
+                                );
+                                refund_done = true;
                             }
                         }
 
@@ -3130,6 +3257,62 @@ fn estimate_intrinsic_gas(tx: &impl Transaction, spec: revm::primitives::hardfor
     gas
 }
 
+/// Per-resource intrinsic gas for a transaction. Its total matches
+/// [`estimate_intrinsic_gas`] plus the EIP-7702 authorization cost; the
+/// inspector never observes it because the intrinsic is charged before the
+/// first opcode runs.
+fn tx_intrinsic_multi_gas(
+    tx: &impl Transaction,
+    spec: revm::primitives::hardfork::SpecId,
+) -> MultiGas {
+    let is_create = tx.to().is_none();
+    let data = tx.input();
+    let zero_bytes = data.iter().filter(|&&b| b == 0).count() as u64;
+    let nonzero_bytes = data.len() as u64 - zero_bytes;
+    let (access_list_addresses, access_list_keys) = tx.access_list().map_or((0, 0), |al| {
+        let mut addrs = 0u64;
+        let mut keys = 0u64;
+        for item in al.iter() {
+            addrs += 1;
+            keys += item.storage_keys.len() as u64;
+        }
+        (addrs, keys)
+    });
+    let init_code_words = if is_create
+        && spec.is_enabled_in(revm::primitives::hardfork::SpecId::SHANGHAI)
+        && !data.is_empty()
+    {
+        (data.len() as u64).div_ceil(32)
+    } else {
+        0
+    };
+    crate::multi_gas::intrinsic_multigas(crate::multi_gas::IntrinsicInput {
+        is_create,
+        zero_bytes,
+        nonzero_bytes,
+        init_code_words,
+        access_list_addresses,
+        access_list_keys,
+        auth_list_len: tx.authorization_list().map_or(0, |l| l.len()) as u64,
+    })
+}
+
+/// EIP-7623 calldata floor: `TxGas + tokens * floor cost`, where each non-zero
+/// data byte is four tokens and each zero byte one. Applied only when the
+/// calldata-price increase feature is enabled.
+fn tx_floor_data_gas(tx: &impl Transaction) -> u64 {
+    const TX_GAS: u64 = 21_000;
+    const TX_TOKEN_PER_NONZERO_BYTE: u64 = 4;
+    const TX_COST_FLOOR_PER_TOKEN: u64 = 10;
+    let data = tx.input();
+    let zero = data.iter().filter(|&&b| b == 0).count() as u64;
+    let nonzero = (data.len() as u64).saturating_sub(zero);
+    let tokens = nonzero
+        .saturating_mul(TX_TOKEN_PER_NONZERO_BYTE)
+        .saturating_add(zero);
+    TX_GAS.saturating_add(tokens.saturating_mul(TX_COST_FLOOR_PER_TOKEN))
+}
+
 /// Decode delayed_messages_read (bytes 32-39) and L2 block number (bytes 40-47)
 /// from the extra_data field passed through EthBlockExecutionCtx.
 fn decode_extra_fields(extra_bytes: &[u8]) -> (u64, u64) {
@@ -3194,4 +3377,47 @@ fn decode_retry_tx_gas(encoded: &[u8]) -> Option<u64> {
         <arb_alloy_consensus::tx::ArbRetryTx as alloy_rlp::Decodable>::decode(&mut &rlp_data[..])
             .ok()?;
     Some(retry.gas)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::populate_l2_block_hash_window;
+    use alloy_primitives::{B256, U256};
+    use arb_context::BlockCtx;
+    use std::collections::HashMap;
+
+    #[test]
+    fn fills_window_from_parent_and_lookup() {
+        let block = BlockCtx::new(60, 0, 0, 1000, false);
+        let parent_hash = B256::repeat_byte(0xfe);
+        let mut db: HashMap<u64, B256> = (744..=998)
+            .map(|n| (n, B256::from(U256::from(n))))
+            .collect();
+        populate_l2_block_hash_window(&block, 1000, parent_hash, |n| db.remove(&n));
+
+        assert_eq!(block.cached_l2_block_hash(999), Some(parent_hash));
+        assert_eq!(
+            block.cached_l2_block_hash(998),
+            Some(B256::from(U256::from(998u64)))
+        );
+        assert_eq!(
+            block.cached_l2_block_hash(744),
+            Some(B256::from(U256::from(744u64)))
+        );
+        assert_eq!(block.cached_l2_block_hash(743), None);
+    }
+
+    #[test]
+    fn keeps_chunk_internal_and_stops_at_gap() {
+        let block = BlockCtx::new(60, 0, 0, 1000, false);
+        populate_l2_block_hash_window(&block, 1000, B256::repeat_byte(0xfe), |n| {
+            (n == 997).then(|| B256::repeat_byte(0x97))
+        });
+        assert_eq!(
+            block.cached_l2_block_hash(999),
+            Some(B256::repeat_byte(0xfe))
+        );
+        assert_eq!(block.cached_l2_block_hash(998), None);
+        assert_eq!(block.cached_l2_block_hash(997), None);
+    }
 }

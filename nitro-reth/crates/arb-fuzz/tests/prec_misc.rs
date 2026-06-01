@@ -219,7 +219,7 @@ fn arbaggregator_get_fee_collector_for_random() {
         "arbaggregator_fee_collector_random",
         ARBAGGREGATOR,
         one_arg_addr("getFeeCollector(address)", Address::repeat_byte(0xaa)),
-        true,
+        false,
     );
 }
 
@@ -230,7 +230,7 @@ fn arbaggregator_get_tx_base_fee() {
         "arbaggregator_tx_base_fee",
         ARBAGGREGATOR,
         no_arg("getTxBaseFee()"),
-        true,
+        false,
     );
 }
 

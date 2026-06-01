@@ -137,38 +137,45 @@ fn calc_num_partials(size: u64) -> u64 {
 }
 
 /// Read a u64 from storage at a given slot (big-endian in last 8 bytes).
-pub fn read_storage_u64_be<F: Fn(Address, B256) -> Option<U256>>(
+///
+/// `read_slot` returns `Ok(None)` for an absent (zero) slot and `Err` for a
+/// backing-store failure; the error propagates so a failed read never silently
+/// reads as zero.
+pub fn read_storage_u64_be<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
     read_slot: &F,
     addr: Address,
     slot: B256,
-) -> Option<u64> {
-    let val = read_slot(addr, slot)?;
+) -> Result<Option<u64>, E> {
+    let Some(val) = read_slot(addr, slot)? else {
+        return Ok(None);
+    };
     let bytes: [u8; 32] = val.to_be_bytes::<32>();
     let mut buf = [0u8; 8];
     buf.copy_from_slice(&bytes[24..32]);
-    Some(u64::from_be_bytes(buf))
+    Ok(Some(u64::from_be_bytes(buf)))
 }
 
 /// Read a B256 hash from storage at a given slot.
-pub fn read_storage_hash<F: Fn(Address, B256) -> Option<U256>>(
+pub fn read_storage_hash<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
     read_slot: &F,
     addr: Address,
     slot: B256,
-) -> Option<B256> {
-    let val = read_slot(addr, slot)?;
-    let bytes: [u8; 32] = val.to_be_bytes::<32>();
-    Some(B256::from(bytes))
+) -> Result<Option<B256>, E> {
+    let Some(val) = read_slot(addr, slot)? else {
+        return Ok(None);
+    };
+    Ok(Some(B256::from(val.to_be_bytes::<32>())))
 }
 
 /// Compute the Merkle root from partials stored in state.
-pub fn merkle_root_from_partials<F: Fn(Address, B256) -> Option<U256>>(
+pub fn merkle_root_from_partials<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
     read_slot: &F,
     addr: Address,
     send_merkle_storage_key: &[u8],
     size: u64,
-) -> Option<B256> {
+) -> Result<Option<B256>, E> {
     if size == 0 {
-        return Some(B256::ZERO);
+        return Ok(Some(B256::ZERO));
     }
     let mut hash_so_far: Option<B256> = None;
     let mut capacity_in_hash: u64 = 0;
@@ -177,7 +184,7 @@ pub fn merkle_root_from_partials<F: Fn(Address, B256) -> Option<U256>>(
     for level in 0..num_partials {
         let key = uint_to_hash_u64_be(2 + level);
         let slot = storage_key_map(send_merkle_storage_key, key);
-        let partial = read_storage_hash(read_slot, addr, slot).unwrap_or(B256::ZERO);
+        let partial = read_storage_hash(read_slot, addr, slot)?.unwrap_or(B256::ZERO);
         if partial != B256::ZERO {
             if let Some(mut h) = hash_so_far {
                 while capacity_in_hash < capacity {
@@ -195,41 +202,50 @@ pub fn merkle_root_from_partials<F: Fn(Address, B256) -> Option<U256>>(
         }
         capacity = capacity.saturating_mul(2);
     }
-    hash_so_far
+    Ok(hash_so_far)
 }
 
 /// Derive ArbHeaderInfo from storage reads.
-pub fn derive_arb_header_info<F: Fn(Address, B256) -> Option<U256>>(
+///
+/// Returns `Ok(None)` when the ArbOS version slot is absent (pre-genesis state
+/// that cannot be derived) and `Err` when a backing-store read fails.
+pub fn derive_arb_header_info<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
     read_slot: &F,
-) -> Option<ArbHeaderInfo> {
+    coinbase: Address,
+) -> Result<Option<ArbHeaderInfo>, E> {
     let addr = ARBOS_STATE_ADDRESS;
     let root_storage_key: &[u8] = &[];
 
     let version_slot = storage_key_map(root_storage_key, uint_to_hash_u64_be(0));
-    let arbos_version = read_storage_u64_be(read_slot, addr, version_slot)?;
+    let Some(arbos_version) = read_storage_u64_be(read_slot, addr, version_slot)? else {
+        return Ok(None);
+    };
 
     let send_merkle_sub = subspace(root_storage_key, &[5u8]);
     let blockhashes_sub = subspace(root_storage_key, &[6u8]);
 
     let send_count_slot = storage_key_map(&send_merkle_sub, uint_to_hash_u64_be(0));
-    let send_count = read_storage_u64_be(read_slot, addr, send_count_slot).unwrap_or(0);
+    let send_count = read_storage_u64_be(read_slot, addr, send_count_slot)?.unwrap_or(0);
 
-    let send_root = merkle_root_from_partials(read_slot, addr, &send_merkle_sub, send_count)
+    let send_root = merkle_root_from_partials(read_slot, addr, &send_merkle_sub, send_count)?
         .unwrap_or(B256::ZERO);
 
     let l1_block_num_slot = storage_key_map(&blockhashes_sub, uint_to_hash_u64_be(0));
-    let l1_block_number = read_storage_u64_be(read_slot, addr, l1_block_num_slot).unwrap_or(0);
+    let l1_block_number = read_storage_u64_be(read_slot, addr, l1_block_num_slot)?.unwrap_or(0);
 
+    // Tip collection is a block-level property: the flag only applies to blocks
+    // produced by the batch poster, not to delayed-message blocks.
     let collect_tips_slot = storage_key_map(root_storage_key, uint_to_hash_u64_be(11));
-    let collect_tips = read_storage_u64_be(read_slot, addr, collect_tips_slot).unwrap_or(0) != 0;
+    let collect_tips = read_storage_u64_be(read_slot, addr, collect_tips_slot)?.unwrap_or(0) != 0
+        && coinbase == crate::l1_pricing::BATCH_POSTER_ADDRESS;
 
-    Some(ArbHeaderInfo {
+    Ok(Some(ArbHeaderInfo {
         send_root,
         send_count,
         l1_block_number,
         arbos_format_version: arbos_version,
         collect_tips,
-    })
+    }))
 }
 
 /// Get the storage address and slot for the ArbOS L1 block number.
@@ -242,7 +258,9 @@ pub fn arbos_l1_block_number_slot() -> (Address, B256) {
 }
 
 /// Read ArbOS version from storage.
-pub fn read_arbos_version<F: Fn(Address, B256) -> Option<U256>>(read_slot: &F) -> Option<u64> {
+pub fn read_arbos_version<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
+    read_slot: &F,
+) -> Result<Option<u64>, E> {
     let addr = ARBOS_STATE_ADDRESS;
     let root_storage_key: &[u8] = &[];
     let version_slot = storage_key_map(root_storage_key, uint_to_hash_u64_be(0));
@@ -250,9 +268,9 @@ pub fn read_arbos_version<F: Fn(Address, B256) -> Option<U256>>(read_slot: &F) -
 }
 
 /// Read the L2 per-block gas limit from storage.
-pub fn read_l2_per_block_gas_limit<F: Fn(Address, B256) -> Option<U256>>(
+pub fn read_l2_per_block_gas_limit<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
     read_slot: &F,
-) -> Option<u64> {
+) -> Result<Option<u64>, E> {
     let addr = ARBOS_STATE_ADDRESS;
     let root_storage_key: &[u8] = &[];
     let l2_pricing_subspace = subspace(root_storage_key, &[1u8]);
@@ -261,7 +279,9 @@ pub fn read_l2_per_block_gas_limit<F: Fn(Address, B256) -> Option<U256>>(
 }
 
 /// Read the L2 base fee from storage.
-pub fn read_l2_base_fee<F: Fn(Address, B256) -> Option<U256>>(read_slot: &F) -> Option<u64> {
+pub fn read_l2_base_fee<E, F: Fn(Address, B256) -> Result<Option<U256>, E>>(
+    read_slot: &F,
+) -> Result<Option<u64>, E> {
     let addr = ARBOS_STATE_ADDRESS;
     let root_storage_key: &[u8] = &[];
     let l2_pricing_subspace = subspace(root_storage_key, &[1u8]);

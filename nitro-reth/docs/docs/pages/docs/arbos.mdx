@@ -8,15 +8,15 @@ All ArbOS state lives at `ARBOS_STATE_ADDRESS` (`0xa4b05...`), organized into su
 
 | Subspace | ID | Purpose |
 |----------|-----|---------|
-| L2 Pricing | 0 | Base fee, gas backlog, per-block gas limit |
-| L1 Pricing | 1 | L1 data costs, batch poster rewards, equilibration |
+| L1 Pricing | 0 | L1 data costs, batch poster rewards, equilibration |
+| L2 Pricing | 1 | Base fee, gas backlog, per-block gas limit |
 | Retryables | 2 | Retryable ticket storage and timeout queue |
 | Address Table | 3 | Calldata compression address lookup table |
 | Send Merkle | 5 | L2-to-L1 message accumulator |
 | Blockhashes | 6 | L1 block number and hash cache |
 | Programs | 8 | Stylus program metadata and parameters |
 
-Each subspace uses a key derivation scheme: `hash(parent_key || offset[0..31]) || offset[31]`, which produces unique non-colliding storage slots.
+A subspace key is `keccak256(parent_key || subspace_id)`. A field slot within a scope is `keccak256(scope_key || key[0..31]) || key[31]`. Together these produce unique non-colliding storage slots.
 
 ## Versioning
 
@@ -25,16 +25,17 @@ ArbOS evolves through version upgrades stored in the block header's `mix_hash` f
 | ArbOS Version | EVM Spec | Key Features |
 |---------------|----------|--------------|
 | v11 | Shanghai | PUSH0 opcode |
-| v20 | Cancun | Transient storage, blob base fee |
+| v20 | Cancun | Transient storage (TLOAD/TSTORE) |
 | v30 | Cancun | Stylus WASM support |
 | v40 | Prague | Prague EVM rules |
-| v50 | Prague | Dia upgrade |
-| v60 | Prague | Multi-gas constraints, transaction filtering |
+| v50 | Osaka | Dia upgrade |
+| v60 | Osaka | Multi-gas constraints, transaction filtering |
 
-The `mix_hash` header field encodes three values:
+The `mix_hash` header field encodes these values:
 - Bytes 0-7: `send_count` (cumulative L2-to-L1 messages)
 - Bytes 8-15: `l1_block_number` (L1 block at time of production)
 - Bytes 16-23: `arbos_format_version`
+- Byte 25: `collect_tips` flag, set on tip-collecting blocks at ArbOS versions above the legacy collect-tips version
 
 ## Gas Pricing
 

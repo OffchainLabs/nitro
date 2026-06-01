@@ -39,8 +39,8 @@ fn address_exists_v30_gas_pin() {
 
 #[test]
 fn lookup_unknown_reverts_v30_gas_pin() {
-    // Unknown → empty_revert with the boilerplate gas accumulated.
-    // init_precompile_gas charged 800 + 1*3 = 803 before the body ran.
+    // Unknown → revert after the OpenArbosState read, the args copy, and the
+    // table read (one SLOAD) that finds the address absent.
     let addr: Address = address!("00000000000000000000000000000000000000aa");
     let run = fixture().gas(50_000).call(
         arbaddresstable,
@@ -48,19 +48,20 @@ fn lookup_unknown_reverts_v30_gas_pin() {
     );
     let out = run.assert_ok();
     assert!(out.reverted);
-    assert_eq!(out.gas_used, SLOAD + COPY);
+    assert_eq!(out.gas_used, 2 * SLOAD + COPY);
 }
 
 #[test]
 fn lookup_index_unknown_reverts_v30_gas_pin() {
-    // Unknown index → empty_revert with init_precompile_gas accumulated.
+    // Unknown index → revert after the OpenArbosState read, the args copy, and
+    // the table read (one SLOAD) that finds the index absent.
     let run = fixture().gas(50_000).call(
         arbaddresstable,
         &calldata("lookupIndex(uint256)", &[word_u256(U256::from(0u64))]),
     );
     let out = run.assert_ok();
     assert!(out.reverted);
-    assert_eq!(out.gas_used, SLOAD + COPY);
+    assert_eq!(out.gas_used, 2 * SLOAD + COPY);
 }
 
 #[test]

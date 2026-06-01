@@ -39,6 +39,7 @@ pub struct ArbrethProcess {
 
 impl ArbrethProcess {
     pub fn start(ctx: &NodeStartCtx) -> Result<Self> {
+        crate::node::reaper::reap_orphan_arbreth();
         let binary = match &ctx.binary {
             Some(b) => b.clone(),
             None => std::env::var(ARB_BINARY_ENV).map_err(|_| HarnessError::MissingEnv {
@@ -111,6 +112,9 @@ impl ArbrethProcess {
             .arg("--disable-discovery")
             .arg("--port=0")
             .arg("--db.exclusive=true")
+            // Tests use HTTP only; disabling IPC avoids the fixed /tmp/reth.ipc
+            // socket colliding when instances run concurrently.
+            .arg("--ipcdisable")
             .stdout(Stdio::from(stdout_file))
             .stderr(Stdio::from(stderr_file))
             .spawn()

@@ -5,7 +5,8 @@ use alloy_primitives::{address, B256, U256};
 use arb_precompiles::create_arbwasm_precompile;
 use arb_storage::{
     layout::{
-        derive_subspace_key, map_slot, map_slot_b256, PROGRAMS_DATA_KEY, PROGRAMS_PARAMS_KEY,
+        derive_subspace_key, map_slot, map_slot_b256,
+        programs::{PARAMS_KEY, PROGRAM_DATA_KEY},
         PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
     ARBOS_STATE_ADDRESS,
@@ -88,7 +89,7 @@ fn default_params() -> StylusParamsWord {
 
 fn params_slot() -> U256 {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
+    let params_key = derive_subspace_key(programs_key.as_slice(), PARAMS_KEY);
     map_slot(params_key.as_slice(), 0)
 }
 
@@ -293,7 +294,7 @@ fn pack_program(version: u16, footprint: u16, activated_at_hours: u32) -> U256 {
 
 fn program_data_slot(codehash: B256) -> U256 {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
-    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
+    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAM_DATA_KEY);
     map_slot_b256(data_key.as_slice(), &codehash)
 }
 

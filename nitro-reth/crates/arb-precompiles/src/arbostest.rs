@@ -25,7 +25,8 @@ fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResu
     if !ctx.block.allow_debug_precompiles {
         return crate::burn_all_revert(gas_limit);
     }
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    // `burnArbGas` is `pure` (no state access) — skip the OpenArbosState SLOAD.
+    crate::init_precompile_gas_pure(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbosTest::ArbosTestCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -34,17 +35,23 @@ fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResu
 
     use IArbosTest::ArbosTestCalls;
     let result = match call {
-        ArbosTestCalls::burnArbGas(c) => handle_burn_arb_gas(gas_limit, c.gasAmount),
+        ArbosTestCalls::burnArbGas(c) => {
+            handle_burn_arb_gas(&mut gas_used, ctx, gas_limit, c.gasAmount)
+        }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
-fn handle_burn_arb_gas(gas_limit: u64, amount: U256) -> PrecompileResult {
-    // Pure method (no state access): no OpenArbosState. Cost = argsCost (3) + gasAmount.
-    const ARGS_COST: u64 = 3;
+fn handle_burn_arb_gas(
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    gas_limit: u64,
+    amount: U256,
+) -> PrecompileResult {
     let to_burn: u64 = amount.try_into().unwrap_or(u64::MAX);
+    crate::charge_computation(gas_used, ctx, to_burn);
     Ok(PrecompileOutput::new(
-        ARGS_COST.saturating_add(to_burn).min(gas_limit),
+        (*gas_used).min(gas_limit),
         Vec::new().into(),
     ))
 }

@@ -78,12 +78,15 @@ fn delete_filtered_transaction_non_filterer_caller_v60_gas_pin() {
 }
 
 #[test]
-fn invalid_calldata_burns_all_gas_v60() {
+fn invalid_calldata_reverts_with_wrapper_gas_v60() {
     let run = fixture(60).gas(50_000).call(
         arbftm,
         &alloy_primitives::Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
     );
     let out = run.assert_ok();
     assert!(out.reverted);
-    assert_eq!(out.gas_used, 50_000);
+    // The free-access wrapper charges only its own reads (OpenArbosState +
+    // membership = 1600) and discards the inner precompile's gas, so a bad
+    // selector reverts with 1600 rather than burning all gas.
+    assert_eq!(out.gas_used, 1600);
 }

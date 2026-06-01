@@ -7,6 +7,7 @@ use crate::{messaging::L1Message, Result};
 
 pub mod arbreth;
 pub mod nitro_docker;
+pub mod reaper;
 pub mod remote;
 
 pub(crate) mod common;

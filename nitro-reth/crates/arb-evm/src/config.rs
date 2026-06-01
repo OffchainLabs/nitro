@@ -46,7 +46,16 @@ where
 
     /// Creates a configuration that opts into ArbDebug/ArbosTest precompiles.
     pub fn with_allow_debug_precompiles(chain_spec: Arc<ChainSpec>, allow_debug: bool) -> Self {
-        let evm_factory = ArbEvmFactory::new();
+        Self::build(chain_spec, allow_debug, ArbEvmFactory::new())
+    }
+
+    /// Configuration for offline parallel block execution; cloned workers get
+    /// an isolated per-block context, unlike the live node/RPC path.
+    pub fn for_offline_execution(chain_spec: Arc<ChainSpec>, allow_debug: bool) -> Self {
+        Self::build(chain_spec, allow_debug, ArbEvmFactory::isolated())
+    }
+
+    fn build(chain_spec: Arc<ChainSpec>, allow_debug: bool, evm_factory: ArbEvmFactory) -> Self {
         Self {
             executor_factory: ArbBlockExecutorFactory::new(
                 ArbReceiptBuilder,

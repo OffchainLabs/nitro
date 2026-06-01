@@ -17,6 +17,7 @@ pub const ARBADDRESSTABLE_ADDRESS: Address = Address::new([
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
+const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 
 pub fn create_arbaddresstable_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
@@ -28,7 +29,7 @@ pub fn create_arbaddresstable_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPreco
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbAddressTable::ArbAddressTableCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -37,12 +38,12 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use IArbAddressTable::ArbAddressTableCalls as Calls;
     let result = match call {
-        Calls::size(_) => handle_size(&mut input, ctx),
-        Calls::addressExists(c) => handle_address_exists(&mut input, c.addr, ctx),
+        Calls::size(_) => handle_size(&mut input, &mut gas_used, ctx),
+        Calls::addressExists(c) => handle_address_exists(&mut input, &mut gas_used, c.addr, ctx),
         Calls::lookup(c) => handle_lookup(&mut input, &mut gas_used, c.addr, ctx),
         Calls::lookupIndex(c) => handle_lookup_index(&mut input, &mut gas_used, c.index, ctx),
         Calls::register(c) => handle_register(&mut input, &mut gas_used, c.addr, ctx),
-        Calls::compress(c) => handle_compress(&mut input, c.addr, ctx),
+        Calls::compress(c) => handle_compress(&mut input, &mut gas_used, c.addr, ctx),
         Calls::decompress(c) => handle_decompress(&mut input, &mut gas_used, &c.buf, c.offset, ctx),
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -56,7 +57,11 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn handle_size(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+fn handle_size(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
@@ -69,14 +74,17 @@ fn handle_size(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Preco
         .size(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         U256::from(size).to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_address_exists(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
@@ -93,8 +101,10 @@ fn handle_address_exists(
         .map_err(ArbPrecompileError::fatal)?;
     let value = if exists { U256::from(1u64) } else { U256::ZERO };
 
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -117,11 +127,14 @@ fn handle_lookup(
         .lookup(internals, addr)
         .map_err(ArbPrecompileError::fatal)?;
     if !exists {
+        crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
         return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
 
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         U256::from(index).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -142,17 +155,25 @@ fn handle_lookup_index(
         .block
         .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    let addr = arb_state
+    let addr = match arb_state
         .address_table
         .lookup_index(internals, index)
         .map_err(ArbPrecompileError::fatal)?
-        .ok_or_else(|| ArbPrecompileError::empty_revert(*gas_used))?;
+    {
+        Some(a) => a,
+        None => {
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+        }
+    };
 
     let mut out = [0u8; 32];
     out[12..32].copy_from_slice(addr.as_slice());
 
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.to_vec().into(),
     ))
 }
@@ -177,13 +198,24 @@ fn handle_register(
         .map_err(ArbPrecompileError::fatal)?;
 
     if already_registered {
+        crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+        crate::charge_computation(gas_used, ctx, COPY_GAS);
         return Ok(PrecompileOutput::new(
-            (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+            (*gas_used).min(gas_limit),
             U256::from(index).to_be_bytes::<32>().to_vec().into(),
         ));
     }
 
-    crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS);
+    // The index→address slot stores the address, so a zero address is a
+    // zero-value write, charged the reset price.
+    let index_write = if addr.is_zero() {
+        SSTORE_ZERO_GAS
+    } else {
+        SSTORE_GAS
+    };
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_storage_write(gas_used, ctx, 2 * SSTORE_GAS + index_write);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -193,6 +225,7 @@ fn handle_register(
 
 fn handle_compress(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
@@ -216,8 +249,10 @@ fn handle_compress(
     output.extend(std::iter::repeat_n(0u8, pad));
 
     let result_words = (output.len() as u64).div_ceil(32);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, result_words * COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS + result_words * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         output.into(),
     ))
 }
@@ -230,7 +265,6 @@ fn handle_decompress(
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
-    let data_len = input.data.len();
     let ioffset: usize = offset
         .try_into()
         .map_err(|_| ArbPrecompileError::empty_revert(*gas_used))?;
@@ -261,10 +295,13 @@ fn handle_decompress(
     output.extend_from_slice(&alloy_primitives::B256::left_padding_from(addr.as_slice()).0);
     output.extend_from_slice(&U256::from(bytes_read).to_be_bytes::<32>());
 
-    let body_sloads: u64 = if raw_address { 1 } else { 3 };
-    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
+    // `body_sloads` counts the framework `OpenArbosState` SLOAD plus the body's
+    // own reads; init already charged the framework SLOAD, so subtract one.
+    let body_sloads: u64 = if raw_address { 0 } else { 2 };
+    crate::charge_storage_read(gas_used, ctx, body_sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, 2 * COPY_GAS);
     Ok(PrecompileOutput::new(
-        (body_sloads * SLOAD_GAS + (arg_words + 2) * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         output.into(),
     ))
 }

@@ -30,6 +30,7 @@ hex = { workspace = true }
 
 [dev-dependencies]
 wat = "1.0"
+arb-stylus = { path = "../arb-stylus" }
 
 [lib]
 name = "arb_fuzz"

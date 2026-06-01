@@ -17,7 +17,7 @@ COPY bin/ bin/
 COPY .gitmodules ./
 COPY brotli/ brotli/
 
-RUN cargo build --release -p arb-reth
+RUN cargo build --release --locked -p arb-reth --bin arb-reth
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

@@ -30,33 +30,20 @@ use crate::{
     retryables::RetryableState,
 };
 
-// Storage offsets for root-level ArbOS state values.
-pub const VERSION_OFFSET: u64 = 0;
-pub const UPGRADE_VERSION_OFFSET: u64 = 1;
-pub const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
-pub const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
-pub const CHAIN_ID_OFFSET: u64 = 4;
-pub const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
-pub const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
-pub const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
-pub const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
-pub const TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
-pub const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
-pub const COLLECT_TIPS_OFFSET: u64 = 11;
-
-// Subspace IDs for partitioned storage.
-pub(crate) const L1_PRICING_SUBSPACE: &[u8] = &[0];
-pub(crate) const L2_PRICING_SUBSPACE: &[u8] = &[1];
-pub(crate) const RETRYABLES_SUBSPACE: &[u8] = &[2];
-const ADDRESS_TABLE_SUBSPACE: &[u8] = &[3];
-const CHAIN_OWNER_SUBSPACE: &[u8] = &[4];
-const SEND_MERKLE_SUBSPACE: &[u8] = &[5];
-const BLOCKHASHES_SUBSPACE: &[u8] = &[6];
-const CHAIN_CONFIG_SUBSPACE: &[u8] = &[7];
-pub(crate) const PROGRAMS_SUBSPACE: &[u8] = &[8];
-const FEATURES_SUBSPACE: &[u8] = &[9];
-const NATIVE_TOKEN_OWNER_SUBSPACE: &[u8] = &[10];
-const TRANSACTION_FILTERING_SUBSPACE: &[u8] = &[11];
+// Root-level field offsets and subspace IDs are defined once in the storage
+// layout module; re-export the offsets that callers reference by name.
+use arb_storage::layout::{
+    ADDRESS_TABLE_SUBSPACE, BLOCKHASHES_SUBSPACE, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
+    FEATURES_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, NATIVE_TOKEN_SUBSPACE,
+    PROGRAMS_SUBSPACE, RETRYABLES_SUBSPACE, SEND_MERKLE_SUBSPACE, TRANSACTION_FILTERER_SUBSPACE,
+};
+pub use arb_storage::layout::{
+    BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET, COLLECT_TIPS_OFFSET,
+    FILTERED_FUNDS_RECIPIENT_OFFSET, GENESIS_BLOCK_NUM_OFFSET, INFRA_FEE_ACCOUNT_OFFSET,
+    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NETWORK_FEE_ACCOUNT_OFFSET,
+    TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET, UPGRADE_TIMESTAMP_OFFSET,
+    UPGRADE_VERSION_OFFSET, VERSION_OFFSET,
+};
 
 /// Cached root→subspace derivations: `keccak256(sub_key)` for each static child.
 macro_rules! cached_root_key {
@@ -78,10 +65,10 @@ cached_root_key!(blockhashes_root_key, BLOCKHASHES_SUBSPACE);
 cached_root_key!(chain_config_root_key, CHAIN_CONFIG_SUBSPACE);
 cached_root_key!(programs_root_key, PROGRAMS_SUBSPACE);
 cached_root_key!(features_root_key, FEATURES_SUBSPACE);
-cached_root_key!(native_token_owner_root_key, NATIVE_TOKEN_OWNER_SUBSPACE);
+cached_root_key!(native_token_owner_root_key, NATIVE_TOKEN_SUBSPACE);
 cached_root_key!(
     transaction_filtering_root_key,
-    TRANSACTION_FILTERING_SUBSPACE
+    TRANSACTION_FILTERER_SUBSPACE
 );
 
 /// The maximum ArbOS version supported by this node.
@@ -566,7 +553,7 @@ impl<'a, D: Database, B: Burner> ArbosState<'a, D, B> {
                     crate::address_set::initialize_address_set(
                         &self
                             .backing_storage
-                            .open_sub_storage(TRANSACTION_FILTERING_SUBSPACE),
+                            .open_sub_storage(TRANSACTION_FILTERER_SUBSPACE),
                     )?;
                 }
                 _ => {

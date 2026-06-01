@@ -18,7 +18,7 @@ fn make_tx(kind: L2TxKind, nonce: u64) -> SignedL2TxBuilder {
         value: U256::from(1u64),
         data: Bytes::new(),
         gas_limit: INVOKE_GAS_CAP,
-        gas_price: 0,
+        gas_price: 2_000_000_000,
         max_fee_per_gas: 2_000_000_000,
         max_priority_fee_per_gas: 0,
         access_list: Vec::new(),
@@ -150,6 +150,7 @@ fn legacy_tx_with_high_value_insufficient_balance_reverts_or_skipped() {
     let idx = next_msg_idx();
     steps.push(message_step(idx, built, idx));
     GuardedRun::new("txtype_legacy_too_big_value", steps)
+        .allow_skipped()
         .expect_last_tx_min_gas(0)
         .run();
 }

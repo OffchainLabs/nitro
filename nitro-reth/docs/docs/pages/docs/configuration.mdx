@@ -9,7 +9,7 @@ When running with Docker Compose, configuration is done through the `.env` file.
 | `PARENT_CHAIN_RPC_URL` | Yes | - | Ethereum L1 RPC endpoint (Sepolia for testnet) |
 | `PARENT_CHAIN_BEACON_URL` | Yes | - | Ethereum Beacon API endpoint |
 | `CHAIN_ID` | No | `421614` | Arbitrum chain ID (421614 = Sepolia) |
-| `NITRO_IMAGE` | No | `offchainlabs/nitro-node:v3.10.0-rc.2-746bda2` | Consensus node Docker image |
+| `NITRO_IMAGE` | No | `offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db` | Consensus node Docker image |
 | `FEED_URL` | No | `wss://sepolia-rollup.arbitrum.io/feed` | Sequencer feed for faster sync |
 | `LOG_LEVEL` | No | `WARN` | Consensus node log level (TRACE/DEBUG/INFO/WARN/ERROR) |
 | `RUST_LOG` | No | `warn` | Execution client log level |
@@ -34,11 +34,12 @@ arb-reth node [OPTIONS]
 | `--http.addr <ADDR>` | HTTP listen address (default: 127.0.0.1) |
 | `--http.port <PORT>` | HTTP port (default: 8545) |
 | `--http.api <APIS>` | Comma-separated API namespaces (eth,web3,net,debug) |
-| `--authrpc.addr <ADDR>` | Engine API listen address |
-| `--authrpc.port <PORT>` | Engine API port (default: 8551) |
+| `--authrpc.addr <ADDR>` | Authenticated RPC listen address |
+| `--authrpc.port <PORT>` | Authenticated RPC port (default: 8551) |
 | `--authrpc.jwtsecret <PATH>` | Path to JWT secret file |
 | `--disable-discovery` | Disable P2P discovery (recommended for Arbitrum) |
-| `--rollup.sequencer` | Enable sequencer mode |
+
+The authenticated RPC port (8551) is where the consensus node drives block production over the `nitroexecution_` namespace, not the Engine API. See [JSON-RPC](/docs/json-rpc).
 
 ### Database
 
@@ -69,6 +70,8 @@ The genesis file contains the initial chain configuration, alloc entries for pre
 |-------|-------|---------|
 | `chainId` | 421614 | Arbitrum Sepolia |
 | `difficulty` | 1 | Constant (proof-of-authority) |
-| `baseFeePerGas` | 100 Gwei | Initial L2 base fee |
+| `baseFeePerGas` | 0.1 Gwei (`0x5f5e100`) | Initial L2 base fee |
 | `gasLimit` | Very large | Arbitrum manages gas limits through ArbOS |
 | `mixHash` | Encodes ArbOS v10 | Initial ArbOS version embedded in header |
+
+The header encodes the genesis ArbOS version (v10); the node then upgrades through ArbOS hardforks up to the highest supported version, ArbOS 60.

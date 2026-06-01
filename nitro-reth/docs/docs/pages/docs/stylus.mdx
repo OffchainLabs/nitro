@@ -40,7 +40,7 @@ Before a Stylus program starts executing, gas is deducted for:
 Programs must be activated before they can be called. Activation:
 1. Validates the WASM module structure
 2. Instruments it with ink metering middleware
-3. Compiles to native code via Cranelift
+3. Builds the prover module and derives activation metadata (module hash, init/cached init cost, asm estimate, footprint)
 4. Stores metadata (version, init cost, cached cost, footprint) in a packed 32-byte storage word
 5. Charges a data pricing fee based on an exponential demand curve
 

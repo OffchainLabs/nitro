@@ -481,10 +481,10 @@ where
 
         // Read the L2 baseFee from the parent's committed state.
         let l2_base_fee = {
-            let read_slot = |addr: Address, slot: B256| -> Option<U256> {
-                state_provider.storage(addr, slot).ok().flatten()
-            };
-            arbos::header::read_l2_base_fee(&read_slot).or(parent_header.base_fee_per_gas())
+            let read_slot = |addr: Address, slot: B256| state_provider.storage(addr, slot);
+            arbos::header::read_l2_base_fee(&read_slot)
+                .map_err(|e| BlockProducerError::Storage(e.to_string()))?
+                .or(parent_header.base_fee_per_gas())
         };
 
         // Build a provisional header for the EVM config.
@@ -637,16 +637,25 @@ where
             extra_data: exec_extra.into(),
         };
 
-        // Create the block executor via the factory.
+        // Create the block executor via the factory. A multi-gas inspector is
+        // installed so the v60 multi-dimensional pricing backlog is driven by
+        // per-opcode resource attribution; it publishes each tx's multi-gas to
+        // the shared sink the executor reads.
+        let multi_gas_sink = arb_evm::multi_gas::MultiGasSink::default();
         let evm = self
             .evm_config
             .block_executor_factory()
             .evm_factory()
-            .create_evm(&mut db, evm_env.clone());
+            .create_evm_with_inspector(
+                &mut db,
+                evm_env.clone(),
+                arb_evm::multi_gas::MultiGasInspector::with_sink(multi_gas_sink.clone()),
+            );
         let mut executor = self
             .evm_config
             .block_executor_factory()
             .create_arb_executor(evm, exec_ctx, chain_id);
+        executor.set_multi_gas_sink(multi_gas_sink);
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = block_l1_block_number;
 
@@ -1019,7 +1028,8 @@ where
         };
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
-        let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
+        let arb_info =
+            derive_header_info_from_state(state_provider.as_ref(), &bundle, input.sender)?;
 
         let final_mix_hash = arb_info
             .as_ref()
@@ -1511,18 +1521,20 @@ fn filter_unchanged_storage(bundle: &mut BundleState) {
 fn derive_header_info_from_state(
     state_provider: &dyn StateProvider,
     bundle_state: &BundleState,
-) -> Option<ArbHeaderInfo> {
-    let read_slot = |addr: Address, slot: B256| -> Option<U256> {
+    coinbase: Address,
+) -> Result<Option<ArbHeaderInfo>, BlockProducerError> {
+    let read_slot = |addr: Address, slot: B256| {
         if let Some(account) = bundle_state.state.get(&addr) {
             let slot_u256 = U256::from_be_bytes(slot.0);
             if let Some(storage_slot) = account.storage.get(&slot_u256) {
-                return Some(storage_slot.present_value);
+                return Ok(Some(storage_slot.present_value));
             }
         }
-        state_provider.storage(addr, slot).ok().flatten()
+        state_provider.storage(addr, slot)
     };
 
-    derive_arb_header_info(&read_slot)
+    derive_arb_header_info(&read_slot, coinbase)
+        .map_err(|e| BlockProducerError::Storage(e.to_string()))
 }
 
 /// Augment the bundle with direct cache modifications not captured by EVM transitions.

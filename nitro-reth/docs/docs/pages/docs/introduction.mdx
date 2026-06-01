@@ -23,9 +23,9 @@ Each component - ArbOS state management, L1/L2 pricing, precompiles, Stylus WASM
 Arbitrum Reth runs as the **execution layer** in a two-component architecture:
 
 1. **Nitro consensus node** - handles L1 interaction, sequencer feed, and message ordering
-2. **Arbitrum Reth execution node** - receives ordered messages via the `nitroexecution_` RPC namespace, produces blocks, and manages state
+2. **Arbitrum Reth execution node** - executes ordered messages into blocks and manages state
 
-The consensus node drives Arbitrum Reth through the Engine API (port 8551), sending L1-to-L2 messages that Arbitrum Reth processes into blocks. This is the same split architecture used by Ethereum's beacon chain and execution client separation.
+The consensus node drives Arbitrum Reth over the authenticated RPC port (8551) using the `nitroexecution_` namespace. The main call is `nitroexecution_digestMessage`: it delivers one ordered L1-to-L2 message and returns the block Arbitrum Reth produces from it.
 
 ## License
 

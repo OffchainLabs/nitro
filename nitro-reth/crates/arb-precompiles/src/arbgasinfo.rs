@@ -40,7 +40,7 @@ pub fn create_arbgasinfo_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbGasInfo::ArbGasInfoCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -50,107 +50,116 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
     use IArbGasInfo::ArbGasInfoCalls as Calls;
     let result = match call {
         Calls::getL1BaseFeeEstimate(_) | Calls::getL1GasPriceEstimate(_) => {
-            read_l1_price_per_unit(&mut input, ctx)
+            read_l1_price_per_unit(&mut input, &mut gas_used, ctx)
         }
-        Calls::getMinimumGasPrice(_) => read_l2_min_base_fee(&mut input, ctx),
+        Calls::getMinimumGasPrice(_) => read_l2_min_base_fee(&mut input, &mut gas_used, ctx),
         Calls::getPricesInWei(_) | Calls::getPricesInWeiWithAggregator(_) => {
-            handle_prices_in_wei(&mut input, ctx)
+            handle_prices_in_wei(&mut input, &mut gas_used, ctx)
         }
-        Calls::getGasAccountingParams(_) => handle_gas_accounting_params(&mut input, ctx),
+        Calls::getGasAccountingParams(_) => {
+            handle_gas_accounting_params(&mut input, &mut gas_used, ctx)
+        }
         Calls::getCurrentTxL1GasFees(_) => {
             let fee = U256::from(ctx.tx_snapshot().poster_fee);
+            crate::charge_computation(&mut gas_used, ctx, COPY_GAS);
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                gas_used.min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         Calls::getPricesInArbGas(_) | Calls::getPricesInArbGasWithAggregator(_) => {
-            handle_prices_in_arbgas(&mut input, ctx)
+            handle_prices_in_arbgas(&mut input, &mut gas_used, ctx)
         }
-        Calls::getL1BaseFeeEstimateInertia(_) => read_l1_inertia(&mut input, ctx),
-        Calls::getGasBacklog(_) => read_l2_gas_backlog(&mut input, ctx),
-        Calls::getPricingInertia(_) => read_l2_pricing_inertia(&mut input, ctx),
-        Calls::getGasBacklogTolerance(_) => read_l2_backlog_tolerance(&mut input, ctx),
-        Calls::getL1PricingSurplus(_) => handle_l1_pricing_surplus(&mut input, ctx),
-        Calls::getPerBatchGasCharge(_) => read_l1_per_batch_gas_cost(&mut input, ctx),
-        Calls::getAmortizedCostCapBips(_) => read_l1_amortized_cost_cap_bips(&mut input, ctx),
+        Calls::getL1BaseFeeEstimateInertia(_) => read_l1_inertia(&mut input, &mut gas_used, ctx),
+        Calls::getGasBacklog(_) => read_l2_gas_backlog(&mut input, &mut gas_used, ctx),
+        Calls::getPricingInertia(_) => read_l2_pricing_inertia(&mut input, &mut gas_used, ctx),
+        Calls::getGasBacklogTolerance(_) => {
+            read_l2_backlog_tolerance(&mut input, &mut gas_used, ctx)
+        }
+        Calls::getL1PricingSurplus(_) => handle_l1_pricing_surplus(&mut input, &mut gas_used, ctx),
+        Calls::getPerBatchGasCharge(_) => {
+            read_l1_per_batch_gas_cost(&mut input, &mut gas_used, ctx)
+        }
+        Calls::getAmortizedCostCapBips(_) => {
+            read_l1_amortized_cost_cap_bips(&mut input, &mut gas_used, ctx)
+        }
         Calls::getL1FeesAvailable(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 10, 0) {
                 return r;
             }
-            read_l1_fees_available(&mut input, ctx)
+            read_l1_fees_available(&mut input, &mut gas_used, ctx)
         }
         Calls::getL1RewardRate(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 11, 0) {
                 return r;
             }
-            read_l1_per_unit_reward(&mut input, ctx)
+            read_l1_per_unit_reward(&mut input, &mut gas_used, ctx)
         }
         Calls::getL1RewardRecipient(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 11, 0) {
                 return r;
             }
-            read_l1_pay_rewards_to(&mut input, ctx)
+            read_l1_pay_rewards_to(&mut input, &mut gas_used, ctx)
         }
         Calls::getL1PricingEquilibrationUnits(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 20, 0) {
                 return r;
             }
-            read_l1_equilibration_units(&mut input, ctx)
+            read_l1_equilibration_units(&mut input, &mut gas_used, ctx)
         }
         Calls::getLastL1PricingUpdateTime(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 20, 0) {
                 return r;
             }
-            read_l1_last_update_time(&mut input, ctx)
+            read_l1_last_update_time(&mut input, &mut gas_used, ctx)
         }
         Calls::getL1PricingFundsDueForRewards(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 20, 0) {
                 return r;
             }
-            read_l1_funds_due_for_rewards(&mut input, ctx)
+            read_l1_funds_due_for_rewards(&mut input, &mut gas_used, ctx)
         }
         Calls::getL1PricingUnitsSinceUpdate(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 20, 0) {
                 return r;
             }
-            read_l1_units_since_update(&mut input, ctx)
+            read_l1_units_since_update(&mut input, &mut gas_used, ctx)
         }
         Calls::getLastL1PricingSurplus(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 20, 0) {
                 return r;
             }
-            read_l1_last_surplus(&mut input, ctx)
+            read_l1_last_surplus(&mut input, &mut gas_used, ctx)
         }
         Calls::getMaxBlockGasLimit(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
-            read_l2_per_block_gas_limit(&mut input, ctx)
+            read_l2_per_block_gas_limit(&mut input, &mut gas_used, ctx)
         }
         Calls::getMaxTxGasLimit(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
-            read_l2_per_tx_gas_limit(&mut input, ctx)
+            read_l2_per_tx_gas_limit(&mut input, &mut gas_used, ctx)
         }
         Calls::getGasPricingConstraints(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 50, 0) {
                 return r;
             }
-            handle_gas_pricing_constraints(&mut input, ctx)
+            handle_gas_pricing_constraints(&mut input, &mut gas_used, ctx)
         }
         Calls::getMultiGasPricingConstraints(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
-            handle_multi_gas_pricing_constraints(&mut input, ctx)
+            handle_multi_gas_pricing_constraints(&mut input, &mut gas_used, ctx)
         }
         Calls::getMultiGasBaseFee(_) => {
             if let Some(r) = crate::check_method_version(ctx, gas_limit, 60, 0) {
                 return r;
             }
-            handle_multi_gas_base_fee(&mut input, ctx)
+            handle_multi_gas_base_fee(&mut input, &mut gas_used, ctx)
         }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -166,9 +175,18 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn field_read_output(gas_limit: u64, value: U256) -> PrecompileResult {
+fn field_read_output(
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    gas_limit: u64,
+    value: U256,
+) -> PrecompileResult {
+    // init already charged the OpenArbosState read and L2Calldata; body
+    // adds one storage read for the field and the result-copy as computation.
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -177,6 +195,7 @@ fn field_read_output(gas_limit: u64, value: U256) -> PrecompileResult {
 
 fn read_l1_price_per_unit(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -190,10 +209,14 @@ fn read_l1_price_per_unit(
         .l1_pricing_state
         .price_per_unit(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, value)
+    field_read_output(gas_used, ctx, gas_limit, value)
 }
 
-fn read_l1_inertia(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+fn read_l1_inertia(
+    input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
     let internals = input.internals_mut();
@@ -205,11 +228,12 @@ fn read_l1_inertia(input: &mut PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> P
         .l1_pricing_state
         .inertia(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l1_per_unit_reward(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -223,11 +247,12 @@ fn read_l1_per_unit_reward(
         .l1_pricing_state
         .per_unit_reward(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l1_pay_rewards_to(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -241,11 +266,17 @@ fn read_l1_pay_rewards_to(
         .l1_pricing_state
         .pay_rewards_to(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
+    field_read_output(
+        gas_used,
+        ctx,
+        gas_limit,
+        U256::from_be_slice(addr.as_slice()),
+    )
 }
 
 fn read_l1_last_surplus(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -264,11 +295,12 @@ fn read_l1_last_surplus(
     } else {
         magnitude
     };
-    field_read_output(gas_limit, raw)
+    field_read_output(gas_used, ctx, gas_limit, raw)
 }
 
 fn read_l1_per_batch_gas_cost(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -282,11 +314,12 @@ fn read_l1_per_batch_gas_cost(
         .l1_pricing_state
         .per_batch_gas_cost(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value as u64))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value as u64))
 }
 
 fn read_l1_amortized_cost_cap_bips(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -300,11 +333,12 @@ fn read_l1_amortized_cost_cap_bips(
         .l1_pricing_state
         .amortized_cost_cap_bips(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l1_equilibration_units(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -318,11 +352,12 @@ fn read_l1_equilibration_units(
         .l1_pricing_state
         .equilibration_units(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, value)
+    field_read_output(gas_used, ctx, gas_limit, value)
 }
 
 fn read_l1_last_update_time(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -336,11 +371,12 @@ fn read_l1_last_update_time(
         .l1_pricing_state
         .last_update_time(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l1_funds_due_for_rewards(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -354,11 +390,12 @@ fn read_l1_funds_due_for_rewards(
         .l1_pricing_state
         .funds_due_for_rewards(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, value)
+    field_read_output(gas_used, ctx, gas_limit, value)
 }
 
 fn read_l1_units_since_update(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -372,11 +409,12 @@ fn read_l1_units_since_update(
         .l1_pricing_state
         .units_since_update(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l1_fees_available(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -390,13 +428,14 @@ fn read_l1_fees_available(
         .l1_pricing_state
         .l1_fees_available(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, value)
+    field_read_output(gas_used, ctx, gas_limit, value)
 }
 
 // ── L2 pricing field readers ────────────────────────────────────────
 
 fn read_l2_min_base_fee(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -410,11 +449,12 @@ fn read_l2_min_base_fee(
         .l2_pricing_state
         .min_base_fee_wei(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, value)
+    field_read_output(gas_used, ctx, gas_limit, value)
 }
 
 fn read_l2_gas_backlog(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -428,11 +468,12 @@ fn read_l2_gas_backlog(
         .l2_pricing_state
         .gas_backlog(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l2_pricing_inertia(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -446,11 +487,12 @@ fn read_l2_pricing_inertia(
         .l2_pricing_state
         .pricing_inertia(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l2_backlog_tolerance(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -464,11 +506,12 @@ fn read_l2_backlog_tolerance(
         .l2_pricing_state
         .backlog_tolerance(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l2_per_block_gas_limit(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -482,11 +525,12 @@ fn read_l2_per_block_gas_limit(
         .l2_pricing_state
         .per_block_gas_limit(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_l2_per_tx_gas_limit(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -500,7 +544,7 @@ fn read_l2_per_tx_gas_limit(
         .l2_pricing_state
         .per_tx_gas_limit(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 // ── Compound handlers ───────────────────────────────────────────────
@@ -510,6 +554,7 @@ fn read_l2_per_tx_gas_limit(
 /// pre-v10: `Balance(L1PricerFundsPool) - (TotalFundsDue + FundsDueForRewards)`.
 fn handle_l1_pricing_surplus(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -551,18 +596,19 @@ fn handle_l1_pricing_surplus(
         U256::ZERO.wrapping_sub(deficit)
     };
 
-    // Pre-v10: 3 SLOAD (OAS + TotalFundsDue + FundsDueForRewards). v10+: 4 SLOAD (adds
-    // L1FeesAvailable).
-    let sloads = if arbos_version >= 10 { 4 } else { 3 };
-    let gas_cost = (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit);
+    // body reads (init covers the OpenArbosState).
+    let body_sloads = if arbos_version >= 10 { 3 } else { 2 };
+    crate::charge_storage_read(gas_used, ctx, body_sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        gas_cost,
+        (*gas_used).min(gas_limit),
         surplus.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_prices_in_wei(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let data_len = input.data.len();
@@ -624,15 +670,20 @@ fn handle_prices_in_wei(
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    // OpenArbosState SLOAD + body SLOADs (1 pre-v4, 2 v4+) + copy gas.
-    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let sloads = if read_min_base { 3 } else { 2 };
-    let gas_cost = (sloads * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
-    Ok(PrecompileOutput::new(gas_cost, out.into()))
+    // body reads (1 pre-v4, 2 v4+); copy for result words (6).
+    let _ = data_len;
+    let body_sloads = if read_min_base { 2 } else { 1 };
+    crate::charge_storage_read(gas_used, ctx, body_sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, 6 * COPY_GAS);
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        out.into(),
+    ))
 }
 
 fn handle_gas_accounting_params(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -659,14 +710,17 @@ fn handle_gas_accounting_params(
     out.extend_from_slice(&limit_word.to_be_bytes::<32>());
     out.extend_from_slice(&limit_word.to_be_bytes::<32>());
 
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, 3 * COPY_GAS);
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + 3 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }
 
 fn handle_prices_in_arbgas(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let data_len = input.data.len();
@@ -719,11 +773,14 @@ fn handle_prices_in_arbgas(
     out.extend_from_slice(&gas_for_l1_calldata.to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
-    // OpenArbosState SLOAD + 1 body SLOAD (L1 price per unit) + copy gas.
-    // l2GasPrice comes from evm.Context.BaseFee (free).
-    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
-    let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
-    Ok(PrecompileOutput::new(gas_cost, out.into()))
+    // body reads (1 SLOAD for L1 price). l2GasPrice comes from evm.Context.BaseFee (free).
+    let _ = data_len;
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, 3 * COPY_GAS);
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        out.into(),
+    ))
 }
 
 // ── Constraint getters (ArbOS v50+) ─────────────────────────────────
@@ -735,6 +792,7 @@ const RESOURCE_KIND_SINGLE_DIM: u64 = 6;
 /// Returns `[][3]uint64` — (target, adjustmentWindow, backlog) per constraint.
 fn handle_gas_pricing_constraints(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -776,8 +834,12 @@ fn handle_gas_pricing_constraints(
     }
 
     let result_words = (out.len() as u64).div_ceil(32);
+    // Subtract the OpenArbosState SLOAD already covered by init.
+    let body_sloads = sloads.saturating_sub(1);
+    crate::charge_storage_read(gas_used, ctx, body_sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, result_words * COPY_GAS);
     Ok(PrecompileOutput::new(
-        (sloads * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }
@@ -789,6 +851,7 @@ fn handle_gas_pricing_constraints(
 /// WeightedResource   = (uint8 resource, uint64 weight)
 fn handle_multi_gas_pricing_constraints(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     use arb_primitives::multigas::ResourceKind;
@@ -876,8 +939,11 @@ fn handle_multi_gas_pricing_constraints(
     }
 
     let result_words = (out.len() as u64).div_ceil(32);
+    let body_sloads = sloads.saturating_sub(1);
+    crate::charge_storage_read(gas_used, ctx, body_sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, result_words * COPY_GAS);
     Ok(PrecompileOutput::new(
-        (sloads * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }
@@ -887,6 +953,7 @@ fn handle_multi_gas_pricing_constraints(
 /// back to BaseFeeWei.
 fn handle_multi_gas_base_fee(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     use arb_primitives::multigas::{ResourceKind, NUM_RESOURCE_KIND};
@@ -922,8 +989,12 @@ fn handle_multi_gas_base_fee(
     }
 
     let result_words = (out.len() as u64).div_ceil(32);
+    // body reads: 1 SLOAD for base_fee_wei + NUM_RESOURCE_KIND per-kind fee SLOADs.
+    let body_sloads = 1 + NUM_RESOURCE_KIND as u64;
+    crate::charge_storage_read(gas_used, ctx, body_sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, result_words * COPY_GAS);
     Ok(PrecompileOutput::new(
-        ((2 + NUM_RESOURCE_KIND as u64) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }

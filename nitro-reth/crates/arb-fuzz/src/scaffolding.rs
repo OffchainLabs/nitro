@@ -17,7 +17,7 @@ use crate::{
 
 pub const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;
 pub const INVOKE_GAS_CAP: u64 = 30_000_000;
-pub const DEPLOY_GAS_CAP: u64 = 150_000_000;
+pub const DEPLOY_GAS_CAP: u64 = 1_000_000_000;
 pub const SEQUENCER_ALIAS: Address = Address::new([
     0xa4, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x73, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x72,
 ]);

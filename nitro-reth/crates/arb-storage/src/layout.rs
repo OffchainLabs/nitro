@@ -2,22 +2,43 @@
 
 use alloy_primitives::{keccak256, B256, U256};
 
+// Root subspace IDs partitioning the ArbOS state trie.
 pub const L1_PRICING_SUBSPACE: &[u8] = &[0];
 pub const L2_PRICING_SUBSPACE: &[u8] = &[1];
 pub const RETRYABLES_SUBSPACE: &[u8] = &[2];
 pub const ADDRESS_TABLE_SUBSPACE: &[u8] = &[3];
 pub const CHAIN_OWNER_SUBSPACE: &[u8] = &[4];
+pub const SEND_MERKLE_SUBSPACE: &[u8] = &[5];
+pub const BLOCKHASHES_SUBSPACE: &[u8] = &[6];
+pub const CHAIN_CONFIG_SUBSPACE: &[u8] = &[7];
 pub const PROGRAMS_SUBSPACE: &[u8] = &[8];
+pub const FEATURES_SUBSPACE: &[u8] = &[9];
 pub const NATIVE_TOKEN_SUBSPACE: &[u8] = &[10];
 pub const TRANSACTION_FILTERER_SUBSPACE: &[u8] = &[11];
 
-pub const PROGRAMS_PARAMS_KEY: &[u8] = &[0];
-pub const PROGRAMS_DATA_KEY: &[u8] = &[1];
-pub const CACHE_MANAGERS_KEY: &[u8] = &[4];
-
+// Root-level field offsets.
 pub const VERSION_OFFSET: u64 = 0;
+pub const UPGRADE_VERSION_OFFSET: u64 = 1;
+pub const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
+pub const NETWORK_FEE_ACCOUNT_OFFSET: u64 = 3;
 pub const CHAIN_ID_OFFSET: u64 = 4;
+pub const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
+pub const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
 pub const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
+pub const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
+pub const TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
+pub const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
+pub const COLLECT_TIPS_OFFSET: u64 = 11;
+
+/// Partition keys within the programs subspace.
+pub mod programs {
+    pub const PARAMS_KEY: &[u8] = &[0];
+    pub const PROGRAM_DATA_KEY: &[u8] = &[1];
+    pub const MODULE_HASHES_KEY: &[u8] = &[2];
+    pub const DATA_PRICER_KEY: &[u8] = &[3];
+    pub const CACHE_MANAGERS_KEY: &[u8] = &[4];
+    pub const ACTIVATION_GAS_KEY: &[u8] = &[5];
+}
 
 pub const ROOT_STORAGE_KEY: &[u8] = &[];
 

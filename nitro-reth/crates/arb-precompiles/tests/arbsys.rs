@@ -3,6 +3,7 @@ mod common;
 use alloy_primitives::{address, Address, B256, U256};
 use arb_precompiles::create_arbsys_precompile;
 use common::{calldata, decode_address, decode_u256, word_address, word_u256, PrecompileTest};
+use revm::precompile::PrecompileError;
 
 const ARBOS_V11: u64 = 11;
 const ARBOS_V30: u64 = 30;
@@ -171,4 +172,17 @@ fn arb_block_hash_reverts_for_too_old_block_arbos11() {
         );
     let out = run.assert_ok();
     assert!(out.reverted);
+}
+
+#[test]
+fn arb_block_hash_fatal_for_uncached_in_range_block() {
+    let run = PrecompileTest::new()
+        .arbos_version(ARBOS_V30)
+        .block_number(100)
+        .arbos_state()
+        .call(
+            arbsys,
+            &calldata("arbBlockHash(uint256)", &[word_u256(U256::from(99))]),
+        );
+    assert!(matches!(run.assert_err(), PrecompileError::Fatal(_)));
 }

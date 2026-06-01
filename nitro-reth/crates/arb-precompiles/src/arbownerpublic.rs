@@ -29,7 +29,7 @@ pub fn create_arbownerpublic_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecom
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbOwnerPublic::ArbOwnerPublicCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -38,7 +38,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     use IArbOwnerPublic::ArbOwnerPublicCalls as Calls;
     let result = match call {
-        Calls::getNetworkFeeAccount(_) => read_network_fee_account(&mut input, ctx),
+        Calls::getNetworkFeeAccount(_) => read_network_fee_account(&mut input, &mut gas_used, ctx),
         Calls::getInfraFeeAccount(_) => {
             if let Some(r) = crate::check_method_version(
                 ctx,
@@ -48,7 +48,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_infra_fee_account(&mut input, ctx)
+            read_infra_fee_account(&mut input, &mut gas_used, ctx)
         }
         Calls::getBrotliCompressionLevel(_) => {
             if let Some(r) = crate::check_method_version(
@@ -59,7 +59,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_brotli_compression_level(&mut input, ctx)
+            read_brotli_compression_level(&mut input, &mut gas_used, ctx)
         }
         Calls::getScheduledUpgrade(_) => {
             if let Some(r) = crate::check_method_version(
@@ -70,10 +70,10 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_scheduled_upgrade(&mut input, ctx)
+            handle_scheduled_upgrade(&mut input, &mut gas_used, ctx)
         }
-        Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, c.addr, ctx),
-        Calls::getAllChainOwners(_) => handle_get_all_chain_owners(&mut input, ctx),
+        Calls::isChainOwner(c) => handle_is_chain_owner(&mut input, &mut gas_used, c.addr, ctx),
+        Calls::getAllChainOwners(_) => handle_get_all_chain_owners(&mut input, &mut gas_used, ctx),
         Calls::rectifyChainOwner(c) => {
             if let Some(r) = crate::check_method_version(
                 ctx,
@@ -94,7 +94,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_is_native_token_owner(&mut input, c.addr, ctx)
+            handle_is_native_token_owner(&mut input, &mut gas_used, c.addr, ctx)
         }
         Calls::isTransactionFilterer(c) => {
             if let Some(r) = crate::check_method_version(
@@ -105,7 +105,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_is_transaction_filterer(&mut input, c.filterer, ctx)
+            handle_is_transaction_filterer(&mut input, &mut gas_used, c.filterer, ctx)
         }
         Calls::getAllNativeTokenOwners(_) => {
             if let Some(r) = crate::check_method_version(
@@ -116,7 +116,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_get_all_native_token_owners(&mut input, ctx)
+            handle_get_all_native_token_owners(&mut input, &mut gas_used, ctx)
         }
         Calls::getAllTransactionFilterers(_) => {
             if let Some(r) = crate::check_method_version(
@@ -127,7 +127,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_get_all_transaction_filterers(&mut input, ctx)
+            handle_get_all_transaction_filterers(&mut input, &mut gas_used, ctx)
         }
         Calls::getNativeTokenManagementFrom(_) => {
             if let Some(r) = crate::check_method_version(
@@ -138,7 +138,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_native_token_management_from(&mut input, ctx)
+            read_native_token_management_from(&mut input, &mut gas_used, ctx)
         }
         Calls::getTransactionFilteringFrom(_) => {
             if let Some(r) = crate::check_method_version(
@@ -149,7 +149,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_transaction_filtering_from(&mut input, ctx)
+            read_transaction_filtering_from(&mut input, &mut gas_used, ctx)
         }
         Calls::getFilteredFundsRecipient(_) => {
             if let Some(r) = crate::check_method_version(
@@ -160,7 +160,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_filtered_funds_recipient(&mut input, ctx)
+            read_filtered_funds_recipient(&mut input, &mut gas_used, ctx)
         }
         Calls::isCalldataPriceIncreaseEnabled(_) => {
             if let Some(r) = crate::check_method_version(
@@ -171,7 +171,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_is_calldata_price_increase_enabled(&mut input, ctx)
+            handle_is_calldata_price_increase_enabled(&mut input, &mut gas_used, ctx)
         }
         Calls::getParentGasFloorPerToken(_) => {
             if let Some(r) = crate::check_method_version(
@@ -182,7 +182,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            read_parent_gas_floor_per_token(&mut input, ctx)
+            read_parent_gas_floor_per_token(&mut input, &mut gas_used, ctx)
         }
         Calls::getMaxStylusContractFragments(_) => {
             if let Some(r) = crate::check_method_version(
@@ -193,7 +193,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ) {
                 return r;
             }
-            handle_max_stylus_fragments(&mut input, ctx)
+            handle_max_stylus_fragments(&mut input, &mut gas_used, ctx)
         }
         Calls::getCollectTips(_) => {
             if let Some(r) = crate::check_method_version(
@@ -218,15 +218,23 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
     Ok(())
 }
 
-fn field_read_output(gas_limit: u64, value: U256) -> PrecompileResult {
+fn field_read_output(
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    gas_limit: u64,
+    value: U256,
+) -> PrecompileResult {
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn read_network_fee_account(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -239,11 +247,17 @@ fn read_network_fee_account(
     let addr = arb_state
         .network_fee_account(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
+    field_read_output(
+        gas_used,
+        ctx,
+        gas_limit,
+        U256::from_be_slice(addr.as_slice()),
+    )
 }
 
 fn read_infra_fee_account(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -262,11 +276,17 @@ fn read_infra_fee_account(
             .infra_fee_account(internals)
             .map_err(ArbPrecompileError::fatal)?
     };
-    field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
+    field_read_output(
+        gas_used,
+        ctx,
+        gas_limit,
+        U256::from_be_slice(addr.as_slice()),
+    )
 }
 
 fn read_brotli_compression_level(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -279,11 +299,12 @@ fn read_brotli_compression_level(
     let value = arb_state
         .brotli_compression_level(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_native_token_management_from(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -296,11 +317,12 @@ fn read_native_token_management_from(
     let value = arb_state
         .native_token_management_from_time(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_transaction_filtering_from(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -313,11 +335,12 @@ fn read_transaction_filtering_from(
     let value = arb_state
         .transaction_filtering_from_time(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn read_filtered_funds_recipient(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -330,11 +353,17 @@ fn read_filtered_funds_recipient(
     let addr = arb_state
         .filtered_funds_recipient(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from_be_slice(addr.as_slice()))
+    field_read_output(
+        gas_used,
+        ctx,
+        gas_limit,
+        U256::from_be_slice(addr.as_slice()),
+    )
 }
 
 fn read_parent_gas_floor_per_token(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -348,11 +377,12 @@ fn read_parent_gas_floor_per_token(
         .l1_pricing_state
         .parent_gas_floor_per_token(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    field_read_output(gas_limit, U256::from(value))
+    field_read_output(gas_used, ctx, gas_limit, U256::from(value))
 }
 
 fn handle_scheduled_upgrade(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -370,14 +400,17 @@ fn handle_scheduled_upgrade(
     out.extend_from_slice(&U256::from(version).to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(timestamp).to_be_bytes::<32>());
 
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, 2 * COPY_GAS);
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }
 
 fn handle_is_chain_owner(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
@@ -398,14 +431,17 @@ fn handle_is_chain_owner(
         U256::ZERO
     };
 
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_is_native_token_owner(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
@@ -426,14 +462,17 @@ fn handle_is_native_token_owner(
         U256::ZERO
     };
 
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_is_transaction_filterer(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
@@ -454,8 +493,10 @@ fn handle_is_transaction_filterer(
         U256::ZERO
     };
 
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -468,27 +509,43 @@ enum AddressSetKind {
 
 fn handle_get_all_chain_owners(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
-    handle_get_all_set_members(input, AddressSetKind::ChainOwners, 256, ctx)
+    handle_get_all_set_members(input, gas_used, AddressSetKind::ChainOwners, 256, ctx)
 }
 
 fn handle_get_all_native_token_owners(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
-    handle_get_all_set_members(input, AddressSetKind::NativeTokenOwners, 65_536, ctx)
+    handle_get_all_set_members(
+        input,
+        gas_used,
+        AddressSetKind::NativeTokenOwners,
+        65_536,
+        ctx,
+    )
 }
 
 fn handle_get_all_transaction_filterers(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
-    handle_get_all_set_members(input, AddressSetKind::TransactionFilterers, 65_536, ctx)
+    handle_get_all_set_members(
+        input,
+        gas_used,
+        AddressSetKind::TransactionFilterers,
+        65_536,
+        ctx,
+    )
 }
 
 fn handle_get_all_set_members(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     kind: AddressSetKind,
     cap: u64,
     ctx: &ArbPrecompileCtx,
@@ -519,8 +576,10 @@ fn handle_get_all_set_members(
         out.extend_from_slice(&word);
     }
 
+    crate::charge_storage_read(gas_used, ctx, (1 + count) * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, (2 + count) * COPY_GAS);
     Ok(PrecompileOutput::new(
-        ((2 + count) * SLOAD_GAS + (2 + count) * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.into(),
     ))
 }
@@ -543,8 +602,13 @@ fn handle_rectify_chain_owner(
     match arb_state.chain_owners.rectify_mapping(internals, addr) {
         Ok(()) => {}
         Err(AddressSetError::Storage(s)) => return Err(ArbPrecompileError::fatal(s).into()),
-        Err(AddressSetError::NotMember | AddressSetError::MappingAlreadyConsistent) => {
-            return Err(ArbPrecompileError::empty_revert(*gas_used).into())
+        Err(AddressSetError::NotMember) => {
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+        }
+        Err(AddressSetError::MappingAlreadyConsistent) => {
+            crate::charge_storage_read(gas_used, ctx, 4 * SLOAD_GAS);
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
     }
 
@@ -560,16 +624,19 @@ fn handle_rectify_chain_owner(
 
     const SSTORE_ZERO_GAS: u64 = 5_000;
     const RECTIFY_EVENT_GAS: u64 = 1_006;
-    let gas_cost =
-        SLOAD_GAS + 7 * SLOAD_GAS + SSTORE_ZERO_GAS + 3 * SSTORE_GAS + RECTIFY_EVENT_GAS + COPY_GAS;
+    crate::charge_storage_read(gas_used, ctx, 7 * SLOAD_GAS);
+    crate::charge_storage_write(gas_used, ctx, SSTORE_ZERO_GAS + 3 * SSTORE_GAS);
+    crate::charge_history_growth(gas_used, ctx, RECTIFY_EVENT_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        gas_cost.min(gas_limit),
+        (*gas_used).min(gas_limit),
         Vec::new().into(),
     ))
 }
 
 fn handle_is_calldata_price_increase_enabled(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -588,19 +655,20 @@ fn handle_is_calldata_price_increase_enabled(
     } else {
         U256::ZERO
     };
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_max_stylus_fragments(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
-    const METHOD_GAS: u64 = SLOAD_GAS + WARM_SLOAD_GAS + COPY_GAS;
-
     load_arbos(input)?;
     let internals = input.internals_mut();
     let arb_state = ctx
@@ -617,8 +685,10 @@ fn handle_max_stylus_fragments(
     }
     let mut out = [0u8; 32];
     out[31] = count;
+    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        METHOD_GAS.min(gas_limit),
+        (*gas_used).min(gas_limit),
         out.to_vec().into(),
     ))
 }
@@ -643,7 +713,8 @@ fn handle_get_collect_tips(
     if value {
         out[31] = 1;
     }
-    crate::charge_precompile_gas(gas_used, SLOAD_GAS + COPY_GAS);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         out.to_vec().into(),

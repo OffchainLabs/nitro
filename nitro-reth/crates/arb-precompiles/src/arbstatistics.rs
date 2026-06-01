@@ -14,7 +14,6 @@ pub const ARBSTATISTICS_ADDRESS: Address = Address::new([
 ]);
 
 const COPY_GAS: u64 = 3;
-const SLOAD_GAS: u64 = 800;
 
 pub fn create_arbstatistics_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbstatistics"), move |input| {
@@ -25,7 +24,7 @@ pub fn create_arbstatistics_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecomp
 fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbStatistics::ArbStatisticsCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -34,12 +33,16 @@ fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResu
 
     use IArbStatistics::ArbStatisticsCalls;
     let result = match call {
-        ArbStatisticsCalls::getStats(_) => handle_get_stats(&input, ctx),
+        ArbStatisticsCalls::getStats(_) => handle_get_stats(&input, &mut gas_used, ctx),
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
 }
 
-fn handle_get_stats(input: &PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+fn handle_get_stats(
+    input: &PrecompileInput<'_>,
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+) -> PrecompileResult {
     // Five Classic-era stats stay zero post-migration; only block number is live.
     let block_number = U256::from(ctx.block.l2_block_number);
     let mut out = Vec::with_capacity(192);
@@ -47,6 +50,9 @@ fn handle_get_stats(input: &PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Prec
     for _ in 0..5 {
         out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
     }
-    let gas_cost = (SLOAD_GAS + 6 * COPY_GAS).min(input.gas);
-    Ok(PrecompileOutput::new(gas_cost, out.into()))
+    crate::charge_computation(gas_used, ctx, 6 * COPY_GAS);
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(input.gas),
+        out.into(),
+    ))
 }

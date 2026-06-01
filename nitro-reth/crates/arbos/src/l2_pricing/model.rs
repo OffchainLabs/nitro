@@ -479,9 +479,12 @@ impl<D: Database> L2PricingState<'_, D> {
 
     /// Variant of `multi_dimensional_price_for_refund` that uses precomputed
     /// current-block multi-gas fees (as returned by `get_current_multi_gas_fees`).
-    /// `base_fee_wei` is still read from state to handle rare mid-block
-    /// `setL2BaseFee` owner writes. Zero cached values are substituted with the
-    /// live base_fee, matching `get_multi_gas_base_fee_per_resource` exactly.
+    ///
+    /// Single-dimensional gas and any resource whose current-block fee is zero
+    /// are valued at the live `base_fee_wei` (the per-block floor), matching
+    /// `get_multi_gas_base_fee_per_resource`. The refund reconciles the
+    /// single-gas cost the sender paid (`base_fee × gasUsed`) against this
+    /// multi-dimensional cost over the raw, pre-refund resource usage.
     pub fn multi_dimensional_price_for_refund_with_fees<B: SystemStateBackend>(
         &self,
         backend: &mut B,

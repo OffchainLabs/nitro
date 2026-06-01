@@ -104,8 +104,10 @@ impl MockStorage {
     fn set(&self, addr: Address, slot: B256, value: U256) {
         self.map.borrow_mut().insert((addr, slot), value);
     }
-    fn reader(&self) -> impl Fn(Address, B256) -> Option<U256> + '_ {
-        |addr, slot| self.map.borrow().get(&(addr, slot)).copied()
+    fn reader(
+        &self,
+    ) -> impl Fn(Address, B256) -> Result<Option<U256>, std::convert::Infallible> + '_ {
+        |addr, slot| Ok(self.map.borrow().get(&(addr, slot)).copied())
     }
 }
 
@@ -116,7 +118,7 @@ fn read_storage_u64_be_returns_last_8_bytes() {
     let slot = B256::ZERO;
     s.set(addr, slot, U256::from(0x1234567890ABCDEFu64));
     assert_eq!(
-        read_storage_u64_be(&s.reader(), addr, slot),
+        read_storage_u64_be(&s.reader(), addr, slot).unwrap(),
         Some(0x1234567890ABCDEF)
     );
 }
@@ -125,7 +127,7 @@ fn read_storage_u64_be_returns_last_8_bytes() {
 fn read_storage_u64_be_returns_none_if_unset() {
     let s = MockStorage::default();
     assert_eq!(
-        read_storage_u64_be(&s.reader(), Address::ZERO, B256::ZERO),
+        read_storage_u64_be(&s.reader(), Address::ZERO, B256::ZERO).unwrap(),
         None
     );
 }
@@ -137,7 +139,7 @@ fn read_storage_hash_converts_u256_to_b256() {
     let slot = B256::ZERO;
     s.set(addr, slot, U256::from_be_slice(&[0xAA; 32]));
     assert_eq!(
-        read_storage_hash(&s.reader(), addr, slot),
+        read_storage_hash(&s.reader(), addr, slot).unwrap(),
         Some(B256::repeat_byte(0xAA))
     );
 }
@@ -146,7 +148,7 @@ fn read_storage_hash_converts_u256_to_b256() {
 fn merkle_root_size_zero_is_zero_hash() {
     let s = MockStorage::default();
     assert_eq!(
-        merkle_root_from_partials(&s.reader(), Address::ZERO, &[], 0),
+        merkle_root_from_partials(&s.reader(), Address::ZERO, &[], 0).unwrap(),
         Some(B256::ZERO)
     );
 }
@@ -168,27 +170,79 @@ fn derive_arb_header_info_reads_version_from_storage() {
         B256::from(mapped)
     };
     s.set(ARBOS_STATE_ADDRESS, slot, U256::from(version));
-    let info = derive_arb_header_info(&reader).expect("some");
+    let info = derive_arb_header_info(&reader, arbos::l1_pricing::BATCH_POSTER_ADDRESS)
+        .unwrap()
+        .expect("some");
     assert_eq!(info.arbos_format_version, version);
     assert_eq!(info.send_count, 0);
     assert_eq!(info.l1_block_number, 0);
     assert_eq!(info.send_root, B256::ZERO);
 }
 
+/// Root-level ArbOS slot for `offset` (`keccak256([0;31]) || offset`).
+fn root_slot(offset: u8) -> B256 {
+    use alloy_primitives::keccak256;
+    let h = keccak256([0u8; 31]);
+    let mut mapped = [0u8; 32];
+    mapped[..31].copy_from_slice(&h.0[..31]);
+    mapped[31] = offset;
+    B256::from(mapped)
+}
+
+#[test]
+fn derive_collect_tips_excluded_for_non_batch_poster_coinbase() {
+    let s = MockStorage::default();
+    s.set(ARBOS_STATE_ADDRESS, root_slot(0), U256::from(60u64)); // version
+    s.set(ARBOS_STATE_ADDRESS, root_slot(11), U256::from(1u64)); // collectTips enabled
+    let reader = s.reader();
+
+    let on = derive_arb_header_info(&reader, arbos::l1_pricing::BATCH_POSTER_ADDRESS)
+        .unwrap()
+        .expect("some");
+    assert!(
+        on.collect_tips,
+        "a batch-poster block collects tips when enabled"
+    );
+
+    let off = derive_arb_header_info(&reader, Address::ZERO)
+        .unwrap()
+        .expect("some");
+    assert!(
+        !off.collect_tips,
+        "a non-batch-poster block never collects tips"
+    );
+}
+
+#[test]
+fn header_reads_propagate_backing_store_errors() {
+    // A backing-store failure must propagate, never be swallowed into a
+    // default/None that would read as a wrong (zero) header field.
+    let failing = |_a: Address, _s: B256| -> Result<Option<U256>, &'static str> { Err("db down") };
+    assert_eq!(
+        read_storage_u64_be(&failing, Address::ZERO, B256::ZERO),
+        Err("db down")
+    );
+    assert_eq!(read_l2_base_fee(&failing), Err("db down"));
+    assert_eq!(
+        derive_arb_header_info(&failing, arbos::l1_pricing::BATCH_POSTER_ADDRESS).err(),
+        Some("db down")
+    );
+}
+
 #[test]
 fn read_arbos_version_returns_none_when_missing() {
     let s = MockStorage::default();
-    assert_eq!(read_arbos_version(&s.reader()), None);
+    assert_eq!(read_arbos_version(&s.reader()).unwrap(), None);
 }
 
 #[test]
 fn read_l2_per_block_gas_limit_returns_none_when_missing() {
     let s = MockStorage::default();
-    assert_eq!(read_l2_per_block_gas_limit(&s.reader()), None);
+    assert_eq!(read_l2_per_block_gas_limit(&s.reader()).unwrap(), None);
 }
 
 #[test]
 fn read_l2_base_fee_returns_none_when_missing() {
     let s = MockStorage::default();
-    assert_eq!(read_l2_base_fee(&s.reader()), None);
+    assert_eq!(read_l2_base_fee(&s.reader()).unwrap(), None);
 }

@@ -138,8 +138,9 @@ fn send_merkle_tree_state_empty_v30_gas_pin() {
     let run = fixture(ARBOS_V30)
         .caller(Address::ZERO)
         .call(arbsys, &calldata("sendMerkleTreeState()", &[]));
-    // STORAGE_READ_COST(800 body size read) + argsCost(0) + resultCost(4 words) = 812
-    assert_eq!(run.gas_used(), SLOAD + 4 * COPY);
+    // OpenArbosState(800) + STORAGE_READ_COST(800 body size read) + argsCost(0)
+    //   + resultCost(4 words) = 1612.
+    assert_eq!(run.gas_used(), 2 * SLOAD + 4 * COPY);
 }
 
 // ── L2→L1 send paths. The full append-emit schedule includes keccak,
@@ -197,4 +198,35 @@ fn send_tx_to_l1_with_calldata_v30_gas_pin() {
     // + phantom size SLOAD + L2ToL1Tx LOG4 over 7-head + 1-payload + 0-pad
     // (256 bytes) + resultCost.
     assert_eq!(run.gas_used(), 46_410);
+}
+
+// `gas_check` must enforce the budget against the raw running total. If a
+// handler's `PrecompileOutput::gas_used` is clamped down to `gas_limit` (the
+// usual pattern), an overrun would otherwise be silently masked as success —
+// allowing logs and writes from a call that should have OOG'd.
+#[test]
+fn handler_charging_past_gas_limit_returns_out_of_gas() {
+    use revm::precompile::PrecompileError;
+    let run = fixture(ARBOS_V30)
+        .gas(100)
+        .call(arbsys, &calldata("arbBlockNumber()", &[]));
+    assert!(matches!(run.assert_err(), PrecompileError::OutOfGas));
+}
+
+#[test]
+fn send_tx_to_l1_with_insufficient_gas_returns_out_of_gas() {
+    use revm::precompile::PrecompileError;
+    let dest: Address = address!("000000000000000000000000000000000000cccc");
+    let mut buf = Vec::with_capacity(4 + 3 * 32);
+    buf.extend_from_slice(&common::selector("sendTxToL1(address,bytes)"));
+    buf.extend_from_slice(word_address(dest).as_slice());
+    buf.extend_from_slice(word_u256(U256::from(64u64)).as_slice());
+    buf.extend_from_slice(word_u256(U256::ZERO).as_slice());
+    let run = fixture(ARBOS_V30)
+        .caller(address!("00000000000000000000000000000000000000aa"))
+        .block_number(1_000)
+        .block_timestamp(1_700_000_000)
+        .gas(20_000)
+        .call(arbsys, &alloy_primitives::Bytes::from(buf));
+    assert!(matches!(run.assert_err(), PrecompileError::OutOfGas));
 }

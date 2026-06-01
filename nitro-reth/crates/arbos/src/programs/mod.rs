@@ -1,4 +1,3 @@
-pub mod api;
 pub mod data_pricer;
 mod error;
 pub mod memory;
@@ -8,14 +7,13 @@ pub mod types;
 pub use error::ProgramsError;
 
 use alloy_primitives::{B256, U256};
-use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES;
 use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::Database;
 
 use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
 
 pub use self::types::{
-    evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, RequestType, UserOutcome,
+    evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, UserOutcome,
 };
 use self::{
     data_pricer::{init_data_pricer, open_data_pricer, DataPricer, ARBITRUM_START_TIME},
@@ -24,12 +22,10 @@ use self::{
 };
 use crate::address_set::{open_address_set, AddressSet};
 
-const PARAMS_KEY: &[u8] = &[0];
-const PROGRAM_DATA_KEY: &[u8] = &[1];
-const MODULE_HASHES_KEY: &[u8] = &[2];
-pub const DATA_PRICER_KEY: &[u8] = &[3];
-const CACHE_MANAGERS_KEY: &[u8] = &[4];
-const ACTIVATION_GAS_KEY: &[u8] = &[5];
+pub use arb_storage::layout::programs::DATA_PRICER_KEY;
+use arb_storage::layout::programs::{
+    ACTIVATION_GAS_KEY, CACHE_MANAGERS_KEY, MODULE_HASHES_KEY, PARAMS_KEY, PROGRAM_DATA_KEY,
+};
 
 /// Per-program metadata stored in state.
 #[derive(Debug, Clone, Copy)]
@@ -406,74 +402,6 @@ impl<D: Database> Programs<'_, D> {
         self.set_program(backend, code_hash, program)?;
 
         Ok(data_fee)
-    }
-
-    /// Execute a Stylus program call.
-    ///
-    /// Computes gas costs, resolves program metadata, and delegates to the
-    /// provided `call_fn` which handles the actual WASM runtime execution.
-    /// After execution, enforces return data cost parity with the EVM and
-    /// attributes residual gas to WasmComputation.
-    ///
-    /// The `call_fn` receives `(program, prog_params, evm_data, calldata, gas)`
-    /// and returns `(output_bytes, gas_left)` or an error.
-    pub fn call_program<B: StorageBackend, F>(
-        &self,
-        backend: &mut B,
-        code_hash: B256,
-        time: u64,
-        pages_open: u16,
-        calldata: &[u8],
-        evm_data: EvmData,
-        _reentrant: bool,
-        debug_mode: bool,
-        gas: u64,
-        used_multi_gas: &mut MultiGas,
-        recent_cache_hit: bool,
-        call_fn: F,
-    ) -> Result<(Vec<u8>, u64), ProgramsError>
-    where
-        F: FnOnce(
-            Program,
-            ProgParams,
-            EvmData,
-            &[u8],
-            u64,
-        ) -> Result<(Vec<u8>, u64), ProgramsError>,
-    {
-        let (call_cost, program, _model) =
-            self.call_gas_cost(backend, code_hash, time, pages_open, recent_cache_hit)?;
-
-        if gas < call_cost {
-            return Err(ProgramsError::InsufficientGas {
-                needed: call_cost,
-                have: gas,
-            });
-        }
-
-        let gas_for_program = gas - call_cost;
-        let params = self.prog_params(program.version, debug_mode, &self.params(backend)?);
-
-        let starting_gas = gas;
-        let (output, gas_left) = call_fn(program, params, evm_data, calldata, gas_for_program)?;
-
-        // Ensure return data costs at least as much as it would in the EVM.
-        let gas_left = if !output.is_empty() && self.arbos_version >= ARBOS_VERSION_STYLUS_FIXES {
-            let evm_cost = evm_memory_cost(output.len() as u64);
-            if starting_gas < evm_cost {
-                // Burn all remaining gas.
-                attribute_wasm_computation(used_multi_gas, starting_gas, 0);
-                return Err(ProgramsError::ReturnDataOutOfGas);
-            }
-            let max_gas_to_return = starting_gas - evm_cost;
-            gas_left.min(max_gas_to_return)
-        } else {
-            gas_left
-        };
-
-        attribute_wasm_computation(used_multi_gas, starting_gas, gas_left);
-
-        Ok((output, gas_left))
     }
 
     /// Update the cached status of a program.

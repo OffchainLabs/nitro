@@ -1,6 +1,7 @@
 //! Per-block and per-tx context threaded into Arbitrum precompile handlers.
 
 use alloy_primitives::{Address, B256, U256};
+use arb_primitives::multigas::MultiGas;
 use arb_storage::{Detached, SystemStateBackend};
 use arbos::{
     arbos_state::{arbos_from_input_system, ArbosState, ArbosStateError},
@@ -221,6 +222,8 @@ pub struct TxCtx {
     pub stylus_program_counts: HashMap<Address, u32>,
     pub stylus_pages_open: u16,
     pub stylus_pages_ever: u16,
+    pub stylus_multi_gas: MultiGas,
+    pub precompile_multi_gas: MultiGas,
 }
 
 impl TxCtx {
@@ -360,6 +363,46 @@ impl ArbPrecompileCtx {
 
     pub fn stylus_call_value(&self) -> U256 {
         self.tx.lock().stylus_call_value
+    }
+
+    pub fn add_stylus_multi_gas(&self, gas: MultiGas) {
+        let mut tx = self.tx.lock();
+        tx.stylus_multi_gas = tx.stylus_multi_gas.saturating_add(gas);
+    }
+
+    pub fn stylus_multi_gas(&self) -> MultiGas {
+        self.tx.lock().stylus_multi_gas
+    }
+
+    /// Accumulate per-dimension gas for a precompile charge. The single-gas
+    /// total still flows through the precompile's own `gas_used`; this records
+    /// only the resource breakdown for the v60 pricing backlog.
+    pub fn add_precompile_multi_gas(
+        &self,
+        kind: arb_primitives::multigas::ResourceKind,
+        amount: u64,
+    ) {
+        let mut tx = self.tx.lock();
+        tx.precompile_multi_gas
+            .saturating_increment_into(kind, amount);
+    }
+
+    pub fn precompile_multi_gas(&self) -> MultiGas {
+        self.tx.lock().precompile_multi_gas
+    }
+
+    /// Capture the current `precompile_multi_gas` so callers can later restore
+    /// it. Used by precompiles whose body gas is intentionally discarded at the
+    /// receipt (mirroring the reference, where access-controlled methods report
+    /// zero gas) so the per-dimension contributions they recorded are dropped
+    /// before the result is returned.
+    pub fn snapshot_precompile_multi_gas(&self) -> MultiGas {
+        self.tx.lock().precompile_multi_gas
+    }
+
+    /// Restore `precompile_multi_gas` to a previously captured snapshot.
+    pub fn restore_precompile_multi_gas(&self, snapshot: MultiGas) {
+        self.tx.lock().precompile_multi_gas = snapshot;
     }
 
     /// Increment the reentrancy counter for `addr` and return `true` if this

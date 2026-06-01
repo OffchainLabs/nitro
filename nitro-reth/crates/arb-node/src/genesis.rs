@@ -9,6 +9,11 @@ use revm::{database::State, Database};
 use tracing::info;
 
 use arb_storage::{
+    layout::{
+        ADDRESS_TABLE_SUBSPACE, BLOCKHASHES_SUBSPACE, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
+        FEATURES_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
+        SEND_MERKLE_SUBSPACE,
+    },
     set_account_code, set_account_nonce, Storage, StorageBackedBigUint, StorageBackedBytes,
     ARBOS_STATE_ADDRESS,
 };
@@ -130,7 +135,7 @@ pub fn initialize_arbos_state<D: Database>(
 
     // 3c. Store serialized chain config.
     if !init_msg.serialized_chain_config.is_empty() {
-        let cc_sto = backing.open_sub_storage(&[7]); // CHAIN_CONFIG_SUBSPACE
+        let cc_sto = backing.open_sub_storage(CHAIN_CONFIG_SUBSPACE);
         let cc_bytes = StorageBackedBytes::new(cc_sto.base_key());
         // SAFETY: see initial state_mut() comment.
         cc_bytes
@@ -145,7 +150,7 @@ pub fn initialize_arbos_state<D: Database>(
     }
 
     // 4. Initialize L1 pricing state.
-    let l1_sto = backing.open_sub_storage(&[0]); // L1_PRICING_SUBSPACE
+    let l1_sto = backing.open_sub_storage(L1_PRICING_SUBSPACE);
     let rewards_recipient = if target_arbos_version >= 2 {
         chain_owner
     } else {
@@ -164,8 +169,7 @@ pub fn initialize_arbos_state<D: Database>(
     })?;
 
     // 5. Initialize L2 pricing state.
-    // L2_PRICING_SUBSPACE.
-    let l2_sto = backing.open_sub_storage(&[1]);
+    let l2_sto = backing.open_sub_storage(L2_PRICING_SUBSPACE);
     // SAFETY: see initial state_mut() comment.
     l2_pricing::L2PricingState::initialize(&l2_sto, unsafe { backing.state_mut() }).map_err(
         |e| GenesisError::InitSubsystem {
@@ -175,7 +179,7 @@ pub fn initialize_arbos_state<D: Database>(
     )?;
 
     // 6. Initialize retryable state.
-    let ret_sto = backing.open_sub_storage(&[2]); // RETRYABLES_SUBSPACE
+    let ret_sto = backing.open_sub_storage(RETRYABLES_SUBSPACE);
     arbos::retryables::RetryableState::initialize(&ret_sto).map_err(|e| {
         GenesisError::InitSubsystem {
             subsystem: "retryables",
@@ -184,11 +188,11 @@ pub fn initialize_arbos_state<D: Database>(
     })?;
 
     // 7. Initialize address table (no-op but call for consistency).
-    let at_sto = backing.open_sub_storage(&[3]); // ADDRESS_TABLE_SUBSPACE
+    let at_sto = backing.open_sub_storage(ADDRESS_TABLE_SUBSPACE);
     arbos::address_table::initialize_address_table(&at_sto);
 
     // 8. Initialize chain owners.
-    let co_sto = backing.open_sub_storage(&[4]); // CHAIN_OWNER_SUBSPACE
+    let co_sto = backing.open_sub_storage(CHAIN_OWNER_SUBSPACE);
     arbos::address_set::initialize_address_set(&co_sto).map_err(|e| {
         GenesisError::InitSubsystem {
             subsystem: "chain owners",
@@ -197,15 +201,15 @@ pub fn initialize_arbos_state<D: Database>(
     })?;
 
     // 9. Initialize merkle accumulator.
-    let ma_sto = backing.open_sub_storage(&[5]); // SEND_MERKLE_SUBSPACE
+    let ma_sto = backing.open_sub_storage(SEND_MERKLE_SUBSPACE);
     arbos::merkle_accumulator::initialize_merkle_accumulator(&ma_sto);
 
     // 10. Initialize blockhashes.
-    let bh_sto = backing.open_sub_storage(&[6]); // BLOCKHASHES_SUBSPACE
+    let bh_sto = backing.open_sub_storage(BLOCKHASHES_SUBSPACE);
     arbos::blockhash::initialize_blockhashes(&bh_sto);
 
     // 11. Initialize features.
-    let _feat_sto = backing.open_sub_storage(&[9]); // FEATURES_SUBSPACE
+    let _feat_sto = backing.open_sub_storage(FEATURES_SUBSPACE);
 
     // Open after persisting `version = 1` above. A failure here means the
     // freshly written version word is unreadable, which is unrecoverable

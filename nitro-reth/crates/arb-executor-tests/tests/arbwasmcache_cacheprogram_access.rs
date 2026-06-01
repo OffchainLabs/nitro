@@ -24,7 +24,8 @@ use arb_executor_tests::helpers::{
 };
 use arb_storage::{
     layout::{
-        derive_subspace_key, map_slot_b256, CACHE_MANAGERS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot_b256, programs::CACHE_MANAGERS_KEY, PROGRAMS_SUBSPACE,
+        ROOT_STORAGE_KEY,
     },
     write_storage_at, ARBOS_STATE_ADDRESS,
 };

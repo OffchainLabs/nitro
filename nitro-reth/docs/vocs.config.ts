@@ -33,6 +33,7 @@ export default defineConfig({
       text: "Running a Node",
       items: [
         { text: "Installation", link: "/docs/installation" },
+        { text: "Snapshots", link: "/docs/snapshots" },
         { text: "Configuration", link: "/docs/configuration" },
       ],
     },

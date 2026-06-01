@@ -57,7 +57,7 @@ pub fn create_arbretryabletx_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecom
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbRetryableTx::ArbRetryableTxCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -68,21 +68,23 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
     let result = match call {
         Calls::getLifetime(_) => {
             let lifetime = U256::from(RETRYABLE_LIFETIME_SECONDS);
+            crate::charge_computation(&mut gas_used, ctx, COPY_GAS);
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (gas_used).min(gas_limit),
                 lifetime.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         Calls::getCurrentRedeemer(_) => {
             let redeemer = ctx.tx_snapshot().redeemer_word();
+            crate::charge_computation(&mut gas_used, ctx, COPY_GAS);
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (gas_used).min(gas_limit),
                 redeemer.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         Calls::submitRetryable(_) => {
             let data = IArbRetryableTx::NotCallable {}.abi_encode();
-            return crate::sol_error_revert(&mut gas_used, data, gas_limit);
+            return crate::sol_error_revert(&mut gas_used, ctx, data, gas_limit);
         }
         Calls::getTimeout(c) => handle_get_timeout(&mut input, &mut gas_used, c.ticketId, ctx),
         Calls::getBeneficiary(c) => {
@@ -132,7 +134,7 @@ fn not_found_revert(
         return crate::burn_all_revert(gas_limit);
     }
     let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-    crate::sol_error_revert(gas_used, data, gas_limit)
+    crate::sol_error_revert(gas_used, ctx, data, gas_limit)
 }
 
 fn handle_get_timeout(
@@ -157,15 +159,17 @@ fn handle_get_timeout(
     {
         Ok(t) => t,
         Err(RetryableError::NoTicketWithId) => {
-            crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
-            return crate::sol_error_revert(gas_used, data, gas_limit);
+            return crate::sol_error_revert(gas_used, ctx, data, gas_limit);
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
 
+    crate::charge_storage_read(gas_used, ctx, 3 * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (4 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         U256::from(effective_timeout)
             .to_be_bytes::<32>()
             .to_vec()
@@ -195,14 +199,16 @@ fn handle_get_beneficiary(
     {
         Ok(addr) => addr,
         Err(RetryableError::NoTicketWithId) => {
-            crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
 
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
+        (*gas_used).min(gas_limit),
         U256::from_be_slice(beneficiary.as_slice())
             .to_be_bytes::<32>()
             .to_vec()
@@ -238,13 +244,13 @@ fn handle_redeem(
     let opened = retryable_state
         .open_retryable(internals, ticket_id, now)
         .map_err(|e| map_retryable_error(e, *gas_used))?;
-    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
 
     let calldata_raw_size = if let Some(ref ret) = opened {
         let size = ret
             .calldata_size(internals)
             .map_err(|e| map_retryable_error(e, *gas_used))?;
-        crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+        crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
         size
     } else {
         0
@@ -259,20 +265,21 @@ fn handle_redeem(
     };
 
     const PARAMS_SLOAD_GAS: u64 = 50;
-    crate::charge_precompile_gas(gas_used, PARAMS_SLOAD_GAS.saturating_mul(write_bytes));
+    crate::charge_storage_read(gas_used, ctx, PARAMS_SLOAD_GAS.saturating_mul(write_bytes));
 
     let nonce = match retryable_state.increment_num_tries_for(internals, ticket_id, now) {
         Ok(n) => n,
         Err(RetryableError::NoTicketWithId) => {
-            crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
-    crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS + SSTORE_GAS);
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_storage_write(gas_used, ctx, SSTORE_GAS);
 
     let make_tx_reads = 5 + calldata_raw_size / 32;
-    crate::charge_precompile_gas(gas_used, make_tx_reads * SLOAD_GAS);
+    crate::charge_storage_read(gas_used, ctx, make_tx_reads * SLOAD_GAS);
 
     let mut hash_input = [0u8; 64];
     hash_input[..32].copy_from_slice(ticket_id.as_slice());
@@ -313,14 +320,19 @@ fn handle_redeem(
         event_data.into(),
     ));
 
-    let total_gas = gas_used_so_far
-        + REDEEM_SCHEDULED_EVENT_COST
-        + gas_to_donate
-        + actual_backlog_cost
-        + COPY_GAS;
+    crate::charge_history_growth(gas_used, ctx, REDEEM_SCHEDULED_EVENT_COST);
+    // `gas_to_donate` is forwarded to the scheduled retry tx and folds into
+    // its execution gas; attribute as Computation at this precompile's
+    // receipt to preserve the single-gas total.
+    crate::charge_computation(gas_used, ctx, gas_to_donate);
+    // `actual_backlog_cost` is the per-constraint SLOAD + SSTORE charge for
+    // updating each constraint's backlog when the donation is applied.
+    crate::charge_storage_write(gas_used, ctx, actual_backlog_cost);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
+    let _ = gas_used_so_far;
 
     Ok(PrecompileOutput::new(
-        total_gas.min(gas_limit),
+        (*gas_used).min(gas_limit),
         retry_tx_hash.to_vec().into(),
     ))
 }
@@ -350,7 +362,7 @@ fn handle_keepalive(
     let new_timeout = match retryable_state.keepalive(internals, ticket_id, now, window_limit, 0) {
         Ok(t) => t,
         Err(RetryableError::NoTicketWithId) => {
-            crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(RetryableError::TimeoutTooFarFuture) => {
@@ -372,15 +384,18 @@ fn handle_keepalive(
     let nbytes = 6 * 32 + 32 + 32 * calldata_words;
     let update_cost = nbytes.div_ceil(32) * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
-    let gas_cost = 8 * SLOAD_GAS
-        + 3 * SSTORE_GAS
-        + 2 * COPY_GAS
-        + update_cost
-        + event_cost
-        + RETRYABLE_REAP_PRICE;
+
+    // Init already covered the framework SLOAD; body adds the remaining
+    // 7 retryable SLOADs, 3 writes (timeout/ttl bumps), 2 result/COPY, the
+    // calldata-bytes "phantom" update_cost (a stylus-cache style warm cost
+    // — Read), the LifetimeExtended log, and the reap-price fee.
+    crate::charge_storage_read(gas_used, ctx, 7 * SLOAD_GAS + update_cost);
+    crate::charge_storage_write(gas_used, ctx, 3 * SSTORE_GAS);
+    crate::charge_history_growth(gas_used, ctx, event_cost);
+    crate::charge_computation(gas_used, ctx, 2 * COPY_GAS + RETRYABLE_REAP_PRICE);
 
     Ok(PrecompileOutput::new(
-        gas_cost.min(gas_limit),
+        (*gas_used).min(gas_limit),
         U256::from(new_timeout).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -406,11 +421,11 @@ fn handle_cancel(
     let calldata_size = match retryable_state.cancel(internals, ticket_id, caller, now) {
         Ok(size) => size,
         Err(RetryableError::NoTicketWithId) => {
-            crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
         Err(RetryableError::NotBeneficiary) => {
-            crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS);
+            crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
@@ -429,10 +444,17 @@ fn handle_cancel(
         0
     };
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS;
-    let gas_cost = 6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + clear_bytes_cost + event_cost + COPY_GAS;
+
+    // Init already covered the framework SLOAD; body adds 5 retryable
+    // SLOADs (lookup + auth + state reads), 7 SSTORE-resets for clearing
+    // the retryable record + the calldata-byte zeroing.
+    crate::charge_storage_read(gas_used, ctx, 5 * SLOAD_GAS);
+    crate::charge_storage_write(gas_used, ctx, 7 * SSTORE_ZERO_GAS + clear_bytes_cost);
+    crate::charge_history_growth(gas_used, ctx, event_cost);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
 
     Ok(PrecompileOutput::new(
-        gas_cost.min(gas_limit),
+        (*gas_used).min(gas_limit),
         Vec::new().into(),
     ))
 }
@@ -454,7 +476,7 @@ fn compute_backlog_update_cost(
     }
     if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
         let len = read_gas_constraints_length(input, ctx)?;
-        crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+        crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
         if len > 0 {
             result += SLOAD_GAS;
             result += len.saturating_mul(SLOAD_GAS + SSTORE_GAS);

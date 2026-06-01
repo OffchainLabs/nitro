@@ -24,7 +24,7 @@ pub fn create_nodeinterface_debug_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynP
 fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match INodeInterfaceDebug::NodeInterfaceDebugCalls::abi_decode(input.data) {
         Ok(c) => c,

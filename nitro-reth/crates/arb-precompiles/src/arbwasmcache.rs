@@ -45,7 +45,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbWasmCache::ArbWasmCacheCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -63,10 +63,14 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         ArbWasmCacheCalls::evictCodehash(c) => {
             handle_evict_codehash(&mut input, ctx, &mut gas_used, c.codehash)
         }
-        ArbWasmCacheCalls::isCacheManager(c) => handle_is_cache_manager(&mut input, c.manager, ctx),
-        ArbWasmCacheCalls::allCacheManagers(_) => handle_all_cache_managers(&mut input, ctx),
+        ArbWasmCacheCalls::isCacheManager(c) => {
+            handle_is_cache_manager(&mut input, &mut gas_used, c.manager, ctx)
+        }
+        ArbWasmCacheCalls::allCacheManagers(_) => {
+            handle_all_cache_managers(&mut input, &mut gas_used, ctx)
+        }
         ArbWasmCacheCalls::codehashIsCached(c) => {
-            handle_codehash_is_cached(&mut input, ctx, c.codehash)
+            handle_codehash_is_cached(&mut input, &mut gas_used, ctx, c.codehash)
         }
     };
     crate::gas_check(ctx, gas_limit, gas_used, result)
@@ -88,10 +92,11 @@ fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), ArbPrecompileError>
 
 fn handle_is_cache_manager(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     addr: Address,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
-    let data_len = input.data.len();
+    let gas_limit = input.gas;
     load_arbos(input)?;
 
     let internals = input.internals_mut();
@@ -110,10 +115,10 @@ fn handle_is_cache_manager(
     } else {
         U256::ZERO
     };
-    let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -121,8 +126,10 @@ fn handle_is_cache_manager(
 /// Return all cache manager addresses.
 fn handle_all_cache_managers(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
+    let gas_limit = input.gas;
     load_arbos(input)?;
 
     let internals = input.internals_mut();
@@ -147,18 +154,21 @@ fn handle_all_cache_managers(
         out.extend_from_slice(&word);
     }
 
-    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(out.len() as u64);
-    let total = SLOAD_GAS + sloads * SLOAD_GAS + args_cost + result_cost;
-    Ok(PrecompileOutput::new(total.min(input.gas), out.into()))
+    crate::charge_storage_read(gas_used, ctx, sloads * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(out.len() as u64));
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        out.into(),
+    ))
 }
 
 fn handle_codehash_is_cached(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
     codehash: B256,
 ) -> PrecompileResult {
-    let data_len = input.data.len();
+    let gas_limit = input.gas;
     load_arbos(input)?;
 
     let time = ctx.block.block_timestamp;
@@ -177,10 +187,10 @@ fn handle_codehash_is_cached(
     } else {
         U256::ZERO
     };
-    let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
-    let result_cost = COPY_GAS * words_for_bytes(32);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * words_for_bytes(32));
     Ok(PrecompileOutput::new(
-        SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
+        (*gas_used).min(gas_limit),
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -235,8 +245,8 @@ fn read_params_and_program(
     Ok((params, program))
 }
 
-/// `pre_set_gas` lets the caller include an extra charge that must be paid on
-/// every exit path (e.g., the GetCodeHash access cost for `cacheProgram`).
+/// `pre_set_gas` lets the caller include an extra cold-account-access charge
+/// that must be paid on every exit path (e.g., `cacheProgram`'s GetCodeHash).
 fn set_program_cached(
     input: &mut PrecompileInput<'_>,
     ctx: &ArbPrecompileCtx,
@@ -245,28 +255,28 @@ fn set_program_cached(
     cache: bool,
     pre_set_gas: u64,
 ) -> PrecompileResult {
-    let data_len = input.data.len();
     let caller = input.caller;
     let now = ctx.block.block_timestamp;
+    let gas_limit = input.gas;
 
-    let args_cost = COPY_GAS * words_for_bytes(data_len.saturating_sub(4) as u64);
-    let boilerplate_gas = args_cost + SLOAD_GAS + pre_set_gas;
+    // `pre_set_gas` is `ColdAccountAccessCostEIP2929` (an account read) for
+    // `cacheProgram`'s GetCodeHash, and zero otherwise — both are read-class.
+    crate::charge_storage_read(gas_used, ctx, pre_set_gas);
 
     load_arbos(input)?;
 
     let (has_access, access_gas) = caller_has_cache_access(input, caller, ctx)?;
-    crate::charge_precompile_gas(gas_used, access_gas);
+    crate::charge_storage_read(gas_used, ctx, access_gas);
     if !has_access {
-        return crate::burn_all_revert(input.gas);
+        return crate::burn_all_revert(gas_limit);
     }
 
     let (params, mut program) = read_params_and_program(input, codehash, now, ctx)?;
-    crate::charge_precompile_gas(gas_used, SLOAD_GAS + SLOAD_GAS);
+    // `programs.params` (one SLOAD) + `get_program` (one SLOAD).
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS + SLOAD_GAS);
     let already_cached = program.cached;
     let expiry_seconds = (params.expiry_days as u64).saturating_mul(86_400);
     let expired = program.age_seconds > expiry_seconds;
-
-    let after_get_program_gas = boilerplate_gas + access_gas + WARM_SLOAD_GAS + SLOAD_GAS;
 
     if cache && program.version != params.version {
         let data = IArbWasm::ProgramNeedsUpgrade {
@@ -274,18 +284,20 @@ fn set_program_cached(
             stylusVersion: params.version,
         }
         .abi_encode();
-        return crate::sol_error_revert(gas_used, data, input.gas);
+        return crate::sol_error_revert(gas_used, ctx, data, gas_limit);
     }
     if cache && expired {
         let data = IArbWasm::ProgramExpired {
             ageInSeconds: program.age_seconds,
         }
         .abi_encode();
-        return crate::sol_error_revert(gas_used, data, input.gas);
+        return crate::sol_error_revert(gas_used, ctx, data, gas_limit);
     }
     if already_cached == cache {
+        // Original formula's pre-set-write tail: WARM_SLOAD + SLOAD, both Read.
+        crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS);
         return Ok(PrecompileOutput::new(
-            after_get_program_gas.min(input.gas),
+            (*gas_used).min(gas_limit),
             Vec::new().into(),
         ));
     }
@@ -323,13 +335,14 @@ fn set_program_cached(
         event_data.into(),
     ));
 
-    let gas_cost = after_get_program_gas
-        + EMIT_UPDATE_PROGRAM_CACHE_GAS
-        + prog_init_cost as u64
-        + SLOAD_GAS
-        + sstore_gas;
+    // Tail: WARM_SLOAD + SLOAD (reads), prog_init_cost (compute warm-up), emit
+    // log (HistoryGrowth), final SLOAD + SSTORE for the program write.
+    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS + SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, prog_init_cost as u64);
+    crate::charge_history_growth(gas_used, ctx, EMIT_UPDATE_PROGRAM_CACHE_GAS);
+    crate::charge_storage_write(gas_used, ctx, sstore_gas);
     Ok(PrecompileOutput::new(
-        gas_cost.min(input.gas),
+        (*gas_used).min(gas_limit),
         Vec::new().into(),
     ))
 }

@@ -8,13 +8,14 @@ Arbitrum Reth is organized as a Cargo workspace of focused, independently consum
 crates/
 ├── arb-node/          Node builder - wires all components into a runnable reth node
 ├── arb-rpc/           JSON-RPC - eth_, arb_, and nitroexecution_ namespaces
-├── arb-payload/       Payload building primitives for the Engine API
+├── arb-payload/       Payload building primitives
 ├── arb-txpool/        Transaction pool validation (rejects blobs, enforces fee caps)
 │
 ├── arb-evm/           Block executor, custom opcode handlers, EVM configuration
 ├── arbos/             Core ArbOS state machine, pricing, retryables, block processing
 ├── arb-precompiles/   System contracts at addresses 0x64+ (gas info, retryables, owner, etc.)
 ├── arb-stylus/        Stylus WASM runtime - compilation, caching, ink metering, host I/O
+├── arb-context/       Per-block / per-tx context (BlockCtx, TxCtx) threaded into the EVM and precompile handlers
 │
 ├── arb-primitives/    Transaction types, receipts, gas accounting
 ├── arb-storage/       Storage-backed types (uint64, address, bytes, queues, vectors)
@@ -22,7 +23,7 @@ crates/
 
 bin/
 ├── arb-reth/          Node binary (CLI entry point)
-└── gen-genesis/       Genesis state generator
+└── arb-test/          Testing CLI - genesis capture, Sepolia import, fixture record/verify/compare/promote/triage
 ```
 
 ## Dependency Layers
@@ -33,7 +34,7 @@ The crates form three layers with one-way dependencies flowing downward:
 `arb-node`, `arb-rpc`, `arb-payload`, `arb-txpool` - infrastructure that integrates with reth's node builder framework. These crates wire the execution layer into a runnable node with RPC endpoints and transaction pool management.
 
 ### Execution Layer
-`arb-evm`, `arbos`, `arb-precompiles`, `arb-stylus` - the core state transition logic. `arb-evm` implements reth's `BlockExecutor` trait and delegates to `arbos` for protocol-level state changes. Precompiles and Stylus are called during EVM execution.
+`arb-evm`, `arbos`, `arb-precompiles`, `arb-stylus`, `arb-context` - the core state transition logic. `arb-evm` implements reth's `BlockExecutor` trait and delegates to `arbos` for protocol-level state changes. Precompiles and Stylus are called during EVM execution. `arb-context` holds the per-block and per-tx state (`BlockCtx`, `TxCtx`) consumed by `arb-evm`, `arb-precompiles`, and `arb-stylus`; `arbos` does not depend on it.
 
 ### Primitives Layer
 `arb-primitives`, `arb-storage`, `arb-chainspec` - foundational types shared across all crates. Transaction types, storage abstractions, and version constants.

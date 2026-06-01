@@ -24,7 +24,7 @@ pub fn create_arbfunctiontable_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrec
 fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbFunctionTable::ArbFunctionTableCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -40,7 +40,7 @@ fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResu
         )),
         // Size: no-op returning 0. Cost = OpenArbosState + argsCost + 1-word resultCost.
         ArbFunctionTableCalls::size(_) => {
-            crate::charge_precompile_gas(&mut gas_used, COPY_GAS);
+            crate::charge_computation(&mut gas_used, ctx, COPY_GAS);
             Ok(PrecompileOutput::new(
                 gas_used.min(gas_limit),
                 U256::ZERO.to_be_bytes::<32>().to_vec().into(),

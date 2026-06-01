@@ -13,9 +13,26 @@ path = "src/main.rs"
 arb-node = { workspace = true }
 clap = { workspace = true }
 reth = { workspace = true }
+reth-cli = { workspace = true }
+reth-cli-commands = { workspace = true }
 reth-cli-util = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-config = { workspace = true }
+reth-consensus = { workspace = true }
 reth-engine-tree = { workspace = true }
 reth-ethereum-cli = { workspace = true }
+reth-evm = { workspace = true }
+reth-primitives-traits = { workspace = true }
+reth-provider = { workspace = true }
+reth-revm = { workspace = true }
+reth-stages = { workspace = true }
+reth-static-file = { workspace = true }
+reth-tasks = { workspace = true }
+reth-tracing = { workspace = true }
+alloy-consensus = { workspace = true }
+revm-database = { workspace = true }
+eyre = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

@@ -12,6 +12,7 @@ pub mod context;
 pub mod evm;
 pub mod executor;
 pub mod hooks;
+pub mod multi_gas;
 pub mod receipt;
 pub mod state_overlay;
 pub mod transaction;

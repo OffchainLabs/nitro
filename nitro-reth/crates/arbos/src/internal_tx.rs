@@ -343,14 +343,12 @@ where
     G: FnMut(Address) -> U256,
     C: StorageBackend,
 {
-    if data.len() < 4 {
+    let Some(selector) = data.first_chunk::<4>().copied() else {
         return Err(InternalTxDecodeError::Length {
             expected: 4,
             got: data.len(),
         });
-    }
-
-    let selector: [u8; 4] = data[0..4].try_into().unwrap();
+    };
 
     match selector {
         INTERNAL_TX_START_BLOCK_METHOD_ID => {

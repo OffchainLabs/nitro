@@ -69,7 +69,7 @@ jobs:
       - name: Prepare for Pages
         run: |
           touch docs/docs/dist/.nojekyll
-          echo "arbitrum-reth.rs" > docs/docs/dist/CNAME
+          echo "arbreth.rs" > docs/docs/dist/CNAME
 
       - uses: actions/upload-pages-artifact@v5
         with:

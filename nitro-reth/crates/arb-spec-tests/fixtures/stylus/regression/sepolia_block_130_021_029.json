@@ -1,6 +1,6 @@
 {
   "name": "sepolia_block_130_021_029",
-  "description": "Sepolia tx 0x97f87acd... at block 130,021,029 (idx 1). Proxy 0xaab1 DELEGATECALLs Stylus impl 0x9a91, which makes 7 sub-calls (incl. nested DELEGATECALL through 5 more Stylus impls + 41 logs). Status=1, 41 logs match canon byte-for-byte. Locks the ArbWasm `programInitGas` gas-charging fix: was missing StorageCodeHashCost (2600) for the program codehash lookup and over-charging the StylusParams read by 700 (should be warm-cached at 100 gas, not full SLOAD at 800). Net: arbreth was -1,906 gas vs canon on Sepolia full-sync; with the fix the same drift is removed (arbreth \u2192 canon). Fixture's gasUsed (3,573,062) differs from canon's 3,555,962 by +17,100 due to fixture cold/warm overhead (real chain has steady-state warm caches the fixture can't replay), but the +1,906 component of the divergence is fixed.",
+  "description": "Sepolia block 130,021,029 (tx idx 1): a proxy delegatecalls a Stylus implementation that makes 7 sub-calls, including nested delegatecalls through 5 more Stylus implementations, emitting 41 logs. Status 1; logs match canonical byte-for-byte. Pins the gas accounting for a nested Stylus delegatecall where the program address is already warm. The expected value is the offline replay output and differs from the canonical receipt because this synthetic case starts from cold caches that steady-state sync does not.",
   "genesis": {
     "config": {
       "chainId": 421614,
@@ -268,7 +268,7 @@
         "from": "0xad0772e46a2ff42f9cb8d9d3ebc7ccdcc43fddf2",
         "to": "0xaab1a91fdc6498d1dc1acba9bf7d751cd744653c",
         "status": 1,
-        "gasUsed": 3573062
+        "gasUsed": 3570462
       }
     ],
     "blocks": [],

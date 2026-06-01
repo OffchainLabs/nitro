@@ -1,0 +1,188 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to publish (e.g. v0.1.0). Manual runs publish the image only; no GitHub Release is created."
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/0xbloctopus/arbitrum-reth
+
+jobs:
+  image:
+    name: image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+      - name: Init submodules with retry
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            if git submodule update --init --recursive --depth 1; then exit 0; fi
+            echo "submodule init attempt $i failed; sleeping $((i*5))s"; sleep $((i*5))
+          done
+          exit 1
+      - name: Platform pair
+        run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+        env:
+          platform: ${{ matrix.platform }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+      # Each arch builds natively and pushes by digest; the manifest job stitches them together.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  manifest:
+    name: merge manifest
+    runs-on: ubuntu-latest
+    needs: [image]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve version
+        run: echo "VERSION=${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
+      - name: Create manifest list
+        working-directory: /tmp/digests
+        run: |
+          tags=( -t "${IMAGE}:${VERSION}" )
+          if [ "${{ github.event_name }}" = "push" ]; then tags+=( -t "${IMAGE}:latest" ); fi
+          refs=()
+          for d in *; do refs+=( "${IMAGE}@sha256:${d}" ); done
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+      - name: Inspect
+        run: docker buildx imagetools inspect "${IMAGE}:${VERSION}"
+
+  binaries:
+    name: binary (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - arch: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+      - name: Init submodules with retry
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            if git submodule update --init --recursive --depth 1; then exit 0; fi
+            echo "submodule init attempt $i failed; sleeping $((i*5))s"; sleep $((i*5))
+          done
+          exit 1
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev cmake
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.arch }}
+      - name: Build
+        run: cargo build --release --locked -p arb-reth --bin arb-reth
+      - name: Package
+        run: |
+          VERSION="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          name="arb-reth-${VERSION}-${{ matrix.arch }}"
+          install -m755 target/release/arb-reth arb-reth
+          tar -czf "${name}.tar.gz" arb-reth
+          sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.arch }}
+          path: |
+            arb-reth-*.tar.gz
+            arb-reth-*.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    name: github release
+    runs-on: ubuntu-latest
+    needs: [manifest, binaries]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: binary-*
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/arb-reth-*.tar.gz
+            dist/arb-reth-*.tar.gz.sha256
+          generate_release_notes: true
+          body: |
+            Multi-arch container image (`linux/amd64`, `linux/arm64`):
+
+            ```
+            docker pull ${{ env.IMAGE }}:${{ github.ref_name }}
+            ```

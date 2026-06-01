@@ -1,5 +1,7 @@
 services:
   arbitrum-reth:
+    image: ghcr.io/0xbloctopus/arbitrum-reth:${ARBRETH_TAG:-latest}
+    pull_policy: missing
     build:
       context: .
       dockerfile: Dockerfile

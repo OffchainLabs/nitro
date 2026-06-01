@@ -1087,6 +1087,7 @@ name = "arb-context"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "arb-primitives",
  "arb-storage",
  "arbos",
  "parking_lot",
@@ -1162,6 +1163,7 @@ dependencies = [
  "arbos",
  "k256",
  "reth-chainspec",
+ "reth-db-api",
  "reth-evm",
  "reth-primitives-traits",
  "reth-revm",
@@ -1169,6 +1171,8 @@ dependencies = [
  "revm",
  "revm-database-interface",
  "revm-state",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1179,6 +1183,7 @@ dependencies = [
  "alloy-primitives",
  "arb-alloy-consensus",
  "arb-primitives",
+ "arb-stylus",
  "arb-test-harness",
  "arbitrary",
  "arbos",
@@ -1353,12 +1358,29 @@ dependencies = [
 name = "arb-reth"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "arb-node",
  "clap 4.5.60",
+ "eyre",
  "reth",
+ "reth-chainspec",
+ "reth-cli",
+ "reth-cli-commands",
  "reth-cli-util",
+ "reth-config",
+ "reth-consensus",
  "reth-engine-tree",
  "reth-ethereum-cli",
+ "reth-evm",
+ "reth-primitives-traits",
+ "reth-provider",
+ "reth-revm",
+ "reth-stages",
+ "reth-static-file",
+ "reth-tasks",
+ "reth-tracing",
+ "revm-database",
+ "tokio",
  "tracing",
 ]
 

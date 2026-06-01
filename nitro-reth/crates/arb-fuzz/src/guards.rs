@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_test_harness::{
+    messaging::signed_l2_tx_hash,
     node::{BlockId, ExecutionNode},
     scenario::{Scenario, ScenarioSetup, ScenarioStep, StateCheck},
 };
@@ -29,6 +30,7 @@ pub struct GuardedRun {
     sentinels: Vec<SentinelExpect>,
     chain_id: u64,
     arbos_version: u64,
+    allow_skipped: bool,
 }
 
 impl GuardedRun {
@@ -41,7 +43,14 @@ impl GuardedRun {
             sentinels: Vec::new(),
             chain_id: FUZZ_L2_CHAIN_ID,
             arbos_version: fuzz_arbos_version(),
+            allow_skipped: false,
         }
+    }
+
+    /// Opt out of the no-op guard when the final signed tx is expected to be rejected.
+    pub fn allow_skipped(mut self) -> Self {
+        self.allow_skipped = true;
+        self
     }
 
     pub fn expect_last_tx_min_gas(mut self, gas: u64) -> Self {
@@ -120,7 +129,8 @@ impl GuardedRun {
         };
 
         let nodes = shared_dual_exec();
-        let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
+        // Recover the poisoned guard so one failed test doesn't cascade.
+        let mut nodes = nodes.lock().unwrap_or_else(|e| e.into_inner());
         let report = nodes
             .run_with_state_checks(&scen, &self.state_checks)
             .expect("run scenario");
@@ -129,15 +139,29 @@ impl GuardedRun {
             dump_and_panic(&self.name, &report);
         }
 
-        let last_tx_hash = locate_last_user_tx_hash(&*nodes);
-        if let Some(hash) = last_tx_hash {
+        // The last signed tx we built must have executed on both nodes.
+        let signed = last_signed_tx_hash(&scen.steps);
+        if let (Some(hash), false) = (signed, self.allow_skipped) {
+            let left_gas = nodes.left.receipt(hash).map(|r| r.gas_used).unwrap_or(0);
+            let right_gas = nodes.right.receipt(hash).map(|r| r.gas_used).unwrap_or(0);
+            assert!(
+                left_gas > 0 && right_gas > 0,
+                "[{}] last signed tx {hash:#x} did not execute (left gas {left_gas}, right gas {right_gas})",
+                self.name,
+            );
+        }
+
+        let target = signed.or_else(|| locate_last_user_tx_hash(&*nodes));
+        if let Some(hash) = target {
             let receipt = nodes.right.receipt(hash);
             if let Ok(rec) = receipt {
                 if let Some(min) = self.last_tx.min_gas {
                     assert!(
                         rec.gas_used >= min,
-                        "[{}] last tx gas_used {} below floor {} — likely false-friend (early revert or no-op dispatch)",
-                        self.name, rec.gas_used, min,
+                        "[{}] last tx gas_used {} below floor {}",
+                        self.name,
+                        rec.gas_used,
+                        min,
                     );
                 }
                 if let Some(max) = self.last_tx.max_gas {
@@ -190,6 +214,13 @@ impl GuardedRun {
             );
         }
     }
+}
+
+fn last_signed_tx_hash(steps: &[ScenarioStep]) -> Option<B256> {
+    steps.iter().rev().find_map(|s| match s {
+        ScenarioStep::Message { message, .. } => signed_l2_tx_hash(message),
+        _ => None,
+    })
 }
 
 fn locate_last_user_tx_hash<L: ExecutionNode, R: ExecutionNode>(

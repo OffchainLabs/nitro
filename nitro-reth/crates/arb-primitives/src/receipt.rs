@@ -645,7 +645,7 @@ impl reth_codecs::Compact for ArbReceipt {
         0
     }
 
-    fn from_compact(buf: &[u8], _len: usize) -> (Self, &[u8]) {
+    fn from_compact(buf: &[u8], len: usize) -> (Self, &[u8]) {
         use bytes::Buf;
         let mut slice = buf;
         let receipt_len = slice.get_u32() as usize;
@@ -661,16 +661,30 @@ impl reth_codecs::Compact for ArbReceipt {
             }))
         });
 
-        // Read gas_used_for_l1 if present.
-        if slice.len() >= 8 {
+        // Bytes after the length-prefixed body, bounded by the on-disk `len` so
+        // trailing data from a larger blob is left for the caller.
+        let mut tail = len.saturating_sub(4 + receipt_len).min(slice.len());
+
+        if tail >= 8 {
             receipt.gas_used_for_l1 = slice.get_u64();
+            tail -= 8;
         }
 
-        // Read multi_gas_used if present (10 u64s = 80 bytes).
-        if slice.len() >= 80 {
+        // The multi-gas section is `[gas: K x u64][total][refund]`. K was
+        // NUM_RESOURCE_KIND at write time and may differ from the current value,
+        // so derive it from the section length instead of assuming it — receipts
+        // written under a smaller or larger K decode without over-reading.
+        if tail >= 16 {
+            let kinds_on_disk = (tail - 16) / 8;
+            let store = kinds_on_disk.min(crate::multigas::NUM_RESOURCE_KIND);
             let mut gas = [0u64; crate::multigas::NUM_RESOURCE_KIND];
-            for g in &mut gas {
-                *g = slice.get_u64();
+            for slot in gas.iter_mut().take(store) {
+                *slot = slice.get_u64();
+            }
+            // Consume any kinds beyond what this build's array holds (a tail
+            // written under a larger NUM_RESOURCE_KIND) to keep the cursor aligned.
+            for _ in store..kinds_on_disk {
+                slice.advance(8);
             }
             let total = slice.get_u64();
             let refund = slice.get_u64();
@@ -739,5 +753,138 @@ mod tests {
         let receipt = ArbReceipt::new(ArbReceiptKind::Legacy(alloy_receipt()));
         assert!(receipt.status());
         assert_eq!(receipt.cumulative_gas_used(), 21_000);
+    }
+
+    const NUM: usize = crate::multigas::NUM_RESOURCE_KIND;
+
+    /// Encode a receipt with an arbitrary `gas.len()` multi-gas width, mirroring
+    /// `to_compact` so tests can replay tails written under a different
+    /// `NUM_RESOURCE_KIND`.
+    fn compact_with_kinds(receipt: &ArbReceipt, gas: &[u64], total: u64, refund: u64) -> Vec<u8> {
+        use bytes::BufMut;
+        let mut body = Vec::new();
+        receipt.encode_2718(&mut body);
+        let mut buf = Vec::new();
+        buf.put_u32(body.len() as u32);
+        buf.put_slice(&body);
+        buf.put_u64(receipt.gas_used_for_l1);
+        for &g in gas {
+            buf.put_u64(g);
+        }
+        buf.put_u64(total);
+        buf.put_u64(refund);
+        buf
+    }
+
+    fn decode(buf: &[u8]) -> ArbReceipt {
+        let (receipt, rest) = <ArbReceipt as reth_codecs::Compact>::from_compact(buf, buf.len());
+        assert!(rest.is_empty(), "{} trailing bytes left", rest.len());
+        receipt
+    }
+
+    #[test]
+    fn from_compact_round_trips_current_kinds() {
+        let mut receipt = ArbReceipt::new(ArbReceiptKind::Eip1559(alloy_receipt()));
+        receipt.gas_used_for_l1 = 4242;
+        let gas: [u64; NUM] = std::array::from_fn(|i| (i as u64 + 1) * 10);
+        receipt.multi_gas_used = MultiGas::from_raw(gas, 999, 7);
+        let mut buf = Vec::new();
+        reth_codecs::Compact::to_compact(&receipt, &mut buf);
+        let decoded = decode(&buf);
+        assert_eq!(decoded.gas_used_for_l1, 4242);
+        assert_eq!(decoded.multi_gas_used, receipt.multi_gas_used);
+    }
+
+    #[test]
+    fn from_compact_pads_receipt_with_fewer_kinds() {
+        // An 8-kind, 80-byte tail written before NUM_RESOURCE_KIND grew — the
+        // case that previously over-read and panicked.
+        let mut receipt = ArbReceipt::new(ArbReceiptKind::Eip1559(alloy_receipt()));
+        receipt.gas_used_for_l1 = 11;
+        let gas: Vec<u64> = (1..=8).map(|n| n * 100).collect();
+        let decoded = decode(&compact_with_kinds(&receipt, &gas, 800, 5));
+        let mut expected = [0u64; NUM];
+        expected[..gas.len()].copy_from_slice(&gas);
+        assert_eq!(decoded.gas_used_for_l1, 11);
+        assert_eq!(decoded.multi_gas_used, MultiGas::from_raw(expected, 800, 5));
+    }
+
+    // Canonical Arbitrum Sepolia block 1 auto-redeem retry tx (0x873c5ee3…);
+    // fields fetched from a real node. Proves our typed-tx hash preimage matches.
+    #[test]
+    fn canonical_block1_retry_tx_hash() {
+        use alloy_primitives::{address, b256, hex, keccak256, Bytes, U256};
+        use arb_alloy_consensus::tx::ArbRetryTx;
+        let tx = ArbRetryTx {
+            chain_id: U256::from(421614u64),
+            nonce: 0,
+            from: address!("b8787d8f23e176a5d32135d746b69886e03313be"),
+            gas_fee_cap: U256::from(0x5f5e100u64),
+            gas: 100_000,
+            to: Some(address!("3fab184622dc19b6109349b94811493bf2a45362")),
+            value: U256::from(0x2386f26fc10000u64),
+            data: Bytes::new(),
+            ticket_id: b256!("13cb79b086a427f3db7ebe6ec2bb90a806a3b0368ecee6020144f352e37dbdf6"),
+            refund_to: address!("11155ca9bbf7be58e27f3309e629c847996b43c8"),
+            max_refund: U256::from(0xb0e85efeab8u64),
+            submission_fee_refund: U256::from(0x1f6377d4ab8u64),
+        };
+        let mut enc = Vec::new();
+        enc.push(ArbTxType::ArbitrumRetryTx.as_u8());
+        alloy_rlp::Encodable::encode(&tx, &mut enc);
+        assert_eq!(
+            keccak256(&enc),
+            b256!("873c5ee3092c40336006808e249293bf5f4cb3235077a74cac9cafa7cf73cb8b"),
+            "retry-tx hash mismatch; our preimage = 0x{}",
+            hex::encode(&enc)
+        );
+    }
+
+    // Canonical Arbitrum Sepolia block 1 SubmitRetryable (0x13cb79b0…) = the
+    // ticketId that feeds the retry tx. Proves our type-0x69 hash preimage.
+    #[test]
+    fn canonical_block1_submit_retryable_hash() {
+        use alloy_primitives::{address, b256, hex, keccak256, Bytes, U256};
+        use arb_alloy_consensus::tx::ArbSubmitRetryableTx;
+        let tx = ArbSubmitRetryableTx {
+            chain_id: U256::from(421614u64),
+            request_id: b256!("0000000000000000000000000000000000000000000000000000000000000001"),
+            from: address!("b8787d8f23e176a5d32135d746b69886e03313be"),
+            l1_base_fee: U256::from(0x5bd57bd9u64),
+            deposit_value: U256::from(0x23e3dbb7b88ab8u64),
+            gas_fee_cap: U256::from(0x3b9aca00u64),
+            gas: 100_000,
+            retry_to: Some(address!("3fab184622dc19b6109349b94811493bf2a45362")),
+            retry_value: U256::from(0x2386f26fc10000u64),
+            beneficiary: address!("11155ca9bbf7be58e27f3309e629c847996b43c8"),
+            max_submission_fee: U256::from(0x1f6377d4ab8u64),
+            fee_refund_addr: address!("11155ca9bbf7be58e27f3309e629c847996b43c8"),
+            retry_data: Bytes::new(),
+        };
+        let mut enc = Vec::new();
+        enc.push(ArbTxType::ArbitrumSubmitRetryableTx.as_u8());
+        alloy_rlp::Encodable::encode(&tx, &mut enc);
+        assert_eq!(
+            keccak256(&enc),
+            b256!("13cb79b086a427f3db7ebe6ec2bb90a806a3b0368ecee6020144f352e37dbdf6"),
+            "submit-retryable hash mismatch; our preimage = 0x{}",
+            hex::encode(&enc)
+        );
+    }
+
+    #[test]
+    fn from_compact_truncates_receipt_with_more_kinds() {
+        // A tail written under a larger NUM_RESOURCE_KIND: extra kinds are
+        // consumed (no over-read) but dropped.
+        let mut receipt = ArbReceipt::new(ArbReceiptKind::Eip1559(alloy_receipt()));
+        receipt.gas_used_for_l1 = 22;
+        let gas: Vec<u64> = (1..=(NUM as u64 + 1)).map(|n| n * 100).collect();
+        let decoded = decode(&compact_with_kinds(&receipt, &gas, 1000, 9));
+        let mut expected = [0u64; NUM];
+        expected.copy_from_slice(&gas[..NUM]);
+        assert_eq!(
+            decoded.multi_gas_used,
+            MultiGas::from_raw(expected, 1000, 9)
+        );
     }
 }

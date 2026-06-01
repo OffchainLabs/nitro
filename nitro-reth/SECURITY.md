@@ -17,8 +17,8 @@ Response cadence:
 
 ## Supported Versions
 
-- `til/dev` — active development branch; receives security fixes first.
-- `master` — stable release branch; receives backported security fixes.
+- `til/dev`: active development branch; receives security fixes first.
+- `master`: stable release branch; receives backported security fixes.
 
 Older release branches are not maintained.
 
@@ -27,26 +27,28 @@ Older release branches are not maintained.
 The following automated checks run in CI on every pull request and on
 pushes to the supported branches:
 
-- `cargo audit` — scans `Cargo.lock` against the RustSec advisory database.
+- `cargo audit`: scans `Cargo.lock` against the RustSec advisory database.
   The ignore list lives in `.cargo/audit.toml` and is mirrored in
   `deny.toml`; every ignored advisory is transitive via reth, wasmer, or
   revm's `ark-*` dependencies and cannot be patched at this layer.
-- `cargo deny check` — enforces licence and supply-chain policy
+- `cargo deny check`: enforces licence and supply-chain policy
   (allowed licences, banned sources, advisory database).
 - `cargo +nightly miri test -p arb-storage --lib` and
-  `cargo +nightly miri test -p arb-context` — validate aliasing safety
+  `cargo +nightly miri test -p arb-context`: validate aliasing safety
   on the lifetime-bound `Storage<'a, D>` foundation and the per-block
   `ArbPrecompileCtx`.
-- `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D warnings"` —
+- `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D warnings"`:
   rejects broken intra-doc links and missing public-API docs.
 - Regression gates (see `.github/workflows/lint.yml`) reject reintroduction
-  of patterns that were removed during the lockdown of the precompile and
-  EVM glue layers: `thread_local!` and static `Mutex`/`RwLock`/`OnceCell`
+  of the following patterns in the precompile and EVM glue layers:
+  `thread_local!` and static `Mutex`/`RwLock`/`OnceCell`
   in `crates/arb-precompiles/src/`, `Result<_, ()>` and `Result<_, String>`
   in the core crates, raw `unsafe { &mut * ... }` derefs in `crates/arb-evm/src/`,
   raw `as *mut State<...>` casts outside `crates/arb-stylus/`, the
   `_via_backend` suffix, and the `with_active`/`install_active`/
-  `clear_active`/`ACTIVE_CTX` ambient-context helpers.
+  `clear_active`/`ACTIVE_CTX` ambient-context helpers. A contributor who
+  reintroduces any of these will see the corresponding `lint.yml` job fail
+  with file:line.
 
 All `unsafe` blocks in the workspace carry focused `SAFETY:` comments
 explaining the runtime invariant the block relies on.
@@ -85,22 +87,3 @@ declaration and on the `state_mut` method; the `arb-storage` `--lib`
 miri suite covers the safe paths, while integration tests that hit the
 aliasing pattern through the full ArbOS initialisation are excluded from
 the miri gate.
-
-## Pattern regression gates
-
-The CI gates listed under "Security Testing Baseline" enforce that the
-following patterns are not reintroduced:
-
-| Pattern                                            | Scope                                            |
-|----------------------------------------------------|--------------------------------------------------|
-| `thread_local!`                                    | `crates/arb-precompiles/src/`                    |
-| `static .. Mutex/RwLock/OnceCell`                  | `crates/arb-precompiles/src/`                    |
-| `Result<_, ()>`                                    | `arbos`, `arb-evm`, `arb-precompiles` src        |
-| `Result<_, String>` (excluding upstream traits)    | `arbos`, `arb-evm`, `arb-precompiles` src        |
-| `unsafe { &mut * ... }`                            | `crates/arb-evm/src/`                            |
-| `as *mut State<...>`                               | workspace, excluding `crates/arb-stylus/`        |
-| `_via_backend` suffix                              | workspace                                        |
-| `with_active`/`install_active`/`clear_active`/`ACTIVE_CTX` | workspace                                |
-
-A new contributor who reintroduces any of these patterns will see the
-corresponding CI job fail with the offending file:line.

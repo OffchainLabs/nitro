@@ -113,6 +113,9 @@ reth-node-events = { git = "https://github.com/paradigmxyz/reth.git", rev = "20c
 reth-tokio-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-prune = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-stages-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-stages = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-static-file = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-config = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-parallel = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }

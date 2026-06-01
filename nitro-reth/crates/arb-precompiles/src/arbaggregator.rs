@@ -35,7 +35,7 @@ pub fn create_arbaggregator_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecomp
 fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
     let mut gas_used = 0u64;
     let gas_limit = input.gas;
-    crate::init_precompile_gas(&mut gas_used, input.data.len());
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
 
     let call = match IArbAggregator::ArbAggregatorCalls::abi_decode(input.data) {
         Ok(c) => c,
@@ -50,25 +50,34 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
             out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
-            crate::charge_precompile_gas(&mut gas_used, 2 * COPY_GAS);
+            crate::charge_computation(&mut gas_used, ctx, 2 * COPY_GAS);
             Ok(PrecompileOutput::new(gas_used.min(gas_limit), out.into()))
         }
         Calls::getDefaultAggregator(_) => {
             let mut out = [0u8; 32];
             out[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
+            crate::charge_computation(&mut gas_used, ctx, COPY_GAS);
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                gas_used.min(gas_limit),
                 out.to_vec().into(),
             ))
         }
-        Calls::getTxBaseFee(_) => Ok(PrecompileOutput::new(
-            (SLOAD_GAS + 6).min(gas_limit),
-            U256::ZERO.to_be_bytes::<32>().to_vec().into(),
-        )),
-        Calls::setTxBaseFee(_) => Ok(PrecompileOutput::new(
-            (SLOAD_GAS + 6).min(gas_limit),
-            vec![].into(),
-        )),
+        Calls::getTxBaseFee(_) => {
+            // 1-arg + 1-result-word: init covered the arg copy; body adds the
+            // result-copy as computation.
+            crate::charge_computation(&mut gas_used, ctx, COPY_GAS);
+            Ok(PrecompileOutput::new(
+                gas_used.min(gas_limit),
+                U256::ZERO.to_be_bytes::<32>().to_vec().into(),
+            ))
+        }
+        Calls::setTxBaseFee(_) => {
+            // 2-arg no-op returning empty: init already charged both arg words.
+            Ok(PrecompileOutput::new(
+                gas_used.min(gas_limit),
+                vec![].into(),
+            ))
+        }
         Calls::getFeeCollector(c) => {
             handle_get_fee_collector(&mut input, &mut gas_used, c.batchPoster, ctx)
         }
@@ -79,7 +88,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             c.newFeeCollector,
             ctx,
         ),
-        Calls::getBatchPosters(_) => handle_get_batch_posters(&mut input, ctx),
+        Calls::getBatchPosters(_) => handle_get_batch_posters(&mut input, &mut gas_used, ctx),
         Calls::addBatchPoster(c) => {
             handle_add_batch_poster(&mut input, &mut gas_used, c.newBatchPoster, ctx)
         }
@@ -112,12 +121,16 @@ fn handle_get_fee_collector(
 
     let poster_state = match bpt.open_poster(internals, poster, false) {
         Ok(state) => state,
-        Err(_) => return Err(ArbPrecompileError::empty_revert(*gas_used).into()),
+        Err(_) => {
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+        }
     };
     let pay_to = poster_state
         .pay_to(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS + COPY_GAS);
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         U256::from_be_slice(pay_to.as_slice())
@@ -147,19 +160,22 @@ fn handle_set_fee_collector(
 
     let poster_state = match bpt.open_poster(internals, poster, false) {
         Ok(state) => state,
-        Err(_) => return Err(ArbPrecompileError::empty_revert(*gas_used).into()),
+        Err(_) => {
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+        }
     };
     let old_collector = poster_state
         .pay_to(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, 2 * SLOAD_GAS);
+    crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
 
     if caller != poster && caller != old_collector {
         let is_owner = arb_state
             .chain_owners
             .is_member(internals, caller)
             .map_err(ArbPrecompileError::fatal)?;
-        crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+        crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
         if !is_owner {
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
@@ -168,7 +184,7 @@ fn handle_set_fee_collector(
     poster_state
         .set_pay_to(internals, new_collector)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, SSTORE_GAS);
+    crate::charge_storage_write(gas_used, ctx, SSTORE_GAS);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -178,6 +194,7 @@ fn handle_set_fee_collector(
 
 fn handle_get_batch_posters(
     input: &mut PrecompileInput<'_>,
+    gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
@@ -189,7 +206,7 @@ fn handle_get_batch_posters(
         .map_err(ArbPrecompileError::fatal)?;
     let bpt = arb_state.l1_pricing_state.batch_poster_table();
 
-    const MAX_MEMBERS: u64 = 1024;
+    const MAX_MEMBERS: u64 = 65_536;
     let posters = bpt
         .all_posters_capped(internals, MAX_MEMBERS)
         .map_err(ArbPrecompileError::fatal)?;
@@ -204,8 +221,12 @@ fn handle_get_batch_posters(
         out.extend_from_slice(&word);
     }
 
-    let gas_cost = (2 + count) * SLOAD_GAS + (2 + count) * COPY_GAS;
-    Ok(PrecompileOutput::new(gas_cost.min(gas_limit), out.into()))
+    crate::charge_storage_read(gas_used, ctx, (1 + count) * SLOAD_GAS);
+    crate::charge_computation(gas_used, ctx, (2 + count) * COPY_GAS);
+    Ok(PrecompileOutput::new(
+        (*gas_used).min(gas_limit),
+        out.into(),
+    ))
 }
 
 /// Caller must be a chain owner.
@@ -228,7 +249,7 @@ fn handle_add_batch_poster(
         .chain_owners
         .is_member(internals, caller)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_precompile_gas(gas_used, SLOAD_GAS);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
     if !is_owner {
         return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
@@ -239,8 +260,11 @@ fn handle_add_batch_poster(
         .map_err(ArbPrecompileError::fatal)?;
 
     if already {
+        // Total stays at `2*SLOAD + COPY` from the original receipt: init's
+        // framework SLOAD + the is_owner check already cover the 2 SLOADs;
+        // init's argsCost L2Calldata word covers the trailing COPY.
         return Ok(PrecompileOutput::new(
-            (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+            (*gas_used).min(gas_limit),
             vec![].into(),
         ));
     }
@@ -248,9 +272,10 @@ fn handle_add_batch_poster(
     bpt.add_poster(internals, new_poster, new_poster)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let gas_cost = 6 * SLOAD_GAS + SSTORE_ZERO_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    crate::charge_storage_read(gas_used, ctx, 4 * SLOAD_GAS);
+    crate::charge_storage_write(gas_used, ctx, SSTORE_ZERO_GAS + 4 * SSTORE_GAS);
     Ok(PrecompileOutput::new(
-        gas_cost.min(gas_limit),
+        (*gas_used).min(gas_limit),
         vec![].into(),
     ))
 }

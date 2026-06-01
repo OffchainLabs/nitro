@@ -34,6 +34,7 @@ pub struct NitroDocker {
 
 impl NitroDocker {
     pub fn start(ctx: &NodeStartCtx) -> Result<Self> {
+        crate::node::reaper::reap_orphan_containers();
         let image = std::env::var("NITRO_REF_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
         let seq = CONTAINER_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let name = format!("arb-harness-nitro-{}-{}", std::process::id(), seq);
@@ -62,12 +63,19 @@ impl NitroDocker {
         };
         let chain_info_json = render_chain_info_json(ctx, &chain_config, seed_genesis);
 
+        let owner_label = format!(
+            "{}={}",
+            crate::node::reaper::OWNER_PID_LABEL,
+            std::process::id()
+        );
         let mut cmd = Command::new("docker");
         cmd.args([
             "run",
             "-d",
             "--name",
             &name,
+            "--label",
+            &owner_label,
             "-p",
             "127.0.0.1::8547",
             "--user",

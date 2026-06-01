@@ -1,0 +1,60 @@
+# Snapshots
+
+Bootstrap a node from a recent snapshot of a fully synced datadir instead of syncing Arbitrum Sepolia from genesis. The snapshot bundles both the Arbitrum Reth execution state and the Nitro consensus state.
+
+## Latest snapshot
+
+| Network | Block | Date | Size |
+|---------|-------|------|------|
+| Arbitrum Sepolia (421614) | 272,465,745 | 2026-05-31 | 998 GiB |
+
+`latest.json` always points to the newest snapshot. Check the current block, URL, and checksum:
+
+```bash
+curl -s https://snapshots-r2.arbreth.rs/arbreth-sepolia/latest.json
+```
+
+Plan for about 1 TB to download and about 3 TB extracted (1.4 TB MDBX state, 1.5 TB reth static files, plus the Nitro data).
+
+## Download
+
+Download with `aria2c` (parallel, resumable):
+
+```bash
+aria2c -x16 -s16 https://snapshots-r2.arbreth.rs/arbreth-sepolia/272465745/snapshot.tar.zst
+```
+
+Optionally verify the checksum before extracting:
+
+```bash
+echo "c98312671a876cea14f6aa6c291ffb998dfd3cc9f4f63c4e42c723e7615353fd  snapshot.tar.zst" | sha256sum -c
+```
+
+## Extract
+
+Extract into `/data`. The archive restores `arbreth-data` (execution state) and `nitro-data` (consensus state):
+
+```bash
+zstd -dc snapshot.tar.zst | tar -xf - -C /data
+```
+
+## Run
+
+Point Compose at the two directories in `.env`:
+
+```bash
+DATA_DIR=/data/arbreth-data
+NITRO_DATA_DIR=/data/nitro-data
+```
+
+Then start the stack:
+
+```bash
+docker compose up -d
+```
+
+Both services start already synced to the snapshot block. The reth datadir is `arbreth-data/db`, and the shared `jwt.hex` inside `arbreth-data` authenticates the execution client and Nitro.
+
+## Sync from genesis instead
+
+Skip the snapshot and let the node sync from genesis. See [Installation](/docs/installation).

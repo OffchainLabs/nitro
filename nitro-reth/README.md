@@ -21,17 +21,25 @@ Each component (ArbOS state management, L1/L2 pricing, precompiles, Stylus WASM 
 
 ### Docker (recommended)
 
+Set `PARENT_CHAIN_RPC_URL` and `PARENT_CHAIN_BEACON_URL` in `.env` first, then start the full node via Compose:
+
 ```bash
 cp .env.example .env
-# Set PARENT_CHAIN_RPC_URL and PARENT_CHAIN_BEACON_URL
 docker compose up -d
 ```
+
+`docker compose up -d` pulls and runs the prebuilt multi-arch image `ghcr.io/0xbloctopus/arbitrum-reth` (`linux/amd64`, `linux/arm64`). To build the image from source instead, run `docker compose up -d --build`.
+
+To sync from a snapshot instead of from genesis, see [Snapshots](https://arbreth.rs/docs/snapshots) for the fast first-run path.
 
 ### Build from Source
 
 **Requirements:** Rust 1.93+, clang, cmake
 
+The build scripts pull C and contract sources from git submodules, so fetch them first or the build fails:
+
 ```bash
+git submodule update --init --recursive
 cargo build --release -p arb-reth
 ```
 
@@ -51,7 +59,7 @@ Run the node:
 | Port | Service |
 |------|---------|
 | 8545 | JSON-RPC (HTTP) |
-| 8551 | Engine API (JWT auth) |
+| 8551 | Authenticated RPC (JWT) |
 
 See [`.env.example`](.env.example) for all configuration options.
 
@@ -65,6 +73,7 @@ crates/
 ├── arb-evm/           Block executor, custom opcodes, EVM integration
 ├── arb-precompiles/   Arbitrum precompile contracts (0x64+)
 ├── arb-stylus/        Stylus WASM runtime and host functions
+├── arb-context/       Per-block / per-tx context (BlockCtx, TxCtx) for the EVM and precompiles
 ├── arb-primitives/    Transaction types, receipts, gas types
 ├── arb-chainspec/     Chain spec and ArbOS version constants
 ├── arb-storage/       Storage-backed types over reth's StateProvider
@@ -74,8 +83,7 @@ crates/
 └── arb-txpool/        Transaction pool validation
 
 bin/
-├── arb-reth/          Node binary
-└── gen-genesis/       Genesis state generator
+└── arb-reth/          Node binary
 ```
 
 All crates integrate with the reth ecosystem through its standard traits and can be consumed individually as libraries for custom tooling, indexers, or alternative node configurations.
@@ -83,7 +91,7 @@ All crates integrate with the reth ecosystem through its standard traits and can
 ## Contributing
 
 ```bash
-git clone https://github.com/0xBloctopus/arbitrum-reth.git
+git clone --recurse-submodules https://github.com/0xBloctopus/arbitrum-reth.git
 cd arbitrum-reth
 cargo check
 cargo test

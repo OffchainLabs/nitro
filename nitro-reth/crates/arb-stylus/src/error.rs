@@ -22,6 +22,11 @@ pub enum StylusError {
     #[error("internal stylus error: {0}")]
     Internal(String),
 
+    /// The backing store failed while reading program/fragment data. This is an
+    /// infrastructure failure that must abort the block, not revert the call.
+    #[error("backing store failure: {0}")]
+    Backend(String),
+
     /// A host function rejected its inputs on semantic grounds (e.g.
     /// `emit_log` called in a static context, malformed topic data).
     /// Surfaces as `UserOutcome::Failure`.

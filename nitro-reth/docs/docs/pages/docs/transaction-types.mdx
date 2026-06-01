@@ -41,7 +41,7 @@ Retryable tickets are the primary mechanism for L1-to-L2 message passing with gu
 1. **Submit** - L1 transaction creates a retryable ticket on L2 with a deposit covering fees and call value
 2. **Auto-redeem** - ArbOS automatically attempts to execute the ticket immediately
 3. **Manual redeem** - if auto-redeem fails, anyone can redeem the ticket later via `ArbRetryableTx.redeem()`
-4. **Expiry** - unredeemed tickets expire after 7 days (configurable) and deposits are refunded to the beneficiary
+4. **Expiry** - unredeemed tickets expire after 7 days and deposits are refunded to the beneficiary. The window length is fixed (`RETRYABLE_LIFETIME_SECONDS`); a ticket's timeout can be pushed forward by one window via `ArbRetryableTx.keepalive()`
 
 ### Fee Structure
 
@@ -68,6 +68,8 @@ Arbitrum receipts include additional fields beyond standard Ethereum receipts:
 
 | Field | Description |
 |-------|-------------|
-| `gasUsedForL1` | Gas attributable to L1 data posting costs |
+| `gasUsedForL1` | Gas attributable to L1 data posting costs (always present) |
+| `l1BlockNumber` | L1 block number for the L2 block (present when a block header is available) |
+| `multiGasUsed` | Per-resource gas breakdown (ArbOS v60+, present when non-zero) |
 
 Receipt type bytes mirror the transaction type bytes (`0x64`-`0x6A`), each with its own RLP encoding.

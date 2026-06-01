@@ -231,6 +231,128 @@ fn cases() -> Vec<(&'static str, Address, Vec<u8>)> {
         ));
     }
 
+    out.extend(edge_cases());
+
+    out
+}
+
+fn word_addr(a: Address) -> [u8; 32] {
+    let mut w = [0u8; 32];
+    w[12..32].copy_from_slice(a.as_slice());
+    w
+}
+
+fn enc(selector: &str, words: &[[u8; 32]]) -> Vec<u8> {
+    let mut out = hex_decode(selector);
+    for w in words {
+        out.extend_from_slice(w);
+    }
+    out
+}
+
+/// Non-default inputs the zero-padded sweep can't reach: full-price storage
+/// writes, address-argument reads against a nonzero account, integer-boundary
+/// reverts, and MODEXP size transitions driving the EIP-2565/7823/7883 cost.
+fn edge_cases() -> Vec<(&'static str, Address, Vec<u8>)> {
+    let nz_word = word_addr(address!("00000000000000000000000000000000deadbeef"));
+    let max_word = [0xffu8; 32];
+
+    let mut out: Vec<(&'static str, Address, Vec<u8>)> = Vec::new();
+
+    out.push((
+        "edge.register_nonzero",
+        addr(0x66),
+        enc("4420e486", &[nz_word]),
+    ));
+    out.push((
+        "edge.address_exists_nonzero",
+        addr(0x66),
+        enc("a5025222", &[nz_word]),
+    ));
+    out.push((
+        "edge.lookup_unregistered",
+        addr(0x66),
+        enc("d4b6b5da", &[nz_word]),
+    ));
+    let mut idx = [0u8; 32];
+    idx[31] = 0x10;
+    out.push(("edge.lookup_index_oob", addr(0x66), enc("8a186788", &[idx])));
+    out.push((
+        "edge.lookup_index_overflow",
+        addr(0x66),
+        enc("8a186788", &[max_word]),
+    ));
+    out.push((
+        "edge.compress_nonzero",
+        addr(0x66),
+        enc("f6a455a2", &[nz_word]),
+    ));
+
+    out.push((
+        "edge.get_balance_nonzero",
+        addr(0x65),
+        enc("f8b2cb4f", &[nz_word]),
+    ));
+    out.push((
+        "edge.get_code_nonzero",
+        addr(0x65),
+        enc("7e105ce2", &[nz_word]),
+    ));
+    out.push((
+        "edge.is_chain_owner_nonzero",
+        addr(0x6b),
+        enc("26ef7f68", &[nz_word]),
+    ));
+    out.push((
+        "edge.preferred_aggregator_nonzero",
+        addr(0x6d),
+        enc("52f10740", &[nz_word]),
+    ));
+    out.push((
+        "edge.fee_collector_nonzero",
+        addr(0x6d),
+        enc("9c2c5bb5", &[nz_word]),
+    ));
+    out.push((
+        "edge.retry_timeout_nonzero",
+        addr(0x6e),
+        enc("9f1025c6", &[max_word]),
+    ));
+    out.push((
+        "edge.retry_beneficiary_nonzero",
+        addr(0x6e),
+        enc("ba20dda4", &[max_word]),
+    ));
+
+    // MODEXP header words are Bsize | Esize | Msize, then base | exp | modulus.
+    let mut modexp_zero_mod = vec![0u8; 96 + 2];
+    modexp_zero_mod[31] = 1;
+    modexp_zero_mod[63] = 1;
+    modexp_zero_mod[96] = 3;
+    modexp_zero_mod[97] = 2;
+    out.push(("edge.modexp_zero_mod", addr(0x05), modexp_zero_mod));
+    let mut modexp_big_exp = vec![0u8; 96 + 1 + 32 + 1];
+    modexp_big_exp[31] = 1;
+    modexp_big_exp[63] = 32;
+    modexp_big_exp[95] = 1;
+    modexp_big_exp[96] = 3;
+    for b in &mut modexp_big_exp[97..97 + 32] {
+        *b = 0xff;
+    }
+    modexp_big_exp[96 + 1 + 32] = 5;
+    out.push(("edge.modexp_big_exp", addr(0x05), modexp_big_exp));
+    let mut modexp_long_exp = vec![0u8; 96 + 1 + 40 + 1];
+    modexp_long_exp[31] = 1;
+    modexp_long_exp[63] = 40;
+    modexp_long_exp[95] = 1;
+    modexp_long_exp[96] = 3;
+    modexp_long_exp[97] = 0xff;
+    modexp_long_exp[96 + 1 + 40] = 5;
+    out.push(("edge.modexp_long_exp", addr(0x05), modexp_long_exp));
+
+    out.push(("edge.sha256_one_word_over", addr(0x02), vec![0x5a; 33]));
+    out.push(("edge.identity_200b", addr(0x04), vec![0x5a; 200]));
+
     out
 }
 
@@ -308,6 +430,7 @@ fn matrix() {
                 continue;
             }
         };
+        let tx_hash = arb_test_harness::messaging::signed_l2_tx_hash(&tx_msg);
 
         let scenario = Scenario {
             name: format!("precompile_{label}"),
@@ -339,10 +462,27 @@ fn matrix() {
             }
         };
 
+        let mut diverged = false;
+
+        // No-op guard: equal gas is only meaningful if both nodes actually ran
+        // the call, so a missing receipt (gas 0) is a failure, not a match.
+        if let Some(hash) = tx_hash {
+            let lg = nodes.left.receipt(hash).map(|r| r.gas_used).unwrap_or(0);
+            let rg = nodes.right.receipt(hash).map(|r| r.gas_used).unwrap_or(0);
+            if lg == 0 || rg == 0 {
+                failures.push(format!(
+                    "{label}: tx {hash:#x} did not execute (left gas {lg}, right gas {rg})"
+                ));
+                diverged = true;
+            }
+        } else {
+            failures.push(format!("{label}: could not derive tx hash for no-op guard"));
+            diverged = true;
+        }
+
         // Block-level: receipts_root / gasUsed / tx_count are the strongest
         // signals here (state_root differs due to nonce / balance changes but
         // both nodes track the same updates, so it should still match).
-        let mut diverged = false;
         for d in &report.block_diffs {
             // Skip pure-noise fields when both nodes use the same chain config.
             // We want gas + receipts to match.
