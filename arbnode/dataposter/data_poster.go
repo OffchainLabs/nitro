@@ -103,15 +103,15 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 			return nil, err
 		}
 	case cfg.UseDBStorage:
-		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-		if cfg.Dangerous.ClearDBStorage {
-			if err := storage.PruneAll(ctx); err != nil {
-				return nil, err
-			}
-		}
-		queue = storage
+		queue = dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	default:
 		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	}
+	if cfg.Dangerous.ClearDBStorage {
+		log.Warn("clearing dataposter queue", "flag", "--data-poster.dangerous.clear-dbstorage")
+		if err := queue.PruneAll(ctx); err != nil {
+			return nil, fmt.Errorf("clearing dataposter queue: %w", err)
+		}
 	}
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {

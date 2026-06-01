@@ -87,7 +87,8 @@ func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg,
 
 type DangerousConfig struct {
 	// This should be used with caution, only when dataposter somehow gets in a
-	// bad state, and we require clearing it.
+	// bad state, and we require clearing it. Clears all storage types including
+	// database and Redis.
 	ClearDBStorage bool `koanf:"clear-dbstorage"`
 }
 
@@ -160,7 +161,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear database storage")
+	f.Bool(prefix+".clear-dbstorage", DefaultDataPosterConfig.Dangerous.ClearDBStorage, "clear dataposter storage (database and redis) on startup")
 }
 
 func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
