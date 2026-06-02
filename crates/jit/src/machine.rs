@@ -267,7 +267,11 @@ pub struct WasmEnv {
 }
 
 impl WasmEnv {
-    pub(crate) fn ready_hostio(&mut self) -> Result<&mut ValidationInput, Escape> {
+    /// Ensures the [`ValidationInput`] is loaded and returns a mutable reference to it.
+    ///
+    /// On the first wavmio call: reads a validator address from stdin, forks, connects to
+    /// the socket, and loads the input. Subsequent calls return immediately.
+    pub(crate) fn acquire_input(&mut self) -> Result<&mut ValidationInput, Escape> {
         let debug = self.process.debug;
 
         if !self.process.reached_wavmio {
@@ -336,7 +340,7 @@ impl HasInput for WasmEnv {
     type Escape = Escape;
 
     fn input(&mut self) -> Result<&mut ValidationInput, Escape> {
-        self.ready_hostio()
+        self.acquire_input()
     }
 }
 
