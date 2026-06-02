@@ -1,12 +1,24 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use alloc::format;
+use alloc::{format, string::String};
 use core::cmp::min;
 
 use validation::ValidationInput;
 
-use crate::{GuestPtr, LogicalError, MemAccess};
+use crate::{GuestPtr, MemAccess};
+
+/// A protocol-level error produced by a wavmio host function.
+#[derive(Debug)]
+pub struct WavmioError(pub String);
+
+impl From<String> for WavmioError {
+    fn from(s: String) -> Self { Self(s) }
+}
+
+impl From<&str> for WavmioError {
+    fn from(s: &str) -> Self { Self(s.into()) }
+}
 
 /// Reads 32-bytes of global state and writes to guest memory.
 pub fn get_global_state_bytes32(
@@ -14,7 +26,7 @@ pub fn get_global_state_bytes32(
     input: &ValidationInput,
     idx: u32,
     out_ptr: GuestPtr,
-) -> Result<(), LogicalError> {
+) -> Result<(), WavmioError> {
     let Some(global) = input.large_globals.get(idx as usize) else {
         return Err("global read out of bounds in wavmio.getGlobalStateBytes32".into());
     };
@@ -28,7 +40,7 @@ pub fn set_global_state_bytes32(
     input: &mut ValidationInput,
     idx: u32,
     src_ptr: GuestPtr,
-) -> Result<(), LogicalError> {
+) -> Result<(), WavmioError> {
     let val = mem.read_fixed(src_ptr);
     let Some(g) = input.large_globals.get_mut(idx as usize) else {
         return Err("global write oob in wavmio.setGlobalStateBytes32".into());
@@ -42,12 +54,12 @@ pub fn get_global_state_u64(
     _: &impl MemAccess,
     input: &ValidationInput,
     idx: u32,
-) -> Result<u64, LogicalError> {
+) -> Result<u64, WavmioError> {
     input
         .small_globals
         .get(idx as usize)
         .copied()
-        .ok_or(LogicalError(
+        .ok_or(WavmioError(
             "global read out of bounds in wavmio.getGlobalStateU64".into(),
         ))
 }
@@ -58,7 +70,7 @@ pub fn set_global_state_u64(
     input: &mut ValidationInput,
     idx: u32,
     val: u64,
-) -> Result<(), LogicalError> {
+) -> Result<(), WavmioError> {
     let Some(g) = input.small_globals.get_mut(idx as usize) else {
         return Err("global write out of bounds in wavmio.setGlobalStateU64".into());
     };
@@ -73,11 +85,11 @@ pub fn read_inbox_message(
     msg_num: u64,
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, LogicalError> {
+) -> Result<u32, WavmioError> {
     let message = input
         .sequencer_messages
         .get(&msg_num)
-        .ok_or_else(|| LogicalError(format!("missing sequencer inbox message {msg_num}")))?;
+        .ok_or_else(|| WavmioError(format!("missing sequencer inbox message {msg_num}")))?;
     read_message(mem, message, offset, out_ptr)
 }
 
@@ -88,11 +100,11 @@ pub fn read_delayed_inbox_message(
     msg_num: u64,
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, LogicalError> {
+) -> Result<u32, WavmioError> {
     let message = input
         .delayed_messages
         .get(&msg_num)
-        .ok_or_else(|| LogicalError(format!("missing delayed inbox message {msg_num}")))?;
+        .ok_or_else(|| WavmioError(format!("missing delayed inbox message {msg_num}")))?;
     read_message(mem, message, offset, out_ptr)
 }
 
@@ -101,7 +113,7 @@ fn read_message(
     message: &[u8],
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, LogicalError> {
+) -> Result<u32, WavmioError> {
     let offset = offset as usize;
     let len = min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -118,7 +130,7 @@ pub fn resolve_preimage(
     offset: u32,
     out_ptr: GuestPtr,
     name: &str,
-) -> Result<u32, LogicalError> {
+) -> Result<u32, WavmioError> {
     let hash = mem.read_fixed(hash_ptr);
     let offset = offset as usize;
 
@@ -147,7 +159,7 @@ pub fn validate_certificate(
     input: &ValidationInput,
     preimage_type: u8,
     hash_ptr: GuestPtr,
-) -> Result<u8, LogicalError> {
+) -> Result<u8, WavmioError> {
     let hash = mem.read_fixed(hash_ptr);
     match input
         .preimages
@@ -165,7 +177,7 @@ pub fn resolve_keccak_preimage<M: MemAccess>(
     hash_ptr: GuestPtr,
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, LogicalError> {
+) -> Result<u32, WavmioError> {
     resolve_preimage(
         mem,
         input,
@@ -184,7 +196,7 @@ pub fn resolve_typed_preimage<M: MemAccess>(
     hash_ptr: GuestPtr,
     offset: u32,
     out_ptr: GuestPtr,
-) -> Result<u32, LogicalError> {
+) -> Result<u32, WavmioError> {
     resolve_preimage(
         mem,
         input,
@@ -198,7 +210,7 @@ pub fn resolve_typed_preimage<M: MemAccess>(
 
 #[cfg(feature = "wasmer_traits")]
 pub mod host {
-    use crate::{GuestPtr, wasmer_traits::{HasMemory, WasmerMem}};
+    use crate::{wasmer_traits::{HasMemory, WasmerMem}, GuestPtr};
 
     /// Generates a wasmer host function that delegates to a `super::` inner function
     /// taking `(&mut impl MemAccess, &mut ValidationInput, args...)`.
@@ -209,7 +221,7 @@ pub mod host {
                 $($arg: $ty,)*
             ) -> Result<$ret, T::Escape>
             where
-                T: HasMemory + $crate::HasInput + Send + 'static,
+                T: HasMemory + $crate::wavmio::HasInput + Send + 'static,
                 T::Escape: std::error::Error + Send + Sync + 'static,
             {
                 let (data, store) = ctx.data_and_store_mut();
@@ -229,4 +241,14 @@ pub mod host {
     host_fn_wavmio!(fn resolve_keccak_preimage(a: GuestPtr, b: u32, c: GuestPtr) -> u32);
     host_fn_wavmio!(fn resolve_typed_preimage(a: u8, b: GuestPtr, c: u32, d: GuestPtr) -> u32);
     host_fn_wavmio!(fn validate_certificate(a: u8, b: GuestPtr) -> u8);
+}
+
+/// Provides access to the [`ValidationInput`] for a running machine.
+///
+/// For JIT, acquiring input may trigger lazy loading (socket connect, fork); the
+/// associated `Escape` type carries any resulting error. For SP1 the load is
+/// handled by `once_cell::Lazy` and the method is infallible in practice.
+pub trait HasInput {
+    type Escape: From<WavmioError>;
+    fn input(&mut self) -> Result<&mut ValidationInput, Self::Escape>;
 }

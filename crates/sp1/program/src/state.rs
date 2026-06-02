@@ -1,8 +1,9 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{ExecEnv, HasInput, wasmer_traits::{HasMemory, WasmerMem}};
+use caller_env::{wasmer_traits::{HasMemory, WasmerMem}, ExecEnv};
 use rand::Rng;
+use caller_env::wavmio::HasInput;
 use validation::ValidationInput;
 use wasmer::FunctionEnvMut;
 use crate::Escape;

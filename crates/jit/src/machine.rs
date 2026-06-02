@@ -10,29 +10,29 @@ use std::{
     time::Instant,
 };
 
-use arbutil::{Bytes32, PreimageType, crypto};
+use arbutil::{crypto, Bytes32, PreimageType};
 use arbutil::Color;
 use caller_env::{
-    GoRuntimeState,
     arbcrypto::host::{ecrecovery, keccak256},
     brotli::host::{brotli_compress, brotli_decompress},
     wasip1_stub::host as wasi,
     wasmer_traits::HasMemory,
     wavmio::host as wavmio,
-    HasInput,
+    GoRuntimeState,
 };
 use validation::transfer::receive_validation_input;
-use eyre::{ErrReport, Report, Result, bail};
+use eyre::{bail, ErrReport, Report, Result};
 use thiserror::Error;
+use caller_env::wavmio::HasInput;
 use validation::{local_target, ValidationInput};
 use wasmer::{
-    Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store,
-    imports, sys::CompilerConfig,
+    imports, sys::CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
+    RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler,
+    program, stylus_backend::CothreadHandler, InputMode, LocalInput, Opts, ValidatorOpts,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
@@ -231,8 +231,8 @@ impl Escape {
     }
 }
 
-impl From<caller_env::LogicalError> for Escape {
-    fn from(e: caller_env::LogicalError) -> Self {
+impl From<caller_env::wavmio::WavmioError> for Escape {
+    fn from(e: caller_env::wavmio::WavmioError) -> Self {
         Self::HostIO(e.0)
     }
 }

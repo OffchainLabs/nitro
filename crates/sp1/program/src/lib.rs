@@ -64,8 +64,8 @@ impl From<String> for Escape {
     }
 }
 
-impl From<caller_env::LogicalError> for Escape {
-    fn from(e: caller_env::LogicalError) -> Self {
+impl From<caller_env::wavmio::WavmioError> for Escape {
+    fn from(e: caller_env::wavmio::WavmioError) -> Self {
         Self::Logical(e.0)
     }
 }

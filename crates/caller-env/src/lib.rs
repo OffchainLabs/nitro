@@ -5,28 +5,11 @@
 
 extern crate alloc;
 
-use alloc::{string::String, vec::Vec};
+use alloc::vec::Vec;
 pub use guest_ptr::GuestPtr;
 use rand_pcg::Pcg32;
-use validation::ValidationInput;
 pub use wasip1_stub::Errno;
 
-/// A protocol-level error from a host function — distinct from infrastructure
-/// failures (sockets, threads) that are runtime-specific.
-#[derive(Debug)]
-pub struct LogicalError(pub String);
-
-impl From<String> for LogicalError {
-    fn from(s: String) -> Self {
-        Self(s)
-    }
-}
-
-impl From<&str> for LogicalError {
-    fn from(s: &str) -> Self {
-        Self(s.into())
-    }
-}
 
 mod guest_ptr;
 pub mod wavmio;
@@ -111,16 +94,6 @@ pub trait ExecEnv {
     fn next_rand_u32(&mut self) -> u32;
 
     fn print_string(&mut self, message: &[u8]);
-}
-
-/// Provides access to the [`ValidationInput`] for a running machine.
-///
-/// For JIT, acquiring input may trigger lazy loading (socket connect, fork); the
-/// associated `Escape` type carries any resulting error. For SP1 the load is
-/// handled by `once_cell::Lazy` and the method is infallible in practice.
-pub trait HasInput {
-    type Escape: From<LogicalError>;
-    fn input(&mut self) -> Result<&mut ValidationInput, Self::Escape>;
 }
 
 #[derive(Clone, PartialEq, Eq)]
