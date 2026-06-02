@@ -138,6 +138,13 @@ pub fn resolve_preimage(
     let hash = mem.read_fixed(hash_ptr);
     let offset = offset as usize;
 
+    // Unknown preimage types are not an error — the prover returns 0 bytes for them.
+    // Only validate when arbutil is available (both JIT and SP1 enable integrity_check).
+    #[cfg(feature = "integrity_check")]
+    if arbutil::PreimageType::try_from(preimage_type).is_err() {
+        return Ok(0);
+    }
+
     let Some(preimage) = input
         .preimages
         .get(&preimage_type)
