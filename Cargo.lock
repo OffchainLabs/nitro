@@ -1131,6 +1131,7 @@ dependencies = [
  "rand_pcg",
  "spin 0.10.0",
  "tiny-keccak",
+ "validation",
  "wasmer",
 ]
 

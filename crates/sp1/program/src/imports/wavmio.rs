@@ -11,7 +11,7 @@ pub fn get_global_state_bytes32(
     out_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mut mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::get_global_state_bytes32(&mut mem, state, idx, out_ptr)?)
+    Ok(caller_env::get_global_state_bytes32(&mut mem, state.input(), idx, out_ptr)?)
 }
 
 pub fn set_global_state_bytes32(
@@ -20,7 +20,7 @@ pub fn set_global_state_bytes32(
     src_ptr: GuestPtr,
 ) -> MaybeEscape {
     let (mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::set_global_state_bytes32(&mem, state, idx, src_ptr)?)
+    Ok(caller_env::set_global_state_bytes32(&mem, state.input_mut(), idx, src_ptr)?)
 }
 
 pub fn get_global_state_u64(
@@ -28,7 +28,7 @@ pub fn get_global_state_u64(
     idx: u32,
 ) -> Result<u64, Escape> {
     let (_mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::get_global_state_u64(state, idx)?)
+    Ok(caller_env::get_global_state_u64(state.input(), idx)?)
 }
 
 pub fn set_global_state_u64(
@@ -37,7 +37,7 @@ pub fn set_global_state_u64(
     val: u64,
 ) -> MaybeEscape {
     let (_mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::set_global_state_u64(state, idx, val)?)
+    Ok(caller_env::set_global_state_u64(state.input_mut(), idx, val)?)
 }
 
 pub fn read_inbox_message(
@@ -47,7 +47,7 @@ pub fn read_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::read_inbox_message(&mut mem, state, msg_num, offset, out_ptr)?)
+    Ok(caller_env::read_inbox_message(&mut mem, state.input(), msg_num, offset, out_ptr)?)
 }
 
 pub fn read_delayed_inbox_message(
@@ -57,7 +57,7 @@ pub fn read_delayed_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::read_delayed_inbox_message(&mut mem, state, msg_num, offset, out_ptr)?)
+    Ok(caller_env::read_delayed_inbox_message(&mut mem, state.input(), msg_num, offset, out_ptr)?)
 }
 
 pub fn resolve_keccak_preimage(
@@ -69,7 +69,7 @@ pub fn resolve_keccak_preimage(
     let (mut mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::resolve_preimage(
         &mut mem,
-        state,
+        state.input(),
         0,
         hash_ptr,
         offset,
@@ -88,7 +88,7 @@ pub fn resolve_typed_preimage(
     let (mut mem, state) = sp1_env(&mut ctx);
     Ok(caller_env::resolve_preimage(
         &mut mem,
-        state,
+        state.input(),
         preimage_type,
         hash_ptr,
         offset,
@@ -103,5 +103,5 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::validate_certificate(&mem, state, preimage_type, hash_ptr))
+    Ok(caller_env::validate_certificate(&mem, state.input(), preimage_type, hash_ptr))
 }
