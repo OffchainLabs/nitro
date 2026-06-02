@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -339,31 +340,34 @@ func (ps *L2PricingState) calcBaseFeeFromExponent(exponent arbmath.Bips) (*big.I
 	}
 }
 
-func (ps *L2PricingState) GetMultiGasBaseFeePerResource() ([]*big.Int, error) {
-	// Base fee is max of per-resource-kind base fees
-	baseFeeWei, err := ps.BaseFeeWei()
-	if err != nil {
-		return nil, err
+func (ps *L2PricingState) GetMultiGasBaseFeePerResource(blockBaseFee *big.Int) ([]*big.Int, error) {
+	// At MultiGasRefundFix, the SingleDim base fee uses the block's actual base fee (passed in by the caller).
+	// Pre-MultiGasRefundFix chains keep reading BaseFeeWei() so historical replays stay deterministic.
+	if ps.ArbosVersion < params.ArbosVersion_MultiGasRefundFix {
+		var err error
+		blockBaseFee, err = ps.BaseFeeWei()
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	fees := make([]*big.Int, multigas.NumResourceKind)
 	for kind := range multigas.ResourceKind(multigas.NumResourceKind) {
-		baseFee, err := ps.multiGasFees.GetCurrentBlockFee(kind)
+		resourceBaseFee, err := ps.multiGasFees.GetCurrentBlockFee(kind)
 		if err != nil {
 			return nil, err
 		}
 		// Force single-dimensional gas (and the unlikely zero-basefee case) to use the max base fee
 		// because it is not refundable.
-		if kind == multigas.ResourceKindSingleDim || baseFee.Cmp(big.NewInt(0)) == 0 {
-			baseFee = baseFeeWei
+		if kind == multigas.ResourceKindSingleDim || resourceBaseFee.Sign() == 0 {
+			resourceBaseFee = blockBaseFee
 		}
-		fees[kind] = baseFee
+		fees[kind] = resourceBaseFee
 	}
 	return fees, nil
 }
 
-func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiGas) (*big.Int, error) {
-	fees, err := ps.GetMultiGasBaseFeePerResource()
+func (ps *L2PricingState) MultiDimensionalPriceForRefund(usedMultiGas multigas.MultiGas, blockBaseFee *big.Int) (*big.Int, error) {
+	fees, err := ps.GetMultiGasBaseFeePerResource(blockBaseFee)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +377,7 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 		// #nosec G115 safe: NumResourceKind < 2^32
 		kind := multigas.ResourceKind(i)
 
-		amount := gasUsed.Get(kind)
+		amount := usedMultiGas.Get(kind)
 		if amount == 0 {
 			continue
 		}
@@ -384,6 +388,19 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(gasUsed multigas.MultiG
 		)
 		total.Add(total, part)
 	}
+
+	// Take in consideration evm refunds using the block base fee.
+	if ps.ArbosVersion >= params.ArbosVersion_MultiGasRefundFix {
+		evmRefunds := new(big.Int).Mul(new(big.Int).SetUint64(usedMultiGas.GetRefund()), blockBaseFee)
+		if total.Cmp(evmRefunds) > 0 {
+			// This should always be true, but check anyway to ensure we don't return a negative value.
+			total.Sub(total, evmRefunds)
+		} else {
+			log.Warn("EVM refund greater than multi-gas fee",
+				"multi-gas-fee", total, "evm-refunds", evmRefunds)
+		}
+	}
+
 	return total, nil
 }
 

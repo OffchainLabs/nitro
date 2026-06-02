@@ -14,8 +14,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/s3syncer"
+)
+
+var (
+	fileSizeGauge       = metrics.NewRegisteredGauge("arb/addressfilter/file/size", nil)
+	fileTooLargeCounter = metrics.NewRegisteredCounter("arb/addressfilter/file/toolarge_total", nil)
+	syncFailureCounter  = metrics.NewRegisteredCounter("arb/addressfilter/sync/failure_total", nil)
 )
 
 // trimHexPrefix strips a leading "0x" or "0X" prefix from a hex string.
@@ -36,6 +43,7 @@ type hashListPayload struct {
 type parsedPayload struct {
 	Id     uuid.UUID
 	Salt   uuid.UUID
+	Scheme HashingScheme
 	Hashes []common.Hash
 }
 
@@ -51,6 +59,7 @@ func NewS3SyncManager(config *Config, hashStore *HashStore) *S3SyncManager {
 	syncer := s3syncer.NewSyncer(
 		&config.S3,
 		manager.handleHashListData,
+		fileSizeGauge,
 	)
 
 	manager.Syncer = syncer
@@ -68,23 +77,26 @@ func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	s.hashStore.Store(parsedData.Id, parsedData.Salt, parsedData.Hashes, digest)
-	log.Info("loaded restricted addr list", "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data))
+	s.hashStore.Store(parsedData.Id, parsedData.Salt, parsedData.Scheme, parsedData.Hashes, digest)
+	log.Info("loaded restricted addr list", "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data), "scheme", parsedData.Scheme)
 	return nil
 }
 
 // parseHashListJSON parses the JSON hash list file.
-// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "sha256-stringinput", "hashes": ["0xhex1", "0xhex2", ...]}
+// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "<sha256-stringinput|sha256-rawbytesinput>", "hashes": ["0xhex1", "0xhex2", ...]}
 func parseHashListJSON(data []byte) (*parsedPayload, error) {
 	var payload hashListPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("JSON unmarshal failed: %w", err)
 	}
 
-	// Validate hashing scheme - warn if not sha256-stringinput but continue for forward compatibility
-	if payload.HashingScheme != "" && payload.HashingScheme != "sha256-stringinput" {
-		log.Warn("unknown hashing scheme in address list, continuing with sha256-stringinput assumption",
-			"scheme", payload.HashingScheme)
+	scheme := HashingScheme(payload.HashingScheme)
+	switch scheme {
+	case "":
+		scheme = HashingSchemeStringInput
+	case HashingSchemeStringInput, HashingSchemeRawBytesInput:
+	default:
+		return nil, fmt.Errorf("unknown hashing_scheme %q", payload.HashingScheme)
 	}
 
 	salt, err := uuid.Parse(payload.Salt)
@@ -111,6 +123,7 @@ func parseHashListJSON(data []byte) (*parsedPayload, error) {
 	return &parsedPayload{
 		Id:     id,
 		Salt:   salt,
+		Scheme: scheme,
 		Hashes: hashes,
 	}, nil
 }

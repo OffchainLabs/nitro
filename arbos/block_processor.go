@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -42,13 +43,19 @@ var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 // ErrFilteredCascadingRedeem is returned via TxFailed when a redeem's
 // inner execution touches a filtered address, requiring the entire tx group
-// (originating user tx + all its redeems) to be reverted.
+// (originating user tx + all its redeems) to be reverted. All fields are
+// captured before the group rollback so TxFailed can build a fully populated
+// FilteredTxReport without late-filling.
 type ErrFilteredCascadingRedeem struct {
-	OriginatingTxHash common.Hash
+	OriginatingTx     *types.Transaction
+	FilteredAddresses []filter.FilteredAddressRecord
+	BlockNumber       uint64
+	ParentBlockHash   common.Hash
+	PositionInBlock   int // receipt index of the originating user tx
 }
 
 func (e *ErrFilteredCascadingRedeem) Error() string {
-	return fmt.Sprintf("cascading redeem filtered (originating tx: %s)", e.OriginatingTxHash.Hex())
+	return fmt.Sprintf("cascading redeem filtered (originating tx: %s)", e.OriginatingTx.Hash().Hex())
 }
 
 // A helper struct that implements String() by marshalling to JSON.
@@ -95,14 +102,14 @@ type groupCheckpoint struct {
 	userTxsProcessed     int
 	completeLen          int
 	receiptsLen          int
-	userTxHash           common.Hash
+	userTx               *types.Transaction
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
@@ -115,7 +122,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 		userTxsProcessed:     s.userTxsProcessed,
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
-		userTxHash:           userTxHash,
+		userTx:               userTx,
 	}
 	return nil
 }
@@ -497,7 +504,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, snap, tx); err != nil {
 							return err
 						}
 					}
@@ -519,11 +526,19 @@ func ProduceBlockAdvanced(
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
 			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
-				userTxHash := buildState.activeGroupCP.userTxHash
+				// Capture everything before rollback — addressCheckerStateß
+				cp := buildState.activeGroupCP
+				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
 				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
 					return nil, nil, nil, err
 				}
-				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})
+				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{
+					OriginatingTx:     cp.userTx,
+					FilteredAddresses: filteredAddresses,
+					BlockNumber:       header.Number.Uint64(),
+					ParentBlockHash:   header.ParentHash,
+					PositionInBlock:   cp.receiptsLen,
+				})
 				continue
 			}
 			if isUserTx {

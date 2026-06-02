@@ -206,7 +206,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
-	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
+	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader.Unwrap())))
 	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
@@ -633,27 +633,39 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait for the reorg to complete: MEL and TxStreamer reorg logs, then check balance.
-	var reorgLogsFound bool
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		if logHandler.WasLogged("MEL detected L1 reorg") &&
-			logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
-			reorgLogsFound = true
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if !reorgLogsFound {
-		t.Fatal("timed out waiting for reorg logs")
-	}
+	// Wait until the reorg is fully handled by polling for the expected balance,
+	// which is the actual correctness condition. Log checks are kept as diagnostics
+	// but not as the gate, since TransactionStreamer rate-limits reorg log emission.
 	expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
-	bal, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt: %v", err)
+	{
+		timeout := time.NewTimer(time.Minute)
+		defer timeout.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		var lastPollErr error
+		for {
+			newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+			if err == nil && newBalance.Cmp(expectedBalance) == 0 {
+				break
+			}
+			if err != nil {
+				lastPollErr = err
+			}
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				latestBalance, balErr := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+				t.Fatalf("timed out waiting for balance to reflect reorg handling: got %v (balErr=%v, lastPollErr=%v), want %v (MEL reorg logged=%v, TxStreamer reorg logged=%v)",
+					latestBalance, balErr, lastPollErr, expectedBalance,
+					logHandler.WasLogged("MEL detected L1 reorg"),
+					logHandler.WasLogged("TransactionStreamer: Reorg detected!"))
+			}
+		}
 	}
-	if bal.Cmp(expectedBalance) != 0 {
-		t.Fatalf("balance=%v, want %v", bal, expectedBalance)
+
+	// Verify that MEL detected the reorg (this should always be true if the balance is correct)
+	if !logHandler.WasLogged("MEL detected L1 reorg") {
+		t.Error("expected MEL to log reorg detection, but it did not")
 	}
 }
 
