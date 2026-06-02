@@ -11,16 +11,10 @@ use std::{
 };
 
 use arbutil::{Bytes32, PreimageType, crypto};
-use caller_env::{
-    GoRuntimeState,
-    arbcrypto::host::{ecrecovery, keccak256},
-    brotli::host::{brotli_compress, brotli_decompress},
-    wasip1_stub::host as wasi,
-    wasmer_traits::HasMemory,
-};
+use caller_env::{GoRuntimeState, arbcrypto::host::{ecrecovery, keccak256}, brotli::host::{brotli_compress, brotli_decompress}, wasip1_stub::host as wasi, wasmer_traits::HasMemory, HasInput};
 use eyre::{ErrReport, Report, Result, bail};
 use thiserror::Error;
-use validation::local_target;
+use validation::{local_target, ValidationInput};
 use wasmer::{
     Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store,
     imports, sys::CompilerConfig,
@@ -257,7 +251,7 @@ pub struct WasmEnv {
     pub go_state: GoRuntimeState,
     /// Validation input (globals, inbox, preimages). Note: module_asms is drained
     /// into the `module_asms` field below during loading, so it will be empty at runtime.
-    pub input: validation::ValidationInput,
+    pub input: ValidationInput,
     /// Arc-wrapped module assemblies, drained from `input.module_asms` to allow
     /// cheap cloning when passing modules to stylus program threads.
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
@@ -265,6 +259,12 @@ pub struct WasmEnv {
     pub process: ProcessEnv,
     // threads
     pub threads: Vec<CothreadHandler>,
+}
+
+impl HasInput for WasmEnv {
+    fn input(&mut self) -> Result<&mut ValidationInput, Escape> {
+        self.ready_hostio()
+    }
 }
 
 impl HasMemory for WasmEnv {
@@ -284,7 +284,7 @@ impl TryFrom<&Opts> for WasmEnv {
             InputMode::Json { inputs } => {
                 let file = File::open(inputs)?;
                 let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
-                let input = validation::ValidationInput::from_request(&req, local_target())
+                let input = ValidationInput::from_request(&req, local_target())
                     .map_err(|e| eyre::eyre!(e))?;
                 load_validation_input(&mut env, input);
             }
@@ -297,7 +297,7 @@ impl TryFrom<&Opts> for WasmEnv {
 }
 
 fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
-    let mut vi = validation::ValidationInput {
+    let mut vi = ValidationInput {
         small_globals: [
             input.old_state.inbox_position,
             input.old_state.position_within_message,
@@ -355,7 +355,7 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: validation::ValidationInput) {
+pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: ValidationInput) {
     env.process.already_has_input = true;
     let module_asms = std::mem::take(&mut input.module_asms);
     for (module_hash, module_asm) in module_asms {

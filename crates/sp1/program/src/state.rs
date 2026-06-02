@@ -1,13 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{
-    ExecEnv,
-    wasmer_traits::{HasMemory, WasmerMem},
-};
+use caller_env::{ExecEnv, wasmer_traits::{HasMemory, WasmerMem}, HasInput};
 use rand::Rng;
+use validation::ValidationInput;
 use wasmer::FunctionEnvMut;
-
+use crate::Escape;
 use crate::replay::CustomEnvData;
 
 impl ExecEnv for CustomEnvData {
@@ -25,6 +23,12 @@ impl ExecEnv for CustomEnvData {
 
     fn print_string(&mut self, bytes: &[u8]) {
         crate::platform::print_string(1, bytes);
+    }
+}
+
+impl HasInput for CustomEnvData {
+    fn input(&mut self) -> Result<&mut ValidationInput, Escape> {
+        Ok(CustomEnvData::input_mut(self))
     }
 }
 
