@@ -16,32 +16,33 @@ use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
+use crate::machine::load_validation_input;
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
     Ok(caller_env::wavmio::get_global_state_bytes32(&mut mem, &exec.input, idx, out_ptr)?)
 }
 
 /// Writes 32-bytes of global state.
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
     Ok(caller_env::wavmio::set_global_state_bytes32(&mem, &mut exec.input, idx, src_ptr)?)
 }
 
 /// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
     let (_, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
     Ok(caller_env::wavmio::get_global_state_u64(&exec.input, idx)?)
 }
 
 /// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
     let (_, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
     Ok(caller_env::wavmio::set_global_state_u64(&mut exec.input, idx, val)?)
 }
 
@@ -53,7 +54,7 @@ pub fn read_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
     Ok(caller_env::wavmio::read_inbox_message(&mut mem, &exec.input, msg_num, offset, out_ptr)?)
 }
 
@@ -65,7 +66,7 @@ pub fn read_delayed_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
     Ok(caller_env::wavmio::read_delayed_inbox_message(&mut mem, &exec.input, msg_num, offset, out_ptr)?)
 }
 
@@ -106,7 +107,7 @@ pub fn resolve_preimage_impl(
     name: &str,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
+    exec.ready_hostio()?;
 
     if TryInto::<arbutil::PreimageType>::try_into(preimage_type).is_err() {
         eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
@@ -169,67 +170,69 @@ pub fn validate_certificate(
     ))
 }
 
-fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
-    let debug = env.process.debug;
+impl WasmEnv {
+    pub(crate) fn ready_hostio(&mut self) -> MaybeEscape {
+        let debug = self.process.debug;
 
-    if !env.process.reached_wavmio {
-        if debug {
-            let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
-            println!("Created the machine in {}.", time.pink());
-        }
-        env.process.timestamp = Instant::now();
-        env.process.reached_wavmio = true;
-    }
-
-    if env.process.already_has_input {
-        return Ok(());
-    }
-
-    unsafe {
-        libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
-    }
-
-    let stdin = io::stdin();
-    let mut address = String::new();
-
-    loop {
-        if let Err(error) = stdin.read_line(&mut address) {
-            return match error.kind() {
-                ErrorKind::UnexpectedEof => Escape::exit(0),
-                error => Escape::hostio(format!("Error reading stdin: {error}")),
-            };
+        if !self.process.reached_wavmio {
+            if debug {
+                let time = format!("{}ms", self.process.timestamp.elapsed().as_millis());
+                println!("Created the machine in {}.", time.pink());
+            }
+            self.process.timestamp = Instant::now();
+            self.process.reached_wavmio = true;
         }
 
-        address.pop(); // pop the newline
-        if address.is_empty() {
-            return Escape::exit(0);
-        }
-        if debug {
-            println!("Child will connect to {address}");
+        if self.process.already_has_input {
+            return Ok(());
         }
 
         unsafe {
-            match libc::fork() {
-                -1 => return Escape::hostio("Failed to fork"),
-                0 => break,                   // we're the child process
-                _ => address = String::new(), // we're the parent process
+            libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
+        }
+
+        let stdin = io::stdin();
+        let mut address = String::new();
+
+        loop {
+            if let Err(error) = stdin.read_line(&mut address) {
+                return match error.kind() {
+                    ErrorKind::UnexpectedEof => Escape::exit(0),
+                    error => Escape::hostio(format!("Error reading stdin: {error}")),
+                };
+            }
+
+            address.pop(); // pop the newline
+            if address.is_empty() {
+                return Escape::exit(0);
+            }
+            if debug {
+                println!("Child will connect to {address}");
+            }
+
+            unsafe {
+                match libc::fork() {
+                    -1 => return Escape::hostio("Failed to fork"),
+                    0 => break,                   // we're the child process
+                    _ => address = String::new(), // we're the parent process
+                }
             }
         }
+
+        self.process.timestamp = Instant::now();
+        if debug {
+            println!("Connecting to {address}");
+        }
+        let socket = TcpStream::connect(&address)?;
+        socket.set_nodelay(true)?;
+
+        let mut reader = BufReader::new(socket.try_clone()?);
+        let input = receive_validation_input(&mut reader)?;
+        load_validation_input(self, input);
+
+        let writer = BufWriter::new(socket);
+        self.process.socket = Some((writer, reader));
+        self.process.already_has_input = true;
+        Ok(())
     }
-
-    env.process.timestamp = Instant::now();
-    if debug {
-        println!("Connecting to {address}");
-    }
-    let socket = TcpStream::connect(&address)?;
-    socket.set_nodelay(true)?;
-
-    let mut reader = BufReader::new(socket.try_clone()?);
-    let input = receive_validation_input(&mut reader)?;
-    crate::machine::load_validation_input(env, input);
-
-    let writer = BufWriter::new(socket);
-    env.process.socket = Some((writer, reader));
-    env.process.already_has_input = true;
-    Ok(())
 }
