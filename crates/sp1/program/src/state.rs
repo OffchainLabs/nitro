@@ -13,15 +13,15 @@ use crate::replay::CustomEnvData;
 
 impl ExecEnv for CustomEnvData {
     fn advance_time(&mut self, ns: u64) {
-        self.time += ns;
+        self.go_state.time += ns;
     }
 
     fn get_time(&self) -> u64 {
-        self.time
+        self.go_state.time
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        self.pcg.next_u32()
+        self.go_state.rng.next_u32()
     }
 
     fn print_string(&mut self, bytes: &[u8]) {
