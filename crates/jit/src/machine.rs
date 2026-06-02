@@ -266,6 +266,72 @@ pub struct WasmEnv {
     pub threads: Vec<CothreadHandler>,
 }
 
+impl WasmEnv {
+    pub(crate) fn ready_hostio(&mut self) -> Result<&mut ValidationInput, Escape> {
+        let debug = self.process.debug;
+
+        if !self.process.reached_wavmio {
+            if debug {
+                let time = format!("{}ms", self.process.timestamp.elapsed().as_millis());
+                println!("Created the machine in {}.", time.pink());
+            }
+            self.process.timestamp = Instant::now();
+            self.process.reached_wavmio = true;
+        }
+
+        if self.process.already_has_input {
+            return Ok(&mut self.input);
+        }
+
+        unsafe {
+            libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
+        }
+
+        let stdin = io::stdin();
+        let mut address = String::new();
+
+        loop {
+            if let Err(error) = stdin.read_line(&mut address) {
+                return match error.kind() {
+                    ErrorKind::UnexpectedEof => Err(Escape::Exit(0)),
+                    error => Err(Escape::HostIO(format!("Error reading stdin: {error}"))),
+                };
+            }
+
+            address.pop(); // pop the newline
+            if address.is_empty() {
+                return Err(Escape::Exit(0));
+            }
+            if debug {
+                println!("Child will connect to {address}");
+            }
+
+            unsafe {
+                match libc::fork() {
+                    -1 => return Err(Escape::HostIO("Failed to fork".into())),
+                    0 => break,                   // we're the child process
+                    _ => address = String::new(), // we're the parent process
+                }
+            }
+        }
+
+        self.process.timestamp = Instant::now();
+        if debug {
+            println!("Connecting to {address}");
+        }
+        let socket = TcpStream::connect(&address)?;
+        socket.set_nodelay(true)?;
+
+        let mut reader = BufReader::new(socket.try_clone()?);
+        let input = receive_validation_input(&mut reader)?;
+        load_validation_input(self, input);
+
+        let writer = BufWriter::new(socket);
+        self.process.socket = Some((writer, reader));
+        Ok(&mut self.input)
+    }
+}
+
 impl HasInput for WasmEnv {
     type Escape = Escape;
 
@@ -370,72 +436,6 @@ pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: ValidationInpu
             .insert(Bytes32(module_hash), module_asm.into());
     }
     env.input = input;
-}
-
-impl WasmEnv {
-    pub(crate) fn ready_hostio(&mut self) -> Result<&mut ValidationInput, Escape> {
-        let debug = self.process.debug;
-
-        if !self.process.reached_wavmio {
-            if debug {
-                let time = format!("{}ms", self.process.timestamp.elapsed().as_millis());
-                println!("Created the machine in {}.", time.pink());
-            }
-            self.process.timestamp = Instant::now();
-            self.process.reached_wavmio = true;
-        }
-
-        if self.process.already_has_input {
-            return Ok(&mut self.input);
-        }
-
-        unsafe {
-            libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
-        }
-
-        let stdin = io::stdin();
-        let mut address = String::new();
-
-        loop {
-            if let Err(error) = stdin.read_line(&mut address) {
-                return match error.kind() {
-                    ErrorKind::UnexpectedEof => Err(Escape::Exit(0)),
-                    error => Err(Escape::HostIO(format!("Error reading stdin: {error}"))),
-                };
-            }
-
-            address.pop(); // pop the newline
-            if address.is_empty() {
-                return Err(Escape::Exit(0));
-            }
-            if debug {
-                println!("Child will connect to {address}");
-            }
-
-            unsafe {
-                match libc::fork() {
-                    -1 => return Err(Escape::HostIO("Failed to fork".into())),
-                    0 => break,                   // we're the child process
-                    _ => address = String::new(), // we're the parent process
-                }
-            }
-        }
-
-        self.process.timestamp = Instant::now();
-        if debug {
-            println!("Connecting to {address}");
-        }
-        let socket = TcpStream::connect(&address)?;
-        socket.set_nodelay(true)?;
-
-        let mut reader = BufReader::new(socket.try_clone()?);
-        let input = receive_validation_input(&mut reader)?;
-        load_validation_input(self, input);
-
-        let writer = BufWriter::new(socket);
-        self.process.socket = Some((writer, reader));
-        Ok(&mut self.input)
-    }
 }
 
 pub struct ProcessEnv {
