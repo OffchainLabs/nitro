@@ -68,31 +68,6 @@ macro_rules! host_fn_exec {
     };
 }
 
-/// Generates a wasmer host function that delegates to a `caller_env::wavmio` inner function
-/// taking `(&mut impl MemAccess, &mut ValidationInput, args...)`. `T` must implement both
-/// `HasMemory` and `HasInput`; `HasInput::input` is the single acquire point that handles
-/// lazy loading (JIT) or lazy init (SP1) before accessing the validation data.
-#[cfg(feature = "wasmer_traits")]
-macro_rules! host_fn_wavmio {
-    (fn $name:ident($($arg:ident : $ty:ty),*) -> $ret:ty) => {
-        pub fn $name<T>(
-            mut ctx: wasmer::FunctionEnvMut<T>,
-            $($arg: $ty,)*
-        ) -> Result<$ret, T::Escape>
-        where
-            T: $crate::wasmer_traits::HasMemory + $crate::HasInput + Send + 'static,
-            T::Escape: std::error::Error + Send + Sync + 'static,
-        {
-            // memory() clones the Arc<Memory> handle, ending the shared borrow before
-            // data_and_store_mut() takes the exclusive borrow.
-            let memory = ctx.data().memory();
-            let (data, store) = ctx.data_and_store_mut();
-            let input = data.input()?;
-            Ok(super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), input, $($arg,)*)?)
-        }
-    };
-}
-
 #[cfg(feature = "brotli")]
 pub mod brotli;
 

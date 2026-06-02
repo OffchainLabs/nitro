@@ -38,12 +38,18 @@ pub fn set_global_state_bytes32(
 }
 
 /// Reads 8-bytes of global state.
-pub fn get_global_state_u64(_: &impl MemAccess, input: &ValidationInput, idx: u32) -> Result<u64, LogicalError> {
+pub fn get_global_state_u64(
+    _: &impl MemAccess,
+    input: &ValidationInput,
+    idx: u32,
+) -> Result<u64, LogicalError> {
     input
         .small_globals
         .get(idx as usize)
         .copied()
-        .ok_or(LogicalError("global read out of bounds in wavmio.getGlobalStateU64".into()))
+        .ok_or(LogicalError(
+            "global read out of bounds in wavmio.getGlobalStateU64".into(),
+        ))
 }
 
 /// Writes 8-bytes of global state.
@@ -122,10 +128,7 @@ pub fn resolve_preimage(
         .and_then(|m| m.get(&hash))
     else {
         let hash_hex = hex::encode(hash);
-        return Err(format!(
-            "Missing requested preimage for hash {hash_hex} in {name}"
-        )
-        .into());
+        return Err(format!("Missing requested preimage for hash {hash_hex} in {name}").into());
     };
 
     if !offset.is_multiple_of(32) {
@@ -146,7 +149,11 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, LogicalError> {
     let hash = mem.read_fixed(hash_ptr);
-    match input.preimages.get(&preimage_type).and_then(|m| m.get(&hash)) {
+    match input
+        .preimages
+        .get(&preimage_type)
+        .and_then(|m| m.get(&hash))
+    {
         Some(_) => Ok(1),
         None => Ok(0),
     }
@@ -159,7 +166,15 @@ pub fn resolve_keccak_preimage<M: MemAccess>(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, LogicalError> {
-    resolve_preimage(mem, input, 0, hash_ptr, offset, out_ptr, "wavmio.ResolvePreImage")
+    resolve_preimage(
+        mem,
+        input,
+        0,
+        hash_ptr,
+        offset,
+        out_ptr,
+        "wavmio.ResolvePreImage",
+    )
 }
 
 pub fn resolve_typed_preimage<M: MemAccess>(
@@ -170,12 +185,42 @@ pub fn resolve_typed_preimage<M: MemAccess>(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, LogicalError> {
-    resolve_preimage(mem, input, preimage_type, hash_ptr, offset, out_ptr, "wavmio.ResolveTypedPreimage")
+    resolve_preimage(
+        mem,
+        input,
+        preimage_type,
+        hash_ptr,
+        offset,
+        out_ptr,
+        "wavmio.ResolveTypedPreimage",
+    )
 }
 
 #[cfg(feature = "wasmer_traits")]
 pub mod host {
-    use crate::GuestPtr;
+    use crate::{GuestPtr, wasmer_traits::{HasMemory, WasmerMem}};
+
+    /// Generates a wasmer host function that delegates to a `super::` inner function
+    /// taking `(&mut impl MemAccess, &mut ValidationInput, args...)`.
+    macro_rules! host_fn_wavmio {
+        (fn $name:ident($($arg:ident : $ty:ty),*) -> $ret:ty) => {
+            pub fn $name<T>(
+                mut ctx: wasmer::FunctionEnvMut<T>,
+                $($arg: $ty,)*
+            ) -> Result<$ret, T::Escape>
+            where
+                T: HasMemory + $crate::HasInput + Send + 'static,
+                T::Escape: std::error::Error + Send + Sync + 'static,
+            {
+                // memory() clones the Arc<Memory> handle, ending the shared borrow before
+                // data_and_store_mut() takes the exclusive borrow.
+                let memory = ctx.data().memory();
+                let (data, store) = ctx.data_and_store_mut();
+                let input = data.input()?;
+                Ok(super::$name(&mut WasmerMem::new(memory, store), input, $($arg,)*)?)
+            }
+        };
+    }
 
     host_fn_wavmio!(fn get_global_state_bytes32(a: u32, b: GuestPtr) -> ());
     host_fn_wavmio!(fn set_global_state_bytes32(a: u32, b: GuestPtr) -> ());
