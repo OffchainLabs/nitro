@@ -147,6 +147,34 @@ pub fn resolve_preimage(
         return Err(format!("Missing requested preimage for hash {hash_hex} in {name}").into());
     };
 
+    #[cfg(all(debug_assertions, feature = "integrity_check"))]
+    if let Ok(pt) = arbutil::PreimageType::try_from(preimage_type) {
+        use arbutil::PreimageType;
+        use sha2::{Digest, Sha256};
+        use tiny_keccak::{Hasher, Keccak};
+
+        let calculated: [u8; 32] = match pt {
+            PreimageType::Keccak256 => {
+                let mut k = Keccak::v256();
+                k.update(preimage);
+                let mut out = [0u8; 32];
+                k.finalize(&mut out);
+                out
+            }
+            PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
+            // EthVersionedHash and DACertificate: hash IS the identifier
+            PreimageType::EthVersionedHash | PreimageType::DACertificate => hash,
+        };
+        if calculated != hash {
+            return Err(WavmioError(format!(
+                "preimage {} hashes to {} but stored under key {} in {name}",
+                hex::encode(preimage),
+                hex::encode(calculated),
+                hex::encode(hash),
+            )));
+        }
+    }
+
     if !offset.is_multiple_of(32) {
         return Err(format!("bad offset {offset} in {name}").into());
     }
