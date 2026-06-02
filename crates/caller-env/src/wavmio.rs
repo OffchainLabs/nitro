@@ -13,11 +13,15 @@ use crate::{GuestPtr, MemAccess};
 pub struct WavmioError(pub String);
 
 impl From<String> for WavmioError {
-    fn from(s: String) -> Self { Self(s) }
+    fn from(s: String) -> Self {
+        Self(s)
+    }
 }
 
 impl From<&str> for WavmioError {
-    fn from(s: &str) -> Self { Self(s.into()) }
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
 }
 
 /// Reads 32-bytes of global state and writes to guest memory.
@@ -210,7 +214,10 @@ pub fn resolve_typed_preimage<M: MemAccess>(
 
 #[cfg(feature = "wasmer_traits")]
 pub mod host {
-    use crate::{wasmer_traits::{HasMemory, WasmerMem}, GuestPtr};
+    use crate::{
+        GuestPtr,
+        wasmer_traits::{HasMemory, WasmerMem},
+    };
 
     /// Generates a wasmer host function that delegates to a `super::` inner function
     /// taking `(&mut impl MemAccess, &mut ValidationInput, args...)`.

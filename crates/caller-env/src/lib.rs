@@ -6,10 +6,10 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+
 pub use guest_ptr::GuestPtr;
 use rand_pcg::Pcg32;
 pub use wasip1_stub::Errno;
-
 
 mod guest_ptr;
 pub mod wavmio;

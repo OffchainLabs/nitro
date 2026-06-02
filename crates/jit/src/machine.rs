@@ -10,30 +10,25 @@ use std::{
     time::Instant,
 };
 
-use arbutil::{crypto, Bytes32, PreimageType};
-use arbutil::Color;
+use arbutil::{Bytes32, Color, PreimageType, crypto};
 use caller_env::{
+    GoRuntimeState,
     arbcrypto::host::{ecrecovery, keccak256},
     brotli::host::{brotli_compress, brotli_decompress},
     wasip1_stub::host as wasi,
     wasmer_traits::HasMemory,
-    wavmio::host as wavmio,
-    GoRuntimeState,
+    wavmio::{HasInput, host as wavmio},
 };
-use validation::transfer::receive_validation_input;
-use eyre::{bail, ErrReport, Report, Result};
+use eyre::{ErrReport, Report, Result, bail};
 use thiserror::Error;
-use caller_env::wavmio::HasInput;
-use validation::{local_target, ValidationInput};
+use validation::{ValidationInput, local_target, transfer::receive_validation_input};
 use wasmer::{
-    imports, sys::CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store,
+    Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store,
+    imports, sys::CompilerConfig,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
-use crate::{
-    program, stylus_backend::CothreadHandler, InputMode, LocalInput, Opts, ValidatorOpts,
-};
+use crate::{InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler};
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
 ///

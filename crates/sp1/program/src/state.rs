@@ -1,13 +1,16 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{wasmer_traits::{HasMemory, WasmerMem}, ExecEnv};
+use caller_env::{
+    ExecEnv,
+    wasmer_traits::{HasMemory, WasmerMem},
+    wavmio::HasInput,
+};
 use rand::Rng;
-use caller_env::wavmio::HasInput;
 use validation::ValidationInput;
 use wasmer::FunctionEnvMut;
-use crate::Escape;
-use crate::replay::CustomEnvData;
+
+use crate::{Escape, replay::CustomEnvData};
 
 impl ExecEnv for CustomEnvData {
     fn advance_time(&mut self, ns: u64) {

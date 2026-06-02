@@ -26,7 +26,7 @@ use wasmer_vm::install_unwinder;
 
 use crate::{
     Escape, JitConfig, STACK_SIZE,
-    imports::{programs},
+    imports::programs,
     platform,
     platform::{exit, read_input},
     stylus::{Cothread, MessageFromCothread, MessageToCothread},
