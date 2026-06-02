@@ -143,10 +143,10 @@ pub fn validate_certificate(
     input: &ValidationInput,
     preimage_type: u8,
     hash_ptr: GuestPtr,
-) -> u8 {
+) -> Result<u8, LogicalError> {
     let hash = mem.read_fixed(hash_ptr);
     match input.preimages.get(&preimage_type).and_then(|m| m.get(&hash)) {
-        Some(_) => 1,
-        None => 0,
+        Some(_) => Ok(1),
+        None => Ok(0),
     }
 }

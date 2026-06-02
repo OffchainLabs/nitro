@@ -103,5 +103,5 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, state) = sp1_env(&mut ctx);
-    Ok(caller_env::validate_certificate(&mem, state.input(), preimage_type, hash_ptr))
+    Ok(caller_env::validate_certificate(&mem, state.input(), preimage_type, hash_ptr)?)
 }

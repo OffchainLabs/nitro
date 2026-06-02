@@ -10,6 +10,7 @@ use std::{
 
 use arbutil::Color;
 use caller_env::GuestPtr;
+use validation::ValidationInput;
 use validation::transfer::receive_validation_input;
 
 use crate::{
@@ -21,29 +22,29 @@ use crate::machine::load_validation_input;
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
-    exec.ready_hostio()?;
-    Ok(caller_env::wavmio::get_global_state_bytes32(&mut mem, &exec.input, idx, out_ptr)?)
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::get_global_state_bytes32(&mut mem, input, idx, out_ptr)?)
 }
 
 /// Writes 32-bytes of global state.
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = env.jit_env();
-    exec.ready_hostio()?;
-    Ok(caller_env::wavmio::set_global_state_bytes32(&mem, &mut exec.input, idx, src_ptr)?)
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::set_global_state_bytes32(&mem, input, idx, src_ptr)?)
 }
 
 /// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
     let (_, exec) = env.jit_env();
-    exec.ready_hostio()?;
-    Ok(caller_env::wavmio::get_global_state_u64(&exec.input, idx)?)
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::get_global_state_u64(input, idx)?)
 }
 
 /// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
     let (_, exec) = env.jit_env();
-    exec.ready_hostio()?;
-    Ok(caller_env::wavmio::set_global_state_u64(&mut exec.input, idx, val)?)
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::set_global_state_u64(input, idx, val)?)
 }
 
 /// Reads an inbox message.
@@ -54,8 +55,8 @@ pub fn read_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    exec.ready_hostio()?;
-    Ok(caller_env::wavmio::read_inbox_message(&mut mem, &exec.input, msg_num, offset, out_ptr)?)
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::read_inbox_message(&mut mem, input, msg_num, offset, out_ptr)?)
 }
 
 /// Reads a delayed inbox message.
@@ -66,8 +67,8 @@ pub fn read_delayed_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    exec.ready_hostio()?;
-    Ok(caller_env::wavmio::read_delayed_inbox_message(&mut mem, &exec.input, msg_num, offset, out_ptr)?)
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::read_delayed_inbox_message(&mut mem, input, msg_num, offset, out_ptr)?)
 }
 
 /// Retrieves the preimage of the given hash.
@@ -107,7 +108,7 @@ pub fn resolve_preimage_impl(
     name: &str,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    exec.ready_hostio()?;
+    let input = exec.ready_hostio()?;
 
     if TryInto::<arbutil::PreimageType>::try_into(preimage_type).is_err() {
         eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
@@ -122,11 +123,10 @@ pub fn resolve_preimage_impl(
 
         let hash: [u8; 32] = mem.read_fixed(hash_ptr);
         let pt: PreimageType = preimage_type.try_into().unwrap();
-        if let Some(preimage) = exec
-            .input
+        if let Some(preimage) = input
             .preimages
             .get(&preimage_type)
-            .and_then(|m| m.get(&hash))
+            .and_then(|m: &std::collections::BTreeMap<_, _>| m.get(&hash))
         {
             let calculated_hash: [u8; 32] = match pt {
                 PreimageType::Keccak256 => crypto::keccak(preimage),
@@ -147,7 +147,7 @@ pub fn resolve_preimage_impl(
 
     Ok(caller_env::wavmio::resolve_preimage(
         &mut mem,
-        &exec.input,
+        input,
         preimage_type,
         hash_ptr,
         offset,
@@ -162,16 +162,12 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, exec) = env.jit_env();
-    Ok(caller_env::wavmio::validate_certificate(
-        &mem,
-        &exec.input,
-        preimage_type,
-        hash_ptr,
-    ))
+    let input = exec.ready_hostio()?;
+    Ok(caller_env::wavmio::validate_certificate(&mem, input, preimage_type, hash_ptr)?)
 }
 
 impl WasmEnv {
-    pub(crate) fn ready_hostio(&mut self) -> MaybeEscape {
+    pub(crate) fn ready_hostio(&mut self) -> Result<&mut ValidationInput, Escape> {
         let debug = self.process.debug;
 
         if !self.process.reached_wavmio {
@@ -184,7 +180,7 @@ impl WasmEnv {
         }
 
         if self.process.already_has_input {
-            return Ok(());
+            return Ok(&mut self.input);
         }
 
         unsafe {
@@ -197,14 +193,14 @@ impl WasmEnv {
         loop {
             if let Err(error) = stdin.read_line(&mut address) {
                 return match error.kind() {
-                    ErrorKind::UnexpectedEof => Escape::exit(0),
-                    error => Escape::hostio(format!("Error reading stdin: {error}")),
+                    ErrorKind::UnexpectedEof => Err(Escape::Exit(0)),
+                    error => Err(Escape::HostIO(format!("Error reading stdin: {error}"))),
                 };
             }
 
             address.pop(); // pop the newline
             if address.is_empty() {
-                return Escape::exit(0);
+                return Err(Escape::Exit(0));
             }
             if debug {
                 println!("Child will connect to {address}");
@@ -212,7 +208,7 @@ impl WasmEnv {
 
             unsafe {
                 match libc::fork() {
-                    -1 => return Escape::hostio("Failed to fork"),
+                    -1 => return Err(Escape::HostIO("Failed to fork".into())),
                     0 => break,                   // we're the child process
                     _ => address = String::new(), // we're the parent process
                 }
@@ -232,7 +228,6 @@ impl WasmEnv {
 
         let writer = BufWriter::new(socket);
         self.process.socket = Some((writer, reader));
-        self.process.already_has_input = true;
-        Ok(())
+        Ok(&mut self.input)
     }
 }
