@@ -6,10 +6,10 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
+pub use guest_ptr::GuestPtr;
 use rand_pcg::Pcg32;
 use validation::ValidationInput;
 pub use wasip1_stub::Errno;
-pub use guest_ptr::GuestPtr;
 
 /// A protocol-level error from a host function — distinct from infrastructure
 /// failures (sockets, threads) that are runtime-specific.
@@ -28,6 +28,9 @@ impl From<&str> for LogicalError {
     }
 }
 
+mod guest_ptr;
+pub mod wavmio;
+
 #[cfg(feature = "static_caller")]
 pub mod static_caller;
 
@@ -45,8 +48,8 @@ macro_rules! host_fn {
             mut ctx: wasmer::FunctionEnvMut<T>,
             $($arg: $ty,)*
         ) $(-> $ret)? {
-            let memory = ctx.data().memory();
-            let (_, store) = ctx.data_and_store_mut();
+            let (data, store) = ctx.data_and_store_mut();
+            let memory = data.memory();
             super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), $($arg,)*)
         }
     };
@@ -61,8 +64,8 @@ macro_rules! host_fn_exec {
             mut ctx: wasmer::FunctionEnvMut<T>,
             $($arg: $ty,)*
         ) -> $crate::wasip1_stub::Errno {
-            let memory = ctx.data().memory();
             let (data, store) = ctx.data_and_store_mut();
+            let memory = data.memory();
             super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), data, $($arg,)*)
         }
     };
@@ -72,9 +75,6 @@ macro_rules! host_fn_exec {
 pub mod brotli;
 
 pub mod arbcrypto;
-pub mod wavmio;
-
-mod guest_ptr;
 pub mod wasip1_stub;
 
 /// Access Guest memory.

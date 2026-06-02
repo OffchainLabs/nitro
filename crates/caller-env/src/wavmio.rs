@@ -212,10 +212,8 @@ pub mod host {
                 T: HasMemory + $crate::HasInput + Send + 'static,
                 T::Escape: std::error::Error + Send + Sync + 'static,
             {
-                // memory() clones the Arc<Memory> handle, ending the shared borrow before
-                // data_and_store_mut() takes the exclusive borrow.
-                let memory = ctx.data().memory();
                 let (data, store) = ctx.data_and_store_mut();
+                let memory = data.memory();
                 let input = data.input()?;
                 Ok(super::$name(&mut WasmerMem::new(memory, store), input, $($arg,)*)?)
             }
