@@ -6,7 +6,9 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-
+use rand_pcg::Pcg32;
+use validation::ValidationInput;
+pub use wasip1_stub::Errno;
 pub use guest_ptr::GuestPtr;
 
 /// A protocol-level error from a host function — distinct from infrastructure
@@ -25,9 +27,6 @@ impl From<&str> for LogicalError {
         Self(s.into())
     }
 }
-use rand_pcg::Pcg32;
-use validation::ValidationInput;
-pub use wasip1_stub::Errno;
 
 #[cfg(feature = "static_caller")]
 pub mod static_caller;
@@ -90,20 +89,6 @@ macro_rules! host_fn_wavmio {
             let (data, store) = ctx.data_and_store_mut();
             let input = data.input()?;
             Ok(super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), input, $($arg,)*)?)
-        }
-    };
-    // For inner functions that take only input (no mem parameter).
-    (no_mem fn $name:ident($($arg:ident : $ty:ty),*) -> $ret:ty) => {
-        pub fn $name<T>(
-            mut ctx: wasmer::FunctionEnvMut<T>,
-            $($arg: $ty,)*
-        ) -> Result<$ret, T::Escape>
-        where
-            T: $crate::HasInput + Send + 'static,
-            T::Escape: std::error::Error + Send + Sync + 'static,
-        {
-            let input = ctx.data_mut().input()?;
-            Ok(super::$name(input, $($arg,)*)?)
         }
     };
 }

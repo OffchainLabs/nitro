@@ -38,7 +38,7 @@ pub fn set_global_state_bytes32(
 }
 
 /// Reads 8-bytes of global state.
-pub fn get_global_state_u64(input: &ValidationInput, idx: u32) -> Result<u64, LogicalError> {
+pub fn get_global_state_u64(_: &impl MemAccess, input: &ValidationInput, idx: u32) -> Result<u64, LogicalError> {
     input
         .small_globals
         .get(idx as usize)
@@ -48,6 +48,7 @@ pub fn get_global_state_u64(input: &ValidationInput, idx: u32) -> Result<u64, Lo
 
 /// Writes 8-bytes of global state.
 pub fn set_global_state_u64(
+    _: &impl MemAccess,
     input: &mut ValidationInput,
     idx: u32,
     val: u64,
@@ -178,8 +179,8 @@ pub mod host {
 
     host_fn_wavmio!(fn get_global_state_bytes32(a: u32, b: GuestPtr) -> ());
     host_fn_wavmio!(fn set_global_state_bytes32(a: u32, b: GuestPtr) -> ());
-    host_fn_wavmio!(no_mem fn get_global_state_u64(a: u32) -> u64);
-    host_fn_wavmio!(no_mem fn set_global_state_u64(a: u32, b: u64) -> ());
+    host_fn_wavmio!(fn get_global_state_u64(a: u32) -> u64);
+    host_fn_wavmio!(fn set_global_state_u64(a: u32, b: u64) -> ());
     host_fn_wavmio!(fn read_inbox_message(a: u64, b: u32, c: GuestPtr) -> u32);
     host_fn_wavmio!(fn read_delayed_inbox_message(a: u64, b: u32, c: GuestPtr) -> u32);
     host_fn_wavmio!(fn resolve_keccak_preimage(a: GuestPtr, b: u32, c: GuestPtr) -> u32);
