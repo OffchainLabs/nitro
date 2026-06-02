@@ -150,3 +150,39 @@ pub fn validate_certificate(
         None => Ok(0),
     }
 }
+
+pub fn resolve_keccak_preimage<M: MemAccess>(
+    mem: &mut M,
+    input: &ValidationInput,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, LogicalError> {
+    resolve_preimage(mem, input, 0, hash_ptr, offset, out_ptr, "wavmio.ResolvePreImage")
+}
+
+pub fn resolve_typed_preimage<M: MemAccess>(
+    mem: &mut M,
+    input: &ValidationInput,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, LogicalError> {
+    resolve_preimage(mem, input, preimage_type, hash_ptr, offset, out_ptr, "wavmio.ResolveTypedPreimage")
+}
+
+#[cfg(feature = "wasmer_traits")]
+pub mod host {
+    use crate::GuestPtr;
+
+    host_fn_wavmio!(fn get_global_state_bytes32(a: u32, b: GuestPtr) -> ());
+    host_fn_wavmio!(fn set_global_state_bytes32(a: u32, b: GuestPtr) -> ());
+    host_fn_wavmio!(no_mem fn get_global_state_u64(a: u32) -> u64);
+    host_fn_wavmio!(no_mem fn set_global_state_u64(a: u32, b: u64) -> ());
+    host_fn_wavmio!(fn read_inbox_message(a: u64, b: u32, c: GuestPtr) -> u32);
+    host_fn_wavmio!(fn read_delayed_inbox_message(a: u64, b: u32, c: GuestPtr) -> u32);
+    host_fn_wavmio!(fn resolve_keccak_preimage(a: GuestPtr, b: u32, c: GuestPtr) -> u32);
+    host_fn_wavmio!(fn resolve_typed_preimage(a: u8, b: GuestPtr, c: u32, d: GuestPtr) -> u32);
+    host_fn_wavmio!(fn validate_certificate(a: u8, b: GuestPtr) -> u8);
+}

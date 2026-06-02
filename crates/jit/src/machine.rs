@@ -11,7 +11,17 @@ use std::{
 };
 
 use arbutil::{Bytes32, PreimageType, crypto};
-use caller_env::{GoRuntimeState, arbcrypto::host::{ecrecovery, keccak256}, brotli::host::{brotli_compress, brotli_decompress}, wasip1_stub::host as wasi, wasmer_traits::HasMemory, HasInput};
+use arbutil::Color;
+use caller_env::{
+    GoRuntimeState,
+    arbcrypto::host::{ecrecovery, keccak256},
+    brotli::host::{brotli_compress, brotli_decompress},
+    wasip1_stub::host as wasi,
+    wasmer_traits::HasMemory,
+    wavmio::host as wavmio,
+    HasInput,
+};
+use validation::transfer::receive_validation_input;
 use eyre::{ErrReport, Report, Result, bail};
 use thiserror::Error;
 use validation::{local_target, ValidationInput};
@@ -22,7 +32,7 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
@@ -129,20 +139,15 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "beforeFirstIO" => func!(|_: WasmEnvMut|{}),
         },
         "wavmio" => {
-            "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
-            "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
-            "getGlobalStateU64" => func!(wavmio::get_global_state_u64),
-            "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
-            "readInboxMessage" => func!(wavmio::read_inbox_message),
-            "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-            "resolvePreImage" => {
-                #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
-                {
-                    func!(wavmio::resolve_keccak_preimage)
-                }
-            },
-            "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
-            "validateCertificate" => func!(wavmio::validate_certificate),
+            "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32::<WasmEnv>),
+            "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32::<WasmEnv>),
+            "getGlobalStateU64" => func!(wavmio::get_global_state_u64::<WasmEnv>),
+            "setGlobalStateU64" => func!(wavmio::set_global_state_u64::<WasmEnv>),
+            "readInboxMessage" => func!(wavmio::read_inbox_message::<WasmEnv>),
+            "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message::<WasmEnv>),
+            "resolvePreImage" => func!(wavmio::resolve_keccak_preimage::<WasmEnv>),
+            "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage::<WasmEnv>),
+            "validateCertificate" => func!(wavmio::validate_certificate::<WasmEnv>),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(|_: WasmEnvMut, code: u32|Err::<(), Escape>(Escape::Exit(code))),
@@ -262,6 +267,8 @@ pub struct WasmEnv {
 }
 
 impl HasInput for WasmEnv {
+    type Escape = Escape;
+
     fn input(&mut self) -> Result<&mut ValidationInput, Escape> {
         self.ready_hostio()
     }
@@ -363,6 +370,72 @@ pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: ValidationInpu
             .insert(Bytes32(module_hash), module_asm.into());
     }
     env.input = input;
+}
+
+impl WasmEnv {
+    pub(crate) fn ready_hostio(&mut self) -> Result<&mut ValidationInput, Escape> {
+        let debug = self.process.debug;
+
+        if !self.process.reached_wavmio {
+            if debug {
+                let time = format!("{}ms", self.process.timestamp.elapsed().as_millis());
+                println!("Created the machine in {}.", time.pink());
+            }
+            self.process.timestamp = Instant::now();
+            self.process.reached_wavmio = true;
+        }
+
+        if self.process.already_has_input {
+            return Ok(&mut self.input);
+        }
+
+        unsafe {
+            libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
+        }
+
+        let stdin = io::stdin();
+        let mut address = String::new();
+
+        loop {
+            if let Err(error) = stdin.read_line(&mut address) {
+                return match error.kind() {
+                    ErrorKind::UnexpectedEof => Err(Escape::Exit(0)),
+                    error => Err(Escape::HostIO(format!("Error reading stdin: {error}"))),
+                };
+            }
+
+            address.pop(); // pop the newline
+            if address.is_empty() {
+                return Err(Escape::Exit(0));
+            }
+            if debug {
+                println!("Child will connect to {address}");
+            }
+
+            unsafe {
+                match libc::fork() {
+                    -1 => return Err(Escape::HostIO("Failed to fork".into())),
+                    0 => break,                   // we're the child process
+                    _ => address = String::new(), // we're the parent process
+                }
+            }
+        }
+
+        self.process.timestamp = Instant::now();
+        if debug {
+            println!("Connecting to {address}");
+        }
+        let socket = TcpStream::connect(&address)?;
+        socket.set_nodelay(true)?;
+
+        let mut reader = BufReader::new(socket.try_clone()?);
+        let input = receive_validation_input(&mut reader)?;
+        load_validation_input(self, input);
+
+        let writer = BufWriter::new(socket);
+        self.process.socket = Some((writer, reader));
+        Ok(&mut self.input)
+    }
 }
 
 pub struct ProcessEnv {

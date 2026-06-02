@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::{ExecEnv, wasmer_traits::{HasMemory, WasmerMem}, HasInput};
+use caller_env::{ExecEnv, HasInput, wasmer_traits::{HasMemory, WasmerMem}};
 use rand::Rng;
 use validation::ValidationInput;
 use wasmer::FunctionEnvMut;
@@ -27,6 +27,8 @@ impl ExecEnv for CustomEnvData {
 }
 
 impl HasInput for CustomEnvData {
+    type Escape = Escape;
+
     fn input(&mut self) -> Result<&mut ValidationInput, Escape> {
         Ok(CustomEnvData::input_mut(self))
     }

@@ -12,6 +12,7 @@ use caller_env::{
     arbcrypto::host::{ecrecovery, keccak256},
     brotli::host::{brotli_compress, brotli_decompress},
     wasip1_stub::host as wasi,
+    wavmio::host as wavmio,
 };
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
@@ -25,7 +26,7 @@ use wasmer_vm::install_unwinder;
 
 use crate::{
     Escape, JitConfig, STACK_SIZE,
-    imports::{programs, wavmio},
+    imports::{programs},
     platform,
     platform::{exit, read_input},
     stylus::{Cothread, MessageFromCothread, MessageToCothread},
@@ -385,15 +386,15 @@ fn build_imports(
                 "sock_shutdown" => func!(wasi::sock_shutdown::<CustomEnvData>),
             },
             "wavmio" => {
-                "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
-                "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
-                "getGlobalStateU64" => func!(wavmio::get_global_state_u64),
-                "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
-                "readInboxMessage" => func!(wavmio::read_inbox_message),
-                "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-                "resolvePreImage" => func!(wavmio::resolve_keccak_preimage),
-                "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
-                "validateCertificate" => func!(wavmio::validate_certificate),
+                "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32::<CustomEnvData>),
+                "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32::<CustomEnvData>),
+                "getGlobalStateU64" => func!(wavmio::get_global_state_u64::<CustomEnvData>),
+                "setGlobalStateU64" => func!(wavmio::set_global_state_u64::<CustomEnvData>),
+                "readInboxMessage" => func!(wavmio::read_inbox_message::<CustomEnvData>),
+                "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message::<CustomEnvData>),
+                "resolvePreImage" => func!(wavmio::resolve_keccak_preimage::<CustomEnvData>),
+                "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage::<CustomEnvData>),
+                "validateCertificate" => func!(wavmio::validate_certificate::<CustomEnvData>),
             },
             "programs" => {
                 "program_prepare" => func!(programs::program_prepare),
