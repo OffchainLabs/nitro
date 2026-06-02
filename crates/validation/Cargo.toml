@@ -21,3 +21,4 @@ serde_with = { workspace = true, features = ["base64"] }
 default = []
 rkyv = ["dep:rkyv"]
 sp1 = []
+transfer = []

@@ -24,7 +24,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 stylus = { workspace = true }
 thiserror = { workspace = true }
-validation = { workspace = true }
+validation = { workspace = true, features = ["transfer"] }
 wasmer = { workspace = true }
 wasmer-compiler-cranelift = { workspace = true }
 wasmer-compiler-llvm = { workspace = true, optional = true }

@@ -9,6 +9,7 @@ use arbutil::{Bytes32, PreimageType};
 use serde::{Deserialize, Serialize};
 use serde_with::{As, DisplayFromStr, base64::Base64};
 
+#[cfg(feature = "transfer")]
 pub mod transfer;
 
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
