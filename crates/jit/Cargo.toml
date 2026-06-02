@@ -12,7 +12,7 @@ rust-version.workspace = true
 [dependencies]
 arbutil = { workspace = true }
 brotli = { workspace = true, features = ["wasmer_traits"] }
-caller-env = { workspace = true, features = ["brotli", "wasmer_traits"] }
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits", "integrity_check"] }
 clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 hex = { workspace = true }
@@ -21,7 +21,6 @@ prover = { workspace = true, features = ["native"] }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 stylus = { workspace = true }
 thiserror = { workspace = true }
 validation = { workspace = true, features = ["transfer"] }
