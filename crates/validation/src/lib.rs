@@ -1,13 +1,24 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::{self, BufRead},
-};
 
-use arbutil::{Bytes32, PreimageType};
-use serde::{Deserialize, Serialize};
-use serde_with::{As, DisplayFromStr, base64::Base64};
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::{collections::BTreeMap, vec::Vec};
+
+#[cfg(feature = "std")]
+use {
+    arbutil::{Bytes32, PreimageType},
+    serde::{Deserialize, Serialize},
+    serde_with::{As, DisplayFromStr, base64::Base64},
+    std::{
+        collections::{BTreeMap, HashMap},
+        io::{self, BufRead},
+    },
+};
 
 #[cfg(feature = "transfer")]
 pub mod transfer;
@@ -40,6 +51,7 @@ pub struct ValidationInput {
     pub module_asms: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
+#[cfg(feature = "std")]
 impl ValidationInput {
     /// Extract runtime data from a request for the given target architecture.
     ///
@@ -116,6 +128,7 @@ pub fn local_target() -> &'static str {
 }
 
 /// Counterpart to Go `validator.GoGlobalState`.
+#[cfg(feature = "std")]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
@@ -128,6 +141,7 @@ pub struct GoGlobalState {
 }
 
 /// Counterpart to Go `validator.server_api.BatchInfoJson`.
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
@@ -140,9 +154,11 @@ pub struct BatchInfo {
 ///
 /// Note: The wrapped `Vec<u8>` is already `Base64` decoded before `from(Vec<u8>)` is called by
 /// `serde`.
+#[cfg(feature = "std")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserWasm(Vec<u8>);
 
+#[cfg(feature = "std")]
 impl UserWasm {
     /// `as_vec` returns the decompressed wasm module as a `Vec<u8>`
     pub fn as_vec(&self) -> Vec<u8> {
@@ -150,12 +166,14 @@ impl UserWasm {
     }
 }
 
+#[cfg(feature = "std")]
 impl AsRef<[u8]> for UserWasm {
     fn as_ref(&self) -> &[u8] {
         &self.0
     }
 }
 
+#[cfg(feature = "std")]
 impl TryFrom<Vec<u8>> for UserWasm {
     type Error = brotli::BrotliStatus;
 
@@ -165,6 +183,7 @@ impl TryFrom<Vec<u8>> for UserWasm {
 }
 
 /// Counterpart to Go `validator.server_api.InputJSON`.
+#[cfg(feature = "std")]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidationRequest {
@@ -187,6 +206,7 @@ pub struct ValidationRequest {
     pub max_user_wasm_size: u64,
 }
 
+#[cfg(feature = "std")]
 impl ValidationRequest {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         Ok(serde_json::from_reader(&mut reader)?)
