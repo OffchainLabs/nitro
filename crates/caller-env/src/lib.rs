@@ -26,6 +26,7 @@ impl From<&str> for LogicalError {
     }
 }
 use rand_pcg::Pcg32;
+use validation::ValidationInput;
 pub use wasip1_stub::Errno;
 
 #[cfg(feature = "static_caller")]
@@ -111,6 +112,15 @@ pub trait ExecEnv {
     fn next_rand_u32(&mut self) -> u32;
 
     fn print_string(&mut self, message: &[u8]);
+}
+
+/// Provides access to the [`ValidationInput`] for a running machine.
+///
+/// For JIT, acquiring input may trigger lazy loading (socket connect, fork); the
+/// associated `Escape` type carries any resulting error. For SP1 the load is
+/// handled by `once_cell::Lazy` and the method is infallible in practice.
+pub trait HasInput {
+    fn input(&mut self) -> Result<&mut ValidationInput, impl From<LogicalError>>;
 }
 
 #[derive(Clone, PartialEq, Eq)]
