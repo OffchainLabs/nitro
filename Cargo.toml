@@ -119,7 +119,7 @@ prover-ffi = { path = "crates/prover-ffi" }
 stylus = { path = "crates/stylus", default-features = false }
 stylus-compiler-program = { path = "crates/sp1/stylus-compiler-program" }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
-validation = { path = "crates/validation" }
+validation = { path = "crates/validation", default-features = false }
 
 # wasmer
 wasmer = { path = "crates/tools/wasmer/lib/api" }
