@@ -40,21 +40,14 @@ def _fmt_gas(v: float | None) -> str:
     return "—" if v is None else f"{int(v):,}"
 
 
-def _fmt_bytes(v: float | None) -> str:
-    if v is None:
-        return "—"
-    n = int(v)
-    return f"{n / 1024:.1f} KiB" if n >= 1024 else f"{n} B"
-
 
 def _fmt_int(v: float | None) -> str:
     return "—" if v is None else f"{int(v):,}"
 
 
 FIELDS = [
-    ("cycles",    "cycles",    _fmt_cycles),
-    ("gas",       "gas",       _fmt_gas),
-    ("wasm_size", "wasm size", _fmt_bytes),
+    ("cycles", "cycles", _fmt_cycles),
+    ("gas",    "gas",    _fmt_gas),
 ]
 
 

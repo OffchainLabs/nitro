@@ -145,7 +145,7 @@ def fmt_secs(v: str | None) -> str:
 # A table row is either a data dict or a section sentinel {"section": name}.
 
 def print_table(rows: list[dict]) -> None:
-    headers = ["Phase", "Wasm size", "SP1 cycles", "Prover gas", "Time"]
+     headers = ["Phase", "SP1 cycles", "Prover gas", "Time"]
 
     # Collect display cells for data rows only (to compute column widths).
     display: list[list[str] | str] = []  # str entries are section labels
@@ -155,7 +155,6 @@ def print_table(rows: list[dict]) -> None:
         else:
             display.append([
                 r["label"],
-                fmt_bytes(r.get("wasm_size")),
                 fmt_int(r.get("cycles")),
                 fmt_int(r.get("gas")),
                 fmt_secs(r.get("time_secs")),
@@ -193,7 +192,7 @@ def print_table(rows: list[dict]) -> None:
     print()
 
 
-_JSON_FIELDS = {"cycles", "gas", "wasm_size", "syscalls"}
+_JSON_FIELDS = {"cycles", "gas", "syscalls"}
 
 
 def write_json(table: list[dict], path: str) -> None:
