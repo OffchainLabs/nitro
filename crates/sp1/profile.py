@@ -25,6 +25,7 @@ BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed", "signatures
 # Sample 1 in every N cycles for the SP1 trace file.
 # Lower = more detail, larger file; higher = coarser, smaller file.
 TRACE_SAMPLE_RATE = 300
+JIT_RUNS = 20
 
 # ---------------------------------------------------------------------------
 # Log parsing
@@ -338,15 +339,19 @@ def main() -> None:
             arb_steps[block] = int(m.group(1)) if m else None
 
     if args.jit and args.replay_wasm:
-        print(f"\n[4] Running JIT on {len(BLOCKS)} block types:")
+        print(f"\n[4] Running JIT on {len(BLOCKS)} block types ({JIT_RUNS} runs each, reporting min):")
         for block in BLOCKS:
             block_file = f"{args.block_inputs_dir}/{block}.json"
-            log = run(f"jit [{block}]",
-                      [args.jit, "--debug", "--cranelift", "--binary", args.replay_wasm,
-                       "json", f"--inputs={block_file}"],
-                      allowed_codes=(0,))
-            m = _JIT_TIME_RE.search(log)
-            jit_time_ms[block] = int(m.group(1)) if m else None
+            samples: list[int] = []
+            for i in range(JIT_RUNS):
+                log = run(f"jit [{block}] run {i + 1}/{JIT_RUNS}",
+                          [args.jit, "--debug", "--cranelift", "--binary", args.replay_wasm,
+                           "json", f"--inputs={block_file}"],
+                          allowed_codes=(0,))
+                m = _JIT_TIME_RE.search(log)
+                if m:
+                    samples.append(int(m.group(1)))
+            jit_time_ms[block] = min(samples) if samples else None
 
     if arb_steps or jit_time_ms:
         print_arb_jit_table(arb_steps, jit_time_ms)
