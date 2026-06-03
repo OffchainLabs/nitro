@@ -175,6 +175,10 @@ fn main() -> Result<()> {
         while !mach.is_halted() {
             mach.step_n(1 << 20)?;
         }
+        if opts.require_success && mach.get_status() != MachineStatus::Finished {
+            eprintln!("Machine didn't finish: {}", mach.get_status().red());
+            std::process::exit(1);
+        }
         println!(
             "WAVM steps: {}, time: {:.3}s",
             mach.get_steps(),
