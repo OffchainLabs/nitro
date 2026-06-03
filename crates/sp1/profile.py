@@ -203,7 +203,8 @@ def profile_jit(jit: str, replay_wasm: str, block_inputs_dir: str) -> dict[str, 
             m = _JIT_TIME_RE.search(log)
             if m:
                 samples.append(int(m.group(1)))
-        result = f"min {min(samples)}ms" if samples else "—"
+        times[block] = min(samples) if samples else None
+        result = f"min {times[block]}ms" if times[block] is not None else "—"
         print(f"  jit [{block}]: {result}".ljust(40))
     return times
 
