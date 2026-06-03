@@ -202,8 +202,11 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 
 	pricing.ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
+	baseFeeWei, err := pricing.BaseFeeWei()
+	Require(t, err)
+
 	// Initial price check
-	price, err := pricing.MultiDimensionalPriceForRefund(multiGas)
+	price, err := pricing.MultiDimensionalPriceForRefund(multiGas, baseFeeWei)
 	Require(t, err)
 	if price.Cmp(singlePrice) != 0 {
 		t.Errorf("Unexpected initial price: got %v, want %v", price, singlePrice)
@@ -244,7 +247,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 	exponentPerKind, err := pricing.CalcMultiGasConstraintsExponents()
 	Require(t, err)
 
-	baseFeeWei, err := pricing.BaseFeeWei()
+	baseFeeWei, err = pricing.BaseFeeWei()
 	Require(t, err)
 
 	expectedPrice := new(big.Int)
@@ -269,7 +272,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 		expectedPrice.Add(expectedPrice, part)
 	}
 
-	price, err = pricing.MultiDimensionalPriceForRefund(multiGas)
+	price, err = pricing.MultiDimensionalPriceForRefund(multiGas, baseFeeWei)
 	Require(t, err)
 	if price.Cmp(expectedPrice) != 0 {
 		t.Errorf("Price did not increase after backlog growth: got %v, want > %v", price, expectedPrice)

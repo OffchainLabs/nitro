@@ -56,8 +56,11 @@ func TestReportFilteredTransactions(t *testing.T) {
 		TxHash: common.HexToHash("0x1234"),
 		TxRLP:  hexutil.Bytes{},
 		FilteredAddresses: []filter.FilteredAddressRecord{{
-			Address:      common.HexToAddress("0xdead"),
-			FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil},
+			FilterSetID: "test-filter-set",
+			FilteredAddressWithReason: filter.FilteredAddressWithReason{
+				Address:      common.HexToAddress("0xdead"),
+				FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil},
+			},
 		}},
 		ChainID:           42161,
 		BlockNumber:       42,
@@ -110,10 +113,13 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 			TxHash: common.BigToHash(big.NewInt(int64(i))),
 			TxRLP:  nil,
 			FilteredAddresses: []filter.FilteredAddressRecord{{
-				Address: common.HexToAddress("0xdead"),
-				FilterReason: filter.FilterReason{
-					Reason:         filter.ReasonFrom,
-					EventRuleMatch: nil,
+				FilterSetID: "test-filter-set",
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xdead"),
+					FilterReason: filter.FilterReason{
+						Reason:         filter.ReasonFrom,
+						EventRuleMatch: nil,
+					},
 				},
 			}},
 			ChainID:           0,

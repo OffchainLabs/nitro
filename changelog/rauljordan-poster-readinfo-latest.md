@@ -1,0 +1,2 @@
+### Fixed
+- BoLD assertion poster no longer logs `ASSERTION_NOT_EXIST` at error level when the configured RPC head block is `finalized` and an assertion has been observed onchain but not yet finalized. The poster now defers its cursor advance and lets `syncAssertions` pick the assertion up once it reaches the configured head, so `assertionChainData` only ever caches data from the reorg-safe RPC head.

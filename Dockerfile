@@ -211,6 +211,7 @@ RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
 RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.4 0x333f5e036235b1ce1a34cbbe254ccbb2615218f9ae6f84aeef0511cb09ef9b67 OffchainLabs/nitro-private
 RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.5 0x7a9e6a77354888257a9989ce0b6bb39df5fedf222d453932933fdf7a489cbb57 OffchainLabs/nitro-private
+RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v61-rc.1 0x64d5b576984e498bb330be4dbec12ed7b9f4d89483699e4944a94b44abff8d0a OffchainLabs/nitro-private
 RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
 # Factored out of node-builder so the stripped variant doesn't depend on it.
@@ -389,11 +390,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
-
 USER user
-
-FROM nitro-node AS nitro-node-default
-# Just to ensure nitro-node-dist is default
 
 # ---------------------------------------------------------------------------
 # Stripped variants: same contents as nitro-node-slim / nitro-node but built
@@ -464,3 +461,7 @@ COPY --from=node-builder-stripped  /workspace/target/bin/transaction-filterer   
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
 USER user
+
+FROM nitro-node AS nitro-node-default
+# Just to ensure nitro-node is default
+

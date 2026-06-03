@@ -30,7 +30,7 @@ const (
 	HeaderSignatureTimestamp = "X-Signature-Timestamp"
 )
 
-var reloadFailuresCounter = metrics.NewRegisteredCounter("arb/txfiltering/report/signer/reload_failures_total", nil)
+var reloadFailuresCounter = metrics.NewRegisteredCounter("arb/filtering-report/signer/reload_failures_total", nil)
 
 type Config struct {
 	PEMFile        string        `koanf:"pem-file"`

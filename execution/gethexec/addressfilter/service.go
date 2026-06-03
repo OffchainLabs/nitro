@@ -5,11 +5,13 @@ package addressfilter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/util/s3syncer"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -56,6 +58,10 @@ func (s *FilterService) Initialize(ctx context.Context) error {
 
 	// Force download (ignore ETag check for initial load)
 	if err := s.syncMgr.Syncer.DownloadAndLoad(ctx); err != nil {
+		syncFailureCounter.Inc(1)
+		if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+			fileTooLargeCounter.Inc(1)
+		}
 		return fmt.Errorf("failed to load initial hash list: %w", err)
 	}
 
@@ -74,7 +80,13 @@ func (s *FilterService) Start(ctx context.Context) {
 	// Start periodic polling goroutine
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		if err := s.syncMgr.Syncer.CheckAndSync(ctx); err != nil {
-			log.Error("failed to sync address-filter list", "err", err)
+			syncFailureCounter.Inc(1)
+			if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+				fileTooLargeCounter.Inc(1)
+				log.Error("address-filter S3 file exceeds max-file-size, skipping download; keeping previously loaded list", "err", err)
+			} else {
+				log.Error("failed to sync address-filter list; keeping previously loaded list", "err", err)
+			}
 		}
 		return s.config.PollInterval
 	})
