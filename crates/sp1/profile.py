@@ -374,11 +374,19 @@ def main() -> None:
             sys.exit(1)
         print_sp1_table(table)
 
-    if "arbitrator" in args.validators and args.prover and args.machine:
-        arb_steps = profile_arbitrator(args.prover, args.machine, args.block_inputs_dir)
+    if "arbitrator" in args.validators:
+        if args.prover and args.machine:
+            arb_steps = profile_arbitrator(args.prover, args.machine, args.block_inputs_dir)
+        else:
+            print("WARNING: --validators includes 'arbitrator' but --prover/--machine not provided; skipping",
+                  file=sys.stderr)
 
-    if "jit" in args.validators and args.jit and args.replay_wasm:
-        jit_time_ms = profile_jit(args.jit, args.replay_wasm, args.block_inputs_dir)
+    if "jit" in args.validators:
+        if args.jit and args.replay_wasm:
+            jit_time_ms = profile_jit(args.jit, args.replay_wasm, args.block_inputs_dir)
+        else:
+            print("WARNING: --validators includes 'jit' but --jit/--replay-wasm not provided; skipping",
+                  file=sys.stderr)
 
     if arb_steps or jit_time_ms:
         print_arb_jit_table(arb_steps, jit_time_ms)
