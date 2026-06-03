@@ -80,14 +80,16 @@ def parse_syscalls(text: str) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 def run(label: str, cmd: list[str], extra_env: dict[str, str] | None = None,
-        allowed_codes: tuple[int, ...] = (0, 1)) -> str:
+        allowed_codes: tuple[int, ...] = (0, 1), quiet: bool = False) -> str:
     """Run cmd, print a progress label, return combined stderr+stdout.
 
     allowed_codes: exit codes that are not treated as errors.
     Default includes 1 because sp1-builder exits 1 on normal bootloading stop.
     Pass (0,) for binaries where any non-zero exit is a failure.
+    Pass quiet=True to suppress the progress label (e.g. when the caller manages its own output).
     """
-    print(f"  {label}...", flush=True)
+    if not quiet:
+        print(f"  {label}...", flush=True)
     env = os.environ.copy()
     # Ensure INFO-level tracing is visible so [PROFILE] lines are emitted.
     env.setdefault("RUST_LOG", "info")
@@ -193,14 +195,16 @@ def profile_jit(jit: str, replay_wasm: str, block_inputs_dir: str) -> dict[str, 
         block_file = f"{block_inputs_dir}/{block}.json"
         samples: list[int] = []
         for i in range(JIT_RUNS):
-            log = run(f"jit [{block}] run {i + 1}/{JIT_RUNS}",
+            print(f"  jit [{block}] {i + 1}/{JIT_RUNS}...", end="\r", flush=True)
+            log = run(f"jit [{block}]",
                       [jit, "--debug", "--cranelift", "--binary", replay_wasm,
                        "json", f"--inputs={block_file}"],
-                      allowed_codes=(0,))
+                      allowed_codes=(0,), quiet=True)
             m = _JIT_TIME_RE.search(log)
             if m:
                 samples.append(int(m.group(1)))
-        times[block] = min(samples) if samples else None
+        result = f"min {min(samples)}ms" if samples else "—"
+        print(f"  jit [{block}]: {result}".ljust(40))
     return times
 
 
