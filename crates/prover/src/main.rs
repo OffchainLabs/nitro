@@ -105,6 +105,10 @@ struct Opts {
     // be specified in the JSON file.
     #[structopt(long)]
     json_inputs: Option<PathBuf>,
+    /// Count WAVM steps to completion and print the result, then exit.
+    /// Much faster than proof generation or --profile-run.
+    #[structopt(long)]
+    count_steps: bool,
 }
 
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
@@ -164,6 +168,19 @@ fn main() -> Result<()> {
         let codehash = &Bytes32::default();
         mach.add_program(&wasm, codehash, 1, true)
             .wrap_err_with(err)?;
+    }
+
+    if opts.count_steps {
+        let start = std::time::Instant::now();
+        while !mach.is_halted() {
+            mach.step_n(1 << 20)?;
+        }
+        println!(
+            "WAVM steps: {}, time: {:.3}s",
+            mach.get_steps(),
+            start.elapsed().as_secs_f64(),
+        );
+        return Ok(());
     }
 
     if opts.print_modules {
