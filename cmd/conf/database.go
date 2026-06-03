@@ -47,13 +47,17 @@ var PersistentConfigDefault = PersistentConfig{
 }
 
 func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
-	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
-	f.String(prefix+".log-dir", PersistentConfigDefault.LogDir, "directory to store log file")
-	f.Int(prefix+".handles", PersistentConfigDefault.Handles, "number of file descriptor handles to use for the database")
-	f.String(prefix+".ancient", PersistentConfigDefault.Ancient, "directory of ancient where the chain freezer can be opened")
-	f.String(prefix+".db-engine", PersistentConfigDefault.DBEngine, "backing database implementation to use. If set to empty string the database type will be autodetected and if no pre-existing database is found it will default to creating new pebble database ('leveldb', 'pebble' or '' = auto-detect)")
-	PebbleConfigAddOptions(prefix+".pebble", f, &PersistentConfigDefault.Pebble)
+	PersistentConfigAddOptionsWithDefault(prefix, f, &PersistentConfigDefault)
+}
+
+func PersistentConfigAddOptionsWithDefault(prefix string, f *pflag.FlagSet, defaultConfig *PersistentConfig) {
+	f.String(prefix+".global-config", defaultConfig.GlobalConfig, "directory to store global config")
+	f.String(prefix+".chain", defaultConfig.Chain, "directory to store chain state")
+	f.String(prefix+".log-dir", defaultConfig.LogDir, "directory to store log file")
+	f.Int(prefix+".handles", defaultConfig.Handles, "number of file descriptor handles to use for the database")
+	f.String(prefix+".ancient", defaultConfig.Ancient, "directory of ancient where the chain freezer can be opened")
+	f.String(prefix+".db-engine", defaultConfig.DBEngine, "backing database implementation to use. If set to empty string the database type will be autodetected and if no pre-existing database is found it will default to creating new pebble database ('leveldb', 'pebble' or '' = auto-detect)")
+	PebbleConfigAddOptions(prefix+".pebble", f, &defaultConfig.Pebble)
 }
 
 func (c *PersistentConfig) ResolveDirectoryNames() error {

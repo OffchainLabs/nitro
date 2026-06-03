@@ -62,11 +62,17 @@ var IPCConfigDefault = genericconf.IPCConfig{
 	Path: "",
 }
 
+func ValidationNodePersistentConfigDefault() conf.PersistentConfig {
+	c := conf.PersistentConfigDefault
+	c.Pebble.Experimental.ReadSamplingMultiplier = -1 // disable read sampling multiplier
+	return c
+}
+
 var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
-	Persistent:    conf.PersistentConfigDefault,
+	Persistent:    ValidationNodePersistentConfigDefault(),
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
@@ -84,7 +90,7 @@ func ValidationNodeConfigAddOptions(f *pflag.FlagSet) {
 	f.String("log-level", ValidationNodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", ValidationNodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptionsWithDefault("persistent", f, &ValidationNodeConfigDefault.Persistent)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
