@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -272,12 +271,8 @@ func mainImpl() int {
 			nodeConfig.Execution.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
 	}
-	if nodeConfig.Persistent.Pebble.Experimental.ReadSamplingMultiplier == conf.UninitializedReadSamplingMultiplier {
-		if nodeConfig.Execution.Caching.StateScheme == rawdb.PathScheme {
-			nodeConfig.Persistent.Pebble.Experimental.ReadSamplingMultiplier = conf.PathdbReadSamplingMultiplier
-		} else {
-			nodeConfig.Persistent.Pebble.Experimental.ReadSamplingMultiplier = conf.HashdbReadSamplingMultiplier
-		}
+	if err = nodeConfig.Persistent.Pebble.ResolveWithStateScheme(nodeConfig.Execution.Caching.StateScheme); err != nil {
+		log.Crit("failed to resolve pebble config", "err", err)
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*config.NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*config.NodeConfig, error) {
 		nodeConfig, _, err := config.ParseNode(ctx, args)

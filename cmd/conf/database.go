@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
 
@@ -142,6 +143,20 @@ func PebbleConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *Pebb
 	f.Bool(prefix+".sync-mode", defaultConfig.SyncMode, "if true sync mode is used (data needs to be written to WAL before the write is marked as completed)")
 	f.Int(prefix+".max-concurrent-compactions", defaultConfig.MaxConcurrentCompactions, "maximum number of concurrent compactions")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f, &defaultConfig.Experimental)
+}
+
+func (c *PebbleConfig) ResolveWithStateScheme(stateScheme string) error {
+	if c.Experimental.ReadSamplingMultiplier == UninitializedReadSamplingMultiplier {
+		switch stateScheme {
+		case rawdb.HashScheme:
+			c.Experimental.ReadSamplingMultiplier = HashdbReadSamplingMultiplier
+		case rawdb.PathScheme:
+			c.Experimental.ReadSamplingMultiplier = PathdbReadSamplingMultiplier
+		default:
+			return fmt.Errorf("invalid state scheme: %s", stateScheme)
+		}
+	}
+	return nil
 }
 
 func (c *PebbleConfig) Validate() error {

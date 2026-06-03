@@ -22,8 +22,9 @@ type DBConfig struct {
 }
 
 func DBConvPebbleConfigDefault() conf.PebbleConfig {
-	conf := conf.PebbleConfigDefault
-	conf.Pebble.Experimental.ReadSamplingMultiplier = -1 // disable read sampling multiplier
+	c := conf.PebbleConfigDefault
+	c.Experimental.ReadSamplingMultiplier = -1 // disable read sampling multiplier
+	return c
 }
 
 var DBConfigDefaultDst = DBConfig{

@@ -2131,15 +2131,9 @@ func deployOnParentChain(
 	return addresses, initMessage
 }
 
-func PebbleExtraOptionsForTest(execConfig *gethexec.Config, namespace string) *pebble.ExtraOptions {
+func PebbleExtraOptionsForTest(t *testing.T, execConfig *gethexec.Config, namespace string) *pebble.ExtraOptions {
 	persistentConfig := conf.PersistentConfigDefault
-	if persistentConfig.Pebble.Experimental.ReadSamplingMultiplier == conf.UninitializedReadSamplingMultiplier {
-		if execConfig.Caching.StateScheme == rawdb.PathScheme {
-			persistentConfig.Pebble.Experimental.ReadSamplingMultiplier = conf.PathdbReadSamplingMultiplier
-		} else {
-			persistentConfig.Pebble.Experimental.ReadSamplingMultiplier = conf.HashdbReadSamplingMultiplier
-		}
-	}
+	Require(t, persistentConfig.Pebble.ResolveWithStateScheme(execConfig.Caching.StateScheme))
 	return persistentConfig.Pebble.ExtraOptions(namespace)
 }
 
@@ -2162,19 +2156,19 @@ func createNonL1BlockChainWithStackConfig(
 
 	chainData := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != env.MemoryDB {
-		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(execConfig, "l2chaindata")})
+		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != env.MemoryDB {
-		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: PebbleExtraOptionsForTest(execConfig, "wasm"), NoFreezer: true})
+		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	consensusDB := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != env.MemoryDB {
-		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: PebbleExtraOptionsForTest(execConfig, "arbitrumdata"), NoFreezer: true})
+		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
 
@@ -2459,19 +2453,19 @@ func Create2ndNodeWithConfig(
 
 	chainData := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != env.MemoryDB {
-		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(execConfig, "l2chaindata")})
+		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != env.MemoryDB {
-		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: PebbleExtraOptionsForTest(execConfig, "wasm"), NoFreezer: true})
+		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
 	consensusDB := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != env.MemoryDB {
-		consensusDB, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: PebbleExtraOptionsForTest(execConfig, "arbitrumdata"), NoFreezer: true})
+		consensusDB, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
 	initReader := statetransfer.NewMemoryInitDataReader(chainInitData)
