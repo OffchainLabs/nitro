@@ -235,7 +235,7 @@ func PebbleExperimentalConfigAddOptions(prefix string, f *pflag.FlagSet, default
 	f.Int(prefix+".l0-compaction-threshold", defaultConfig.L0CompactionThreshold, "amount of L0 read-amplification necessary to trigger an L0 compaction")
 	f.Int(prefix+".l0-stop-writes-threshold", defaultConfig.L0StopWritesThreshold, "hard limit on L0 read-amplification, computed as the number of L0 sublevels. Writes are stopped when this threshold is reached")
 	f.Int64(prefix+".l-base-max-bytes", defaultConfig.LBaseMaxBytes, "The maximum number of bytes for LBase. The base level is the level which L0 is compacted into. The base level is determined dynamically based on the existing data in the LSM. The maximum number of bytes for other levels is computed dynamically based on the base level's maximum size. When the maximum number of bytes for a level is exceeded, compaction is requested.")
-	f.Int(prefix+".mem-table-number", defaultConfig.MemTableNumber, "number used to calculate MemTable size, half of hard limit on the number of queued of MemTables")
+	f.Int(prefix+".mem-table-number", defaultConfig.MemTableNumber, "number used to calculate MemTable size, half of hard limit on the number of queued MemTables")
 	f.Bool(prefix+".disable-automatic-compactions", defaultConfig.DisableAutomaticCompactions, "disables automatic compactions")
 	f.Int(prefix+".wal-bytes-per-sync", defaultConfig.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the background")
 	f.String(prefix+".wal-dir", defaultConfig.WALDir, "absolute path of directory to store write-ahead logs (WALs) in. If empty, WALs will be stored in the same directory as sstables")
@@ -249,7 +249,7 @@ func PebbleExperimentalConfigAddOptions(prefix string, f *pflag.FlagSet, default
 	f.Int(prefix+".l0-compaction-concurrency", defaultConfig.L0CompactionConcurrency, "threshold of L0 read-amplification at which compaction concurrency is enabled (if compaction-debt-concurrency was not already exceeded). Every multiple of this value enables another concurrent compaction up to max-concurrent-compactions.")
 	f.Uint64(prefix+".compaction-debt-concurrency", defaultConfig.CompactionDebtConcurrency, "controls the threshold of compaction debt at which additional compaction concurrency slots are added. For every multiple of this value in compaction debt bytes, an additional concurrent compaction is added. This works \"on top\" of l0-compaction-concurrency, so the higher of the count of compaction concurrency slots as determined by the two options is chosen.")
 	f.Int64(prefix+".read-compaction-rate", defaultConfig.ReadCompactionRate, "controls the frequency of read triggered compactions by adjusting `AllowedSeeks` in manifest.FileMetadata: AllowedSeeks = FileSize / ReadCompactionRate")
-	f.Int64(prefix+".read-sampling-multiplier", defaultConfig.ReadSamplingMultiplier, "a multiplier for the readSamplingPeriod in iterator.maybeSampleRead() to control the frequency of read sampling to trigger a read triggered compaction. A value of -1 prevents sampling and disables read triggered compactions. Geth default is -1. The pebble default is 1 << 4. which gets multiplied with a constant of 1 << 16 to yield 1 << 20 (1MB).")
+	f.Int64(prefix+".read-sampling-multiplier", defaultConfig.ReadSamplingMultiplier, "a multiplier for the readSamplingPeriod in iterator.maybeSampleRead() to control the frequency of read sampling to trigger a read triggered compaction. A value of -1 prevents sampling and disables read triggered compactions. Default is -1 for hash scheme, 1 for path scheme.")
 	f.Int(prefix+".max-writer-concurrency", defaultConfig.MaxWriterConcurrency, "maximum number of compression workers the compression queue is allowed to use. If max-writer-concurrency > 0, then the Writer will use parallelism, to compress and write blocks to disk. Otherwise, the writer will compress and write blocks to disk synchronously.")
 	f.Bool(prefix+".force-writer-parallelism", defaultConfig.ForceWriterParallelism, "force parallelism in the sstable Writer for the metamorphic tests. Even with the MaxWriterConcurrency option set, pebble only enables parallelism in the sstable Writer if there is enough CPU available, and this option bypasses that.")
 }
@@ -258,7 +258,9 @@ func (c *PebbleExperimentalConfig) Validate() error {
 	if c.WALDir != "" && !filepath.IsAbs(c.WALDir) {
 		return fmt.Errorf("invalid .wal-dir directory (%s) - has to be an absolute path", c.WALDir)
 	}
-	// TODO
+	if c.ReadSamplingMultiplier == UninitializedReadSamplingMultiplier {
+		return fmt.Errorf("pebble read-sampling-multiplier config uninitialized")
+	}
 	return nil
 }
 
