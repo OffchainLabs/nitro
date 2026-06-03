@@ -254,6 +254,9 @@ func (p Programs) CallProgram(
 	callCost = arbmath.SaturatingUAdd(callCost, penalty)
 
 	if err := contract.BurnGas(callCost); err != nil {
+		if p.ArbosVersion >= gethParams.ArbosVersion_MultiGasRefundFix {
+			attributeWasmComputation(contract, startingGas)
+		}
 		return nil, err
 	}
 	statedb.AddStylusPages(program.footprint)

@@ -21,8 +21,8 @@ import (
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
 	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // MachineHashCollector defines an interface which collects hashes of the state
@@ -128,7 +128,7 @@ type L2MessageStateCollector interface {
 		ctx context.Context,
 		fromState protocol.GoGlobalState,
 		batchLimit Batch,
-		toHeight option.Option[Height],
+		toHeight containers.Option[Height],
 	) ([]common.Hash, error)
 }
 
@@ -141,7 +141,7 @@ type HistoryCommitmentProvider struct {
 	machineHashCollector    MachineHashCollector
 	proofCollector          ProofCollector
 	challengeLeafHeights    []Height
-	apiDB                   db.Database
+	apiDB                   containers.Option[db.Database]
 	ExecutionProvider
 }
 
@@ -153,7 +153,7 @@ func NewHistoryCommitmentProvider(
 	proofCollector ProofCollector,
 	challengeLeafHeights []Height,
 	executionProvider ExecutionProvider,
-	apiDB db.Database,
+	apiDB containers.Option[db.Database],
 ) *HistoryCommitmentProvider {
 	return &HistoryCommitmentProvider{
 		l2MessageStateCollector: l2MessageStateCollector,
@@ -169,7 +169,7 @@ func NewHistoryCommitmentProvider(
 // and to be less than the total number of challenge levels in the protocol.
 type validatedStartHeights []Height
 
-func (p *HistoryCommitmentProvider) UpdateAPIDatabase(apiDB db.Database) {
+func (p *HistoryCommitmentProvider) UpdateAPIDatabase(apiDB containers.Option[db.Database]) {
 	p.apiDB = apiDB
 }
 
@@ -178,7 +178,7 @@ func (p *HistoryCommitmentProvider) UpdateAPIDatabase(apiDB db.Database) {
 // I the optional h value is None, then based on the challenge level, and given
 // slice of challenge origin heights (coh) determine the maximum number of
 // leaves for that level and return it as virtual.
-func (p *HistoryCommitmentProvider) virtualFrom(h option.Option[Height], coh []Height) (uint64, error) {
+func (p *HistoryCommitmentProvider) virtualFrom(h containers.Option[Height], coh []Height) (uint64, error) {
 	var virtual uint64
 	if h.IsNone() {
 		validatedHeights, err := p.validateOriginHeights(coh)
@@ -288,7 +288,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 		StepSize:          stepSize,
 	}
 	// Requests collecting machine hashes for the specified config.
-	if !api.IsNil(p.apiDB) {
+	if p.apiDB.IsSome() {
 		var rawStepHeights string
 		for i, stepHeight := range cfg.StepHeights {
 			hInt, err := safecast.ToInt(stepHeight)
@@ -312,14 +312,15 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 			StepSize:             uint64(cfg.StepSize),
 			StartTime:            time.Now().UTC(),
 		}
-		err := p.apiDB.InsertCollectMachineHash(&collectMachineHashes)
+		apiDB := p.apiDB.Unwrap()
+		err := apiDB.InsertCollectMachineHash(&collectMachineHashes)
 		if err != nil {
 			return nil, err
 		}
 		defer func() {
 			finishTime := time.Now().UTC()
 			collectMachineHashes.FinishTime = &finishTime
-			err := p.apiDB.UpdateCollectMachineHash(&collectMachineHashes)
+			err := apiDB.UpdateCollectMachineHash(&collectMachineHashes)
 			if err != nil {
 				return
 			}
@@ -360,7 +361,7 @@ func (p *HistoryCommitmentProvider) AgreesWithHistoryCommitment(
 			&HistoryCommitmentRequest{
 				AssertionMetadata:           historyCommitMetadata.AssertionMetadata,
 				UpperChallengeOriginHeights: []Height{},
-				UpToHeight:                  option.Some(Height(commit.Height)),
+				UpToHeight:                  containers.Some(Height(commit.Height)),
 			},
 		)
 		if err != nil {
@@ -372,7 +373,7 @@ func (p *HistoryCommitmentProvider) AgreesWithHistoryCommitment(
 			&HistoryCommitmentRequest{
 				AssertionMetadata:           historyCommitMetadata.AssertionMetadata,
 				UpperChallengeOriginHeights: historyCommitMetadata.UpperChallengeOriginHeights,
-				UpToHeight:                  option.Some(Height(commit.Height)),
+				UpToHeight:                  containers.Some(Height(commit.Height)),
 			},
 		)
 		if err != nil {
@@ -483,7 +484,7 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 		&HistoryCommitmentRequest{
 			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: startHeights,
-			UpToHeight:                  option.Some(upToHeight + 1),
+			UpToHeight:                  containers.Some(upToHeight + 1),
 		},
 	)
 	if err != nil {
@@ -494,7 +495,7 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 		&HistoryCommitmentRequest{
 			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: startHeights,
-			UpToHeight:                  option.Some(upToHeight),
+			UpToHeight:                  containers.Some(upToHeight),
 		},
 	)
 	if err != nil {
@@ -528,7 +529,7 @@ func (p *HistoryCommitmentProvider) OneStepProofData(
 // total from there.
 func (p *HistoryCommitmentProvider) computeRequiredNumberOfHashes(
 	challengeLevel uint64,
-	upToHeight option.Option[Height],
+	upToHeight containers.Option[Height],
 ) (uint64, error) {
 	maxHeightForLevel, err := p.leafHeightAtChallengeLevel(challengeLevel)
 	if err != nil {

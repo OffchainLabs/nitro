@@ -14,9 +14,9 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/challenge/tracker"
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 // HandleCorrectRival is called when the assertion manager has posted a correct
@@ -145,7 +145,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		&state.HistoryCommitmentRequest{
 			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: []state.Height{},
-			UpToHeight:                  option.Some(state.Height(0)),
+			UpToHeight:                  util_containers.Some(state.Height(0)),
 		},
 	)
 	if err != nil {
@@ -156,7 +156,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	req := &state.HistoryCommitmentRequest{
 		AssertionMetadata:           assertionMetadata,
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(state.Height(layerZeroHeights.BlockChallengeHeight)),
+		UpToHeight:                  util_containers.Some(state.Height(layerZeroHeights.BlockChallengeHeight)),
 	}
 	endCommit, err := m.stateManager.HistoryCommitment(
 		ctx,

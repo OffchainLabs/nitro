@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -22,6 +23,18 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	addFilteredTransactionFailureCounter = metrics.NewRegisteredCounter(
+		"arb/transaction-filterer/add_filtered_transaction_failures_total", nil,
+	)
+	addFilteredTransactionSuccessCounter = metrics.NewRegisteredCounter(
+		"arb/transaction-filterer/add_filtered_transaction_successes_total", nil,
+	)
+	filterQueueDepthGauge = metrics.NewRegisteredGauge(
+		"arb/transaction-filterer/filter_queue_depth", nil,
+	)
 )
 
 const filterQueueSize = 100
@@ -58,6 +71,7 @@ func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
 	select {
 	case t.queue <- txHashToFilter:
+		filterQueueDepthGauge.Update(int64(len(t.queue)))
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -65,6 +79,7 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 }
 
 func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter common.Hash) {
+	filterQueueDepthGauge.Update(int64(len(t.queue)))
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
 
@@ -76,9 +91,11 @@ func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter comm
 	}
 	tx, err := manager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
+		addFilteredTransactionFailureCounter.Inc(1)
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
 		return
 	}
+	addFilteredTransactionSuccessCounter.Inc(1)
 	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 }
 

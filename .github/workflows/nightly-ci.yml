@@ -19,6 +19,7 @@ jobs:
       matrix:
         test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble-a, pebble-b]
     uses: ./.github/workflows/_go-tests.yml
+    secrets: inherit
     with:
       run-name: ${{ matrix.test-mode }}
       run-legacy-challenge: ${{ matrix.test-mode == 'legacychallenge' }}
