@@ -278,9 +278,6 @@ func mainImpl() int {
 			nodeConfig.Execution.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
 	}
-	if err = nodeConfig.Persistent.Pebble.ResolveWithStateScheme(nodeConfig.Execution.Caching.StateScheme); err != nil {
-		log.Crit("failed to resolve pebble config", "err", err)
-	}
 	liveNodeConfig := genericconf.NewLiveConfig[*config.NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*config.NodeConfig, error) {
 		nodeConfig, _, err := config.ParseNode(ctx, args)
 		return nodeConfig, err

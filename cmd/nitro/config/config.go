@@ -304,7 +304,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err := resolveGenesisJsonFileDirectory(&nodeConfig); err != nil {
 		return nil, nil, err
 	}
-
+	if err = nodeConfig.Persistent.Pebble.ResolveWithStateScheme(nodeConfig.Execution.Caching.StateScheme); err != nil {
+		return nil, nil, err
+	}
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err
