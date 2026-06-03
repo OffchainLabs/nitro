@@ -1,4 +1,4 @@
-// Copyright 2026-2027, Offchain Labs, Inc.
+// Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm

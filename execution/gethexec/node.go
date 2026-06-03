@@ -445,7 +445,7 @@ func CreateExecutionNode(
 	var precheckerFilterer core.TxFilterer
 	// Sequencer filters via block-production hooks; skip prechecker dry-run when it is the publisher.
 	if config.TransactionFiltering.Enable && txPublisher != sequencer {
-		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter, filteringReportRPCClient: filteringReportRPCClient}
 	}
 
 	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher, precheckerFilterer)

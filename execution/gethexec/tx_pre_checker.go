@@ -90,7 +90,7 @@ func NewTxPreChecker(
 }
 
 func (c *TxPreChecker) SetTxFiltererForTest(_ *testing.T, execEngine *ExecutionEngine, ef *eventfilter.EventFilter) {
-	c.txFilterer = &txFilterer{execEngine: execEngine, eventFilter: ef}
+	c.txFilterer = &txFilterer{execEngine: execEngine, eventFilter: ef, filteringReportRPCClient: execEngine.filteringReportRPCClient}
 }
 
 func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {

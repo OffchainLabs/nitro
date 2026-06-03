@@ -10,8 +10,18 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
+)
+
+var (
+	sqsSendFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filtering-report/api/sqs_send_failures_total", nil,
+	)
+	sqsSendSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filtering-report/api/sqs_send_successes_total", nil,
+	)
 )
 
 // ReportFilteredTransactions enqueues each report to SQS. All reports are
@@ -28,10 +38,12 @@ func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, rep
 		}
 		err = a.queueClient.Send(ctx, string(body))
 		if err != nil {
+			sqsSendFailuresCounter.Inc(1)
 			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
 			failures = append(failures, fmt.Sprintf("report %d (id=%s, txHash=%s): %v", i, report.ID, report.TxHash.Hex(), err))
 			continue
 		}
+		sqsSendSuccessesCounter.Inc(1)
 		log.Debug("Successfully sent filtered transaction report to SQS", "txHash", report.TxHash.Hex())
 	}
 	if len(failures) > 0 {
