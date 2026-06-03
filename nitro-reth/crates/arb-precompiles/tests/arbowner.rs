@@ -549,3 +549,90 @@ fn nitro_parity_arb_owner_network_fee_account_round_trip() {
         U256::from_be_slice(new_fee_account.as_slice())
     );
 }
+
+// Stylus parameter setters: the dual-exec matrix only drives zero arguments,
+// so these lock in the scaling (DivCeil) and saturating narrowing for the
+// init-gas params, plus the per-type range rejection on the narrow setters.
+mod stylus_params {
+    use super::*;
+    use arb_storage::layout::{map_slot, programs::PARAMS_KEY, PROGRAMS_SUBSPACE};
+
+    fn params_slot() -> U256 {
+        let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+        let params_key = derive_subspace_key(programs_key.as_slice(), PARAMS_KEY);
+        map_slot(params_key.as_slice(), 0)
+    }
+
+    fn params_byte(word: U256, index: usize) -> u8 {
+        word.to_be_bytes::<32>()[index]
+    }
+
+    fn set_param(sig: &str, args: &[B256]) -> U256 {
+        let run = fixture(30)
+            .storage(ARBOS_STATE_ADDRESS, params_slot(), U256::ZERO)
+            .call(arbowner, &calldata(sig, args));
+        run.assert_ok();
+        run.storage(ARBOS_STATE_ADDRESS, params_slot())
+    }
+
+    #[test]
+    fn min_init_gas_scales_and_saturates_cached() {
+        // gas=200 -> ceil(200/128)=2; cached=20000 -> ceil(20000/32)=625 -> 255
+        let word = set_param(
+            "setWasmMinInitGas(uint8,uint16)",
+            &[word_u256(U256::from(200)), word_u256(U256::from(20000))],
+        );
+        assert_eq!(params_byte(word, 15), 2);
+        assert_eq!(params_byte(word, 16), 255);
+    }
+
+    #[test]
+    fn init_cost_scalar_scales() {
+        let word = set_param(
+            "setWasmInitCostScalar(uint64)",
+            &[word_u256(U256::from(300))],
+        );
+        assert_eq!(params_byte(word, 17), 150);
+    }
+
+    #[test]
+    fn init_cost_scalar_saturates() {
+        let word = set_param(
+            "setWasmInitCostScalar(uint64)",
+            &[word_u256(U256::from(1000))],
+        );
+        assert_eq!(params_byte(word, 17), 255);
+    }
+
+    #[test]
+    fn free_pages_stores_full_u16() {
+        let word = set_param("setWasmFreePages(uint16)", &[word_u256(U256::from(50000))]);
+        let free_pages = u16::from_be_bytes([params_byte(word, 9), params_byte(word, 10)]);
+        assert_eq!(free_pages, 50000);
+    }
+
+    #[test]
+    fn free_pages_rejects_above_u16() {
+        let run = fixture(30)
+            .storage(ARBOS_STATE_ADDRESS, params_slot(), U256::ZERO)
+            .call(
+                arbowner,
+                &calldata("setWasmFreePages(uint16)", &[word_u256(U256::from(65536))]),
+            );
+        run.assert_err();
+    }
+
+    #[test]
+    fn min_init_gas_rejects_cached_above_u16() {
+        let run = fixture(30)
+            .storage(ARBOS_STATE_ADDRESS, params_slot(), U256::ZERO)
+            .call(
+                arbowner,
+                &calldata(
+                    "setWasmMinInitGas(uint8,uint16)",
+                    &[word_u256(U256::from(10)), word_u256(U256::from(70000))],
+                ),
+            );
+        run.assert_err();
+    }
+}

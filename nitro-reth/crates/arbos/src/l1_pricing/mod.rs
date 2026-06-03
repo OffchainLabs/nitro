@@ -238,7 +238,7 @@ impl<'a, D> L1PricingState<'a, D> {
         backend: &mut B,
         units: u64,
     ) -> Result<(), L1PricingError> {
-        let current = self.units_since_update.get(backend).unwrap_or(0);
+        let current = self.units_since_update.get(backend)?;
         Ok(self
             .units_since_update
             .set(backend, current.saturating_add(units))?)
@@ -249,7 +249,7 @@ impl<'a, D> L1PricingState<'a, D> {
         backend: &mut B,
         units: u64,
     ) -> Result<(), L1PricingError> {
-        let current = self.units_since_update.get(backend).unwrap_or(0);
+        let current = self.units_since_update.get(backend)?;
         Ok(self
             .units_since_update
             .set(backend, current.saturating_sub(units))?)
@@ -343,7 +343,7 @@ impl<'a, D> L1PricingState<'a, D> {
         backend: &mut B,
         amount: U256,
     ) -> Result<(), L1PricingError> {
-        let current = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
+        let current = self.l1_fees_available.get(backend)?;
         Ok(self
             .l1_fees_available
             .set(backend, current.saturating_add(amount))?)
@@ -354,7 +354,7 @@ impl<'a, D> L1PricingState<'a, D> {
         backend: &mut B,
         amount: U256,
     ) -> Result<U256, L1PricingError> {
-        let available = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
+        let available = self.l1_fees_available.get(backend)?;
         let transfer = amount.min(available);
         self.l1_fees_available
             .set(backend, available.saturating_sub(transfer))?;
@@ -388,10 +388,10 @@ impl<'a, D> L1PricingState<'a, D> {
         &self,
         backend: &mut B,
     ) -> Result<(U256, bool), L1PricingError> {
-        let l1_fees_available = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
+        let l1_fees_available = self.l1_fees_available.get(backend)?;
         let bpt = self.batch_poster_table();
-        let total_funds_due = bpt.total_funds_due(backend).unwrap_or(U256::ZERO);
-        let funds_due_for_rewards = self.funds_due_for_rewards(backend).unwrap_or(U256::ZERO);
+        let total_funds_due = bpt.total_funds_due(backend)?;
+        let funds_due_for_rewards = self.funds_due_for_rewards(backend)?;
 
         let need = total_funds_due.saturating_add(funds_due_for_rewards);
         if l1_fees_available >= need {
@@ -523,10 +523,10 @@ impl<D: revm::Database> L1PricingState<'_, D> {
         let bpt = self.batch_poster_table();
         let poster_state = bpt.open_poster(backend, batch_poster, true)?;
 
-        let funds_due_for_rewards = self.funds_due_for_rewards(backend).unwrap_or(U256::ZERO);
-        let l1_fees_available = self.l1_fees_available.get(backend).unwrap_or(U256::ZERO);
+        let funds_due_for_rewards = self.funds_due_for_rewards(backend)?;
+        let l1_fees_available = self.l1_fees_available.get(backend)?;
 
-        let mut last_update_time = self.last_update_time(backend).unwrap_or(0);
+        let mut last_update_time = self.last_update_time(backend)?;
         if last_update_time == 0 && update_time > 0 {
             last_update_time = update_time.saturating_sub(1);
         }
@@ -543,7 +543,7 @@ impl<D: revm::Database> L1PricingState<'_, D> {
             (alloc_num, alloc_denom)
         };
 
-        let units_since = self.units_since_update(backend).unwrap_or(0);
+        let units_since = self.units_since_update(backend)?;
         let units_allocated = units_since
             .saturating_mul(alloc_num)
             .checked_div(alloc_denom)
@@ -552,7 +552,7 @@ impl<D: revm::Database> L1PricingState<'_, D> {
 
         let mut wei_spent = wei_spent;
         if self.arbos_version >= 3 {
-            let cap_bips = self.amortized_cost_cap_bips(backend).unwrap_or(0);
+            let cap_bips = self.amortized_cost_cap_bips(backend)?;
             if cap_bips != 0 {
                 let cap = l1_basefee
                     .saturating_mul(U256::from(units_allocated))
@@ -565,14 +565,14 @@ impl<D: revm::Database> L1PricingState<'_, D> {
             }
         }
 
-        let due = poster_state.funds_due(backend).unwrap_or(U256::ZERO);
+        let due = poster_state.funds_due(backend)?;
         let _ = poster_state.set_funds_due(
             backend,
             due.saturating_add(wei_spent),
             &bpt.total_funds_due,
         );
 
-        let per_unit_reward = self.per_unit_reward(backend).unwrap_or(0);
+        let per_unit_reward = self.per_unit_reward(backend)?;
         let reward_amount = U256::from(units_allocated).saturating_mul(U256::from(per_unit_reward));
         self.set_funds_due_for_rewards(
             backend,
@@ -585,12 +585,11 @@ impl<D: revm::Database> L1PricingState<'_, D> {
             payment_for_rewards = l1_fees;
         }
         let fdr_after = self
-            .funds_due_for_rewards(backend)
-            .unwrap_or(U256::ZERO)
+            .funds_due_for_rewards(backend)?
             .saturating_sub(payment_for_rewards);
         self.set_funds_due_for_rewards(backend, fdr_after)?;
 
-        let pay_rewards_to = self.pay_rewards_to(backend).unwrap_or(Address::ZERO);
+        let pay_rewards_to = self.pay_rewards_to(backend)?;
         if payment_for_rewards > U256::ZERO {
             // payment_for_rewards was clamped to l1_fees just above, which mirrors
             // the L1 pricer pool balance. A typed shortfall here would indicate
@@ -604,13 +603,13 @@ impl<D: revm::Database> L1PricingState<'_, D> {
             self.set_l1_fees_available(backend, l1_fees)?;
         }
 
-        let balance_due = poster_state.funds_due(backend).unwrap_or(U256::ZERO);
+        let balance_due = poster_state.funds_due(backend)?;
         let mut transfer_amount = balance_due;
         if l1_fees < transfer_amount {
             transfer_amount = l1_fees;
         }
         if transfer_amount > U256::ZERO {
-            let addr_to_pay = poster_state.pay_to(backend).unwrap_or(batch_poster);
+            let addr_to_pay = poster_state.pay_to(backend)?;
             // transfer_amount is capped to the remaining pool balance above; a
             // shortfall here would be a pool/state inconsistency rather than a
             // user-driven error, so do not surface it as Err.
@@ -627,8 +626,8 @@ impl<D: revm::Database> L1PricingState<'_, D> {
         self.set_last_update_time(backend, update_time)?;
 
         if units_allocated > 0 {
-            let total_funds_due = bpt.total_funds_due(backend).unwrap_or(U256::ZERO);
-            let fdr = self.funds_due_for_rewards(backend).unwrap_or(U256::ZERO);
+            let total_funds_due = bpt.total_funds_due(backend)?;
+            let fdr = self.funds_due_for_rewards(backend)?;
 
             let need_funds = total_funds_due.saturating_add(fdr);
             let (surplus_mag, surplus_positive) = if l1_fees >= need_funds {
@@ -637,20 +636,15 @@ impl<D: revm::Database> L1PricingState<'_, D> {
                 (need_funds.saturating_sub(l1_fees), false)
             };
 
-            let inertia = self.inertia(backend).unwrap_or(INITIAL_INERTIA);
-            let equil_units = self
-                .equilibration_units(backend)
-                .unwrap_or(U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
+            let inertia = self.inertia(backend)?;
+            let equil_units = self.equilibration_units(backend)?;
             let inertia_units = equil_units
                 .checked_div(U256::from(inertia))
                 .unwrap_or(U256::ZERO);
-            let price = self.price_per_unit(backend).unwrap_or(U256::ZERO);
+            let price = self.price_per_unit(backend)?;
 
             let alloc_plus_inert = inertia_units.saturating_add(U256::from(units_allocated));
-            let (old_surplus_mag, old_surplus_neg) = self
-                .last_surplus
-                .get_signed(backend)
-                .unwrap_or((U256::ZERO, false));
+            let (old_surplus_mag, old_surplus_neg) = self.last_surplus.get_signed(backend)?;
 
             let units_u256 = U256::from(units_allocated);
 

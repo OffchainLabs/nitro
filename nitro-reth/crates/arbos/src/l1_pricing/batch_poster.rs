@@ -186,8 +186,8 @@ impl BatchPosterState {
         value: U256,
         total_funds_due: &StorageBackedBigInt,
     ) -> Result<(), L1PricingError> {
-        let prev = self.funds_due.get_raw(backend).unwrap_or(U256::ZERO);
-        let prev_total = total_funds_due.get_raw(backend).unwrap_or(U256::ZERO);
+        let prev = self.funds_due.get_raw(backend)?;
+        let prev_total = total_funds_due.get_raw(backend)?;
         let new_total = prev_total.saturating_add(value).saturating_sub(prev);
         total_funds_due.set(backend, new_total)?;
         Ok(self.funds_due.set(backend, value)?)

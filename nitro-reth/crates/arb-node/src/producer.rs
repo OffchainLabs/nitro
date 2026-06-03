@@ -916,7 +916,7 @@ where
         db.merge_transitions(BundleRetention::Reverts);
         let mut bundle = db.take_bundle();
 
-        augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
+        augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider)?;
 
         // Mark per-tx finalise deletions, skipping zombie accounts.
         let keccak_empty_hash = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
@@ -1542,7 +1542,7 @@ fn augment_bundle_from_cache(
     bundle: &mut BundleState,
     cache: &revm_database::CacheState,
     state_provider: &dyn StateProvider,
-) {
+) -> Result<(), BlockProducerError> {
     use revm_database::states::plain_account::StorageSlot;
 
     for (addr, cache_acct) in &cache.accounts {
@@ -1565,8 +1565,7 @@ fn augment_bundle_from_cache(
                     // Slot written via direct cache modification.
                     let original_value = state_provider
                         .storage(*addr, B256::from(*key))
-                        .ok()
-                        .flatten()
+                        .map_err(|e| BlockProducerError::Storage(e.to_string()))?
                         .unwrap_or(U256::ZERO);
                     if *value != original_value {
                         bundle_acct.storage.insert(
@@ -1581,7 +1580,9 @@ fn augment_bundle_from_cache(
             }
         } else {
             // Account not in bundle — check if modified from original.
-            let original = state_provider.basic_account(addr).ok().flatten();
+            let original = state_provider
+                .basic_account(addr)
+                .map_err(|e| BlockProducerError::Storage(e.to_string()))?;
 
             let info_changed = match (&original, &current_info) {
                 (None, None) => false,
@@ -1596,28 +1597,23 @@ fn augment_bundle_from_cache(
                 }
             };
 
-            let storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
-                current_storage
-                    .iter()
-                    .filter_map(|(key, value)| {
-                        let original_value = state_provider
-                            .storage(*addr, B256::from(*key))
-                            .ok()
-                            .flatten()
-                            .unwrap_or(U256::ZERO);
-                        if original_value != *value {
-                            Some((
-                                *key,
-                                StorageSlot {
-                                    previous_or_original_value: original_value,
-                                    present_value: *value,
-                                },
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+            let mut storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
+                alloy_primitives::map::HashMap::default();
+            for (key, value) in &current_storage {
+                let original_value = state_provider
+                    .storage(*addr, B256::from(*key))
+                    .map_err(|e| BlockProducerError::Storage(e.to_string()))?
+                    .unwrap_or(U256::ZERO);
+                if original_value != *value {
+                    storage_changes.insert(
+                        *key,
+                        StorageSlot {
+                            previous_or_original_value: original_value,
+                            present_value: *value,
+                        },
+                    );
+                }
+            }
 
             if info_changed || !storage_changes.is_empty() {
                 let original_info = original.as_ref().map(|a| revm::state::AccountInfo {
@@ -1646,6 +1642,7 @@ fn augment_bundle_from_cache(
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
