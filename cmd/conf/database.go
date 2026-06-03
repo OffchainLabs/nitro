@@ -239,7 +239,7 @@ var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
 	L0CompactionConcurrency:   1,                                   // latest geth upstream default update: https://github.com/ethereum/go-ethereum/pull/33353
 	CompactionDebtConcurrency: 1 << 28,                             // 256MB
 	ReadCompactionRate:        16000,                               // see ReadSamplingMultiplier comment
-	ReadSamplingMultiplier:    UninitializedReadSamplingMultiplier, // geth old disabled read sampling and disables read triggered compaction for hashdb, new changes with pathdb in mind re-enable read sampling; see: https://github.com/ethereum/go-ethereum/pull/33353
+	ReadSamplingMultiplier:    UninitializedReadSamplingMultiplier, // old upstream default disabled read sampling and read triggered compactions, new changes with pathdb in mind re-enable read sampling; see: https://github.com/ethereum/go-ethereum/pull/33353
 	MaxWriterConcurrency:      0,
 	ForceWriterParallelism:    false,
 }
