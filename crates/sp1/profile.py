@@ -184,6 +184,8 @@ def profile_arbitrator(prover: str, machine: str, block_inputs_dir: str) -> dict
                   allowed_codes=(0,))
         m = _WAVM_STEPS_RE.search(log)
         steps[block] = int(m.group(1)) if m else None
+        if steps[block] is None:
+            print(f"  ERROR: no WAVM steps found in arbitrator output for [{block}]", file=sys.stderr)
     return steps
 
 
@@ -204,7 +206,9 @@ def profile_jit(jit: str, replay_wasm: str, block_inputs_dir: str) -> dict[str, 
             if m:
                 samples.append(int(m.group(1)))
         times[block] = min(samples) if samples else None
-        result = f"min {times[block]}ms" if times[block] is not None else "—"
+        if times[block] is None:
+            print(f"  ERROR: no JIT time parsed for [{block}]", file=sys.stderr)
+        result = f"min {times[block]}ms" if times[block] is not None else "FAILED"
         print(f"  jit [{block}]: {result}".ljust(40))
     return times
 
@@ -332,10 +336,10 @@ def write_json(table: list[dict], path: str,
         else:
             print(f"write_json: unrecognised row, skipping: {r}", file=sys.stderr)
     for block, block_data in data["blocks"].items():
-        if arb_steps and arb_steps.get(block) is not None:
-            block_data["arbitrator"] = {"steps": arb_steps[block]}
-        if jit_time_ms and jit_time_ms.get(block) is not None:
-            block_data["jit"] = {"time_ms": jit_time_ms[block]}
+        if arb_steps is not None:
+            block_data["arbitrator"] = {"steps": arb_steps.get(block)}
+        if jit_time_ms is not None:
+            block_data["jit"] = {"time_ms": jit_time_ms.get(block)}
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 

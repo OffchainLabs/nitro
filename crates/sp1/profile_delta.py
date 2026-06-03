@@ -101,20 +101,36 @@ def _syscall_rows(b: dict, p: dict) -> list[list[str]]:
     return rows
 
 
+def _fmt_or_failed(entry: dict | None, key: str, fmt) -> str:
+    """Format a value from a block entry, distinguishing absent (—) from null (FAILED)."""
+    if entry is None:
+        return "—"
+    v = _parse(entry.get(key))
+    return fmt(v) if v is not None else "FAILED"
+
+
 def _arbitrator_row(b_blk: dict, p_blk: dict) -> list[list[str]]:
-    bv = _parse((b_blk.get("arbitrator") or {}).get("steps"))
-    pv = _parse((p_blk.get("arbitrator") or {}).get("steps"))
-    if bv is None and pv is None:
+    b_arb = b_blk.get("arbitrator")
+    p_arb = p_blk.get("arbitrator")
+    if b_arb is None and p_arb is None:
         return []
-    return [["arbitrator", "WAVM steps", _fmt_int(bv), _fmt_int(pv), _delta_cell(bv, pv, _fmt_int)]]
+    b_str = _fmt_or_failed(b_arb, "steps", _fmt_int)
+    p_str = _fmt_or_failed(p_arb, "steps", _fmt_int)
+    bv, pv = _parse((b_arb or {}).get("steps")), _parse((p_arb or {}).get("steps"))
+    delta = "—" if "FAILED" in (b_str, p_str) else _delta_cell(bv, pv, _fmt_int)
+    return [["arbitrator", "WAVM steps", b_str, p_str, delta]]
 
 
 def _jit_row(b_blk: dict, p_blk: dict) -> list[list[str]]:
-    bv = _parse((b_blk.get("jit") or {}).get("time_ms"))
-    pv = _parse((p_blk.get("jit") or {}).get("time_ms"))
-    if bv is None and pv is None:
+    b_jit = b_blk.get("jit")
+    p_jit = p_blk.get("jit")
+    if b_jit is None and p_jit is None:
         return []
-    return [["jit", "time", _fmt_ms(bv), _fmt_ms(pv), _delta_cell(bv, pv, _fmt_ms)]]
+    b_str = _fmt_or_failed(b_jit, "time_ms", _fmt_ms)
+    p_str = _fmt_or_failed(p_jit, "time_ms", _fmt_ms)
+    bv, pv = _parse((b_jit or {}).get("time_ms")), _parse((p_jit or {}).get("time_ms"))
+    delta = "—" if "FAILED" in (b_str, p_str) else _delta_cell(bv, pv, _fmt_ms)
+    return [["jit", "time", b_str, p_str, delta]]
 
 
 def main() -> None:
