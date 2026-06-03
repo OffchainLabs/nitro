@@ -37,9 +37,10 @@ _KV_RE = re.compile(r"(\w+)=([^\s,]+)")
 # `[PROFILE] reexecution: ...`. The runner uses bare `tracing::info!` lines
 # (no `[PROFILE]` marker), so we anchor on the headers and the indented rows.
 _SYSCALLS_HEADER_RE = re.compile(r"\bSyscalls:\s*$")
-_CYCLE_TRACKERS_HEADER_RE = re.compile(r"\bCycle trackers:\s*$")
 _SYSCALL_ROW_RE = re.compile(r"  ([A-Z][A-Z0-9_]+):\s+(\d+)\s*$")
-_CYCLE_TRACKER_ROW_RE = re.compile(r"  (.+?)\s+consumed cycles:\s+(\d+)\s*$")
+
+_WAVM_STEPS_RE = re.compile(r"WAVM steps:\s*(\d+)")
+_JIT_TIME_RE = re.compile(r"Completed in (\d+)ms")
 
 
 def parse_profile_lines(text: str) -> list[dict]:
@@ -56,17 +57,15 @@ def parse_profile_lines(text: str) -> list[dict]:
     return rows
 
 
-def parse_runner_aux_blocks(text: str) -> dict:
-    """Extract syscalls and cycle_trackers maps from a runner's combined output.
+def parse_runner_aux_blocks(text: str) -> dict[str, int]:
+    """Extract the syscalls map from a runner's combined output.
 
-    Each runner invocation in Normal mode emits at most one of each block, so
-    we collapse all matches into single dicts. We end the active section on
-    the next [PROFILE] marker or on the other section's header — intervening
-    non-matching log noise is ignored, not treated as a terminator.
+    Each runner invocation in Normal mode emits at most one syscalls block, so
+    we collapse all matches into a single dict. We end the active section on
+    the next [PROFILE] marker — intervening non-matching log noise is ignored.
     """
     syscalls: dict[str, int] = {}
-    cycle_trackers: dict[str, int] = {}
-    section: str | None = None  # "syscalls" | "cycle_trackers" | None
+    section: str | None = None
     for line in text.splitlines():
         if _PROFILE_RE.search(line):
             section = None
@@ -74,26 +73,25 @@ def parse_runner_aux_blocks(text: str) -> dict:
         if _SYSCALLS_HEADER_RE.search(line):
             section = "syscalls"
             continue
-        if _CYCLE_TRACKERS_HEADER_RE.search(line):
-            section = "cycle_trackers"
-            continue
         if section == "syscalls":
             m = _SYSCALL_ROW_RE.search(line)
             if m:
                 syscalls[m.group(1)] = int(m.group(2))
-        elif section == "cycle_trackers":
-            m = _CYCLE_TRACKER_ROW_RE.search(line)
-            if m:
-                cycle_trackers[m.group(1).strip()] = int(m.group(2))
-    return {"syscalls": syscalls, "cycle_trackers": cycle_trackers}
+    return syscalls
 
 
 # ---------------------------------------------------------------------------
 # Running subprocesses
 # ---------------------------------------------------------------------------
 
-def run(label: str, cmd: list[str], extra_env: dict[str, str] | None = None) -> str:
-    """Run cmd, print a progress label, return combined stderr+stdout."""
+def run(label: str, cmd: list[str], extra_env: dict[str, str] | None = None,
+        allowed_codes: tuple[int, ...] = (0, 1)) -> str:
+    """Run cmd, print a progress label, return combined stderr+stdout.
+
+    allowed_codes: exit codes that are not treated as errors.
+    Default includes 1 because sp1-builder exits 1 on normal bootloading stop.
+    Pass (0,) for binaries where any non-zero exit is a failure.
+    """
     print(f"  {label}...", flush=True)
     env = os.environ.copy()
     # Ensure INFO-level tracing is visible so [PROFILE] lines are emitted.
@@ -102,8 +100,7 @@ def run(label: str, cmd: list[str], extra_env: dict[str, str] | None = None) -> 
         env.update(extra_env)
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     combined = result.stderr + result.stdout
-    if result.returncode not in (0, 1):
-        # exit code 1 is expected from sp1-builder (bootloading stops early)
+    if result.returncode not in allowed_codes:
         print(f"\nERROR: {label} exited with code {result.returncode}", file=sys.stderr)
         print(combined, file=sys.stderr)
         sys.exit(1)
@@ -123,15 +120,6 @@ def fmt_int(v: str | None) -> str:
         return v
 
 
-def fmt_bytes(v: str | None) -> str:
-    if v is None:
-        return "—"
-    try:
-        n = int(v)
-        return f"{n / 1024:.1f} KiB" if n >= 1024 else f"{n} B"
-    except ValueError:
-        return v
-
 
 def fmt_secs(v: str | None) -> str:
     if v is None:
@@ -145,7 +133,7 @@ def fmt_secs(v: str | None) -> str:
 # A table row is either a data dict or a section sentinel {"section": name}.
 
 def print_table(rows: list[dict]) -> None:
-     headers = ["Phase", "SP1 cycles", "Prover gas", "Time"]
+    headers = ["Phase", "SP1 cycles", "Prover gas", "Time"]
 
     # Collect display cells for data rows only (to compute column widths).
     display: list[list[str] | str] = []  # str entries are section labels
@@ -195,7 +183,35 @@ def print_table(rows: list[dict]) -> None:
 _JSON_FIELDS = {"cycles", "gas", "syscalls"}
 
 
-def write_json(table: list[dict], path: str) -> None:
+def print_arb_jit_table(arb_steps: dict[str, int | None], jit_time_ms: dict[str, int | None]) -> None:
+    headers = ["Block", "WAVM steps", "JIT time"]
+    rows = [
+        [
+            block,
+            f"{arb_steps[block]:,}" if arb_steps.get(block) is not None else "—",
+            f"{jit_time_ms[block] / 1000:.3f}s" if jit_time_ms.get(block) is not None else "—",
+        ]
+        for block in BLOCKS
+    ]
+    col_widths = [max(len(headers[i]), max(len(r[i]) for r in rows)) for i in range(len(headers))]
+    sep = "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
+    hdr_row = "| " + " | ".join(h.ljust(w) for h, w in zip(headers, col_widths)) + " |"
+    print()
+    print(sep)
+    print(hdr_row)
+    print(sep)
+    for r in rows:
+        print("| " + " | ".join(
+            c.ljust(col_widths[i]) if i == 0 else c.rjust(col_widths[i])
+            for i, c in enumerate(r)
+        ) + " |")
+    print(sep)
+    print()
+
+
+def write_json(table: list[dict], path: str,
+               arb_steps: dict[str, int | None] | None = None,
+               jit_time_ms: dict[str, int | None] | None = None) -> None:
     data: dict = {"bootloading": None, "blocks": {}}
     current = None
     for r in table:
@@ -212,6 +228,11 @@ def write_json(table: list[dict], path: str) -> None:
             data["blocks"][current]["reexecution"] = {k: v for k, v in r.items() if k in _JSON_FIELDS}
         else:
             print(f"write_json: unrecognised row, skipping: {r}", file=sys.stderr)
+    for block, block_data in data["blocks"].items():
+        if arb_steps and arb_steps.get(block) is not None:
+            block_data["arbitrator"] = {"steps": arb_steps[block]}
+        if jit_time_ms and jit_time_ms.get(block) is not None:
+            block_data["jit"] = {"time_ms": jit_time_ms[block]}
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
@@ -225,6 +246,10 @@ def main() -> None:
     ap.add_argument("--output-dir", required=True, help="Path to target/sp1")
     ap.add_argument("--block-inputs-dir", required=True, help="Path to target/sp1/block-inputs")
     ap.add_argument("--json-output", help="Also write results as JSON to FILE")
+    ap.add_argument("--prover", help="Path to the arbitrator-prover binary")
+    ap.add_argument("--machine", help="Path to machine.v2.wavm.br")
+    ap.add_argument("--jit", help="Path to the JIT binary")
+    ap.add_argument("--replay-wasm", help="Path to replay.wasm for JIT (reference-types stripped)")
     args = ap.parse_args()
 
     out = args.output_dir
@@ -276,21 +301,19 @@ def main() -> None:
         print(f"    trace -> {trace_file}")
 
         table.append({"section": block})
-        aux = parse_runner_aux_blocks(run_log)
+        syscalls = parse_runner_aux_blocks(run_log)
         stylus_count = 0
         for row in parse_profile_lines(run_log):
             phase = row["phase"]
             if phase == "stylus_compilation":
                 stylus_count += 1
-                table.append({"label": f"stylus_compilation [{stylus_count}]", "wasm_size": row.get("wasm_size"),
-                              "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
+                table.append({"label": f"stylus_compilation [{stylus_count}]",
+                               "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
             elif phase == "reexecution":
                 entry = {"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"),
                          "time_secs": row.get("time_secs")}
-                if aux["syscalls"]:
-                    entry["syscalls"] = aux["syscalls"]
-                if aux["cycle_trackers"]:
-                    entry["cycle_trackers"] = aux["cycle_trackers"]
+                if syscalls:
+                    entry["syscalls"] = syscalls
                 table.append(entry)
 
     data_rows = [r for r in table if "section" not in r]
@@ -300,8 +323,36 @@ def main() -> None:
 
     print_table(table)
 
+    arb_steps: dict[str, int | None] = {}
+    jit_time_ms: dict[str, int | None] = {}
+
+    if args.prover and args.machine:
+        print(f"\n[3] Running arbitrator prover on {len(BLOCKS)} block types:")
+        for block in BLOCKS:
+            block_file = f"{args.block_inputs_dir}/{block}.json"
+            log = run(f"arbitrator [{block}]",
+                      [args.prover, args.machine, "--json-inputs", block_file,
+                       "--count-steps", "--require-success"],
+                      allowed_codes=(0,))
+            m = _WAVM_STEPS_RE.search(log)
+            arb_steps[block] = int(m.group(1)) if m else None
+
+    if args.jit and args.replay_wasm:
+        print(f"\n[4] Running JIT on {len(BLOCKS)} block types:")
+        for block in BLOCKS:
+            block_file = f"{args.block_inputs_dir}/{block}.json"
+            log = run(f"jit [{block}]",
+                      [args.jit, "--debug", "--cranelift", "--binary", args.replay_wasm,
+                       "json", f"--inputs={block_file}"],
+                      allowed_codes=(0,))
+            m = _JIT_TIME_RE.search(log)
+            jit_time_ms[block] = int(m.group(1)) if m else None
+
+    if arb_steps or jit_time_ms:
+        print_arb_jit_table(arb_steps, jit_time_ms)
+
     if args.json_output:
-        write_json(table, args.json_output)
+        write_json(table, args.json_output, arb_steps or None, jit_time_ms or None)
         print(f"JSON written to {args.json_output}")
 
 
