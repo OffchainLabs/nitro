@@ -4,6 +4,9 @@ BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
 OUTPUT_DIR       := $(TOP)/target/sp1
 BLOCK_INPUTS_DIR := $(OUTPUT_DIR)/block-inputs
+PROVER_BIN       := $(TOP)/target/bin/prover
+JIT_BIN          := $(TOP)/target/bin/jit
+MACHINE_WAVM     := $(TOP)/target/machines/latest/machine.v2.wavm.br
 
 # Name of the block input (without .json) for the `run` target; override with BLOCK=<name>.
 BLOCK ?= stylus
@@ -111,6 +114,10 @@ profile: build
 	@python3 $(PROFILE_SCRIPT) \
 		--output-dir $(OUTPUT_DIR) \
 		--block-inputs-dir $(BLOCK_INPUTS_DIR) \
+		--prover $(PROVER_BIN) \
+		--machine $(MACHINE_WAVM) \
+		--jit $(JIT_BIN) \
+		--replay-wasm $(TOP)/target/machines/latest/replay.wasm \
 		$(if $(JSON_OUTPUT),--json-output $(JSON_OUTPUT),)
 
 .PHONY: profile-snapshot
