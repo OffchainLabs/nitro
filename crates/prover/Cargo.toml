@@ -37,7 +37,7 @@ sha2 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
 structopt = { workspace = true, optional = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
-validation = { workspace = true }
+validation = { workspace = true, features = ["std"] }
 wasmer = { workspace = true, optional = true }
 wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
 wasmer-types = { workspace = true }
