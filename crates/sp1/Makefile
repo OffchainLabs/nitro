@@ -118,7 +118,8 @@ profile: build
 		--machine $(MACHINE_WAVM) \
 		--jit $(JIT_BIN) \
 		--replay-wasm $(TOP)/target/machines/latest/replay.wasm \
-		$(if $(JSON_OUTPUT),--json-output $(JSON_OUTPUT),)
+		$(if $(JSON_OUTPUT),--json-output $(JSON_OUTPUT),) \
+		$(PROFILE_ARGS)
 
 .PHONY: profile-snapshot
 profile-snapshot: # Run `profile` and save the JSON snapshot to $(OUTPUT_DIR)/profile-$(LABEL).json.
