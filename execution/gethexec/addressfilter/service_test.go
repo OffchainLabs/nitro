@@ -4,20 +4,25 @@
 package addressfilter
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/johannesboyne/gofakes3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/s3syncer/s3syncertest"
 )
 
 func TestHashStore_IsRestricted(t *testing.T) {
@@ -25,8 +30,12 @@ func TestHashStore_IsRestricted(t *testing.T) {
 
 	// Test empty store
 	addr := common.HexToAddress("0xddfAbCdc4D8FfC6d5beaf154f18B778f892A0740")
-	if store.IsRestricted(addr) {
+	restricted, returnedID := store.IsRestricted(addr)
+	if restricted {
 		t.Error("empty store should not restrict any address")
+	}
+	if returnedID != uuid.Nil {
+		t.Errorf("empty store: expected nil filter set ID, got %s", returnedID)
 	}
 
 	// Create test data
@@ -47,19 +56,28 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	}
 
 	// Store the hashes
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
+	filterSetID := uuid.New()
+	store.Store(filterSetID, salt, HashingSchemeStringInput, hashes, "test-etag")
 
 	// Test restricted addresses
 	for _, addr := range addresses {
-		if !store.IsRestricted(addr) {
+		restricted, returnedID := store.IsRestricted(addr)
+		if !restricted {
 			t.Errorf("address %s should be restricted", addr.Hex())
+		}
+		if returnedID != filterSetID {
+			t.Errorf("address %s: expected filter set ID %s, got %s", addr.Hex(), filterSetID, returnedID)
 		}
 	}
 
 	// Test non-restricted address
 	nonRestrictedAddr := common.HexToAddress("0x4444444444444444444444444444444444444444")
-	if store.IsRestricted(nonRestrictedAddr) {
+	restricted, returnedID = store.IsRestricted(nonRestrictedAddr)
+	if restricted {
 		t.Errorf("address %s should not be restricted", nonRestrictedAddr.Hex())
+	}
+	if returnedID != filterSetID {
+		t.Errorf("non-restricted address: expected filter set ID %s, got %s", filterSetID, returnedID)
 	}
 
 	// Test metadata
@@ -79,9 +97,14 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	hash1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr1)
 
 	// Store first set
-	store.Store(uuid.New(), salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1")
-	if !store.IsRestricted(addr1) {
+	filterSetID1 := uuid.New()
+	store.Store(filterSetID1, salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1")
+	restricted, returnedID := store.IsRestricted(addr1)
+	if !restricted {
 		t.Error("addr1 should be restricted after first load")
+	}
+	if returnedID != filterSetID1 {
+		t.Errorf("expected filter set ID %s, got %s", filterSetID1, returnedID)
 	}
 
 	// Store second set with different salt (simulating hourly rotation)
@@ -89,15 +112,24 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
 	hash2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr2)
 
-	store.Store(uuid.New(), salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2")
+	filterSetID2 := uuid.New()
+	store.Store(filterSetID2, salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
-	if store.IsRestricted(addr1) {
+	restricted, returnedID = store.IsRestricted(addr1)
+	if restricted {
 		t.Error("addr1 should not be restricted after swap (salt changed)")
 	}
+	if returnedID != filterSetID2 {
+		t.Errorf("expected filter set ID %s after swap, got %s", filterSetID2, returnedID)
+	}
 	// addr2 should now be restricted
-	if !store.IsRestricted(addr2) {
+	restricted, returnedID = store.IsRestricted(addr2)
+	if !restricted {
 		t.Error("addr2 should be restricted after swap")
+	}
+	if returnedID != filterSetID2 {
+		t.Errorf("expected filter set ID %s, got %s", filterSetID2, returnedID)
 	}
 	if store.Digest() != "etag2" {
 		t.Errorf("expected etag 'etag2', got '%s'", store.Digest())
@@ -154,8 +186,10 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 					if store.isAllRestricted([]common.Address{addr1, addr2}) ||
 						!store.isAnyRestricted([]common.Address{addr1, addr2}) {
 						// One should be restricted, the other not, atomic swap should ensure consistency
-						t.Log("addr1:", addr1.Hex(), "restricted:", store.IsRestricted(addr1))
-						t.Log("addr2:", addr2.Hex(), "restricted:", store.IsRestricted(addr2))
+						r1, _ := store.IsRestricted(addr1)
+						r2, _ := store.IsRestricted(addr2)
+						t.Log("addr1:", addr1.Hex(), "restricted:", r1)
+						t.Log("addr2:", addr2.Hex(), "restricted:", r2)
 						t.Error("concurrent access yielded inconsistent results")
 					}
 				}
@@ -426,15 +460,15 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
 
 	// Verify store works correctly with custom size
-	if !store.IsRestricted(addresses[0]) {
+	if restricted, _ := store.IsRestricted(addresses[0]); !restricted {
 		t.Error("address should be restricted")
 	}
-	if !store.IsRestricted(addresses[1]) {
+	if restricted, _ := store.IsRestricted(addresses[1]); !restricted {
 		t.Error("address should be restricted")
 	}
 
 	nonRestrictedAddr := common.HexToAddress("0x3333333333333333333333333333333333333333")
-	if store.IsRestricted(nonRestrictedAddr) {
+	if restricted, _ := store.IsRestricted(nonRestrictedAddr); restricted {
 		t.Error("address should not be restricted")
 	}
 }
@@ -456,6 +490,134 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	loadedAt := store.LoadedAt()
 	if loadedAt.Before(before) || loadedAt.After(after) {
 		t.Errorf("LoadedAt should be between %v and %v, got %v", before, after, loadedAt)
+	}
+}
+
+const filteringTestBucket = "addressfilter-test"
+
+func newFilteringTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
+	cfg := DefaultConfig
+	cfg.S3 = s3syncer.Config{
+		Config: s3client.Config{
+			Region:    "us-east-1",
+			AccessKey: "dummy-access-key",
+			SecretKey: "dummy-secret-key",
+			Endpoint:  endpoint,
+		},
+		Bucket:        filteringTestBucket,
+		ObjectKey:     key,
+		ChunkSizeMB:   s3syncer.DefaultS3Config.ChunkSizeMB,
+		MaxRetries:    s3syncer.DefaultS3Config.MaxRetries,
+		Concurrency:   s3syncer.DefaultS3Config.Concurrency,
+		MaxFileSizeMB: maxFileSizeMB,
+	}
+	return &cfg
+}
+
+func TestFilterService_Initialize_RejectsOversizedFile(t *testing.T) {
+	key := "oversized.json"
+	body := bytes.Repeat([]byte("X"), 2*1024*1024) // 2 MB
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: body})
+
+	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
+	syncFailureBefore := syncFailureCounter.Snapshot().Count()
+
+	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	require.NoError(t, err)
+
+	err = service.Initialize(context.Background())
+	if err == nil {
+		t.Fatal("expected Initialize to return error for oversized file")
+	}
+	if !errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		t.Errorf("expected error chain to include ErrObjectTooLarge, got %v", err)
+	}
+
+	tooLargeDelta := fileTooLargeCounter.Snapshot().Count() - tooLargeBefore
+	syncFailureDelta := syncFailureCounter.Snapshot().Count() - syncFailureBefore
+	if tooLargeDelta != 1 {
+		t.Errorf("fileTooLargeCounter delta: got %d, want 1", tooLargeDelta)
+	}
+	if syncFailureDelta != 1 {
+		t.Errorf("syncFailureCounter delta: got %d, want 1", syncFailureDelta)
+	}
+}
+
+func TestFilterService_Initialize_GenericFailure(t *testing.T) {
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, nil) // bucket exists, key does not
+
+	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
+	syncFailureBefore := syncFailureCounter.Snapshot().Count()
+
+	service, err := NewFilterService(newFilteringTestConfig(endpoint, "missing.json", 1))
+	require.NoError(t, err)
+
+	err = service.Initialize(context.Background())
+	if err == nil {
+		t.Fatal("expected Initialize to return error for missing key")
+	}
+	if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		t.Errorf("missing-key error should not match ErrObjectTooLarge: %v", err)
+	}
+
+	tooLargeDelta := fileTooLargeCounter.Snapshot().Count() - tooLargeBefore
+	syncFailureDelta := syncFailureCounter.Snapshot().Count() - syncFailureBefore
+	if tooLargeDelta != 0 {
+		t.Errorf("fileTooLargeCounter delta: got %d, want 0", tooLargeDelta)
+	}
+	if syncFailureDelta != 1 {
+		t.Errorf("syncFailureCounter delta: got %d, want 1", syncFailureDelta)
+	}
+}
+
+func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
+	salt := uuid.New()
+	restrictedAddr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), restrictedAddr)
+	payload := map[string]interface{}{
+		"id":             uuid.NewString(),
+		"salt":           salt.String(),
+		"hashing_scheme": "sha256-stringinput",
+		"hashes":         []string{hex.EncodeToString(hash[:])},
+	}
+	initialBody, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	key := "filter.json"
+	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: initialBody})
+
+	// 1 MB limit; initial body is well under, the swap body will be 2 MB.
+	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	require.NoError(t, err)
+
+	require.NoError(t, service.Initialize(context.Background()))
+
+	digestBefore := service.GetHashStoreDigest()
+	countBefore := service.GetHashCount()
+	require.NotEmpty(t, digestBefore, "initial digest should be set")
+	require.Equal(t, 1, countBefore)
+	restricted, _ := service.hashStore.IsRestricted(restrictedAddr)
+	require.True(t, restricted, "address should be restricted after initial load")
+
+	// Swap the S3 object for a payload that exceeds the configured limit.
+	oversized := bytes.Repeat([]byte("X"), 2*1024*1024)
+	_, err = backend.PutObject(filteringTestBucket, key, map[string]string{}, bytes.NewReader(oversized), int64(len(oversized)), &gofakes3.PutConditions{})
+	require.NoError(t, err)
+
+	// Drive one sync tick directly — same call the Start() poll loop makes.
+	err = service.syncMgr.Syncer.CheckAndSync(context.Background())
+	if !errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		t.Fatalf("expected ErrObjectTooLarge from oversized swap, got %v", err)
+	}
+
+	if got := service.GetHashStoreDigest(); got != digestBefore {
+		t.Errorf("digest changed after failed sync: got %q, want %q", got, digestBefore)
+	}
+	if got := service.GetHashCount(); got != countBefore {
+		t.Errorf("hash count changed after failed sync: got %d, want %d", got, countBefore)
+	}
+	if restricted, _ := service.hashStore.IsRestricted(restrictedAddr); !restricted {
+		t.Error("address should still be restricted after failed sync")
 	}
 }
 
@@ -531,16 +693,16 @@ func TestHashStore_RawBytesScheme(t *testing.T) {
 
 	store.Store(uuid.New(), salt, HashingSchemeRawBytesInput, []common.Hash{hashRestricted}, "raw")
 
-	if !store.IsRestricted(addrRestricted) {
+	if restricted, _ := store.IsRestricted(addrRestricted); !restricted {
 		t.Fatal("restricted address should match under raw bytes scheme")
 	}
-	if store.IsRestricted(addrAllowed) {
+	if restricted, _ := store.IsRestricted(addrAllowed); restricted {
 		t.Fatal("allowed address must not match under raw bytes scheme")
 	}
 
 	// Same hash bytes reloaded under string scheme must not match: scheme drives the lookup function.
 	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{hashRestricted}, "str")
-	if store.IsRestricted(addrRestricted) {
+	if restricted, _ := store.IsRestricted(addrRestricted); restricted {
 		t.Fatal("raw-bytes hash should not match under string input scheme")
 	}
 }
@@ -568,11 +730,11 @@ func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
 	store := NewHashStore(8)
 	store.Store(parsed.Id, parsed.Salt, parsed.Scheme, parsed.Hashes, "etag")
 
-	if !store.IsRestricted(addr) {
+	if restricted, _ := store.IsRestricted(addr); !restricted {
 		t.Fatal("vendor address must be restricted after parse+Store under raw bytes scheme")
 	}
 	otherAddr := common.HexToAddress("0x000000000000000000000000000000000000beef")
-	if store.IsRestricted(otherAddr) {
+	if restricted, _ := store.IsRestricted(otherAddr); restricted {
 		t.Fatal("non-listed address must not be restricted")
 	}
 }

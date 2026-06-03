@@ -321,6 +321,12 @@ func (m *mockMetadataReader) ReadAssertionCreationInfo(
 	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
 }
 
+func (m *mockMetadataReader) ReadAssertionCreationInfoAtLatest(
+	_ context.Context, _ protocol.AssertionHash,
+) (*protocol.AssertionCreatedInfo, error) {
+	return &protocol.AssertionCreatedInfo{InboxMaxCount: big.NewInt(1)}, nil
+}
+
 type newCfg struct {
 	t         *testing.T
 	originId  mock.OriginId

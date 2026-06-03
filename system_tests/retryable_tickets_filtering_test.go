@@ -1712,13 +1712,11 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1Report(t *testing.T) {
 	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
 	require.NoError(t, err)
 
-	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
-
 	p := &retryableFilterTestParams{
 		builder:            builder,
 		ctx:                ctx,
 		delayedInbox:       delayedInbox,
-		lookupL2Tx:         lookupL2Tx,
+		delayedBridge:      delayedBridge,
 		filtererName:       "Filterer",
 		fundsRecipientAddr: fundsRecipientAddr,
 	}
@@ -1730,7 +1728,7 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1Report(t *testing.T) {
 	require.NoError(t, err)
 
 	l1Receipt, ticketId := submitRetryableViaL1(t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryData)
-	l2Tx := p.lookupL2Tx(l1Receipt)
+	l2Tx := lookupRetryableSubmissionTx(t, p, l1Receipt)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// A's auto-redeem calls callTarget(filteredTarget) → filter → group revert → halt
