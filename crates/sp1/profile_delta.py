@@ -48,6 +48,8 @@ SP1_FIELDS = [
 def _delta_cell(b: float | None, p: float | None, fmt) -> str:
     if b is None or p is None:
         return "—"
+    if b == p:
+        return "="
     d = p - b
     pct = (d / b * 100) if b != 0 else 0.0
     sign = "+" if d >= 0 else "-"
