@@ -251,83 +251,90 @@ def main() -> None:
     ap.add_argument("--machine", help="Path to machine.v2.wavm.br")
     ap.add_argument("--jit", help="Path to the JIT binary")
     ap.add_argument("--replay-wasm", help="Path to replay.wasm for JIT (reference-types stripped)")
+    ap.add_argument("--validators", nargs="+", choices=["sp1", "arbitrator", "jit"],
+                    default=["sp1", "arbitrator", "jit"],
+                    help="Which validators to profile (default: all)")
     args = ap.parse_args()
 
     out = args.output_dir
 
-    print("\n[1] Running sp1-builder (WASM→LLVM compilation + SP1 bootloading):")
-    boot_log = run(
-        "sp1-builder",
-        [
-            "cargo", "run", "--release", "-p", "sp1-builder",
-            "--features", "sp1-sdk/profiling,sp1-core-executor/profiling",
-            "--",
-            "--replay-wasm", f"{out}/replay.wasm",
-            "--output-folder", out,
-        ],
-        extra_env={
-            # TRACE_FILE must be set for the profiling feature to activate symbol
-            # embedding in the dumped ELF. We use a throwaway path and a huge
-            # sample rate so virtually no trace data is written.
-            "TRACE_FILE": f"{out}/ignore_bootload_trace.json",
-            "TRACE_SAMPLE_RATE": "1000000000",
-        },
-    )
+    run_sp1 = "sp1" in args.validators
+    run_arb = "arbitrator" in args.validators
+    run_jit = "jit" in args.validators
 
     table: list[dict] = []
 
-    boot_rows = parse_profile_lines(boot_log)
-    for row in boot_rows:
-        if row["phase"] == "bootloading":
-            table.append({"label": "bootloading", "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
-
-    print(f"\n[2] Running sp1-runner on {len(BLOCKS)} block types:")
-    for i, block in enumerate(BLOCKS, 1):
-        block_file = f"{args.block_inputs_dir}/{block}.json"
-        trace_file = f"{out}/trace_{block}.json"
-        run_log = run(
-            f"sp1-runner [{block}]",
+    if run_sp1:
+        print("\n[1] Running sp1-builder (WASM→LLVM compilation + SP1 bootloading):")
+        boot_log = run(
+            "sp1-builder",
             [
-                f"{out}/sp1-runner-profiling",
-                "--program", f"{out}/dumped_replay_wasm.elf",
-                "--stylus-compiler-program", f"{out}/stylus-compiler-program",
-                "--block-file", block_file,
-                "--mode", "normal",
+                "cargo", "run", "--release", "-p", "sp1-builder",
+                "--features", "sp1-sdk/profiling,sp1-core-executor/profiling",
+                "--",
+                "--replay-wasm", f"{out}/replay.wasm",
+                "--output-folder", out,
             ],
             extra_env={
-                "TRACE_FILE": trace_file,
-                "TRACE_SAMPLE_RATE": str(TRACE_SAMPLE_RATE),
+                # TRACE_FILE must be set for the profiling feature to activate symbol
+                # embedding in the dumped ELF. We use a throwaway path and a huge
+                # sample rate so virtually no trace data is written.
+                "TRACE_FILE": f"{out}/ignore_bootload_trace.json",
+                "TRACE_SAMPLE_RATE": "1000000000",
             },
         )
-        print(f"    trace -> {trace_file}")
 
-        table.append({"section": block})
-        syscalls = parse_runner_aux_blocks(run_log)
-        stylus_count = 0
-        for row in parse_profile_lines(run_log):
-            phase = row["phase"]
-            if phase == "stylus_compilation":
-                stylus_count += 1
-                table.append({"label": f"stylus_compilation [{stylus_count}]",
-                               "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
-            elif phase == "reexecution":
-                entry = {"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"),
-                         "time_secs": row.get("time_secs")}
-                if syscalls:
-                    entry["syscalls"] = syscalls
-                table.append(entry)
+        boot_rows = parse_profile_lines(boot_log)
+        for row in boot_rows:
+            if row["phase"] == "bootloading":
+                table.append({"label": "bootloading", "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
 
-    data_rows = [r for r in table if "section" not in r]
-    if not data_rows:
-        print("\nNo [PROFILE] lines found. Make sure RUST_LOG is not suppressing INFO logs.", file=sys.stderr)
-        sys.exit(1)
+        print(f"\n[2] Running sp1-runner on {len(BLOCKS)} block types:")
+        for i, block in enumerate(BLOCKS, 1):
+            block_file = f"{args.block_inputs_dir}/{block}.json"
+            trace_file = f"{out}/trace_{block}.json"
+            run_log = run(
+                f"sp1-runner [{block}]",
+                [
+                    f"{out}/sp1-runner-profiling",
+                    "--program", f"{out}/dumped_replay_wasm.elf",
+                    "--stylus-compiler-program", f"{out}/stylus-compiler-program",
+                    "--block-file", block_file,
+                    "--mode", "normal",
+                ],
+                extra_env={
+                    "TRACE_FILE": trace_file,
+                    "TRACE_SAMPLE_RATE": str(TRACE_SAMPLE_RATE),
+                },
+            )
+            print(f"    trace -> {trace_file}")
 
-    print_table(table)
+            table.append({"section": block})
+            syscalls = parse_runner_aux_blocks(run_log)
+            stylus_count = 0
+            for row in parse_profile_lines(run_log):
+                phase = row["phase"]
+                if phase == "stylus_compilation":
+                    stylus_count += 1
+                    table.append({"label": f"stylus_compilation [{stylus_count}]",
+                                   "cycles": row.get("cycles"), "time_secs": row.get("time_secs")})
+                elif phase == "reexecution":
+                    entry = {"label": "reexecution", "cycles": row.get("cycles"), "gas": row.get("gas"),
+                             "time_secs": row.get("time_secs")}
+                    if syscalls:
+                        entry["syscalls"] = syscalls
+                    table.append(entry)
+
+        if not any("section" not in r for r in table):
+            print("\nNo [PROFILE] lines found. Make sure RUST_LOG is not suppressing INFO logs.", file=sys.stderr)
+            sys.exit(1)
+
+        print_table(table)
 
     arb_steps: dict[str, int | None] = {}
     jit_time_ms: dict[str, int | None] = {}
 
-    if args.prover and args.machine:
+    if run_arb and args.prover and args.machine:
         print(f"\n[3] Running arbitrator prover on {len(BLOCKS)} block types:")
         for block in BLOCKS:
             block_file = f"{args.block_inputs_dir}/{block}.json"
@@ -338,7 +345,7 @@ def main() -> None:
             m = _WAVM_STEPS_RE.search(log)
             arb_steps[block] = int(m.group(1)) if m else None
 
-    if args.jit and args.replay_wasm:
+    if run_jit and args.jit and args.replay_wasm:
         print(f"\n[4] Running JIT on {len(BLOCKS)} block types ({JIT_RUNS} runs each, reporting min):")
         for block in BLOCKS:
             block_file = f"{args.block_inputs_dir}/{block}.json"
