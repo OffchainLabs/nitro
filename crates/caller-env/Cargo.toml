@@ -15,7 +15,9 @@ brotli = { workspace = true, optional = true }
 hex = { workspace = true, features = ["alloc"] }
 k256 = { workspace = true, features = ["ecdsa"] }
 rand = { workspace = true }
+validation = { workspace = true }
 rand_pcg = { workspace = true }
+sha2 = { workspace = true, optional = true }
 spin = { workspace = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmer = { workspace = true, optional = true }
@@ -24,5 +26,6 @@ wasmer = { workspace = true, optional = true }
 default = ["brotli"]
 brotli = ["dep:brotli"]
 static_caller = []
+integrity_check = ["dep:sha2", "dep:arbutil"]
 wasmer_traits = ["dep:wasmer", "dep:arbutil", "brotli?/wasmer_traits"]
 cc_brotli = ["brotli?/cc_brotli"]
