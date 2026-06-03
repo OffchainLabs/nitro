@@ -193,6 +193,9 @@ def print_table(rows: list[dict]) -> None:
     print()
 
 
+_JSON_FIELDS = {"cycles", "gas", "wasm_size", "syscalls"}
+
+
 def write_json(table: list[dict], path: str) -> None:
     data: dict = {"bootloading": None, "blocks": {}}
     current = None
@@ -201,13 +204,13 @@ def write_json(table: list[dict], path: str) -> None:
             current = r["section"]
             data["blocks"][current] = {"stylus_compilations": [], "reexecution": None}
         elif r.get("label") == "bootloading":
-            data["bootloading"] = {k: v for k, v in r.items() if k not in {"label", "time_secs"}}
+            data["bootloading"] = {k: v for k, v in r.items() if k in _JSON_FIELDS}
         elif r.get("label", "").startswith("stylus_compilation") and current:
             data["blocks"][current]["stylus_compilations"].append(
-                {k: v for k, v in r.items() if k not in {"label", "time_secs"}}
+                {k: v for k, v in r.items() if k in _JSON_FIELDS}
             )
         elif r.get("label") == "reexecution" and current:
-            data["blocks"][current]["reexecution"] = {k: v for k, v in r.items() if k not in {"label", "time_secs"}}
+            data["blocks"][current]["reexecution"] = {k: v for k, v in r.items() if k in _JSON_FIELDS}
         else:
             print(f"write_json: unrecognised row, skipping: {r}", file=sys.stderr)
     with open(path, "w") as f:

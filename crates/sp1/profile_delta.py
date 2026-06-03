@@ -112,20 +112,6 @@ def _syscall_rows(b: dict, p: dict) -> list[list[str]]:
     return rows
 
 
-def _cycle_tracker_rows(b: dict, p: dict) -> list[list[str]]:
-    """Build [entry, base, pr, delta] rows for cycle-tracker spans."""
-    b_ct = b.get("cycle_trackers") or {}
-    p_ct = p.get("cycle_trackers") or {}
-    entries = set(b_ct) | set(p_ct)
-    if not entries:
-        return []
-    rows = []
-    for entry in sorted(entries):
-        bv = _parse(b_ct.get(entry))
-        pv = _parse(p_ct.get(entry))
-        rows.append([entry, _fmt_int(bv), _fmt_int(pv), _delta_cell(bv, pv, _fmt_int)])
-    return rows
-
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -177,14 +163,6 @@ def main() -> None:
                 "",
             ]
 
-        ct_rows = _cycle_tracker_rows(b_re, p_re)
-        if ct_rows:
-            lines += [
-                f"#### Block {block} — cycle trackers",
-                "",
-                _md_table(ct_rows, ["Entry", "Base", "PR", "Delta"], right_align_from=1),
-                "",
-            ]
 
     lines.append(MARKER)
 
