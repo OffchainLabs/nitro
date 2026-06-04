@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compute delta between two SP1 profile JSON snapshots and emit a
+Compute delta between two profile JSON snapshots and emit a
 GitHub-flavoured markdown comment.
 
 Usage:
@@ -15,9 +15,8 @@ from itertools import zip_longest
 MARKER = "<!-- sp1-profile-comment -->"
 BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed", "signatures"]
 
-# Crypto-related syscall name prefixes — these get sorted to the top of the
-# syscall diff table for visibility (the migration we care about most affects
-# SECP256K1_*).
+# Crypto-related syscall name prefixes — sorted to the top of the syscall diff
+# table (the migration we care about most affects SECP256K1_*).
 _CRYPTO_SYSCALL_PREFIXES = ("SECP256K1", "KECCAK", "SHA256", "BN254", "BLS12381", "ED25519")
 
 
@@ -32,40 +31,25 @@ def _parse(v) -> float | None:
         return None
 
 
-def _fmt_cycles(v: float | None) -> str:
-    return "—" if v is None else f"{int(v):,}"
-
-
-def _fmt_gas(v: float | None) -> str:
-    return "—" if v is None else f"{int(v):,}"
-
-
-def _fmt_bytes(v: float | None) -> str:
-    if v is None:
-        return "—"
-    n = int(v)
-    return f"{n / 1024:.1f} KiB" if n >= 1024 else f"{n} B"
-
-
-def _fmt_secs(v: float | None) -> str:
-    return "—" if v is None else f"{v:.3f} s"
-
-
 def _fmt_int(v: float | None) -> str:
     return "—" if v is None else f"{int(v):,}"
 
 
-FIELDS = [
-    ("cycles",    "cycles",    _fmt_cycles),
-    ("gas",       "gas",       _fmt_gas),
-    ("wasm_size", "wasm size", _fmt_bytes),
-    ("time_secs", "time",      _fmt_secs),
+def _fmt_ms(v: float | None) -> str:
+    return "—" if v is None else f"{int(v):,} ms"
+
+
+SP1_FIELDS = [
+    ("cycles", "cycles", _fmt_int),
+    ("gas",    "gas",    _fmt_int),
 ]
 
 
 def _delta_cell(b: float | None, p: float | None, fmt) -> str:
     if b is None or p is None:
         return "—"
+    if b == p:
+        return "="
     d = p - b
     pct = (d / b * 100) if b != 0 else 0.0
     sign = "+" if d >= 0 else "-"
@@ -86,9 +70,9 @@ def _md_table(rows: list[list[str]], headers: list[str], right_align_from: int =
     return "\n".join([hdr, sep] + data)
 
 
-def _phase_rows(phase: str, b: dict, p: dict) -> list[list[str]]:
+def _sp1_rows(phase: str, b: dict, p: dict) -> list[list[str]]:
     rows = []
-    for key, label, fmt in FIELDS:
+    for key, label, fmt in SP1_FIELDS:
         bv = _parse(b.get(key))
         pv = _parse(p.get(key))
         if bv is None and pv is None:
@@ -117,19 +101,36 @@ def _syscall_rows(b: dict, p: dict) -> list[list[str]]:
     return rows
 
 
-def _cycle_tracker_rows(b: dict, p: dict) -> list[list[str]]:
-    """Build [entry, base, pr, delta] rows for cycle-tracker spans."""
-    b_ct = b.get("cycle_trackers") or {}
-    p_ct = p.get("cycle_trackers") or {}
-    entries = set(b_ct) | set(p_ct)
-    if not entries:
+def _fmt_or_failed(entry: dict | None, key: str, fmt) -> str:
+    """Format a value from a block entry, distinguishing absent (—) from null (FAILED)."""
+    if entry is None:
+        return "—"
+    v = _parse(entry.get(key))
+    return fmt(v) if v is not None else "FAILED"
+
+
+def _arbitrator_row(b_blk: dict, p_blk: dict) -> list[list[str]]:
+    b_arb = b_blk.get("arbitrator")
+    p_arb = p_blk.get("arbitrator")
+    if b_arb is None and p_arb is None:
         return []
-    rows = []
-    for entry in sorted(entries):
-        bv = _parse(b_ct.get(entry))
-        pv = _parse(p_ct.get(entry))
-        rows.append([entry, _fmt_int(bv), _fmt_int(pv), _delta_cell(bv, pv, _fmt_int)])
-    return rows
+    b_str = _fmt_or_failed(b_arb, "steps", _fmt_int)
+    p_str = _fmt_or_failed(p_arb, "steps", _fmt_int)
+    bv, pv = _parse((b_arb or {}).get("steps")), _parse((p_arb or {}).get("steps"))
+    delta = "—" if "FAILED" in (b_str, p_str) else _delta_cell(bv, pv, _fmt_int)
+    return [["arbitrator", "WAVM steps", b_str, p_str, delta]]
+
+
+def _jit_row(b_blk: dict, p_blk: dict) -> list[list[str]]:
+    b_jit = b_blk.get("jit")
+    p_jit = p_blk.get("jit")
+    if b_jit is None and p_jit is None:
+        return []
+    b_str = _fmt_or_failed(b_jit, "time_ms", _fmt_ms)
+    p_str = _fmt_or_failed(p_jit, "time_ms", _fmt_ms)
+    bv, pv = _parse((b_jit or {}).get("time_ms")), _parse((p_jit or {}).get("time_ms"))
+    delta = "—" if "FAILED" in (b_str, p_str) else _delta_cell(bv, pv, _fmt_ms)
+    return [["jit", "time", b_str, p_str, delta]]
 
 
 def main() -> None:
@@ -148,7 +149,7 @@ def main() -> None:
     lines = ["## SP1 Profile — Delta Report", ""]
 
     # Bootloading
-    boot_rows = _phase_rows("bootloading", base.get("bootloading") or {}, pr.get("bootloading") or {})
+    boot_rows = _sp1_rows("bootloading", base.get("bootloading") or {}, pr.get("bootloading") or {})
     if boot_rows:
         lines += ["### Bootloading", "", _md_table(boot_rows, headers), ""]
 
@@ -157,37 +158,27 @@ def main() -> None:
         b_blk = (base.get("blocks") or {}).get(block, {})
         p_blk = (pr.get("blocks") or {}).get(block, {})
 
-        # Sort compilations by (wasm_size, cycles) so positional zip-pairing
-        # remains stable across runs — runner iteration order is HashMap-random.
-        sort_key = lambda c: (int(c.get("wasm_size") or 0), int(c.get("cycles") or 0))
+        # Sort compilations by cycles so positional zip-pairing is stable
+        # across runs (runner iteration order is HashMap-random).
+        sort_key = lambda c: int(c.get("cycles") or 0)
         rows = []
         b_sc = sorted(b_blk.get("stylus_compilations") or [], key=sort_key)
         p_sc = sorted(p_blk.get("stylus_compilations") or [], key=sort_key)
         for i, (b_s, p_s) in enumerate(zip_longest(b_sc, p_sc, fillvalue={}), 1):
-            rows.extend(_phase_rows(f"stylus_compilation[{i}]", b_s, p_s))
-        rows.extend(_phase_rows("reexecution", b_blk.get("reexecution") or {}, p_blk.get("reexecution") or {}))
+            rows.extend(_sp1_rows(f"stylus_compilation[{i}]", b_s, p_s))
+        rows.extend(_sp1_rows("reexecution", b_blk.get("reexecution") or {}, p_blk.get("reexecution") or {}))
+        rows.extend(_arbitrator_row(b_blk, p_blk))
+        rows.extend(_jit_row(b_blk, p_blk))
 
         if rows:
             lines += [f"### Block: {block}", "", _md_table(rows, headers), ""]
 
-        b_re = b_blk.get("reexecution") or {}
-        p_re = p_blk.get("reexecution") or {}
-
-        sys_rows = _syscall_rows(b_re, p_re)
+        sys_rows = _syscall_rows(b_blk.get("reexecution") or {}, p_blk.get("reexecution") or {})
         if sys_rows:
             lines += [
                 f"#### Block {block} — syscalls",
                 "",
                 _md_table(sys_rows, ["Syscall", "Base", "PR", "Delta"], right_align_from=1),
-                "",
-            ]
-
-        ct_rows = _cycle_tracker_rows(b_re, p_re)
-        if ct_rows:
-            lines += [
-                f"#### Block {block} — cycle trackers",
-                "",
-                _md_table(ct_rows, ["Entry", "Base", "PR", "Delta"], right_align_from=1),
                 "",
             ]
 

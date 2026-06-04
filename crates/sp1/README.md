@@ -99,21 +99,48 @@ If you want to generate additional Arbitrum blocks beyond the ones recorded by `
 
 Three Make targets drive `profile.py` and `profile_delta.py` in `crates/sp1/`:
 
-* `profile` — single ad-hoc run. Builds a profiling-instrumented `sp1-runner`, executes every recorded block, and prints a human-readable summary table. Pass `JSON_OUTPUT=<path>` to also write a JSON snapshot.
+* `profile` — single ad-hoc run. Profiles all three validators (SP1, Arbitrator, JIT) across every recorded block and prints a human-readable summary. Pass `JSON_OUTPUT=<path>` to also write a JSON snapshot.
 * `profile-snapshot LABEL=<name>` — wrapper that runs `profile` and stores the JSON snapshot at `target/sp1/profile-<name>.json`.
 * `profile-compare BASE=<old> NEW=<new>` — runs `profile_delta.py` against two saved snapshots and writes a markdown delta report to `target/sp1/profile-delta-<old>-vs-<new>.md` (also `cat`s it).
 
-JSON snapshot shape:
+### Validators
 
-* Top-level `bootloading`: `cycles`, `time_secs`.
-* Per block, `stylus_compilations[i]`: `wasm_size`, `cycles`, `time_secs`.
-* Per block, `reexecution`: `cycles`, `gas`, `time_secs`, plus the optional `syscalls` map (`SECP256K1_ADD`, `KECCAK_PERMUTE`, `MPROTECT`, …) and an optional `cycle_trackers` map (only present when the program emits `cycle_tracker_start!` spans).
+`profile.py` profiles three validators for each block:
 
-The delta report renders a per-block scalar table for those phases plus a separate syscall diff table (with crypto syscalls listed first) and a cycle-tracker diff table when present.
+| Validator    | What is measured                        | How                                      |
+|--------------|-----------------------------------------|------------------------------------------|
+| `sp1`        | SP1 cycles and prover gas               | `sp1-runner` in Normal mode              |
+| `arbitrator` | WAVM step count                         | `arbitrator-prover --count-steps`        |
+| `jit`        | Wall-clock execution time (min of 20)   | `jit --debug --cranelift`                |
+
+To run only a subset, pass `--validators` via `PROFILE_ARGS`:
+
+```bash
+# JIT only — much faster, no SP1 build needed
+$ make -C crates/sp1 profile PROFILE_ARGS="--validators jit"
+
+# Arbitrator and JIT, skip SP1
+$ make -C crates/sp1 profile PROFILE_ARGS="--validators arbitrator jit"
+
+# JIT-only snapshot
+$ make -C crates/sp1 profile-snapshot LABEL=head PROFILE_ARGS="--validators jit"
+```
+
+### JSON snapshot shape
+
+* Top-level `bootloading`: `cycles`.
+* Per block, `stylus_compilations[i]`: `cycles`.
+* Per block, `reexecution`: `cycles`, `gas`, plus the optional `syscalls` map (`SECP256K1_ADD`, `KECCAK_PERMUTE`, `MPROTECT`, …).
+* Per block, `arbitrator`: `steps` (total WAVM instruction count).
+* Per block, `jit`: `time_ms` (minimum wall-clock execution time in milliseconds across 20 runs).
+
+Time is printed to the console during profiling but intentionally excluded from snapshots — it is too noisy to compare reliably across runs.
+
+The delta report renders a per-block scalar table (cycles, gas) for SP1 phases, a separate syscall diff table (with crypto syscalls listed first), and WAVM steps / JIT time rows for the Arbitrator and JIT validators.
 
 ### Typical "before / after" workflow
 
-When evaluating a change to the SP1 program (a library swap, new precompile, optimization), use snapshots to capture the impact:
+When evaluating a change to any validator (SP1 program, WAVM machine, JIT), use snapshots to capture the impact:
 
 ```bash
 # 1. Record block inputs once (only needs to be redone when block_recording_test.go changes).
@@ -133,18 +160,19 @@ $ make -C crates/sp1 profile-snapshot LABEL=my-change
 $ make -C crates/sp1 profile-compare BASE=baseline NEW=my-change
 ```
 
-Snapshots persist under `target/sp1/profile-*.json`, so it's safe to switch branches between steps 2 and 3 — the JSON files are not removed by `make build`. Only `make clean` wipes them.
+Snapshots persist under `target/sp1/profile-*.json`, so it is safe to switch branches between steps 2 and 3 — the JSON files are not removed by `make build`. Only `make clean` wipes them.
 
 ### Sanity checks on a fresh snapshot
 
 ```bash
-# Confirm the new fields are populated.
+# Confirm SP1 reexecution fields are populated.
 $ jq '.blocks.transfer.reexecution | keys' target/sp1/profile-baseline.json
-[ "cycles", "gas", "syscalls", "time_secs" ]
+[ "cycles", "gas", "syscalls" ]
 
-# Confirm SECP256K1_* syscalls appear. Each ECDSA recovery fans out into
-# hundreds of SECP256K1_ADD / SECP256K1_DOUBLE ecalls (windowed scalar mult),
-# so a 50-tx block produces tens of thousands of these entries.
+# Confirm Arbitrator and JIT entries are present.
+$ jq '{arb: .blocks.transfer.arbitrator, jit: .blocks.transfer.jit}' target/sp1/profile-baseline.json
+
+# Confirm SECP256K1_* syscalls appear in the signatures block.
 $ jq '.blocks.signatures.reexecution.syscalls | with_entries(select(.key | startswith("SECP256K1")))' \
     target/sp1/profile-baseline.json
 ```

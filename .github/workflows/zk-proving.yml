@@ -109,7 +109,7 @@ jobs:
         run: |
           rm -f "target/sp1/profile-${BASE_LABEL}.json" "target/sp1/profile-${HEAD_LABEL}.json"
           rm -f "target/sp1/profile-delta-${BASE_LABEL}-vs-${HEAD_LABEL}.md"
-          rm -f /tmp/profile.py /tmp/profile_delta.py /tmp/Makefile
+          rm -f /tmp/profile.py /tmp/profile_delta.py /tmp/Makefile /tmp/prover
 
       - name: Profile PR branch
         if: github.event_name == 'pull_request'
@@ -121,6 +121,7 @@ jobs:
           cp crates/sp1/profile.py /tmp/profile.py
           cp crates/sp1/profile_delta.py /tmp/profile_delta.py
           cp crates/sp1/Makefile /tmp/Makefile
+          cp target/bin/prover /tmp/prover
           git fetch --no-recurse-submodules origin ${{ github.base_ref }}
           git checkout FETCH_HEAD
 
@@ -142,6 +143,7 @@ jobs:
           cd crates/sp1 && make -f /tmp/Makefile profile-snapshot
           LABEL="$BASE_LABEL"
           PROFILE_SCRIPT=/tmp/profile.py
+          PROVER_BIN=/tmp/prover
 
       - name: Compare profiles
         if: github.event_name == 'pull_request'
