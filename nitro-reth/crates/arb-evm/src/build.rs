@@ -751,6 +751,13 @@ where
         self.touched_accounts.insert(sender);
         self.touched_accounts.insert(fees.escrow);
 
+        // The escrow is touched even at zero call value so the per-tx Finalise
+        // destructs it; a same-block zero-value redeem then resurrects it as a
+        // present-empty account, reproducing the leaf the state trie keeps.
+        if info.retry_value.is_zero() {
+            materialise_empty(db, overlay, fees.escrow, &mut self.touched_accounts);
+        }
+
         // 6. Create retryable ticket.
         let arb_state = ArbosState::open(db, SystemBurner::new(None, false))
             .map_err(BlockExecutionError::other)?;
@@ -1597,6 +1604,13 @@ where
                             apply_balance_op(db, overlay, f, t, a)
                         });
                         retry_pre_exec_undo = Some((sender, prepaid, escrow, value));
+
+                        // Record the pre-exec synthetic credits (escrow value +
+                        // prepaid gas) as transitions now. The EVM's own commit
+                        // would otherwise capture the transient prepaid mint as
+                        // the revert baseline of a freshly-created redeemer,
+                        // corrupting the account changeset and the stateRoot.
+                        overlay.drain_and_apply(db, &self.zombie_accounts);
 
                         // Set retry context for end-tx processing.
                         if let Some(hooks) = self.arb_hooks.as_mut() {
@@ -2929,17 +2943,18 @@ where
                 })
                 .collect();
 
-            // Mark deleted accounts as destroyed in the cache instead of
-            // removing them. Removing from cache causes the NEXT transaction
-            // in the same block to reload stale data from the database when
-            // it accesses the address (Entry::Vacant path in
-            // load_cache_account). Keeping the entry with account=None
-            // ensures subsequent accesses see a non-existent account —
-            // matching Go's stateObject.deleted=true behaviour in Finalise.
+            // Mark deleted accounts non-existent in the cache instead of
+            // removing them. Removing the entry would let the next same-block
+            // access reload stale data from the database (the Entry::Vacant
+            // path in load_cache_account). Keeping account=None with a
+            // non-existent status leaves a self-consistent entry, so both
+            // later accesses and any revert baseline captured from it see a
+            // genuinely absent account.
             for addr in &to_remove {
                 overlay.record_pre_touch(db, *addr);
                 if let Some(cached) = db.cache.accounts.get_mut(addr) {
                     cached.account = None;
+                    cached.status = revm_database::AccountStatus::LoadedNotExisting;
                 }
             }
             self.finalise_deleted.extend(to_remove);
@@ -2948,7 +2963,7 @@ where
         {
             let overlay = &mut self.state_overlay;
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            overlay.drain_and_apply(db);
+            overlay.drain_and_apply(db, &self.zombie_accounts);
         }
 
         Ok(gas_used)
@@ -3041,6 +3056,30 @@ fn apply_mint_to_state<DB: Database>(
             });
         }
     }
+}
+
+/// Materialise an account as present-empty if it does not yet exist (an EIP-161
+/// zero-value touch). The per-tx Finalise then destructs the empty result and
+/// records it in `finalise_deleted`, so a later zero-value transfer can
+/// resurrect it via `create_zombie_if_deleted`.
+fn materialise_empty<DB: Database>(
+    state: &mut State<DB>,
+    overlay: &mut StateOverlay,
+    addr: Address,
+    touched: &mut rustc_hash::FxHashSet<Address>,
+) {
+    overlay.record_pre_touch(state, addr);
+    let _ = state.load_cache_account(addr);
+    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+        if cached.account.is_none() {
+            cached.account = Some(revm_database::states::plain_account::PlainAccount {
+                info: revm_state::AccountInfo::default(),
+                storage: Default::default(),
+            });
+            cached.status = revm_database::AccountStatus::InMemoryChange;
+        }
+    }
+    touched.insert(addr);
 }
 
 /// Apply an unconditional SubBalance to the EVM state.
