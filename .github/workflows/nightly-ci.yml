@@ -14,6 +14,7 @@ permissions:
 jobs:
   # Only run on schedule
   tests-scheduled:
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +34,7 @@ jobs:
   # MEL test modes are gated out of default CI; run them nightly so master
   # coverage is preserved without blocking every PR.
   mel-tests-scheduled:
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
     uses: ./.github/workflows/_mel-go-test-suite.yml
     secrets: inherit
 
