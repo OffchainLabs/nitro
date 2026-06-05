@@ -55,6 +55,41 @@ docker compose up -d
 
 Both services start already synced to the snapshot block. The reth datadir is `arbreth-data/db`, and the shared `jwt.hex` inside `arbreth-data` authenticates the execution client and Nitro.
 
+## Older snapshots
+
+Archived snapshots at roughly 40M-block spacing. Each lives under the same `arbreth-sepolia/<block>/` path with its own `manifest.json`.
+
+| Block | Date | Size |
+|-------|------|------|
+| 13,984,099 | 2026-03-29 | 53 GiB |
+| 53,455,712 | 2026-04-06 | 202 GiB |
+| 89,962,814 | 2026-04-24 | 417 GiB |
+| 124,808,115 | 2026-05-07 | 596 GiB |
+| 165,696,725 | 2026-05-13 | 784 GiB |
+| 202,542,211 | 2026-05-18 | 942 GiB |
+| 242,809,010 | 2026-05-23 | 1086 GiB |
+
+Download any block by substituting its number, then extract and run the same way as above:
+
+```bash
+B=89962814
+aria2c -x16 -s16 https://snapshots-r2.arbreth.rs/arbreth-sepolia/$B/snapshot.tar.zst
+```
+
+`index.json` lists every snapshot with its block, size, URL, and checksum:
+
+```bash
+curl -s https://snapshots-r2.arbreth.rs/arbreth-sepolia/index.json
+```
+
+Older snapshots carry an MD5 in each `manifest.json`. Verify it before extracting:
+
+```bash
+B=89962814
+MD5=$(curl -s https://snapshots-r2.arbreth.rs/arbreth-sepolia/$B/manifest.json | grep -o '"md5": "[^"]*"' | cut -d'"' -f4)
+echo "$MD5  snapshot.tar.zst" | md5sum -c
+```
+
 ## Sync from genesis instead
 
 Skip the snapshot and let the node sync from genesis. See [Installation](/docs/installation).
