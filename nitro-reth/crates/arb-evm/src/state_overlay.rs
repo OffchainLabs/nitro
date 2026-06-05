@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use alloy_primitives::Address;
-use revm::{database::State, Database, DatabaseCommit};
+use revm::{database::State, Database};
 use revm_database::{AccountStatus as CacheAccountStatus, TransitionAccount};
-use revm_state::{Account, AccountInfo};
+use revm_state::AccountInfo;
 
 #[derive(Clone, Debug)]
 struct Entry {
@@ -12,16 +12,15 @@ struct Entry {
 }
 
 /// Records pre-mutation snapshots so direct State-cache writes performed
-/// outside revm's normal transition flow can be committed back at end of
-/// tx.
+/// outside revm's normal transition flow can be committed back as
+/// transitions at end of tx.
 ///
-/// Fresh-account credits (previously non-existent) are routed through
-/// [`State::commit`] so revm's `apply_account_state` produces a transition
-/// with the `Created` flag — required for the bundle's plain-state write
-/// to actually insert the new account. Modifications of already-existing
-/// accounts use a manually-built [`TransitionAccount`], preserving the
-/// diff the overlay captured even though `apply_balance_op` pre-mutated
-/// the cache for within-tx visibility.
+/// Every captured account — freshly created or modified — is emitted as a
+/// manually-built [`TransitionAccount`] whose `previous_info` is the snapshot
+/// taken before the first write. This keeps the revert baseline equal to the
+/// parent-block state even though `apply_balance_op` pre-mutates the cache for
+/// within-tx visibility; a transient pre-write (e.g. a retry tx's prepaid-gas
+/// mint) must never become the account's changeset baseline.
 #[derive(Default, Debug)]
 pub struct StateOverlay {
     entries: HashMap<Address, Entry>,
@@ -57,13 +56,16 @@ impl StateOverlay {
         );
     }
 
-    pub fn drain_and_apply<DB: Database>(&mut self, state: &mut State<DB>) {
+    pub fn drain_and_apply<DB: Database>(
+        &mut self,
+        state: &mut State<DB>,
+        zombies: &rustc_hash::FxHashSet<Address>,
+    ) {
         if self.entries.is_empty() {
             return;
         }
         let entries: Vec<(Address, Entry)> = self.entries.drain().collect();
 
-        let mut fresh_creates = alloy_primitives::map::HashMap::default();
         let mut existing_transitions: Vec<(Address, TransitionAccount)> = Vec::new();
 
         for (addr, entry) in entries {
@@ -85,6 +87,34 @@ impl StateOverlay {
                 .unwrap_or(true);
             let cur_empty = current_info.as_ref().map(|i| i.is_empty()).unwrap_or(true);
             if pre_empty && cur_empty {
+                // A present-empty result is normally pruned (EIP-161). An account
+                // resurrected this block by a zero-value transfer on pre-Stylus
+                // ArbOS must instead persist as a present-empty leaf. Its revert
+                // baseline is the genuinely absent parent state: a snapshot taken
+                // from a destructed cache entry can carry a stale non-empty
+                // status, so it is normalised to LoadedNotExisting, which reverts
+                // to "absent" rather than to a spurious present-empty account.
+                if zombies.contains(&addr) && current_info.is_some() {
+                    let previous_status = if entry.previous_info.is_none() {
+                        CacheAccountStatus::LoadedNotExisting
+                    } else {
+                        entry.previous_status
+                    };
+                    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+                        cached.status = CacheAccountStatus::InMemoryChange;
+                    }
+                    existing_transitions.push((
+                        addr,
+                        TransitionAccount {
+                            info: current_info.clone(),
+                            status: CacheAccountStatus::InMemoryChange,
+                            previous_info: entry.previous_info,
+                            previous_status,
+                            storage: Default::default(),
+                            storage_was_destroyed: false,
+                        },
+                    ));
+                }
                 continue;
             }
 
@@ -114,14 +144,27 @@ impl StateOverlay {
                     ));
 
             if was_non_existing && !cur_empty {
-                let mut account = Account {
-                    info: current_info.unwrap_or_default(),
-                    storage: Default::default(),
-                    ..Default::default()
-                };
-                account.mark_touch();
-                account.mark_created();
-                fresh_creates.insert(addr, account);
+                // Insert the new account via an explicit transition whose
+                // baseline is the recorded pre-existing state (absent for a
+                // freshly-seen account). Committing through revm's create path
+                // would capture the transient pre-mutation — e.g. a retry tx's
+                // prepaid-gas mint written only for within-tx visibility — as
+                // the revert baseline, corrupting the account changeset and the
+                // incremental-merkle trie.
+                if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+                    cached.status = CacheAccountStatus::InMemoryChange;
+                }
+                existing_transitions.push((
+                    addr,
+                    TransitionAccount {
+                        info: current_info.clone(),
+                        status: CacheAccountStatus::InMemoryChange,
+                        previous_info: entry.previous_info,
+                        previous_status: entry.previous_status,
+                        storage: Default::default(),
+                        storage_was_destroyed: false,
+                    },
+                ));
                 continue;
             }
 
@@ -178,9 +221,6 @@ impl StateOverlay {
             ));
         }
 
-        if !fresh_creates.is_empty() {
-            <State<DB> as DatabaseCommit>::commit(state, fresh_creates);
-        }
         if !existing_transitions.is_empty() {
             state.apply_transition(existing_transitions);
         }
@@ -220,7 +260,7 @@ mod tests {
             storage: Default::default(),
         });
 
-        overlay.drain_and_apply(&mut state);
+        overlay.drain_and_apply(&mut state, &Default::default());
         state.merge_transitions(BundleRetention::Reverts);
 
         let bundled = state
@@ -262,7 +302,7 @@ mod tests {
             p.info.balance = U256::from(42u64);
         }
 
-        overlay.drain_and_apply(&mut state);
+        overlay.drain_and_apply(&mut state, &Default::default());
         state.merge_transitions(BundleRetention::Reverts);
 
         let bundled = state
@@ -294,7 +334,7 @@ mod tests {
                 })
             }
         }
-        overlay.drain_and_apply(state);
+        overlay.drain_and_apply(state, &Default::default());
         state.merge_transitions(BundleRetention::Reverts);
         overlay.reset_tx();
     }
@@ -406,9 +446,68 @@ mod tests {
             storage: Default::default(),
         });
 
-        overlay.drain_and_apply(&mut state);
+        overlay.drain_and_apply(&mut state, &Default::default());
         state.merge_transitions(BundleRetention::Reverts);
 
         assert!(!state.bundle_state.state.contains_key(&transient));
+    }
+
+    #[test]
+    fn zombie_resurrection_reverts_to_absent() {
+        // A destructed account (cache account=None) carrying a stale status is
+        // resurrected present-empty via the zombie path. Forward it must be a
+        // present-empty leaf; on a block unwind it must revert to absent rather
+        // than be resurrected, whatever stale status the destruct left behind.
+        let addr = address!("00000000000000000000000000000000deadbeef");
+        for stale in [
+            CacheAccountStatus::InMemoryChange,
+            CacheAccountStatus::Loaded,
+            CacheAccountStatus::LoadedNotExisting,
+            CacheAccountStatus::LoadedEmptyEIP161,
+        ] {
+            let mut state = make_state();
+            let mut overlay = StateOverlay::new();
+            state.cache.accounts.insert(
+                addr,
+                CacheAccount {
+                    account: None,
+                    status: stale,
+                },
+            );
+            overlay.record_pre_touch(&mut state, addr);
+            let entry = state.cache.accounts.get_mut(&addr).unwrap();
+            entry.account = Some(PlainAccount {
+                info: AccountInfo::default(),
+                storage: Default::default(),
+            });
+            entry.status = CacheAccountStatus::InMemoryChange;
+
+            let zombies: rustc_hash::FxHashSet<Address> = std::iter::once(addr).collect();
+            overlay.drain_and_apply(&mut state, &zombies);
+            state.merge_transitions(BundleRetention::Reverts);
+
+            let forward = state
+                .bundle_state
+                .state
+                .get(&addr)
+                .and_then(|a| a.info.as_ref())
+                .cloned();
+            assert!(
+                forward.as_ref().is_some_and(|i| i.is_empty()),
+                "stale={stale:?}: zombie must persist present-empty forward, got {forward:?}"
+            );
+
+            state.bundle_state.revert(usize::MAX);
+            let reverted = state
+                .bundle_state
+                .state
+                .get(&addr)
+                .and_then(|a| a.info.as_ref())
+                .cloned();
+            assert!(
+                reverted.is_none(),
+                "stale={stale:?}: unwound zombie must be absent, got {reverted:?}"
+            );
+        }
     }
 }
