@@ -15,10 +15,24 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	// total time inside SequenceExpressLaneSubmission
+	expressLaneSequencingDurationHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/sequencingduration", nil, metrics.NewBoundedHistogramSample())
+	// wait to acquire roundInfoMutex
+	expressLaneMutexWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/mutexwait", nil, metrics.NewBoundedHistogramSample())
+	// time a submission sat in the reordering queue before publishing
+	expressLaneReorderResidencyHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/reorderresidency", nil, metrics.NewBoundedHistogramSample())
+	// pending (buffered, not yet publishable) submissions
+	expressLaneReorderBufferSizeGauge = metrics.NewRegisteredGauge("arb/sequencer/timeboost/expresslane/reorderbuffersize", nil)
+	// submissions arriving with a future sequence number
+	expressLaneFutureSeqCounter = metrics.NewRegisteredCounter("arb/sequencer/timeboost/expresslane/futureseqsubmissions", nil)
 )
 
 type expressLaneRoundInfo struct {
@@ -26,6 +40,9 @@ type expressLaneRoundInfo struct {
 
 	// The per-round sequence number reordering queue
 	msgBySequenceNumber map[uint64]*ExpressLaneSubmission
+
+	// arrival time per not-yet-published submission; deleted on publish, so len = pending backlog
+	arrivalTimeBySequenceNumber map[uint64]time.Time
 }
 
 type ExpressLaneService struct {
@@ -97,8 +114,15 @@ func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubm
 		return es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, msg.Transaction, msg.Options)
 	}
 
+	lockRequestedAt := time.Now()
 	es.roundInfoMutex.Lock()
 	defer es.roundInfoMutex.Unlock()
+	expressLaneMutexWaitHistogram.Update(time.Since(lockRequestedAt).Microseconds())
+
+	sequencingStart := time.Now()
+	defer func() {
+		expressLaneSequencingDurationHistogram.Update(time.Since(sequencingStart).Microseconds())
+	}()
 
 	// Below code block isn't a repetition, it prevents stale messages to be accepted during control transfer within or after the round ends!
 	controller, err := es.tracker.RoundController(msg.Round)
@@ -116,8 +140,9 @@ func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubm
 	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
 	if !es.roundInfo.Contains(msg.Round) {
 		es.roundInfo.Add(msg.Round, &expressLaneRoundInfo{
-			0,
-			make(map[uint64]*ExpressLaneSubmission),
+			sequence:                    0,
+			msgBySequenceNumber:         make(map[uint64]*ExpressLaneSubmission),
+			arrivalTimeBySequenceNumber: make(map[uint64]time.Time),
 		})
 	}
 	roundInfo, _ := es.roundInfo.Get(msg.Round)
@@ -146,11 +171,19 @@ func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubm
 		if msg.SequenceNumber > roundInfo.sequence+seqConfig.MaxFutureSequenceDistance {
 			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.MaxFutureSequenceDistance)
 		}
-		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
+		expressLaneFutureSeqCounter.Inc(1)
+		log.Info("Received express lane submission with future sequence number; buffering until predecessors arrive",
+			"round", msg.Round,
+			"SequenceNumber", msg.SequenceNumber,
+			"expectedSequenceNumber", roundInfo.sequence,
+			"gap", msg.SequenceNumber-roundInfo.sequence,
+			"txHash", msg.Transaction.Hash(),
+		)
 	}
 
 	// Put into the sequence number map.
 	roundInfo.msgBySequenceNumber[msg.SequenceNumber] = msg
+	roundInfo.arrivalTimeBySequenceNumber[msg.SequenceNumber] = time.Now()
 
 	if es.redisCoordinator != nil {
 		// Persist accepted expressLane txs to redis
@@ -182,9 +215,23 @@ func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubm
 				retErr = err
 			}
 		}
+		if arrival, ok := roundInfo.arrivalTimeBySequenceNumber[roundInfo.sequence]; ok {
+			residency := time.Since(arrival)
+			expressLaneReorderResidencyHistogram.Update(residency.Microseconds())
+			if residency > time.Second {
+				log.Info("Express lane tx waited in reordering queue before being published",
+					"round", msg.Round,
+					"SequenceNumber", roundInfo.sequence,
+					"residency", residency,
+					"txHash", nextMsg.Transaction.Hash(),
+				)
+			}
+			delete(roundInfo.arrivalTimeBySequenceNumber, roundInfo.sequence)
+		}
 		// Increase the global round sequence number.
 		roundInfo.sequence += 1
 	}
+	expressLaneReorderBufferSizeGauge.Update(int64(len(roundInfo.arrivalTimeBySequenceNumber)))
 	es.roundInfo.Add(msg.Round, roundInfo)
 
 	if es.redisCoordinator != nil {
@@ -212,7 +259,11 @@ func (es *ExpressLaneService) SyncFromRedis() {
 	roundInfo, exists := es.roundInfo.Get(currentRound)
 	if !exists {
 		// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
-		roundInfo = &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)}
+		roundInfo = &expressLaneRoundInfo{
+			sequence:                    0,
+			msgBySequenceNumber:         make(map[uint64]*ExpressLaneSubmission),
+			arrivalTimeBySequenceNumber: make(map[uint64]time.Time),
+		}
 	}
 	if redisSeqCount > roundInfo.sequence {
 		roundInfo.sequence = redisSeqCount

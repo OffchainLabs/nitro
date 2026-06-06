@@ -36,6 +36,10 @@ var (
 	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/accepted", nil)
 	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/rejected", nil)
 	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/accepted", nil)
+	// prechecker's own express-lane work (validate, StateAt, PreCheckTx, filtering)
+	expressLanePreCheckOnlyHistogram = metrics.NewRegisteredHistogram("arb/txprechecker/expresslane/precheckonly", nil, metrics.NewBoundedHistogramSample())
+	// downstream (sequencer) express-lane publish
+	expressLanePublishDownstreamHistogram = metrics.NewRegisteredHistogram("arb/txprechecker/expresslane/publishdownstream", nil, metrics.NewBoundedHistogramSample())
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -261,6 +265,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 		log.Error("ExpressLaneTracker not properly initialized in TxPreChecker, rejecting transaction.", "msg", msg)
 		return errors.New("express lane server misconfiguration")
 	}
+	preCheckStart := time.Now()
 	err := c.expressLaneTracker.ValidateExpressLaneTx(msg)
 	if err != nil {
 		return err
@@ -282,7 +287,25 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err := c.checkFilteredAddresses(ctx, msg.Transaction, block); err != nil {
 		return err
 	}
-	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
+	precheckOnly := time.Since(preCheckStart)
+	expressLanePreCheckOnlyHistogram.Update(precheckOnly.Microseconds())
+
+	publishStart := time.Now()
+	err = c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
+	downstream := time.Since(publishStart)
+	expressLanePublishDownstreamHistogram.Update(downstream.Microseconds())
+
+	if total := precheckOnly + downstream; total > 100*time.Millisecond {
+		log.Info("Slow express lane tx through prechecker+sequencer publish path",
+			"total", total,
+			"precheckOnly", precheckOnly,
+			"downstream", downstream,
+			"round", msg.Round,
+			"seqNum", msg.SequenceNumber,
+			"txHash", msg.Transaction.Hash(),
+		)
+	}
+	return err
 }
 
 func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {

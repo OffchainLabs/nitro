@@ -77,6 +77,8 @@ var (
 	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
 	// number of blocks ended because of exhausting the transactions to sequence
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
+	// forwarder/pause wait + validation before sequencing an express lane submission
+	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
 )
 
 type SequencerConfig struct {
@@ -643,6 +645,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return errors.New("timeboost not enabled")
 	}
 
+	preSequenceWaitStart := time.Now()
 	forwarder, err := s.getForwarder(ctx)
 	if err != nil {
 		return err
@@ -665,6 +668,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if forwarder != nil {
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
+	expressLanePreSequenceWaitHistogram.Update(time.Since(preSequenceWaitStart).Microseconds())
 
 	return s.expressLaneService.SequenceExpressLaneSubmission(msg)
 }
