@@ -41,7 +41,10 @@ type expressLaneRoundInfo struct {
 	// The per-round sequence number reordering queue
 	msgBySequenceNumber map[uint64]*ExpressLaneSubmission
 
-	// arrival time per not-yet-published submission; deleted on publish, so len = pending backlog
+	// arrival time per not-yet-published submission; deleted on publish, so len = pending backlog.
+	// Thread safe because every access to arrivalTimeBySequenceNumber
+	// already happens while es.roundInfoMutex is held, exactly like
+	// the existing msgBySequenceNumber map it sits next to:
 	arrivalTimeBySequenceNumber map[uint64]time.Time
 }
 
