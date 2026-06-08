@@ -63,6 +63,30 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         Ok(c) => c,
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
+    if let Some(r) = crate::reject_nonpayable_value(input.value, input.data, gas_limit, &[]) {
+        return r;
+    }
+    if let Some(r) = crate::reject_static_write(
+        input.is_static,
+        input.data,
+        gas_limit,
+        &[
+            [0xed, 0xa1, 0x12, 0x2c],
+            [0xf0, 0xb2, 0x1a, 0x41],
+            [0xc4, 0xd2, 0x52, 0xf5],
+            [0xc9, 0xf9, 0x5d, 0x32],
+        ],
+    ) {
+        return r;
+    }
+    if let Some(r) = crate::reject_delegate_nonpure(
+        input.target_address != input.bytecode_address,
+        input.data,
+        gas_limit,
+        &[],
+    ) {
+        return r;
+    }
 
     use IArbRetryableTx::ArbRetryableTxCalls as Calls;
     let result = match call {
@@ -385,14 +409,14 @@ fn handle_keepalive(
     let update_cost = nbytes.div_ceil(32) * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
 
-    // Init already covered the framework SLOAD; body adds the remaining
-    // 7 retryable SLOADs, 3 writes (timeout/ttl bumps), 2 result/COPY, the
-    // calldata-bytes "phantom" update_cost (a stylus-cache style warm cost
-    // — Read), the LifetimeExtended log, and the reap-price fee.
+    // Init already covered the framework SLOAD and argsCost; body adds the
+    // remaining 7 retryable SLOADs, 3 writes (timeout/ttl bumps), the single
+    // result word, the calldata-bytes "phantom" update_cost (a stylus-cache
+    // style warm cost — Read), the LifetimeExtended log, and the reap-price fee.
     crate::charge_storage_read(gas_used, ctx, 7 * SLOAD_GAS + update_cost);
     crate::charge_storage_write(gas_used, ctx, 3 * SSTORE_GAS);
     crate::charge_history_growth(gas_used, ctx, event_cost);
-    crate::charge_computation(gas_used, ctx, 2 * COPY_GAS + RETRYABLE_REAP_PRICE);
+    crate::charge_computation(gas_used, ctx, COPY_GAS + RETRYABLE_REAP_PRICE);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -409,6 +433,14 @@ fn handle_cancel(
     let gas_limit = input.gas;
     let caller = input.caller;
     let now = current_timestamp(input);
+
+    {
+        let current_retryable = ctx.tx_snapshot().retryable_id;
+        if !current_retryable.is_zero() && current_retryable == ticket_id {
+            return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+        }
+    }
+
     load_arbos(input)?;
 
     let internals = input.internals_mut();
@@ -438,20 +470,13 @@ fn handle_cancel(
     ));
 
     let calldata_words = calldata_size.div_ceil(32);
-    let clear_bytes_cost = if calldata_size > 0 {
-        (calldata_words + 1) * SSTORE_ZERO_GAS
-    } else {
-        0
-    };
+    // Length-slot reset is charged even for empty calldata.
+    let clear_bytes_cost = (calldata_words + 1) * SSTORE_ZERO_GAS;
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS;
 
-    // Init already covered the framework SLOAD; body adds 5 retryable
-    // SLOADs (lookup + auth + state reads), 7 SSTORE-resets for clearing
-    // the retryable record + the calldata-byte zeroing.
     crate::charge_storage_read(gas_used, ctx, 5 * SLOAD_GAS);
     crate::charge_storage_write(gas_used, ctx, 7 * SSTORE_ZERO_GAS + clear_bytes_cost);
     crate::charge_history_growth(gas_used, ctx, event_cost);
-    crate::charge_computation(gas_used, ctx, COPY_GAS);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -519,10 +544,12 @@ fn compute_actual_backlog_cost(
             return Ok(total);
         }
     }
-    Ok(legacy_actual_backlog_cost(
-        ctx.block.current_gas_backlog(),
-        gas_to_donate,
-    ))
+    let mut cost = legacy_actual_backlog_cost(ctx.block.current_gas_backlog(), gas_to_donate);
+    if arbos_version >= arb_ver::ARBOS_VERSION_50 {
+        // Matches the constraints-length read reserved in compute_backlog_update_cost.
+        cost += SLOAD_GAS;
+    }
+    Ok(cost)
 }
 
 fn legacy_actual_backlog_cost(current_backlog: u64, gas_to_donate: u64) -> u64 {

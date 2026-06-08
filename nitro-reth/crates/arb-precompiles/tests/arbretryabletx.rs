@@ -538,12 +538,13 @@ fn cancel_with_empty_calldata_charges_full_formula() {
             U256::from_be_slice(beneficiary.as_slice()),
         )
         .call(arbretryabletx, &calldata("cancel(bytes32)", &[ticket_id]));
-    // argsCost(3) + 6 SLOAD + 7 SSTORE_ZERO + LOG2(375+750) + resultCost(3)
-    //   = 3 + 4800 + 35000 + 1125 + 3 = 40_931.
+    // argsCost(3) + 6 SLOAD + 7 SSTORE_ZERO (record) + 1 SSTORE_ZERO (calldata
+    // length-slot reset, always cleared) + LOG2(375+750); the empty return
+    // carries no result cost = 3 + 4800 + 40000 + 1125 = 45_928.
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS;
     assert_eq!(
         run.gas_used(),
-        6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + event_cost + 2 * COPY_GAS,
+        6 * SLOAD_GAS + 8 * SSTORE_ZERO_GAS + event_cost + COPY_GAS,
     );
 }
 
@@ -585,7 +586,7 @@ fn keepalive_with_empty_calldata_charges_full_formula() {
         arbretryabletx,
         &calldata("keepalive(bytes32)", &[ticket_id]),
     );
-    // argsCost(3) + 8 SLOAD + 3 SSTORE + 2 COPY + updateCost(7*200=1400)
+    // argsCost(1 word) + 8 SLOAD + 3 SSTORE + 1-word result + updateCost(7*200=1400)
     //   + event(375+750+256=1381) + reap(58000).
     let update_cost = 7 * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
@@ -593,7 +594,7 @@ fn keepalive_with_empty_calldata_charges_full_formula() {
         run.gas_used(),
         8 * SLOAD_GAS
             + 3 * SSTORE_GAS
-            + 3 * COPY_GAS
+            + 2 * COPY_GAS
             + update_cost
             + event_cost
             + RETRYABLE_REAP_PRICE,

@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU64, AtomicUsize},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
         Arc, OnceLock,
     },
 };
@@ -70,6 +70,10 @@ pub struct BlockCtx {
     pub allow_debug_precompiles: bool,
     /// Live counter mutated by the executor between transactions in the same block.
     pub current_gas_backlog: AtomicU64,
+    /// Set by the fee-collector setters when a transaction changes the network
+    /// or infrastructure fee account; the executor refreshes its cached
+    /// collectors and clears it after the transaction.
+    pub fee_collectors_dirty: AtomicBool,
     pub chain_caches: Arc<ChainCaches>,
     pub recent_wasms: Mutex<RecentWasms>,
     /// Per-block descriptor cache for the detached [`ArbosState`].
@@ -131,6 +135,7 @@ impl BlockCtx {
             l2_block_number,
             allow_debug_precompiles,
             current_gas_backlog: AtomicU64::new(0),
+            fee_collectors_dirty: AtomicBool::new(false),
             chain_caches,
             recent_wasms: Mutex::new(RecentWasms::default()),
             arbos_state: OnceLock::new(),

@@ -45,6 +45,25 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         Ok(c) => c,
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
+    if let Some(r) = crate::reject_nonpayable_value(input.value, input.data, gas_limit, &[]) {
+        return r;
+    }
+    if let Some(r) = crate::reject_static_write(
+        input.is_static,
+        input.data,
+        gas_limit,
+        &[[0xa6, 0xf0, 0xf7, 0xc7], [0x1c, 0x67, 0x9a, 0x3c]],
+    ) {
+        return r;
+    }
+    if let Some(r) = crate::reject_delegate_nonpure(
+        input.target_address != input.bytecode_address,
+        input.data,
+        gas_limit,
+        &[],
+    ) {
+        return r;
+    }
 
     use IArbNativeTokenManager::ArbNativeTokenManagerCalls;
     let result = match call {

@@ -51,6 +51,29 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         Ok(c) => c,
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
+    if let Some(r) = crate::reject_nonpayable_value(input.value, input.data, gas_limit, &[]) {
+        return r;
+    }
+    if let Some(r) = crate::reject_static_write(
+        input.is_static,
+        input.data,
+        gas_limit,
+        &[
+            [0x4c, 0xea, 0xc8, 0x17],
+            [0xe7, 0x3a, 0xc9, 0xf2],
+            [0xce, 0x97, 0x20, 0x13],
+        ],
+    ) {
+        return r;
+    }
+    if let Some(r) = crate::reject_delegate_nonpure(
+        input.target_address != input.bytecode_address,
+        input.data,
+        gas_limit,
+        &[],
+    ) {
+        return r;
+    }
 
     use IArbWasmCache::ArbWasmCacheCalls;
     let result = match call {

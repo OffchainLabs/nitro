@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "arb-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "arb-chainspec"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-genesis",
  "alloy-hardforks",
@@ -1084,7 +1084,7 @@ dependencies = [
 
 [[package]]
 name = "arb-context"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-primitives",
  "arb-primitives",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "arb-errors"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arb-storage-errors",
  "thiserror 2.0.18",
@@ -1103,7 +1103,7 @@ dependencies = [
 
 [[package]]
 name = "arb-evm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1143,7 +1143,7 @@ dependencies = [
 
 [[package]]
 name = "arb-executor-tests"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1177,7 +1177,7 @@ dependencies = [
 
 [[package]]
 name = "arb-fuzz"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -1199,11 +1199,11 @@ dependencies = [
 
 [[package]]
 name = "arb-math"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "arb-node"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1286,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "arb-payload"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1305,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "arb-precompiles"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "arb-primitives"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1356,7 +1356,7 @@ dependencies = [
 
 [[package]]
 name = "arb-reth"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "arb-node",
@@ -1386,7 +1386,7 @@ dependencies = [
 
 [[package]]
 name = "arb-rpc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "arb-spec-tests"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-primitives",
  "arb-storage",
@@ -1455,7 +1455,7 @@ dependencies = [
 
 [[package]]
 name = "arb-storage"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-evm",
  "alloy-primitives",
@@ -1475,7 +1475,7 @@ dependencies = [
 
 [[package]]
 name = "arb-storage-errors"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-primitives",
  "thiserror 2.0.18",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "arb-stylus"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-primitives",
  "arb-chainspec",
@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "arb-test"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-primitives",
  "anyhow",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "arb-test-harness"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1551,7 +1551,7 @@ dependencies = [
 
 [[package]]
 name = "arb-test-utils"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-primitives",
  "arb-chainspec",
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "arb-txpool"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -1587,7 +1587,7 @@ dependencies = [
 
 [[package]]
 name = "arbos"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",

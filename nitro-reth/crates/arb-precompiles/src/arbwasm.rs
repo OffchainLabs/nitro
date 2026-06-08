@@ -48,6 +48,31 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
 
+    if let Some(r) = crate::reject_nonpayable_value(
+        input.value,
+        input.data,
+        gas_limit,
+        &[[0x58, 0xc7, 0x80, 0xc2], [0xc6, 0x89, 0xba, 0xd5]],
+    ) {
+        return r;
+    }
+    if let Some(r) = crate::reject_static_write(
+        input.is_static,
+        input.data,
+        gas_limit,
+        &[[0x58, 0xc7, 0x80, 0xc2], [0xc6, 0x89, 0xba, 0xd5]],
+    ) {
+        return r;
+    }
+    if let Some(r) = crate::reject_delegate_nonpure(
+        input.target_address != input.bytecode_address,
+        input.data,
+        gas_limit,
+        &[],
+    ) {
+        return r;
+    }
+
     use IArbWasm::ArbWasmCalls as Calls;
     match &call {
         Calls::activateProgram(c) => return handle_activate_program(input, ctx, c.program),
@@ -210,7 +235,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             )
         }
         Calls::programVersion(c) => {
-            let codehash = get_account_codehash(&mut input, c.program)?;
+            let codehash = get_account_codehash(&mut input, ctx, &mut gas_used, c.program)?;
             let (params, program) =
                 load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
@@ -225,7 +250,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ok_u256(&mut gas_used, ctx, input.gas, U256::from(program.version))
         }
         Calls::programInitGas(c) => {
-            let codehash = get_account_codehash(&mut input, c.program)?;
+            let codehash = get_account_codehash(&mut input, ctx, &mut gas_used, c.program)?;
             let (params, program) =
                 load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
@@ -253,7 +278,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             )
         }
         Calls::programMemoryFootprint(c) => {
-            let codehash = get_account_codehash(&mut input, c.program)?;
+            let codehash = get_account_codehash(&mut input, ctx, &mut gas_used, c.program)?;
             let (params, program) =
                 load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
@@ -268,7 +293,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
             ok_u256(&mut gas_used, ctx, input.gas, U256::from(program.footprint))
         }
         Calls::programTimeLeft(c) => {
-            let codehash = get_account_codehash(&mut input, c.program)?;
+            let codehash = get_account_codehash(&mut input, ctx, &mut gas_used, c.program)?;
             let (params, program) =
                 load_params_and_program(&mut input, ctx, &mut gas_used, codehash)?;
             if let Err(r) = validate_active_program(
@@ -348,19 +373,25 @@ fn load_params_and_program(
     Ok((params, program))
 }
 
-/// Get the code hash for an account address.
+/// Read an account's code hash, charging the per-lookup code-hash storage read.
 fn get_account_codehash(
     input: &mut PrecompileInput<'_>,
+    ctx: &ArbPrecompileCtx,
+    gas_used: &mut u64,
     address: Address,
 ) -> Result<B256, ArbPrecompileError> {
-    crate::without_access_list_effect(input.internals_mut(), |internals| {
-        Ok(internals
-            .load_account(address)
-            .map_err(ArbPrecompileError::fatal)?
-            .data
-            .info
-            .code_hash)
-    })
+    let codehash = crate::without_access_list_effect(input.internals_mut(), |internals| {
+        Ok::<_, ArbPrecompileError>(
+            internals
+                .load_account(address)
+                .map_err(ArbPrecompileError::fatal)?
+                .data
+                .info
+                .code_hash,
+        )
+    })?;
+    crate::charge_storage_read(gas_used, ctx, STORAGE_CODE_HASH_COST);
+    Ok(codehash)
 }
 
 /// Returns ProgramNotActivated, ProgramNeedsUpgrade(progV, paramsV),
@@ -531,6 +562,19 @@ fn handle_activate_program(
     };
     crate::charge_storage_read(&mut gas_used, ctx, SLOAD_GAS);
 
+    // An already-current program short-circuits before reconstructing its WASM,
+    // so a fragmented root is not billed for fragment reads it never needs.
+    if existing_program.version == params.version
+        && existing_program.age_seconds <= (params.expiry_days as u64) * 86400
+    {
+        return revert_sol_error(
+            &mut gas_used,
+            ctx,
+            IArbWasm::ProgramUpToDate {}.abi_encode(),
+            input.gas,
+        );
+    }
+
     if code_bytes.is_empty() {
         return revert_sol_error(
             &mut gas_used,
@@ -616,18 +660,6 @@ fn handle_activate_program(
     };
 
     let was_cached = existing_program.cached;
-
-    if existing_program.version == params.version {
-        let age = existing_program.age_seconds;
-        if age <= (params.expiry_days as u64) * 86400 {
-            return revert_sol_error(
-                &mut gas_used,
-                ctx,
-                IArbWasm::ProgramUpToDate {}.abi_encode(),
-                input.gas,
-            );
-        }
-    }
 
     let gas_available = input.gas.saturating_sub(gas_used);
     let mut gas_for_prover = gas_available;
@@ -840,15 +872,6 @@ fn handle_codehash_keepalive(
             input.gas,
         );
     }
-    let age = hours_to_age(time, program.activated_at);
-    if age > (params.expiry_days as u64) * 86400 {
-        return revert_sol_error(
-            &mut gas_used,
-            ctx,
-            IArbWasm::ProgramExpired { ageInSeconds: age }.abi_encode(),
-            input.gas,
-        );
-    }
     if program.version != params.version {
         return revert_sol_error(
             &mut gas_used,
@@ -858,6 +881,15 @@ fn handle_codehash_keepalive(
                 stylusVersion: params.version,
             }
             .abi_encode(),
+            input.gas,
+        );
+    }
+    let age = hours_to_age(time, program.activated_at);
+    if age > (params.expiry_days as u64) * 86400 {
+        return revert_sol_error(
+            &mut gas_used,
+            ctx,
+            IArbWasm::ProgramExpired { ageInSeconds: age }.abi_encode(),
             input.gas,
         );
     }

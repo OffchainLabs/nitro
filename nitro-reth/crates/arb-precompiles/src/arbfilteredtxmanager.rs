@@ -35,6 +35,9 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
 
     let gas_limit = input.gas;
 
+    // Value, read-only and delegate rejections are handled inside the inner
+    // handlers so the free-access wrapper's gas override still applies.
+
     // Mimic the reference FreeAccessPrecompile wrapper: open ArbOS state and
     // check `filterers.IsMember(caller)` (2 SLOAD = 1600 gas total), without
     // charging argsCost. Then always run the inner method. The wrapper keeps
@@ -171,6 +174,10 @@ fn handle_is_tx_filtered(
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
     let gas_limit = input.gas;
+    // A view method rejects call value and DELEGATECALL.
+    if !input.value.is_zero() || input.target_address != input.bytecode_address {
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+    }
     load_accounts(input)?;
 
     let internals = input.internals_mut();
@@ -205,6 +212,10 @@ fn handle_add_filtered_tx(
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
+    // Value, read-only and delegate context revert via the wrapper's gas.
+    if !input.value.is_zero() || input.is_static || input.target_address != input.bytecode_address {
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+    }
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, gas_used, caller, ctx)? {
@@ -247,6 +258,10 @@ fn handle_delete_filtered_tx(
 ) -> PrecompileResult {
     let gas_limit = input.gas;
     let caller = input.caller;
+    // Value, read-only and delegate context revert via the wrapper's gas.
+    if !input.value.is_zero() || input.is_static || input.target_address != input.bytecode_address {
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+    }
     load_accounts(input)?;
 
     if !is_transaction_filterer(input, gas_used, caller, ctx)? {

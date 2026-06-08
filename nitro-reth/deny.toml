@@ -11,16 +11,12 @@ all-features = true
 yanked = "warn"
 ignore = [
     "RUSTSEC-2021-0139", # ansi_term unmaintained - transitive via vendored wasmer
-    "RUSTSEC-2021-0145", # atty potential unaligned read - transitive via vendored wasmer
     "RUSTSEC-2024-0370", # proc-macro-error unmaintained - transitive via reth
+    "RUSTSEC-2026-0173", # proc-macro-error2 unmaintained - transitive via reth
     "RUSTSEC-2024-0375", # atty unmaintained - transitive via vendored wasmer
     "RUSTSEC-2024-0388", # derivative unmaintained - transitive via reth
     "RUSTSEC-2024-0436", # paste unmaintained - transitive via reth
-    "RUSTSEC-2025-0055", # tracing-subscriber ANSI escape - transitive via revm/ark-relations
-    "RUSTSEC-2025-0057", # fxhash unmaintained - transitive via reth
     "RUSTSEC-2025-0141", # bincode unmaintained - transitive via reth
-    "RUSTSEC-2026-0002", # lru IterMut stacked borrows - transitive via reth/discv5
-    "RUSTSEC-2026-0037", # quinn-proto DoS - transitive via reth/reqwest
     "RUSTSEC-2026-0041", # lz4_flex decompression - transitive via reth
     "RUSTSEC-2026-0067", # tar unpack_in symlink - transitive via reth
     "RUSTSEC-2026-0068", # tar PAX size headers - transitive via reth

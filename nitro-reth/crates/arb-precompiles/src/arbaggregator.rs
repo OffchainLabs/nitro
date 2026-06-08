@@ -41,6 +41,29 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         Ok(c) => c,
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
+    if let Some(r) = crate::reject_nonpayable_value(input.value, input.data, gas_limit, &[]) {
+        return r;
+    }
+    if let Some(r) = crate::reject_static_write(
+        input.is_static,
+        input.data,
+        gas_limit,
+        &[
+            [0xdf, 0x41, 0xe1, 0xe2],
+            [0x29, 0x14, 0x97, 0x99],
+            [0x5b, 0xe6, 0x88, 0x8b],
+        ],
+    ) {
+        return r;
+    }
+    if let Some(r) = crate::reject_delegate_nonpure(
+        input.target_address != input.bytecode_address,
+        input.data,
+        gas_limit,
+        &[],
+    ) {
+        return r;
+    }
 
     use IArbAggregator::ArbAggregatorCalls as Calls;
     let result = match call {
@@ -184,7 +207,13 @@ fn handle_set_fee_collector(
     poster_state
         .set_pay_to(internals, new_collector)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_storage_write(gas_used, ctx, SSTORE_GAS);
+    // The write cost depends on the value: a zero collector resets the slot.
+    let write_cost = if new_collector.is_zero() {
+        SSTORE_ZERO_GAS
+    } else {
+        SSTORE_GAS
+    };
+    crate::charge_storage_write(gas_used, ctx, write_cost);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -258,11 +287,9 @@ fn handle_add_batch_poster(
     let already = bpt
         .contains_poster(internals, new_poster)
         .map_err(ArbPrecompileError::fatal)?;
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
 
     if already {
-        // Total stays at `2*SLOAD + COPY` from the original receipt: init's
-        // framework SLOAD + the is_owner check already cover the 2 SLOADs;
-        // init's argsCost L2Calldata word covers the trailing COPY.
         return Ok(PrecompileOutput::new(
             (*gas_used).min(gas_limit),
             vec![].into(),

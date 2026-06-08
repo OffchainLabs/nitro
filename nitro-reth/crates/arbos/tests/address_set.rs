@@ -24,7 +24,7 @@ fn empty_set_size_zero_membership_false() {
     let backend = unsafe { &mut *state_ptr };
     assert_eq!(s.size(backend).unwrap(), 0);
     assert!(!s.is_member(backend, Address::ZERO).unwrap());
-    s.remove(backend, Address::ZERO, ARBOS_V30).unwrap();
+    s.remove(backend, Address::ZERO, ARBOS_V30, &mut 0).unwrap();
     assert_eq!(s.size(backend).unwrap(), 0);
     assert!(s.get_any_member(backend).unwrap().is_none());
 }
@@ -51,14 +51,14 @@ fn add_remove_size_consistency() {
     assert!(s.is_member(backend, a2).unwrap());
     assert!(!s.is_member(backend, a3).unwrap());
 
-    s.remove(backend, a1, ARBOS_V30).unwrap();
+    s.remove(backend, a1, ARBOS_V30, &mut 0).unwrap();
     assert_eq!(s.size(backend).unwrap(), 1);
     assert!(!s.is_member(backend, a1).unwrap());
     assert!(s.is_member(backend, a2).unwrap());
 
     s.add(backend, a3).unwrap();
     assert_eq!(s.size(backend).unwrap(), 2);
-    s.remove(backend, a3, ARBOS_V30).unwrap();
+    s.remove(backend, a3, ARBOS_V30, &mut 0).unwrap();
     assert_eq!(s.size(backend).unwrap(), 1);
 
     s.add(backend, a1).unwrap();
@@ -127,7 +127,7 @@ fn random_add_remove_keeps_invariants() {
         let addr = pool[(state >> 33) as usize % pool.len()];
         let remove = (state & 1) == 0;
         if remove {
-            s.remove(backend, addr, ARBOS_V30).unwrap();
+            s.remove(backend, addr, ARBOS_V30, &mut 0).unwrap();
             model.remove(&addr);
         } else {
             s.add(backend, addr).unwrap();

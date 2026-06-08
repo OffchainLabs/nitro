@@ -212,6 +212,74 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
     ))
 }
 
+/// Reject call value sent to a non-payable method, reverting and consuming all
+/// forwarded gas. `payable` lists the selectors that may receive value. Call
+/// only once the precompile is active for the current ArbOS version.
+pub fn reject_nonpayable_value(
+    value: alloy_primitives::U256,
+    data: &[u8],
+    gas_limit: u64,
+    payable: &[[u8; 4]],
+) -> Option<PrecompileResult> {
+    if value.is_zero() {
+        return None;
+    }
+    if payable.contains(&input_selector(data)) {
+        return None;
+    }
+    Some(burn_all_revert(gas_limit))
+}
+
+fn input_selector(data: &[u8]) -> [u8; 4] {
+    data.get(..4)
+        .and_then(|s| s.try_into().ok())
+        .unwrap_or([0u8; 4])
+}
+
+/// Reject a state-modifying method invoked under STATICCALL, reverting and
+/// consuming all forwarded gas. `write` lists the state-modifying selectors.
+pub fn reject_static_write(
+    is_static: bool,
+    data: &[u8],
+    gas_limit: u64,
+    write: &[[u8; 4]],
+) -> Option<PrecompileResult> {
+    if is_static && write.contains(&input_selector(data)) {
+        return Some(burn_all_revert(gas_limit));
+    }
+    None
+}
+
+/// Like [`reject_static_write`] but for a mostly-writing precompile: under
+/// read-only, reject every method except the listed read-only (view/pure)
+/// selectors.
+pub fn reject_static_unless_read(
+    is_static: bool,
+    data: &[u8],
+    gas_limit: u64,
+    reads: &[[u8; 4]],
+) -> Option<PrecompileResult> {
+    if is_static && !reads.contains(&input_selector(data)) {
+        return Some(burn_all_revert(gas_limit));
+    }
+    None
+}
+
+/// Reject a non-`pure` method invoked via DELEGATECALL, reverting and consuming
+/// all forwarded gas. `is_delegate` is true when acting as an address other than
+/// the precompile; `pure` lists the stateless selectors.
+pub fn reject_delegate_nonpure(
+    is_delegate: bool,
+    data: &[u8],
+    gas_limit: u64,
+    pure: &[[u8; 4]],
+) -> Option<PrecompileResult> {
+    if is_delegate && !pure.contains(&input_selector(data)) {
+        return Some(burn_all_revert(gas_limit));
+    }
+    None
+}
+
 /// Emit a pre-encoded Solidity custom-error payload (selector + ABI args)
 /// as a revert. Adds the copy cost for the payload to the accumulated gas,
 /// attributed to `Computation` to mirror the reference framework's

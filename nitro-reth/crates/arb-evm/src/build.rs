@@ -529,6 +529,28 @@ where
     >,
     R::Transaction: TransactionEnvelope,
 {
+    /// Re-read the network and infrastructure fee collectors from committed
+    /// ArbOS state into the cached context and hooks.
+    #[cold]
+    #[inline(never)]
+    fn refresh_fee_collectors(&mut self) {
+        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+        if let Ok(arb_state) = ArbosState::open(db, SystemBurner::new(None, false)) {
+            // SAFETY: see `Storage::state_mut()` invariant.
+            let state_ref = unsafe { arb_state.backing_storage.state_mut() };
+            if let Ok(net) = arb_state.network_fee_account(state_ref) {
+                self.arb_ctx.network_fee_account = net;
+            }
+            if let Ok(infra) = arb_state.infra_fee_account(state_ref) {
+                self.arb_ctx.infra_fee_account = infra;
+            }
+        }
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            hooks.network_fee_account = self.arb_ctx.network_fee_account;
+            hooks.infra_fee_account = self.arb_ctx.infra_fee_account;
+        }
+    }
+
     /// Handle SubmitRetryableTx: no EVM execution, all state changes done directly.
     ///
     /// Returns a synthetic execution result (endTxNow=true).
@@ -2387,13 +2409,22 @@ where
             }
         }
 
-        // Capture EVM-modified addresses for dirty tracking before commit consumes output.
         for addr in output.result.state.keys() {
             self.touched_accounts.insert(*addr);
         }
 
-        // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
+
+        // A fee-collector setter flags the change; refresh the cached collectors
+        // so it takes effect within the block, including the setting tx's own fee.
+        if self
+            .precompile_ctx
+            .block
+            .fee_collectors_dirty
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            self.refresh_fee_collectors();
+        }
 
         // Redirect the coinbase tip to network_fee_account when
         // CollectTips is on. tx_env.gas_limit is shrunk by poster_gas before

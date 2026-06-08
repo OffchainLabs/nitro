@@ -160,7 +160,7 @@ fn apply_action(
             let v = harness.arbos_version();
             let root = harness.root_storage();
             let s = open_address_set(root.open_sub_storage(&[CHAIN_OWNER_SUBSPACE]));
-            s.remove(unsafe { &mut *state_ptr }, *owner, v)
+            s.remove(unsafe { &mut *state_ptr }, *owner, v, &mut 0)
                 .map_err(|_| SpecError::Action("chain_owners.remove".into()))?;
         }
         Action::RetryableCreate {

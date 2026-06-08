@@ -74,3 +74,6 @@ xtask/
 # Genesis cache (Nitro-captured per-(chainId, arbosVersion) golden files) — committed.
 !crates/arb-spec-tests/fixtures/_genesis_cache/
 !crates/arb-spec-tests/fixtures/_genesis_cache/**
+
+# Operational tooling kept out of the repo
+ops/

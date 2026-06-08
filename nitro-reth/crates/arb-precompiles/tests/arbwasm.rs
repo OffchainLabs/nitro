@@ -354,6 +354,79 @@ fn codehash_version_reverts_program_expired_after_expiry() {
     assert_eq!(out.gas_used, 1709);
 }
 
+// codehashKeepalive validates the active program in the same order as the
+// reference's getActiveProgram: NotActivated, then NeedsUpgrade, then Expired.
+// A program that is both version-stale and expired must report NeedsUpgrade.
+#[test]
+fn codehash_keepalive_reverts_needs_upgrade_before_expired() {
+    let codehash = B256::from_slice(&[0x55u8; 32]);
+    // Activated at the epoch (hour 0) at version 1; run 366 days later so the
+    // program is simultaneously version-stale (1 vs params 2) and expired.
+    let now = ARBITRUM_START_TIME + 366 * 86_400;
+    let prog_word = pack_program(1, 3, 0);
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        arbwasm,
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted, "must revert");
+    let sel = alloy_primitives::keccak256(b"ProgramNeedsUpgrade(uint16,uint16)");
+    assert_eq!(
+        &out.bytes[..4],
+        &sel[..4],
+        "needs-upgrade wins over expired"
+    );
+    assert_eq!(U256::from_be_slice(&out.bytes[4..36]), U256::from(1u64));
+    assert_eq!(
+        U256::from_be_slice(&out.bytes[36..68]),
+        U256::from(default_params().version)
+    );
+    // lookup(1703) + 3-word error(9) = 1712.
+    assert_eq!(out.gas_used, 1712);
+}
+
+#[test]
+fn codehash_keepalive_reverts_needs_upgrade_for_stale_version() {
+    let codehash = B256::from_slice(&[0x56u8; 32]);
+    let now = 1_700_000_000;
+    let prog_word = pack_program(1, 3, hours_since_start(now));
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        arbwasm,
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    let sel = alloy_primitives::keccak256(b"ProgramNeedsUpgrade(uint16,uint16)");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+    assert_eq!(out.gas_used, 1712);
+}
+
+#[test]
+fn codehash_keepalive_reverts_expired_for_current_version() {
+    let codehash = B256::from_slice(&[0x57u8; 32]);
+    let now = ARBITRUM_START_TIME + 366 * 86_400;
+    let prog_word = pack_program(default_params().version, 3, 0);
+    let test = test_with(default_params(), ARBOS_V32)
+        .block_timestamp(now)
+        .storage(ARBOS_STATE_ADDRESS, program_data_slot(codehash), prog_word);
+    let run = test.call(
+        arbwasm,
+        &calldata("codehashKeepalive(bytes32)", &[codehash]),
+    );
+    let out = run.assert_ok();
+    assert!(out.reverted);
+    let sel = alloy_primitives::keccak256(b"ProgramExpired(uint64)");
+    assert_eq!(&out.bytes[..4], &sel[..4]);
+    // lookup(1703) + 2-word error(6) = 1709.
+    assert_eq!(out.gas_used, 1709);
+}
+
 #[test]
 fn codehash_version_returns_active_version_for_fresh_program() {
     let codehash = B256::from_slice(&[0xa1u8; 32]);
@@ -393,6 +466,8 @@ fn program_memory_footprint_returns_packed_value() {
         ),
     );
     assert_eq!(decode_u256(run.output()), U256::from(7u64));
+    // open(800) + args(3) + codehash(2600) + params(100) + program(800) + result(3).
+    assert_eq!(run.gas_used(), 4306);
 }
 
 // ── More query coverage ──────────────────────────────────────────────
@@ -466,6 +541,8 @@ fn program_init_gas_returns_init_and_cached_costs() {
 
     assert_eq!(decode_word(out, 0), common::word_u64(init));
     assert_eq!(decode_word(out, 1), common::word_u64(cached));
+    // open(800) + args(3) + codehash(2600) + params(100) + program(800) + two-word result(6).
+    assert_eq!(run.gas_used(), 4309);
 }
 
 #[test]
@@ -513,6 +590,8 @@ fn program_time_left_returns_expiry_seconds_minus_age() {
     );
     let expected = 365u64 * 86_400 - 86_400;
     assert_eq!(decode_u256(run.output()), U256::from(expected));
+    // open(800) + args(3) + codehash(2600) + params(100) + program(800) + result(3).
+    assert_eq!(run.gas_used(), 4306);
 }
 
 #[test]
@@ -577,6 +656,8 @@ fn program_version_returns_program_version_for_fresh_program() {
         decode_u256(run.output()),
         U256::from(default_params().version)
     );
+    // open(800) + args(3) + codehash(2600) + params(100) + program(800) + result(3).
+    assert_eq!(run.gas_used(), 4306);
 }
 
 // ── codehashKeepalive value-source regression ─────────────────────────

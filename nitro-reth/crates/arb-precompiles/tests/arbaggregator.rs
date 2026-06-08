@@ -400,7 +400,7 @@ fn get_batch_posters_charges_two_sloads_and_two_copy_words_when_empty() {
 }
 
 #[test]
-fn add_batch_poster_already_exists_returns_two_sloads_and_one_copy_word() {
+fn add_batch_poster_already_exists_returns_three_sloads_and_one_copy_word() {
     let owner: Address = address!("0000000000000000000000000000000000000aaa");
     let existing: Address = address!("0000000000000000000000000000000000000eee");
     let run = PrecompileTest::new()
@@ -421,8 +421,8 @@ fn add_batch_poster_already_exists_returns_two_sloads_and_one_copy_word() {
             arbaggregator,
             &calldata("addBatchPoster(address)", &[word_address(existing)]),
         );
-    // No-op path: explicit return (2 * SLOAD + COPY) = 1603.
-    assert_eq!(run.gas_used(), 2 * SLOAD_GAS + COPY_GAS);
+    // No-op path: framework + is-owner + contains-poster reads (3 SLOAD + COPY) = 2403.
+    assert_eq!(run.gas_used(), 3 * SLOAD_GAS + COPY_GAS);
 }
 
 #[test]
@@ -442,10 +442,10 @@ fn add_batch_poster_new_writes_charges_full_formula() {
             arbaggregator,
             &calldata("addBatchPoster(address)", &[word_address(new_poster)]),
         );
-    // 6 SLOAD + 1 SSTORE_ZERO + 4 SSTORE + COPY = 4800 + 5000 + 80000 + 3 = 89803.
+    // 7 SLOAD + 1 SSTORE_ZERO + 4 SSTORE + COPY = 5600 + 5000 + 80000 + 3 = 90603.
     assert_eq!(
         run.gas_used(),
-        6 * SLOAD_GAS + SSTORE_ZERO_GAS + 4 * SSTORE_GAS + COPY_GAS,
+        7 * SLOAD_GAS + SSTORE_ZERO_GAS + 4 * SSTORE_GAS + COPY_GAS,
     );
 }
 

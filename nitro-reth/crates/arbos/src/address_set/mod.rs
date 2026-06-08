@@ -8,6 +8,19 @@ use arb_storage::{
 mod error;
 pub use error::AddressSetError;
 
+/// Flat ArbOS storage gas per slot read/write (no EVM cold/warm or refunds).
+const STORAGE_READ_COST: u64 = 800;
+const STORAGE_WRITE_COST: u64 = 20_000;
+const STORAGE_WRITE_ZERO_COST: u64 = 5_000;
+
+fn write_cost(value: B256) -> u64 {
+    if value == B256::ZERO {
+        STORAGE_WRITE_ZERO_COST
+    } else {
+        STORAGE_WRITE_COST
+    }
+}
+
 /// A set of addresses backed by ArbOS storage.
 ///
 /// Layout: slot 0 = size, slots 1..size = addresses (as StorageBackedAddress).
@@ -143,14 +156,17 @@ impl<D> AddressSet<'_, D> {
         Ok(self.size.set(backend, size + 1)?)
     }
 
+    /// Removes `addr`, adding the value-dependent storage gas it consumes to `gas`.
     pub fn remove<B: StorageBackend>(
         &self,
         backend: &mut B,
         addr: Address,
         arbos_version: u64,
+        gas: &mut u64,
     ) -> Result<(), AddressSetError> {
         let addr_as_hash = address_to_hash(addr);
         let slot_hash = self.by_address_get(backend, addr_as_hash)?;
+        *gas += STORAGE_READ_COST;
         let slot = hash_to_uint64(slot_hash);
 
         if slot == 0 {
@@ -158,19 +174,30 @@ impl<D> AddressSet<'_, D> {
         }
 
         self.by_address_set(backend, addr_as_hash, B256::ZERO)?;
+        *gas += STORAGE_WRITE_ZERO_COST;
 
         let size = self.size.get(backend)?;
+        *gas += STORAGE_READ_COST;
         if slot < size {
             let at_size = self.backing_get_by_uint64(backend, size)?;
+            *gas += STORAGE_READ_COST;
             self.backing_set_by_uint64(backend, slot, at_size)?;
+            *gas += write_cost(at_size);
 
             if arbos_version >= 11 {
                 self.by_address_set(backend, at_size, uint_to_hash(slot))?;
+                *gas += write_cost(uint_to_hash(slot));
             }
         }
 
         self.backing_set_by_uint64(backend, size, B256::ZERO)?;
-        Ok(self.size.set(backend, size - 1)?)
+        *gas += STORAGE_WRITE_ZERO_COST;
+
+        let new_size = size - 1;
+        *gas += STORAGE_READ_COST;
+        self.size.set(backend, new_size)?;
+        *gas += write_cost(uint_to_hash(new_size));
+        Ok(())
     }
 
     fn by_address_get<B: SystemStateBackend>(

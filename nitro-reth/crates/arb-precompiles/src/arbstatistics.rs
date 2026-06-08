@@ -30,6 +30,17 @@ fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResu
         Ok(c) => c,
         Err(_) => return crate::burn_all_revert(gas_limit),
     };
+    if let Some(r) = crate::reject_nonpayable_value(input.value, input.data, gas_limit, &[]) {
+        return r;
+    }
+    if let Some(r) = crate::reject_delegate_nonpure(
+        input.target_address != input.bytecode_address,
+        input.data,
+        gas_limit,
+        &[],
+    ) {
+        return r;
+    }
 
     use IArbStatistics::ArbStatisticsCalls;
     let result = match call {

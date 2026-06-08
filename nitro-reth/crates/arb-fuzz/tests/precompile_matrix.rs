@@ -711,3 +711,193 @@ fn matrix() {
         panic!("{} precompile-matrix divergences", failures.len());
     }
 }
+
+// ── STATICCALL matrix ────────────────────────────────────────────────
+//
+// Every precompile method invoked via STATICCALL must behave identically on
+// both nodes: read-only methods succeed, state-modifying methods revert (the
+// reference rejects them up front, burning all forwarded gas). Catches both a
+// missed write (state written under read-only) and an over-rejected read.
+
+/// Constructor that returns `runtime`.
+fn wrap_init(runtime: &[u8]) -> Vec<u8> {
+    let len = runtime.len();
+    let mut c = vec![0x61, (len >> 8) as u8, len as u8];
+    c.extend_from_slice(&[
+        0x60,
+        0x0e,
+        0x60,
+        0x00,
+        0x39,
+        0x61,
+        (len >> 8) as u8,
+        len as u8,
+    ]);
+    c.extend_from_slice(&[0x60, 0x00, 0xf3]);
+    c.extend_from_slice(runtime);
+    c
+}
+
+/// Runtime that copies its calldata to memory, calls `precompile` via the given
+/// `op` (0xfa STATICCALL or 0xf4 DELEGATECALL) with it, and stores the call's
+/// success flag at slot 0.
+fn ctx_forwarder(precompile: Address, op: u8) -> Vec<u8> {
+    let mut c = Vec::new();
+    // CALLDATACOPY(dest=0, off=0, size=CALLDATASIZE)
+    c.extend_from_slice(&[0x36, 0x60, 0x00, 0x60, 0x00, 0x37]);
+    // OP(gas, addr, argOff=0, argLen=CALLDATASIZE, retOff=0, retLen=0)
+    c.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x36, 0x60, 0x00]);
+    c.push(0x73);
+    c.extend_from_slice(precompile.as_slice());
+    c.push(0x5a); // GAS
+    c.extend_from_slice(&[op, 0x60, 0x00, 0x55, 0x00]); // OP PUSH1 0 SSTORE STOP
+    c
+}
+
+fn create_addr(deployer: Address, nonce: u64) -> Address {
+    let mut rlp = vec![0xd6u8, 0x94];
+    rlp.extend_from_slice(deployer.as_slice());
+    rlp.push(if nonce == 0 { 0x80 } else { nonce as u8 });
+    Address::from_slice(&alloy_primitives::keccak256(&rlp)[12..])
+}
+
+#[test]
+#[ignore]
+fn static_matrix() {
+    run_ctx_matrix(0xfa, "STATIC");
+}
+
+#[test]
+#[ignore]
+fn delegate_matrix() {
+    run_ctx_matrix(0xf4, "DELEGATE");
+}
+
+fn run_ctx_matrix(op: u8, tag: &str) {
+    let nodes = shared_dual_exec();
+    let mut nodes = nodes.lock().expect("dual_exec mutex");
+    let mut failures: Vec<String> = Vec::new();
+
+    for (i, (pre, label, calldata_hex)) in generated::ALL_METHODS.iter().enumerate() {
+        // ArbDebug (0xff) is an intentionally-stubbed debug-only precompile,
+        // active only with AllowDebugPrecompiles (off on mainnet).
+        if *pre == 0xff {
+            continue;
+        }
+        let precompile = addr(*pre);
+        let calldata = hex_decode(calldata_hex);
+        let mut k = [0u8; 32];
+        k[0] = 0xcd;
+        k[30] = (i >> 8) as u8;
+        k[31] = i as u8;
+        let sk = alloy_primitives::B256::from(k);
+        let signer = derive_address(sk);
+        let forwarder = create_addr(signer, 0);
+
+        let pre_idx = next_msg_idx();
+        let dep = DepositBuilder {
+            from: FUNDER,
+            to: signer,
+            amount: U256::from(10u128).pow(U256::from(19u64)),
+            l1_block_number: 1,
+            timestamp: 1_700_000_000,
+            request_seq: pre_idx,
+            base_fee_l1: L1_BASE_FEE,
+        }
+        .build()
+        .expect("deposit");
+
+        let tx = |nonce: u64, to: Option<Address>, data: Vec<u8>| {
+            SignedL2TxBuilder {
+                chain_id: FUZZ_L2_CHAIN_ID,
+                nonce,
+                to,
+                value: U256::ZERO,
+                data: Bytes::from(data),
+                gas_limit: 3_000_000,
+                gas_price: 1_000_000_000,
+                max_fee_per_gas: 1_000_000_000,
+                max_priority_fee_per_gas: 0,
+                access_list: Vec::new(),
+                authorization_list: Vec::new(),
+                kind: L2TxKind::Eip1559,
+                signing_key: sk,
+                l1_block_number: 1,
+                timestamp: 1_700_000_001,
+                request_id: None,
+                sender: SEQUENCER_ALIAS,
+                base_fee_l1: 0,
+            }
+            .build()
+        };
+
+        let deploy = tx(0, None, wrap_init(&ctx_forwarder(precompile, op))).expect("deploy");
+        let invoke = tx(1, Some(forwarder), calldata).expect("invoke");
+        let invoke_hash = arb_test_harness::messaging::signed_l2_tx_hash(&invoke);
+
+        let scenario = Scenario {
+            name: format!("{tag}_{label}"),
+            description: format!("{tag} to {label}"),
+            setup: ScenarioSetup {
+                l2_chain_id: FUZZ_L2_CHAIN_ID,
+                arbos_version: arb_fuzz::shared_nodes::fuzz_arbos_version(),
+                genesis: None,
+            },
+            steps: vec![
+                ScenarioStep::Message {
+                    idx: pre_idx,
+                    message: dep,
+                    delayed_messages_read: pre_idx,
+                },
+                ScenarioStep::Message {
+                    idx: next_msg_idx(),
+                    message: deploy,
+                    delayed_messages_read: pre_idx + 1,
+                },
+                ScenarioStep::Message {
+                    idx: next_msg_idx(),
+                    message: invoke,
+                    delayed_messages_read: pre_idx + 1,
+                },
+            ],
+        };
+
+        let report = match nodes.run(&scenario) {
+            Ok(r) => r,
+            Err(e) => {
+                failures.push(format!("{label}: run: {e}"));
+                continue;
+            }
+        };
+
+        if let Some(hash) = invoke_hash {
+            let lg = nodes.left.receipt(hash).map(|r| r.gas_used).unwrap_or(0);
+            let rg = nodes.right.receipt(hash).map(|r| r.gas_used).unwrap_or(0);
+            if lg == 0 || rg == 0 {
+                failures.push(format!("{label}: invoke did not execute (l={lg} r={rg})"));
+                continue;
+            }
+        }
+        for d in &report.block_diffs {
+            if d.field == "gas_used" || d.field == "receipts_root" || d.field == "state_root" {
+                failures.push(format!(
+                    "{label}: block#{} {} l={} r={}",
+                    d.number, d.field, d.left, d.right
+                ));
+            }
+        }
+        for d in &report.tx_diffs {
+            failures.push(format!(
+                "{label}: tx {} l={} r={}",
+                d.field, d.left, d.right
+            ));
+        }
+    }
+
+    if !failures.is_empty() {
+        for f in &failures {
+            eprintln!("{tag} DIVERGENCE: {f}");
+        }
+        panic!("{} {tag}-matrix divergences", failures.len());
+    }
+}
