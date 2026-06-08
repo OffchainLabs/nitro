@@ -4,7 +4,7 @@
 #![no_main]
 
 use stylus_sdk::{
-    alloy_primitives::{b256, B256},
+    alloy_primitives::b256,
     host::VM,
     prelude::*,
     ArbResult,

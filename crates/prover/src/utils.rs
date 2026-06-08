@@ -9,9 +9,12 @@ use c_kzg::Blob;
 use digest::Digest;
 use eyre::{Result, eyre};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
-use sha3::Keccak256;
 use wasmparser::{RefType, TableType};
+#[cfg(feature = "native")]
+use {
+    crate::kzg::ETHEREUM_KZG_SETTINGS, arbutil::PreimageType, c_kzg::Blob, digest::Digest,
+    sha2::Sha256, sha3::Keccak256,
+};
 
 pub use crate::cbytes::CBytes;
 #[cfg(feature = "libc")]

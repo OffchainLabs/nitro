@@ -501,6 +501,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// filteredFundsRecipient defaults to zero address (falls back to networkFeeAccount).
 			// No explicit initialization needed -- uninitialized storage reads as zero.
 
+		case params.ArbosVersion_61:
+			// ArbosVersion_MultiGasRefundFix: multi-dimensional gas bug fixes.
+			// No state changes needed.
+
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

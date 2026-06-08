@@ -14,9 +14,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
 
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -182,6 +186,140 @@ func TestExecuteNextMsgEphemeralAccumulatorNotFound(t *testing.T) {
 	streamer.ExecuteNextMsg(ctx)
 	if handler.FirstOccurrence.Equal(time.Time{}) {
 		t.Fatal("expected handler to engage after AccumulatorNotFoundErr from ExecuteNextMsg, but FirstOccurrence is still zero")
+	}
+}
+
+type checkResultFixture struct {
+	streamer     *TransactionStreamer
+	db           ethdb.Database
+	fatalErrChan chan error
+	info         *arbostypes.MessageWithMetadataAndBlockInfo
+	msgResult    *execution.MessageResult
+}
+
+// Wires a streamer with the given config and pre-populates the cleanup-branch preconditions
+func newCheckResultMismatchFixture(t *testing.T, cfg TransactionStreamerConfig) checkResultFixture {
+	t.Helper()
+	fatalErrChan := make(chan error, 1)
+	db := rawdb.NewMemoryDatabase()
+	s := &TransactionStreamer{
+		db:                     db,
+		fatalErrChan:           fatalErrChan,
+		config:                 func() *TransactionStreamerConfig { return &cfg },
+		trackBlockMetadataFrom: 1,
+	}
+	Require(t, db.Put(dbKey(schema.BlockMetadataInputFeedPrefix, 42), []byte{0xcd}))
+	feedHash := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	localHash := common.HexToHash("0x2222222222222222222222222222222222222222222222222222222222222222")
+	return checkResultFixture{
+		streamer:     s,
+		db:           db,
+		fatalErrChan: fatalErrChan,
+		info: &arbostypes.MessageWithMetadataAndBlockInfo{
+			MessageWithMeta: arbostypes.MessageWithMetadata{},
+			BlockHash:       &feedHash,
+			BlockMetadata:   common.BlockMetadata{0xab},
+		},
+		msgResult: &execution.MessageResult{BlockHash: localHash},
+	}
+}
+
+// BlockMetadata + trackBlockMetadataFrom are set so the cleanup branch is
+// reachable; the assertion is that the shutdown path skips it (no mutation).
+func TestCheckResultShutdownOnMismatch(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, slog.LevelDebug)
+
+	if !DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch {
+		t.Fatal("DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch must be true; the safe default was flipped intentionally")
+	}
+
+	f := newCheckResultMismatchFixture(t, DefaultTransactionStreamerConfig)
+
+	if f.streamer.checkResult(42, f.msgResult, f.info) {
+		t.Fatal("expected checkResult to return false (halt) on mismatch with shutdown flag set")
+	}
+
+	if !logHandler.WasLogged(BlockHashMismatchLogMsg) {
+		t.Error("expected BlockHashMismatchLogMsg to be logged")
+	}
+	if !logHandler.WasLogged("shutdown-on-blockhash-mismatch=false") {
+		t.Error("expected override-hint log naming the override flag")
+	}
+
+	select {
+	case err := <-f.fatalErrChan:
+		msg := err.Error()
+		for _, want := range []string{BlockHashMismatchLogMsg, "42", "1111", "2222"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("fatal err missing %q; got: %v", want, err)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected a fatal error on fatalErrChan")
+	}
+
+	hadOld, err := f.db.Has(dbKey(schema.BlockMetadataInputFeedPrefix, 42))
+	Require(t, err)
+	if !hadOld {
+		t.Error("shutdown path must not delete pre-existing blockMetadata")
+	}
+	hasMissing, err := f.db.Has(dbKey(schema.MissingBlockMetadataInputFeedPrefix, 42))
+	Require(t, err)
+	if hasMissing {
+		t.Error("shutdown path must not write the Missing marker")
+	}
+}
+
+func TestCheckResultOverrideContinues(t *testing.T) {
+	cfg := DefaultTransactionStreamerConfig
+	cfg.ShutdownOnBlockhashMismatch = false
+	f := newCheckResultMismatchFixture(t, cfg)
+
+	if !f.streamer.checkResult(42, f.msgResult, f.info) {
+		t.Fatal("expected checkResult to return true (continue) when shutdown flag is off")
+	}
+
+	select {
+	case err := <-f.fatalErrChan:
+		t.Fatalf("did not expect a fatal error in override mode: %v", err)
+	default:
+	}
+
+	hadOld, err := f.db.Has(dbKey(schema.BlockMetadataInputFeedPrefix, 42))
+	Require(t, err)
+	if hadOld {
+		t.Error("expected stale blockMetadata to be deleted by override path")
+	}
+	hasMissing, err := f.db.Has(dbKey(schema.MissingBlockMetadataInputFeedPrefix, 42))
+	Require(t, err)
+	if !hasMissing {
+		t.Error("expected MissingBlockMetadata marker to be written by override path")
+	}
+}
+
+func TestCheckResultMatchingHashes(t *testing.T) {
+	fatalErrChan := make(chan error, 1)
+	cfg := DefaultTransactionStreamerConfig
+	s := &TransactionStreamer{
+		db:           rawdb.NewMemoryDatabase(),
+		fatalErrChan: fatalErrChan,
+		config:       func() *TransactionStreamerConfig { return &cfg },
+	}
+	h := common.HexToHash("0xabcd000000000000000000000000000000000000000000000000000000000000")
+	info := &arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.MessageWithMetadata{},
+		BlockHash:       &h,
+		BlockMetadata:   nil,
+	}
+	msgResult := &execution.MessageResult{BlockHash: h}
+
+	if !s.checkResult(42, msgResult, info) {
+		t.Fatal("matching hashes should return true")
+	}
+	select {
+	case err := <-fatalErrChan:
+		t.Fatalf("did not expect fatal err on matching hashes: %v", err)
+	default:
 	}
 }
 
