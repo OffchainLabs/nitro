@@ -62,23 +62,17 @@ func allocateBalance(dp dataPoster, s *state.LockedInternalState, nonce uint64, 
 
 // Parameters for splitting between blob and non-blob consts
 type costSplitter struct {
-	numBlobs uint64
-	lastTx *types.Transaction
-	minRbfIncrease arbmath.Bips
-	currentBlobFee *big.Int
+	numBlobs          uint64
+	lastTx            *types.Transaction
+	minRbfIncrease    arbmath.Bips
+	currentBlobFee    *big.Int
 	currentNonBlobFee *big.Int
-	blobGasUsed uint64
-}
-
-// Cost split between blob and non-blob
-type splitCost struct {
-	newBaseFeeCap *big.Int
-	newBlobFeeCap *big.Int
+	blobGasUsed       uint64
 }
 
 func newCostSplitter(numBlobs uint64, lastTx *types.Transaction, minRbfIncrease arbmath.Bips, currentBlobFee *big.Int, currentNonBlobFee *big.Int) *costSplitter {
 	blobGasUsed := params.BlobTxBlobGasPerBlob * numBlobs
-	return &costSplitter {
+	return &costSplitter{
 		numBlobs,
 		lastTx,
 		minRbfIncrease,
@@ -109,7 +103,7 @@ func (cs *costSplitter) splitCost(gasLimit uint64, targetMaxCost *big.Int) BlobS
 		newBlobCost := arbmath.BigSub(targetBlobCost, baseFeeCostIncrease)
 		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, cs.blobGasUsed)
 	}
-	return BlobSplit[*big.Int] { NonBlob: newBaseFeeCap, Blob: newBlobFeeCap }
+	return BlobSplit[*big.Int]{NonBlob: newBaseFeeCap, Blob: newBlobFeeCap}
 }
 
 // Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)

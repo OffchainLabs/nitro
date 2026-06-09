@@ -199,7 +199,7 @@ func defaultTestHeader() *types.Header {
 	blobGasUsed := uint64(0)
 	return &types.Header{
 		Number:        big.NewInt(100),
-		Time:          uint64(time.Now().Unix()),
+		Time:          uint64(time.Now().Unix()), // #nosec G115
 		BaseFee:       big.NewInt(10 * params.GWei),
 		ExcessBlobGas: &excessBlobGas,
 		BlobGasUsed:   &blobGasUsed,

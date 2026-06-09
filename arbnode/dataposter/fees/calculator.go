@@ -22,14 +22,14 @@ import (
 	"github.com/offchainlabs/nitro/util/floatmath"
 )
 
-var MinRbfIncrease = BlobSplit[arbmath.Bips] {
-	Blob: arbmath.OneInBips * 2,
+var MinRbfIncrease = BlobSplit[arbmath.Bips]{
+	Blob:    arbmath.OneInBips * 2,
 	NonBlob: arbmath.OneInBips * 11 / 10,
 }
 
 type feeCalculatorOpts struct {
-	minTipCapGwei float64
-	maxTipCapGwei float64
+	minTipCapGwei  float64
+	maxTipCapGwei  float64
 	minRbfIncrease arbmath.Bips
 }
 
@@ -39,21 +39,21 @@ type feeCalculator interface {
 }
 
 type blobFeeCalculator struct {
-	o feeCalculatorOpts
-	dp dataPoster
+	o            feeCalculatorOpts
+	dp           dataPoster
 	latestHeader *types.Header
 }
 
 func newBlobFeeCalculator(dp dataPoster, latestHeader *types.Header) feeCalculator {
 	config := dp.Config()
 
-	return &blobFeeCalculator {
-		dp: dp,
+	return &blobFeeCalculator{
+		dp:           dp,
 		latestHeader: latestHeader,
 
-		o: feeCalculatorOpts {
-			minTipCapGwei: config.MinBlobTxTipCapGwei,
-			maxTipCapGwei: config.MaxBlobTxTipCapGwei,
+		o: feeCalculatorOpts{
+			minTipCapGwei:  config.MinBlobTxTipCapGwei,
+			maxTipCapGwei:  config.MaxBlobTxTipCapGwei,
 			minRbfIncrease: MinRbfIncrease.Blob,
 		},
 	}
@@ -86,10 +86,10 @@ type nonBlobFeeCalculator struct {
 func newNonBlobFeeCalculator(dp dataPoster) feeCalculator {
 	config := dp.Config()
 
-	return &nonBlobFeeCalculator {
-		o: feeCalculatorOpts {
-			minTipCapGwei: config.MinTipCapGwei,
-			maxTipCapGwei: config.MaxTipCapGwei,
+	return &nonBlobFeeCalculator{
+		o: feeCalculatorOpts{
+			minTipCapGwei:  config.MinTipCapGwei,
+			maxTipCapGwei:  config.MaxTipCapGwei,
 			minRbfIncrease: MinRbfIncrease.NonBlob,
 		},
 	}
@@ -143,8 +143,8 @@ func FeeAndTipCaps(ctx context.Context, dp dataPoster, s *state.LockedInternalSt
 		return nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
 
-	calc := (&BlobSplit[feeCalculator] {
-		Blob: newBlobFeeCalculator(dp, latestHeader),
+	calc := (&BlobSplit[feeCalculator]{
+		Blob:    newBlobFeeCalculator(dp, latestHeader),
 		NonBlob: newNonBlobFeeCalculator(dp),
 	}).SelectIfBlobs(numBlobs > 0)
 	opts := calc.opts()
@@ -246,10 +246,10 @@ func FeeAndTipCaps(ctx context.Context, dp dataPoster, s *state.LockedInternalSt
 		log.Info(msg, logFields...)
 		if lastTx != nil {
 			// wait until we have a higher target max cost to replace by fee
-			return &Caps {
-				Fee: BlobSplit[*big.Int] {
+			return &Caps{
+				Fee: BlobSplit[*big.Int]{
 					NonBlob: lastTx.GasFeeCap(),
-					Blob: lastTx.BlobGasFeeCap(),
+					Blob:    lastTx.BlobGasFeeCap(),
 				},
 				Tip: lastTx.GasTipCap(),
 			}, nil
@@ -267,10 +267,10 @@ func FeeAndTipCaps(ctx context.Context, dp dataPoster, s *state.LockedInternalSt
 		// which lets us move in a particular direction (biasing towards either basefee or blobfee).
 		log.Info("can't meet current parent chain fees with current target max cost", logFields...)
 		// wait until we have a higher target max cost to replace by fee
-		return &Caps {
-			Fee: BlobSplit[*big.Int] {
+		return &Caps{
+			Fee: BlobSplit[*big.Int]{
 				NonBlob: lastTx.GasFeeCap(),
-				Blob: lastTx.BlobGasFeeCap(),
+				Blob:    lastTx.BlobGasFeeCap(),
 			},
 			Tip: lastTx.GasTipCap(),
 		}, nil
@@ -284,7 +284,7 @@ func FeeAndTipCaps(ctx context.Context, dp dataPoster, s *state.LockedInternalSt
 		costs.Blob = big.NewInt(1)
 	}
 
-	return &Caps {
+	return &Caps{
 		Fee: costs,
 		Tip: newTipCap,
 	}, nil
