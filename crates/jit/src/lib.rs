@@ -9,8 +9,6 @@ use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
 
 use crate::machine::Escape;
 
-mod arbcompress;
-mod arbcrypto;
 mod caller_env;
 pub mod machine;
 pub mod program;

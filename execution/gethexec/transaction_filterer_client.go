@@ -14,6 +14,7 @@ import (
 )
 
 const TransactionFiltererNamespace = "transactionfilterer"
+const TransactionFiltererURLNone = "none"
 
 var DefaultTransactionFiltererRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",

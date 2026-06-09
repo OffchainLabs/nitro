@@ -208,7 +208,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build ## Build Nitro binaries.
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report stylus-raw-deploycode)
 	@printf $(done)
 
 .PHONY: build-node-deps ## Build dependencies needed by Nitro node binaries.
@@ -437,6 +437,9 @@ $(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/filtering-report: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/filtering-report"
+
+$(output_root)/bin/stylus-raw-deploycode: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/stylus-raw-deploycode"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

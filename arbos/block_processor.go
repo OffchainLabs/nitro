@@ -301,7 +301,7 @@ func ProduceBlock(
 	hooks := NewNoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas, nil,
 	)
 }
 
@@ -316,6 +316,7 @@ func ProduceBlockAdvanced(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
+	addressChecker state.AddressChecker,
 ) (*types.Block, *state.StateDB, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
@@ -439,6 +440,11 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			var addrCheckerState state.AddressCheckerState
+			if addressChecker != nil {
+				addrCheckerState = addressChecker.NewTxState()
+			}
+			buildState.statedb.SetAddressCheckerState(addrCheckerState)
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if isUserTx {
 				if err = sequencingHooks.PreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, len(buildState.receipts)); err != nil {

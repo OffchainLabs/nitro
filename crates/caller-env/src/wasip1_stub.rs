@@ -81,10 +81,10 @@ pub fn fd_write<M: MemAccess, E: ExecEnv>(
     }
     let mut size = 0;
     for i in 0..iovecs_len {
-        let ptr = iovecs_ptr + i * 8;
+        let ptr = iovecs_ptr + i.checked_mul(8).expect("iovec offset overflow");
         let len = mem.read_u32(ptr + 4);
         let ptr = mem.read_u32(ptr); // TODO: string might be split across utf-8 character boundary
-        let data = mem.read_slice(GuestPtr(ptr), len as usize);
+        let data = mem.read_slice(GuestPtr::new(ptr), len as usize);
         env.print_string(&data);
         size += len;
     }
@@ -392,7 +392,10 @@ pub fn poll_oneoff<M: MemAccess, E: ExecEnv>(
 
     const SUBSCRIPTION_SIZE: u32 = 48; // user data + 40-byte union
     for index in 0..num_subscriptions {
-        let subs_base = in_subs + (SUBSCRIPTION_SIZE * index);
+        let subs_base = in_subs
+            + SUBSCRIPTION_SIZE
+                .checked_mul(index)
+                .expect("subscription offset overflow");
         let subs_type = mem.read_u32(subs_base + 8);
         if subs_type != 0 {
             // not a clock subscription type

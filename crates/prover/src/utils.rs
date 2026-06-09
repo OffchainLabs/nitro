@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 use wasmparser::{RefType, TableType};
 #[cfg(feature = "native")]
 use {
-    crate::kzg::ETHEREUM_KZG_SETTINGS, arbutil::PreimageType, c_kzg::Blob, digest::Digest,
-    sha2::Sha256, sha3::Keccak256,
+    crate::kzg::ETHEREUM_KZG_SETTINGS,
+    arbutil::{PreimageType, crypto},
+    c_kzg::Blob,
+    digest::Digest,
+    sha2::Sha256,
 };
 
 pub use crate::cbytes::CBytes;
@@ -75,7 +78,7 @@ pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
 #[cfg(feature = "native")]
 pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
     match ty {
-        PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),
+        PreimageType::Keccak256 => Ok(crypto::keccak(preimage)),
         PreimageType::Sha2_256 => Ok(Sha256::digest(preimage).into()),
         PreimageType::EthVersionedHash => {
             // TODO: really we should also accept what version it is,

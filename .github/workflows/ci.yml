@@ -18,6 +18,8 @@ jobs:
 
   # --- Fast: Build + Lint only (required by can_proceed) ---
   fast:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true'
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
@@ -37,6 +39,8 @@ jobs:
 
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true'
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
@@ -49,6 +53,8 @@ jobs:
 
   # --- Validation tests (not required by can_proceed) ---
   validation-tests:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true'
     uses: ./.github/workflows/_validation-tests.yml
     secrets: inherit
 

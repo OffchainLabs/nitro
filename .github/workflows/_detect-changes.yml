@@ -13,6 +13,9 @@ on:
       changelog_added:
         description: 'New changelog fragments.'
         value: ${{ jobs.changes.outputs.changelog_added }}
+      code_changed:
+        description: 'True if any file other than CHANGELOG.md or changelog/** changed.'
+        value: ${{ jobs.changes.outputs.code_changed }}
 
 permissions:
   contents: read
@@ -25,6 +28,7 @@ jobs:
       rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
+      code_changed: ${{ steps.changed.outputs.code_any_changed }}
 
     steps:
       - name: Checkout
@@ -58,3 +62,7 @@ jobs:
               - '.github/workflows/_bold-legacy.yml'
             changelog:
               - 'changelog/**.md'
+            code:
+              - '**'
+              - '!CHANGELOG.md'
+              - '!changelog/**'
