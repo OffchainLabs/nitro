@@ -6,6 +6,7 @@ package dataposter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -90,12 +91,18 @@ func (c *testStubClient) CallContext(_ context.Context, result interface{}, meth
 				nonce = c.nonceAtFunc(tag)
 			}
 		}
-		ptr := result.(*hexutil.Uint64) // panics if ethclient changes calling convention
+		ptr, ok := result.(*hexutil.Uint64)
+		if !ok {
+			panic(fmt.Sprintf("eth_getTransactionCount: result is %T, want *hexutil.Uint64", result))
+		}
 		*ptr = hexutil.Uint64(nonce)
 
 	case "eth_maxPriorityFeePerGas":
 		// ethclient.SuggestGasTipCap passes *hexutil.Big.
-		ptr := result.(*hexutil.Big)
+		ptr, ok := result.(*hexutil.Big)
+		if !ok {
+			panic(fmt.Sprintf("eth_maxPriorityFeePerGas: result is %T, want *hexutil.Big", result))
+		}
 		if c.suggestedGasTipCap != nil {
 			*ptr = hexutil.Big(*c.suggestedGasTipCap)
 		}
@@ -109,17 +116,26 @@ func (c *testStubClient) CallContext(_ context.Context, result interface{}, meth
 		if c.latestHeader == nil {
 			return errors.New("eth_getBlockByNumber: no latestHeader configured in stub")
 		}
-		ptrptr := result.(**types.Header)
+		ptrptr, ok := result.(**types.Header)
+		if !ok {
+			panic(fmt.Sprintf("eth_getBlockByNumber: result is %T, want **types.Header", result))
+		}
 		*ptrptr = c.latestHeader
 
 	case "eth_blockNumber":
 		// ethclient.BlockNumber passes *hexutil.Uint64.
-		ptr := result.(*hexutil.Uint64)
+		ptr, ok := result.(*hexutil.Uint64)
+		if !ok {
+			panic(fmt.Sprintf("eth_blockNumber: result is %T, want *hexutil.Uint64", result))
+		}
 		*ptr = hexutil.Uint64(c.latestBlockNumber)
 
 	case "eth_getBalance":
 		// ethclient.BalanceAt passes *hexutil.Big.
-		ptr := result.(*hexutil.Big)
+		ptr, ok := result.(*hexutil.Big)
+		if !ok {
+			panic(fmt.Sprintf("eth_getBalance: result is %T, want *hexutil.Big", result))
+		}
 		if c.balance != nil {
 			*ptr = hexutil.Big(*c.balance)
 		}
@@ -139,7 +155,10 @@ func (c *testStubClient) CallContext(_ context.Context, result interface{}, meth
 
 	case "eth_getCode":
 		// ethclient.CodeAt passes *hexutil.Bytes. Return empty (no contract).
-		ptr := result.(*hexutil.Bytes)
+		ptr, ok := result.(*hexutil.Bytes)
+		if !ok {
+			panic(fmt.Sprintf("eth_getCode: result is %T, want *hexutil.Bytes", result))
+		}
 		*ptr = hexutil.Bytes{}
 
 	case "eth_config":
