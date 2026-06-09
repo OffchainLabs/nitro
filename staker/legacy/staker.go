@@ -79,25 +79,25 @@ func L1PostingStrategyAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable                    bool                        `koanf:"enable"`
-	Strategy                  string                      `koanf:"strategy"`
-	StakerInterval            time.Duration               `koanf:"staker-interval"`
-	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
-	PostingStrategy           L1PostingStrategy           `koanf:"posting-strategy"`
-	DisableChallenge          bool                        `koanf:"disable-challenge"`
-	ConfirmationBlocks        int64                       `koanf:"confirmation-blocks"`
-	UseSmartContractWallet    bool                        `koanf:"use-smart-contract-wallet"`
-	OnlyCreateWalletContract  bool                        `koanf:"only-create-wallet-contract"`
-	StartValidationFromStaked bool                        `koanf:"start-validation-from-staked"`
-	ContractWalletAddress     string                      `koanf:"contract-wallet-address"`
-	GasRefunderAddress        string                      `koanf:"gas-refunder-address"`
+	Enable                    bool                              `koanf:"enable"`
+	Strategy                  string                            `koanf:"strategy"`
+	StakerInterval            time.Duration                     `koanf:"staker-interval"`
+	MakeAssertionInterval     time.Duration                     `koanf:"make-assertion-interval"`
+	PostingStrategy           L1PostingStrategy                 `koanf:"posting-strategy"`
+	DisableChallenge          bool                              `koanf:"disable-challenge"`
+	ConfirmationBlocks        int64                             `koanf:"confirmation-blocks"`
+	UseSmartContractWallet    bool                              `koanf:"use-smart-contract-wallet"`
+	OnlyCreateWalletContract  bool                              `koanf:"only-create-wallet-contract"`
+	StartValidationFromStaked bool                              `koanf:"start-validation-from-staked"`
+	ContractWalletAddress     string                            `koanf:"contract-wallet-address"`
+	GasRefunderAddress        string                            `koanf:"gas-refunder-address"`
 	DataPoster                dataposterconfig.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                  string                      `koanf:"redis-url"`
-	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
-	Dangerous                 DangerousConfig             `koanf:"dangerous"`
-	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
-	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
+	RedisUrl                  string                            `koanf:"redis-url"`
+	ExtraGas                  uint64                            `koanf:"extra-gas" reload:"hot"`
+	Dangerous                 DangerousConfig                   `koanf:"dangerous"`
+	ParentChainWallet         genericconf.WalletConfig          `koanf:"parent-chain-wallet"`
+	LogQueryBatchSize         uint64                            `koanf:"log-query-batch-size" reload:"hot"`
+	EnableFastConfirmation    bool                              `koanf:"enable-fast-confirmation"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
