@@ -4,7 +4,9 @@
 #[cfg(target_os = "zkvm")]
 const _: () = match option_env!("SP1_PATCHES_APPLIED") {
     Some(_) => (),
-    None => panic!("sp1 program must be built via the sp1 builder crate, which applies required crate patches"),
+    None => panic!(
+        "sp1 program must be built via the sp1 builder crate, which applies required crate patches"
+    ),
 };
 
 #[cfg(target_os = "zkvm")]
