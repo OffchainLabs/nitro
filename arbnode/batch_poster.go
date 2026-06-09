@@ -188,23 +188,23 @@ type BatchPosterConfig struct {
 	CompressionLevel int `koanf:"compression-level" reload:"hot"`
 	// CompressionLevels defines adaptive compression based on backlog. Each entry specifies the
 	// compression level and recompression level to use when backlog >= the entry's backlog threshold.
-	CompressionLevels              CompressionLevelStepList    `koanf:"compression-levels" reload:"hot"`
-	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
-	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
+	CompressionLevels              CompressionLevelStepList          `koanf:"compression-levels" reload:"hot"`
+	AnyTrustRetentionPeriod        time.Duration                     `koanf:"anytrust-retention-period" reload:"hot"`
+	GasRefunderAddress             string                            `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                     dataposterconfig.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                       string                      `koanf:"redis-url"`
-	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
-	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
-	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
-	GasEstimateBaseFeeMultipleBips arbmath.UBips               `koanf:"gas-estimate-base-fee-multiple-bips"`
-	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
-	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
-	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
+	RedisUrl                       string                            `koanf:"redis-url"`
+	RedisLock                      redislock.SimpleCfg               `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                  uint64                            `koanf:"extra-batch-gas" reload:"hot"`
+	Post4844Blobs                  bool                              `koanf:"post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice                bool                              `koanf:"ignore-blob-price" reload:"hot"`
+	ParentChainWallet              genericconf.WalletConfig          `koanf:"parent-chain-wallet"`
+	L1BlockBound                   string                            `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass             time.Duration                     `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists                 bool                              `koanf:"use-access-lists" reload:"hot"`
+	GasEstimateBaseFeeMultipleBips arbmath.UBips                     `koanf:"gas-estimate-base-fee-multiple-bips"`
+	Dangerous                      BatchPosterDangerousConfig        `koanf:"dangerous"`
+	ReorgResistanceMargin          time.Duration                     `koanf:"reorg-resistance-margin" reload:"hot"`
+	CheckBatchCorrectness          bool                              `koanf:"check-batch-correctness"`
 	// MaxEmptyBatchDelay defines how long the batch poster waits before submitting a batch
 	// that contains no new useful transactions (a “report-only” or “empty” batch). Set to 0 to disable it.
 	MaxEmptyBatchDelay         time.Duration `koanf:"max-empty-batch-delay"`
