@@ -27,13 +27,13 @@ import (
 
 var (
 	addFilteredTransactionFailureCounter = metrics.NewRegisteredCounter(
-		"arb/transaction-filterer/add_filtered_transaction_failures_total", nil,
+		"arb/tx_filterer/add_failure_total", nil,
 	)
 	addFilteredTransactionSuccessCounter = metrics.NewRegisteredCounter(
-		"arb/transaction-filterer/add_filtered_transaction_successes_total", nil,
+		"arb/tx_filterer/add_success_total", nil,
 	)
 	filterQueueDepthGauge = metrics.NewRegisteredGauge(
-		"arb/transaction-filterer/filter_queue_depth", nil,
+		"arb/tx_filterer/queue_depth", nil,
 	)
 )
 

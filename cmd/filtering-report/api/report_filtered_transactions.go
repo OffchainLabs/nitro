@@ -17,10 +17,10 @@ import (
 
 var (
 	sqsSendFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/api/sqs_send_failures_total", nil,
+		"arb/filter_report/api/sqs_send_failure_total", nil,
 	)
 	sqsSendSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/api/sqs_send_successes_total", nil,
+		"arb/filter_report/api/sqs_send_success_total", nil,
 	)
 )
 

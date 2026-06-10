@@ -27,34 +27,34 @@ import (
 
 var (
 	externalEndpointRetryableFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/external_endpoint_retryable_failures_total", nil,
+		"arb/filter_report/forwarder/endpoint_retryable_failure_total", nil,
 	)
 	externalEndpointNonRetryableFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/external_endpoint_non_retryable_failures_total", nil,
+		"arb/filter_report/forwarder/endpoint_fatal_failure_total", nil,
 	)
 	externalEndpointSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/external_endpoint_successes_total", nil,
+		"arb/filter_report/forwarder/endpoint_success_total", nil,
 	)
 	sqsReceiveFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/sqs_receive_failures_total", nil,
+		"arb/filter_report/forwarder/sqs_receive_failure_total", nil,
 	)
 	sqsReceiveSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/sqs_receive_successes_total", nil,
+		"arb/filter_report/forwarder/sqs_receive_success_total", nil,
 	)
 	sqsDeleteFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/sqs_delete_failures_total", nil,
+		"arb/filter_report/forwarder/sqs_delete_failure_total", nil,
 	)
 	sqsDeleteSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/sqs_delete_successes_total", nil,
+		"arb/filter_report/forwarder/sqs_delete_success_total", nil,
 	)
 	poisonQueueSendFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/poison_queue_send_failures_total", nil,
+		"arb/filter_report/forwarder/poison_send_failure_total", nil,
 	)
 	poisonQueueSendSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/poison_queue_send_successes_total", nil,
+		"arb/filter_report/forwarder/poison_send_success_total", nil,
 	)
 	externalEndpointSlowdownTriggeredCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report/forwarder/external_endpoint_slowdown_triggered_total", nil,
+		"arb/filter_report/forwarder/endpoint_slowdown_total", nil,
 	)
 )
 
@@ -212,7 +212,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 	}
 	msg := msgs[0]
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
+		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId, "body", *msg.Body)
 		var httpErr *httperror.HTTPError
 		if errors.As(err, &httpErr) && !httpErr.IsRetryable() {
 			externalEndpointNonRetryableFailuresCounter.Inc(1)
@@ -230,6 +230,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 	}
 	externalEndpointSuccessesCounter.Inc(1)
 	*consecutiveRetryableErrors = 0
+	log.Info("Successfully forwarded report to external endpoint", "messageId", *msg.MessageId, "body", *msg.Body)
 	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
 		sqsDeleteFailuresCounter.Inc(1)
 		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)

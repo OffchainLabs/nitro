@@ -8,7 +8,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -366,6 +365,9 @@ func (ps *L2PricingState) GetMultiGasBaseFeePerResource(blockBaseFee *big.Int) (
 	return fees, nil
 }
 
+// MultiDimensionalPriceForRefund returns the multi-gas fee considering each dimension's base-fee.
+// It doesn't take in consideration EVM SSTORE refunds. So, the transaction will be charged the
+// minimum between `single-gas fee minus EVM refunds` AND `multi-gas fee without EVM refunds`.
 func (ps *L2PricingState) MultiDimensionalPriceForRefund(usedMultiGas multigas.MultiGas, blockBaseFee *big.Int) (*big.Int, error) {
 	fees, err := ps.GetMultiGasBaseFeePerResource(blockBaseFee)
 	if err != nil {
@@ -388,19 +390,6 @@ func (ps *L2PricingState) MultiDimensionalPriceForRefund(usedMultiGas multigas.M
 		)
 		total.Add(total, part)
 	}
-
-	// Take in consideration evm refunds using the block base fee.
-	if ps.ArbosVersion >= params.ArbosVersion_MultiGasRefundFix {
-		evmRefunds := new(big.Int).Mul(new(big.Int).SetUint64(usedMultiGas.GetRefund()), blockBaseFee)
-		if total.Cmp(evmRefunds) > 0 {
-			// This should always be true, but check anyway to ensure we don't return a negative value.
-			total.Sub(total, evmRefunds)
-		} else {
-			log.Warn("EVM refund greater than multi-gas fee",
-				"multi-gas-fee", total, "evm-refunds", evmRefunds)
-		}
-	}
-
 	return total, nil
 }
 

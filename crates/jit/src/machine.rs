@@ -282,8 +282,10 @@ impl WasmEnv {
             return Ok(&mut self.input);
         }
 
+        // SAFETY: signal() is async-signal-safe; SIG_IGN is a valid handler that
+        // suppresses SIGCHLD and prevents child processes from becoming zombies.
         unsafe {
-            libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
+            libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         }
 
         let stdin = io::stdin();
@@ -305,6 +307,10 @@ impl WasmEnv {
                 println!("Child will connect to {address}");
             }
 
+            // SAFETY: fork() is called in a single-threaded context (this is the
+            // machine's setup loop before any worker threads are spawned), so
+            // duplicating the process state is safe. The child breaks immediately
+            // without returning to async-unsafe code paths.
             unsafe {
                 match libc::fork() {
                     -1 => return Err(Escape::HostIO("Failed to fork".into())),
