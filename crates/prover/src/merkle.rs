@@ -7,15 +7,13 @@ use std::{
     convert::{TryFrom, TryInto},
 };
 
-use arbutil::Bytes32;
+use arbutil::{Bytes32, crypto};
 use bitvec::prelude::*;
-use digest::Digest;
 use enum_iterator::Sequence;
 use parking_lot::Mutex;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
 
 mod zerohashes;
 #[cfg(feature = "counters")]
@@ -133,11 +131,7 @@ pub struct Merkle {
 }
 
 fn hash_node(ty: MerkleType, a: impl AsRef<[u8]>, b: impl AsRef<[u8]>) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update(ty.get_prefix());
-    h.update(a);
-    h.update(b);
-    h.finalize().into()
+    crypto::keccak_seq(&[ty.get_prefix().as_bytes(), a.as_ref(), b.as_ref()])
 }
 
 const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> &'static Bytes32 {
@@ -167,11 +161,10 @@ fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) ->
 #[inline]
 #[cfg(not(feature = "rayon"))]
 fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) -> Vec<Bytes32> {
-    let new_layer = layer
+    layer
         .chunks(2)
         .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).unwrap_or(empty_hash)))
-        .collect();
-    new_layer
+        .collect()
 }
 
 impl Clone for Merkle {

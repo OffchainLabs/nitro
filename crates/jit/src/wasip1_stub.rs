@@ -6,7 +6,7 @@
 use caller_env::{self, GuestPtr, wasip1_stub::Errno};
 
 use crate::{
-    caller_env::{JitEnv, JitExecEnv},
+    caller_env::JitEnv,
     machine::{Escape, WasmEnvMut},
 };
 
@@ -18,7 +18,7 @@ macro_rules! wrap {
     (fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* $(,)?)) => {
         pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<Errno, Escape> {
             let (mut mem, wenv) = src.jit_env();
-            Ok(caller_env::wasip1_stub::$func_name(&mut mem, &mut JitExecEnv { wenv }, $($arg_name),*))
+            Ok(caller_env::wasip1_stub::$func_name(&mut mem, wenv, $($arg_name),*))
         }
     };
 }

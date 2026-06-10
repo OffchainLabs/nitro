@@ -134,7 +134,7 @@ pub fn new_program(
     evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
+    let (mem, exec) = env.jit_env();
     let compiled_hash = mem.read_bytes32(compiled_hash_ptr);
     let calldata = mem.read_slice(calldata_ptr, calldata_size as usize);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
@@ -386,7 +386,7 @@ pub fn create_evm_data_v2(
     cached: u32,
     reentrant: u32,
 ) -> Result<u64, Escape> {
-    let (mut mem, _) = env.jit_env();
+    let (mem, _) = env.jit_env();
 
     let evm_data = EvmData {
         arbos_version,

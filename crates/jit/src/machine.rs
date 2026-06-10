@@ -11,9 +11,13 @@ use std::{
 };
 
 use arbutil::{Bytes32, PreimageType};
-use caller_env::GoRuntimeState;
+use caller_env::{
+    GoRuntimeState,
+    arbcrypto::host::{ecrecovery, keccak256},
+    brotli::host::{brotli_compress, brotli_decompress},
+    wasmer_traits::HasMemory,
+};
 use eyre::{ErrReport, Report, Result, bail};
-use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use validation::local_target;
 use wasmer::{
@@ -23,8 +27,8 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    InputMode, LocalInput, Opts, ValidatorOpts, arbcompress, arbcrypto, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts, program, stylus_backend::CothreadHandler,
+    wasip1_stub, wavmio,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
@@ -120,12 +124,12 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
     }
     imports! {
         "arbcompress" => {
-            "brotli_compress" => func!(arbcompress::brotli_compress),
-            "brotli_decompress" => func!(arbcompress::brotli_decompress),
+            "brotli_compress" => func!(brotli_compress::<WasmEnv>),
+            "brotli_decompress" => func!(brotli_decompress::<WasmEnv>),
         },
         "arbcrypto" => {
-            "ecrecovery" => func!(arbcrypto::ecrecovery),
-            "keccak256" => func!(arbcrypto::keccak256),
+            "ecrecovery" => func!(ecrecovery::<WasmEnv>),
+            "keccak256" => func!(keccak256::<WasmEnv>),
         },
         "hooks" => {
             "beforeFirstIO" => func!(|_: WasmEnvMut|{}),
@@ -257,6 +261,12 @@ pub struct WasmEnv {
     pub threads: Vec<CothreadHandler>,
 }
 
+impl HasMemory for WasmEnv {
+    fn memory(&self) -> Memory {
+        self.memory.clone().expect("memory not set in WasmEnv")
+    }
+}
+
 impl TryFrom<&Opts> for WasmEnv {
     type Error = Report;
 
@@ -330,9 +340,7 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
             .entry(PreimageType::Keccak256 as u8)
             .or_default();
         for preimage in preimages {
-            let mut hasher = Keccak256::new();
-            hasher.update(&preimage);
-            let hash = hasher.finalize().into();
+            let hash = arbutil::crypto::keccak(&preimage);
             keccak_preimages.insert(hash, preimage);
         }
     }

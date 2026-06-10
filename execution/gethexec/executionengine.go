@@ -742,9 +742,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	if s.addressChecker != nil {
-		statedb.SetAddressChecker(s.addressChecker)
-	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, errors.New("can't find block for current header")
@@ -775,6 +772,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		false,
 		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
+		s.addressChecker,
 	)
 	if err != nil {
 		return nil, err
@@ -955,11 +953,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 
-	// Set up address checker for filtering if configured
-	if s.addressChecker != nil {
-		statedb.SetAddressChecker(s.addressChecker)
-	}
-
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
@@ -1012,6 +1005,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			isMsgForPrefetch,
 			runCtx,
 			s.exposeMultiGas,
+			s.addressChecker,
 		)
 		if err != nil {
 			return nil, nil, nil, err
