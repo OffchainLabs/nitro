@@ -4,9 +4,7 @@ package timeboost
 
 import (
 	"context"
-	"fmt"
 	"math/big"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -447,15 +445,14 @@ func BenchmarkBidValidation(b *testing.B) {
 }
 
 func setupBidValidator(t testing.TB, ctx context.Context, redisURL string, testSetup *auctionSetup) (*BidValidator, string) {
-	randHttp := getRandomPort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
-		HTTPPort:            randHttp,
+		HTTPPort:            0,
 		HTTPModules:         []string{AuctioneerNamespace},
 		HTTPHost:            "localhost",
 		HTTPVirtualHosts:    []string{"localhost"},
 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-		WSPort:              getRandomPort(t),
+		WSPort:              0,
 		WSModules:           []string{AuctioneerNamespace},
 		WSHost:              "localhost",
 		GraphQLVirtualHosts: []string{"localhost"},
@@ -486,16 +483,5 @@ func setupBidValidator(t testing.TB, ctx context.Context, redisURL string, testS
 	require.NoError(t, bidValidator.Initialize(ctx))
 	require.NoError(t, stack.Start())
 	bidValidator.Start(ctx)
-	return bidValidator, fmt.Sprintf("http://localhost:%d", randHttp)
-}
-
-func getRandomPort(t testing.TB) int {
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
+	return bidValidator, stack.HTTPEndpoint()
 }

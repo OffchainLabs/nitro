@@ -16,13 +16,19 @@ type MockQueueClient struct {
 	queue                 []sqstypes.Message
 	msgCounter            int
 	deletedReceiptHandles []string
+	sentBodies            []string
 	ReceiveErr            error
 	DeleteErr             error
+	SendErr               error
 }
 
 func (m *MockQueueClient) Send(_ context.Context, body string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.SendErr != nil {
+		return m.SendErr
+	}
+	m.sentBodies = append(m.sentBodies, body)
 	m.msgCounter++
 	msgId := fmt.Sprintf("msg-%d", m.msgCounter)
 	rh := fmt.Sprintf("rh-%d", m.msgCounter)
@@ -32,6 +38,14 @@ func (m *MockQueueClient) Send(_ context.Context, body string) error {
 		ReceiptHandle: &rh,
 	})
 	return nil
+}
+
+func (m *MockQueueClient) SentBodies() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.sentBodies))
+	copy(result, m.sentBodies)
+	return result
 }
 
 func (m *MockQueueClient) Receive(_ context.Context, _ int32, maxMessages int32) ([]sqstypes.Message, error) {

@@ -11,19 +11,37 @@ pub use guest_ptr::GuestPtr;
 use rand_pcg::Pcg32;
 pub use wasip1_stub::Errno;
 
+mod guest_ptr;
+pub mod wavmio;
+
 #[cfg(feature = "static_caller")]
 pub mod static_caller;
 
 #[cfg(feature = "wasmer_traits")]
 pub mod wasmer_traits;
 
+/// Generates a wasmer host function that owns `FunctionEnvMut<T>`, extracts memory
+/// via `HasMemory::memory()`, and delegates to the `super::` function of the same
+/// name which takes `&mut impl MemAccess` as its first argument.
+#[cfg(feature = "wasmer_traits")]
+macro_rules! host_fn {
+    ($(#[$attr:meta])* fn $name:ident($($arg:ident : $ty:ty),*) $(-> $ret:ty)?) => {
+        $(#[$attr])*
+        pub fn $name<T: $crate::wasmer_traits::HasMemory + Send + 'static>(
+            mut ctx: wasmer::FunctionEnvMut<T>,
+            $($arg: $ty,)*
+        ) $(-> $ret)? {
+            let (data, store) = ctx.data_and_store_mut();
+            let memory = data.memory();
+            super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), $($arg,)*)
+        }
+    };
+}
+
 #[cfg(feature = "brotli")]
 pub mod brotli;
 
 pub mod arbcrypto;
-pub mod wavmio;
-
-mod guest_ptr;
 pub mod wasip1_stub;
 
 /// Access Guest memory.

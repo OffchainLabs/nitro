@@ -156,6 +156,9 @@ type AssertionChain interface {
 	ReadAssertionCreationInfo(
 		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)
+	ReadAssertionCreationInfoAtLatest(
+		ctx context.Context, id AssertionHash,
+	) (*AssertionCreatedInfo, error)
 	GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts
 	GetDesiredRpcHeadBlockNumber() rpc.BlockNumber
 

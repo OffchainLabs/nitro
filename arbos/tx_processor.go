@@ -22,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -86,14 +87,8 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	}
 
 	// Record touched addresses for tx filtering
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
-		Address:      contract.Address(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil},
-	})
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
-		Address:      contract.Caller(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil},
-	})
+	p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: contract.Address(), FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil}})
+	p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: contract.Caller(), FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil}})
 }
 
 func (p *TxProcessor) PopContract() {
@@ -622,11 +617,26 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
 
+	var basefee *big.Int
+	if p.evm.Context.BaseFeeInBlock != nil {
+		basefee = p.evm.Context.BaseFeeInBlock
+	} else {
+		basefee = p.evm.Context.BaseFee
+	}
+
 	var multiDimensionalCost *big.Int
-	var err error
 	if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
-		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
-		p.state.Restrict(err)
+		shouldRefund := true
+		if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasRefundFix {
+			gasModel, err := p.state.L2PricingState().GasModelToUse()
+			p.state.Restrict(err)
+			shouldRefund = gasModel == l2pricing.GasModelMultiGasConstraints
+		}
+		if shouldRefund {
+			var err error
+			multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas, basefee)
+			p.state.Restrict(err)
+		}
 	}
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
@@ -746,12 +756,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		return
 	}
 
-	var basefee *big.Int
-	if p.evm.Context.BaseFeeInBlock != nil {
-		basefee = p.evm.Context.BaseFeeInBlock
-	} else {
-		basefee = p.evm.Context.BaseFee
-	}
 	if gasUsed < p.posterGas {
 		log.Error("gas used < poster gas", "gasUsed", gasUsed, "posterGas", p.posterGas)
 	}

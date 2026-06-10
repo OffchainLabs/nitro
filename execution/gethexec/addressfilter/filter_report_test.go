@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+const testFilterSetID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
 func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 	report := FilteredTxReport{
 		ID:     "019539b4-6b30-7e5a-8000-1a2b3c4d5e6f",
@@ -23,10 +25,13 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8, 0x6c},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address: common.HexToAddress("0xdead"),
-				FilterReason: filter.FilterReason{
-					Reason:         filter.ReasonFrom,
-					EventRuleMatch: nil,
+				FilterSetID: testFilterSetID,
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xdead"),
+					FilterReason: filter.FilterReason{
+						Reason:         filter.ReasonFrom,
+						EventRuleMatch: nil,
+					},
 				},
 			},
 		},
@@ -48,6 +53,7 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		"txRLP": "0xf86c",
 		"filteredAddresses": [
 			{
+				"filterSetId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 				"address": "0x000000000000000000000000000000000000dead",
 				"reason": "from"
 			}
@@ -75,10 +81,13 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8, 0x6c},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address: common.HexToAddress("0xdead"),
-				FilterReason: filter.FilterReason{
-					Reason:         filter.ReasonDealiasedFrom,
-					EventRuleMatch: nil,
+				FilterSetID: testFilterSetID,
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xdead"),
+					FilterReason: filter.FilterReason{
+						Reason:         filter.ReasonDealiasedFrom,
+						EventRuleMatch: nil,
+					},
 				},
 			},
 		},
@@ -102,6 +111,7 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		"txRLP": "0xf86c",
 		"filteredAddresses": [
 			{
+				"filterSetId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 				"address": "0x000000000000000000000000000000000000dead",
 				"reason": "dealiased_from"
 			}
@@ -129,20 +139,23 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address: common.HexToAddress("0xbeef"),
-				FilterReason: filter.FilterReason{
-					Reason: filter.ReasonEventRule,
-					EventRuleMatch: &filter.EventRuleMatch{
-						MatchedEvent:      "Transfer(address,address,uint256)",
-						MatchedTopicIndex: 2,
-						RawLog: &filter.RawLog{
-							Address: common.HexToAddress("0xdead"),
-							Topics: []common.Hash{
-								common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),
-								common.HexToHash("0x000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-								common.HexToHash("0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"),
+				FilterSetID: testFilterSetID,
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xbeef"),
+					FilterReason: filter.FilterReason{
+						Reason: filter.ReasonEventRule,
+						EventRuleMatch: &filter.EventRuleMatch{
+							MatchedEvent:      "Transfer(address,address,uint256)",
+							MatchedTopicIndex: 2,
+							RawLog: &filter.RawLog{
+								Address: common.HexToAddress("0xdead"),
+								Topics: []common.Hash{
+									common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),
+									common.HexToHash("0x000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+									common.HexToHash("0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"),
+								},
+								Data: hexutil.Bytes{0x00, 0x00},
 							},
-							Data: hexutil.Bytes{0x00, 0x00},
 						},
 					},
 				},
@@ -166,6 +179,7 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		"txRLP": "0xf8",
 		"filteredAddresses": [
 			{
+				"filterSetId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 				"address": "0x000000000000000000000000000000000000beef",
 				"reason": "event_rule",
 				"matchedEvent": "Transfer(address,address,uint256)",

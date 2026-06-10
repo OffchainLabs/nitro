@@ -435,6 +435,18 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		return nil, nil
 	}
 
+	if postedRival.AssertionHash == args.invalidAssertion.AssertionHash {
+		selfChallengeBailoutCounter.Inc(1)
+		log.Warn(
+			"Computed correct rival has the same hash as the detected invalid assertion; "+
+				"skipping challenge to avoid challenging a canonical assertion",
+			"assertionHash", postedRival.AssertionHash,
+			"parentAssertionHash", args.canonicalParent.AssertionHash,
+			"validatorName", m.validatorName,
+		)
+		return postedRival, nil
+	}
+
 	if m.rivalHandler == nil {
 		return nil, errors.New("rival handler not set")
 	}

@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/execution"
@@ -33,16 +35,26 @@ func isFilteredError(err error) bool {
 }
 
 func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
+	return newHashedCheckerWithScheme(addrs, addressfilter.HashingSchemeStringInput)
+}
+
+func newHashedCheckerWithScheme(addrs []common.Address, scheme addressfilter.HashingScheme) *addressfilter.HashedAddressChecker {
 	const cacheSize = 100
 	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
 		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
-		hashPrefix := addressfilter.GetHashInputPrefix(salt)
-		for i, addr := range addrs {
-			hashes[i] = addressfilter.HashWithPrefix(hashPrefix, addr)
+		if scheme == addressfilter.HashingSchemeRawBytesInput {
+			for i, addr := range addrs {
+				hashes[i] = addressfilter.HashRawBytesInput(salt, addr)
+			}
+		} else {
+			hashPrefix := addressfilter.GetHashStringInputPrefix(salt)
+			for i, addr := range addrs {
+				hashes[i] = addressfilter.HashStringInputWithPrefix(hashPrefix, addr)
+			}
 		}
-		store.Store(uuid.New(), salt, hashes, "test")
+		store.Store(uuid.New(), salt, scheme, hashes, "test")
 	}
 	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -151,6 +163,116 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+// TestAddressFilterMultipleTxsInBlock sequences a clean / bad-A / clean / bad-B
+// / clean pattern into a single block and asserts that every clean tx is
+// included and each filtered tx is reported with only its own offending
+// address.
+func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Two distinct filtered addresses, so the test can detect cross-tx
+	// attribution leaks where a later tx's report mentions an earlier tx's address.
+	builder.L2Info.GenerateAccount("FilteredUserA")
+	builder.L2Info.GenerateAccount("FilteredUserB")
+	filteredA := builder.L2Info.GetAddress("FilteredUserA")
+	filteredB := builder.L2Info.GetAddress("FilteredUserB")
+
+	// One sender per tx: a filtered tx is rejected before execution and never
+	// bumps the state nonce, so reusing the same sender for a later tx would
+	// fail the nonce check rather than the filter.
+	senders := []string{"Sender1", "Sender2", "Sender3", "Sender4", "Sender5"}
+	for _, s := range senders {
+		builder.L2Info.GenerateAccount(s)
+		builder.L2.TransferBalance(t, "Owner", s, big.NewInt(1e18), builder.L2Info)
+	}
+	builder.L2Info.GenerateAccount("CleanReceiver1")
+	builder.L2Info.GenerateAccount("CleanReceiver3")
+	builder.L2Info.GenerateAccount("CleanReceiver5")
+
+	addrFilter := newHashedChecker([]common.Address{filteredA, filteredB})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	clean1 := builder.L2Info.PrepareTx("Sender1", "CleanReceiver1", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	badA := builder.L2Info.PrepareTx("Sender2", "FilteredUserA", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	clean3 := builder.L2Info.PrepareTx("Sender3", "CleanReceiver3", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	badB := builder.L2Info.PrepareTx("Sender4", "FilteredUserB", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	clean5 := builder.L2Info.PrepareTx("Sender5", "CleanReceiver5", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	sequencer := builder.L2.ExecNode.Sequencer
+	// SequenceTransactionsForTest bypasses the tx queue and sequences every
+	// tx into a single block.
+	sequencer.Pause()
+	defer sequencer.Activate()
+	block, txErrors := sequencer.SequenceTransactionsForTest(
+		t, types.Transactions{clean1, badA, clean3, badB, clean5},
+	)
+	require.NotNil(t, block, "block should have been produced")
+	require.Len(t, txErrors, 5)
+
+	require.NoError(t, txErrors[0], "clean tx 1 should have been sequenced")
+	require.Error(t, txErrors[1], "tx to FilteredUserA should have been rejected")
+	require.Truef(t, isFilteredError(txErrors[1]), "tx 2 rejection should be a filter error, got: %v", txErrors[1])
+	require.NoErrorf(t, txErrors[2], "clean tx 3 must not inherit filter state from tx 2, got: %v", txErrors[2])
+	require.Error(t, txErrors[3], "tx to FilteredUserB should have been rejected")
+	require.Truef(t, isFilteredError(txErrors[3]), "tx 4 rejection should be a filter error, got: %v", txErrors[3])
+	require.NoErrorf(t, txErrors[4], "clean tx 5 must not inherit filter state from tx 4, got: %v", txErrors[4])
+
+	cleanReceipt1, err := builder.L2.EnsureTxSucceeded(clean1)
+	require.NoError(t, err)
+	cleanReceipt3, err := builder.L2.EnsureTxSucceeded(clean3)
+	require.NoError(t, err)
+	cleanReceipt5, err := builder.L2.EnsureTxSucceeded(clean5)
+	require.NoError(t, err)
+	require.Equal(t, cleanReceipt1.BlockNumber.Uint64(), cleanReceipt3.BlockNumber.Uint64(),
+		"clean txs must share the same block")
+	require.Equal(t, cleanReceipt1.BlockNumber.Uint64(), cleanReceipt5.BlockNumber.Uint64(),
+		"clean txs must share the same block")
+
+	// Exactly one report per filtered tx; reports may arrive in any order.
+	reports := map[common.Hash]*addressfilter.FilteredTxReport{}
+	for i := 0; i < 2; i++ {
+		r := endpoint.NextReport(t)
+		reports[r.TxHash] = r
+	}
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+
+	require.Contains(t, reports, badA.Hash(), "no report received for tx to FilteredUserA")
+	require.Contains(t, reports, badB.Hash(), "no report received for tx to FilteredUserB")
+
+	assertReportFilteredOn(t, reports[badA.Hash()], filteredA, filteredB)
+	assertReportFilteredOn(t, reports[badB.Hash()], filteredB, filteredA)
+
+	CheckCommonReportFields(t, ctx, builder, reports[badA.Hash()], badA)
+	CheckCommonReportFields(t, ctx, builder, reports[badB.Hash()], badB)
+}
+
+// assertReportFilteredOn asserts that report mentions `expected` (with
+// ReasonTo) and does not mention `notExpected`. This catches cross-tx attribution
+// leaks where a previous tx's filtered address is reported against a later tx.
+func assertReportFilteredOn(t *testing.T, report *addressfilter.FilteredTxReport, expected, notExpected common.Address) {
+	t.Helper()
+	foundExpected := false
+	for _, fa := range report.FilteredAddresses {
+		require.NotEqualf(t, notExpected, fa.Address,
+			"report for tx %s leaked filtered address %s from another tx",
+			report.TxHash.Hex(), notExpected.Hex())
+		if fa.Address == expected {
+			require.Equal(t, filter.ReasonTo, fa.FilterReason.Reason,
+				"expected filter reason %q, got %q", filter.ReasonTo, fa.FilterReason.Reason)
+			foundExpected = true
+		}
+	}
+	require.Truef(t, foundExpected, "report should mention filtered address %s", expected.Hex())
 }
 
 func TestAddressFilterEventRuleReport(t *testing.T) {
@@ -761,7 +883,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Store hashes to the hashstore so FilteringReady returns true
 	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	Require(t, err)
-	filterService.GetHashStore().Store(uuid.New(), salt, nil, "test-digest")
+	filterService.GetHashStore().Store(uuid.New(), salt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -770,4 +892,51 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	if !execNode.Synced(ctx) {
 		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
 	}
+}
+
+// Exercises an end-to-end filtering tx flow under the raw-bytes hashing scheme:
+// the checker's HashStore is loaded with sha256-rawbytesinput hashes and the
+// sequencer must still reject txs to/from a listed address.
+func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	addrFilter := newHashedCheckerWithScheme([]common.Address{filteredAddr}, addressfilter.HashingSchemeRawBytesInput)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil {
+		t.Fatal("expected transaction to filtered address to be rejected under raw-bytes scheme")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+
+	// Sanity check: tx between non-filtered addresses succeeds.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	builder.L2Info.GenerateAccount("AnotherUser")
+	builder.L2.TransferBalance(t, "Owner", "AnotherUser", big.NewInt(1e18), builder.L2Info)
+	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
 }
