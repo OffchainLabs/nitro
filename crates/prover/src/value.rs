@@ -18,8 +18,6 @@ use crate::binary::FloatType;
 
 // Wire-format: bincode-reachable via `Function.local_types` and
 // `FunctionType.inputs/outputs` in `*.wavm.br` replay binaries. Append-only
-// — reordering shifts the declaration-order discriminant and breaks every
-// committed replay binary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ArbValueType {

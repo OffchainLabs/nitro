@@ -52,8 +52,7 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
 }
 
 // Wire-format: bincode-reachable as `Opcode::IUnOp(_, IUnOpType)` in
-// `*.wavm.br`. `#[repr(u8)]` doesn't constrain bincode (still
-// declaration-order). Append-only.
+// `*.wavm.br`. `#[repr(u8)]` doesn't constrain bincode. Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IUnOpType {
@@ -63,8 +62,7 @@ pub enum IUnOpType {
 }
 
 // Wire-format: bincode-reachable as `Opcode::IBinOp(_, IBinOpType)` in
-// `*.wavm.br`. `#[repr(u8)]` doesn't constrain bincode (still
-// declaration-order). Append-only.
+// `*.wavm.br`. `#[repr(u8)]` doesn't constrain bincode. Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IBinOpType {
@@ -85,9 +83,9 @@ pub enum IBinOpType {
     Rotr,
 }
 
-// TWO ENCODINGS, TWO CONTEXTS (the wasmdb half is new in this change):
-//   - wasmdb cached modules (wavm_serialize.rs): stable `Opcode::repr()` u16   [NEW]
-//   - committed `*.wavm.br` replay binary (machine.rs):  bincode discriminant  [unchanged]
+// Two encodings, each used in a different context:
+//  - wasmdb cached modules (wavm_serialize.rs):         stable `Opcode::repr()` u16
+//  - committed `*.wavm.br` replay binary (machine.rs):  bincode discriminant
 // Both must stay stable; the rules below cover each.
 //
 // WIRE-FORMAT SYNC: persisted WAVM modules identify each opcode by its `repr()`
@@ -105,10 +103,7 @@ pub enum IBinOpType {
 // (`*.wavm.br`). Bincode reaches `Opcode` transitively via
 // `Function::code: Vec<Instruction>` and encodes each variant by its
 // declaration-order discriminant, so reordering variants would silently break
-// every committed replay binary on disk. The test
-// `opcode_bincode_discriminants_are_pinned` (below) will fire at CI time if
-// the first variants shift. Add new variants to the end of the enum to preserve
-// this format.
+// every committed replay binary on disk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
@@ -572,8 +567,7 @@ impl Opcode {
 
 pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
 
-// Wire-format: bincode-reachable via `Function::code: Vec<Instruction>` in
-// `*.wavm.br`. Fields are serialized in declaration order — swapping or
+// Fields are serialized in declaration order; swapping or
 // inserting breaks every committed replay binary. Append-only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Instruction {

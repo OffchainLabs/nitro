@@ -140,9 +140,6 @@ pub unsafe extern "C" fn stylus_activate(
             Err(err) => return write_err(output, err),
         };
 
-        // Match sibling FFI fns (stylus_compile, etc.): write FFI out-params
-        // only on the success path. Failure paths return via write_err and must
-        // leave outputs untouched, since Go does not inspect them on failure.
         let bytes = match module.to_wavm_bytes() {
             Ok(b) => b,
             Err(err) => return write_err(output, err),

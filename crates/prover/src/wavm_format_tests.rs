@@ -9,11 +9,10 @@
 
 use std::sync::Arc;
 
-use arbutil::Bytes32;
+use arbutil::{Bytes32, crypto};
 use brotli::Dictionary;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
-use sha3::{Digest, Keccak256};
 use wasmparser::{RefType, TableType};
 
 use crate::{
@@ -677,9 +676,7 @@ fn wavm_blob_layout_keccak_pinned_to_golden() {
 
     let module = build_test_module();
     let bytes = module.to_wavm_bytes().expect("encode");
-    let mut h = Keccak256::new();
-    h.update(&bytes);
-    let actual_hex = hex::encode(h.finalize());
+    let actual_hex = hex::encode(crypto::keccak(&bytes));
 
     assert_eq!(
         actual_hex, WAVM_BLOB_LAYOUT_GOLDEN_HEX,
@@ -693,9 +690,7 @@ fn wavm_blob_layout_keccak_pinned_to_golden() {
     let mut mutated = build_test_module();
     mutated.internals_offset = mutated.internals_offset.wrapping_add(1);
     let mutated_bytes = mutated.to_wavm_bytes().expect("encode mutated");
-    let mut mh = Keccak256::new();
-    mh.update(&mutated_bytes);
-    let mutated_hex = hex::encode(mh.finalize());
+    let mutated_hex = hex::encode(crypto::keccak(&mutated_bytes));
     assert_ne!(
         actual_hex, mutated_hex,
         "encoder must produce a different keccak after mutating a \

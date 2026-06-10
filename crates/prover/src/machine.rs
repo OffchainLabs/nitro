@@ -697,15 +697,13 @@ impl Module {
 
     /// Serializes a `Module` into `MAGIC | VERSION | u32 LEN | brotli(body)`.
     /// Body fields are positional, in `Module` declaration order; schema changes
-    /// require bumping `WAVM_SERIALIZE_VERSION` (the Go validator then purges).
-    /// Returns `Err` rather than panicking so the FFI surfaces failures as
-    /// status codes.
+    /// require bumping `WAVM_SERIALIZE_VERSION`. Returns `Err` rather than
+    /// panicking so the FFI surfaces failures as status codes.
     pub fn to_wavm_bytes(&self) -> Result<Vec<u8>> {
         // Body follows `Module`'s declaration order; `tables_merkle` and
         // `funcs_merkle` are re-derived on decode.
         //
-        // Pre-size to skip the ~10 doubling reallocations a multi-MB body would
-        // otherwise cost. Instruction stream + memory buffer dominate.
+        // Pre-size to skip the ~10 doubling reallocations a multi-MB body would otherwise cost
         let body_capacity_hint = self.memory.size() as usize
             + self
                 .funcs
@@ -1423,10 +1421,7 @@ pub(crate) fn format_missing_stylus_module_error(
     format!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
 }
 
-// Repopulates merkle caches on a freshly-deserialized module
-// (replay-binary path). `Arc::get_mut` is sound today because `modules` was
-// just locally deserialized, but returning `Err` instead of panicking keeps
-// a future caller that clones `module.funcs` first from crashing the FFI.
+// Repopulates merkle caches on a freshly-deserialized module (replay-binary path)
 fn recompute_module_merkles(module: &mut Module) -> Result<()> {
     for table in module.tables.iter_mut() {
         table.elems_merkle = Merkle::new(
@@ -2832,9 +2827,6 @@ impl Machine {
 
                     // Decode and hash-check BEFORE mutating `value_stack` /
                     // `self.modules` so the pre-step state survives bail.
-                    // The hash equality must hold by construction (see
-                    // `from_wavm_bytes`); the runtime check guards the BOLD
-                    // commitment against a future regression.
                     let new_module = match Module::from_wavm_bytes(bytes) {
                         Ok(m) => m,
                         Err(e) => bail!("failed to decode stylus module {hash}: {e}"),

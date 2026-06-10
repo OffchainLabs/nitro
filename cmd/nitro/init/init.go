@@ -437,16 +437,15 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	return !it.Next()
 }
 
-// wavmPrefixHasEntries reports whether any WAVM-prefixed key exists. Surfacing
-// it.Error() matters: a transient I/O failure during the probe must not be
-// misread as "no entries", which would skip the purge and leave stale entries
-// in place for the decoder to reject later with a confusing "magic mismatch".
+// wavmPrefixHasEntries reports whether any WAVM-prefixed key exists.
 func wavmPrefixHasEntries(db ethdb.Database) (bool, error) {
 	for _, prefix := range rawdb.WavmPrefixes() {
 		it := db.NewIterator(prefix, nil)
 		hasNext := it.Next()
 		err := it.Error()
 		it.Release()
+		// A transient I/O failure during the probe must not be misread as "no entries",
+		// which would skip the purge and leave stale entries in place for the decoder
 		if err != nil {
 			return false, fmt.Errorf("probe prefix %x: %w", prefix, err)
 		}
@@ -526,12 +525,9 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 						return fmt.Errorf("failed to write batch: %w", err)
 					}
 					batch.Reset()
-					// Surface mid-loop iterator I/O errors before releasing,
-					// symmetric with the end-of-loop check below. Without
-					// this, a transient storage error on the first batch
-					// would be silently dropped when the iterator is
-					// recreated, leaving the purge half-complete but the
-					// version key written.
+					// Without this, a transient storage error on the first batch
+					// would be silently dropped when the iterator is recreated,
+					// leaving the purge half-complete but the version key written.
 					if err := it.Error(); err != nil {
 						return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
 					}
@@ -587,7 +583,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 // Purges activated Stylus WAVM entries when the on-disk version is absent or
 // mismatched. A missing key in a wasmdb that already has WAVM entries is
 // treated as incompatible (legacy bincode bytes). A fresh wasmdb (no
-// wavm-prefixed entries) just gets the version key written — scoping the
+// wavm-prefixed entries) just gets the version key written; scoping the
 // predicate to wavm prefixes avoids a misleading empty purge on upgrading
 // nodes that only have wasmer entries.
 //
@@ -602,7 +598,7 @@ func validateOrUpgradeWavmSerializeVersion(db ethdb.Database) (bool, error) {
 	if rustVersion := readRustWavmFormatVersion(); rustVersion != WavmSerializeVersion {
 		return false, fmt.Errorf(
 			"WavmSerializeVersion mismatch between Go (%d) and Rust (%d); "+
-				"this is a build inconsistency — rebuild both sides from the same revision",
+				"this is a build inconsistency. Rebuild both sides from the same revision",
 			WavmSerializeVersion, rustVersion,
 		)
 	}
@@ -631,7 +627,7 @@ func validateOrUpgradeWavmSerializeVersion(db ethdb.Database) (bool, error) {
 		return false, nil
 	}
 	if missing {
-		log.Warn("No WavmSerializeVersion key found - removing old WAVM stylus module entries", "expected", WavmSerializeVersion)
+		log.Warn("No WavmSerializeVersion key found, removing old WAVM stylus module entries", "expected", WavmSerializeVersion)
 	} else {
 		log.Warn("Detected wavm serialize version, removing old WAVM stylus module entries", "found", versionInDB, "expected", WavmSerializeVersion)
 	}
@@ -1156,8 +1152,6 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
 
-				// wavmPurged is fine to drop here: the purge already deleted
-				// RebuildingPositionKey, so rebuildLocalWasm fires on its own.
 				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
