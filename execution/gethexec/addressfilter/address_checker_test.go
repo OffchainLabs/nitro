@@ -75,7 +75,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	state4 := mustState(t, checker.NewTxState())
 	state4.TouchAddress(&filter.FilteredAddressWithReason{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil}})
 	state4.TouchAddress(&filter.FilteredAddressWithReason{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
-	state4.TouchAddress(&filter.FilteredAddressWithReason{Address: addrFiltered2, FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil}})
+	state4.TouchAddress(&filter.FilteredAddressWithReason{Address: addrFiltered2, FilterReason: filter.FilterReason{Reason: filter.ReasonCallTarget, EventRuleMatch: nil}})
 	filtered4, records4 := state4.IsFiltered()
 	assert.True(t, filtered4, "expected transaction with multiple filtered addresses to be filtered")
 	require.Len(t, records4, 2)
@@ -85,7 +85,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	}
 	assert.Equal(t, filter.ReasonFrom, recordsByAddr[addrFiltered].Reason)
 	assert.Equal(t, filterSetID.String(), recordsByAddr[addrFiltered].FilterSetID)
-	assert.Equal(t, filter.ReasonContractAddress, recordsByAddr[addrFiltered2].Reason)
+	assert.Equal(t, filter.ReasonCallTarget, recordsByAddr[addrFiltered2].Reason)
 	assert.Equal(t, filterSetID.String(), recordsByAddr[addrFiltered2].FilterSetID)
 
 	// Tx 5: reuse HashStore cache across txs

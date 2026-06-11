@@ -111,7 +111,7 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	ExecuteMessageLoopDelay:     time.Millisecond * 100,
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
-	ShutdownOnBlockhashMismatch: false,
+	ShutdownOnBlockhashMismatch: true,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
@@ -129,7 +129,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
-	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "if set the node gracefully shuts down upon detecting mismatch in feed and locally computed blockhash. This is turned off by default")
+	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "when true (default), on a feed-vs-local block hash mismatch the node refuses to process further messages and shuts down gracefully; set to false only if you trust local execution over the feed and want to keep processing")
 }
 
 func NewTransactionStreamer(
@@ -1397,36 +1397,47 @@ func (s *TransactionStreamer) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) 
 	return msgResult, nil
 }
 
-func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
+// Returns false to halt processing of this message when the feed's block
+// hash disagrees with ours and ShutdownOnBlockhashMismatch is set.
+func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult *execution.MessageResult, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) bool {
 	if msgAndBlockInfo.BlockHash == nil {
+		return true
+	}
+	if msgResult.BlockHash == *msgAndBlockInfo.BlockHash {
+		return true
+	}
+	log.Error(
+		BlockHashMismatchLogMsg,
+		"msgIdx", msgIdx,
+		"expected", msgAndBlockInfo.BlockHash,
+		"actual", msgResult.BlockHash,
+	)
+	if s.config().ShutdownOnBlockhashMismatch {
+		log.Error("refusing to process further messages due to block hash mismatch with feed; to override (only if you trust local execution over the feed), set --node.transaction-streamer.shutdown-on-blockhash-mismatch=false")
+		s.fatalErrChan <- fmt.Errorf("%s: msgIdx: %d, expectedHash: %v actualHash: %v", BlockHashMismatchLogMsg, msgIdx, msgAndBlockInfo.BlockHash, msgResult.BlockHash)
+		return false
+	}
+	s.markMismatchedBlockMetadataMissing(msgIdx, msgAndBlockInfo)
+	return true
+}
+
+// Best-effort: failures are swallowed because the caller is on the override
+// path and wants execution to continue regardless.
+func (s *TransactionStreamer) markMismatchedBlockMetadataMissing(msgIdx arbutil.MessageIndex, msgAndBlockInfo *arbostypes.MessageWithMetadataAndBlockInfo) {
+	if msgAndBlockInfo.BlockMetadata == nil || s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
 		return
 	}
-	if msgResult.BlockHash != *msgAndBlockInfo.BlockHash {
-		log.Error(
-			BlockHashMismatchLogMsg,
-			"msgIdx", msgIdx,
-			"expected", msgAndBlockInfo.BlockHash,
-			"actual", msgResult.BlockHash,
-		)
-		// Try deleting the existing blockMetadata for this block in consensusDB and set it as missing
-		if msgAndBlockInfo.BlockMetadata != nil &&
-			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
-			batch := s.db.NewBatch()
-			if err := batch.Delete(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(msgIdx))); err != nil {
-				log.Error("error deleting blockMetadata of block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
-				return
-			}
-			if err := batch.Put(dbKey(schema.MissingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in consensusDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
-				return
-			}
-			if err := batch.Write(); err != nil {
-				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
-			}
-		}
-		if s.config().ShutdownOnBlockhashMismatch {
-			s.fatalErrChan <- fmt.Errorf("%s: msgIdx: %d, expectedHash: %v actualHash: %v", BlockHashMismatchLogMsg, msgIdx, msgAndBlockInfo.BlockHash, msgResult.BlockHash)
-		}
+	batch := s.db.NewBatch()
+	if err := batch.Delete(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(msgIdx))); err != nil {
+		log.Error("error deleting blockMetadata of block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
+		return
+	}
+	if err := batch.Put(dbKey(schema.MissingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
+		log.Error("error marking deleted blockMetadata as missing in consensusDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
+		return
+	}
+	if err := batch.Write(); err != nil {
+		log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 	}
 }
 
@@ -1517,7 +1528,9 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	s.checkResult(msgIdxToExecute, msgResult, msgAndBlockInfo)
+	if !s.checkResult(msgIdxToExecute, msgResult, msgAndBlockInfo) {
+		return false
+	}
 
 	batch := s.db.NewBatch()
 	err = s.storeResult(msgIdxToExecute, *msgResult, batch)

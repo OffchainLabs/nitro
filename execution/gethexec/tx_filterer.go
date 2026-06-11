@@ -29,7 +29,9 @@ type txFilterer struct {
 }
 
 func (f *txFilterer) Setup(statedb *state.StateDB) {
-	statedb.SetAddressChecker(f.execEngine.addressChecker)
+	if f.execEngine.addressChecker != nil {
+		statedb.SetAddressCheckerState(f.execEngine.addressChecker.NewTxState())
+	}
 	statedb.SetTxContext(common.Hash{}, 0)
 }
 

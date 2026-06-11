@@ -1882,10 +1882,24 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
 	}
 
+	s.pendingFilteredTxReports = nil
 	block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
 	if err != nil {
 		t.Fatalf("SequenceTransactionsForTest: %v", err)
 	}
+
+	// Mirror createBlock: dispatch any reports accumulated by preTxFilter so
+	// tests inspecting the filtering-report endpoint observe them.
+	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
+		reports := s.pendingFilteredTxReports
+		s.LaunchThread(func(ctx context.Context) {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
+			}
+		})
+	}
+	s.pendingFilteredTxReports = nil
+
 	return block, hooks.GetTxErrors()
 }
 
