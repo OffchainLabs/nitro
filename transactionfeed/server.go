@@ -82,9 +82,12 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.LaunchThread(func(_ context.Context) {
-		if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Warn("Transaction feed http serve error", "err", err)
+		err := s.httpServer.Serve(ln)
+		if errors.Is(err, http.ErrServerClosed) {
+			return
 		}
+		log.Error("Transaction feed http serve exited unexpectedly", "err", err)
+		s.StopOnly()
 	})
 	s.LaunchThread(s.run)
 	log.Info("Transaction feed server listening", "addr", addr)
@@ -234,15 +237,11 @@ func (s *Server) run(ctx context.Context) {
 func (s *Server) sendUnregister(cc *clientConn) {
 	select {
 	case s.unregister <- cc:
-	default:
+	case <-s.GetContext().Done():
 	}
 }
 
 func (s *Server) BroadcastTransaction(msg *TransactionFeedMessage) {
-	if msg == nil {
-		log.Warn("Attempted to broadcast nil transaction feed message")
-		return
-	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Error("Failed to marshal transaction feed message", "err", err)

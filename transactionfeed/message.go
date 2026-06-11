@@ -4,12 +4,13 @@
 package transactionfeed
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -52,28 +53,23 @@ type Log struct {
 	Data    string   `json:"data"`
 }
 
-func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) *TransactionFeedMessage {
-	var txHash string
-	if tx != nil {
-		txHash = tx.Hash().Hex()
+func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) (*TransactionFeedMessage, error) {
+	if tx == nil {
+		return nil, errors.New("nil transaction")
 	}
 	if header == nil {
-		log.Warn("Transaction feed: BuildFeedMessage called with nil header", "txHash", txHash)
-		return nil
+		return nil, fmt.Errorf("nil header for tx %s", tx.Hash().Hex())
 	}
 	if header.BaseFee == nil {
-		log.Warn("Transaction feed: BuildFeedMessage called with header missing BaseFee", "txHash", txHash, "blockNumber", header.Number)
-		return nil
+		return nil, fmt.Errorf("header missing BaseFee for tx %s at block %s", tx.Hash().Hex(), header.Number)
 	}
 	if receipt == nil {
-		log.Warn("Transaction feed: BuildFeedMessage called with nil receipt", "txHash", txHash)
-		return nil
+		return nil, fmt.Errorf("nil receipt for tx %s", tx.Hash().Hex())
 	}
 
 	rawTx, err := tx.MarshalBinary()
 	if err != nil {
-		log.Warn("Transaction feed: tx.MarshalBinary failed", "txHash", txHash, "err", err)
-		return nil
+		return nil, fmt.Errorf("MarshalBinary for tx %s: %w", tx.Hash().Hex(), err)
 	}
 
 	effectiveGasPrice := receipt.EffectiveGasPrice
@@ -119,5 +115,5 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 				Logs:              logs,
 			},
 		},
-	}
+	}, nil
 }

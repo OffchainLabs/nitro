@@ -993,7 +993,12 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 	if s.transactionFeedServer == nil {
 		return
 	}
-	s.transactionFeedServer.BroadcastTransaction(transactionfeed.BuildFeedMessage(header, tx, receipt))
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
+	if err != nil {
+		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
+		return
+	}
+	s.transactionFeedServer.BroadcastTransaction(msg)
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
@@ -1402,7 +1407,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.preTxFilter,
 		s.postTxFilter,
 		nil,
-		s.execEngine.transactionFeedServer,
+		s.execEngine.transactionBroadcaster,
 	)
 
 	for _, queueItem := range queueItems {

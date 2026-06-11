@@ -475,7 +475,7 @@ func CreateExecutionNode(
 	var transactionFeedServer *transactionfeed.Server
 	if config.TransactionFeed.Enable {
 		transactionFeedServer = transactionfeed.NewServer(config.TransactionFeed)
-		execEngine.SetTransactionFeedServer(transactionFeedServer)
+		execEngine.SetTransactionBroadcaster(transactionFeedServer)
 	}
 
 	execNode := &ExecutionNode{

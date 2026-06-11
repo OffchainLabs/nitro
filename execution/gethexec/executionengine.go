@@ -185,7 +185,12 @@ func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *t
 	if f.transactionBroadcaster == nil {
 		return
 	}
-	f.transactionBroadcaster.BroadcastTransaction(transactionfeed.BuildFeedMessage(header, tx, receipt))
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
+	if err != nil {
+		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
+		return
+	}
+	f.transactionBroadcaster.BroadcastTransaction(msg)
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
