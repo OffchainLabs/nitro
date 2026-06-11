@@ -189,27 +189,28 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig        `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig         `koanf:"tx-pre-checker" reload:"hot"`
-	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
-	Forwarder                   ForwarderConfig            `koanf:"forwarder"`
-	ForwardingTarget            string                     `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string                   `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig              `koanf:"caching"`
-	RPC                         arbitrum.Config            `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig            `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                       `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig          `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig         `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64                     `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64                     `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig          `koanf:"vmtrace"`
-	ExposeMultiGas              bool                       `koanf:"expose-multi-gas"`
-	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
-	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
-	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
+	ParentChainReader           headerreader.Config          `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig              `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig          `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig           `koanf:"tx-pre-checker" reload:"hot"`
+	TransactionFiltering        TransactionFilteringConfig   `koanf:"transaction-filtering" reload:"hot"`
+	Forwarder                   ForwarderConfig              `koanf:"forwarder"`
+	ForwardingTarget            string                       `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string                     `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig                `koanf:"caching"`
+	RPC                         arbitrum.Config              `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig              `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                         `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig            `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig           `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                       `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                       `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig            `koanf:"vmtrace"`
+	ExposeMultiGas              bool                         `koanf:"expose-multi-gas"`
+	RPCServer                   rpcserver.Config             `koanf:"rpc-server"`
+	ConsensusRPCClient          rpcclient.ClientConfig       `koanf:"consensus-rpc-client" reload:"hot"`
+	DisableArbOwnerEthCall      bool                         `koanf:"disable-arbowner-ethcall"`
+	TransactionFeed             transactionfeed.ServerConfig `koanf:"transaction-feed"`
 
 	forwardingTarget string
 }
@@ -244,6 +245,9 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
+	if err := c.TransactionFeed.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -266,6 +270,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
+	transactionfeed.ServerConfigAddOptions(prefix+".transaction-feed", f)
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
@@ -345,6 +350,7 @@ type ExecutionNode struct {
 	filteringReportRPCClient *FilteringReportRPCClient
 	AddressFilterService     *addressfilter.FilterService
 	EventFilter              *eventfilter.EventFilter
+	TransactionFeedServer    *transactionfeed.Server
 }
 
 func CreateExecutionNode(
@@ -466,6 +472,12 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
+	var transactionFeedServer *transactionfeed.Server
+	if config.TransactionFeed.Enable {
+		transactionFeedServer = transactionfeed.NewServer(config.TransactionFeed)
+		execEngine.SetTransactionFeedServer(transactionFeedServer)
+	}
+
 	execNode := &ExecutionNode{
 		ExecutionDB:              executionDB,
 		Backend:                  backend,
@@ -485,6 +497,7 @@ func CreateExecutionNode(
 		filteringReportRPCClient: filteringReportRPCClient,
 		AddressFilterService:     addressFilterService,
 		EventFilter:              eventFilter,
+		TransactionFeedServer:    transactionFeedServer,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -634,6 +647,12 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	if n.ParentChain != nil {
 		n.ParentChain.Start(ctx)
 	}
+	if n.TransactionFeedServer != nil {
+		err = n.TransactionFeedServer.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting transaction feed server: %w", err)
+		}
+	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	return nil
 }
@@ -671,6 +690,9 @@ func (n *ExecutionNode) StopAndWait() {
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
+	}
+	if n.TransactionFeedServer != nil && n.TransactionFeedServer.Started() {
+		n.TransactionFeedServer.StopAndWait()
 	}
 	// TODO after separation
 	// if err := n.Stack.Close(); err != nil {
@@ -746,10 +768,6 @@ func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClie
 	}
 	n.ExecEngine.SetConsensus(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
-}
-
-func (n *ExecutionNode) SetTransactionFeedServer(srv *transactionfeed.Server) {
-	n.ExecEngine.SetTransactionFeedServer(srv)
 }
 
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {

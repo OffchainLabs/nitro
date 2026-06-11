@@ -28,7 +28,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster/message"
-	"github.com/offchainlabs/nitro/transactionfeed"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -43,9 +42,8 @@ var (
 var TransactionStreamerBlockCreationStopped = errors.New("block creation stopped in transaction streamer")
 
 type FeedConfig struct {
-	Output          wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
-	Input           Config                              `koanf:"input" reload:"hot"`
-	TransactionFeed transactionfeed.ServerConfig        `koanf:"transaction-feed"`
+	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
+	Input  Config                              `koanf:"input" reload:"hot"`
 }
 
 func (fc *FeedConfig) Validate() error {
@@ -59,13 +57,11 @@ func FeedConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool,
 	if feedOutputEnable {
 		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
 	}
-	transactionfeed.ServerConfigAddOptions(prefix+".transaction-feed", f)
 }
 
 var FeedConfigDefault = FeedConfig{
-	Output:          wsbroadcastserver.DefaultBroadcasterConfig,
-	Input:           DefaultConfig,
-	TransactionFeed: transactionfeed.DefaultServerConfig,
+	Output: wsbroadcastserver.DefaultBroadcasterConfig,
+	Input:  DefaultConfig,
 }
 
 type Config struct {

@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -52,12 +53,26 @@ type Log struct {
 }
 
 func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) *TransactionFeedMessage {
-	if header == nil || header.BaseFee == nil || receipt == nil {
+	var txHash string
+	if tx != nil {
+		txHash = tx.Hash().Hex()
+	}
+	if header == nil {
+		log.Warn("Transaction feed: BuildFeedMessage called with nil header", "txHash", txHash)
+		return nil
+	}
+	if header.BaseFee == nil {
+		log.Warn("Transaction feed: BuildFeedMessage called with header missing BaseFee", "txHash", txHash, "blockNumber", header.Number)
+		return nil
+	}
+	if receipt == nil {
+		log.Warn("Transaction feed: BuildFeedMessage called with nil receipt", "txHash", txHash)
 		return nil
 	}
 
 	rawTx, err := tx.MarshalBinary()
 	if err != nil {
+		log.Warn("Transaction feed: tx.MarshalBinary failed", "txHash", txHash, "err", err)
 		return nil
 	}
 
@@ -90,7 +105,7 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
 		Transaction: TransactionIncluded{
 			BlockNumber: header.Number.Uint64(),
-			TxIndex:     uint32(receipt.TransactionIndex),
+			TxIndex:     arbmath.SaturatingUUCast[uint32](receipt.TransactionIndex),
 			RawTx:       hexutil.Encode(rawTx),
 			TxHash:      tx.Hash().Hex(),
 			Receipt: IncompleteReceipt{

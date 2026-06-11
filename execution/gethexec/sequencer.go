@@ -927,7 +927,7 @@ type FullSequencingHooks struct {
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
 	filteredTxCount          int
-	transactionFeedServer    *transactionfeed.Server
+	transactionFeedServer    transactionBroadcaster
 }
 
 func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
@@ -1086,7 +1086,7 @@ func MakeSequencingHooks(
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
-	transactionFeedServer *transactionfeed.Server,
+	transactionFeedServer transactionBroadcaster,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
 		queueItems:               items,
@@ -1099,6 +1099,16 @@ func MakeSequencingHooks(
 		transactionFeedServer:    transactionFeedServer,
 	}
 	return res
+}
+
+// makeReorgSequencingHooks builds FullSequencingHooks used when re-sequencing
+// transactions from a reorg.
+func makeReorgSequencingHooks(txes types.Transactions, transactionFeedServer transactionBroadcaster) *FullSequencingHooks {
+	items := make([]txQueueItem, 0, len(txes))
+	for _, tx := range txes {
+		items = append(items, txQueueItem{tx: tx})
+	}
+	return MakeSequencingHooks(items, 0, nil, nil, nil, transactionFeedServer)
 }
 
 // MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.

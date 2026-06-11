@@ -94,20 +94,28 @@ func (e *ErrFilteredDelayedMessage) Error() string {
 // that a transaction touched a filtered address and is not in the onchain filter.
 var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 
+// transactionBroadcaster is the subset of transactionfeed.Server functionality used
+// by the execution engine to broadcast transactions as they are accepted.
+type transactionBroadcaster interface {
+	BroadcastTransaction(msg *transactionfeed.TransactionFeedMessage)
+}
+
 // DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
 // for delayed message processing. Collects all tx hashes that touch filtered addresses
 // and are not in the onchain filter. After block production, the caller checks if any
 // hashes were collected and returns ErrFilteredDelayedMessage if so.
 type DelayedFilteringSequencingHooks struct {
 	arbos.NoopSequencingHooks
-	FilteredTxHashes []common.Hash
-	eventFilter      *eventfilter.EventFilter
+	FilteredTxHashes       []common.Hash
+	eventFilter            *eventfilter.EventFilter
+	transactionBroadcaster transactionBroadcaster
 }
 
-func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter) *DelayedFilteringSequencingHooks {
+func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter, tb transactionBroadcaster) *DelayedFilteringSequencingHooks {
 	return &DelayedFilteringSequencingHooks{
-		NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes),
-		eventFilter:         ef,
+		NoopSequencingHooks:    *arbos.NewNoopSequencingHooks(txes),
+		eventFilter:            ef,
+		transactionBroadcaster: tb,
 	}
 }
 
@@ -171,6 +179,13 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	if errors.As(err, &cascadingErr) {
 		f.FilteredTxHashes = append(f.FilteredTxHashes, cascadingErr.OriginatingTxHash)
 	}
+}
+
+func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
+	if f.transactionBroadcaster == nil {
+		return
+	}
+	f.transactionBroadcaster.BroadcastTransaction(transactionfeed.BuildFeedMessage(header, tx, receipt))
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -251,11 +266,11 @@ type ExecutionEngine struct {
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
 	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
-	transactionFeedServer          *transactionfeed.Server
+	transactionBroadcaster         transactionBroadcaster
 }
 
-func (s *ExecutionEngine) SetTransactionFeedServer(srv *transactionfeed.Server) {
-	s.transactionFeedServer = srv
+func (s *ExecutionEngine) SetTransactionBroadcaster(tb transactionBroadcaster) {
+	s.transactionBroadcaster = tb
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -603,7 +618,9 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
+		// Pass the live transactionFeedServer so reorged blocks re-broadcast
+		// their txs -- subscribers see at-least-once delivery across reorgs.
+		hooks := makeReorgSequencingHooks(txes, s.transactionBroadcaster)
 		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
@@ -954,7 +971,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			log.Warn("error parsing incoming message for filtering", "err", err)
 			txes = types.Transactions{}
 		}
-		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter, s.transactionBroadcaster)
 
 		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,

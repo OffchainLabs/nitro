@@ -7,46 +7,61 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"sync/atomic"
 	"time"
 
-	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
+	"github.com/coder/websocket"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var (
 	clientsCurrentGauge     = metrics.NewRegisteredGauge("arb/transactionfeed/clients/current", nil)
 	clientsDisconnectedSlow = metrics.NewRegisteredCounter("arb/transactionfeed/clients/disconnected/slow", nil)
+	clientsRejectedAtCap    = metrics.NewRegisteredCounter("arb/transactionfeed/clients/rejected/at_cap", nil)
 	broadcastDroppedCounter = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/dropped", nil)
 )
 
+// broadcastDropLogInterval is the minimum gap between successive Warn logs
+// for dropped broadcasts. Keeps log volume bounded when a slow run loop or
+// pathological client wave causes a sustained drop streak; the
+// broadcastDroppedCounter still reflects every drop.
+const broadcastDropLogInterval = time.Minute
+
 type clientConn struct {
-	conn net.Conn
-	out  chan []byte
+	conn       *websocket.Conn
+	remoteAddr string
+	out        chan []byte
+	done       chan struct{}
 }
 
 type Server struct {
 	stopwaiter.StopWaiter
-	config      ServerConfig
-	listener    net.Listener
-	register    chan net.Conn
-	unregister  chan net.Conn
-	broadcast   chan []byte
-	clientCount atomic.Int32
+	config              ServerConfig
+	listener            net.Listener
+	httpServer          *http.Server
+	register            chan *clientConn
+	unregister          chan *clientConn
+	broadcast           chan []byte
+	clientCount         atomic.Int32
+	wsUpgradeErrHandler *util.EphemeralErrorHandler
+	lastDropLogNanos    atomic.Int64
 }
 
 func NewServer(config ServerConfig) *Server {
 	return &Server{
-		config:     config,
-		register:   make(chan net.Conn, 16),
-		unregister: make(chan net.Conn, 64),
-		broadcast:  make(chan []byte, config.BroadcastBuf),
+		config:              config,
+		register:            make(chan *clientConn, 16),
+		unregister:          make(chan *clientConn, 64),
+		broadcast:           make(chan []byte, config.BroadcastBuf),
+		wsUpgradeErrHandler: util.NewEphemeralErrorHandler(time.Minute, "", 0),
 	}
 }
 
@@ -59,109 +74,79 @@ func (s *Server) Start(ctx context.Context) error {
 	s.listener = ln
 	s.StopWaiter.Start(ctx, s)
 
-	s.LaunchThread(s.acceptLoop)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleWS)
+	s.httpServer = &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: s.config.HandshakeTimeout,
+	}
+
+	s.LaunchThread(func(_ context.Context) {
+		if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Warn("Transaction feed http serve error", "err", err)
+		}
+	})
 	s.LaunchThread(s.run)
 	log.Info("Transaction feed server listening", "addr", addr)
 	return nil
 }
 
-func (s *Server) acceptLoop(ctx context.Context) {
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			log.Warn("Transaction feed accept error", "err", err)
-			continue
-		}
-		s.LaunchThread(func(ctx context.Context) {
-			s.handleHandshake(ctx, conn)
-		})
+func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	if s.config.MaxClients > 0 && int(s.clientCount.Load()) >= s.config.MaxClients {
+		clientsRejectedAtCap.Inc(1)
+		http.Error(w, "transaction feed at client capacity", http.StatusServiceUnavailable)
+		log.Debug("Transaction feed client connection rejected due to capacity", "remote", r.RemoteAddr)
+		return
 	}
-}
 
-func (s *Server) handleHandshake(ctx context.Context, conn net.Conn) {
-	if err := conn.SetReadDeadline(time.Now().Add(s.config.HandshakeTimeout)); err != nil {
-		conn.Close()
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+	if err != nil {
+		s.wsUpgradeErrHandler.LogLevel(err, log.Warn)("Transaction feed ws upgrade error", "err", err, "remote", r.RemoteAddr)
 		return
 	}
-	if _, err := ws.Upgrade(conn); err != nil {
-		log.Warn("Transaction feed ws upgrade error", "err", err)
-		conn.Close()
-		return
+	s.wsUpgradeErrHandler.Reset()
+
+	cc := &clientConn{
+		conn:       conn,
+		remoteAddr: r.RemoteAddr,
+		out:        make(chan []byte, s.config.ClientBuf),
+		done:       make(chan struct{}),
 	}
-	if err := conn.SetReadDeadline(time.Time{}); err != nil {
-		conn.Close()
-		return
-	}
+
+	ctx := s.GetContext()
+
 	select {
-	case s.register <- conn:
+	case s.register <- cc:
 	case <-ctx.Done():
-		conn.Close()
+		_ = conn.Close(websocket.StatusGoingAway, "shutting down")
+		return
 	}
+
+	log.Debug("Transaction feed client connected", "remote", cc.remoteAddr)
+
+	go s.clientReader(ctx, cc)
+	s.clientWriter(ctx, cc)
+
+	log.Debug("Transaction feed client disconnected", "remote", cc.remoteAddr)
+
+	_ = conn.Close(websocket.StatusNormalClosure, "")
+	s.sendUnregister(cc)
 }
 
-func (s *Server) run(ctx context.Context) {
-	clients := make(map[net.Conn]*clientConn)
-	defer func() {
-		for c, cc := range clients {
-			close(cc.out)
-			c.Close()
-		}
-
-		s.clientCount.Store(0)
-		clientsCurrentGauge.Update(0)
-	}()
-
+func (s *Server) clientReader(ctx context.Context, cc *clientConn) {
+	defer close(cc.done)
 	for {
-		select {
-		case conn := <-s.register:
-			cc := &clientConn{
-				conn: conn,
-				out:  make(chan []byte, s.config.ClientBuf),
-			}
-			clients[conn] = cc
-			s.clientCount.Add(1)
-			clientsCurrentGauge.Update(int64(s.clientCount.Load()))
-			s.LaunchThread(func(ctx context.Context) {
-				s.clientWriter(ctx, cc)
-			})
-			s.LaunchThread(func(ctx context.Context) {
-				s.clientReader(ctx, cc)
-			})
-
-		case conn := <-s.unregister:
-			if cc, ok := clients[conn]; ok {
-				close(cc.out)
-				conn.Close()
-				delete(clients, conn)
-				s.clientCount.Add(-1)
-				clientsCurrentGauge.Update(int64(s.clientCount.Load()))
-			}
-
-		case data := <-s.broadcast:
-			for conn, cc := range clients {
-				select {
-				case cc.out <- data:
-				default:
-					clientsDisconnectedSlow.Inc(1)
-					close(cc.out)
-					conn.Close()
-					delete(clients, conn)
-					s.clientCount.Add(-1)
-					clientsCurrentGauge.Update(int64(s.clientCount.Load()))
-				}
-			}
-
-		case <-ctx.Done():
+		readCtx, cancel := context.WithTimeout(ctx, s.config.ClientTimeout)
+		_, reader, err := cc.conn.Reader(readCtx)
+		if err != nil {
+			cancel()
 			return
 		}
+		if _, err := io.Copy(io.Discard, reader); err != nil {
+			cancel()
+			return
+		}
+		cancel()
 	}
 }
 
@@ -175,24 +160,23 @@ func (s *Server) clientWriter(ctx context.Context, cc *clientConn) {
 			if !ok {
 				return
 			}
-			if err := cc.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
-				s.sendUnregister(cc.conn)
-				return
-			}
-			if err := wsutil.WriteServerText(cc.conn, data); err != nil {
-				s.sendUnregister(cc.conn)
+			wctx, cancel := context.WithTimeout(ctx, s.config.WriteTimeout)
+			err := cc.conn.Write(wctx, websocket.MessageBinary, data)
+			cancel()
+			if err != nil {
 				return
 			}
 
 		case <-ticker.C:
-			if err := cc.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
-				s.sendUnregister(cc.conn)
+			pctx, cancel := context.WithTimeout(ctx, s.config.WriteTimeout)
+			err := cc.conn.Ping(pctx)
+			cancel()
+			if err != nil {
 				return
 			}
-			if err := wsutil.WriteServerMessage(cc.conn, ws.OpPing, nil); err != nil {
-				s.sendUnregister(cc.conn)
-				return
-			}
+
+		case <-cc.done:
+			return
 
 		case <-ctx.Done():
 			return
@@ -200,53 +184,63 @@ func (s *Server) clientWriter(ctx context.Context, cc *clientConn) {
 	}
 }
 
-func (s *Server) clientReader(ctx context.Context, cc *clientConn) {
-	controlHandler := wsutil.ControlFrameHandler(cc.conn, ws.StateServerSide)
-	reader := &wsutil.Reader{
-		Source:         cc.conn,
-		State:          ws.StateServerSide,
-		OnIntermediate: controlHandler,
-	}
+func (s *Server) run(ctx context.Context) {
+	clients := make(map[*clientConn]struct{})
+	defer func() {
+		for cc := range clients {
+			close(cc.out)
+			_ = cc.conn.Close(websocket.StatusGoingAway, "shutting down")
+		}
+		s.clientCount.Store(0)
+		clientsCurrentGauge.Update(0)
+	}()
 
 	for {
 		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		if err := cc.conn.SetReadDeadline(time.Now().Add(s.config.ClientTimeout)); err != nil {
-			s.sendUnregister(cc.conn)
-			return
-		}
-		hdr, err := reader.NextFrame()
-		if err != nil {
-			s.sendUnregister(cc.conn)
-			return
-		}
-		if hdr.OpCode.IsControl() {
-			if err := controlHandler(hdr, reader); err != nil {
-				s.sendUnregister(cc.conn)
-				return
+		case cc := <-s.register:
+			clients[cc] = struct{}{}
+			s.clientCount.Add(1)
+			clientsCurrentGauge.Update(int64(s.clientCount.Load()))
+
+		case cc := <-s.unregister:
+			if _, ok := clients[cc]; ok {
+				delete(clients, cc)
+				close(cc.out)
+				s.clientCount.Add(-1)
+				clientsCurrentGauge.Update(int64(s.clientCount.Load()))
 			}
-			continue
-		}
-		if err := reader.Discard(); err != nil {
-			s.sendUnregister(cc.conn)
+
+		case data := <-s.broadcast:
+			for cc := range clients {
+				select {
+				case cc.out <- data:
+				default:
+					log.Warn("Transaction feed client disconnected due to slow consumption", "remote", cc.remoteAddr)
+					clientsDisconnectedSlow.Inc(1)
+					delete(clients, cc)
+					close(cc.out)
+					_ = cc.conn.Close(websocket.StatusPolicyViolation, "slow consumer")
+					s.clientCount.Add(-1)
+					clientsCurrentGauge.Update(int64(s.clientCount.Load()))
+				}
+			}
+
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Server) sendUnregister(conn net.Conn) {
-	conn.Close()
+func (s *Server) sendUnregister(cc *clientConn) {
 	select {
-	case s.unregister <- conn:
+	case s.unregister <- cc:
 	default:
 	}
 }
 
 func (s *Server) BroadcastTransaction(msg *TransactionFeedMessage) {
 	if msg == nil {
+		log.Warn("Attempted to broadcast nil transaction feed message")
 		return
 	}
 	data, err := json.Marshal(msg)
@@ -259,7 +253,25 @@ func (s *Server) BroadcastTransaction(msg *TransactionFeedMessage) {
 	case s.broadcast <- data:
 	default:
 		broadcastDroppedCounter.Inc(1)
+		s.maybeLogBroadcastDrop()
 	}
+}
+
+// maybeLogBroadcastDrop emits at most one Warn log per broadcastDropLogInterval
+// to surface sustained drop pressure without spamming the log.
+func (s *Server) maybeLogBroadcastDrop() {
+	now := time.Now().UnixNano()
+	last := s.lastDropLogNanos.Load()
+	if now-last < int64(broadcastDropLogInterval) {
+		return
+	}
+	if !s.lastDropLogNanos.CompareAndSwap(last, now) {
+		return
+	}
+	log.Warn("Transaction feed broadcast channel full -- message dropped",
+		"totalDropped", broadcastDroppedCounter.Snapshot().Count(),
+		"clients", s.clientCount.Load(),
+		"size", s.config.BroadcastBuf)
 }
 
 func (s *Server) ClientCount() int32 {
@@ -274,8 +286,11 @@ func (s *Server) ListenerAddr() net.Addr {
 }
 
 func (s *Server) StopAndWait() {
+	if s.httpServer != nil {
+		_ = s.httpServer.Close()
+	}
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 	s.StopWaiter.StopAndWait()
 }

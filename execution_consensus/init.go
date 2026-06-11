@@ -24,9 +24,6 @@ func InitAndStartExecutionAndConsensusNodes(ctx context.Context, stack *node.Nod
 	}
 	if execNode != nil {
 		execNode.SetConsensusClient(consensusNode)
-		if consensusNode.TransactionFeedServer != nil {
-			execNode.SetTransactionFeedServer(consensusNode.TransactionFeedServer)
-		}
 		if err := execNode.Start(ctx); err != nil {
 			return nil, fmt.Errorf("error starting exec node: %w", err)
 		}

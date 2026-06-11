@@ -21,10 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -71,7 +73,7 @@ func startTransactionFeedReader(ctx context.Context, conn net.Conn) (<-chan *tra
 	go func() {
 		defer close(msgs)
 		for {
-			data, err := wsutil.ReadServerText(conn)
+			data, err := wsutil.ReadServerBinary(conn)
 			if err != nil {
 				select {
 				case errs <- err:
@@ -117,13 +119,113 @@ func awaitFeedMessageFor(t *testing.T, msgs <-chan *transactionfeed.TransactionF
 	}
 }
 
-func setupTransactionFeedTest(t *testing.T, ctx context.Context) (*NodeBuilder, func(), <-chan *transactionfeed.TransactionFeedMessage, <-chan error) {
+// assertTxNotBroadcastBefore drains the feed until the sentinel tx's broadcast
+// arrives, failing if disallowed appears in any message en route. Because the
+// feed is FIFO and the sentinel was submitted after disallowed, the sentinel's
+// arrival is a deterministic "we have caught up past that point" signal --
+// faster and less flaky than a wall-clock window.
+func assertTxNotBroadcastBefore(t *testing.T, msgs <-chan *transactionfeed.TransactionFeedMessage, errs <-chan error, disallowed common.Hash, sentinel common.Hash, timeout time.Duration) {
 	t.Helper()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
-	builder.nodeConfig.Feed.TransactionFeed = newTransactionFeedConfigTest()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case m, ok := <-msgs:
+			if !ok {
+				t.Fatalf("transaction feed closed before sentinel tx %s arrived", sentinel.Hex())
+			}
+			if strings.EqualFold(m.Transaction.TxHash, disallowed.Hex()) {
+				t.Fatalf("unexpected feed message for disallowed tx %s", disallowed.Hex())
+			}
+			if strings.EqualFold(m.Transaction.TxHash, sentinel.Hex()) {
+				return
+			}
+		case err := <-errs:
+			t.Fatalf("transaction feed reader error while waiting for sentinel %s: %v", sentinel.Hex(), err)
+		case <-deadline:
+			t.Fatalf("timeout waiting for sentinel tx %s on transaction feed", sentinel.Hex())
+		}
+	}
+}
+
+func assertNoReaderError(t *testing.T, errs <-chan error) {
+	t.Helper()
+	select {
+	case err := <-errs:
+		t.Fatalf("transaction feed reader error: %v", err)
+	default:
+	}
+}
+
+func parseRedeemScheduledRetryHash(t *testing.T, client *ethclient.Client, receipt *types.Receipt) common.Hash {
+	t.Helper()
+	arbRetryableFilterer, err := precompilesgen.NewArbRetryableTxFilterer(types.ArbRetryableTxAddress, client)
+	Require(t, err)
+	for _, l := range receipt.Logs {
+		event, err := arbRetryableFilterer.ParseRedeemScheduled(*l)
+		if err != nil {
+			continue
+		}
+		return common.Hash(event.RetryTxHash)
+	}
+	t.Fatalf("RedeemScheduled event not found on receipt for tx %s", receipt.TxHash.Hex())
+	return common.Hash{}
+}
+
+type transactionFeedTestOpts struct {
+	// withL1 builds the node with an L1 chain and exposes the delayed bridge
+	// helpers (delayedInbox, lookupL2Tx) on the returned env.
+	withL1 bool
+	// withDelayedSequencer implies withL1; enables the delayed sequencer so
+	// that L1->L2 messages drive the DelayedFilteringSequencingHooks emit
+	// path in arbos/block_processor.go without ArbOS-level filtering.
+	withDelayedSequencer bool
+	// enableFiltering implies withDelayedSequencer plus the ArbOS-level
+	// transaction-filtering machinery: ArbOS v60 and a Filterer /
+	// FundsRecipient registered through ArbOwner.
+	enableFiltering bool
+	// feedConfig overrides the default test feed config when non-nil. Used by
+	// tests that need a tighter ClientBuf (slow-consumer eviction) etc.
+	feedConfig *transactionfeed.ServerConfig
+}
+
+type transactionFeedTestEnv struct {
+	builder      *NodeBuilder
+	msgs         <-chan *transactionfeed.TransactionFeedMessage
+	errs         <-chan error
+	server       *transactionfeed.Server                 // the running feed server
+	conn         net.Conn                                // the first dialed client conn
+	delayedInbox *bridgegen.Inbox                        // non-nil when withL1
+	lookupL2Tx   func(*types.Receipt) *types.Transaction // non-nil when withL1
+	cleanup      func()
+}
+
+func setupTransactionFeedTest(t *testing.T, ctx context.Context, opts transactionFeedTestOpts) *transactionFeedTestEnv {
+	t.Helper()
+	withDelayedSequencer := opts.withDelayedSequencer || opts.enableFiltering
+	withL1 := opts.withL1 || withDelayedSequencer
+
+	builderChain := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+	if opts.enableFiltering {
+		builderChain = builderChain.
+			WithArbOSVersion(params.ArbosVersion_60).
+			WithArbOSInit(&params.ArbOSInit{TransactionFilteringEnabled: true})
+	}
+	builder := builderChain.DontParalellise()
+
+	if withDelayedSequencer {
+		builder.isSequencer = true
+		builder.nodeConfig.DelayedSequencer.Enable = true
+		builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	}
+	if opts.feedConfig != nil {
+		builder.execConfig.TransactionFeed = *opts.feedConfig
+	} else {
+		builder.execConfig.TransactionFeed = newTransactionFeedConfigTest()
+	}
+
 	cleanup := builder.Build(t)
 
-	rfs := builder.L2.ConsensusNode.TransactionFeedServer
+	rfs := builder.L2.ExecNode.TransactionFeedServer
 	if rfs == nil {
 		cleanup()
 		t.Fatal("TransactionFeedServer was not constructed")
@@ -134,19 +236,57 @@ func setupTransactionFeedTest(t *testing.T, ctx context.Context) (*NodeBuilder, 
 	msgs, errs := startTransactionFeedReader(ctx, conn)
 	waitForTransactionFeedClients(t, rfs, 1, 3*time.Second)
 
-	tearDown := func() {
-		_ = conn.Close()
-		cleanup()
+	env := &transactionFeedTestEnv{
+		builder: builder,
+		msgs:    msgs,
+		errs:    errs,
+		server:  rfs,
+		conn:    conn,
+		cleanup: func() {
+			_ = conn.Close()
+			cleanup()
+		},
 	}
-	return builder, tearDown, msgs, errs
+
+	if withL1 {
+		delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+		Require(t, err)
+		delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+		Require(t, err)
+		env.delayedInbox = delayedInbox
+		env.lookupL2Tx = getLookupL2Tx(t, ctx, delayedBridge)
+	}
+
+	if opts.enableFiltering {
+		// Register a Filterer and a FundsRecipient on L2 so the precompile
+		// machinery is fully wired.
+		builder.L2Info.GenerateAccount("Filterer")
+		builder.L2Info.GenerateAccount("FundsRecipient")
+		builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+		ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+		arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+		Require(t, err)
+		tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+		Require(t, err)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+		tx, err = arbOwner.SetFilteredFundsRecipient(&ownerTxOpts, builder.L2Info.GetAddress("FundsRecipient"))
+		Require(t, err)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+	}
+
+	return env
 }
 
 func TestTransactionFeedDelivery(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup, msgs, errs := setupTransactionFeedTest(t, ctx)
-	defer cleanup()
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
 
 	builder.L2Info.GenerateAccount("User2")
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -154,7 +294,7 @@ func TestTransactionFeedDelivery(t *testing.T) {
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	m := awaitFeedMessageFor(t, msgs, errs, tx.Hash(), 5*time.Second)
+	m := awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
 
 	if m.Version != uint32(transactionfeed.TransactionFeedV1) {
 		t.Fatalf("unexpected version: got %d, want %d", m.Version, transactionfeed.TransactionFeedV1)
@@ -186,19 +326,16 @@ func TestTransactionFeedDelivery(t *testing.T) {
 		t.Fatalf("raw_tx round-trip hash mismatch: got %s want %s", roundTrip.Hash().Hex(), tx.Hash().Hex())
 	}
 
-	select {
-	case err := <-errs:
-		t.Fatalf("transaction feed reader error: %v", err)
-	default:
-	}
+	assertNoReaderError(t, env.errs)
 }
 
 func TestTransactionFeedContractCreation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup, msgs, errs := setupTransactionFeedTest(t, ctx)
-	defer cleanup()
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	deployAddr, deployTx, _, err := localgen.DeploySimple(&auth, builder.L2.Client)
@@ -206,7 +343,7 @@ func TestTransactionFeedContractCreation(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(deployTx)
 	Require(t, err)
 
-	m := awaitFeedMessageFor(t, msgs, errs, deployTx.Hash(), 5*time.Second)
+	m := awaitFeedMessageFor(t, env.msgs, env.errs, deployTx.Hash(), 5*time.Second)
 
 	if m.Transaction.Receipt.ContractAddress == "" {
 		t.Fatal("expected non-empty contract_address for deploy tx")
@@ -218,14 +355,17 @@ func TestTransactionFeedContractCreation(t *testing.T) {
 	if m.Transaction.Receipt.Status != 1 {
 		t.Fatalf("deploy status: got %d, want 1", m.Transaction.Receipt.Status)
 	}
+
+	assertNoReaderError(t, env.errs)
 }
 
 func TestTransactionFeedOrdering(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup, msgs, errs := setupTransactionFeedTest(t, ctx)
-	defer cleanup()
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
 
 	const n = 3
 	recipients := []string{"User2", "User3", "User4"}
@@ -242,7 +382,7 @@ func TestTransactionFeedOrdering(t *testing.T) {
 
 	feedMsgs := make([]*transactionfeed.TransactionFeedMessage, n)
 	for i := range txs {
-		feedMsgs[i] = awaitFeedMessageFor(t, msgs, errs, txs[i].Hash(), 5*time.Second)
+		feedMsgs[i] = awaitFeedMessageFor(t, env.msgs, env.errs, txs[i].Hash(), 5*time.Second)
 	}
 
 	for i, m := range feedMsgs {
@@ -271,86 +411,17 @@ func TestTransactionFeedOrdering(t *testing.T) {
 				i-1, prev.Transaction.TxIndex, i, curr.Transaction.TxIndex)
 		}
 	}
-}
 
-func setupTransactionFeedTestWithL1(t *testing.T, ctx context.Context) (
-	*NodeBuilder,
-	*bridgegen.Inbox,
-	func(*types.Receipt) *types.Transaction,
-	func(),
-	<-chan *transactionfeed.TransactionFeedMessage,
-	<-chan error,
-) {
-	t.Helper()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	builder.nodeConfig.Feed.TransactionFeed = newTransactionFeedConfigTest()
-	cleanup := builder.Build(t)
-
-	rfs := builder.L2.ConsensusNode.TransactionFeedServer
-	if rfs == nil {
-		cleanup()
-		t.Fatal("TransactionFeedServer was not constructed")
-	}
-	port := testhelpers.AddrTCPPort(rfs.ListenerAddr(), t)
-
-	conn := dialTransactionFeed(ctx, t, port)
-	msgs, errs := startTransactionFeedReader(ctx, conn)
-	waitForTransactionFeedClients(t, rfs, 1, 3*time.Second)
-
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
-	Require(t, err)
-	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
-
-	tearDown := func() {
-		_ = conn.Close()
-		cleanup()
-	}
-	return builder, delayedInbox, lookupL2Tx, tearDown, msgs, errs
-}
-
-func assertNoFeedMessageFor(t *testing.T, msgs <-chan *transactionfeed.TransactionFeedMessage, errs <-chan error, txHash common.Hash, window time.Duration) {
-	t.Helper()
-	deadline := time.After(window)
-	for {
-		select {
-		case m, ok := <-msgs:
-			if !ok {
-				return
-			}
-			if strings.EqualFold(m.Transaction.TxHash, txHash.Hex()) {
-				t.Fatalf("unexpected feed message for tx %s", txHash.Hex())
-			}
-		case err := <-errs:
-			t.Fatalf("transaction feed reader error while draining for tx %s: %v", txHash.Hex(), err)
-		case <-deadline:
-			return
-		}
-	}
-}
-
-func parseRedeemScheduledRetryHash(t *testing.T, client *ethclient.Client, receipt *types.Receipt) common.Hash {
-	t.Helper()
-	arbRetryableFilterer, err := precompilesgen.NewArbRetryableTxFilterer(common.HexToAddress("6e"), client)
-	Require(t, err)
-	for _, l := range receipt.Logs {
-		event, err := arbRetryableFilterer.ParseRedeemScheduled(*l)
-		if err != nil {
-			continue
-		}
-		return common.Hash(event.RetryTxHash)
-	}
-	t.Fatalf("RedeemScheduled event not found on receipt for tx %s", receipt.TxHash.Hex())
-	return common.Hash{}
+	assertNoReaderError(t, env.errs)
 }
 
 func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, delayedInbox, lookupL2Tx, cleanup, msgs, errs := setupTransactionFeedTestWithL1(t, ctx)
-	defer cleanup()
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{withL1: true})
+	defer env.cleanup()
+	builder := env.builder
 
 	builder.L2Info.GenerateAccount("RetryDest")
 	builder.L2Info.GenerateAccount("Beneficiary")
@@ -364,7 +435,7 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 
 	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	l1opts.Value = deposit
-	l1tx, err := delayedInbox.CreateRetryableTicket(
+	l1tx, err := env.delayedInbox.CreateRetryableTicket(
 		&l1opts,
 		destAddr,
 		callValue,
@@ -384,13 +455,13 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 	}
 	waitForL1DelayBlocks(t, builder)
 
-	submissionTx := lookupL2Tx(l1Receipt)
+	submissionTx := env.lookupL2Tx(l1Receipt)
 	_, err = builder.L2.EnsureTxSucceeded(submissionTx)
 	Require(t, err)
 	ticketId := submissionTx.Hash()
 
 	// Trigger a manual redeem from L2
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(types.ArbRetryableTxAddress, builder.L2.Client)
 	Require(t, err)
 	redeemerOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	redeemTx, err := arbRetryableTx.Redeem(&redeemerOpts, ticketId)
@@ -410,7 +481,7 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 			retryReceipt.Status, types.ReceiptStatusSuccessful)
 	}
 
-	m := awaitFeedMessageFor(t, msgs, errs, redeemTx.Hash(), 10*time.Second)
+	m := awaitFeedMessageFor(t, env.msgs, env.errs, redeemTx.Hash(), 10*time.Second)
 	if m.Transaction.BlockNumber != redeemReceipt.BlockNumber.Uint64() {
 		t.Fatalf("redeem block mismatch: feed=%d receipt=%d",
 			m.Transaction.BlockNumber, redeemReceipt.BlockNumber.Uint64())
@@ -424,7 +495,7 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 			m.Transaction.Receipt.Status, types.ReceiptStatusSuccessful)
 	}
 
-	m = awaitFeedMessageFor(t, msgs, errs, retryTxHash, 10*time.Second)
+	m = awaitFeedMessageFor(t, env.msgs, env.errs, retryTxHash, 10*time.Second)
 	if m.Transaction.BlockNumber != retryReceipt.BlockNumber.Uint64() {
 		t.Fatalf("redeem block mismatch: feed=%d receipt=%d",
 			m.Transaction.BlockNumber, retryReceipt.BlockNumber.Uint64())
@@ -437,78 +508,17 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 		t.Fatalf("redeem feed status: got %d, want %d",
 			m.Transaction.Receipt.Status, types.ReceiptStatusSuccessful)
 	}
-}
 
-func setupTransactionFeedFilterTest(t *testing.T, ctx context.Context) (
-	*NodeBuilder,
-	*bridgegen.Inbox,
-	func(*types.Receipt) *types.Transaction,
-	func(),
-	<-chan *transactionfeed.TransactionFeedMessage,
-	<-chan error,
-) {
-	t.Helper()
-
-	arbOSInit := &params.ArbOSInit{TransactionFilteringEnabled: true}
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, true).
-		WithArbOSVersion(params.ArbosVersion_60).
-		WithArbOSInit(arbOSInit).
-		DontParalellise()
-	builder.isSequencer = true
-	builder.nodeConfig.DelayedSequencer.Enable = true
-	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
-	builder.nodeConfig.Feed.TransactionFeed = newTransactionFeedConfigTest()
-
-	cleanup := builder.Build(t)
-
-	rfs := builder.L2.ConsensusNode.TransactionFeedServer
-	if rfs == nil {
-		cleanup()
-		t.Fatal("TransactionFeedServer was not constructed")
-	}
-	port := testhelpers.AddrTCPPort(rfs.ListenerAddr(), t)
-	conn := dialTransactionFeed(ctx, t, port)
-	msgs, errs := startTransactionFeedReader(ctx, conn)
-	waitForTransactionFeedClients(t, rfs, 1, 3*time.Second)
-
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	Require(t, err)
-	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
-	Require(t, err)
-	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
-
-	// Register a Filterer and a FundsRecipient on L2 so the precompile
-	// machinery is fully wired.
-	builder.L2Info.GenerateAccount("Filterer")
-	builder.L2Info.GenerateAccount("FundsRecipient")
-	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
-
-	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	Require(t, err)
-	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-	tx, err = arbOwner.SetFilteredFundsRecipient(&ownerTxOpts, builder.L2Info.GetAddress("FundsRecipient"))
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	tearDown := func() {
-		_ = conn.Close()
-		cleanup()
-	}
-	return builder, delayedInbox, lookupL2Tx, tearDown, msgs, errs
+	assertNoReaderError(t, env.errs)
 }
 
 func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, delayedInbox, lookupL2Tx, cleanup, msgs, errs := setupTransactionFeedFilterTest(t, ctx)
-	defer cleanup()
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{enableFiltering: true})
+	defer env.cleanup()
+	builder := env.builder
 
 	builder.L2Info.GenerateAccount("Redeemer")
 	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
@@ -541,7 +551,7 @@ func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
 	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
 	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	l1opts.Value = deposit
-	l1tx, err := delayedInbox.CreateRetryableTicket(
+	l1tx, err := env.delayedInbox.CreateRetryableTicket(
 		&l1opts,
 		callerAddr,
 		common.Big0,
@@ -556,7 +566,7 @@ func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
 	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
 	Require(t, err)
 	waitForL1DelayBlocks(t, builder)
-	submissionTx := lookupL2Tx(l1Receipt)
+	submissionTx := env.lookupL2Tx(l1Receipt)
 	ticketId := submissionTx.Hash()
 	_, err = builder.L2.EnsureTxSucceeded(submissionTx)
 	Require(t, err)
@@ -567,7 +577,7 @@ func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
 
 	// Sign the Redeem call without sending so we can capture the hash even
 	// though the sequencer will reject the submission.
-	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(types.ArbRetryableTxAddress, builder.L2.Client)
 	Require(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
 	redeemOpts.NoSend = true
@@ -585,11 +595,378 @@ func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
 		t.Fatalf("unexpected SendTransaction error: %v", sendErr)
 	}
 
-	// The Redeem tx must NEVER reach the feed. Drain briefly to confirm.
-	assertNoFeedMessageFor(t, msgs, errs, redeemHash, 2*time.Second)
+	// The Redeem tx must NEVER reach the feed. Submit a sentinel value
+	// transfer and use its broadcast as a deterministic "we've drained past
+	// the rejected tx" signal -- avoids a flaky wall-clock window.
+	builder.L2Info.GenerateAccount("Sentinel")
+	sentinelTx := builder.L2Info.PrepareTx("Owner", "Sentinel", builder.L2Info.TransferGas, big.NewInt(1e6), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, sentinelTx))
+	_, err = builder.L2.EnsureTxSucceeded(sentinelTx)
+	Require(t, err)
+	assertTxNotBroadcastBefore(t, env.msgs, env.errs, redeemHash, sentinelTx.Hash(), 10*time.Second)
 
 	// Sanity check the ticket still exists -- the rollback was real.
 	if _, err = arbRetryable.GetTimeout(&bind.CallOpts{Context: ctx}, ticketId); err != nil {
 		t.Fatalf("retryable ticket should survive the rolled-back redeem: %v", err)
 	}
+}
+
+func TestTransactionFeedDisabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	// Leave execConfig.TransactionFeed at the zero value -- Enable defaults to false.
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	if builder.L2.ExecNode.TransactionFeedServer != nil {
+		t.Fatal("TransactionFeedServer should be nil when TransactionFeed.Enable is false")
+	}
+}
+
+func TestTransactionFeedMultipleSubscribers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
+
+	// Dial a second client and start a parallel reader.
+	port := testhelpers.AddrTCPPort(env.server.ListenerAddr(), t)
+	conn2 := dialTransactionFeed(ctx, t, port)
+	defer conn2.Close()
+	msgs2, errs2 := startTransactionFeedReader(ctx, conn2)
+	waitForTransactionFeedClients(t, env.server, 2, 3*time.Second)
+
+	builder.L2Info.GenerateAccount("User2")
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	m1 := awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
+	m2 := awaitFeedMessageFor(t, msgs2, errs2, tx.Hash(), 5*time.Second)
+
+	if m1.Transaction.BlockNumber != m2.Transaction.BlockNumber {
+		t.Fatalf("subscribers disagree on block number: c1=%d c2=%d",
+			m1.Transaction.BlockNumber, m2.Transaction.BlockNumber)
+	}
+	assertNoReaderError(t, env.errs)
+	assertNoReaderError(t, errs2)
+}
+
+func TestTransactionFeedDynamicFeeTx(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
+
+	builder.L2Info.GenerateAccount("DynamicRecipient")
+	recipient := builder.L2Info.GetAddress("DynamicRecipient")
+
+	header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	Require(t, err, "fetch L2 head for baseFee")
+	tip := big.NewInt(1e9)
+	gasFeeCap := new(big.Int).Add(header.BaseFee, tip)
+
+	faucet := builder.L2Info.GetInfoWithPrivKey("Faucet")
+	tx := builder.L2Info.SignTxAs("Faucet", &types.DynamicFeeTx{
+		To:        &recipient,
+		Gas:       builder.L2Info.TransferGas,
+		GasTipCap: tip,
+		GasFeeCap: gasFeeCap,
+		Value:     big.NewInt(1e12),
+		Nonce:     faucet.Nonce.Add(1) - 1,
+	})
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	m := awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
+	if m.Transaction.BlockNumber != receipt.BlockNumber.Uint64() {
+		t.Fatalf("block mismatch: feed=%d receipt=%d", m.Transaction.BlockNumber, receipt.BlockNumber.Uint64())
+	}
+
+	rawBytes, err := hexutil.Decode(m.Transaction.RawTx)
+	Require(t, err, "raw_tx hex decode")
+	var roundTrip types.Transaction
+	Require(t, roundTrip.UnmarshalBinary(rawBytes), "raw_tx unmarshal")
+	if roundTrip.Type() != types.DynamicFeeTxType {
+		t.Fatalf("expected DynamicFeeTx (type %d), got type %d", types.DynamicFeeTxType, roundTrip.Type())
+	}
+	if roundTrip.Hash() != tx.Hash() {
+		t.Fatalf("raw_tx round-trip hash mismatch: got %s want %s", roundTrip.Hash().Hex(), tx.Hash().Hex())
+	}
+	assertNoReaderError(t, env.errs)
+}
+
+func TestTransactionFeedSlowConsumerEviction(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// ClientBuf=1 so cc.out can only hold a single pending broadcast. A tight
+	// PingInterval keeps the writer goroutine stuck in conn.Ping (waiting up
+	// to WriteTimeout for a pong that a stalled client never sends) -- while
+	// the writer is parked there, the next broadcast finds cc.out full and
+	// triggers slow-consumer eviction.
+	cfg := newTransactionFeedConfigTest()
+	cfg.ClientBuf = 1
+	cfg.PingInterval = 100 * time.Millisecond
+	cfg.WriteTimeout = 5 * time.Second
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{feedConfig: &cfg})
+	defer env.cleanup()
+	builder := env.builder
+
+	// env's first client is being read by startTransactionFeedReader (healthy).
+	// Add a stalled second client that never reads from its conn -- so the
+	// server's pings to it go unanswered.
+	port := testhelpers.AddrTCPPort(env.server.ListenerAddr(), t)
+	stalledConn := dialTransactionFeed(ctx, t, port)
+	defer stalledConn.Close()
+	waitForTransactionFeedClients(t, env.server, 2, 3*time.Second)
+
+	slowCounter := metrics.GetOrRegisterCounter("arb/transactionfeed/clients/disconnected/slow", nil)
+	startSlow := slowCounter.Snapshot().Count()
+
+	// Let the first ping fire and park the stalled client's writer.
+	time.Sleep(200 * time.Millisecond)
+
+	// Send a small burst -- once cc.out holds its single message, the next
+	// broadcast evicts.
+	const burst = 3
+	recipients := make([]string, burst)
+	txs := make([]*types.Transaction, burst)
+	for i := 0; i < burst; i++ {
+		recipients[i] = fmt.Sprintf("SlowRecv%d", i)
+		builder.L2Info.GenerateAccount(recipients[i])
+		txs[i] = builder.L2Info.PrepareTx("Owner", recipients[i], builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+		Require(t, builder.L2.Client.SendTransaction(ctx, txs[i]))
+		_, err := builder.L2.EnsureTxSucceeded(txs[i])
+		Require(t, err)
+	}
+
+	// Healthy reader still receives every message in order.
+	for i := 0; i < burst; i++ {
+		awaitFeedMessageFor(t, env.msgs, env.errs, txs[i].Hash(), 10*time.Second)
+	}
+
+	// Stalled client should have been evicted: ClientCount drops to 1 and
+	// the slow-disconnect metric advanced by at least 1.
+	deadline := time.Now().Add(10 * time.Second)
+	for env.server.ClientCount() > 1 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if env.server.ClientCount() != 1 {
+		t.Fatalf("expected stalled client to be evicted (ClientCount=1), got %d", env.server.ClientCount())
+	}
+	if delta := slowCounter.Snapshot().Count() - startSlow; delta < 1 {
+		t.Fatalf("clientsDisconnectedSlow did not advance: delta=%d", delta)
+	}
+	assertNoReaderError(t, env.errs)
+}
+
+func TestTransactionFeedAbruptDisconnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
+
+	// One delivery to confirm the client is fully wired.
+	builder.L2Info.GenerateAccount("AbruptRecv")
+	tx := builder.L2Info.PrepareTx("Owner", "AbruptRecv", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
+
+	// Slam the conn shut and confirm the server unregisters the client.
+	_ = env.conn.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for env.server.ClientCount() > 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if env.server.ClientCount() != 0 {
+		t.Fatalf("server did not unregister client after abrupt close: ClientCount=%d", env.server.ClientCount())
+	}
+}
+
+func TestTransactionFeedStopAndWaitWithClients(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	builder := env.builder
+
+	// Dial a second client so cleanup has two active sessions to tear down.
+	port := testhelpers.AddrTCPPort(env.server.ListenerAddr(), t)
+	conn2 := dialTransactionFeed(ctx, t, port)
+	defer conn2.Close()
+	waitForTransactionFeedClients(t, env.server, 2, 3*time.Second)
+
+	builder.L2Info.GenerateAccount("PreStopRecv")
+	tx := builder.L2Info.PrepareTx("Owner", "PreStopRecv", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
+
+	server := env.server
+	env.cleanup() // triggers ExecutionNode.StopAndWait -> server.StopAndWait
+	if c := server.ClientCount(); c != 0 {
+		t.Fatalf("ClientCount should be 0 after StopAndWait, got %d", c)
+	}
+}
+
+func TestTransactionFeedDelayedSequencerBroadcast(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{withDelayedSequencer: true})
+	defer env.cleanup()
+	builder := env.builder
+
+	builder.L2Info.GenerateAccount("DelayedDest")
+	builder.L2Info.GenerateAccount("Beneficiary")
+	destAddr := builder.L2Info.GetAddress("DelayedDest")
+	beneficiaryAddr := builder.L2Info.GetAddress("Beneficiary")
+
+	// Submit a retryable with a non-zero gas limit so the auto-redeem fires
+	// in the same delayed-sequencing block as the submission. Both txs go
+	// through DelayedFilteringSequencingHooks (FilteredTxCount == 0 because
+	// no address filter is active) and so should hit the broadcast.
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e6)
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+	gasLimit := big.NewInt(1_000_000)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1tx, err := env.delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		destAddr,
+		callValue,
+		maxSubmissionCost,
+		beneficiaryAddr,
+		beneficiaryAddr,
+		gasLimit,
+		maxFeePerGas,
+		nil,
+	)
+	Require(t, err)
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	waitForL1DelayBlocks(t, builder)
+
+	submissionTx := env.lookupL2Tx(l1Receipt)
+	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTx)
+	Require(t, err)
+
+	// The submission tx must appear on the feed -- proving the
+	// DelayedFilteringSequencingHooks.TxAccepted path is live.
+	mSub := awaitFeedMessageFor(t, env.msgs, env.errs, submissionTx.Hash(), 10*time.Second)
+	if mSub.Transaction.BlockNumber != submissionReceipt.BlockNumber.Uint64() {
+		t.Fatalf("submission block mismatch: feed=%d receipt=%d",
+			mSub.Transaction.BlockNumber, submissionReceipt.BlockNumber.Uint64())
+	}
+
+	// The auto-redeem fires from arbos as a follow-up tx. Locate it via the
+	// RedeemScheduled event on the submission receipt and confirm it lands
+	// on the feed too.
+	retryTxHash := parseRedeemScheduledRetryHash(t, builder.L2.Client, submissionReceipt)
+	retryReceipt, err := WaitForTx(ctx, builder.L2.Client, retryTxHash, 10*time.Second)
+	Require(t, err)
+	if retryReceipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("auto-redeem status: got %d, want %d",
+			retryReceipt.Status, types.ReceiptStatusSuccessful)
+	}
+	mRetry := awaitFeedMessageFor(t, env.msgs, env.errs, retryTxHash, 10*time.Second)
+	if mRetry.Transaction.BlockNumber != retryReceipt.BlockNumber.Uint64() {
+		t.Fatalf("auto-redeem block mismatch: feed=%d receipt=%d",
+			mRetry.Transaction.BlockNumber, retryReceipt.BlockNumber.Uint64())
+	}
+
+	assertNoReaderError(t, env.errs)
+}
+
+func TestTransactionFeedMaxClientsCap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// MaxClients=2: env's auto-dial is client 1, we'll dial a 2nd, and the 3rd
+	// must be rejected before WS upgrade.
+	cfg := newTransactionFeedConfigTest()
+	cfg.MaxClients = 2
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{feedConfig: &cfg})
+	defer env.cleanup()
+
+	port := testhelpers.AddrTCPPort(env.server.ListenerAddr(), t)
+	secondConn := dialTransactionFeed(ctx, t, port)
+	defer secondConn.Close()
+	waitForTransactionFeedClients(t, env.server, 2, 3*time.Second)
+
+	rejectedCounter := metrics.GetOrRegisterCounter("arb/transactionfeed/clients/rejected/at_cap", nil)
+	startRejected := rejectedCounter.Snapshot().Count()
+
+	// Third dial: dialer should error because the server returns HTTP 503
+	// before completing the WebSocket upgrade.
+	dctx, dcancel := context.WithTimeout(ctx, 3*time.Second)
+	defer dcancel()
+	thirdConn, _, _, err := ws.Dialer{}.Dial(dctx, fmt.Sprintf("ws://127.0.0.1:%d/", port))
+	if err == nil {
+		_ = thirdConn.Close()
+		t.Fatalf("expected third dial to be rejected; got connected conn")
+	}
+
+	if got := env.server.ClientCount(); got != 2 {
+		t.Fatalf("ClientCount should stay at 2 after rejection, got %d", got)
+	}
+	if delta := rejectedCounter.Snapshot().Count() - startRejected; delta < 1 {
+		t.Fatalf("clientsRejectedAtCap did not advance: delta=%d", delta)
+	}
+	assertNoReaderError(t, env.errs)
+}
+
+func TestTransactionFeedReorgRebroadcast(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{})
+	defer env.cleanup()
+	builder := env.builder
+
+	// Send a tx; capture the head message index immediately after it lands.
+	builder.L2Info.GenerateAccount("ReorgRecv")
+	tx := builder.L2Info.PrepareTx("Owner", "ReorgRecv", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	first := awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
+
+	headIdx, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
+	Require(t, err)
+	if headIdx == 0 {
+		t.Fatal("head message index is 0; cannot reorg")
+	}
+
+	// Reorg out the message containing tx (and any after). The execution
+	// engine sends popped messages to its resequence channel, which now
+	// re-broadcasts via the wired transactionFeedServer.
+	reorgFrom := arbutil.MessageIndex(headIdx)
+	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgFrom))
+
+	// Expect a second broadcast of the same tx hash.
+	second := awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 10*time.Second)
+	if second.TimestampMs < first.TimestampMs {
+		t.Fatalf("second broadcast timestamp %d earlier than first %d",
+			second.TimestampMs, first.TimestampMs)
+	}
+	assertNoReaderError(t, env.errs)
 }
