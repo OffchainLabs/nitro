@@ -61,7 +61,7 @@ jobs:
   # --- Summarize test results (not required by can_proceed) ---
   codecov:
     needs: [go-tests, rust-tests]
-    if: always()
+    if: '!cancelled() && (needs.go-tests.result != ''skipped'' || needs.rust-tests.result != ''skipped'')'
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
     permissions:

@@ -10,7 +10,6 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -85,10 +84,6 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	if !contract.IsDelegateOrCallcode() {
 		p.Programs[contract.Address()]++
 	}
-
-	// Record touched addresses for tx filtering
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: contract.Address(), FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil}})
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: contract.Caller(), FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil}})
 }
 
 func (p *TxProcessor) PopContract() {
