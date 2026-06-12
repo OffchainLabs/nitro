@@ -139,9 +139,10 @@ pub fn resolve_preimage(
     let offset = offset as usize;
 
     // Unknown preimage types are not an error — the prover returns 0 bytes for them.
-    // Only validate when arbutil is available (both JIT and SP1 enable integrity_check).
-    #[cfg(feature = "integrity_check")]
-    if arbutil::PreimageType::try_from(preimage_type).is_err() {
+    // Valid types are 0–3 (Keccak256, Sha2_256, EthVersionedHash, DACertificate).
+    if preimage_type > 3 {
+        #[cfg(not(target_arch = "wasm32"))]
+        eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
         return Ok(0);
     }
 

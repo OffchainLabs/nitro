@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -2994,18 +2993,6 @@ func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	Fatal(t, "timed out waiting for TCP", addr)
-}
-
-func getFreePort(t testing.TB) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
 }
 
 // Used only by challengetest-tagged files; the linter doesn't see those callers in default builds.
