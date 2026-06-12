@@ -397,7 +397,7 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 
 	roots, err = client.WasmModuleRoots()
 	Require(t, err)
-	if len(roots) != len(mockWasmModuleRoots) {
+	if len(roots) != 2 || len(roots) != len(mockWasmModuleRoots) {
 		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
 	}
 
