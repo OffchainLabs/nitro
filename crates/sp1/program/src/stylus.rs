@@ -640,7 +640,6 @@ fn build_imports(
         };
     }
 
-    // TODO: this is not yet a complete list of hook APIs
     let mut imports = imports! {
         "vm_hooks" => {
             "read_args" => func!(vm_hooks::read_args),

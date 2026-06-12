@@ -1,17 +1,20 @@
-//! This module should implement programs related APIs, mainly for
-//! launching stylus programs.
-//! TODO: for now, we are focusing on getting replay.wasm to run first,
-//! so this module only contains dummy impls that serve as a placeholder,
-//! and will throw errors when called.
-//! They are expected to follow implementations in:
-//! https://github.com/OffchainLabs/nitro/blob/d2dba175c037c47e68cf3038f0d4b06b54983644/arbitrator/jit/src/program.rs
+//! Programs-related host APIs for launching and driving stylus programs.
+//! These mirror the JIT implementations in `crates/jit/src/program.rs` and
+//! must keep behaving identically to them.
 
 #![allow(clippy::too_many_arguments)]
 
-use arbutil::evm::{EvmData, api::Gas};
+use arbutil::{
+    Bytes32,
+    evm::{EvmData, api::Gas},
+    format::DebugBytes,
+};
 use caller_env::{GuestPtr, MemAccess};
-use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
-use wasmer::{FunctionEnvMut, WasmPtr};
+use prover::{
+    machine::Module,
+    programs::config::{CompileConfig, PricingParams, StylusConfig},
+};
+use wasmer::FunctionEnvMut;
 
 use crate::{
     Escape, JitConfig, MaybeEscape, replay::CustomEnvData, state::sp1_env,
@@ -39,12 +42,9 @@ pub fn new_program(
     data.launch_program(&compiled_hash, calldata, config, evm_data, gas)
 }
 
-pub fn pop(mut ctx: FunctionEnvMut<CustomEnvData>) {
-    let data = ctx.data_mut();
-
-    // FIXME: this is wrong, when poping, we should yield from replay.wasm coroutine, and keep
-    // running the poped program till it sends the last message and terminates.
-    data.pop_last_program();
+/// Removes the last created program
+pub fn pop(mut ctx: FunctionEnvMut<CustomEnvData>) -> MaybeEscape {
+    ctx.data_mut().pop_last_program()
 }
 
 pub fn set_response(
@@ -241,15 +241,15 @@ pub fn activate(
     ctx: FunctionEnvMut<CustomEnvData>,
     wasm_ptr: GuestPtr,
     wasm_size: u32,
-    pages_ptr: WasmPtr<u16>,
+    pages_ptr: GuestPtr,
     asm_estimate_ptr: GuestPtr,
-    init_cost_ptr: WasmPtr<u16>,
-    cached_init_cost_ptr: WasmPtr<u16>,
+    init_cost_ptr: GuestPtr,
+    cached_init_cost_ptr: GuestPtr,
     stylus_version: u16,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
-    gas_ptr: WasmPtr<u64>,
+    gas_ptr: GuestPtr,
     err_buf: GuestPtr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
@@ -272,27 +272,70 @@ pub fn activate(
     )
 }
 
+/// Activates a user program, mirroring `activate_v2` in `crates/jit/src/program.rs`.
+///
+/// NOTE: `Module::activate` is the same code the JIT and the arbitrator's
+/// wasm32 build (`user-host/src/link.rs`) run, so the module hash matches
+/// them bit-for-bit. Running it natively in the guest also keeps keccak on
+/// SP1's syscall-patched `tiny-keccak`. If activation cycles in the main
+/// proof ever become a problem, the escalation path is a separate provable
+/// activation program (see `stylus-compiler-program`), not an in-guest wasm
+/// module (which would lose the keccak syscall acceleration).
 pub fn activate_v2(
-    _ctx: FunctionEnvMut<CustomEnvData>,
-    _wasm_ptr: GuestPtr,
-    _wasm_size: u32,
-    _pages_ptr: WasmPtr<u16>,
-    _asm_estimate_ptr: GuestPtr,
-    _init_cost_ptr: WasmPtr<u16>,
-    _cached_init_cost_ptr: WasmPtr<u16>,
-    _stylus_version: u16,
-    _arbos_version_for_gas: u64,
-    _debug: u32,
-    _codehash: GuestPtr,
-    _module_hash_ptr: GuestPtr,
-    _gas_ptr: WasmPtr<u64>,
-    _err_buf: GuestPtr,
-    _err_buf_len: u32,
+    mut ctx: FunctionEnvMut<CustomEnvData>,
+    wasm_ptr: GuestPtr,
+    wasm_size: u32,
+    pages_ptr: GuestPtr,
+    asm_estimate_ptr: GuestPtr,
+    init_cost_ptr: GuestPtr,
+    cached_init_cost_ptr: GuestPtr,
+    stylus_version: u16,
+    arbos_version_for_activation: u64,
+    debug: u32,
+    codehash: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    gas_ptr: GuestPtr,
+    err_buf: GuestPtr,
+    err_buf_len: u32,
 ) -> Result<u32, Escape> {
-    // TODO: per offline discussion with the Arbitrum team, we will call
-    // into a separate WASM module to calculate WAVM hash for each stylus
-    // program. We won't aim to pull in WAVM logic here.
-    todo!("Implement activate_v2!");
+    let (mut mem, _) = sp1_env(&mut ctx);
+    let wasm = mem.read_slice(wasm_ptr, wasm_size as usize);
+    let codehash = &mem.read_bytes32(codehash);
+    let debug = debug != 0;
+
+    let page_limit = mem.read_u16(pages_ptr);
+    let gas_left = &mut mem.read_u64(gas_ptr);
+    match Module::activate(
+        &wasm,
+        codehash,
+        stylus_version,
+        arbos_version_for_activation,
+        page_limit,
+        debug,
+        gas_left,
+    ) {
+        Ok((module, data)) => {
+            mem.write_u64(gas_ptr, *gas_left);
+            mem.write_u16(pages_ptr, data.footprint);
+            mem.write_u32(asm_estimate_ptr, data.asm_estimate);
+            mem.write_u16(init_cost_ptr, data.init_cost);
+            mem.write_u16(cached_init_cost_ptr, data.cached_init_cost);
+            mem.write_bytes32(module_hash_ptr, module.hash());
+            Ok(0)
+        }
+        Err(error) => {
+            let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
+            err_bytes.truncate(err_buf_len as usize);
+            mem.write_slice(err_buf, &err_bytes);
+            mem.write_u64(gas_ptr, 0);
+            mem.write_u16(pages_ptr, 0);
+            mem.write_u32(asm_estimate_ptr, 0);
+            mem.write_u16(init_cost_ptr, 0);
+            mem.write_u16(cached_init_cost_ptr, 0);
+            mem.write_bytes32(module_hash_ptr, Bytes32::default());
+            Ok(err_bytes.len() as u32)
+        }
+    }
 }
 
 fn heapify<T>(value: T) -> *mut T {
@@ -302,7 +345,7 @@ fn heapify<T>(value: T) -> *mut T {
 /// program_requires_prepare
 pub fn program_requires_prepare(
     mut _env: FunctionEnvMut<CustomEnvData>,
-    _module_hash_ptr: WasmPtr<u16>,
+    _module_hash_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     Ok(0)
 }
@@ -310,10 +353,10 @@ pub fn program_requires_prepare(
 /// program_prepare
 pub fn program_prepare(
     mut _env: FunctionEnvMut<CustomEnvData>,
-    _wasm_ptr: WasmPtr<u16>,
+    _wasm_ptr: GuestPtr,
     _wasm_size: u64,
-    _module_hash_ptr: WasmPtr<u16>,
-    _code_hash_ptr: WasmPtr<u16>,
+    _module_hash_ptr: GuestPtr,
+    _code_hash_ptr: GuestPtr,
     _max_wasm_size: u32,
     _page_limit: u32,
     _debug_mode: u32,
