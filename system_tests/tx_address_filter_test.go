@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
@@ -161,6 +162,78 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterArbSysWithdrawEth(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Withdrawer")
+	builder.L2.TransferBalance(t, "Owner", "Withdrawer", big.NewInt(1e18), builder.L2Info)
+
+	builder.L1Info.GenerateAccount("FilteredL1Dest")
+	filteredL1Dest := builder.L1Info.GetAddress("FilteredL1Dest")
+	builder.L1Info.GenerateAccount("OkL1Dest")
+	okL1Dest := builder.L1Info.GetAddress("OkL1Dest")
+
+	addrFilter := newHashedChecker([]common.Address{filteredL1Dest})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
+	Require(t, err)
+
+	withdrawAmount := big.NewInt(1e15)
+
+	authBad := builder.L2Info.GetDefaultTransactOpts("Withdrawer", ctx)
+	authBad.Value = withdrawAmount
+	tx, err := arbSys.WithdrawEth(&authBad, filteredL1Dest)
+	if err == nil {
+		t.Fatal("expected withdrawEth to filtered L1 destination to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundDestReason := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address != filteredL1Dest {
+			continue
+		}
+		if fa.FilterReason.Reason != filter.ReasonToL1 {
+			t.Fatalf("expected filter reason %q for L1 destination, got %q", filter.ReasonToL1, fa.FilterReason.Reason)
+		}
+		if fa.FilterReason.EventRuleMatch != nil {
+			t.Fatal("expected nil EventRuleMatch for direct destination touch")
+		}
+		foundDestReason = true
+	}
+	if !foundDestReason {
+		t.Fatalf("report should contain filtered L1 destination %s with ReasonToL1", filteredL1Dest.Hex())
+	}
+	// Reset local nonce tracker since the Signer callback increments it on
+	// every signing attempt, including for the rejected tx above.
+	builder.L2Info.GetInfoWithPrivKey("Withdrawer").Nonce.Store(0)
+
+	authGood := builder.L2Info.GetDefaultTransactOpts("Withdrawer", ctx)
+	authGood.Value = withdrawAmount
+	tx, err = arbSys.WithdrawEth(&authGood, okL1Dest)
+	Require(t, err, "withdrawEth to unfiltered L1 destination should not be rejected")
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 

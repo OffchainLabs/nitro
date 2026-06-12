@@ -14,18 +14,22 @@ on:
 
 permissions:
   contents: read
-  actions: write  # needed for the cache-deletion curl call on failure
 
 jobs:
+  # Detect whether anything other than the changelog changed. code_changed is
+  # "any file other than CHANGELOG.md or changelog/**", so a changelog-only PR
+  # leaves it false and skips the build below.
+  changes:
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+
   docker:
     name: Docker build
     runs-on: arbitrator-ci
-    services:
-      # local registry
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
+    needs: changes
+    # Skip the build for changelog-only PRs. merge_group and manual runs always
+    # build, since detect-changes has no PR diff base for those events.
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code_changed == 'true'
 
     steps:
       - name: Checkout
@@ -42,61 +46,14 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
-        with:
-          driver-opts: network=host
-
-      - name: Cache Docker layers
-        uses: actions/cache@v5
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
-          restore-keys: ${{ runner.os }}-buildx-
-
-      - name: Build nitro-node docker
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
-        with:
-          target: nitro-node
-          push: true
-          context: .
-          tags: localhost:5000/nitro-node:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-          secrets: |
-            gh_token=${{ steps.submods.outputs.token }}
 
       - name: Build nitro-node-dev docker
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
         with:
           target: nitro-node-dev
-          push: true
+          load: true
           context: .
-          tags: localhost:5000/nitro-node-dev:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-          secrets: |
-            gh_token=${{ steps.submods.outputs.token }}
-
-      - name: Build nitro-node-slim-stripped docker
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
-        with:
-          target: nitro-node-slim-stripped
-          push: true
-          context: .
-          tags: localhost:5000/nitro-node-slim-stripped:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-          secrets: |
-            gh_token=${{ steps.submods.outputs.token }}
-
-      - name: Build nitro-node-stripped docker
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
-        with:
-          target: nitro-node-stripped
-          push: true
-          context: .
-          tags: localhost:5000/nitro-node-stripped:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          tags: nitro-node-dev:latest
           secrets: |
             gh_token=${{ steps.submods.outputs.token }}
 
@@ -104,8 +61,6 @@ jobs:
         shell: bash
         run: |
           # Reuse the image we just built instead of rebuilding inside test-node.bash
-          docker pull localhost:5000/nitro-node-dev:latest
-          docker tag localhost:5000/nitro-node-dev:latest nitro-node-dev:latest
           docker image inspect nitro-node-dev:latest --format '{{.Id}} {{.Architecture}}'
           cd nitro-testnode
           ./test-node.bash --init --dev --no-build-dev-nitro > /tmp/testnode.log 2>&1 &
@@ -126,10 +81,11 @@ jobs:
 
       - name: Print WAVM module root
         id: module-root
+        shell: bash
         run: |
           # Unfortunately, `docker cp` seems to always result in a "permission denied"
           # We work around this by piping a tarball through stdout
-          docker run --rm --entrypoint tar localhost:5000/nitro-node-dev:latest -cf - target/machines/latest | tar xf -
+          docker run --rm --entrypoint tar nitro-node-dev:latest -cf - target/machines/latest | tar xf -
           module_root="$(cat "target/machines/latest/module-root.txt")"
           echo "module-root=$module_root" >> "$GITHUB_OUTPUT"
           echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
@@ -141,21 +97,3 @@ jobs:
           path: target/machines/latest/*
           if-no-files-found: error
 
-      - name: Move cache
-        # Temp fix
-        # https://github.com/docker/build-push-action/issues/252
-        # https://github.com/moby/buildkit/issues/1896
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-      - name: Clear cache on failure
-        if: failure()
-        run: |
-          keys=(${{ runner.os }}-buildx- ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }})
-          for key in "${keys[@]}"; do
-            curl -X DELETE \
-              -H "Accept: application/vnd.github.v3+json" \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "${{ github.api_url }}/repos/${{ github.repository }}/actions/caches?key=$key"
-          done

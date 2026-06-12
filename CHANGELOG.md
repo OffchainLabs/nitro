@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.11.0-rc.5](https://github.com/OffchainLabs/nitro/compare/v3.11.0-rc.4...v3.11.0-rc.5) - 2026-06-11
+
+### Changed
+
+- `S3SyncManager` now includes `filterSetID` in the successful hash-list load log line so operators can correlate it with the `FilterSetID` reported on filtered tx reports.
+
+### Fixed
+
+- Updated `log.*` calls to use slog key/value pairs.
+- Address filter now records the L1 destination of `ArbSys.withdrawEth` / `ArbSys.sendTxToL1` via a new `ReasonToL1`, closing a gap where L2→L1 withdrawals to a filtered address were not caught.
+
+## [v3.11.0-rc.4](https://github.com/OffchainLabs/nitro/compare/v3.11.0-rc.3...v3.11.0-rc.4) - 2026-06-10
+
+### Internal
+
+- stylus-raw-deploycode - a small utility that helps deploy stylus contracts for testing.
+- Make `validation` crate no-std friendly.
+- Remove JIT wrappers for wasi and wavmio.
+- Fix inner call and pushcontract address filter recording
+- `cmd/filtering-report` forwarder now emits an info log on successful report forwarding and includes the SQS message body in the existing forward-failure error log.
+
+## [v3.11.0-rc.3](https://github.com/OffchainLabs/nitro/compare/v3.11.0-rc.2...v3.11.0-rc.3) - 2026-06-08
+
+### Changed
+
+- Replace `sha3`/`digest` keccak with `tiny-keccak` across `prover` and `caller-env`.
+
+### Fixed
+
+- Fix invalid Prometheus metric names in filtering-report and transaction-filterer components; hyphens in geth metric paths survive the `/`→`_` translation and produce names that violate the Prometheus spec.
+- Removed legacy validator (was included but not working since wasmer upgrade).
+- Removed unnecessary tokens from consensus machine downloads in Dockerfile.
+
+### Internal
+
+- NIT-5012: fail fast when delayed-sequencing filtering is active but `transaction-filterer-rpc-client.url` is unset, and pin the `transaction-filterer` binary to serve only the `transactionfilterer` RPC namespace.
+- Make `GuestPtr` field private with checked addition (panics on overflow instead of silent wraparound).
+- Remove JIT wrappers for arbcrypto and arbcompress.
+
 ## [v3.11.0-rc.2](https://github.com/OffchainLabs/nitro/compare/v3.11.0-rc.1...v3.11.0-rc.2) - 2026-06-05
 
 ### Changed
@@ -507,4 +546,3 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Implement preimage recorder for `DelayedMessageDatabase` interface: [[PR]](https://github.com/OffchainLabs/nitro/pull/4119)
 - Implement recording of preimages related to sequencer batches (DA providers): [[PR]](https://github.com/OffchainLabs/nitro/pull/4133)
 - Add new boolean option to `BlocksReExecutor` called `CommitStateToDisk` that will allow `BlocksReExecutor.Blocks` range to not only re-executes blocks but it will also commit their state to triedb on disk. [[PR]](https://github.com/OffchainLabs/nitro/pull/4132)
-
