@@ -685,9 +685,6 @@ func ProduceBlockAdvanced(
 	if runCtx.IsDelayedSequencing() && sequencingHooks.FilteredTxCount() == 0 {
 		for i, receipt := range buildState.receipts {
 			tx := buildState.complete[i]
-			if tx.Type() == types.ArbitrumInternalTxType {
-				continue
-			}
 			sequencingHooks.TxAccepted(header, tx, receipt)
 		}
 	}
