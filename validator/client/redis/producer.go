@@ -195,6 +195,9 @@ func (br *BOLDRedisExecutionClient) StartValidators(moduleRoots []common.Hash) e
 	if err != nil {
 		return fmt.Errorf("getting context: %w", err)
 	}
+	if br.redisValidationClient == nil || br.redisValidationClient.redisClient == nil {
+		return fmt.Errorf("BOLD redis execution client has no valid validation client")
+	}
 	cfg := br.redisValidationClient.config
 	redisClient := br.redisValidationClient.redisClient
 	for _, mr := range moduleRoots {
