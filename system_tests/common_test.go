@@ -1698,7 +1698,7 @@ func createRedisGroup(ctx context.Context, t *testing.T, streamName string, clie
 	t.Helper()
 	// Stream name and group name are the same.
 	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
-		log.Debug("Error creating stream group: %v", err)
+		log.Debug("Error creating stream group", "err", err)
 	}
 }
 
