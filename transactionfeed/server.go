@@ -25,7 +25,6 @@ import (
 var (
 	clientsCurrentGauge     = metrics.NewRegisteredGauge("arb/transactionfeed/clients/current", nil)
 	clientsDisconnectedSlow = metrics.NewRegisteredCounter("arb/transactionfeed/clients/disconnected/slow", nil)
-	clientsRejectedAtCap    = metrics.NewRegisteredCounter("arb/transactionfeed/clients/rejected/at_cap", nil)
 	broadcastDroppedCounter = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/dropped", nil)
 )
 
@@ -95,13 +94,6 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	if s.config.MaxClients > 0 && int(s.clientCount.Load()) >= s.config.MaxClients {
-		clientsRejectedAtCap.Inc(1)
-		http.Error(w, "transaction feed at client capacity", http.StatusServiceUnavailable)
-		log.Debug("Transaction feed client connection rejected due to capacity", "remote", r.RemoteAddr)
-		return
-	}
-
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 	if err != nil {
 		s.wsUpgradeErrHandler.LogLevel(err, log.Warn)("Transaction feed ws upgrade error", "err", err, "remote", r.RemoteAddr)
@@ -139,7 +131,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 func (s *Server) clientReader(ctx context.Context, cc *clientConn) {
 	defer close(cc.done)
 	for {
-		readCtx, cancel := context.WithTimeout(ctx, s.config.ClientTimeout)
+		readCtx, cancel := context.WithTimeout(ctx, s.config.ReadTimeout)
 		_, reader, err := cc.conn.Reader(readCtx)
 		if err != nil {
 			cancel()

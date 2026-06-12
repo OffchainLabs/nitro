@@ -895,44 +895,6 @@ func TestTransactionFeedDelayedSequencerBroadcast(t *testing.T) {
 	assertNoReaderError(t, env.errs)
 }
 
-func TestTransactionFeedMaxClientsCap(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// MaxClients=2: env's auto-dial is client 1, we'll dial a 2nd, and the 3rd
-	// must be rejected before WS upgrade.
-	cfg := newTransactionFeedConfigTest()
-	cfg.MaxClients = 2
-	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{feedConfig: &cfg})
-	defer env.cleanup()
-
-	port := testhelpers.AddrTCPPort(env.server.ListenerAddr(), t)
-	secondConn := dialTransactionFeed(ctx, t, port)
-	defer secondConn.Close()
-	waitForTransactionFeedClients(t, env.server, 2, 3*time.Second)
-
-	rejectedCounter := metrics.GetOrRegisterCounter("arb/transactionfeed/clients/rejected/at_cap", nil)
-	startRejected := rejectedCounter.Snapshot().Count()
-
-	// Third dial: dialer should error because the server returns HTTP 503
-	// before completing the WebSocket upgrade.
-	dctx, dcancel := context.WithTimeout(ctx, 3*time.Second)
-	defer dcancel()
-	thirdConn, _, _, err := ws.Dialer{}.Dial(dctx, fmt.Sprintf("ws://127.0.0.1:%d/", port))
-	if err == nil {
-		_ = thirdConn.Close()
-		t.Fatalf("expected third dial to be rejected; got connected conn")
-	}
-
-	if got := env.server.ClientCount(); got != 2 {
-		t.Fatalf("ClientCount should stay at 2 after rejection, got %d", got)
-	}
-	if delta := rejectedCounter.Snapshot().Count() - startRejected; delta < 1 {
-		t.Fatalf("clientsRejectedAtCap did not advance: delta=%d", delta)
-	}
-	assertNoReaderError(t, env.errs)
-}
-
 func TestTransactionFeedReorgRebroadcast(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
