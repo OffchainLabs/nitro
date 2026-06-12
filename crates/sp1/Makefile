@@ -75,6 +75,8 @@ record-blocks: nitro-deps
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSolidity/*.json    $(BLOCK_INPUTS_DIR)/solidity.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylus/*.json      $(BLOCK_INPUTS_DIR)/stylus.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusHeavy/*.json $(BLOCK_INPUTS_DIR)/stylus_heavy.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusActivation/*.json $(BLOCK_INPUTS_DIR)/stylus_activation.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusActivationMulticall/*.json $(BLOCK_INPUTS_DIR)/stylus_activation_multicall.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockMixed/*.json       $(BLOCK_INPUTS_DIR)/mixed.json; \
 		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSignatures/*.json  $(BLOCK_INPUTS_DIR)/signatures.json; \
 		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
