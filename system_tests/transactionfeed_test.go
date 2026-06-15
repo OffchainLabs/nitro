@@ -296,7 +296,7 @@ func TestTransactionFeedDelivery(t *testing.T) {
 
 	m := awaitFeedMessageFor(t, env.msgs, env.errs, tx.Hash(), 5*time.Second)
 
-	if m.Version != uint32(transactionfeed.TransactionFeedV1) {
+	if m.Version != transactionfeed.TransactionFeedV1 {
 		t.Fatalf("unexpected version: got %d, want %d", m.Version, transactionfeed.TransactionFeedV1)
 	}
 	if m.Transaction.BlockNumber != receipt.BlockNumber.Uint64() {
@@ -732,7 +732,7 @@ func TestTransactionFeedSlowConsumerEviction(t *testing.T) {
 
 	largeHex := "0x" + strings.Repeat("ab", 4096) // ~8 KB raw_tx field
 	msg := &transactionfeed.TransactionFeedMessage{
-		Version: uint32(transactionfeed.TransactionFeedV1),
+		Version: transactionfeed.TransactionFeedV1,
 		Transaction: transactionfeed.TransactionIncluded{
 			RawTx:  largeHex,
 			TxHash: "0x" + strings.Repeat("00", 32),

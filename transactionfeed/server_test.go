@@ -10,7 +10,7 @@ func TestBroadcastDroppedCounter(t *testing.T) {
 	cfg.BroadcastBuf = 1
 	s := NewServer(cfg)
 
-	msg := &TransactionFeedMessage{Version: uint32(TransactionFeedV1)}
+	msg := &TransactionFeedMessage{Version: TransactionFeedV1}
 	start := broadcastDroppedCounter.Snapshot().Count()
 
 	s.BroadcastTransaction(msg)

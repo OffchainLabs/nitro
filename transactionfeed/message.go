@@ -22,10 +22,10 @@ const (
 )
 
 type TransactionFeedMessage struct {
-	Version     uint32              `json:"version"`
-	TimestampMs uint64              `json:"timestamp_ms"`
-	PGARound    uint64              `json:"pga_round"`
-	Transaction TransactionIncluded `json:"transaction"`
+	Version     TransactionFeedMessageVersion `json:"version"`
+	TimestampMs uint64                        `json:"timestamp_ms"`
+	PGARound    uint64                        `json:"pga_round"`
+	Transaction TransactionIncluded           `json:"transaction"`
 }
 
 type TransactionIncluded struct {
@@ -96,7 +96,7 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 	}
 
 	return &TransactionFeedMessage{
-		Version:     uint32(TransactionFeedV1),
+		Version:     TransactionFeedV1,
 		PGARound:    1, // TODO: placeholder until we connect with PGA round logic
 		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
 		Transaction: TransactionIncluded{
