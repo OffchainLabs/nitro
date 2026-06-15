@@ -462,6 +462,7 @@ fn stylus_call_gas_cost(
     program: &Program,
     pages_open: u16,
     pages_ever: u16,
+    arbos_version: u64,
 ) -> u64 {
     let model = MemoryModel::new(params.free_pages, params.page_gas);
     let mut cost = model.gas_cost(program.footprint, pages_open, pages_ever);
@@ -472,6 +473,10 @@ fn stylus_call_gas_cost(
     }
     if !cached {
         cost = cost.saturating_add(program.init_gas(params));
+    }
+    let new_open = pages_open.saturating_add(program.footprint);
+    if arb_stylus::env::page_limit_exceeded(arbos_version, params.page_limit, new_open) {
+        cost = cost.saturating_add(u64::MAX);
     }
     cost
 }
@@ -1365,10 +1370,17 @@ where
     } else {
         program
     };
-    let upfront_cost = stylus_call_gas_cost(&params, &effective_program, parent_open, parent_ever);
+    let upfront_cost = stylus_call_gas_cost(
+        &params,
+        &effective_program,
+        parent_open,
+        parent_ever,
+        arbos_version,
+    );
     let total_gas = inputs.gas_limit;
 
     if total_gas < upfront_cost {
+        ctx.add_stylus_upfront_oog_gas(total_gas);
         return InterpreterResult::new(InstructionResult::OutOfGas, Bytes::new(), zero_gas());
     }
     let gas_for_wasm = total_gas - upfront_cost;
@@ -1430,7 +1442,14 @@ where
         };
         let mut env =
             arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
-        env.set_pages(start_open, start_ever, params.free_pages, params.page_gas);
+        env.set_pages(
+            start_open,
+            start_ever,
+            params.free_pages,
+            params.page_gas,
+            params.page_limit,
+            arbos_version,
+        );
         match arb_stylus::NativeInstance::from_module(module, store, env) {
             Ok(inst) => inst,
             Err(e) => {
@@ -1504,6 +1523,8 @@ where
             start_ever,
             params.free_pages,
             params.page_gas,
+            params.page_limit,
+            arbos_version,
         ) {
             Ok(inst) => inst,
             Err(e) => {

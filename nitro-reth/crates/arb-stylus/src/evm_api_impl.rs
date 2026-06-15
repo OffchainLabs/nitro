@@ -815,13 +815,7 @@ impl EvmApi for StylusEvmApi {
 
         let response = match result.address {
             Some(addr) => CreateResponse::Success(addr),
-            None => {
-                if self.return_data.is_empty() {
-                    CreateResponse::Fail("create failed".into())
-                } else {
-                    CreateResponse::Fail("reverted".into())
-                }
-            }
+            None => CreateResponse::Success(Address::ZERO),
         };
 
         Ok((
@@ -896,13 +890,7 @@ impl EvmApi for StylusEvmApi {
 
         let response = match result.address {
             Some(addr) => CreateResponse::Success(addr),
-            None => {
-                if self.return_data.is_empty() {
-                    CreateResponse::Fail("create failed".into())
-                } else {
-                    CreateResponse::Fail("reverted".into())
-                }
-            }
+            None => CreateResponse::Success(Address::ZERO),
         };
 
         Ok((

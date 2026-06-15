@@ -136,6 +136,23 @@ pub fn decompress_wasm(bytecode: &[u8]) -> Result<Vec<u8>, StylusError> {
         .map_err(|e| StylusError::Decompression(format!("{e:?}")))
 }
 
+/// Compress raw WASM into classic Stylus contract bytecode.
+///
+/// Produces `[0xEF, 0xF0, 0x00, 0x00, ...brotli(wasm)]` (empty dictionary),
+/// the inverse of [`decompress_wasm`]. This is the on-chain form a Stylus
+/// deploy must store for activation to reconstruct the program; raw WASM after
+/// the discriminant is rejected because byte 3 is read as the dictionary type
+/// and the remainder is brotli-decompressed.
+pub fn compress_classic_program_code(wasm: &[u8]) -> Result<Vec<u8>, StylusError> {
+    let compressed = nitro_brotli::compress(wasm, 11, 22, nitro_brotli::Dictionary::Empty)
+        .map_err(|e| StylusError::Decompression(format!("{e:?}")))?;
+    let mut out = Vec::with_capacity(4 + compressed.len());
+    out.extend_from_slice(&STYLUS_DISCRIMINANT);
+    out.push(0);
+    out.extend_from_slice(&compressed);
+    Ok(out)
+}
+
 /// A parsed Stylus root program. The on-chain layout is
 /// `[0xEF, 0xF0, 0x02, dict, decompressed_len(4, big-endian), addr×20...]`,
 /// where each 20-byte address points to a fragment holding part of the

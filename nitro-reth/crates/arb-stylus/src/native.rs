@@ -112,9 +112,18 @@ impl<E: EvmApi> NativeInstance<E> {
         pages_ever: u16,
         free_pages: u16,
         page_gas: u16,
+        page_limit: u16,
+        arbos_version: u64,
     ) -> Result<Self, StylusError> {
         let mut env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
-        env.set_pages(pages_open, pages_ever, free_pages, page_gas);
+        env.set_pages(
+            pages_open,
+            pages_ever,
+            free_pages,
+            page_gas,
+            page_limit,
+            arbos_version,
+        );
         let store = env.compile.store();
         let module = Module::new(&store, bytes).map_err(|e| StylusError::Compile(e.to_string()))?;
         Self::from_module(module, store, env)
