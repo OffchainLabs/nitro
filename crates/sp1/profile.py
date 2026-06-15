@@ -20,7 +20,7 @@ import re
 import subprocess
 import sys
 
-BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed", "signatures"]
+BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "stylus_activation", "stylus_activation_multicall", "mixed", "signatures"]
 
 # Sample 1 in every N cycles for the SP1 trace file.
 # Lower = more detail, larger file; higher = coarser, smaller file.

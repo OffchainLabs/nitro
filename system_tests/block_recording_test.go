@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -166,7 +167,44 @@ func TestRecordBlockMixed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Signature-heavy block — many ETH transfers in a single block to amplify
+// 6. Stylus activation — the recorded block contains the
+//    ArbWasm.activateProgram tx itself, exercising the activate_v2 hostio.
+// ---------------------------------------------------------------------------
+
+func TestRecordBlockStylusActivation(t *testing.T) {
+	recordStylusActivation(t, rustFile("storage"))
+}
+
+// Same as above but activating a larger program; together the two give
+// datapoints for how activation cost scales with program size.
+func TestRecordBlockStylusActivationMulticall(t *testing.T) {
+	recordStylusActivation(t, rustFile("multicall"))
+}
+
+// recordStylusActivation deploys the wasm without activating it (unlike
+// deployWasm), then records the block containing the activation tx itself.
+func recordStylusActivation(t *testing.T, file string) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	wasm, _ := readWasmFile(t, file)
+	auth.GasLimit = 32000000 // skip gas estimation
+	program := deployContract(t, ctx, auth, l2client, wasm)
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+	auth.Value = oneEth
+	tx, err := arbWasm.ActivateProgram(&auth, program)
+	Require(t, err)
+	receipt := ensureTx(t, builder, tx)
+
+	record(t, receipt.BlockNumber.Uint64(), builder)
+}
+
+// ---------------------------------------------------------------------------
+// 7. Signature-heavy block — many ETH transfers in a single block to amplify
 //    ECRecover (sender recovery) signal in profile snapshots.
 // ---------------------------------------------------------------------------
 

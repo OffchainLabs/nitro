@@ -69,40 +69,43 @@ jobs:
           # Exit if any command in a pipe fails
           set -e -o pipefail
 
-          echo "--- Running SP1 Validation ---"
-          # Extracting only the hex string using grep -o
-          SP1_HASH=$(make -C crates/sp1 run BLOCK=stylus 2>&1 \
-            | grep "Validation succeeds with hash" \
-            | awk '{print $NF}')
+          # Cross-check SP1 (RISC-V, in-zkVM) against JIT (native) on each block.
+          for BLOCK in transfer solidity stylus stylus_heavy stylus_activation stylus_activation_multicall mixed signatures; do
+            echo "--- Running SP1 Validation ($BLOCK) ---"
+            # Extracting only the hex string using grep -o
+            SP1_HASH=$(make -C crates/sp1 run BLOCK="$BLOCK" 2>&1 \
+              | grep "Validation succeeds with hash" \
+              | awk '{print $NF}')
 
-          if [ -z "$SP1_HASH" ]; then
-              echo "Error: Failed to capture hash."
-              exit 1
-          fi
+            if [ -z "$SP1_HASH" ]; then
+                echo "::error::Failed to capture SP1 hash for $BLOCK."
+                exit 1
+            fi
 
-          echo "--- Running JIT Validation ---"
-          JIT_HASH=$(./target/bin/jit \
-            --debug --cranelift \
-            --binary target/machines/latest/replay.wasm \
-            json --inputs=target/sp1/block-inputs/stylus.json 2>&1 \
-            | grep "Completed in .* with hash" \
-            | awk '{print $NF}' \
-            | sed 's/\.$//')
+            echo "--- Running JIT Validation ($BLOCK) ---"
+            JIT_HASH=$(./target/bin/jit \
+              --debug --cranelift \
+              --binary target/machines/latest/replay.wasm \
+              json --inputs="target/sp1/block-inputs/$BLOCK.json" 2>&1 \
+              | grep "Completed in .* with hash" \
+              | awk '{print $NF}' \
+              | sed 's/\.$//')
 
-          if [ -z "$JIT_HASH" ]; then
-              echo "Error: Failed to capture JIT hash."
-              exit 1
-          fi
+            if [ -z "$JIT_HASH" ]; then
+                echo "::error::Failed to capture JIT hash for $BLOCK."
+                exit 1
+            fi
 
-          echo "SP1 Hash: $SP1_HASH"
-          echo "JIT Hash: $JIT_HASH"
+            echo "$BLOCK SP1 Hash: $SP1_HASH"
+            echo "$BLOCK JIT Hash: $JIT_HASH"
 
-          if [ "$SP1_HASH" != "$JIT_HASH" ]; then
-              echo "::error::Hash mismatch detected!"
-              echo "Expected: $SP1_HASH"
-              echo "Actual:   $JIT_HASH"
-              exit 1
-          fi
+            if [ "$SP1_HASH" != "$JIT_HASH" ]; then
+                echo "::error::Hash mismatch detected for $BLOCK!"
+                echo "SP1: $SP1_HASH"
+                echo "JIT: $JIT_HASH"
+                exit 1
+            fi
+          done
 
       - name: Clean up stale profiling artifacts
         if: github.event_name == 'pull_request'

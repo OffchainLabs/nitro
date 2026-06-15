@@ -65,6 +65,8 @@ This runs the block-recording system tests (under the `block_recording` build ta
 * `solidity.json` — 20 Solidity SSTORE operations, no Stylus.
 * `stylus.json` — a single Stylus call with one WASM storage write.
 * `stylus_heavy.json` — 32 cross-contract read/write pairs through a multicall Stylus program.
+* `stylus_activation.json` — a block containing an `ArbWasm.activateProgram` tx, exercising Stylus activation (`activate_v2`).
+* `stylus_activation_multicall.json` — same, but activating the larger `multicall` program; compare with `stylus_activation` to see how activation cost scales with program size.
 * `mixed.json` — a mixed block: ETH transfers, an EVM call, and multiple Stylus programs.
 * `signatures.json` — 50 ETH transfers in a single block; amplifies ECRecover (sender recovery) signal in profile snapshots.
 

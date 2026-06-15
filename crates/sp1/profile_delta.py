@@ -13,7 +13,7 @@ import json
 from itertools import zip_longest
 
 MARKER = "<!-- sp1-profile-comment -->"
-BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "mixed", "signatures"]
+BLOCKS = ["transfer", "solidity", "stylus", "stylus_heavy", "stylus_activation", "stylus_activation_multicall", "mixed", "signatures"]
 
 # Crypto-related syscall name prefixes — sorted to the top of the syscall diff
 # table (the migration we care about most affects SECP256K1_*).

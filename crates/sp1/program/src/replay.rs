@@ -25,7 +25,7 @@ use wasmer::{
 use wasmer_vm::install_unwinder;
 
 use crate::{
-    Escape, JitConfig, STACK_SIZE,
+    Escape, JitConfig, MaybeEscape, STACK_SIZE,
     imports::programs,
     platform,
     platform::{exit, read_input},
@@ -193,8 +193,30 @@ impl CustomEnvData {
             .expect("no message waiting")
     }
 
-    pub fn pop_last_program(&mut self) {
-        cothreads_mut().pop();
+    /// Removes the last created program, first driving its coroutine to
+    /// completion — the SP1 analogue of jit's `pop` joining the cothread
+    /// (`thread.wait_done()`). Normally a no-op: replay only pops after
+    /// receiving the final outcome message, which the run loop sends once the
+    /// coroutine returned (or was force_reset on unwind, which also marks it
+    /// done). The loop only does work on abnormal early-pop paths.
+    pub fn pop_last_program(&mut self) -> MaybeEscape {
+        if cothreads().is_empty() {
+            return Escape::logical("no child");
+        }
+
+        const MAX_YIELD_ITERATIONS: usize = 10;
+        for _ in 0..MAX_YIELD_ITERATIONS {
+            // The run loop always resumes the *last* cothread, so it must
+            // stay in place until it is done.
+            if cothreads().last().unwrap().coroutine.done() {
+                cothreads_mut().pop();
+                return Ok(());
+            }
+            self.yielder.suspend(MainYieldMessage::RunLastChild);
+        }
+        Err(Escape::Internal(format!(
+            "program did not finish after {MAX_YIELD_ITERATIONS} iterations"
+        )))
     }
 }
 

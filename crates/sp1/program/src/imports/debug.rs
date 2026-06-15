@@ -38,10 +38,13 @@ pub fn console_tee<T: Into<Value> + Copy>(
 
 pub fn null_host(_ctx: FunctionEnvMut<StylusCustomEnvData>) {}
 
+// Benchmarking records wall-clock time and ink for host-side debug tooling
+// (jit returns it in its final cothread message). The zkVM has no wall clock
+// and nothing consumes the data here, so these are deliberate no-ops.
 pub fn start_benchmark(_ctx: FunctionEnvMut<StylusCustomEnvData>) -> MaybeEscape {
-    unimplemented!("start_benchmark is not implemented in debug host imports")
+    Ok(())
 }
 
 pub fn end_benchmark(_ctx: FunctionEnvMut<StylusCustomEnvData>) -> MaybeEscape {
-    unimplemented!("end_benchmark is not implemented in debug host imports")
+    Ok(())
 }
