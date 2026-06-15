@@ -21,7 +21,6 @@ pub const ARBWASMCACHE_ADDRESS: Address = Address::new([
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
 
-const WARM_SLOAD_GAS: u64 = 100;
 const COLD_ACCOUNT_ACCESS_GAS: u64 = 2600;
 const SSTORE_SET_GAS: u64 = 20_000;
 const SSTORE_RESET_GAS: u64 = 5_000;
@@ -295,8 +294,9 @@ fn set_program_cached(
     }
 
     let (params, mut program) = read_params_and_program(input, codehash, now, ctx)?;
-    // `programs.params` is a warm read; `get_program` is one SLOAD.
-    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS);
+    // params is a warm read billed to computation; get_program is one SLOAD.
+    crate::charge_params_read(gas_used, ctx);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
     let already_cached = program.cached;
     let expiry_seconds = (params.expiry_days as u64).saturating_mul(86_400);
     let expired = program.age_seconds > expiry_seconds;
@@ -358,9 +358,9 @@ fn set_program_cached(
     ));
 
     // Re-caching reads the previous module hash (one SLOAD), then charges the
-    // init cost (compute), the cache-update event, and the program write.
+    // init cost, the cache-update event, and the program write.
     crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
-    crate::charge_computation(gas_used, ctx, prog_init_cost as u64);
+    crate::charge_storage_read(gas_used, ctx, prog_init_cost as u64);
     crate::charge_history_growth(gas_used, ctx, EMIT_UPDATE_PROGRAM_CACHE_GAS);
     crate::charge_storage_write(gas_used, ctx, sstore_gas);
     Ok(PrecompileOutput::new(

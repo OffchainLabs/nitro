@@ -1,17 +1,8 @@
-//! Ports of Nitro's `precompiles/constraints_test.go`.
-//!
-//! These tests validate the ArbOwner ↔ ArbGasInfo round-trip for
-//! `setGasPricingConstraints` / `getGasPricingConstraints` and their
-//! multi-gas siblings at ArbOS v50/v60. They drive the real owner-gated
-//! setter (writing through our journaled state) and then feed the
-//! mutated state back into the getter precompile to verify field-level
-//! consistency, exactly like Nitro does against its in-memory
-//! `arbosState`.
-//!
-//! Only the parts of Nitro's test file that are reachable with the
-//! unit-test harness are ported. Tests that depend on `GasModelToUse`
-//! flipping are intentionally skipped — we don't implement that field
-//! yet and wiring it up without live evidence would risk a regression.
+//! Round-trip tests for the ArbOwner -> ArbGasInfo path for
+//! `setGasPricingConstraints` / `getGasPricingConstraints` and their multi-gas
+//! siblings at ArbOS v50/v60. The owner-gated setter writes through journaled
+//! state; the mutated state is then read back through the getter precompile to
+//! verify field-level consistency.
 
 mod common;
 
@@ -76,12 +67,9 @@ fn set_gas_pricing_calldata(constraints: &[[u64; 3]]) -> alloy_primitives::Bytes
 
 /// Build calldata for `setMultiGasPricingConstraints(((uint8,uint64)[],uint32,uint64,uint64)[])`.
 ///
-/// Nitro's `MultiGasConstraint` struct is declared with
-/// `Resources` (dynamic) FIRST, then `AdjustmentWindowSecs`,
-/// `TargetPerSec`, `Backlog`. ABI encoding follows declaration order,
-/// so each struct head starts with an offset-to-resources, then the
-/// three static fields, and the resources array is appended in the
-/// struct tail.
+/// The struct is (Resources dynamic, AdjustmentWindowSecs, TargetPerSec,
+/// Backlog); the ABI head holds the offset-to-resources then the three static
+/// fields, and the resources array is appended in the struct tail.
 fn set_multi_gas_pricing_calldata(
     constraints: &[(Vec<(u8, u64)>, u32, u64, u64)],
 ) -> alloy_primitives::Bytes {
@@ -183,16 +171,12 @@ fn decode_gas_pricing_constraints(out: &[u8]) -> Vec<[u64; 3]> {
     result
 }
 
-// ── Ports of constraints_test.go ───────────────────────────────────────
-
-/// Port of Nitro's `TestFailToSetInvalidConstraints`.
 /// Rejects zero target and zero adjustment window.
 ///
-/// Note: at ArbOS >= 11, `gas_check` converts `Err(Other)` into
-/// `Ok(reverted=true)` to mirror Nitro's behavior, so we inspect the
+/// At ArbOS >= 11 an invalid call surfaces as reverted, so check the
 /// `reverted` flag rather than `Result::is_err`.
 #[test]
-fn nitro_parity_fail_to_set_invalid_constraints() {
+fn fail_to_set_invalid_constraints() {
     // Zero target.
     let run = owner_fixture(50).call(arbowner, &set_gas_pricing_calldata(&[[0, 17, 1000]]));
     let out = run.result.as_ref().expect("should return Ok(reverted)");
@@ -204,10 +188,9 @@ fn nitro_parity_fail_to_set_invalid_constraints() {
     assert!(out.reverted, "zero adjustment window should revert");
 }
 
-/// Port of Nitro's `TestSetLegacyBacklog`.
 /// Setter/getter round-trip for the legacy gas backlog field.
 #[test]
-fn nitro_parity_set_legacy_backlog_round_trip() {
+fn set_legacy_backlog_round_trip() {
     // Initially zero.
     let run = owner_fixture(50).call(arbgasinfo, &calldata("getGasBacklog()", &[]));
     assert_eq!(U256::from_be_slice(run.output()), U256::ZERO);
@@ -226,11 +209,10 @@ fn nitro_parity_set_legacy_backlog_round_trip() {
     assert_eq!(U256::from_be_slice(run.output()), U256::from(80_000));
 }
 
-/// Port of Nitro's `TestConstraintsStorage` — first half.
 /// Set two constraints, verify the getter returns them with field-level
 /// fidelity.
 #[test]
-fn nitro_parity_constraints_storage_round_trip_two_constraints() {
+fn constraints_storage_round_trip_two_constraints() {
     let constraints = [[30_000_000, 1, 800_000], [15_000_000, 102, 1_600_000]];
     let set_run = owner_fixture(50).call(arbowner, &set_gas_pricing_calldata(&constraints));
     let _ = set_run.assert_ok();
@@ -243,16 +225,12 @@ fn nitro_parity_constraints_storage_round_trip_two_constraints() {
     assert_eq!(got[1], [15_000_000, 102, 1_600_000]);
 }
 
-/// Port of Nitro's `TestConstraintsBacklogUpdate`. Backlog is the only
-/// mutable field after `SetGasPricingConstraints`, so a subsequent state
-/// update must be observable through the getter.
-///
-/// We can't call `state.L2PricingState().OpenGasConstraintAt(i).SetBacklog()`
-/// from the test (no ArbosState bindings in Rust), so we mutate the raw
-/// slot directly in the continued fixture. Slot layout is `vector_element_field(vec, i,
-/// CONSTRAINT_BACKLOG=2)`.
+/// Backlog is the only mutable field after `SetGasPricingConstraints`, so a
+/// subsequent state update must be observable through the getter. The raw slot
+/// is mutated directly in the continued fixture; the layout is
+/// `vector_element_field(vec, i, CONSTRAINT_BACKLOG=2)`.
 #[test]
-fn nitro_parity_constraints_backlog_update() {
+fn constraints_backlog_update() {
     use arb_storage::layout::{gas_constraints_vec_key, vector_element_field};
 
     let set_run = owner_fixture(50).call(
@@ -292,11 +270,10 @@ fn nitro_parity_constraints_backlog_update() {
     );
 }
 
-/// Port of Nitro's `TestMultiGasConstraintsCantExceedLimit`. A single
-/// constraint with backlog high enough to push the pricing exponent
+/// A single constraint with backlog high enough to push the pricing exponent
 /// past `MaxPricingExponentBips` must revert.
 #[test]
-fn nitro_parity_multi_gas_constraints_cant_exceed_limit() {
+fn multi_gas_constraints_cant_exceed_limit() {
     let run = owner_fixture(60).call(
         arbowner,
         &set_multi_gas_pricing_calldata(&[(
@@ -313,15 +290,14 @@ fn nitro_parity_multi_gas_constraints_cant_exceed_limit() {
     );
 }
 
-/// Port of Nitro's `TestGetMultiGasPricingConstraintsOrder`. Verifies
-/// that `getMultiGasPricingConstraints()` returns each constraint's
-/// `Resources` list sorted ascending by resource-kind id, regardless of
-/// the order the caller supplied them.
+/// `getMultiGasPricingConstraints()` returns each constraint's `Resources`
+/// list sorted ascending by resource-kind id, regardless of the order the
+/// caller supplied them.
 #[test]
-fn nitro_parity_multi_gas_pricing_constraints_order() {
+fn multi_gas_pricing_constraints_order() {
     // Supply resources in deliberately unsorted order.
     let constraints = vec![(
-        vec![(3u8, 7u64), (0u8, 5u64), (2u8, 3u64), (1u8, 1u64)],
+        vec![(3u8, 7u64), (4u8, 5u64), (2u8, 3u64), (1u8, 1u64)],
         1u32,
         20_000_000u64,
         800_000u64,
@@ -347,20 +323,19 @@ fn nitro_parity_multi_gas_pricing_constraints_order() {
     }
 }
 
-/// Port of Nitro's `TestMultiGasConstraintsStorage`. Set two
-/// multi-gas constraints with distinct resource weights and verify the
+/// Set two multi-gas constraints with distinct resource weights and verify the
 /// getter returns them field-by-field.
 #[test]
-fn nitro_parity_multi_gas_constraints_storage_round_trip() {
+fn multi_gas_constraints_storage_round_trip() {
     let constraints = vec![
         (
-            vec![(0u8, 1u64), (1u8, 2u64)],
+            vec![(3u8, 1u64), (1u8, 2u64)],
             1u32,
             30_000_000u64,
             800_000u64,
         ),
         (
-            vec![(0u8, 2u64), (1u8, 3u64)],
+            vec![(3u8, 2u64), (1u8, 3u64)],
             102u32,
             15_000_000u64,
             1_600_000u64,
@@ -389,7 +364,7 @@ fn nitro_parity_multi_gas_constraints_storage_round_trip() {
     assert_eq!(*backlog0, 800_000);
     let mut r0 = resources0.clone();
     r0.sort_by_key(|x| x.0);
-    assert_eq!(r0, vec![(0, 1), (1, 2)]);
+    assert_eq!(r0, vec![(1, 2), (3, 1)]);
 
     // Element 1
     let (resources1, window1, target1, backlog1) = &got[1];
@@ -398,13 +373,12 @@ fn nitro_parity_multi_gas_constraints_storage_round_trip() {
     assert_eq!(*backlog1, 1_600_000);
     let mut r1 = resources1.clone();
     r1.sort_by_key(|x| x.0);
-    assert_eq!(r1, vec![(0, 2), (1, 3)]);
+    assert_eq!(r1, vec![(1, 3), (3, 2)]);
 }
 
-/// Port of Nitro's `TestConstraintsStorage` — second half.
 /// Replacing the constraint list must clear the old entries.
 #[test]
-fn nitro_parity_constraints_storage_replace_clears_old() {
+fn constraints_storage_replace_clears_old() {
     // Start with two, then replace with one.
     let first = owner_fixture(50).call(
         arbowner,

@@ -288,6 +288,9 @@ impl<D: Database> L2PricingState<'_, D> {
             }
 
             for kind in ResourceKind::ALL {
+                if kind == ResourceKind::SingleDim {
+                    continue;
+                }
                 let weight = c.resource_weight(backend, kind)?;
                 if weight == 0 {
                     continue;

@@ -39,7 +39,9 @@ impl ReceiptBuilder for ArbReceiptBuilder {
             ArbTxTypeLocal::Eip1559 => ArbReceiptKind::Eip1559(inner),
             ArbTxTypeLocal::Eip4844 => ArbReceiptKind::Eip1559(inner),
             ArbTxTypeLocal::Eip7702 => ArbReceiptKind::Eip7702(inner),
-            ArbTxTypeLocal::Deposit => ArbReceiptKind::Deposit(arb_primitives::ArbDepositReceipt),
+            ArbTxTypeLocal::Deposit => {
+                ArbReceiptKind::Deposit(arb_primitives::ArbDepositReceipt::new(success))
+            }
             ArbTxTypeLocal::Unsigned => ArbReceiptKind::Unsigned(inner),
             ArbTxTypeLocal::Contract => ArbReceiptKind::Contract(inner),
             ArbTxTypeLocal::Retry => ArbReceiptKind::Retry(inner),

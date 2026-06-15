@@ -35,7 +35,7 @@ use tracing::trace;
 use arb_storage::{
     layout::{
         root_slot, subspace_slot, BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET,
-        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+        GENESIS_BLOCK_NUM_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     },
     ARBOS_STATE_ADDRESS,
 };
@@ -1226,9 +1226,11 @@ where
     {
         async move {
             use crate::nodeinterface_rpc::{
-                encode_gas_estimate_components, encode_l2_block_range, NODE_INTERFACE_ADDRESS,
-                SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
-                SEL_L2_BLOCK_RANGE_FOR_L1,
+                encode_gas_estimate_components, encode_l2_block_range, encode_legacy_lookup_empty,
+                encode_u64_word, unpack_mix_hash, NODE_INTERFACE_ADDRESS, SEL_BLOCK_L1_NUM,
+                SEL_FIND_BATCH_CONTAINING_BLOCK, SEL_GAS_ESTIMATE_COMPONENTS,
+                SEL_GAS_ESTIMATE_L1_COMPONENT, SEL_GET_L1_CONFIRMATIONS, SEL_L2_BLOCK_RANGE_FOR_L1,
+                SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF, SEL_NITRO_GENESIS_BLOCK,
             };
             use alloy_primitives::{Address, TxKind};
 
@@ -1429,6 +1431,57 @@ where
                 // ArbSys SendMerkleUpdate / L2ToL1Tx events, build a
                 // position → hash map, run the outbox-proof algorithm.
                 [0x42, 0x69, 0x63, 0x50] => self.construct_outbox_proof(&input_bytes, at).await,
+
+                SEL_NITRO_GENESIS_BLOCK => {
+                    let state = self
+                        .inner
+                        .provider()
+                        .state_by_block_id(at)
+                        .map_err(|e| EthApiError::Internal(e.into()))?;
+                    let genesis: u64 = state
+                        .storage(
+                            ARBOS_STATE_ADDRESS,
+                            StorageKey::from(B256::from(
+                                root_slot(GENESIS_BLOCK_NUM_OFFSET).to_be_bytes::<32>(),
+                            )),
+                        )
+                        .map_err(|e| EthApiError::Internal(e.into()))?
+                        .unwrap_or_default()
+                        .try_into()
+                        .unwrap_or(0);
+                    Ok(encode_u64_word(genesis))
+                }
+
+                SEL_BLOCK_L1_NUM => {
+                    use alloy_consensus::BlockHeader;
+                    use reth_provider::BlockReaderIdExt;
+                    if input_bytes.len() < 4 + 32 {
+                        return Err(EthApiError::InvalidParams(
+                            "blockL1Num: missing uint64 arg".into(),
+                        ));
+                    }
+                    let l2_block: u64 = U256::from_be_slice(&input_bytes[4..36])
+                        .try_into()
+                        .unwrap_or(u64::MAX);
+                    let l1_block = self
+                        .inner
+                        .provider()
+                        .sealed_header_by_number_or_tag(
+                            alloy_rpc_types_eth::BlockNumberOrTag::Number(l2_block),
+                        )
+                        .ok()
+                        .flatten()
+                        .and_then(|h| h.header().mix_hash())
+                        .map(|mix| unpack_mix_hash(mix).1)
+                        .unwrap_or(0);
+                    Ok(encode_u64_word(l1_block))
+                }
+
+                SEL_GET_L1_CONFIRMATIONS | SEL_FIND_BATCH_CONTAINING_BLOCK => {
+                    Ok(encode_u64_word(0))
+                }
+
+                SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => Ok(encode_legacy_lookup_empty()),
 
                 _ => {
                     // Delegate to EVM (precompile returns zero / reverts).

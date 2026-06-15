@@ -18,7 +18,7 @@ fn encode(r: &ArbReceipt) -> Vec<u8> {
 
 #[test]
 fn deposit_receipt_type_byte_is_0x64() {
-    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt));
+    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt::default()));
     assert_eq!(r.ty(), 0x64);
     let bytes = encode(&r);
     assert_eq!(bytes[0], 0x64);
@@ -98,7 +98,7 @@ fn empty_internal_receipt_golden_bytes() {
 
 #[test]
 fn empty_deposit_receipt_golden_bytes() {
-    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt));
+    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt::default()));
     let bytes = encode(&r);
     assert_eq!(bytes, vec![0x64, 0xc3, 0x01, 0x80, 0xc0]);
 }

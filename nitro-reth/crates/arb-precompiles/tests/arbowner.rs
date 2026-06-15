@@ -171,9 +171,7 @@ fn add_chain_owner_at_v30_succeeds_without_event() {
 
 #[test]
 fn version_check_uses_raw_arbos_version_not_plus_55() {
-    // Regression test for block 18,489,005: arbowner.rs added 55 to the raw
-    // ArbOS version before the version gate, making raw=11 evaluate as 66 >= 60
-    // and emit a spurious ChainOwnerAdded event.
+    // addChainOwner gates on the raw ArbOS version (v60), not version + 55.
     let new_owner: Address = address!("00000000000000000000000000000000000000ef");
     let run = fixture(11).call(
         arbowner,
@@ -185,14 +183,10 @@ fn version_check_uses_raw_arbos_version_not_plus_55() {
 }
 
 #[test]
-fn set_max_tx_gas_limit_writes_per_tx_slot_and_leaves_per_block_alone() {
-    // Regression: SetMaxTxGasLimit used to dispatch by ArbOS version and write to
-    // L2_PER_BLOCK_GAS_LIMIT (slot 1) at ArbOS < 50, which corrupted the per-block
-    // gas limit. Nitro precompiles/ArbOwner.go::SetMaxTxGasLimit always calls
-    // L2PricingState.SetMaxPerTxGasLimit, which writes perTxGasLimitOffset (slot 7).
+fn set_max_tx_gas_limit_below_v50_writes_per_block_slot() {
     let test = fixture(30).storage(
         ARBOS_STATE_ADDRESS,
-        subspace_slot(L2_PRICING_SUBSPACE, 1 /* L2_PER_BLOCK_GAS_LIMIT */),
+        subspace_slot(L2_PRICING_SUBSPACE, 1),
         U256::from(32_000_000_u64),
     );
     let limit = U256::from(7_000_000_u64);
@@ -202,14 +196,23 @@ fn set_max_tx_gas_limit_writes_per_tx_slot_and_leaves_per_block_alone() {
     );
     let _ = run.assert_ok();
     assert_eq!(
+        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 1)),
+        limit,
+    );
+}
+
+#[test]
+fn set_max_tx_gas_limit_at_v50_writes_per_tx_slot() {
+    let test = fixture(50);
+    let limit = U256::from(7_000_000_u64);
+    let run = test.call(
+        arbowner,
+        &calldata("setMaxTxGasLimit(uint64)", &[word_u256(limit)]),
+    );
+    let _ = run.assert_ok();
+    assert_eq!(
         run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 7)),
         limit,
-        "must write the per-tx slot"
-    );
-    assert_eq!(
-        run.storage(ARBOS_STATE_ADDRESS, subspace_slot(L2_PRICING_SUBSPACE, 1)),
-        U256::from(32_000_000_u64),
-        "must NOT have overwritten per-block slot"
     );
 }
 
@@ -371,7 +374,7 @@ fn schedule_arbos_upgrade_writes_version_and_timestamp_slots() {
     );
 }
 
-// ── Ports from /data/nitro/precompiles/ArbOwner_test.go ───────────────
+// ── ArbOwner round-trip ports ─────────────────────────────────────────
 
 use arbos::arbos_state::INFRA_FEE_ACCOUNT_OFFSET;
 
@@ -383,20 +386,12 @@ fn arbownerpublic(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrec
     arb_precompiles::create_arbownerpublic_precompile(ctx)
 }
 
-/// Port of Nitro's `TestArbInfraFeeAccount` (v6+ round-trip).
+/// Infra fee account round-trip at ArbOS v6.
 ///
-/// Nitro's test nominally targets `ArbosVersion_5`, but the mock EVM's
-/// state config is a freshly-built `ArbitrumDevTestChainConfig()` whose
-/// `InitialArbOSVersion` is well above 6, so `State.ArbOSVersion()`
-/// reports the dev-chain default regardless of the `version` parameter.
-/// The effective test is therefore against v≥6. We run at v6 directly.
-///
-/// We also skip the v0-no-op assertion: arbreth gates
-/// `setInfraFeeAccount` at v≥5 via `check_method_version` and reverts
-/// below that, which is stricter but not observable via precompile
-/// dispatch from outside.
+/// `setInfraFeeAccount` is gated at v>=5 and reverts below that, which is
+/// not observable via precompile dispatch from outside.
 #[test]
-fn nitro_parity_infra_fee_account_round_trip() {
+fn infra_fee_account_round_trip() {
     let new_addr: Address = address!("00000000000000000000000000000000000000cd");
 
     // Empty at start via both precompiles.
@@ -435,11 +430,10 @@ fn nitro_parity_infra_fee_account_round_trip() {
     );
 }
 
-/// Port of Nitro's `TestArbOwner` — chain owner management sub-flow.
-/// Verifies add/remove/isChainOwner/getAllChainOwners with duplicate
-/// adds not double-counting.
+/// Chain owner management: add/remove/isChainOwner with duplicate adds not
+/// double-counting.
 #[test]
-fn nitro_parity_arb_owner_chain_owner_management() {
+fn arb_owner_chain_owner_management() {
     let addr1: Address = address!("00000000000000000000000000000000000000d1");
     let addr2: Address = address!("00000000000000000000000000000000000000d2");
     let addr3: Address = address!("00000000000000000000000000000000000000d3");
@@ -504,9 +498,9 @@ fn nitro_parity_arb_owner_chain_owner_management() {
     assert_eq!(decode_u256(run.output()), U256::from(1), "addr2 remains");
 }
 
-/// Port of Nitro's `TestArbOwner` — SetAmortizedCostCapBips round-trip.
+/// SetAmortizedCostCapBips round-trip.
 #[test]
-fn nitro_parity_arb_owner_amortized_cost_cap_round_trip() {
+fn arb_owner_amortized_cost_cap_round_trip() {
     // Initial value is zero.
     let run = fixture(30).call(arbgasinfo, &calldata("getAmortizedCostCapBips()", &[]));
     assert_eq!(decode_u256(run.output()), U256::ZERO);
@@ -526,12 +520,11 @@ fn nitro_parity_arb_owner_amortized_cost_cap_round_trip() {
     assert_eq!(decode_u256(run.output()), U256::from(new_cap));
 }
 
-/// Port of Nitro's `TestArbOwner` — SetNetworkFeeAccount round-trip
-/// (confirms the getter picks up the setter's write, beyond the raw
-/// slot-write regression test already covered by
+/// SetNetworkFeeAccount round-trip: the getter picks up the setter's write
+/// (beyond the raw slot-write check in
 /// `set_network_fee_account_writes_root_slot`).
 #[test]
-fn nitro_parity_arb_owner_network_fee_account_round_trip() {
+fn arb_owner_network_fee_account_round_trip() {
     let new_fee_account: Address = address!("00000000000000000000000000000000000000fa");
     let set_run = fixture(30).call(
         arbowner,
@@ -550,9 +543,9 @@ fn nitro_parity_arb_owner_network_fee_account_round_trip() {
     );
 }
 
-// Stylus parameter setters: the dual-exec matrix only drives zero arguments,
-// so these lock in the scaling (DivCeil) and saturating narrowing for the
-// init-gas params, plus the per-type range rejection on the narrow setters.
+// Stylus parameter setters: lock in the scaling (DivCeil) and saturating
+// narrowing for the init-gas params, plus the per-type range rejection on the
+// narrow setters.
 mod stylus_params {
     use super::*;
     use arb_storage::layout::{map_slot, programs::PARAMS_KEY, PROGRAMS_SUBSPACE};

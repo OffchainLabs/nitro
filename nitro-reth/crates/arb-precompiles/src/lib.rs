@@ -170,6 +170,16 @@ pub fn charge_computation(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCt
     ctx.add_precompile_multi_gas(arb_primitives::multigas::ResourceKind::Computation, gas);
 }
 
+/// `WarmStorageReadCostEIP2929` — the cost of the warm StylusParams slot read.
+const PARAMS_WARM_READ_GAS: u64 = 100;
+
+/// Charge the warm StylusParams read. The params slot is read frequently and
+/// billed to `Computation`, not as a storage read; centralized so every reader
+/// attributes it to the same resource.
+pub fn charge_params_read(gas_used: &mut u64, ctx: &arb_context::ArbPrecompileCtx) {
+    charge_computation(gas_used, ctx, PARAMS_WARM_READ_GAS);
+}
+
 /// Initialize gas tracking for a precompile call: charge `argsCost` as
 /// `L2Calldata` and the `OpenArbosState` read (1 SLOAD = 800) as
 /// `StorageAccessRead`, mirroring the reference framework's per-call
@@ -210,6 +220,21 @@ fn burn_all_revert(gas_limit: u64) -> PrecompileResult {
         gas_limit,
         Default::default(),
     ))
+}
+
+/// Revert with an ABI-encoded Solidity error, charging the result copy as
+/// computation. Consumes all gas if the result cannot be afforded.
+pub(crate) fn revert_sol_error(
+    gas_used: &mut u64,
+    ctx: &arb_context::ArbPrecompileCtx,
+    payload: Vec<u8>,
+    input_gas: u64,
+) -> PrecompileResult {
+    charge_computation(gas_used, ctx, 3 * (payload.len() as u64).div_ceil(32));
+    if *gas_used > input_gas {
+        return Err(ArbPrecompileError::OutOfGas.into());
+    }
+    Ok(PrecompileOutput::new_reverted(*gas_used, payload.into()))
 }
 
 /// Reject call value sent to a non-payable method, reverting and consuming all
@@ -391,14 +416,6 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap, ctx: Arc<ArbPrecompile
         (
             ARBNATIVETOKENMANAGER_ADDRESS,
             create_arbnativetokenmanager_precompile(ctx.clone()),
-        ),
-        (
-            NODE_INTERFACE_ADDRESS,
-            create_nodeinterface_precompile(ctx.clone()),
-        ),
-        (
-            NODE_INTERFACE_DEBUG_ADDRESS,
-            create_nodeinterface_debug_precompile(ctx.clone()),
         ),
     ]);
 

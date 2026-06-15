@@ -3,7 +3,9 @@ use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::retryables::{RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE};
+use arbos::retryables::{
+    CancelOutcome, LookupOutcome, RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE,
+};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
 
@@ -177,17 +179,18 @@ fn handle_get_timeout(
         .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let effective_timeout = match arb_state
+    let lookup = arb_state
         .retryable_state
         .get_timeout(internals, ticket_id, now)
-    {
-        Ok(t) => t,
-        Err(RetryableError::NoTicketWithId) => {
+        .map_err(|e| map_retryable_error(e, *gas_used))?;
+    crate::charge_storage_read(gas_used, ctx, lookup.extra_gas);
+    let effective_timeout = match lookup.outcome {
+        LookupOutcome::Found(t) => t,
+        LookupOutcome::NoTicket => {
             crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             let data = IArbRetryableTx::NoTicketWithID {}.abi_encode();
             return crate::sol_error_revert(gas_used, ctx, data, gas_limit);
         }
-        Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
 
     crate::charge_storage_read(gas_used, ctx, 3 * SLOAD_GAS);
@@ -217,16 +220,17 @@ fn handle_get_beneficiary(
         .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
 
-    let beneficiary = match arb_state
+    let lookup = arb_state
         .retryable_state
         .get_beneficiary(internals, ticket_id, now)
-    {
-        Ok(addr) => addr,
-        Err(RetryableError::NoTicketWithId) => {
+        .map_err(|e| map_retryable_error(e, *gas_used))?;
+    crate::charge_storage_read(gas_used, ctx, lookup.extra_gas);
+    let beneficiary = match lookup.outcome {
+        LookupOutcome::Found(addr) => addr,
+        LookupOutcome::NoTicket => {
             crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
-        Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
 
     crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
@@ -265,10 +269,11 @@ fn handle_redeem(
         .map_err(ArbPrecompileError::fatal)?;
     let retryable_state = &arb_state.retryable_state;
 
-    let opened = retryable_state
-        .open_retryable(internals, ticket_id, now)
+    let (opened, open_extra) = retryable_state
+        .open_retryable_metered(internals, ticket_id, now)
         .map_err(|e| map_retryable_error(e, *gas_used))?;
     crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+    crate::charge_storage_read(gas_used, ctx, open_extra);
 
     let calldata_raw_size = if let Some(ref ret) = opened {
         let size = ret
@@ -291,13 +296,16 @@ fn handle_redeem(
     const PARAMS_SLOAD_GAS: u64 = 50;
     crate::charge_storage_read(gas_used, ctx, PARAMS_SLOAD_GAS.saturating_mul(write_bytes));
 
-    let nonce = match retryable_state.increment_num_tries_for(internals, ticket_id, now) {
-        Ok(n) => n,
-        Err(RetryableError::NoTicketWithId) => {
+    let inc = retryable_state
+        .increment_num_tries_for(internals, ticket_id, now)
+        .map_err(|e| map_retryable_error(e, *gas_used))?;
+    crate::charge_storage_read(gas_used, ctx, inc.extra_gas);
+    let nonce = match inc.outcome {
+        LookupOutcome::Found(n) => n,
+        LookupOutcome::NoTicket => {
             crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
-        Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
     crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
     crate::charge_storage_write(gas_used, ctx, SSTORE_GAS);
@@ -315,10 +323,14 @@ fn handle_redeem(
     let gas_used_so_far = *gas_used;
     let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
-    if gas_remaining < future_gas_costs + TX_GAS {
+    if gas_remaining < future_gas_costs {
+        *gas_used = gas_limit;
         return Err(ArbPrecompileError::empty_revert(*gas_used).into());
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
+    if gas_to_donate < TX_GAS {
+        return Err(ArbPrecompileError::empty_revert(*gas_used).into());
+    }
 
     let actual_backlog_cost = compute_actual_backlog_cost(input, ctx, gas_to_donate)?;
 
@@ -378,21 +390,26 @@ fn handle_keepalive(
         .map_err(ArbPrecompileError::fatal)?;
     let retryable_state = &arb_state.retryable_state;
 
-    let calldata_size = retryable_state
+    let (calldata_size, ka_extra_a) = retryable_state
         .calldata_size_for(internals, ticket_id, now)
         .map_err(|e| map_retryable_error(e, *gas_used))?;
+    crate::charge_storage_read(gas_used, ctx, ka_extra_a);
 
     let window_limit = now + RETRYABLE_LIFETIME_SECONDS;
-    let new_timeout = match retryable_state.keepalive(internals, ticket_id, now, window_limit, 0) {
-        Ok(t) => t,
-        Err(RetryableError::NoTicketWithId) => {
-            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
-            return not_found_revert(ctx, gas_used, gas_limit);
-        }
+    let lookup = match retryable_state.keepalive(internals, ticket_id, now, window_limit, 0) {
+        Ok(l) => l,
         Err(RetryableError::TimeoutTooFarFuture) => {
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
         Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
+    };
+    crate::charge_storage_read(gas_used, ctx, lookup.extra_gas);
+    let new_timeout = match lookup.outcome {
+        LookupOutcome::Found(t) => t,
+        LookupOutcome::NoTicket => {
+            crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
+            return not_found_revert(ctx, gas_used, gas_limit);
+        }
     };
 
     let topic0 = lifetime_extended_topic();
@@ -409,10 +426,6 @@ fn handle_keepalive(
     let update_cost = nbytes.div_ceil(32) * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
 
-    // Init already covered the framework SLOAD and argsCost; body adds the
-    // remaining 7 retryable SLOADs, 3 writes (timeout/ttl bumps), the single
-    // result word, the calldata-bytes "phantom" update_cost (a stylus-cache
-    // style warm cost — Read), the LifetimeExtended log, and the reap-price fee.
     crate::charge_storage_read(gas_used, ctx, 7 * SLOAD_GAS + update_cost);
     crate::charge_storage_write(gas_used, ctx, 3 * SSTORE_GAS);
     crate::charge_history_growth(gas_used, ctx, event_cost);
@@ -450,17 +463,27 @@ fn handle_cancel(
         .map_err(ArbPrecompileError::fatal)?;
     let retryable_state = &arb_state.retryable_state;
 
-    let calldata_size = match retryable_state.cancel(internals, ticket_id, caller, now) {
-        Ok(size) => size,
-        Err(RetryableError::NoTicketWithId) => {
+    let lookup = retryable_state
+        .cancel(internals, ticket_id, caller, now)
+        .map_err(|e| map_retryable_error(e, *gas_used))?;
+    crate::charge_storage_read(gas_used, ctx, lookup.extra_gas);
+    let calldata_size = match lookup.outcome {
+        CancelOutcome::Cleared {
+            calldata_size,
+            beneficiary,
+        } => {
+            let escrow = arbos::retryables::retryable_escrow_address(ticket_id);
+            ctx.set_cancel_escrow_sweep(escrow, beneficiary);
+            calldata_size
+        }
+        CancelOutcome::NoTicket => {
             crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
             return not_found_revert(ctx, gas_used, gas_limit);
         }
-        Err(RetryableError::NotBeneficiary) => {
+        CancelOutcome::NotBeneficiary => {
             crate::charge_storage_read(gas_used, ctx, 2 * SLOAD_GAS);
             return Err(ArbPrecompileError::empty_revert(*gas_used).into());
         }
-        Err(e) => return Err(map_retryable_error(e, *gas_used).into()),
     };
 
     input.internals_mut().log(Log::new_unchecked(
@@ -627,10 +650,10 @@ mod redeem_gas_tests {
     }
 
     #[test]
-    fn sepolia_block_100_435_687_diverges_by_15000_with_buggy_static_cost() {
-        let buggy_static_cost = SLOAD_GAS + SSTORE_GAS;
-        let fixed_drain_cost = legacy_actual_backlog_cost(100_000, 100_000);
-        assert_eq!(buggy_static_cost - fixed_drain_cost, 15_000);
+    fn full_drain_uses_reset_cost_15000_below_static_set() {
+        let static_set_cost = SLOAD_GAS + SSTORE_GAS;
+        let drain_cost = legacy_actual_backlog_cost(100_000, 100_000);
+        assert_eq!(static_set_cost - drain_cost, 15_000);
     }
 
     #[test]
@@ -663,7 +686,7 @@ mod redeem_gas_tests {
     }
 
     #[test]
-    fn block_235_386_091_redeem_recovers_full_gas_limit() {
+    fn non_draining_constraints_redeem_recovers_full_gas_limit() {
         let gas_limit = 1_200_000u64;
         let len = 6u64;
         let backlog_per_constraint = 10_000_000u64;
@@ -672,17 +695,17 @@ mod redeem_gas_tests {
         let future = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + reservation;
         let gas_to_donate = gas_limit - gas_used_so_far - future;
 
-        let buggy_actual = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_RESET_GAS);
-        let buggy_total =
-            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + buggy_actual + COPY_GAS;
-        assert_eq!(gas_limit - buggy_total, 90_000);
+        let reset_actual = 2 * SLOAD_GAS + len * (SLOAD_GAS + SSTORE_RESET_GAS);
+        let reset_total =
+            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + reset_actual + COPY_GAS;
+        assert_eq!(gas_limit - reset_total, 90_000);
 
-        let fixed_actual = 2 * SLOAD_GAS
+        let actual = 2 * SLOAD_GAS
             + (0..len)
                 .map(|_| constraint_actual_backlog_cost(backlog_per_constraint, gas_to_donate))
                 .sum::<u64>();
-        let fixed_total =
-            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + fixed_actual + COPY_GAS;
-        assert_eq!(fixed_total, gas_limit);
+        let total =
+            gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + gas_to_donate + actual + COPY_GAS;
+        assert_eq!(total, gas_limit);
     }
 }

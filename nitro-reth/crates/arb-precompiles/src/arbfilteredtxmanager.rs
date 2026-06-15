@@ -17,7 +17,9 @@ pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
+const SSTORE_CLEAR_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
+const LOG_GAS: u64 = 375 + 2 * 375;
 
 pub fn create_arbfilteredtxmanager_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbfilteredtxmanager"), move |input| {
@@ -38,14 +40,8 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
     // Value, read-only and delegate rejections are handled inside the inner
     // handlers so the free-access wrapper's gas override still applies.
 
-    // Mimic the reference FreeAccessPrecompile wrapper: open ArbOS state and
-    // check `filterers.IsMember(caller)` (2 SLOAD = 1600 gas total), without
-    // charging argsCost. Then always run the inner method. The wrapper keeps
-    // the inner's output and error, but overrides gas — 1600 for non-filterer
-    // callers, 0 for filterers (free access).
-    // The free-access wrapper takes a snapshot so the inner method's per-dim
-    // contributions are discarded after the wrapper override, matching the
-    // receipt (which is also overridden to either 0 or just the wrapper SLOADs).
+    // Free-access wrapper: 2 SLOAD membership check (1600), gas overridden to 0
+    // for filterers. Inner per-dim contributions are snapshotted and discarded.
     let mg_snapshot = ctx.snapshot_precompile_multi_gas();
     let mut wrapper_gas_used = 0u64;
     crate::charge_storage_read(&mut wrapper_gas_used, ctx, SLOAD_GAS);
@@ -90,6 +86,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         };
 
     let mut gas_used = 0u64;
+    crate::init_precompile_gas(&mut gas_used, ctx, input.data.len());
     use IArbFilteredTxManager::ArbFilteredTransactionsManagerCalls as Calls;
     let inner_result = match call {
         Calls::addFilteredTransaction(c) => {
@@ -103,9 +100,7 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
         }
     };
 
-    // Wrapper overrides the inner's gas accounting: 0 for filterer, 1600 for
-    // non-filterer. Inner's output and error are preserved. The inner method's
-    // per-dim contributions are also discarded — receipt parity demands it.
+    // Override inner gas: 0 for filterer, else the wrapper SLOADs.
     let final_gas = if is_filterer {
         0
     } else {
@@ -113,14 +108,17 @@ fn handler(mut input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> Precompile
     };
     ctx.restore_precompile_multi_gas(mg_snapshot);
     if !is_filterer {
-        // Re-record the wrapper's two membership SLOADs as storage reads now
-        // that the inner accumulator has been wiped.
+        // Re-record the two wrapper SLOADs after the snapshot restore.
         ctx.add_precompile_multi_gas(
             arb_primitives::multigas::ResourceKind::StorageAccessRead,
             2 * SLOAD_GAS,
         );
     }
     match inner_result {
+        Ok(_) if gas_used > gas_limit => Ok(PrecompileOutput::new_reverted(
+            final_gas,
+            Default::default(),
+        )),
         Ok(mut output) => {
             output.gas_used = final_gas;
             Ok(output)
@@ -243,6 +241,7 @@ fn handle_add_filtered_tx(
         ],
         Default::default(),
     ));
+    crate::charge_history_growth(gas_used, ctx, LOG_GAS);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -278,7 +277,7 @@ fn handle_delete_filtered_tx(
             .filtered_transactions
             .set(internals, tx_hash, false)
             .map_err(ArbPrecompileError::fatal)?;
-        crate::charge_storage_write(gas_used, ctx, 5_000);
+        crate::charge_storage_write(gas_used, ctx, SSTORE_CLEAR_GAS);
     }
 
     input.internals_mut().log(Log::new_unchecked(
@@ -289,6 +288,7 @@ fn handle_delete_filtered_tx(
         ],
         Default::default(),
     ));
+    crate::charge_history_growth(gas_used, ctx, LOG_GAS);
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),

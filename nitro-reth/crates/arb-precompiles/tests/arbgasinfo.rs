@@ -295,12 +295,10 @@ fn get_multi_gas_base_fee_gated_to_v60() {
 
 #[test]
 fn get_prices_in_wei_uses_block_basefee_not_storage() {
-    // Regression for the wrong-source bug: handle_prices_in_wei used to read
-    // L2_BASE_FEE from storage instead of evm.Context.BaseFee. Set them to
-    // different values to lock the behavior in.
+    // getPricesInWei must use the block base fee, not the stored L2 base fee.
     let l1_price = U256::from(50_000_000_u64);
-    let stored_l2_base = U256::from(999_999_999_u64); // would-be wrong source
-    let block_basefee = 100_000_000_u64; // the correct source per Nitro
+    let stored_l2_base = U256::from(999_999_999_u64);
+    let block_basefee = 100_000_000_u64;
     let l2_min = U256::from(50_000_000_u64);
 
     let test = put_l1(fixture(30), L1_PRICE_PER_UNIT, l1_price);
@@ -319,8 +317,7 @@ fn get_prices_in_wei_uses_block_basefee_not_storage() {
 
 #[test]
 fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
-    // Same regression for prices-in-arbgas: Nitro divides wei costs by
-    // evm.Context.BaseFee, not by the stored L2_BASE_FEE field.
+    // getPricesInArbGas divides by the block base fee, not the stored L2 base fee.
     let l1_price = U256::from(40_000_000_u64);
     let stored_l2_base = U256::from(1u64); // 1 wei would yield huge wrong values
     let block_basefee = 200_000_000_u64;
@@ -336,11 +333,9 @@ fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
     assert_eq!(decode_word(out, 1), common::word_u256(expected_calldata));
 }
 
-// ── Ported from Nitro ──────────────────────────────────────────────────
+// ── Value pins ─────────────────────────────────────────────────────────
 
-/// Nitro-parity value pin for `getPricesInWei()`. Derived directly from
-/// Nitro's `GetPricesInWeiWithAggregator` implementation in
-/// `precompiles/ArbGasInfo.go`:
+/// Value pin for `getPricesInWei()`:
 ///
 ///   weiForL1Calldata = l1_price * TxDataNonZeroGas(16)
 ///   perL2Tx          = weiForL1Calldata * AssumedSimpleTxSize(140)
@@ -349,11 +344,9 @@ fn get_prices_in_arbgas_uses_block_basefee_not_storage() {
 ///   perArbGasTotal   = l2_gas_price
 ///   weiForL2Storage  = l2_gas_price * StorageWriteCost(20_000)
 ///
-/// Run with Nitro's default `DefaultInitialL1BaseFee` (50 GWei) and a
-/// block basefee of 1005 so the arithmetic matches `getPricesInArbGas`'s
-/// pinned test and proves both functions use the same formula family.
+/// Run with L1 base fee 50 GWei and block base fee 1005.
 #[test]
-fn nitro_parity_get_prices_in_wei() {
+fn value_pin_get_prices_in_wei() {
     const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000;
     const STORAGE_WRITE_COST: u64 = 20_000;
     const TX_DATA_NON_ZERO_GAS: u64 = 16;
@@ -387,17 +380,10 @@ fn nitro_parity_get_prices_in_wei() {
     assert_eq!(decode_word(out, 5), common::word_u64(per_arbgas_total));
 }
 
-/// Port of `TestGetPricesInArbGas` in
-/// nitro/precompiles/ArbGasInfo_test.go. Nitro's default L1BaseFee is
-/// `DefaultInitialL1BaseFee = 50 GWei = 50,000,000,000 wei`
-/// (arbos/arbostypes/incomingmessage.go:317). With block.basefee = 1005
-/// and AssumedSimpleTxSize = 140, the Nitro test pins the exact three
-/// return values of `getPricesInArbGas()`. Reproducing them here
-/// byte-for-byte proves our integer arithmetic matches Go's big.Int
-/// truncation semantics across multiply-then-divide, which is the
-/// subtle part of the formula.
+/// Value pin for `getPricesInArbGas()` with L1 base fee 50 GWei
+/// (DefaultInitialL1BaseFee), block base fee 1005, and AssumedSimpleTxSize 140.
 #[test]
-fn nitro_parity_get_prices_in_arbgas() {
+fn value_pin_get_prices_in_arbgas() {
     const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000;
     const STORAGE_WRITE_COST: u64 = 20_000;
 
@@ -421,19 +407,9 @@ fn nitro_parity_get_prices_in_arbgas() {
 
 // ── Protocol gas-cost pins ─────────────────────────────────────────────
 //
-// These tests lock in the *exact* gas cost returned by the precompile so
-// that any future refactor of the value source cannot silently drop an
-// SloadGas charge. The expected numbers are derived from Nitro's burn
-// model: OpenArbosState + one SloadGas per storage field read by the
-// method body, plus CopyGas (3) per return word and per input arg word.
-//
-// Regression for commit b627a908 → 984e13c: the switch from storage
-// L2_BASE_FEE to evm.Context.BaseFee correctly removed the storage read,
-// but the gas cost must still cover OpenArbosState + L1_PRICE_PER_UNIT +
-// L2_MIN_BASE_FEE = 3 * 800 = 2400, plus 6 return words * 3 = 18 → 2418.
-// The bug silently reduced this to 2 * 800 + 18 = 1618, causing an
-// 800-gas undercharge per call and a state-root mismatch at block
-// 55,705,814 tx 1 (ERC-4337 handleOps).
+// Lock in the exact gas cost returned by the precompile: OpenArbosState +
+// one SloadGas per storage field read by the method body, plus CopyGas (3)
+// per return word and per input arg word.
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
@@ -478,7 +454,7 @@ fn get_minimum_gas_price_charges_two_sloads_and_one_copy_word() {
 
 // ── L1 pricing surplus ─────────────────────────────────────────────────
 
-const L1_PRICER_FUNDS_POOL: Address = address!("a4b05fffffffffffffffffffffffffffffffffff");
+const L1_PRICER_FUNDS_POOL: Address = address!("a4b00000000000000000000000000000000000f6");
 
 fn batch_poster_total_funds_due_slot() -> U256 {
     use arb_storage::layout::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};

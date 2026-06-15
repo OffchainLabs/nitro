@@ -12,6 +12,7 @@ const FILES: &[(&str, &str)] = &[
         "ArbStatistics.sol",
     ),
     ("nitro-precompile-interfaces/ArbosTest.sol", "ArbosTest.sol"),
+    ("nitro-precompile-interfaces/ArbosActs.sol", "ArbosActs.sol"),
     (
         "nitro-precompile-interfaces/ArbFunctionTable.sol",
         "ArbFunctionTable.sol",

@@ -148,7 +148,7 @@ fn legacy_receipt_has_no_type_override() {
 
 #[test]
 fn deposit_receipt_overrides_type_to_0x64() {
-    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt));
+    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt::default()));
     let tx = deposit_tx();
     let out = convert_one(r, &tx, 0);
     assert_eq!(out.other.get("type").and_then(|v| v.as_str()), Some("0x64"));
@@ -321,7 +321,7 @@ fn with_block_deposit_effective_gas_price_zero_when_collect_tips() {
     mix[16..24].copy_from_slice(&60u64.to_be_bytes());
     mix[25] = 1;
     let block = block_with_mix_hash(mix);
-    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt));
+    let r = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt::default()));
     let tx = deposit_tx();
     let out = ArbReceiptConverter
         .convert_receipts_with_block(

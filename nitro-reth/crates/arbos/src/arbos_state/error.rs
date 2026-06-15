@@ -92,4 +92,8 @@ pub enum ArbosStateError {
     /// slot index that did not match its position in the input list.
     #[error("address table slot mismatch during genesis initialisation")]
     AddressTableSlotMismatch,
+
+    /// A brotli compression level above the maximum was supplied.
+    #[error("invalid brotli compression level")]
+    InvalidBrotliCompressionLevel,
 }

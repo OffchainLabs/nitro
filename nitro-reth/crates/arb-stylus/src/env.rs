@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use arb_chainspec::arbos_version::ARBOS_VERSION_59;
 use arbos::programs::{memory::MemoryModel, types::EvmData};
 use wasmer::{FunctionEnvMut, Global, Memory, MemoryView, Pages, StoreMut, Value};
 
@@ -10,6 +11,21 @@ use crate::{
     ink::Ink,
     meter::{GasMeteredMachine, MachineMeter, MeteredMachine, HOSTIO_INK},
 };
+
+/// Consensus open-page cap (ArbOS >= 59): a non-zero `page_limit` that
+/// `new_open` exceeds forces a saturating out-of-gas charge.
+#[inline]
+pub fn page_limit_exceeded(arbos_version: u64, page_limit: u16, new_open: u16) -> bool {
+    arbos_version >= ARBOS_VERSION_59 && page_limit > 0 && new_open > page_limit
+}
+
+/// `pay_for_memory_grow` page operand overflow (ArbOS >= 59): an operand wider
+/// than `u16::MAX` must buy the whole gas budget before truncation, so the
+/// program traps out of ink rather than wrapping to a cheap small grow.
+#[inline]
+pub fn pay_for_memory_grow_overflows(arbos_version: u64, pages: u32) -> bool {
+    pages > u32::from(u16::MAX) && arbos_version >= ARBOS_VERSION_59
+}
 
 pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
 
@@ -45,6 +61,8 @@ pub struct WasmEnv<E: EvmApi> {
     pub pages_ever: u16,
     pub free_pages: u16,
     pub page_gas: u16,
+    pub page_limit: u16,
+    pub arbos_version: u64,
     _phantom: PhantomData<E>,
 }
 
@@ -71,26 +89,41 @@ impl<E: EvmApi> WasmEnv<E> {
             pages_ever: 0,
             free_pages: 0,
             page_gas: 0,
+            page_limit: 0,
+            arbos_version: 0,
             _phantom: PhantomData,
         }
     }
 
     /// Initialise page tracking with the parent call's values and a per-instance
     /// `MemoryModel` configuration.
-    pub fn set_pages(&mut self, open: u16, ever: u16, free_pages: u16, page_gas: u16) {
+    pub fn set_pages(
+        &mut self,
+        open: u16,
+        ever: u16,
+        free_pages: u16,
+        page_gas: u16,
+        page_limit: u16,
+        arbos_version: u64,
+    ) {
         self.pages_open = open;
         self.pages_ever = ever;
         self.free_pages = free_pages;
         self.page_gas = page_gas;
+        self.page_limit = page_limit;
+        self.arbos_version = arbos_version;
     }
 
     /// Charge for allocating `new_pages`, updating the open/ever counters and
-    /// returning the gas cost.
+    /// returning the gas cost. Past the open-page cap the charge saturates.
     pub fn add_pages_charge(&mut self, new_pages: u16) -> u64 {
         let model = MemoryModel::new(self.free_pages, self.page_gas);
         let cost = model.gas_cost(new_pages, self.pages_open, self.pages_ever);
         self.pages_open = self.pages_open.saturating_add(new_pages);
         self.pages_ever = self.pages_ever.max(self.pages_open);
+        if page_limit_exceeded(self.arbos_version, self.page_limit, self.pages_open) {
+            return u64::MAX;
+        }
         cost
     }
 

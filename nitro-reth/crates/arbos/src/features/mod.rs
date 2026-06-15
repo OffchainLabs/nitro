@@ -22,11 +22,13 @@ pub fn open_features<'a, D>(base_key: alloy_primitives::B256, offset: u64) -> Fe
 }
 
 impl<D> Features<'_, D> {
+    /// Sets the calldata-pricing feature bit, returning the resulting bitmask
+    /// so callers can price the write by value.
     pub fn set_calldata_price_increase<B: StorageBackend>(
         &self,
         backend: &mut B,
         enabled: bool,
-    ) -> Result<(), FeaturesError> {
+    ) -> Result<U256, FeaturesError> {
         self.set_bit(backend, INCREASED_CALLDATA, enabled)
     }
 
@@ -42,14 +44,15 @@ impl<D> Features<'_, D> {
         backend: &mut B,
         index: usize,
         enabled: bool,
-    ) -> Result<(), FeaturesError> {
+    ) -> Result<U256, FeaturesError> {
         let mut val = self.features.get(backend)?;
         if enabled {
             val |= U256::from(1) << index;
         } else {
             val &= !(U256::from(1) << index);
         }
-        Ok(self.features.set(backend, val)?)
+        self.features.set(backend, val)?;
+        Ok(val)
     }
 
     fn is_set<B: SystemStateBackend>(

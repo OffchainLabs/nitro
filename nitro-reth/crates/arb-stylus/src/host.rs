@@ -486,11 +486,11 @@ pub fn create1<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
-    info.buy_gas(gas_cost.0)?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
-        crate::evm_api::CreateResponse::Fail(_) => Address::ZERO,
+        crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
+    info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
@@ -549,11 +549,11 @@ pub fn create2<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
-    info.buy_gas(gas_cost.0)?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
-        crate::evm_api::CreateResponse::Fail(_) => Address::ZERO,
+        crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
+    info.buy_gas(gas_cost.0)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
@@ -1358,7 +1358,7 @@ pub fn tx_origin<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -
 /// Charge for WASM memory growth.
 pub fn pay_for_memory_grow<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    pages: u16,
+    pages: u32,
 ) -> MaybeEscape {
     crate::trace::record_leaf(
         "pay_for_memory_grow",
@@ -1366,6 +1366,10 @@ pub fn pay_for_memory_grow<E: EvmApi>(
         Default::default(),
     );
     let mut info = hostio!(&mut env);
+    if crate::env::pay_for_memory_grow_overflows(info.env.evm_data.arbos_version, pages) {
+        info.buy_gas(u64::MAX)?;
+    }
+    let pages = pages as u16;
     if pages == 0 {
         info.buy_ink(hio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
         return Ok(());

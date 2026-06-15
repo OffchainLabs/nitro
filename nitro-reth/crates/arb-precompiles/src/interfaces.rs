@@ -14,6 +14,7 @@ sol_module!(arbsys, ".gen/ArbSys.sol");
 sol_module!(arbinfo, ".gen/ArbInfo.sol");
 sol_module!(arbstatistics, ".gen/ArbStatistics.sol");
 sol_module!(arbostest, ".gen/ArbosTest.sol");
+sol_module!(arbosacts, ".gen/ArbosActs.sol");
 sol_module!(arbfunctiontable, ".gen/ArbFunctionTable.sol");
 sol_module!(
     arbfilteredtxmanager,
@@ -40,6 +41,7 @@ pub use arbfunctiontable::ArbFunctionTable as IArbFunctionTable;
 pub use arbgasinfo::ArbGasInfo as IArbGasInfo;
 pub use arbinfo::ArbInfo as IArbInfo;
 pub use arbnativetokenmanager::ArbNativeTokenManager as IArbNativeTokenManager;
+pub use arbosacts::ArbosActs as IArbosActs;
 pub use arbostest::ArbosTest as IArbosTest;
 pub use arbowner::ArbOwner as IArbOwner;
 pub use arbownerpublic::ArbOwnerPublic as IArbOwnerPublic;

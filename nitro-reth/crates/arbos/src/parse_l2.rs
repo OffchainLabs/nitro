@@ -106,6 +106,12 @@ pub fn parse_l2_transactions(
     l1_base_fee: Option<U256>,
     chain_id: u64,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
+    if l2_msg.len() > MAX_L2_MESSAGE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "message too large",
+        ));
+    }
     match kind {
         L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, poster, request_id, 0, chain_id),
         L1_MESSAGE_TYPE_END_OF_BLOCK => Ok(vec![]),
@@ -234,8 +240,14 @@ fn parse_l2_message(
             Ok(txs)
         }
         L2_MESSAGE_KIND_HEARTBEAT => Ok(vec![]),
-        L2_MESSAGE_KIND_NON_MUTATING_CALL => Ok(vec![]),
-        _ => Ok(vec![]),
+        L2_MESSAGE_KIND_NON_MUTATING_CALL => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "L2 message kind NonmutatingCall is unimplemented",
+        )),
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unknown L2 message kind {other}"),
+        )),
     }
 }
 
@@ -415,7 +427,13 @@ fn parse_submit_retryable_message(
     }
     let mut calldata = vec![0u8; data_length];
     if data_length > 0 {
-        io::Read::read_exact(&mut reader, &mut calldata)?;
+        let read = io::Read::read(&mut reader, &mut calldata)?;
+        if read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "missing retry data",
+            ));
+        }
     }
 
     let to = if retry_to == Address::ZERO {

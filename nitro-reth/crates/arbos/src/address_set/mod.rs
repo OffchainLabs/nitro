@@ -3,22 +3,14 @@ use revm::Database;
 
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedUint64, StorageBackend, SystemStateBackend,
+    STORAGE_READ_GAS as STORAGE_READ_COST, STORAGE_WRITE_ZERO_GAS as STORAGE_WRITE_ZERO_COST,
 };
 
 mod error;
 pub use error::AddressSetError;
 
-/// Flat ArbOS storage gas per slot read/write (no EVM cold/warm or refunds).
-const STORAGE_READ_COST: u64 = 800;
-const STORAGE_WRITE_COST: u64 = 20_000;
-const STORAGE_WRITE_ZERO_COST: u64 = 5_000;
-
 fn write_cost(value: B256) -> u64 {
-    if value == B256::ZERO {
-        STORAGE_WRITE_ZERO_COST
-    } else {
-        STORAGE_WRITE_COST
-    }
+    arb_storage::write_cost(value == B256::ZERO)
 }
 
 /// A set of addresses backed by ArbOS storage.

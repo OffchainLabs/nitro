@@ -146,13 +146,26 @@ fn arbostest_burn_arb_gas_zero() {
 
 #[test]
 #[ignore]
-fn arbostest_burn_arb_gas_huge_reverts() {
-    run_query(
-        "arbostest_burn_huge",
-        ARBOSTEST,
+fn arbostest_burn_arb_gas_huge_burns_out_and_succeeds() {
+    // burnArbGas(u64::MAX) requests more gas than the call has. The burn is
+    // clamped to the remaining gas and the call still succeeds (the burn-out is
+    // not surfaced as an error), consuming nearly the whole budget.
+    let (mut steps, _, _) = baseline_stylus_plus_helper(&[0x00]);
+    let tx = signed(
+        3,
+        Some(ARBOSTEST),
         one_arg_u256("burnArbGas(uint256)", U256::from(u64::MAX)),
-        false,
-    );
+        U256::ZERO,
+        INVOKE_GAS_CAP,
+    )
+    .build()
+    .expect("tx");
+    let idx = next_msg_idx();
+    steps.push(message_step(idx, tx, idx));
+    GuardedRun::new("arbostest_burn_huge", steps)
+        .expect_last_tx_status(true)
+        .expect_last_tx_min_gas(INVOKE_GAS_CAP - 1_000_000)
+        .run();
 }
 
 #[test]

@@ -190,7 +190,7 @@ fn l2_message_heartbeat_yields_empty() {
 }
 
 #[test]
-fn l2_message_non_mutating_call_yields_empty() {
+fn l2_message_non_mutating_call_errors() {
     let data = vec![L2_MESSAGE_KIND_NON_MUTATING_CALL];
     let r = parse_l2_transactions(
         L1_MESSAGE_TYPE_L2_MESSAGE,
@@ -199,9 +199,8 @@ fn l2_message_non_mutating_call_yields_empty() {
         None,
         None,
         CHAIN_ID,
-    )
-    .expect("parse");
-    assert!(r.is_empty());
+    );
+    assert!(r.is_err());
 }
 
 #[test]
@@ -219,7 +218,7 @@ fn l2_message_signed_compressed_tx_errors() {
 }
 
 #[test]
-fn l2_message_unknown_inner_kind_yields_empty() {
+fn l2_message_unknown_inner_kind_errors() {
     let data = vec![0xFE];
     let r = parse_l2_transactions(
         L1_MESSAGE_TYPE_L2_MESSAGE,
@@ -228,9 +227,8 @@ fn l2_message_unknown_inner_kind_yields_empty() {
         None,
         None,
         CHAIN_ID,
-    )
-    .expect("parse");
-    assert!(r.is_empty());
+    );
+    assert!(r.is_err());
 }
 
 #[test]
