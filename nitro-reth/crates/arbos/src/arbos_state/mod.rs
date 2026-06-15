@@ -129,6 +129,10 @@ impl<'a, D, B: Burner> ArbosState<'a, D, B> {
         backend: &mut C,
         level: u64,
     ) -> Result<(), ArbosStateError> {
+        const LEVEL_WELL: u64 = 11;
+        if level > LEVEL_WELL {
+            return Err(ArbosStateError::InvalidBrotliCompressionLevel);
+        }
         Ok(self.brotli_compression_level.set(backend, level)?)
     }
 
@@ -346,6 +350,7 @@ impl<'a, D: Database, B: Burner> ArbosState<'a, D, B> {
             ),
             retryable_state: RetryableState::open(
                 backing_storage.open_sub_storage_with_key(retryables_root_key()),
+                arbos_version,
             ),
             address_table: address_table::open_address_table(
                 backing_storage.open_sub_storage_with_key(address_table_root_key()),
@@ -574,6 +579,7 @@ impl<'a, D: Database, B: Burner> ArbosState<'a, D, B> {
             self.programs.arbos_version = next;
             self.l1_pricing_state.arbos_version = next;
             self.l2_pricing_state.arbos_version = next;
+            self.retryable_state.arbos_version = next;
         }
 
         if first_time && upgrade_to >= 6 {
@@ -605,7 +611,7 @@ impl<'a, D: Database, B: Burner> ArbosState<'a, D, B> {
 /// `backend`. Intended for callers that have a storage view but no executor
 /// state pointer — precompile handlers via `EvmInternals`, RPC tools reading
 /// historical state through a `StateProvider`, etc. The version slot is read
-/// up front so divergence between the pinned build and the stored ArbOS
+/// up front so a mismatch between the pinned build and the stored ArbOS
 /// version surfaces as [`ArbosStateError::UnsupportedVersion`] instead of
 /// silently reading the wrong slot.
 pub fn arbos_from_input<S: StorageBackend, B: Burner>(
@@ -666,6 +672,7 @@ fn open_detached<B: Burner>(
         ),
         retryable_state: RetryableState::open(
             backing_storage.open_sub_storage_with_key(retryables_root_key()),
+            arbos_version,
         ),
         address_table: address_table::open_address_table(
             backing_storage.open_sub_storage_with_key(address_table_root_key()),
