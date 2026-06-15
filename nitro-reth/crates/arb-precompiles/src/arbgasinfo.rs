@@ -25,11 +25,7 @@ const TX_DATA_NON_ZERO_GAS: u64 = 16;
 const ASSUMED_SIMPLE_TX_SIZE: u64 = 140;
 const STORAGE_WRITE_COST: u64 = 20_000;
 
-/// L1 pricer funds pool address.
-const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
-    0xa4, 0xb0, 0x5f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff,
-]);
+use arbos::l1_pricing::L1_PRICER_FUNDS_POOL_ADDRESS;
 
 pub fn create_arbgasinfo_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbgasinfo"), move |input| {

@@ -16,7 +16,6 @@ pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
 ]);
 
 const SLOAD_GAS: u64 = 800;
-const WARM_SLOAD_GAS: u64 = 100;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
@@ -411,9 +410,13 @@ fn handle_scheduled_upgrade(
         .block
         .arbos_state(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    let (version, timestamp) = arb_state
+    let (mut version, mut timestamp) = arb_state
         .get_scheduled_upgrade(internals)
         .map_err(ArbPrecompileError::fatal)?;
+    if ctx.block.arbos_version >= version {
+        version = 0;
+        timestamp = 0;
+    }
 
     let mut out = Vec::with_capacity(64);
     out.extend_from_slice(&U256::from(version).to_be_bytes::<32>());
@@ -704,7 +707,7 @@ fn handle_max_stylus_fragments(
     }
     let mut out = [0u8; 32];
     out[31] = count;
-    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS);
+    crate::charge_params_read(gas_used, ctx);
     crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),

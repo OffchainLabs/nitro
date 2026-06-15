@@ -65,8 +65,7 @@ fn handle_get_balance(
             .map(|acct| acct.data.info.balance)
             .map_err(ArbPrecompileError::fatal)
     })?;
-    // BalanceGasEIP1884 (700) is an account read; resultCost (3) is the return copy.
-    crate::charge_storage_read(gas_used, ctx, 700);
+    crate::charge_computation(gas_used, ctx, 700);
     crate::charge_computation(gas_used, ctx, COPY_GAS);
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -100,12 +99,10 @@ fn handle_get_code(
     out.extend_from_slice(&code);
     out.extend(std::iter::repeat_n(0u8, pad));
 
-    // ColdSloadCostEIP2929 (2100) is the cold account access; the copy costs
-    // (over the code + result) are pure computation.
     let code_words = (code.len() as u64).div_ceil(32);
     let result_words = (out.len() as u64).div_ceil(32);
-    crate::charge_storage_read(gas_used, ctx, 2100);
-    crate::charge_computation(gas_used, ctx, COPY_GAS * (code_words + result_words));
+    crate::charge_storage_read(gas_used, ctx, 2100 + COPY_GAS * code_words);
+    crate::charge_computation(gas_used, ctx, COPY_GAS * result_words);
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         out.into(),

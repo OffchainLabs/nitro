@@ -33,6 +33,12 @@ impl ResourceKind {
         ResourceKind::WasmComputation,
     ];
 
+    /// Whether `id` names a concrete resource kind: not `Unknown` and within
+    /// range.
+    pub const fn is_valid_id(id: u8) -> bool {
+        id > Self::Unknown as u8 && (id as usize) < NUM_RESOURCE_KIND
+    }
+
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
             0 => Some(Self::Unknown),

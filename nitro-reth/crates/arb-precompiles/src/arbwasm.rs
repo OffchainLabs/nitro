@@ -343,7 +343,7 @@ fn load_params(
         .programs
         .params(internals)
         .map_err(ArbPrecompileError::fatal)?;
-    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS);
+    crate::charge_params_read(gas_used, ctx);
     Ok(params)
 }
 
@@ -368,8 +368,9 @@ fn load_params_and_program(
         .programs
         .get_program(internals, codehash, time)
         .map_err(ArbPrecompileError::fatal)?;
-    // params (warm follow-up) + program slot (cold) — init already covered OpenArbosState.
-    crate::charge_storage_read(gas_used, ctx, WARM_SLOAD_GAS + SLOAD_GAS);
+    // params (warm, computation) + program slot (one SLOAD).
+    crate::charge_params_read(gas_used, ctx);
+    crate::charge_storage_read(gas_used, ctx, SLOAD_GAS);
     Ok((params, program))
 }
 
@@ -439,23 +440,6 @@ fn revert_with_payload(payload: Vec<u8>, lookup_gas: u64, gas_limit: u64) -> Pre
     ))
 }
 
-fn revert_sol_error(
-    gas_used: &mut u64,
-    ctx: &ArbPrecompileCtx,
-    payload: Vec<u8>,
-    input_gas: u64,
-) -> PrecompileResult {
-    crate::charge_computation(
-        gas_used,
-        ctx,
-        COPY_GAS * (payload.len() as u64).div_ceil(32),
-    );
-    if *gas_used > input_gas {
-        return Err(ArbPrecompileError::OutOfGas.into());
-    }
-    Ok(PrecompileOutput::new_reverted(*gas_used, payload.into()))
-}
-
 /// Return a single `uint256` view result. Charges the result-copy as
 /// computation and returns whatever the gas accumulator currently holds.
 fn ok_u256(
@@ -504,7 +488,7 @@ fn handle_activate_program(
     crate::charge_l2_calldata(&mut gas_used, ctx, args_cost);
     crate::charge_storage_read(&mut gas_used, ctx, SLOAD_GAS);
 
-    if ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_60 {
+    if ctx.block.arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_59 {
         load_arbos(&mut input)?;
         let internals = input.internals_mut();
         let arb_state = ctx
@@ -543,7 +527,7 @@ fn handle_activate_program(
 
     load_arbos(&mut input)?;
     let time = ctx.block.block_timestamp;
-    crate::charge_storage_read(&mut gas_used, ctx, WARM_SLOAD_GAS);
+    crate::charge_computation(&mut gas_used, ctx, WARM_SLOAD_GAS);
     let (params, existing_program) = {
         let internals = input.internals_mut();
         let arb_state = ctx
@@ -567,7 +551,7 @@ fn handle_activate_program(
     if existing_program.version == params.version
         && existing_program.age_seconds <= (params.expiry_days as u64) * 86400
     {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramUpToDate {}.abi_encode(),
@@ -576,7 +560,7 @@ fn handle_activate_program(
     }
 
     if code_bytes.is_empty() {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramNotWasm {}.abi_encode(),
@@ -585,13 +569,15 @@ fn handle_activate_program(
     }
     if !arb_stylus::is_stylus_deployable(&code_bytes, ctx.block.arbos_version) {
         let arbos_v = ctx.block.arbos_version;
-        if arbos_v < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT {
+        if arbos_v < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CONTRACT_LIMIT
+            || arb_stylus::is_stylus_fragment(&code_bytes)
+        {
             return Ok(PrecompileOutput::new_reverted(
                 gas_used.min(input.gas),
                 Default::default(),
             ));
         }
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramNotWasm {}.abi_encode(),
@@ -760,7 +746,7 @@ fn handle_activate_program(
         stashed_outer_value
     };
     if effective_value < data_fee {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramInsufficientValue {
@@ -862,10 +848,11 @@ fn handle_codehash_keepalive(
             .map_err(ArbPrecompileError::fatal)?;
         (params, program)
     };
-    crate::charge_storage_read(&mut gas_used, ctx, SLOAD_GAS + WARM_SLOAD_GAS + SLOAD_GAS);
+    crate::charge_params_read(&mut gas_used, ctx);
+    crate::charge_storage_read(&mut gas_used, ctx, 2 * SLOAD_GAS);
 
     if program.version == 0 {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramNotActivated {}.abi_encode(),
@@ -873,7 +860,7 @@ fn handle_codehash_keepalive(
         );
     }
     if program.version != params.version {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramNeedsUpgrade {
@@ -886,7 +873,7 @@ fn handle_codehash_keepalive(
     }
     let age = hours_to_age(time, program.activated_at);
     if age > (params.expiry_days as u64) * 86400 {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramExpired { ageInSeconds: age }.abi_encode(),
@@ -894,7 +881,7 @@ fn handle_codehash_keepalive(
         );
     }
     if age < (params.keepalive_days as u64) * 86400 {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramKeepaliveTooSoon { ageInSeconds: age }.abi_encode(),
@@ -942,7 +929,7 @@ fn handle_codehash_keepalive(
         stashed_outer_value
     };
     if effective_value < data_fee {
-        return revert_sol_error(
+        return crate::revert_sol_error(
             &mut gas_used,
             ctx,
             IArbWasm::ProgramInsufficientValue {

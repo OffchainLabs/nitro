@@ -70,10 +70,10 @@ pub struct BlockCtx {
     pub allow_debug_precompiles: bool,
     /// Live counter mutated by the executor between transactions in the same block.
     pub current_gas_backlog: AtomicU64,
-    /// Set by the fee-collector setters when a transaction changes the network
-    /// or infrastructure fee account; the executor refreshes its cached
-    /// collectors and clears it after the transaction.
-    pub fee_collectors_dirty: AtomicBool,
+    /// Set by an owner setter when a transaction changes a per-tx state
+    /// parameter (fee collectors, minimum base fee, brotli level, calldata
+    /// pricing); the executor refreshes its cached values after the transaction.
+    pub state_params_dirty: AtomicBool,
     pub chain_caches: Arc<ChainCaches>,
     pub recent_wasms: Mutex<RecentWasms>,
     /// Per-block descriptor cache for the detached [`ArbosState`].
@@ -135,7 +135,7 @@ impl BlockCtx {
             l2_block_number,
             allow_debug_precompiles,
             current_gas_backlog: AtomicU64::new(0),
-            fee_collectors_dirty: AtomicBool::new(false),
+            state_params_dirty: AtomicBool::new(false),
             chain_caches,
             recent_wasms: Mutex::new(RecentWasms::default()),
             arbos_state: OnceLock::new(),
@@ -229,6 +229,8 @@ pub struct TxCtx {
     pub stylus_pages_ever: u16,
     pub stylus_multi_gas: MultiGas,
     pub precompile_multi_gas: MultiGas,
+    pub stylus_upfront_oog_gas: u64,
+    pub cancel_escrow_sweep: Option<(Address, Address)>,
 }
 
 impl TxCtx {
@@ -346,6 +348,14 @@ impl ArbPrecompileCtx {
         self.tx.lock().stylus_activation_addr.take()
     }
 
+    pub fn set_cancel_escrow_sweep(&self, escrow: Address, beneficiary: Address) {
+        self.tx.lock().cancel_escrow_sweep = Some((escrow, beneficiary));
+    }
+
+    pub fn take_cancel_escrow_sweep(&self) -> Option<(Address, Address)> {
+        self.tx.lock().cancel_escrow_sweep.take()
+    }
+
     pub fn set_stylus_keepalive_hash(&self, hash: Option<B256>) {
         self.tx.lock().stylus_keepalive_hash = hash;
     }
@@ -377,6 +387,15 @@ impl ArbPrecompileCtx {
 
     pub fn stylus_multi_gas(&self) -> MultiGas {
         self.tx.lock().stylus_multi_gas
+    }
+
+    pub fn add_stylus_upfront_oog_gas(&self, gas: u64) {
+        let mut tx = self.tx.lock();
+        tx.stylus_upfront_oog_gas = tx.stylus_upfront_oog_gas.saturating_add(gas);
+    }
+
+    pub fn stylus_upfront_oog_gas(&self) -> u64 {
+        self.tx.lock().stylus_upfront_oog_gas
     }
 
     /// Accumulate per-dimension gas for a precompile charge. The single-gas
