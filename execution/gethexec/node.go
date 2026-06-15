@@ -321,6 +321,8 @@ var ConfigDefault = Config{
 	DisableArbOwnerEthCall:      false,
 	LegacyZeroBaseFeeUntil:      0,
 
+	TransactionFeed: transactionfeed.DefaultServerConfig,
+
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
 		URL:                       "",
