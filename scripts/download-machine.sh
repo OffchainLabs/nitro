@@ -4,6 +4,14 @@ set -euo pipefail
 tag="$1"
 module_root="$2"
 repo="${3:-OffchainLabs/nitro}"
+token=""
+
+if [ "$repo" = "OffchainLabs/nitro-private" ]; then
+	token="$(cat "${GH_TOKEN_FILE:-/run/secrets/gh_token}" 2>/dev/null | tr -d '[:space:]' || true)"
+	if [ -z "$token" ]; then
+		repo="OffchainLabs/nitro"
+	fi
+fi
 
 mkdir "$module_root"
 ln -sfT "$module_root" latest
@@ -19,7 +27,6 @@ if [ "$repo" = "OffchainLabs/nitro" ]; then
 		wget "$url_base/replay.wasm"
 	fi
 else
-	token="$(cat "${GH_TOKEN_FILE:-/run/secrets/gh_token}" 2>/dev/null | tr -d '[:space:]' || true)"
 	if [ -z "$token" ]; then
 		echo "ERROR: $repo requires a GitHub token; mount one as a BuildKit secret with id=gh_token (e.g., --mount=type=secret,id=gh_token,required=false)" >&2
 		exit 1

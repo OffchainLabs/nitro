@@ -141,6 +141,7 @@ RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
 
 FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -208,8 +209,9 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
-RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.4 0x333f5e036235b1ce1a34cbbe254ccbb2615218f9ae6f84aeef0511cb09ef9b67 OffchainLabs/nitro-private
-RUN --mount=type=secret,id=gh_token,required=false ./download-machine.sh consensus-v60-rc.5 0x7a9e6a77354888257a9989ce0b6bb39df5fedf222d453932933fdf7a489cbb57 OffchainLabs/nitro-private
+RUN ./download-machine.sh consensus-v60-rc.4 0x333f5e036235b1ce1a34cbbe254ccbb2615218f9ae6f84aeef0511cb09ef9b67
+RUN ./download-machine.sh consensus-v60-rc.5 0x7a9e6a77354888257a9989ce0b6bb39df5fedf222d453932933fdf7a489cbb57
+RUN ./download-machine.sh consensus-v61-rc.2 0xc10cd7ec6acaf1c441a3f6bd0900ad20f15855ba775a96f1939118cbc629dc97
 RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
 # Factored out of node-builder so the stripped variant doesn't depend on it.
@@ -332,8 +334,22 @@ COPY --from=node-builder  /workspace/target/bin/blobtool                 /usr/lo
 COPY --from=node-builder  /workspace/target/bin/el-proxy                 /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/filtering-report         /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/genesis-generator        /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/transaction-filterer     /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/validator                /usr/local/bin/
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
+USER user
+
+# The nitro-node-rust-validator runs a single Rust validation server that handles all WASM module roots.
+FROM nitro-node AS nitro-node-rust-validator
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd curl netcat-traditional && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+COPY --from=prover-export /bin/validator /usr/local/bin/
+COPY scripts/rust-val-entry.sh /usr/local/bin/
+ENTRYPOINT [ "/usr/local/bin/rust-val-entry.sh" ]
 USER user
 
 # The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
@@ -342,8 +358,6 @@ USER user
 # We keep the code (commented out), and the docker-target, for use in case such an update is needed again.
 FROM nitro-node AS nitro-node-validator
 USER root
-COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
-COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y xxd netcat-traditional && \
@@ -360,6 +374,7 @@ COPY --from=prover-export /bin/jit                                         /usr/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/stylus-raw-deploycode        /usr/local/bin/
 COPY --from=module-root-calc /workspace/target/machines/latest/machine.v2.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
@@ -374,11 +389,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
-
 USER user
-
-FROM nitro-node AS nitro-node-default
-# Just to ensure nitro-node-dist is default
 
 # ---------------------------------------------------------------------------
 # Stripped variants: same contents as nitro-node-slim / nitro-node but built
@@ -445,6 +456,11 @@ COPY --from=node-builder-stripped  /workspace/target/bin/blobtool               
 COPY --from=node-builder-stripped  /workspace/target/bin/el-proxy                 /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/filtering-report         /usr/local/bin/
 COPY --from=node-builder-stripped  /workspace/target/bin/genesis-generator        /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/transaction-filterer     /usr/local/bin/
 RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
     nitro --version
 USER user
+
+FROM nitro-node AS nitro-node-default
+# Just to ensure nitro-node is default
+

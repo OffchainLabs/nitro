@@ -15,11 +15,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/challenge/types"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {
@@ -102,7 +102,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			if parentAssertionHasSecondChild {
 				return
 			}
-			confirmed, err := sol.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationL1Block, m.chain, m.times.avgBlockTime, option.None[protocol.EdgeId]())
+			confirmed, err := sol.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationL1Block, m.chain, m.times.avgBlockTime, containers.None[protocol.EdgeId]())
 			if err != nil {
 				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
 					logLevel := log.Error

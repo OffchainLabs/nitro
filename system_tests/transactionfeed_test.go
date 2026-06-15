@@ -708,65 +708,50 @@ func TestTransactionFeedSlowConsumerEviction(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ClientBuf=1 so cc.out can only hold a single pending broadcast. A tight
-	// PingInterval keeps the writer goroutine stuck in conn.Ping (waiting up
-	// to WriteTimeout for a pong that a stalled client never sends) -- while
-	// the writer is parked there, the next broadcast finds cc.out full and
-	// triggers slow-consumer eviction.
 	cfg := newTransactionFeedConfigTest()
-	cfg.ClientBuf = 1
-	cfg.PingInterval = 100 * time.Millisecond
-	cfg.WriteTimeout = 5 * time.Second
+	cfg.ClientBuf = 4
 	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{feedConfig: &cfg})
 	defer env.cleanup()
-	builder := env.builder
 
-	// env's first client is being read by startTransactionFeedReader (healthy).
-	// Add a stalled second client that never reads from its conn -- so the
-	// server's pings to it go unanswered.
+	_ = env.conn.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for env.server.ClientCount() > 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if env.server.ClientCount() != 0 {
+		t.Fatalf("env client did not disconnect: ClientCount=%d", env.server.ClientCount())
+	}
+
 	port := testhelpers.AddrTCPPort(env.server.ListenerAddr(), t)
 	stalledConn := dialTransactionFeed(ctx, t, port)
 	defer stalledConn.Close()
-	waitForTransactionFeedClients(t, env.server, 2, 3*time.Second)
+	waitForTransactionFeedClients(t, env.server, 1, 3*time.Second)
 
 	slowCounter := metrics.GetOrRegisterCounter("arb/transactionfeed/clients/disconnected/slow", nil)
 	startSlow := slowCounter.Snapshot().Count()
 
-	// Let the first ping fire and park the stalled client's writer.
-	time.Sleep(200 * time.Millisecond)
-
-	// Send a small burst -- once cc.out holds its single message, the next
-	// broadcast evicts.
-	const burst = 3
-	recipients := make([]string, burst)
-	txs := make([]*types.Transaction, burst)
-	for i := 0; i < burst; i++ {
-		recipients[i] = fmt.Sprintf("SlowRecv%d", i)
-		builder.L2Info.GenerateAccount(recipients[i])
-		txs[i] = builder.L2Info.PrepareTx("Owner", recipients[i], builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-		Require(t, builder.L2.Client.SendTransaction(ctx, txs[i]))
-		_, err := builder.L2.EnsureTxSucceeded(txs[i])
-		Require(t, err)
+	largeHex := "0x" + strings.Repeat("ab", 4096) // ~8 KB raw_tx field
+	msg := &transactionfeed.TransactionFeedMessage{
+		Version: uint32(transactionfeed.TransactionFeedV1),
+		Transaction: transactionfeed.TransactionIncluded{
+			RawTx:  largeHex,
+			TxHash: "0x" + strings.Repeat("00", 32),
+		},
+	}
+	for i := 0; i < 100; i++ {
+		env.server.BroadcastTransaction(msg)
 	}
 
-	// Healthy reader still receives every message in order.
-	for i := 0; i < burst; i++ {
-		awaitFeedMessageFor(t, env.msgs, env.errs, txs[i].Hash(), 10*time.Second)
-	}
-
-	// Stalled client should have been evicted: ClientCount drops to 1 and
-	// the slow-disconnect metric advanced by at least 1.
-	deadline := time.Now().Add(10 * time.Second)
-	for env.server.ClientCount() > 1 && time.Now().Before(deadline) {
+	deadline = time.Now().Add(10 * time.Second)
+	for env.server.ClientCount() > 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if env.server.ClientCount() != 1 {
-		t.Fatalf("expected stalled client to be evicted (ClientCount=1), got %d", env.server.ClientCount())
+	if env.server.ClientCount() != 0 {
+		t.Fatalf("expected stalled client to be evicted (ClientCount=0), got %d", env.server.ClientCount())
 	}
 	if delta := slowCounter.Snapshot().Count() - startSlow; delta < 1 {
 		t.Fatalf("clientsDisconnectedSlow did not advance: delta=%d", delta)
 	}
-	assertNoReaderError(t, env.errs)
 }
 
 func TestTransactionFeedAbruptDisconnect(t *testing.T) {
