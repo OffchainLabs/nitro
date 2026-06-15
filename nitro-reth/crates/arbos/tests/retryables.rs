@@ -1,6 +1,8 @@
 use alloy_primitives::{address, b256, keccak256, Address, B256, U256};
 use arb_test_utils::ArbosHarness;
-use arbos::retryables::{retryable_escrow_address, retryable_submission_fee};
+use arbos::retryables::{
+    retryable_escrow_address, retryable_submission_fee, RETRYABLE_LIFETIME_SECONDS,
+};
 
 const FROM: Address = address!("00000000000000000000000000000000000A11CE");
 const BENEFICIARY: Address = address!("00000000000000000000000000000000000B0B00");
@@ -56,6 +58,53 @@ fn open_returns_none_after_timeout() {
     assert!(rs.open_retryable(b, TICKET_ID, 100).unwrap().is_some());
     assert!(rs.open_retryable(b, TICKET_ID, 101).unwrap().is_none());
     assert!(rs.open_retryable(b, TICKET_ID, 200).unwrap().is_none());
+}
+
+#[test]
+fn open_survives_past_raw_timeout_at_v60() {
+    let mut h = ArbosHarness::new().with_arbos_version(60).initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let _ = rs
+        .keepalive(b, TICKET_ID, 50, 50 + RETRYABLE_LIFETIME_SECONDS, 0)
+        .unwrap();
+    let (alive, extra) = rs.open_retryable_metered(b, TICKET_ID, 101).unwrap();
+    assert!(alive.is_some());
+    assert_eq!(extra, 800);
+    let (dead, extra) = rs
+        .open_retryable_metered(b, TICKET_ID, 100 + RETRYABLE_LIFETIME_SECONDS + 1)
+        .unwrap();
+    assert!(dead.is_none());
+    assert_eq!(extra, 800);
+}
+
+#[test]
+fn open_reaps_with_charge_at_v60_windows_zero() {
+    let mut h = ArbosHarness::new().with_arbos_version(60).initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let (dead, extra) = rs.open_retryable_metered(b, TICKET_ID, 101).unwrap();
+    assert!(dead.is_none());
+    assert_eq!(extra, 800);
+}
+
+#[test]
+fn open_reaps_without_charge_below_v60_with_windows() {
+    let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let _ = rs
+        .keepalive(b, TICKET_ID, 50, 50 + RETRYABLE_LIFETIME_SECONDS, 0)
+        .unwrap();
+    let (dead, extra) = rs.open_retryable_metered(b, TICKET_ID, 101).unwrap();
+    assert!(dead.is_none());
+    assert_eq!(extra, 0);
 }
 
 #[test]
