@@ -70,9 +70,24 @@ pub enum ArbReceiptKind {
     Internal(AlloyReceipt),
 }
 
-/// Deposit receipts always succeed with no gas and no logs.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct ArbDepositReceipt;
+/// Deposit receipts carry a success status, with no gas and no logs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArbDepositReceipt {
+    /// Whether the deposit succeeded. A filtered deposit fails.
+    pub status: bool,
+}
+
+impl Default for ArbDepositReceipt {
+    fn default() -> Self {
+        Self { status: true }
+    }
+}
+
+impl ArbDepositReceipt {
+    pub const fn new(status: bool) -> Self {
+        Self { status }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // ArbReceiptKind — inherent methods (encoding internals)
@@ -123,8 +138,8 @@ impl ArbReceiptKind {
             | Self::Retry(r)
             | Self::SubmitRetryable(r)
             | Self::Internal(r) => r.rlp_encoded_fields_length_with_bloom(bloom),
-            Self::Deposit(_) => {
-                Eip658Value::Eip658(true).length()
+            Self::Deposit(d) => {
+                Eip658Value::Eip658(d.status).length()
                     + 0u64.length()
                     + bloom.length()
                     + Vec::<Log>::new().length()
@@ -143,8 +158,8 @@ impl ArbReceiptKind {
             | Self::Retry(r)
             | Self::SubmitRetryable(r)
             | Self::Internal(r) => r.rlp_encode_fields_with_bloom(bloom, out),
-            Self::Deposit(_) => {
-                Eip658Value::Eip658(true).encode(out);
+            Self::Deposit(d) => {
+                Eip658Value::Eip658(d.status).encode(out);
                 (0u64).encode(out);
                 bloom.encode(out);
                 let logs: Vec<Log> = Vec::new();
@@ -175,8 +190,8 @@ impl ArbReceiptKind {
                 r.cumulative_gas_used.encode(out);
                 r.logs.encode(out);
             }
-            Self::Deposit(_) => {
-                Eip658Value::Eip658(true).encode(out);
+            Self::Deposit(d) => {
+                Eip658Value::Eip658(d.status).encode(out);
                 (0u64).encode(out);
                 let logs: Vec<Log> = Vec::new();
                 logs.encode(out);
@@ -197,8 +212,10 @@ impl ArbReceiptKind {
             | Self::Internal(r) => {
                 r.status.length() + r.cumulative_gas_used.length() + r.logs.length()
             }
-            Self::Deposit(_) => {
-                Eip658Value::Eip658(true).length() + (0u64).length() + Vec::<Log>::new().length()
+            Self::Deposit(d) => {
+                Eip658Value::Eip658(d.status).length()
+                    + (0u64).length()
+                    + Vec::<Log>::new().length()
             }
         }
     }
@@ -221,7 +238,7 @@ impl ArbReceiptKind {
                     return Err(alloy_rlp::Error::UnexpectedString);
                 }
                 let remaining = buf.len();
-                let _status: Eip658Value = alloy_rlp::Decodable::decode(buf)?;
+                let status: Eip658Value = alloy_rlp::Decodable::decode(buf)?;
                 let _cumu: u64 = alloy_rlp::Decodable::decode(buf)?;
                 let logs_bloom: Bloom = alloy_rlp::Decodable::decode(buf)?;
                 let _logs: Vec<Log> = alloy_rlp::Decodable::decode(buf)?;
@@ -229,7 +246,9 @@ impl ArbReceiptKind {
                     return Err(alloy_rlp::Error::UnexpectedLength);
                 }
                 Ok(alloy_consensus::ReceiptWithBloom {
-                    receipt: ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt)),
+                    receipt: ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt::new(
+                        status.coerce_status(),
+                    ))),
                     logs_bloom,
                 })
             }
@@ -269,7 +288,9 @@ impl ArbReceiptKind {
             logs,
         };
         let kind = match tx_type {
-            ArbTxType::ArbitrumDepositTx => ArbReceiptKind::Deposit(ArbDepositReceipt),
+            ArbTxType::ArbitrumDepositTx => {
+                ArbReceiptKind::Deposit(ArbDepositReceipt::new(receipt.status.coerce_status()))
+            }
             ArbTxType::ArbitrumUnsignedTx => ArbReceiptKind::Unsigned(receipt),
             ArbTxType::ArbitrumContractTx => ArbReceiptKind::Contract(receipt),
             ArbTxType::ArbitrumRetryTx => ArbReceiptKind::Retry(receipt),
@@ -302,14 +323,20 @@ impl TxReceipt for ArbReceipt {
     fn status_or_post_state(&self) -> Eip658Value {
         match self.kind.as_receipt() {
             Some(r) => r.status_or_post_state(),
-            None => Eip658Value::Eip658(true),
+            None => match &self.kind {
+                ArbReceiptKind::Deposit(d) => Eip658Value::Eip658(d.status),
+                _ => Eip658Value::Eip658(true),
+            },
         }
     }
 
     fn status(&self) -> bool {
         match self.kind.as_receipt() {
             Some(r) => r.status(),
-            None => true,
+            None => match &self.kind {
+                ArbReceiptKind::Deposit(d) => d.status,
+                _ => true,
+            },
         }
     }
 
@@ -591,7 +618,7 @@ impl<'de> serde::Deserialize<'de> for ArbReceipt {
         }
         let helper = Helper::deserialize(deserializer)?;
         let kind = if helper.ty == 0x64 {
-            ArbReceiptKind::Deposit(ArbDepositReceipt)
+            ArbReceiptKind::Deposit(ArbDepositReceipt::new(helper.status))
         } else {
             let receipt = AlloyReceipt {
                 status: Eip658Value::Eip658(helper.status),
@@ -728,7 +755,7 @@ mod tests {
 
     #[test]
     fn as_receipt_returns_none_for_deposit() {
-        let kind = ArbReceiptKind::Deposit(ArbDepositReceipt);
+        let kind = ArbReceiptKind::Deposit(ArbDepositReceipt::default());
         assert!(kind.as_receipt().is_none());
     }
 
@@ -740,7 +767,7 @@ mod tests {
 
     #[test]
     fn tx_receipt_trait_methods_handle_deposit() {
-        let receipt = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt));
+        let receipt = ArbReceipt::new(ArbReceiptKind::Deposit(ArbDepositReceipt::default()));
         assert!(receipt.status());
         assert_eq!(receipt.status_or_post_state(), Eip658Value::Eip658(true));
         assert_eq!(receipt.bloom(), Bloom::ZERO);

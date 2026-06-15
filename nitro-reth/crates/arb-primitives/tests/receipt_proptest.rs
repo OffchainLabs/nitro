@@ -42,7 +42,7 @@ fn arb_kind() -> impl Strategy<Value = ArbReceiptKind> {
         arb_receipt_inner().prop_map(ArbReceiptKind::Eip1559),
         arb_receipt_inner().prop_map(ArbReceiptKind::Eip2930),
         arb_receipt_inner().prop_map(ArbReceiptKind::Eip7702),
-        Just(ArbReceiptKind::Deposit(ArbDepositReceipt)),
+        any::<bool>().prop_map(|s| ArbReceiptKind::Deposit(ArbDepositReceipt::new(s))),
         arb_receipt_inner().prop_map(ArbReceiptKind::Unsigned),
         arb_receipt_inner().prop_map(ArbReceiptKind::Contract),
         arb_receipt_inner().prop_map(ArbReceiptKind::Retry),
