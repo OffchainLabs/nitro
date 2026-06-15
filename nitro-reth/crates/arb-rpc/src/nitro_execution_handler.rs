@@ -15,8 +15,12 @@ use base64::{
 };
 use jsonrpsee::core::RpcResult;
 use parking_lot::RwLock;
+use reth_metrics::{
+    metrics::{self, Gauge},
+    Metrics,
+};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     block_producer::{BlockProducer, BlockProductionInput},
@@ -36,6 +40,14 @@ pub struct NitroExecutionState {
     pub max_message_count: u64,
 }
 
+/// Prometheus metrics for the nitroexecution RPC handler.
+#[derive(Metrics)]
+#[metrics(scope = "arb_sync")]
+struct NitroExecutionMetrics {
+    /// Messages the consensus layer is ahead of the execution head.
+    messages_behind: Gauge,
+}
+
 /// Handler for the `nitroexecution` RPC namespace.
 ///
 /// Receives L1 incoming messages from the consensus layer and produces blocks.
@@ -46,6 +58,7 @@ pub struct NitroExecutionHandler<Provider, BP> {
     state: Arc<RwLock<NitroExecutionState>>,
     /// Genesis block number (0 for Arbitrum Sepolia, 22207817 for Arbitrum One).
     genesis_block_num: u64,
+    metrics: NitroExecutionMetrics,
 }
 
 impl<Provider, BP> NitroExecutionHandler<Provider, BP> {
@@ -56,6 +69,7 @@ impl<Provider, BP> NitroExecutionHandler<Provider, BP> {
             block_producer,
             state: Arc::new(RwLock::new(NitroExecutionState::default())),
             genesis_block_num,
+            metrics: NitroExecutionMetrics::default(),
         }
     }
 
@@ -97,6 +111,32 @@ where
         } else {
             B256::ZERO
         }
+    }
+}
+
+impl<Provider, BP> NitroExecutionHandler<Provider, BP>
+where
+    Provider: BlockNumReader,
+{
+    /// Refresh the `messages_behind` gauge from the current head and target.
+    fn update_messages_behind(&self) {
+        let best = match self.provider.best_block_number() {
+            Ok(best) => best,
+            Err(err) => {
+                warn!(target: "nitroexecution", %err, "failed to read best block number; skipping messages_behind update");
+                return;
+            }
+        };
+        let Some(head_msg_idx) = self.block_number_to_message_index(best) else {
+            debug!(target: "nitroexecution", best, genesis = self.genesis_block_num, "head below genesis; skipping messages_behind update");
+            return;
+        };
+        let max_message_count = self.state.read().max_message_count;
+        // Processed = head_msg_idx + 1, so behind = count - (idx + 1).
+        let processed = head_msg_idx.saturating_add(1);
+        self.metrics
+            .messages_behind
+            .set(max_message_count.saturating_sub(processed) as f64);
     }
 }
 
@@ -222,6 +262,8 @@ where
             .await
             .map_err(RpcError::from)?;
 
+        self.update_messages_behind();
+
         Ok(RpcMessageResult {
             block_hash: result.block_hash,
             send_root: result.send_root,
@@ -331,10 +373,13 @@ where
     }
 
     fn set_consensus_sync_data(&self, sync_data: RpcConsensusSyncData) -> RpcResult<()> {
-        let mut state = self.state.write();
-        state.synced = sync_data.synced;
-        state.max_message_count = sync_data.max_message_count;
+        {
+            let mut state = self.state.write();
+            state.synced = sync_data.synced;
+            state.max_message_count = sync_data.max_message_count;
+        }
         debug!(target: "nitroexecution", synced = sync_data.synced, max = sync_data.max_message_count, "setConsensusSyncData");
+        self.update_messages_behind();
         Ok(())
     }
 

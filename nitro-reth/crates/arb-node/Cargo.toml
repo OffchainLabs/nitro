@@ -39,6 +39,7 @@ reth-engine-tree = { workspace = true }
 reth-engine-util = { workspace = true }
 reth-evm = { workspace = true }
 reth-exex = { workspace = true }
+reth-metrics = { workspace = true }
 reth-execution-types = { workspace = true }
 reth-network = { workspace = true }
 reth-network-api = { workspace = true }

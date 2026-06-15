@@ -28,6 +28,7 @@ alloy-serde = { workspace = true }
 alloy-evm = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-evm = { workspace = true }
+reth-metrics = { workspace = true }
 reth-node-api = { workspace = true }
 reth-node-builder = { workspace = true }
 reth-primitives-traits = { workspace = true }

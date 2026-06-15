@@ -24,6 +24,10 @@ use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
+use reth_metrics::{
+    metrics::{self, Counter, Gauge, Histogram},
+    Metrics,
+};
 use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
@@ -127,6 +131,24 @@ fn read_dirty_pages_mb() -> Option<u64> {
     None
 }
 
+/// Prometheus metrics for block production.
+#[derive(Metrics)]
+#[metrics(scope = "arb_block_producer")]
+struct ArbBlockProducerMetrics {
+    /// Number of the latest block produced.
+    head_block: Gauge,
+    /// Total number of blocks produced.
+    blocks_produced_total: Counter,
+    /// Total gas processed across all produced blocks.
+    gas_processed_total: Counter,
+    /// Total transactions included across all produced blocks.
+    transactions_processed_total: Counter,
+    /// Duration of each block flush to disk (save_blocks + commit).
+    flush_commit_duration_seconds: Histogram,
+    /// Seconds the producer stalled on backpressure, per occurrence.
+    backpressure_stall_seconds: Histogram,
+}
+
 /// Block producer using reth's save_blocks(Full) for persistence.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
@@ -152,6 +174,7 @@ pub struct ArbBlockProducer<Provider> {
     /// or rollback so a stale chain view never feeds an SLOAD.
     cached_overlay: Mutex<Option<CachedOverlay>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
+    metrics: ArbBlockProducerMetrics,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -200,6 +223,7 @@ where
             validated_watcher: Mutex::new(None),
             cached_overlay: Mutex::new(None),
             cached_prestate: Mutex::new(None),
+            metrics: ArbBlockProducerMetrics::default(),
         }
     }
 
@@ -354,6 +378,9 @@ where
         self.invalidate_cached_overlay();
         self.invalidate_cached_prestate();
         let commit_latency_ms = result.duration.as_millis() as u64;
+        self.metrics
+            .flush_commit_duration_seconds
+            .record(result.duration.as_secs_f64());
         let flush_interval_current = {
             let mut sched = self.scheduler.lock();
             sched.observe(commit_latency_ms);
@@ -419,6 +446,9 @@ where
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
         }
+        self.metrics
+            .backpressure_stall_seconds
+            .record(start.elapsed().as_secs_f64());
         warn!(
             target: "block_producer",
             chain_len,
@@ -1147,6 +1177,17 @@ where
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
+        let num_txs = sealed.body().transactions.len();
+        // Update block producer metrics.
+        {
+            self.metrics.head_block.set(l2_block_number as f64);
+            self.metrics.blocks_produced_total.increment(1);
+            self.metrics.gas_processed_total.increment(gas_used);
+            self.metrics
+                .transactions_processed_total
+                .increment(num_txs as u64);
+        }
+
         let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
         let should_flush = self.scheduler.lock().should_flush(since_flush);
         if should_flush && !self.pending_flush.load(Ordering::SeqCst) {
@@ -1159,7 +1200,7 @@ where
             ?block_hash,
             ?send_root,
             ?state_root,
-            num_txs = sealed.body().transactions.len(),
+            num_txs,
             gas_used,
             "Produced block"
         );
