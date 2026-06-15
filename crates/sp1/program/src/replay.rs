@@ -214,7 +214,9 @@ impl CustomEnvData {
             }
             self.yielder.suspend(MainYieldMessage::RunLastChild);
         }
-        panic!("program did not finish after {MAX_YIELD_ITERATIONS} iterations");
+        Err(Escape::Internal(format!(
+            "program did not finish after {MAX_YIELD_ITERATIONS} iterations"
+        )))
     }
 }
 
