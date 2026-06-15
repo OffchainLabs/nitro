@@ -397,8 +397,19 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 
 	roots, err = client.WasmModuleRoots()
 	Require(t, err)
-	if len(roots) != 2 || len(roots) != len(mockWasmModuleRoots) {
+	if len(roots) != len(mockWasmModuleRoots) {
 		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
+	}
+	for i := range roots {
+		if roots[i] != mockWasmModuleRoots[i] {
+			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
+		}
+	}
+
+	proof, err = client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
+	Require(t, err)
+	if !bytes.Equal(proof, mockProof) {
+		t.Error("mock proof not expected")
 	}
 
 	proof, err = client.GetProofAt(ctx, mockWasmModuleRoots[1], &valInput, 0)
