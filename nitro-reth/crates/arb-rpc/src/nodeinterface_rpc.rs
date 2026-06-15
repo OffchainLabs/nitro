@@ -17,6 +17,9 @@ pub const SEL_L2_BLOCK_RANGE_FOR_L1: [u8; 4] = [0x48, 0xe7, 0xf8, 0x11];
 pub const SEL_GET_L1_CONFIRMATIONS: [u8; 4] = [0xe5, 0xca, 0x23, 0x8c];
 pub const SEL_FIND_BATCH_CONTAINING_BLOCK: [u8; 4] = [0x81, 0xf1, 0xad, 0xaf];
 pub const SEL_CONSTRUCT_OUTBOX_PROOF: [u8; 4] = [0x42, 0x69, 0x63, 0x50];
+pub const SEL_NITRO_GENESIS_BLOCK: [u8; 4] = [0x93, 0xa2, 0xfe, 0x21];
+pub const SEL_BLOCK_L1_NUM: [u8; 4] = [0x6f, 0x27, 0x5e, 0xf2];
+pub const SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF: [u8; 4] = [0x89, 0x49, 0x62, 0x70];
 
 /// Decode a packed header's mix_hash field to `(sendCount, l1BlockNumber,
 /// arbosVersion)`.
@@ -47,6 +50,23 @@ pub fn encode_l2_block_range(first: u64, last: u64) -> Bytes {
     let mut out = vec![0u8; 64];
     out[24..32].copy_from_slice(&first.to_be_bytes());
     out[56..64].copy_from_slice(&last.to_be_bytes());
+    Bytes::from(out)
+}
+
+/// ABI-encode a single `uint64` as a right-aligned 32-byte word.
+pub fn encode_u64_word(v: u64) -> Bytes {
+    let mut out = vec![0u8; 32];
+    out[24..32].copy_from_slice(&v.to_be_bytes());
+    Bytes::from(out)
+}
+
+/// ABI-encode `legacyLookupMessageBatchProof`'s all-zero 9-value tuple. The head
+/// is nine words (0x120), so the empty `proof` array begins at 0x120 and the
+/// empty `calldataForL1` at 0x140; both length words live inside the 0x160 buffer.
+pub fn encode_legacy_lookup_empty() -> Bytes {
+    let mut out = vec![0u8; 0x160];
+    out[..32].copy_from_slice(&U256::from(0x120u64).to_be_bytes::<32>());
+    out[0x100..0x120].copy_from_slice(&U256::from(0x140u64).to_be_bytes::<32>());
     Bytes::from(out)
 }
 
@@ -235,5 +255,23 @@ mod tests {
     fn find_l2_block_range_all_same_l1() {
         let mix_hash_of = |_: u64| Some(mix_with_l1_block(42));
         assert_eq!(find_l2_block_range(42, 5, mix_hash_of), Some((0, 5)));
+    }
+
+    #[test]
+    fn legacy_lookup_empty_offsets_in_bounds() {
+        let out = encode_legacy_lookup_empty();
+        assert_eq!(out.len(), 0x160);
+        // proof is return value 0 (head word at 0x00); calldataForL1 is value 8
+        // (head word at 0x100). Each dynamic offset must point at an in-bounds,
+        // zero-length word.
+        for head_off in [0x00usize, 0x100] {
+            let off = U256::from_be_slice(&out[head_off..head_off + 32]).to::<usize>();
+            assert!(
+                off + 32 <= out.len(),
+                "dynamic offset {off:#x} out of bounds"
+            );
+            let len = U256::from_be_slice(&out[off..off + 32]);
+            assert_eq!(len, U256::ZERO, "empty dynamic field must have zero length");
+        }
     }
 }

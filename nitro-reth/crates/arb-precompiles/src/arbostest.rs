@@ -52,10 +52,15 @@ fn handle_burn_arb_gas(
     gas_limit: u64,
     amount: U256,
 ) -> PrecompileResult {
-    let to_burn: u64 = amount.try_into().unwrap_or(u64::MAX);
-    crate::charge_computation(gas_used, ctx, to_burn);
-    Ok(PrecompileOutput::new(
-        (*gas_used).min(gas_limit),
-        Vec::new().into(),
-    ))
+    let Ok(to_burn) = u64::try_from(amount) else {
+        return Ok(PrecompileOutput::new_reverted(
+            *gas_used,
+            Default::default(),
+        ));
+    };
+    // Burning more than the remaining gas consumes all of it yet still
+    // succeeds; smaller amounts are charged as computation as usual.
+    let remaining = gas_limit.saturating_sub(*gas_used);
+    crate::charge_computation(gas_used, ctx, to_burn.min(remaining));
+    Ok(PrecompileOutput::new(*gas_used, Default::default()))
 }
