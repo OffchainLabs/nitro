@@ -12,6 +12,7 @@ mod backed_types;
 mod backend;
 mod bytes_storage;
 mod extra_types;
+mod gas;
 pub mod layout;
 pub mod queue;
 mod slot;
@@ -30,6 +31,7 @@ pub use extra_types::{
     StorageBackedBips, StorageBackedUBips, StorageBackedUint16, StorageBackedUint24,
     StorageBackedUint32,
 };
+pub use gas::{write_cost, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS};
 pub use queue::{initialize_queue, open_queue, Queue};
 pub use slot::storage_key_map;
 pub use state_ops::{

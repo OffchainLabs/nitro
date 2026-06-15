@@ -2,7 +2,9 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
-use arb_storage::ARBOS_STATE_ADDRESS;
+use arb_storage::{
+    write_cost, ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS,
+};
 
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 use std::sync::Arc;
@@ -21,9 +23,9 @@ const BATCH_POSTER_ADDRESS: Address = Address::new([
     0x6e, 0x63, 0x65, 0x72,
 ]);
 
-const SLOAD_GAS: u64 = 800;
-const SSTORE_GAS: u64 = 20_000;
-const SSTORE_ZERO_GAS: u64 = 5_000;
+const SLOAD_GAS: u64 = STORAGE_READ_GAS;
+const SSTORE_GAS: u64 = STORAGE_WRITE_GAS;
+const SSTORE_ZERO_GAS: u64 = STORAGE_WRITE_ZERO_GAS;
 const COPY_GAS: u64 = 3;
 
 pub fn create_arbaggregator_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
@@ -207,13 +209,7 @@ fn handle_set_fee_collector(
     poster_state
         .set_pay_to(internals, new_collector)
         .map_err(ArbPrecompileError::fatal)?;
-    // The write cost depends on the value: a zero collector resets the slot.
-    let write_cost = if new_collector.is_zero() {
-        SSTORE_ZERO_GAS
-    } else {
-        SSTORE_GAS
-    };
-    crate::charge_storage_write(gas_used, ctx, write_cost);
+    crate::charge_storage_write(gas_used, ctx, write_cost(new_collector.is_zero()));
 
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
@@ -299,8 +295,13 @@ fn handle_add_batch_poster(
     bpt.add_poster(internals, new_poster, new_poster)
         .map_err(ArbPrecompileError::fatal)?;
 
+    let addr_write = write_cost(new_poster.is_zero());
     crate::charge_storage_read(gas_used, ctx, 4 * SLOAD_GAS);
-    crate::charge_storage_write(gas_used, ctx, SSTORE_ZERO_GAS + 4 * SSTORE_GAS);
+    crate::charge_storage_write(
+        gas_used,
+        ctx,
+        SSTORE_ZERO_GAS + addr_write + SSTORE_GAS + addr_write + SSTORE_GAS,
+    );
     Ok(PrecompileOutput::new(
         (*gas_used).min(gas_limit),
         vec![].into(),

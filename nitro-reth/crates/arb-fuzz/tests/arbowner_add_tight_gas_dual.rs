@@ -1,15 +1,11 @@
-//! Differential test: ArbOwner.addWasmCacheManager at a tight forwarded budget.
+//! Differential tests: ArbOwner methods at a tight forwarded budget.
 //!
-//! `AddressSet::Add` reads membership, size, and the increment's count (three
-//! reads) and performs three set-writes, returning nothing; an access-controlled
-//! body that overruns its forwarded gas reverts and bills the owner zero. A
-//! caller forwarding a budget right at that boundary must add the manager — and
-//! charge gas — identically on arbreth and the Nitro reference.
-//!
-//! Run:
-//!   ARB_SPEC_BINARY=$(pwd)/target/fastdev/arb-reth \
-//!     cargo test -p arb-fuzz --test arbowner_add_tight_gas_dual --profile fastdev \
-//!     -- --ignored --nocapture
+//! Owner methods bill the caller zero but revert if their computed cost
+//! overruns the forwarded gas, so the cost must match the reference exactly at
+//! that boundary. Storage writes are priced by value — clearing a slot to zero
+//! costs less than setting it — so a method that writes a caller-supplied zero
+//! (a reset fee account, an immediate upgrade timestamp) must charge the reset
+//! price, not the set price, or it out-of-gases where the reference succeeds.
 
 use std::sync::Mutex;
 
@@ -40,7 +36,7 @@ const ARBOWNER: Address = address!("0000000000000000000000000000000000000070");
 const FUNDER: Address = Address::new([0xa1; 20]);
 const MANAGER: Address = Address::new([0xbb; 20]);
 
-// Forwarded budget inside `[arbreth body = 62406, nitro body = 63203)`.
+// Forwarded budget tight enough to bracket the method's body cost.
 const TIGHT_CALL_GAS: u16 = 62_800;
 
 fn owner_key() -> B256 {
@@ -103,25 +99,33 @@ fn wrap_init(runtime: &[u8]) -> Vec<u8> {
     c
 }
 
-/// Runtime that `CALL`s 0x70 with `addWasmCacheManager(MANAGER)` forwarding
-/// exactly `gas`, then stores the call's success flag at slot 0.
-fn caller_runtime(manager: Address, gas: u16) -> Vec<u8> {
-    let sel = selector4("addWasmCacheManager(address)");
+/// Runtime that `CALL`s 0x70 with `selector ++ args` forwarding exactly `gas`,
+/// then stores the call's success flag at slot 0. `args` must be a whole number
+/// of 32-byte words; the total calldata length stays below 256 bytes.
+fn forward_runtime(selector: [u8; 4], args: &[u8], gas: u16) -> Vec<u8> {
+    debug_assert!(args.len().is_multiple_of(32) && 4 + args.len() < 256);
     let mut c = Vec::new();
     c.push(0x63);
-    c.extend_from_slice(&sel);
+    c.extend_from_slice(&selector);
     c.extend_from_slice(&[0x60, 0xE0, 0x1b, 0x60, 0x00, 0x52]); // PUSH1 224 SHL PUSH1 0 MSTORE
-    c.push(0x73);
-    c.extend_from_slice(manager.as_slice());
-    c.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4 MSTORE
-                                              // CALL operands (pushed reverse): retLen retOff argLen argOff value addr gas
+    for (i, word) in args.chunks(32).enumerate() {
+        c.push(0x7f); // PUSH32
+        c.extend_from_slice(word);
+        c.extend_from_slice(&[0x60, (4 + 32 * i) as u8, 0x52]); // PUSH1 off MSTORE
+    }
+    let arg_len = (4 + args.len()) as u8;
+    // CALL operands (reverse): retLen retOff argLen argOff value addr gas
     c.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x24, 0x60, 0x00, 0x60, 0x00, 0x60, 0x70,
+        0x60, 0x00, 0x60, 0x00, 0x60, arg_len, 0x60, 0x00, 0x60, 0x00, 0x60, 0x70,
     ]);
     c.push(0x61);
     c.extend_from_slice(&gas.to_be_bytes()); // PUSH2 gas
     c.extend_from_slice(&[0xf1, 0x60, 0x00, 0x55, 0x00]); // CALL PUSH1 0 SSTORE STOP
     c
+}
+
+fn word(bytes: &[u8]) -> [u8; 32] {
+    B256::left_padding_from(bytes).0
 }
 
 fn add_chain_owner(addr: Address) -> Vec<u8> {
@@ -161,9 +165,11 @@ impl Rig {
     }
 }
 
-#[test]
-#[ignore]
-fn add_wasm_cache_manager_tight_gas_matches_nitro() {
+/// Deploys a forwarder whose runtime is `caller_runtime`, makes it a chain owner
+/// (the method under test is access-controlled), invokes it so it forwards its
+/// tight budget to ArbOwner, and asserts both nodes agree on the block, the
+/// receipts, and the forwarder's recorded success flag.
+fn run_forwarder(caller_runtime: Vec<u8>, name: &str) {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let owner = derive_address(owner_key());
     let caller = create_address(owner, 0);
@@ -176,7 +182,6 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
         idx
     };
 
-    // Fund the owner.
     let i = next();
     steps.push(msg_step(
         i,
@@ -194,14 +199,13 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
         1,
     ));
 
-    // Deploy the caller (owner nonce 0).
     let i = next();
     steps.push(msg_step(
         i,
         tx(
             0,
             None,
-            wrap_init(&caller_runtime(MANAGER, TIGHT_CALL_GAS)),
+            wrap_init(&caller_runtime),
             3_000_000,
             BASE_TS + i * BLOCK_SECS,
         )
@@ -210,7 +214,6 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
         1,
     ));
 
-    // Make the caller a chain owner (owner nonce 1, ample gas → both succeed).
     let i = next();
     steps.push(msg_step(
         i,
@@ -226,8 +229,6 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
         1,
     ));
 
-    // Invoke the caller (owner nonce 2): it forwards the tight budget to
-    // addWasmCacheManager and records the call's success flag at slot 0.
     let i = next();
     steps.push(msg_step(
         i,
@@ -243,7 +244,6 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
         1,
     ));
 
-    // Trailing no-op deposit so the invoke's block is sealed before we query.
     let i = next();
     steps.push(msg_step(
         i,
@@ -262,8 +262,8 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
     ));
 
     let scenario = Scenario {
-        name: "addWasmCacheManager_tight_gas".into(),
-        description: "owner-method add at a budget between arbreth and nitro body cost".into(),
+        name: name.into(),
+        description: "owner method at a budget between the two nodes' body cost".into(),
         setup: ScenarioSetup {
             l2_chain_id: L2_CHAIN_ID,
             arbos_version: ARBOS_VERSION,
@@ -287,166 +287,79 @@ fn add_wasm_cache_manager_tight_gas_matches_nitro() {
 
     assert!(
         report.is_clean(),
-        "arbreth diverged from Nitro on the tight-gas add\n  block_diffs={:#?}\n  tx_diffs={:#?}\n  state_diffs={:#?}",
+        "differs from the reference on {name}\n  block_diffs={:#?}\n  tx_diffs={:#?}\n  state_diffs={:#?}",
         report.block_diffs,
         report.tx_diffs,
         report.state_diffs,
     );
 }
 
-// Forwarded budget inside the window where the setter's StylusParams read being
-// a warm access (100) rather than a cold SLOAD (800) decides the outcome: the
-// reference node sets the param while a node charging the cold cost out-of-gases.
-fn setter_tight_gas() -> u16 {
-    std::env::var("ARB_SETTER_GAS")
+fn env_gas(var: &str, default: u16) -> u16 {
+    std::env::var(var)
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(21_000)
-}
-
-/// Runtime that `CALL`s 0x70 with `setInkPrice(0x1234)` forwarding exactly
-/// `gas`, then stores the call's success flag at slot 0.
-fn set_ink_price_runtime(gas: u16) -> Vec<u8> {
-    let sel = selector4("setInkPrice(uint32)");
-    let mut c = Vec::new();
-    c.push(0x63);
-    c.extend_from_slice(&sel);
-    c.extend_from_slice(&[0x60, 0xE0, 0x1b, 0x60, 0x00, 0x52]); // PUSH1 224 SHL PUSH1 0 MSTORE
-    c.extend_from_slice(&[0x61, 0x12, 0x34]); // PUSH2 0x1234 (the uint32 value)
-    c.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4 MSTORE
-                                              // CALL operands (reverse): retLen retOff argLen argOff value addr gas
-    c.extend_from_slice(&[
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x24, 0x60, 0x00, 0x60, 0x00, 0x60, 0x70,
-    ]);
-    c.push(0x61);
-    c.extend_from_slice(&gas.to_be_bytes()); // PUSH2 gas
-    c.extend_from_slice(&[0xf1, 0x60, 0x00, 0x55, 0x00]); // CALL PUSH1 0 SSTORE STOP
-    c
+        .unwrap_or(default)
 }
 
 #[test]
 #[ignore]
-fn set_ink_price_tight_gas_matches_nitro() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let owner = derive_address(owner_key());
-    let caller = create_address(owner, 0);
-    let mut rig = Rig::spawn(owner);
+fn add_wasm_cache_manager_tight_gas_matches_reference() {
+    let sel = selector4("addWasmCacheManager(address)");
+    let runtime = forward_runtime(sel, &word(MANAGER.as_slice()), TIGHT_CALL_GAS);
+    run_forwarder(runtime, "addWasmCacheManager_tight_gas");
+}
 
-    let mut steps = Vec::new();
-    let mut idx = 0u64;
-    let mut next = || {
-        idx += 1;
-        idx
-    };
+#[test]
+#[ignore]
+fn set_ink_price_tight_gas_matches_reference() {
+    let sel = selector4("setInkPrice(uint32)");
+    let gas = env_gas("ARB_SETTER_GAS", 21_000);
+    let runtime = forward_runtime(sel, &word(&[0x12, 0x34]), gas);
+    run_forwarder(runtime, "set_ink_price_tight_gas");
+}
 
-    let i = next();
-    steps.push(msg_step(
-        i,
-        DepositBuilder {
-            from: FUNDER,
-            to: owner,
-            amount: U256::from(10u128).pow(U256::from(21u64)),
-            l1_block_number: 1,
-            timestamp: BASE_TS,
-            request_seq: i,
-            base_fee_l1: FUZZ_L1_BASE_FEE,
-        }
-        .build()
-        .expect("deposit"),
-        1,
-    ));
+/// `scheduleArbOSUpgrade(50, 0)`: the zero timestamp is the value-dependent
+/// reset write under test.
+#[test]
+#[ignore]
+fn schedule_upgrade_zero_timestamp_tight_gas_matches_reference() {
+    let sel = selector4("scheduleArbOSUpgrade(uint64,uint64)");
+    let gas = env_gas("ARB_SCHEDULE_GAS", 30_000);
+    let mut args = word(&[50]).to_vec();
+    args.extend_from_slice(&[0u8; 32]); // timestamp = 0
+    let runtime = forward_runtime(sel, &args, gas);
+    run_forwarder(runtime, "schedule_upgrade_tight_gas");
+}
 
-    let i = next();
-    steps.push(msg_step(
-        i,
-        tx(
-            0,
-            None,
-            wrap_init(&set_ink_price_runtime(setter_tight_gas())),
-            3_000_000,
-            BASE_TS + i * BLOCK_SECS,
-        )
-        .build()
-        .expect("deploy caller"),
-        1,
-    ));
+/// `setNetworkFeeAccount(0)`: clearing the network fee account is a zero-value
+/// write to an address slot, charged the reset price.
+#[test]
+#[ignore]
+fn set_network_fee_account_zero_tight_gas_matches_reference() {
+    let sel = selector4("setNetworkFeeAccount(address)");
+    let gas = env_gas("ARB_SETTER0_GAS", 12_000);
+    let runtime = forward_runtime(sel, &[0u8; 32], gas);
+    run_forwarder(runtime, "set_network_fee_account_zero_tight_gas");
+}
 
-    let i = next();
-    steps.push(msg_step(
-        i,
-        tx(
-            1,
-            Some(ARBOWNER),
-            add_chain_owner(caller),
-            3_000_000,
-            BASE_TS + i * BLOCK_SECS,
-        )
-        .build()
-        .expect("addChainOwner"),
-        1,
-    ));
+/// `setL2BaseFee(0)`: a zero-value write to a uint256 pricing slot.
+#[test]
+#[ignore]
+fn set_l2_base_fee_zero_tight_gas_matches_reference() {
+    let sel = selector4("setL2BaseFee(uint256)");
+    let gas = env_gas("ARB_SETTER0_GAS", 12_000);
+    let runtime = forward_runtime(sel, &[0u8; 32], gas);
+    run_forwarder(runtime, "set_l2_base_fee_zero_tight_gas");
+}
 
-    let i = next();
-    steps.push(msg_step(
-        i,
-        tx(
-            2,
-            Some(caller),
-            Vec::new(),
-            3_000_000,
-            BASE_TS + i * BLOCK_SECS,
-        )
-        .build()
-        .expect("invoke caller"),
-        1,
-    ));
-
-    let i = next();
-    steps.push(msg_step(
-        i,
-        DepositBuilder {
-            from: FUNDER,
-            to: FUNDER,
-            amount: U256::from(1u64),
-            l1_block_number: 1 + (BASE_TS + i * BLOCK_SECS - BASE_TS) / BLOCK_SECS,
-            timestamp: BASE_TS + i * BLOCK_SECS,
-            request_seq: i,
-            base_fee_l1: FUZZ_L1_BASE_FEE,
-        }
-        .build()
-        .expect("trailing deposit"),
-        2,
-    ));
-
-    let scenario = Scenario {
-        name: "set_ink_price_tight_gas".into(),
-        description: "owner setter at a budget between arbreth and nitro body cost".into(),
-        setup: ScenarioSetup {
-            l2_chain_id: L2_CHAIN_ID,
-            arbos_version: ARBOS_VERSION,
-            genesis: None,
-        },
-        steps,
-    };
-
-    let checks = [StateCheck {
-        address: caller,
-        slots: vec![B256::ZERO],
-        check_balance: false,
-        check_nonce: false,
-        check_code: false,
-    }];
-
-    let report = rig
-        .dual
-        .run_with_state_checks(&scenario, &checks)
-        .expect("dual run");
-
-    assert!(
-        report.is_clean(),
-        "arbreth diverged from Nitro on the tight-gas setter\n  block_diffs={:#?}\n  tx_diffs={:#?}\n  state_diffs={:#?}",
-        report.block_diffs,
-        report.tx_diffs,
-        report.state_diffs,
-    );
+/// `setCollectTips(false)`: writes 0 to the collect-tips slot, charged the reset
+/// price, so a tight budget that covers the reset write but not the set write
+/// must still succeed.
+#[test]
+#[ignore]
+fn set_collect_tips_false_tight_gas_matches_reference() {
+    let sel = selector4("setCollectTips(bool)");
+    let gas = env_gas("ARB_SETTER0_GAS", 12_000);
+    let runtime = forward_runtime(sel, &[0u8; 32], gas);
+    run_forwarder(runtime, "set_collect_tips_false_tight_gas");
 }
