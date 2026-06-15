@@ -70,7 +70,7 @@ jobs:
           set -e -o pipefail
 
           # Cross-check SP1 (RISC-V, in-zkVM) against JIT (native) on each block.
-          for BLOCK in transfer, solidity, stylus, stylus_heavy, stylus_activation, stylus_activation_multicall, mixed, signatures; do
+          for BLOCK in transfer solidity stylus stylus_heavy stylus_activation stylus_activation_multicall mixed signatures; do
             echo "--- Running SP1 Validation ($BLOCK) ---"
             # Extracting only the hex string using grep -o
             SP1_HASH=$(make -C crates/sp1 run BLOCK="$BLOCK" 2>&1 \
