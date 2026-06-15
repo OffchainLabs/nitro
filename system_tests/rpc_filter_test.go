@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -213,6 +214,9 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 	// ticket survives for manual redeem via eth_call.
 	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
 	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	Require(t, err)
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
 
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
@@ -233,7 +237,7 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 	Require(t, err)
 
 	// Extract ticket ID and wait for it on L2
-	ticketId := lookupSubmissionTxHash(t, ctx, builder, l1Receipt)
+	ticketId := lookupL2Tx(l1Receipt).Hash()
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 	_, err = WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
 	Require(t, err)
