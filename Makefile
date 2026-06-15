@@ -68,6 +68,7 @@ color_reset = "\e[0;0m"
 done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 replay_wasm=$(output_latest)/replay.wasm
+unified_replay_wasm=$(output_latest)/unified_replay.wasm
 
 arb_brotli_files = $(wildcard crates/brotli/src/*.* crates/brotli/src/*/*.* crates/brotli/*.toml crates/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
@@ -207,7 +208,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build ## Build Nitro binaries.
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report stylus-raw-deploycode)
 	@printf $(done)
 
 .PHONY: build-node-deps ## Build dependencies needed by Nitro node binaries.
@@ -216,6 +217,7 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 .PHONY: test-go-deps ## Build dependencies required by Go tests.
 test-go-deps: \
 	build-replay-env \
+	build-unified-replay-env \
 	build-validation-server \
 	$(stylus_test_wasms) \
 	$(arbitrator_stylus_lib) \
@@ -239,6 +241,12 @@ build-validation-server: $(validation_server)
 
 .PHONY: build-replay-env ## Build the replay environment.
 build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br
+
+.PHONY: build-unified-replay-env ## Build the unified replay environment.
+build-unified-replay-env: $(unified_replay_wasm) $(output_latest)/unified_machine.wavm.br
+
+.PHONY: build-unified-wasm-bin ## Build the unified replay WASM binary.
+build-unified-wasm-bin: $(unified_replay_wasm)
 
 .PHONY: build-wasm-libs ## Build arbitrator WASM libraries.
 build-wasm-libs: $(arbitrator_wasm_libs)
@@ -430,10 +438,18 @@ $(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/filtering-report: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/filtering-report"
 
+$(output_root)/bin/stylus-raw-deploycode: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/stylus-raw-deploycode"
+
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
 	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/replay/...
+	./scripts/remove_reference_types.sh $@
+
+$(unified_replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
+	mkdir -p `dirname $(unified_replay_wasm)`
+	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/unified-replay/...
 	./scripts/remove_reference_types.sh $@
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
@@ -552,6 +568,10 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 
 $(output_latest)/machine.v2.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
+
+$(output_latest)/unified_machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(unified_replay_wasm)
+	$(prover_bin) $(unified_replay_wasm) --generate-binaries $(output_latest) --until-hostio-bin-filename="unified-until-host-io-state.bin" --brotli-wavm-machine-filename="unified_machine.wavm.br" --module-root-filename="unified-module-root.txt" \
 	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat

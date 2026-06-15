@@ -139,7 +139,7 @@ func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
 
 	singleGasCost := new(big.Int).Mul(baseFee, new(big.Int).SetUint64(gasUsed))
 
-	multiDimensionalCost, err := txProcessor.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+	multiDimensionalCost, err := txProcessor.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas, baseFee)
 	require.NoError(t, err)
 
 	expectedRefund := new(big.Int).Sub(singleGasCost, multiDimensionalCost)
@@ -214,7 +214,7 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 	gasFeeCap := new(big.Int).Set(baseFee)
 	simpleGasCost := new(big.Int).Mul(gasFeeCap, new(big.Int).SetUint64(gasUsed))
 
-	multiDimensionalCost, err := pricing.MultiDimensionalPriceForRefund(usedMultiGas)
+	multiDimensionalCost, err := pricing.MultiDimensionalPriceForRefund(usedMultiGas, baseFee)
 	require.NoError(t, err)
 
 	expectedRefund := new(big.Int).Sub(simpleGasCost, multiDimensionalCost)
@@ -271,4 +271,65 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 		refundToDelta,
 		expectedRefund,
 	)
+}
+
+// TestEndTxHookMultiGasRefundWithEVMRefundCredit verifies that the EndTxHook doesn't give extra refunds when the EVM
+// refunds are greater than the multi-dimensional one.
+// The EVM refunds are given back to the user before EndTxHook is called, in stateTransition.returnGas().
+func TestEndTxHookMultiGasRefundWithEVMRefundCredit(t *testing.T) {
+	const gasLimit uint64 = 1_000_000
+	const evmRefundCredit uint64 = 200_000 // EIP-3529 cap
+	const gasLeft uint64 = evmRefundCredit
+	from := common.HexToAddress("0x1234")
+
+	evm := newMockEVMForTestingWithBaseFee(big.NewInt(l2pricing.InitialBaseFeeWei))
+
+	msg := &core.Message{
+		TxRunContext: core.NewMessageReplayContext(),
+		From:         from,
+		GasLimit:     gasLimit,
+		GasPrice:     big.NewInt(0),
+		GasFeeCap:    big.NewInt(1),
+		GasTipCap:    big.NewInt(0),
+	}
+
+	txProcessor := NewTxProcessor(evm, msg)
+	txProcessor.PosterFee = big.NewInt(0)
+
+	pricing := txProcessor.state.L2PricingState()
+	pricing.ArbosVersion = params.ArbosVersion_MultiGasRefundFix
+
+	// Set a 99/100 ratio to make the multi-gas refund smaller than the EVM refunds.
+	Require(t, pricing.AddMultiGasConstraint(
+		100_000,
+		10,
+		200_000_000_000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):   99,
+			uint8(multigas.ResourceKindStorageGrowth): 100,
+		},
+	))
+	pricing.UpdatePricingModel(1)
+	require.NoError(t, pricing.CommitMultiGasFees())
+
+	baseFee, err := pricing.BaseFeeWei()
+	require.NoError(t, err)
+	evm.Context.BaseFee = baseFee
+
+	gasUsed := gasLimit - gasLeft
+	peakGasUsed := gasUsed + evmRefundCredit
+	usedMultiGas := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: peakGasUsed / 2},
+		multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: peakGasUsed / 2},
+	).WithRefund(evmRefundCredit)
+
+	multiGasFee, err := pricing.MultiDimensionalPriceForRefund(usedMultiGas, baseFee)
+	require.NoError(t, err)
+	singleGasFee := new(big.Int).Mul(baseFee, new(big.Int).SetUint64(gasUsed))
+	require.Negative(t, singleGasFee.Cmp(multiGasFee), "expected singleGasFee < multiGasFee")
+
+	// Expect zero balance because the EVM refunds are given before EndTxHook is called.
+	txProcessor.EndTxHook(gasLeft, usedMultiGas, true)
+	balance := evm.StateDB.GetBalance(from).ToBig()
+	require.Zero(t, balance.Sign(), "unexpected refund in EndTxHook")
 }

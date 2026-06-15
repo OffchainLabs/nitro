@@ -1,4 +1,5 @@
 #include "softfloat.h"
+#include "canonicalize.h"
 
 bool f64_isReal(float64_t f) {
 	uint64_t exponentMask = (1ull << 63) - (1ull << 52);
@@ -6,9 +7,7 @@ bool f64_isReal(float64_t f) {
 }
 
 bool f64_isNaN(float64_t f) {
-	if (f64_isReal(f)) return false;
-	uint64_t fraction = f.v & ((1ull << 52) - 1);
-	return fraction != 0;
+	return f64_bits_isNaN(f.v);
 }
 
 bool f64_isInfinity(float64_t f) {
@@ -50,68 +49,68 @@ uint64_t wavm__f64_neg(uint64_t v) {
 uint64_t wavm__f64_ceil(uint64_t v) {
 	float64_t f = {v};
 	f = f64_roundToInt(f, softfloat_round_max, true);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_floor(uint64_t v) {
 	float64_t f = {v};
 	f = f64_roundToInt(f, softfloat_round_min, true);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_trunc(uint64_t v) {
 	float64_t f = {v};
 	f = f64_roundToInt(f, softfloat_round_minMag, true);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_nearest(uint64_t v) {
 	float64_t f = {v};
 	f = f64_roundToInt(f, softfloat_round_near_even, true);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_sqrt(uint64_t v) {
 	float64_t f = {v};
 	f = f64_sqrt(f);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_add(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
 	float64_t f = f64_add(a, b);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_sub(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
 	float64_t f = f64_sub(a, b);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_mul(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
 	float64_t f = f64_mul(a, b);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_div(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
 	float64_t f = f64_div(a, b);
-	return f.v;
+	return f64_canonicalize(f.v);
 }
 
 uint64_t wavm__f64_min(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
 	if (f64_isNaN(a)) {
-		return a.v;
+		return F64_CANONICAL_NAN;
 	} else if (f64_isNaN(b)) {
-		return b.v;
+		return F64_CANONICAL_NAN;
 	} else if (f64_isInfinity(a) && f64_isNegative(a)) {
 		return a.v;
 	} else if (f64_isInfinity(b) && f64_isNegative(b)) {
@@ -135,9 +134,9 @@ uint64_t wavm__f64_max(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
 	if (f64_isNaN(a)) {
-		return a.v;
+		return F64_CANONICAL_NAN;
 	} else if (f64_isNaN(b)) {
-		return b.v;
+		return F64_CANONICAL_NAN;
 	} else if (f64_isInfinity(b) && !f64_isNegative(b)) {
 		return b.v;
 	} else if (f64_isInfinity(a) && f64_isNegative(a)) {
@@ -327,10 +326,10 @@ uint64_t wavm__f64_convert_i64_u(uint64_t x) {
 
 uint32_t wavm__f32_demote_f64(uint64_t x) {
 	float64_t f = {x};
-	return f64_to_f32(f).v;
+	return f32_canonicalize(f64_to_f32(f).v);
 }
 
 uint64_t wavm__f64_promote_f32(uint32_t x) {
 	float32_t f = {x};
-	return f32_to_f64(f).v;
+	return f64_canonicalize(f32_to_f64(f).v);
 }

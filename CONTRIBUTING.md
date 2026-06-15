@@ -13,9 +13,20 @@ You can explore our [Open Issues](https://github.com/offchainlabs/nitro/issues) 
 > If you are unsure, please open an issue first to discuss the change.
 > Here are some examples of trivial PRs that will most-likely be rejected:
 > * Fixing typos
-> * AI-generated code
+> * Non-impactful/not-useful AI generated code
 > * Refactors that don't improve usability
 <!-- end-trivial-prs -->
+
+## How contributions are merged
+
+Our development model has changed. The private repository (`nitro-private`) is now the source of truth for day-to-day development; the public `nitro` repository is a published mirror of private.
+
+External pull requests are still welcome and should be opened against the public `nitro` repository as described in the steps below. When a contribution is accepted, a core developer will:
+
+1. Port your changes into the private repository, preserving you as the commit author.
+2. Push the same commits to the public repository when the private repository is synced.
+
+As a result, the feedback loop is somewhat slower than a direct merge, and there will be a delay between acceptance and the change appearing in the public repository. We appreciate your patience and will work to keep communication clear throughout the process.
 
 ## Contribution Steps
 
@@ -100,6 +111,9 @@ $ git push mynitrorepo feature-in-progress-branch
 
 Navigate your browser to https://github.com/offchainlabs/nitro and click on the new pull request button. In the “base” box on the left, leave the default selection “base master”, the branch that you want your changes to be applied to. In the “compare” box on the right, select feature-in-progress-branch, the branch containing the changes you want to apply. 
 
+> [!NOTE]
+> As described in [How contributions are merged](#how-contributions-are-merged) above, accepted pull requests are ported into our private development repository rather than merged directly. Your change will appear in the public repository once the private repository is synced.
+
 **15. Respond to comments by Core Contributors.**
 
 Core Contributors may ask questions and request that you make edits. If you set notifications at the top of the page to “not watching,” you will still be notified by email whenever someone comments on the page of a pull request you have created. If you are asked to modify your pull request, repeat steps 8 through 15, then leave a comment to notify the Core Contributors that the pull request is ready for further review.
@@ -146,6 +160,6 @@ $ git push mynitrorepo feature-in-progress-branch
 
 We love working with people that are autonomous, bring new experience to the team, and are excited for their work. 
 
-Join our dynamic team of innovators and explore exciting career opportunities below to make a meaningful impact in a collaborative environment. Browse open positions and take the next step in your career today!
+Interested in working on Nitro full time? See open roles at Offchain.
 
-[Offchain Labs Careers](https://www.offchainlabs.com/careers)
+[Offchain Labs Careers](https://www.offchain.io/careers)
