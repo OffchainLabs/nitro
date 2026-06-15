@@ -12,15 +12,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
@@ -163,6 +168,188 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
 }
 
+func TestAddressFilterArbSysWithdrawEth(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Withdrawer")
+	builder.L2.TransferBalance(t, "Owner", "Withdrawer", big.NewInt(1e18), builder.L2Info)
+
+	builder.L1Info.GenerateAccount("FilteredL1Dest")
+	filteredL1Dest := builder.L1Info.GetAddress("FilteredL1Dest")
+	builder.L1Info.GenerateAccount("OkL1Dest")
+	okL1Dest := builder.L1Info.GetAddress("OkL1Dest")
+
+	addrFilter := newHashedChecker([]common.Address{filteredL1Dest})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
+	Require(t, err)
+
+	withdrawAmount := big.NewInt(1e15)
+
+	authBad := builder.L2Info.GetDefaultTransactOpts("Withdrawer", ctx)
+	authBad.Value = withdrawAmount
+	tx, err := arbSys.WithdrawEth(&authBad, filteredL1Dest)
+	if err == nil {
+		t.Fatal("expected withdrawEth to filtered L1 destination to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundDestReason := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address != filteredL1Dest {
+			continue
+		}
+		if fa.FilterReason.Reason != filter.ReasonToL1 {
+			t.Fatalf("expected filter reason %q for L1 destination, got %q", filter.ReasonToL1, fa.FilterReason.Reason)
+		}
+		if fa.FilterReason.EventRuleMatch != nil {
+			t.Fatal("expected nil EventRuleMatch for direct destination touch")
+		}
+		foundDestReason = true
+	}
+	if !foundDestReason {
+		t.Fatalf("report should contain filtered L1 destination %s with ReasonToL1", filteredL1Dest.Hex())
+	}
+	// Reset local nonce tracker since the Signer callback increments it on
+	// every signing attempt, including for the rejected tx above.
+	builder.L2Info.GetInfoWithPrivKey("Withdrawer").Nonce.Store(0)
+
+	authGood := builder.L2Info.GetDefaultTransactOpts("Withdrawer", ctx)
+	authGood.Value = withdrawAmount
+	tx, err = arbSys.WithdrawEth(&authGood, okL1Dest)
+	Require(t, err, "withdrawEth to unfiltered L1 destination should not be rejected")
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+// TestAddressFilterMultipleTxsInBlock sequences a clean / bad-A / clean / bad-B
+// / clean pattern into a single block and asserts that every clean tx is
+// included and each filtered tx is reported with only its own offending
+// address.
+func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Two distinct filtered addresses, so the test can detect cross-tx
+	// attribution leaks where a later tx's report mentions an earlier tx's address.
+	builder.L2Info.GenerateAccount("FilteredUserA")
+	builder.L2Info.GenerateAccount("FilteredUserB")
+	filteredA := builder.L2Info.GetAddress("FilteredUserA")
+	filteredB := builder.L2Info.GetAddress("FilteredUserB")
+
+	// One sender per tx: a filtered tx is rejected before execution and never
+	// bumps the state nonce, so reusing the same sender for a later tx would
+	// fail the nonce check rather than the filter.
+	senders := []string{"Sender1", "Sender2", "Sender3", "Sender4", "Sender5"}
+	for _, s := range senders {
+		builder.L2Info.GenerateAccount(s)
+		builder.L2.TransferBalance(t, "Owner", s, big.NewInt(1e18), builder.L2Info)
+	}
+	builder.L2Info.GenerateAccount("CleanReceiver1")
+	builder.L2Info.GenerateAccount("CleanReceiver3")
+	builder.L2Info.GenerateAccount("CleanReceiver5")
+
+	addrFilter := newHashedChecker([]common.Address{filteredA, filteredB})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	clean1 := builder.L2Info.PrepareTx("Sender1", "CleanReceiver1", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	badA := builder.L2Info.PrepareTx("Sender2", "FilteredUserA", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	clean3 := builder.L2Info.PrepareTx("Sender3", "CleanReceiver3", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	badB := builder.L2Info.PrepareTx("Sender4", "FilteredUserB", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	clean5 := builder.L2Info.PrepareTx("Sender5", "CleanReceiver5", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	sequencer := builder.L2.ExecNode.Sequencer
+	// SequenceTransactionsForTest bypasses the tx queue and sequences every
+	// tx into a single block.
+	sequencer.Pause()
+	defer sequencer.Activate()
+	block, txErrors := sequencer.SequenceTransactionsForTest(
+		t, types.Transactions{clean1, badA, clean3, badB, clean5},
+	)
+	require.NotNil(t, block, "block should have been produced")
+	require.Len(t, txErrors, 5)
+
+	require.NoError(t, txErrors[0], "clean tx 1 should have been sequenced")
+	require.Error(t, txErrors[1], "tx to FilteredUserA should have been rejected")
+	require.Truef(t, isFilteredError(txErrors[1]), "tx 2 rejection should be a filter error, got: %v", txErrors[1])
+	require.NoErrorf(t, txErrors[2], "clean tx 3 must not inherit filter state from tx 2, got: %v", txErrors[2])
+	require.Error(t, txErrors[3], "tx to FilteredUserB should have been rejected")
+	require.Truef(t, isFilteredError(txErrors[3]), "tx 4 rejection should be a filter error, got: %v", txErrors[3])
+	require.NoErrorf(t, txErrors[4], "clean tx 5 must not inherit filter state from tx 4, got: %v", txErrors[4])
+
+	cleanReceipt1, err := builder.L2.EnsureTxSucceeded(clean1)
+	require.NoError(t, err)
+	cleanReceipt3, err := builder.L2.EnsureTxSucceeded(clean3)
+	require.NoError(t, err)
+	cleanReceipt5, err := builder.L2.EnsureTxSucceeded(clean5)
+	require.NoError(t, err)
+	require.Equal(t, cleanReceipt1.BlockNumber.Uint64(), cleanReceipt3.BlockNumber.Uint64(),
+		"clean txs must share the same block")
+	require.Equal(t, cleanReceipt1.BlockNumber.Uint64(), cleanReceipt5.BlockNumber.Uint64(),
+		"clean txs must share the same block")
+
+	// Exactly one report per filtered tx; reports may arrive in any order.
+	reports := map[common.Hash]*addressfilter.FilteredTxReport{}
+	for i := 0; i < 2; i++ {
+		r := endpoint.NextReport(t)
+		reports[r.TxHash] = r
+	}
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+
+	require.Contains(t, reports, badA.Hash(), "no report received for tx to FilteredUserA")
+	require.Contains(t, reports, badB.Hash(), "no report received for tx to FilteredUserB")
+
+	assertReportFilteredOn(t, reports[badA.Hash()], filteredA, filteredB)
+	assertReportFilteredOn(t, reports[badB.Hash()], filteredB, filteredA)
+
+	CheckCommonReportFields(t, ctx, builder, reports[badA.Hash()], badA)
+	CheckCommonReportFields(t, ctx, builder, reports[badB.Hash()], badB)
+}
+
+// assertReportFilteredOn asserts that report mentions `expected` (with
+// ReasonTo) and does not mention `notExpected`. This catches cross-tx attribution
+// leaks where a previous tx's filtered address is reported against a later tx.
+func assertReportFilteredOn(t *testing.T, report *addressfilter.FilteredTxReport, expected, notExpected common.Address) {
+	t.Helper()
+	foundExpected := false
+	for _, fa := range report.FilteredAddresses {
+		require.NotEqualf(t, notExpected, fa.Address,
+			"report for tx %s leaked filtered address %s from another tx",
+			report.TxHash.Hex(), notExpected.Hex())
+		if fa.Address == expected {
+			require.Equal(t, filter.ReasonTo, fa.FilterReason.Reason,
+				"expected filter reason %q, got %q", filter.ReasonTo, fa.FilterReason.Reason)
+			foundExpected = true
+		}
+	}
+	require.Truef(t, foundExpected, "report should mention filtered address %s", expected.Hex())
+}
+
 func TestAddressFilterEventRuleReport(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -303,19 +490,16 @@ func TestAddressFilterCall(t *testing.T) {
 	}
 	foundTarget := false
 	for _, fa := range report.FilteredAddresses {
-		if fa.Address == targetAddr {
+		if fa.Address == targetAddr && fa.FilterReason.Reason == filter.ReasonCallTarget {
 			if fa.FilterReason.EventRuleMatch != nil {
 				t.Fatal("expected nil EventRuleMatch for direct address filter via CALL")
-			}
-			if fa.FilterReason.Reason != filter.ReasonContractAddress {
-				t.Fatalf("expected filter reason %q, got %q", filter.ReasonContractAddress, fa.FilterReason.Reason)
 			}
 			foundTarget = true
 			break
 		}
 	}
 	if !foundTarget {
-		t.Fatalf("report should contain filtered target address %s", targetAddr.Hex())
+		t.Fatalf("report should contain filtered target address %s with reason %s", targetAddr.Hex(), filter.ReasonCallTarget)
 	}
 
 	// Deploy another target (not filtered) - should succeed
@@ -368,6 +552,177 @@ func TestAddressFilterStaticCall(t *testing.T) {
 	Require(t, err)
 }
 
+// runInnerCallFilterTest exercises an inner CALL-family opcode (CALL / DELEGATECALL / CALLCODE)
+// from a wrapper contract to either a filtered EOA or a filtered contract, and asserts that the
+// target appears in the report with ReasonCallTarget.
+func runInnerCallFilterTest(t *testing.T, useEOATarget bool, invoke func(*localgen.AddressFilterTest, *bind.TransactOpts, common.Address) (*types.Transaction, error)) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	_, caller := deployAddressFilterTestContract(t, ctx, builder)
+
+	var filteredAddr common.Address
+	if useEOATarget {
+		builder.L2Info.GenerateAccount("FilteredEOA")
+		filteredAddr = builder.L2Info.GetAddress("FilteredEOA")
+	} else {
+		filteredAddr, _ = deployAddressFilterTestContract(t, ctx, builder)
+	}
+
+	checker := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err := invoke(caller, &auth, filteredAddr)
+	if err == nil {
+		t.Fatal("expected inner call to filtered address to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	found := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == filteredAddr && fa.FilterReason.Reason == filter.ReasonCallTarget {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for call-target filter")
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("report should contain filtered address %s with reason %s, got %+v", filteredAddr.Hex(), filter.ReasonCallTarget, report.FilteredAddresses)
+	}
+
+	// Sanity: an unfiltered target should pass.
+	var cleanAddr common.Address
+	if useEOATarget {
+		builder.L2Info.GenerateAccount("CleanEOA")
+		cleanAddr = builder.L2Info.GetAddress("CleanEOA")
+	} else {
+		cleanAddr, _ = deployAddressFilterTestContract(t, ctx, builder)
+	}
+	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err = invoke(caller, &auth, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterCallToContract(t *testing.T) {
+	runInnerCallFilterTest(t, false, (*localgen.AddressFilterTest).CallTarget)
+}
+
+func TestAddressFilterCallToEOA(t *testing.T) {
+	runInnerCallFilterTest(t, true, (*localgen.AddressFilterTest).CallTarget)
+}
+
+func TestAddressFilterDelegateCallToContract(t *testing.T) {
+	runInnerCallFilterTest(t, false, (*localgen.AddressFilterTest).DelegatecallTarget)
+}
+
+func TestAddressFilterDelegateCallToEOA(t *testing.T) {
+	runInnerCallFilterTest(t, true, (*localgen.AddressFilterTest).DelegatecallTarget)
+}
+
+func TestAddressFilterCallCodeToContract(t *testing.T) {
+	runInnerCallFilterTest(t, false, (*localgen.AddressFilterTest).CallcodeTarget)
+}
+
+func TestAddressFilterCallCodeToEOA(t *testing.T) {
+	runInnerCallFilterTest(t, true, (*localgen.AddressFilterTest).CallcodeTarget)
+}
+
+func TestAddressFilterStaticCallToContract(t *testing.T) {
+	runInnerCallFilterTest(t, false, (*localgen.AddressFilterTest).StaticcallTargetTx)
+}
+
+func TestAddressFilterStaticCallToEOA(t *testing.T) {
+	runInnerCallFilterTest(t, true, (*localgen.AddressFilterTest).StaticcallTargetTx)
+}
+
+// runStylusCallFilterTest deploys multicall.wasm as the Stylus caller and exercises
+// the call hostio against a filtered target (contract or EOA).
+func runStylusCallFilterTest(t *testing.T, useEOATarget bool) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	multicallAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	var filteredAddr common.Address
+	if useEOATarget {
+		builder.L2Info.GenerateAccount("FilteredEOA")
+		filteredAddr = builder.L2Info.GetAddress("FilteredEOA")
+	} else {
+		auth2 := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+		filteredAddr = deployWasm(t, ctx, auth2, builder.L2.Client, rustFile("storage"))
+	}
+
+	checker := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+
+	args := argsForMulticall(vm.CALL, filteredAddr, nil, nil)
+	tx := builder.L2Info.PrepareTxTo("Owner", &multicallAddr, 10_000_000, common.Big0, args)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil {
+		t.Fatal("expected Stylus CALL to filtered target to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	found := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == filteredAddr && fa.FilterReason.Reason == filter.ReasonCallTarget {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for Stylus call-target filter")
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("report should contain filtered address %s with reason %s, got %+v", filteredAddr.Hex(), filter.ReasonCallTarget, report.FilteredAddresses)
+	}
+}
+
+func TestAddressFilterStylusCallToContract(t *testing.T) {
+	runStylusCallFilterTest(t, false)
+}
+
+func TestAddressFilterStylusCallToEOA(t *testing.T) {
+	runStylusCallFilterTest(t, true)
+}
+
 func TestAddressFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -405,6 +760,8 @@ func TestAddressFilterCreate2(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -417,12 +774,12 @@ func TestAddressFilterCreate2(t *testing.T) {
 	Require(t, err)
 
 	// Set up filter to block the computed address
-	filter := newHashedChecker([]common.Address{create2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	checker := newHashedChecker([]common.Address{create2Addr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
 
 	// Test: CREATE2 to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	_, err = caller.Create2Contract(&auth, salt)
+	tx, err := caller.Create2Contract(&auth, salt)
 	if err == nil {
 		t.Fatal("expected CREATE2 to filtered address to be rejected")
 	}
@@ -430,13 +787,33 @@ func TestAddressFilterCreate2(t *testing.T) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundTarget := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == create2Addr && fa.FilterReason.Reason == filter.ReasonCreate {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter via CREATE2")
+			}
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Fatalf("report should contain filtered address %s with reason %s, got %+v", create2Addr.Hex(), filter.ReasonCreate, report.FilteredAddresses)
+	}
+
 	// Test: CREATE2 with different salt (different address) should succeed
 	differentSalt := [32]byte{4, 5, 6}
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	tx, err := caller.Create2Contract(&auth, differentSalt)
+	tx, err = caller.Create2Contract(&auth, differentSalt)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
 }
 
 func TestAddressFilterCreate(t *testing.T) {
@@ -445,6 +822,8 @@ func TestAddressFilterCreate(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -459,17 +838,36 @@ func TestAddressFilterCreate(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	// Set up filter to block the computed address
-	filter := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	checker := newHashedChecker([]common.Address{createAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
 
 	// Test: CREATE to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	_, err = caller.CreateContract(&auth)
+	tx, err := caller.CreateContract(&auth)
 	if err == nil {
 		t.Fatal("expected CREATE to filtered address to be rejected")
 	}
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundTarget := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == createAddr && fa.FilterReason.Reason == filter.ReasonCreate {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter via CREATE")
+			}
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Fatalf("report should contain filtered address %s with reason %s, got %+v", createAddr.Hex(), filter.ReasonCreate, report.FilteredAddresses)
 	}
 
 	// Test: CREATE to non-filtered address (after nonce incremented) should succeed
@@ -478,10 +876,66 @@ func TestAddressFilterCreate(t *testing.T) {
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, emptyChecker)
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	tx, err := caller.CreateContract(&auth)
+	tx, err = caller.CreateContract(&auth)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterTopLevelDeployment(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	senderAddr := builder.L2Info.GetAddress("Owner")
+	senderNonce, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	Require(t, err)
+	// createAddr is the address the EVM will derive for the new contract when
+	// state_transition processes the deployment tx (evm.Create -> evm.create).
+	// We pre-compute it with the same formula so the filter can block it.
+	createAddr := crypto.CreateAddress(senderAddr, senderNonce)
+
+	checker := newHashedChecker([]common.Address{createAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+
+	// Minimal init code: deploys a 0x35-byte runtime that always reverts. Same bytecode used by
+	// AddressFilterTest.createContract — we only need a valid constructor that runs to completion.
+	deployCode := common.FromHex("6080604052348015600f57600080fd5b50603580601d6000396000f3fe6080604052600080fdfea164736f6c6343000811000a")
+
+	tx := builder.L2Info.PrepareTxTo("Owner", nil, 10_000_000, common.Big0, deployCode)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil {
+		t.Fatal("expected top-level deployment to filtered address to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundTarget := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address == createAddr && fa.FilterReason.Reason == filter.ReasonCreate {
+			if fa.FilterReason.EventRuleMatch != nil {
+				t.Fatal("expected nil EventRuleMatch for direct address filter via top-level deployment")
+			}
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Fatalf("report should contain filtered address %s with reason %s, got %+v", createAddr.Hex(), filter.ReasonCreate, report.FilteredAddresses)
+	}
 }
 
 func TestAddressFilterSelfdestruct(t *testing.T) {

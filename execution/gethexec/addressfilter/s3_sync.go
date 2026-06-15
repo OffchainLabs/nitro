@@ -14,8 +14,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/s3syncer"
+)
+
+var (
+	fileSizeGauge       = metrics.NewRegisteredGauge("arb/addressfilter/file/size", nil)
+	fileTooLargeCounter = metrics.NewRegisteredCounter("arb/addressfilter/file/toolarge_total", nil)
+	syncFailureCounter  = metrics.NewRegisteredCounter("arb/addressfilter/sync/failure_total", nil)
 )
 
 // trimHexPrefix strips a leading "0x" or "0X" prefix from a hex string.
@@ -52,6 +59,7 @@ func NewS3SyncManager(config *Config, hashStore *HashStore) *S3SyncManager {
 	syncer := s3syncer.NewSyncer(
 		&config.S3,
 		manager.handleHashListData,
+		fileSizeGauge,
 	)
 
 	manager.Syncer = syncer
@@ -70,7 +78,7 @@ func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
 	}
 
 	s.hashStore.Store(parsedData.Id, parsedData.Salt, parsedData.Scheme, parsedData.Hashes, digest)
-	log.Info("loaded restricted addr list", "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data), "scheme", parsedData.Scheme)
+	log.Info("loaded restricted addr list", "filterSetID", parsedData.Id, "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data), "scheme", parsedData.Scheme)
 	return nil
 }
 

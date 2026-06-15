@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults-A, defaults-B, flaky, pathdb-A, pathdb-B, challenge, stylus, l3challenge]
+        test-mode: [defaults-A, defaults-B, flaky, pathdb-A, pathdb-B, challenge-A, challenge-B, stylus, l3challenge]
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
     with:
@@ -18,6 +18,7 @@ jobs:
       run-flaky: ${{ matrix.test-mode == 'flaky' }}
       run-pathdb-a: ${{ matrix.test-mode == 'pathdb-A' }}
       run-pathdb-b: ${{ matrix.test-mode == 'pathdb-B' }}
-      run-challenge: ${{ matrix.test-mode == 'challenge' }}
+      run-challenge-a: ${{ matrix.test-mode == 'challenge-A' }}
+      run-challenge-b: ${{ matrix.test-mode == 'challenge-B' }}
       run-stylus: ${{ matrix.test-mode == 'stylus' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
