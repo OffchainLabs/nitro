@@ -32,10 +32,6 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 			c.ExperimentalPGA.Enable = true
 			c.ExperimentalPGA.RoundsPerBlock = 0
 		}, true},
-		{"pga enabled with negative rounds per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
-			c.ExperimentalPGA.RoundsPerBlock = -1
-		}, true},
 		{"pga enabled with one round per block", func(c *SequencerConfig) {
 			c.ExperimentalPGA.Enable = true
 			c.ExperimentalPGA.RoundsPerBlock = 1

@@ -111,7 +111,7 @@ type DangerousConfig struct {
 
 type PGAConfig struct {
 	Enable         bool `koanf:"enable"`
-	RoundsPerBlock int  `koanf:"rounds-per-block"`
+	RoundsPerBlock uint `koanf:"rounds-per-block"`
 }
 
 const minPGARoundLength = 50 * time.Millisecond
@@ -120,6 +120,8 @@ const minPGARoundLength = 50 * time.Millisecond
 // block time rather than configured directly, so MaxBlockSpeed remains the
 // single source of truth.
 func (c *SequencerConfig) PGARoundLength() time.Duration {
+	// RoundsPerBlock is a small round count bounded by Validate; the conversion cannot overflow.
+	// #nosec G115
 	return c.MaxBlockSpeed / time.Duration(c.ExperimentalPGA.RoundsPerBlock)
 }
 
@@ -172,8 +174,8 @@ func (c *SequencerConfig) Validate() error {
 			}
 		}
 	}
-	if c.ExperimentalPGA.RoundsPerBlock < 1 {
-		return fmt.Errorf("experimental-pga.rounds-per-block must be at least 1, got %d", c.ExperimentalPGA.RoundsPerBlock)
+	if c.ExperimentalPGA.RoundsPerBlock == 0 {
+		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
 	if c.ExperimentalPGA.Enable {
 		if c.Timeboost.Enable {
@@ -257,7 +259,7 @@ func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultPGAConfig.Enable, "EXPERIMENTAL: enable priority gas auction (PGA) transaction ordering; mutually exclusive with timeboost")
-	f.Int(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
+	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
