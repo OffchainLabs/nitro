@@ -6,7 +6,11 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"math/big"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1281,4 +1285,84 @@ func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestGenerateAddressHashesFixtureScript(t *testing.T) {
+	const script = "../scripts/generate-address-hashes-fixture.sh"
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available; skipping generator script test")
+	}
+	salt := uuid.MustParse("ce823987-8c5b-42c8-9d44-11df313b91e9")
+	addrs := []common.Address{
+		common.HexToAddress("0xddfabcdc4d8ffc6d5beaf154f18b778f892a0740"), // vendor vector
+		common.HexToAddress("0x0000000000000000000000000000000000000000"), // all-zero
+		common.HexToAddress("0xffffffffffffffffffffffffffffffffffffffff"), // all-ff
+	}
+	addrStrs := make([]string, len(addrs))
+	for i, a := range addrs {
+		addrStrs[i] = a.Hex()
+	}
+	csv := strings.Join(addrStrs, ",")
+
+	for _, scheme := range []addressfilter.HashingScheme{
+		addressfilter.HashingSchemeStringInput,
+		addressfilter.HashingSchemeRawBytesInput,
+	} {
+		t.Run(string(scheme), func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "list.json")
+			cmd := exec.Command("bash", script, // #nosec G204 -- test-only, all args are in-test constants
+				"--hashing-scheme", string(scheme),
+				"--salt", salt.String(),
+				"--addresses", csv,
+				"--size", "1MB", "--out", out)
+			if b, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("generator failed: %v\n%s", err, b)
+			}
+
+			var payload struct {
+				Salt          string   `json:"salt"`
+				HashingScheme string   `json:"hashing_scheme"`
+				Hashes        []string `json:"hashes"`
+			}
+			data, err := os.ReadFile(out)
+			Require(t, err)
+			Require(t, json.Unmarshal(data, &payload))
+			if payload.HashingScheme != string(scheme) {
+				t.Fatalf("hashing_scheme: got %q want %q", payload.HashingScheme, scheme)
+			}
+
+			hashes := make([]common.Hash, len(payload.Hashes))
+			set := make(map[common.Hash]struct{}, len(payload.Hashes))
+			for i, h := range payload.Hashes {
+				hashes[i] = common.HexToHash(h)
+				set[hashes[i]] = struct{}{}
+			}
+
+			// Each address's production-computed hash must appear in the generated file.
+			prefix := addressfilter.GetHashStringInputPrefix(salt)
+			for _, a := range addrs {
+				var want common.Hash
+				if scheme == addressfilter.HashingSchemeRawBytesInput {
+					want = addressfilter.HashRawBytesInput(salt, a)
+				} else {
+					want = addressfilter.HashStringInputWithPrefix(prefix, a)
+				}
+				if _, ok := set[want]; !ok {
+					t.Fatalf("addr %s: production hash %s missing from generated file", a.Hex(), want.Hex())
+				}
+			}
+
+			// The generated file loads and filters via the production HashStore.
+			store := addressfilter.NewHashStore(100)
+			store.Store(uuid.New(), salt, scheme, hashes, "test")
+			for _, a := range addrs {
+				if restricted, _ := store.IsRestricted(a); !restricted {
+					t.Fatalf("addr %s should be restricted under %s", a.Hex(), scheme)
+				}
+			}
+			if restricted, _ := store.IsRestricted(common.HexToAddress("0x00000000000000000000000000000000cafef00d")); restricted {
+				t.Fatal("unlisted address must not be restricted")
+			}
+		})
+	}
 }

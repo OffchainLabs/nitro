@@ -156,7 +156,10 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 		if head.Time() >= bpo1Time {
 			return true
 		}
-		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
+		// Each dev-mode L1 block only bumps the timestamp by 1s, so advancing a
+		// single block per 100ms iteration cannot cover the 600s to BPO1Time
+		// within the poll budget; advance a chunk of blocks per iteration instead.
+		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 25)
 		return false
 	})
 
