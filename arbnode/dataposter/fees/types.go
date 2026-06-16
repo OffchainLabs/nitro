@@ -5,14 +5,6 @@ package fees
 
 import (
 	"math/big"
-
-	"github.com/Knetic/govaluate"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-
-	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
-	"github.com/offchainlabs/nitro/arbnode/parent"
 )
 
 // Split between blob and non-blob for calculations
@@ -33,14 +25,4 @@ func (s *BlobSplit[T]) SelectIfBlobs(hasBlobs bool) T {
 type Caps struct {
 	Fee BlobSplit[*big.Int]
 	Tip *big.Int
-}
-
-type dataPoster interface {
-	Client() *ethclient.Client
-	Config() *config.DataPosterConfig
-	ExtraBacklog() uint64
-	MaxFeeCapExpression() *govaluate.EvaluableExpression
-	ParentChain() *parent.ParentChain
-	Sender() common.Address
-	UsingNoOpStorage() bool
 }

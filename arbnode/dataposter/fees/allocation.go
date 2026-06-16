@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -23,11 +22,10 @@ var big4 = big.NewInt(4)
 // - The remaining weight get the remaining 1/6 of the balance split among them.
 // This helps ensure batch posting is reliable under a variety of fee conditions.
 // With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
-func allocateBalance(dp dataPoster, s *state.LockedInternalState, nonce uint64, softConfNonce uint64, weight uint64, maxMempoolWeight uint64) *big.Int {
-	config := dp.Config()
-	balanceForTx := new(big.Int).Set(s.Balance)
+func allocateBalance(cfg *config.DataPosterConfig, usingNoOpStorage bool, balance *big.Int, nonce uint64, softConfNonce uint64, weight uint64, maxMempoolWeight uint64) *big.Int {
+	balanceForTx := new(big.Int).Set(balance)
 
-	if !config.AllocateMempoolBalance || dp.UsingNoOpStorage() {
+	if !cfg.AllocateMempoolBalance || usingNoOpStorage {
 		return balanceForTx
 	}
 

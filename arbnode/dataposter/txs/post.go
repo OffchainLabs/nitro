@@ -16,8 +16,10 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
+	datapostermetrics "github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
 )
 
@@ -82,16 +84,63 @@ func (tx *Tx) post(ctx context.Context, p dataPoster, s *state.LockedInternalSta
 		return nil, err
 	}
 
-	caps, err := fees.FeeAndTipCaps(ctx, p, s, tx.Nonce, tx.GasLimit, uint64(len(tx.KzgBlobs)), nil, tx.DataCreatedAt, 0, latestHeader)
+	cfg := p.Config()
+	numBlobs := uint64(len(tx.KzgBlobs))
+
+	softConfBlock := arbmath.BigSubByUint(latestHeader.Number, cfg.NonceRbfSoftConfs)
+	softConfNonce, err := p.Client().NonceAt(ctx, p.Sender(), softConfBlock)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", cfg.NonceRbfSoftConfs, softConfBlock, err)
+	}
+	// #nosec G115
+	datapostermetrics.LatestSoftConfirmedNonceGauge.Update(int64(softConfNonce))
+
+	suggestedTip, err := p.Client().SuggestGasTipCap(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var currentBlobFee *big.Int
+	if numBlobs > 0 {
+		if latestHeader.ExcessBlobGas == nil || latestHeader.BlobGasUsed == nil {
+			return nil, fmt.Errorf(
+				"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
+					"(either the parent chain node is not synced or the EIP-4844 was improperly activated)",
+				latestHeader.Number,
+			)
+		}
+		currentBlobFee, err = p.ParentChain().BlobFeePerByte(ctx, latestHeader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get blob base fee: %w", err)
+		}
+	}
+
+	caps, err := fees.FeeAndTipCaps(&fees.FeeCalcOpts{
+		Config:              cfg,
+		Balance:             s.Balance,
+		SoftConfNonce:       softConfNonce,
+		SuggestedTip:        suggestedTip,
+		CurrentBlobFee:      currentBlobFee,
+		ExtraBacklog:        p.ExtraBacklog(),
+		MaxFeeCapExpression: p.MaxFeeCapExpression(),
+		UsingNoOpStorage:    p.UsingNoOpStorage(),
+		Nonce:               tx.Nonce,
+		GasLimit:            tx.GasLimit,
+		NumBlobs:            numBlobs,
+		LastTx:              nil, // new transaction, not RBF
+		DataCreatedAt:       tx.DataCreatedAt,
+		DataPosterBacklog:   0,
+		LatestHeader:        latestHeader,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
-	replacementTimes := p.Config().ReplacementTimes
+	replacementTimes := cfg.ReplacementTimes
 	if len(tx.KzgBlobs) > 0 {
-		replacementTimes = p.Config().BlobTxReplacementTimes
+		replacementTimes = cfg.BlobTxReplacementTimes
 		value256, overflow := uint256.FromBig(tx.Value)
 		if overflow {
 			return nil, fmt.Errorf("blob transaction callvalue %v overflows uint256", tx.Value)

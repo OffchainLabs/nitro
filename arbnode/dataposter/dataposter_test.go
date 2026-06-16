@@ -15,23 +15,18 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/txs"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -132,12 +127,7 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	}
 	cfg := config.DefaultDataPosterConfig
 	cfg.TargetPriceGwei = 0
-	p := &DataPoster{
-		config:              func() *config.DataPosterConfig { return &cfg },
-		internalState:       state.NewInternalState(nil),
-		maxFeeCapExpression: expression,
-	}
-	result, err := fees.EvalMaxFeeCapExpr(p, 0, 0)
+	result, err := fees.EvalMaxFeeCapExpr(expression, &cfg, 0, 0)
 	if err != nil {
 		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
@@ -145,7 +135,7 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 		t.Fatalf("Unexpected result. Got: %d, want: 0", result)
 	}
 
-	result, err = fees.EvalMaxFeeCapExpr(p, 0, time.Since(time.Time{}))
+	result, err = fees.EvalMaxFeeCapExpr(expression, &cfg, 0, time.Since(time.Time{}))
 	if err != nil {
 		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
@@ -153,37 +143,6 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 		t.Fatalf("Unexpected result. Got: %d, want: >0", result)
 	}
 }
-
-type stubL1ClientInner struct {
-	senderNonce        uint64
-	suggestedGasTipCap *big.Int
-}
-
-func (c *stubL1ClientInner) CallContext(ctx_in context.Context, result interface{}, method string, args ...interface{}) error {
-	switch method {
-	case "eth_getTransactionCount":
-		ptr, ok := result.(*hexutil.Uint64)
-		if !ok {
-			return errors.New("result is not a *hexutil.Uint64")
-		}
-		*ptr = hexutil.Uint64(c.senderNonce)
-	case "eth_maxPriorityFeePerGas":
-		ptr, ok := result.(*hexutil.Big)
-		if !ok {
-			return errors.New("result is not a *hexutil.Big")
-		}
-		*ptr = hexutil.Big(*c.suggestedGasTipCap)
-	}
-	return nil
-}
-
-func (c *stubL1ClientInner) EthSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error) {
-	return nil, nil
-}
-func (c *stubL1ClientInner) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
-	return nil
-}
-func (c *stubL1ClientInner) Close() {}
 
 func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T) {
 	conf := func() *config.DataPosterConfig {
@@ -211,22 +170,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 	}
 
 	ctx := context.Background()
-
-	p := DataPoster{
-		config:           conf,
-		extraBacklog:     func() uint64 { return 0 },
-		internalState:    state.NewInternalState(nil),
-		usingNoOpStorage: false,
-		client: ethclient.NewClient(&stubL1ClientInner{
-			senderNonce:        1,
-			suggestedGasTipCap: big.NewInt(2 * params.GWei),
-		}),
-		auth: &bind.TransactOpts{
-			From: common.Address{},
-		},
-		maxFeeCapExpression: expression,
-		parentChain:         parent.NewParentChain(ctx, big.NewInt(1337), nil),
-	}
+	parentChain := parent.NewParentChain(ctx, big.NewInt(1337), nil)
 
 	var nonce uint64 = 1
 	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
@@ -243,16 +187,40 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	lockedState := p.internalState.Lock()
-	defer p.internalState.Unlock()
+	balance := big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
 
-	lockedState.Balance = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
+	softConfNonce := uint64(1)
+	suggestedTip := big.NewInt(2 * params.GWei)
+	currentBlobFee, err := parentChain.BlobFeePerByte(ctx, &latestHeader)
+	if err != nil {
+		t.Fatalf("BlobFeePerByte: %v", err)
+	}
 
-	caps, err := fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
-	newGasFeeCap, newTipCap, newBlobFeeCap := caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
+	buildOpts := func(lastTx *types.Transaction, dataCreatedAt time.Time, backlog uint64, header *types.Header, blobFee *big.Int) *fees.FeeCalcOpts {
+		return &fees.FeeCalcOpts{
+			Config:              conf(),
+			Balance:             balance,
+			SoftConfNonce:       softConfNonce,
+			SuggestedTip:        suggestedTip,
+			CurrentBlobFee:      blobFee,
+			ExtraBacklog:        0,
+			MaxFeeCapExpression: expression,
+			UsingNoOpStorage:    false,
+			Nonce:               nonce,
+			GasLimit:            gasLimit,
+			NumBlobs:            numBlobs,
+			LastTx:              lastTx,
+			DataCreatedAt:       dataCreatedAt,
+			DataPosterBacklog:   backlog,
+			LatestHeader:        header,
+		}
+	}
+
+	caps, err := fees.FeeAndTipCaps(buildOpts(lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader, currentBlobFee))
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
+	newGasFeeCap, newTipCap, newBlobFeeCap := caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 
 	// There is no backlog and almost no time elapses since the batch data was
 	// created to when it was posted so the maxNormalizedFeeCap is ~60.01 gwei.
@@ -298,7 +266,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	caps, err = fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	caps, err = fees.FeeAndTipCaps(buildOpts(lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader, currentBlobFee))
 	newGasFeeCap, newTipCap, newBlobFeeCap = caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
 	/*
@@ -351,22 +319,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 	}
 
 	ctx := context.Background()
-
-	p := DataPoster{
-		config:           conf,
-		extraBacklog:     func() uint64 { return 0 },
-		internalState:    state.NewInternalState(nil),
-		usingNoOpStorage: false,
-		client: ethclient.NewClient(&stubL1ClientInner{
-			senderNonce:        1,
-			suggestedGasTipCap: big.NewInt(2 * params.GWei),
-		}),
-		auth: &bind.TransactOpts{
-			From: common.Address{},
-		},
-		maxFeeCapExpression: expression,
-		parentChain:         parent.NewParentChain(ctx, big.NewInt(1337), nil),
-	}
+	parentChain := parent.NewParentChain(ctx, big.NewInt(1337), nil)
 
 	var nonce uint64 = 1
 	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
@@ -383,16 +336,40 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	lockedState := p.internalState.Lock()
-	defer p.internalState.Unlock()
+	balance := big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
 
-	lockedState.Balance = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10))
+	softConfNonce := uint64(1)
+	suggestedTip := big.NewInt(2 * params.GWei)
+	currentBlobFee, err := parentChain.BlobFeePerByte(ctx, &latestHeader)
+	if err != nil {
+		t.Fatalf("BlobFeePerByte: %v", err)
+	}
 
-	caps, err := fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
-	newGasFeeCap, newTipCap, newBlobFeeCap := caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
+	buildOpts := func(lastTx *types.Transaction, dataCreatedAt time.Time, backlog uint64, header *types.Header, blobFee *big.Int) *fees.FeeCalcOpts {
+		return &fees.FeeCalcOpts{
+			Config:              conf(),
+			Balance:             balance,
+			SoftConfNonce:       softConfNonce,
+			SuggestedTip:        suggestedTip,
+			CurrentBlobFee:      blobFee,
+			ExtraBacklog:        0,
+			MaxFeeCapExpression: expression,
+			UsingNoOpStorage:    false,
+			Nonce:               nonce,
+			GasLimit:            gasLimit,
+			NumBlobs:            numBlobs,
+			LastTx:              lastTx,
+			DataCreatedAt:       dataCreatedAt,
+			DataPosterBacklog:   backlog,
+			LatestHeader:        header,
+		}
+	}
+
+	caps, err := fees.FeeAndTipCaps(buildOpts(lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader, currentBlobFee))
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
+	newGasFeeCap, newTipCap, newBlobFeeCap := caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 
 	// There is no backlog and almost no time elapses since the batch data was
 	// created to when it was posted so the maxNormalizedFeeCap is ~60.01 gwei.
@@ -440,7 +417,13 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		ExcessBlobGas: &excessBlobGas,
 	}
 
-	caps, err = fees.FeeAndTipCaps(ctx, &p, lockedState, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	// Recompute blob fee for the new header
+	currentBlobFee, err = parentChain.BlobFeePerByte(ctx, &latestHeader)
+	if err != nil {
+		t.Fatalf("BlobFeePerByte: %v", err)
+	}
+
+	caps, err = fees.FeeAndTipCaps(buildOpts(lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader, currentBlobFee))
 	newGasFeeCap, newTipCap, newBlobFeeCap = caps.Fee.NonBlob, caps.Tip, caps.Fee.Blob
 
 	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
@@ -1308,7 +1291,7 @@ func TestEvalMaxFeeCapExpr_EdgeCases(t *testing.T) {
 		dp, _ := newTestDataPoster(t, stub, nil)
 
 		// Huge backlog should produce a massive fee cap, but it's capped at 1e9 * GWei
-		result, err := fees.EvalMaxFeeCapExpr(dp, 1e18, 10*time.Hour)
+		result, err := fees.EvalMaxFeeCapExpr(dp.MaxFeeCapExpression(), dp.Config(), 1e18, 10*time.Hour)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1322,7 +1305,7 @@ func TestEvalMaxFeeCapExpr_EdgeCases(t *testing.T) {
 		stub := defaultTestStub()
 		dp, _ := newTestDataPoster(t, stub, nil)
 
-		result, err := fees.EvalMaxFeeCapExpr(dp, 0, 0)
+		result, err := fees.EvalMaxFeeCapExpr(dp.MaxFeeCapExpression(), dp.Config(), 0, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1337,33 +1320,33 @@ func TestEvalMaxFeeCapExpr_EdgeCases(t *testing.T) {
 }
 
 func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
-	ctx := context.Background()
-
 	t.Run("zero balance new tx returns minimal caps", func(t *testing.T) {
 		// With zero balance and no lastTx, the function does NOT return an error.
 		// Instead, targetMaxCost is clamped to 0, resulting in feeCap=0 which
-		// gets floored to 1 wei at the end (line 739-741).
-		// Note: s.Balance defaults to 0 from NewInternalState — that's what
-		// feeAndTipCaps reads, not the stub's BalanceAt RPC response.
+		// gets floored to 1 wei at the end.
+		// Note: balance=0 is what feeAndTipCaps reads.
 		stub := defaultTestStub()
-		stub.senderNonce = 0
-		dp, is := newTestDataPoster(t, stub, nil)
-
-		s := is.Lock()
-		defer is.Unlock()
+		dp, _ := newTestDataPoster(t, stub, nil)
 
 		header := defaultTestHeader()
 
-		caps, err := fees.FeeAndTipCaps(
-			ctx, dp, s,
-			0,       // nonce
-			300_000, // gasLimit
-			0,       // numBlobs
-			nil,     // lastTx (new tx)
-			time.Now(),
-			0, // backlog
-			header,
-		)
+		caps, err := fees.FeeAndTipCaps(&fees.FeeCalcOpts{
+			Config:              dp.Config(),
+			Balance:             big.NewInt(0),
+			SoftConfNonce:       0,
+			SuggestedTip:        big.NewInt(2 * params.GWei),
+			CurrentBlobFee:      nil,
+			ExtraBacklog:        0,
+			MaxFeeCapExpression: dp.MaxFeeCapExpression(),
+			UsingNoOpStorage:    false,
+			Nonce:               0,
+			GasLimit:            300_000,
+			NumBlobs:            0,
+			LastTx:              nil,
+			DataCreatedAt:       time.Now(),
+			DataPosterBacklog:   0,
+			LatestHeader:        header,
+		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1371,20 +1354,16 @@ func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
 		if caps.Fee.NonBlob.Cmp(big.NewInt(1)) != 0 {
 			t.Errorf("feeCap = %v, want 1 (minimum floor)", caps.Fee.NonBlob)
 		}
-		// tipCap is clamped to feeCap (line 689-696)
+		// tipCap is clamped to feeCap
 		if caps.Tip.Cmp(caps.Fee.NonBlob) > 0 {
 			t.Errorf("tipCap %v > feeCap %v (should be clamped)", caps.Tip, caps.Fee.NonBlob)
 		}
 	})
 
 	t.Run("zero balance replacing returns lastTx caps from feeAndTipCaps", func(t *testing.T) {
-		// s.Balance defaults to 0 from NewInternalState.
+		// balance=0 directly.
 		stub := defaultTestStub()
-		stub.senderNonce = 0
-		dp, is := newTestDataPoster(t, stub, nil)
-
-		s := is.Lock()
-		defer is.Unlock()
+		dp, _ := newTestDataPoster(t, stub, nil)
 
 		header := defaultTestHeader()
 
@@ -1397,16 +1376,23 @@ func TestFeeAndTipCaps_ZeroBalance(t *testing.T) {
 			Value:     big.NewInt(0),
 		})
 
-		caps, err := fees.FeeAndTipCaps(
-			ctx, dp, s,
-			0,       // nonce
-			300_000, // gasLimit
-			0,       // numBlobs
-			lastTx,  // replacing existing tx
-			time.Now(),
-			0, // backlog
-			header,
-		)
+		caps, err := fees.FeeAndTipCaps(&fees.FeeCalcOpts{
+			Config:              dp.Config(),
+			Balance:             big.NewInt(0),
+			SoftConfNonce:       0,
+			SuggestedTip:        big.NewInt(2 * params.GWei),
+			CurrentBlobFee:      nil,
+			ExtraBacklog:        0,
+			MaxFeeCapExpression: dp.MaxFeeCapExpression(),
+			UsingNoOpStorage:    false,
+			Nonce:               0,
+			GasLimit:            300_000,
+			NumBlobs:            0,
+			LastTx:              lastTx,
+			DataCreatedAt:       time.Now(),
+			DataPosterBacklog:   0,
+			LatestHeader:        header,
+		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
