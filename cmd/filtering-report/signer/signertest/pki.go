@@ -136,8 +136,6 @@ func SigningFixture(t *testing.T, opts LeafOptions) (pemPath, caPath string) {
 	return WriteCombinedPEM(t, dir, leafPriv, leafDER), WriteCAPEMFile(t, dir, pki.CACertPEM())
 }
 
-// NewSigner builds a signer backed by a fresh throwaway PEM fixture, for tests
-// that need a non-nil signer.
 func NewSigner(t *testing.T) *signer.Signer {
 	t.Helper()
 	pemPath, _ := SigningFixture(t, DefaultLeafOptions(DefaultTestSAN))

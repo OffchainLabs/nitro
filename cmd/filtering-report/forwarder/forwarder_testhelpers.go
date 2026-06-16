@@ -25,8 +25,6 @@ type MockExternalEndpoint struct {
 	requestCount atomic.Int64
 }
 
-// NewMockExternalEndpoint returns a signer whose identity the endpoint's
-// verifier accepts, together with the endpoint itself.
 func NewMockExternalEndpoint(t *testing.T) (sgn *signer.Signer, endpoint *MockExternalEndpoint) {
 	t.Helper()
 	leaf := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
