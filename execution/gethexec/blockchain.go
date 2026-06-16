@@ -123,10 +123,10 @@ var DefaultCachingConfig = CachingConfig{
 }
 
 func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
-	return DefaultCacheConfigTrieNoFlushFor(cachingConfig, false)
+	return DefaultCacheConfigWithExtraFor(cachingConfig, false, false)
 }
 
-func DefaultCacheConfigTrieNoFlushFor(cachingConfig *CachingConfig, trieNoAsyncFlush bool) *core.BlockChainConfig {
+func DefaultCacheConfigWithExtraFor(cachingConfig *CachingConfig, trieNoAsyncFlush bool, noHistoryIndexDelay bool) *core.BlockChainConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
@@ -156,6 +156,7 @@ func DefaultCacheConfigTrieNoFlushFor(cachingConfig *CachingConfig, trieNoAsyncF
 		TrieNoAsyncFlush:                   trieNoAsyncFlush,
 		StateSizeTracking:                  cachingConfig.StateSizeTracking,
 		NodeFullValueCheckpoint:            cachingConfig.NodeFullValueCheckpoint,
+		NoHistoryIndexDelay:                noHistoryIndexDelay,
 	}
 }
 

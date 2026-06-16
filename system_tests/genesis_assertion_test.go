@@ -300,7 +300,7 @@ func createL2NodeWithRollupAddresses(
 
 	var l2executionDB ethdb.Database
 	var l2consensusDB ethdb.Database
-	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false)
+	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false, false)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {

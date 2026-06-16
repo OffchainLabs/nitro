@@ -339,6 +339,7 @@ type NodeBuilder struct {
 	deployReferenceDAContracts  bool
 	withReferenceDAProvider     bool
 	TrieNoAsyncFlush            bool
+	NoHistoryIndexDelay         bool
 	// If true, calls prestate tracer check AutomatedPrestateTracerTest on L2 cleanup
 	WithPrestateTracerChecks bool
 
@@ -484,6 +485,11 @@ func (b *NodeBuilder) WithArbOSInit(arbOSInit *params.ArbOSInit) *NodeBuilder {
 
 func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
 	b.withProdConfirmPeriodBlocks = true
+	return b
+}
+
+func (b *NodeBuilder) WithNoHistoryIndexDelay() *NodeBuilder {
+	b.NoHistoryIndexDelay = true
 	return b
 }
 
@@ -824,6 +830,7 @@ func buildOnParentChain(
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
 	trieNoAsyncFlush bool,
+	noHistoryIndexDelay bool,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -842,7 +849,7 @@ func buildOnParentChain(
 	var consensusDB ethdb.Database
 	var blockchain *core.BlockChain
 	_, chainTestClient.Stack, executionDB, consensusDB, blockchain = createNonL1BlockChainWithStackConfig(
-		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig, trieNoAsyncFlush)
+		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig, trieNoAsyncFlush, noHistoryIndexDelay)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -948,6 +955,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3InitMessage,
 		b.l3Addresses,
 		b.TrieNoAsyncFlush,
+		b.NoHistoryIndexDelay,
 	)
 
 	return func() {
@@ -982,6 +990,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.initMessage,
 		b.addresses,
 		b.TrieNoAsyncFlush,
+		b.NoHistoryIndexDelay,
 	)
 
 	if b.nodeConfig.MessageExtraction.Enable {
@@ -1073,7 +1082,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	var consensusDB ethdb.Database
 	var blockchain *core.BlockChain
 	b.L2Info, b.L2.Stack, executionDB, consensusDB, blockchain = createNonL1BlockChainWithStackConfig(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
+		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush, b.NoHistoryIndexDelay)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil)
@@ -1157,7 +1166,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
+	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush, b.NoHistoryIndexDelay)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain)
@@ -1219,6 +1228,7 @@ func build2ndNode(
 
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
+	noHistoryIndexDelay bool,
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1259,7 +1269,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, noHistoryIndexDelay)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -1292,6 +1302,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		b.addresses,
 		b.initMessage,
+		b.NoHistoryIndexDelay,
 	)
 }
 
@@ -1324,6 +1335,7 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		b.l3Addresses,
 		b.l3InitMessage,
+		b.NoHistoryIndexDelay,
 	)
 }
 
@@ -2137,7 +2149,7 @@ func PebbleExtraOptionsForTest(t *testing.T, execConfig *gethexec.Config, namesp
 }
 
 func createNonL1BlockChainWithStackConfig(
-	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, arbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, trieNoAsyncFlush bool,
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, arbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, trieNoAsyncFlush bool, noHistoryIndexDelay bool,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if info == nil {
 		info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -2182,7 +2194,7 @@ func createNonL1BlockChainWithStackConfig(
 			SerializedChainConfig: serializedChainConfig,
 		}
 	}
-	coreCacheConfig := gethexec.DefaultCacheConfigTrieNoFlushFor(&execConfig.Caching, trieNoAsyncFlush)
+	coreCacheConfig := gethexec.DefaultCacheConfigWithExtraFor(&execConfig.Caching, trieNoAsyncFlush, noHistoryIndexDelay)
 	blockchain, err := gethexec.WriteOrTestBlockChain(executionDB, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, &gethexec.ConfigDefault.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
@@ -2431,6 +2443,7 @@ func Create2ndNodeWithConfig(
 	useExecutionClientOnly bool,
 	blobReader containers.Option[daprovider.BlobReader],
 	parentChain *parent.ParentChain,
+	noHistoryIndexDelay bool,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -2475,7 +2488,7 @@ func Create2ndNodeWithConfig(
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
-	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
+	coreCacheConfig := gethexec.DefaultCacheConfigWithExtraFor(&execConfig.Caching, false, noHistoryIndexDelay)
 	var tracer *tracing.Hooks
 	if execConfig.VmTrace.TracerName != "" {
 		tracer, err = tracers.LiveDirectory.New(execConfig.VmTrace.TracerName, json.RawMessage(execConfig.VmTrace.JSONConfig))
