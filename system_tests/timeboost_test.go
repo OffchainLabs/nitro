@@ -1484,8 +1484,17 @@ func setupExpressLaneAuction(
 	extraNodeTy extraNodeType,
 	queueTimeoutInBlocks uint64,
 ) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func(), *timeboost.BidValidator) {
-	seqPort := getFreePort(t)
-	forwarderPort := getFreePort(t)
+	// The ports must be known up front (written into Redis and SeqCoordinator.MyUrl
+	// below), so we can't defer to bind-time assignment. Holding the listeners open
+	// until just before each node binds shrinks the bind race window.
+	seqListener, err := testhelpers.FreeTCPPortListener()
+	Require(t, err)
+	defer seqListener.Close()
+	forwarderListener, err := testhelpers.FreeTCPPortListener()
+	Require(t, err)
+	defer forwarderListener.Close()
+	seqPort := testhelpers.AddrTCPPort(seqListener.Addr(), t)
+	forwarderPort := testhelpers.AddrTCPPort(forwarderListener.Addr(), t)
 
 	nodeNames := []string{fmt.Sprintf("http://127.0.0.1:%d", seqPort), fmt.Sprintf("http://127.0.0.1:%d", forwarderPort)}
 	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
@@ -1512,6 +1521,7 @@ func setupExpressLaneAuction(
 		QueueTimeoutInBlocks:         queueTimeoutInBlocks,
 	}
 	builderSeq.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
+	seqListener.Close() // release the port immediately before the sequencer binds it
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
@@ -1539,6 +1549,7 @@ func setupExpressLaneAuction(
 			QueueTimeoutInBlocks:         queueTimeoutInBlocks,
 		}
 		extraNodebuilder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
+		forwarderListener.Close() // release the port immediately before the forwarder binds it
 		cleanupExtraNode = extraNodebuilder.Build(t)
 		extraNode = extraNodebuilder.L2
 	case withFeedListener:
@@ -1749,17 +1760,15 @@ func setupExpressLaneAuction(
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	// Set up the auctioneer RPC service.
-	bidValidatorPort := getFreePort(t)
-	bidValidatorWsPort := getFreePort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
-		HTTPPort:            bidValidatorPort,
+		HTTPPort:            0,
 		HTTPHost:            "localhost",
 		HTTPModules:         []string{timeboost.AuctioneerNamespace},
 		HTTPVirtualHosts:    []string{"localhost"},
 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
 		WSHost:              "localhost",
-		WSPort:              bidValidatorWsPort,
+		WSPort:              0,
 		WSModules:           []string{timeboost.AuctioneerNamespace},
 		GraphQLVirtualHosts: []string{"localhost"},
 		P2P: p2p.Config{
@@ -1787,6 +1796,7 @@ func setupExpressLaneAuction(
 	)
 	Require(t, err)
 	Require(t, stack.Start())
+	bidValidatorEndpoint := stack.HTTPEndpoint()
 	Require(t, bidValidator.Initialize(ctx))
 	bidValidator.Start(ctx)
 
@@ -1816,7 +1826,7 @@ func setupExpressLaneAuction(
 	cfgFetcherAlice := func() *timeboost.BidderClientConfig {
 		return &timeboost.BidderClientConfig{
 			AuctionContractAddress: proxyAddr.Hex(),
-			BidValidatorEndpoint:   fmt.Sprintf("http://localhost:%d", bidValidatorPort),
+			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   fmt.Sprintf("http://localhost:%d", seqPort),
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("00%x", alicePriv.D.Bytes()),
@@ -1833,7 +1843,7 @@ func setupExpressLaneAuction(
 	cfgFetcherBob := func() *timeboost.BidderClientConfig {
 		return &timeboost.BidderClientConfig{
 			AuctionContractAddress: proxyAddr.Hex(),
-			BidValidatorEndpoint:   fmt.Sprintf("http://localhost:%d", bidValidatorPort),
+			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   fmt.Sprintf("http://localhost:%d", seqPort),
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("00%x", bobPriv.D.Bytes()),

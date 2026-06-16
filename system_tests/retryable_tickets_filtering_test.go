@@ -1747,12 +1747,10 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1Report(t *testing.T) {
 	require.NotEmpty(t, report.FilteredAddresses)
 	foundTarget := false
 	for _, addr := range report.FilteredAddresses {
-		if addr.Address == filteredTarget {
-			require.Equal(t, filterTypes.ReasonContractAddress, addr.Reason,
-				"filtered target should be caught as contract_address")
+		if addr.Address == filteredTarget && addr.Reason == filterTypes.ReasonCallTarget {
 			foundTarget = true
 			break
 		}
 	}
-	require.True(t, foundTarget, "report should contain the filtered target address")
+	require.True(t, foundTarget, "report should contain the filtered target address with reason %s", filterTypes.ReasonCallTarget)
 }

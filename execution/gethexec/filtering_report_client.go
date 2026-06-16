@@ -18,10 +18,10 @@ const FilteringReportNamespace = "filteringreport"
 
 var (
 	reportFilteredTransactionsCallFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report-client/report_filtered_transactions_failures_total", nil,
+		"arb/filter_report/client/failure_total", nil,
 	)
 	reportFilteredTransactionsCallSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filtering-report-client/report_filtered_transactions_successes_total", nil,
+		"arb/filter_report/client/success_total", nil,
 	)
 )
 

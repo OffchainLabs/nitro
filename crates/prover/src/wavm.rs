@@ -4,11 +4,10 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use arbutil::{Bytes32, Color, DebugColor};
-use digest::Digest;
 use eyre::{Result, bail, ensure};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
+use tiny_keccak::{Hasher, Keccak};
 use wasmparser::{BlockType, Operator};
 
 use crate::{
@@ -379,14 +378,16 @@ impl Instruction {
     }
 
     pub fn hash(code: &[Self]) -> Bytes32 {
-        let mut h = Keccak256::new();
+        let mut h = Keccak::v256();
         h.update(b"Instructions:");
-        h.update((code.len() as u8).to_be_bytes());
+        h.update(&(code.len() as u8).to_be_bytes());
         for inst in code {
-            h.update(inst.opcode.repr().to_be_bytes());
-            h.update(inst.get_proving_argument_data());
+            h.update(&inst.opcode.repr().to_be_bytes());
+            h.update(inst.get_proving_argument_data().as_ref());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 }
 
