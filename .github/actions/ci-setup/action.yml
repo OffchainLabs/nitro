@@ -22,6 +22,12 @@ runs:
       with:
         go-version-file: "go.mod"
 
+    # "|" falls back to direct fetching on any proxy error; the default ","
+    # only falls back on 404/410, so a transient proxy error fails the build.
+    - name: Fall back to direct module fetching on Go proxy errors
+      run: echo "GOPROXY=https://proxy.golang.org|direct" >> "$GITHUB_ENV"
+      shell: bash
+
     - name: Install wasm-ld
       run: |
         sudo apt-get update && sudo apt-get install -y lld-14
