@@ -17,14 +17,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble-a, pebble-b]
+        test-mode: [legacychallenge, long, challenge-A, challenge-B, l3challenge, execution-spec-tests, pebble-a, pebble-b]
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
     with:
       run-name: ${{ matrix.test-mode }}
       run-legacy-challenge: ${{ matrix.test-mode == 'legacychallenge' }}
       run-long: ${{ matrix.test-mode == 'long' }}
-      run-challenge: ${{ matrix.test-mode == 'challenge' }}
+      run-challenge-a: ${{ matrix.test-mode == 'challenge-A' }}
+      run-challenge-b: ${{ matrix.test-mode == 'challenge-B' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
       run-execution-spec-tests: ${{ matrix.test-mode == 'execution-spec-tests' }}
       run-pebble-a: ${{ matrix.test-mode == 'pebble-a' }}

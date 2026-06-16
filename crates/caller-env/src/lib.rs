@@ -38,6 +38,22 @@ macro_rules! host_fn {
     };
 }
 
+/// Like [`host_fn!`] but for WASI stubs that take both `&mut impl MemAccess` and
+/// `&mut impl ExecEnv`. The env data type `T` must implement both `HasMemory` and `ExecEnv`.
+#[cfg(feature = "wasmer_traits")]
+macro_rules! host_fn_exec {
+    (fn $name:ident($($arg:ident : $ty:ty),*)) => {
+        pub fn $name<T: $crate::wasmer_traits::HasMemory + $crate::ExecEnv + Send + 'static>(
+            mut ctx: wasmer::FunctionEnvMut<T>,
+            $($arg: $ty,)*
+        ) -> $crate::wasip1_stub::Errno {
+            let (data, store) = ctx.data_and_store_mut();
+            let memory = data.memory();
+            super::$name(&mut $crate::wasmer_traits::WasmerMem::new(memory, store), data, $($arg,)*)
+        }
+    };
+}
+
 #[cfg(feature = "brotli")]
 pub mod brotli;
 
