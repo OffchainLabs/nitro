@@ -66,8 +66,12 @@ func TestPrefetchNextBlockRecoversFromPanic(t *testing.T) {
 	engine := &ExecutionEngine{}
 
 	done := make(chan struct{})
+	var recovered any
 	go func() {
-		defer close(done)
+		defer func() {
+			recovered = recover()
+			close(done)
+		}()
 		engine.prefetchNextBlock(nil)
 	}()
 
@@ -75,5 +79,9 @@ func TestPrefetchNextBlockRecoversFromPanic(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("prefetch goroutine did not complete; panic was not recovered")
+	}
+
+	if recovered != nil {
+		t.Fatalf("panic sneaked out: %v", recovered)
 	}
 }
