@@ -18,13 +18,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func TestLiveness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -37,7 +38,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -50,7 +51,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
 	client := stack.Attach()
 	defer client.Close()
 
@@ -79,7 +80,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
 	client := stack.Attach()
 	defer client.Close()
 
@@ -97,7 +98,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, mock, &genericconf.HTTPClientConfigDefault, nil)
+	stack, err := NewStack(&stackConfig, mock, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 }
 
 func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, nil)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
 	client := stack.Attach()
 	defer client.Close()
 

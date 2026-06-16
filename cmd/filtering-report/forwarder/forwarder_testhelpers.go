@@ -25,7 +25,9 @@ type MockExternalEndpoint struct {
 	requestCount atomic.Int64
 }
 
-func NewMockExternalEndpoint(t *testing.T) (pemPath string, endpoint *MockExternalEndpoint) {
+// NewMockExternalEndpoint returns a signer whose identity the endpoint's
+// verifier accepts, together with the endpoint itself.
+func NewMockExternalEndpoint(t *testing.T) (sgn *signer.Signer, endpoint *MockExternalEndpoint) {
 	t.Helper()
 	leaf := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
 	pemPath, caPath := signertest.SigningFixture(t, leaf)
@@ -36,6 +38,10 @@ func NewMockExternalEndpoint(t *testing.T) (pemPath string, endpoint *MockExtern
 	})
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
+	}
+	sgn, err = signer.NewSigner(&signer.Config{PEMFile: pemPath, ReloadInterval: time.Minute})
+	if err != nil {
+		t.Fatalf("NewSigner: %v", err)
 	}
 	m := &MockExternalEndpoint{
 		reports: make(chan *addressfilter.FilteredTxReport, 100),
@@ -61,7 +67,7 @@ func NewMockExternalEndpoint(t *testing.T) (pemPath string, endpoint *MockExtern
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(func() { m.server.Close() })
-	return pemPath, m
+	return sgn, m
 }
 
 func (m *MockExternalEndpoint) NextReport(t *testing.T) *addressfilter.FilteredTxReport {
@@ -92,11 +98,8 @@ func (m *MockExternalEndpoint) AssertNoReport(t *testing.T, within time.Duration
 	}
 }
 
-func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, endpointURL string, pemPath string) *Forwarder {
+func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, endpointURL string, sgn *signer.Signer) *Forwarder {
 	t.Helper()
-	signerCfg := signer.DefaultConfig
-	signerCfg.PEMFile = pemPath
-	signerCfg.ReloadInterval = time.Minute
 	config := &Config{
 		Workers:            1,
 		PollInterval:       10 * time.Millisecond,
@@ -106,11 +109,7 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQue
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 		ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
-		Signer:                                 signerCfg,
-	}
-	sgn, err := signer.NewSigner(&signerCfg)
-	if err != nil {
-		t.Fatal(err)
+		Signer:                                 signer.DefaultConfig,
 	}
 	fwd, err := New(config, queueClient, poisonQueueClient, sgn)
 	if err != nil {
