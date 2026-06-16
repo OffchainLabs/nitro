@@ -211,7 +211,7 @@ func (br *BOLDRedisExecutionClient) Initialize(ctx context.Context, moduleRoots 
 		p, err := pubsub.NewProducer[*server_api.BoldValidationInput, []byte](
 			redisClient, server_api.RedisBoldStreamForRoot(br.redisValidationClient.config.StreamPrefix, mr), &br.redisValidationClient.config.ProducerConfig)
 		if err != nil {
-			log.Warn("failed init redis for %v: %w", mr, err)
+			log.Warn("failed init redis", "hash", mr, "err", err)
 			continue
 		}
 		br.producers[mr] = p

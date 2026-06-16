@@ -19,7 +19,7 @@ jobs:
   # --- Fast: Build + Lint only (required by can_proceed) ---
   fast:
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
@@ -40,7 +40,7 @@ jobs:
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
@@ -54,14 +54,14 @@ jobs:
   # --- Validation tests (not required by can_proceed) ---
   validation-tests:
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true'
+    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
     uses: ./.github/workflows/_validation-tests.yml
     secrets: inherit
 
   # --- Summarize test results (not required by can_proceed) ---
   codecov:
     needs: [go-tests, rust-tests]
-    if: always()
+    if: '!cancelled() && (needs.go-tests.result != ''skipped'' || needs.rust-tests.result != ''skipped'')'
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
     permissions:

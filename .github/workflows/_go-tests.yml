@@ -25,7 +25,10 @@ on:
       run-stylus:
         required: false
         type: boolean
-      run-challenge:
+      run-challenge-a:
+        required: false
+        type: boolean
+      run-challenge-b:
         required: false
         type: boolean
       run-l3challenge:
@@ -214,12 +217,23 @@ jobs:
 
       # --------------------- CHALLENGE MODES ---------------------
 
-      - name: build challenge tests
-        if: inputs.run-challenge
+      # The challenge suite is split across two shards to keep wall-clock off the
+      # CI critical path. The ~8 heavy TestChallengeProtocolBOLD* system tests run
+      # serially at ~4.5min each; the CustomDA group (A) balances against the
+      # ReadInbox/StartStep group plus all the fast tests (B), ~18min each.
+      - name: run challenge tests (CustomDA, A-batch)
+        if: inputs.run-challenge-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
-          --run TestChallenge --timeout 120m --cover
-          --junitfile test-results/junit-challenge.xml
+          --run TestChallengeProtocolBOLDCustomDA --timeout 120m --cover
+          --junitfile test-results/junit-challenge-a.xml
+
+      - name: run challenge tests (B-batch)
+        if: inputs.run-challenge-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
+          --run TestChallenge --skip TestChallengeProtocolBOLDCustomDA --timeout 120m --cover
+          --junitfile test-results/junit-challenge-b.xml
 
       - name: run L3 challenge tests
         if: inputs.run-l3challenge

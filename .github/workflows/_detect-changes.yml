@@ -16,9 +16,13 @@ on:
       code_changed:
         description: 'True if any file other than CHANGELOG.md or changelog/** changed.'
         value: ${{ jobs.changes.outputs.code_changed }}
+      has_prior_success:
+        description: 'True if the latest completed CI run on this branch succeeded.'
+        value: ${{ jobs.changes.outputs.has_prior_success }}
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   changes:
@@ -29,6 +33,7 @@ jobs:
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
       code_changed: ${{ steps.changed.outputs.code_any_changed }}
+      has_prior_success: ${{ steps.prior-runs.outputs.has_prior_success }}
 
     steps:
       - name: Checkout
@@ -38,12 +43,6 @@ jobs:
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
-      - uses: ./.github/actions/init-submodules
-        with:
-          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
-          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          pat: ${{ secrets.PRIVATE_REPO_PAT }}
-
       - name: Detect changes
         id: changed
         uses: tj-actions/changed-files@v47
@@ -51,6 +50,10 @@ jobs:
           files_yaml: |
             rust:
               - 'crates/**'
+              # Submodules aren't checked out here, so a contracts bump appears
+              # in diffs as the bare gitlink path 'contracts', which the glob
+              # form doesn't match. Keep both in case checkout behavior changes.
+              - 'contracts'
               - 'contracts/**'
               - 'Makefile'
               - '**.toml'
@@ -66,3 +69,32 @@ jobs:
               - '**'
               - '!CHANGELOG.md'
               - '!changelog/**'
+
+      - name: Check whether the latest CI run on this branch succeeded
+        id: prior-runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          branch="$HEAD_REF"
+          if [ -z "$branch" ]; then
+            echo "has_prior_success=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Skip only when the latest *completed* run was green; a failing code
+          # run must not be masked by an earlier success on the same branch.
+          # --method GET is required: -f params would otherwise make gh POST.
+          if conclusion=$(gh api --method GET \
+                "repos/$REPO/actions/workflows/ci.yml/runs" \
+                -f "branch=$branch" \
+                -f "per_page=20" \
+                --jq '[.workflow_runs[] | select(.conclusion != null) | .conclusion][0] // ""'); then
+            [ "$conclusion" = "success" ] && result=true || result=false
+          else
+            # Default to running the full suite, but make the failure visible
+            # rather than silently disabling the skip optimization forever.
+            echo "::warning::Could not query prior CI runs for '$branch'; running full suite."
+            result=false
+          fi
+          echo "has_prior_success=$result" >> "$GITHUB_OUTPUT"
