@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/sqsclient"
@@ -19,6 +20,7 @@ import (
 type filterSetReporter struct {
 	url    string
 	client *http.Client
+	signer *signer.Signer
 }
 
 type FilteringReportAPI struct {
@@ -26,15 +28,23 @@ type FilteringReportAPI struct {
 	filterSetReporter *filterSetReporter
 }
 
-func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig) (*FilteringReportAPI, error) {
+// NewFilteringReportAPI builds the RPC service. When filter-set-id reporting is
+// enabled (a non-empty URL), sgn must be non-nil: reports are forwarded to an
+// external endpoint that verifies the service's signature, so sgn is shared
+// with the forwarder to reuse a single signing identity.
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig, sgn *signer.Signer) (*FilteringReportAPI, error) {
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
 	}
 	api := &FilteringReportAPI{queueClient: queueClient}
 	if filterSetReporting != nil && filterSetReporting.URL != "" {
+		if sgn == nil {
+			return nil, errors.New("signer must not be nil when filter-set-id reporting is enabled")
+		}
 		api.filterSetReporter = &filterSetReporter{
 			url:    filterSetReporting.URL,
 			client: &http.Client{Timeout: filterSetReporting.Timeout},
+			signer: sgn,
 		}
 	}
 	return api, nil
@@ -65,13 +75,14 @@ func NewStack(
 	stackConfig *node.Config,
 	queueClient sqsclient.QueueClient,
 	filterSetReporting *genericconf.HTTPClientConfig,
+	sgn *signer.Signer,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	api, err := NewFilteringReportAPI(queueClient, filterSetReporting)
+	api, err := NewFilteringReportAPI(queueClient, filterSetReporting, sgn)
 	if err != nil {
 		return nil, err
 	}

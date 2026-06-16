@@ -6,6 +6,8 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
+	"time"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/httpclient"
@@ -18,5 +20,10 @@ func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, repor
 	if report == nil {
 		return errors.New("nil filter-set id report")
 	}
-	return httpclient.PostJSON(ctx, a.filterSetReporter.client, a.filterSetReporter.url, report)
+	reporter := a.filterSetReporter
+	return httpclient.PostJSON(ctx, reporter.client, reporter.url, report,
+		func(req *http.Request, signedBody []byte) error {
+			reporter.signer.SignHTTPRequest(req, signedBody, time.Now())
+			return nil
+		})
 }

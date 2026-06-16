@@ -20,7 +20,11 @@ import (
 // our logs.
 const errorBodyLimit = 1024
 
-func PostJSON(ctx context.Context, client *http.Client, url string, v any) error {
+// RequestOption mutates the outgoing request before it is sent. It receives the
+// marshalled request body so callers can, for example, sign it.
+type RequestOption func(req *http.Request, body []byte) error
+
+func PostJSON(ctx context.Context, client *http.Client, url string, v any, opts ...RequestOption) error {
 	body, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal body: %w", err)
@@ -30,6 +34,11 @@ func PostJSON(ctx context.Context, client *http.Client, url string, v any) error
 		return fmt.Errorf("build request to %s: %w", url, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for _, opt := range opts {
+		if err := opt(req, body); err != nil {
+			return fmt.Errorf("apply request option for %s: %w", url, err)
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("post to %s: %w", url, err)

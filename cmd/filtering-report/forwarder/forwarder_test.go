@@ -30,7 +30,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	pemPath, endpoint := NewMockExternalEndpoint(t)
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	filteringReportClient := stack.Attach()
 	t.Cleanup(func() { filteringReportClient.Close() })
 
@@ -99,7 +99,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	filteringReportClient := stack.Attach()
 	t.Cleanup(func() { filteringReportClient.Close() })
 
@@ -198,7 +198,7 @@ func TestForwarder_DeleteError(t *testing.T) {
 	queueClient := &sqsclient.MockQueueClient{
 		DeleteErr: fmt.Errorf("simulated SQS delete error"),
 	}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -244,7 +244,7 @@ func TestForwarder_RetryableHTTPErrorSlowdown_AfterThreshold(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -305,7 +305,7 @@ func TestForwarder_RetryableHTTPErrorSlowdown_ResetOnSuccess(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -363,7 +363,7 @@ func TestForwarder_RetryableHTTPErrorSlowdown_ResetOnNonRetryableError(t *testin
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -415,7 +415,7 @@ func TestForwarder_RetryableHTTPErrorSlowdown_NonRetryableErrorDoesNotCount(t *t
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -467,7 +467,7 @@ func TestForwarder_PoisonQueue_NonRetryableErrorSentToPoisonQueue(t *testing.T) 
 	queueClient := &sqsclient.MockQueueClient{}
 	poisonQueueClient := &sqsclient.MockQueueClient{}
 
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -524,7 +524,7 @@ func TestForwarder_TransportError_FallsThroughToSlowdown(t *testing.T) {
 
 	queueClient := &sqsclient.MockQueueClient{}
 	poisonQueueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -589,7 +589,7 @@ func TestForwarder_PoisonQueue_SendFailureLeavesMessageInQueue(t *testing.T) {
 		SendErr: fmt.Errorf("simulated poison queue send error"),
 	}
 
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 

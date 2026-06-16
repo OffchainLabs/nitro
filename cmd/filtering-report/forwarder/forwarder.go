@@ -261,6 +261,17 @@ func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message,
 	}
 }
 
+// Signer returns the forwarder's request signer so other senders in the same
+// process (e.g. the filter-set-id reporter) can share the single signing
+// identity and its reload loop, which the forwarder owns.
+func (r *Forwarder) Signer() *signer.Signer {
+	return r.signer
+}
+
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
-	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, json.RawMessage(body))
+	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, json.RawMessage(body),
+		func(req *http.Request, signedBody []byte) error {
+			r.signer.SignHTTPRequest(req, signedBody, time.Now())
+			return nil
+		})
 }

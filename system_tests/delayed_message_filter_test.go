@@ -212,7 +212,7 @@ func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndp
 	queueClient := &sqsclient.MockQueueClient{}
 	pemPath, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
 
-	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault)
+	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, nil)
 
 	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), pemPath)
 	fwd.Start(t.Context())
