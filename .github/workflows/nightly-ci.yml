@@ -43,9 +43,6 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
-    permissions:
-      contents: read
-      pull-requests: write
     with:
       post_comment: false
       upload_report: true
