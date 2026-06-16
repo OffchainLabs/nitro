@@ -293,6 +293,7 @@ impl PrecompileTest {
             tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
             evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
             caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
+            stylus_frame_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         pre_ctx.set_tx_is_aliased(self.tx_is_aliased);
         let precompile = factory(pre_ctx.clone());

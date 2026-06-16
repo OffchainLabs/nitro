@@ -1155,6 +1155,11 @@ where
                 // corrupts the input to ecrecover, transferFrom, etc.
                 let resolved_input: Bytes = match &sub_call.input {
                     revm::interpreter::CallInput::Bytes(b) => b.clone(),
+                    // A zero-length range carries no input; its start offset may
+                    // sit past the un-grown memory, so skip the slice read.
+                    revm::interpreter::CallInput::SharedBuffer(range) if range.is_empty() => {
+                        Bytes::new()
+                    }
                     revm::interpreter::CallInput::SharedBuffer(range) => {
                         // The range was computed by call_helpers as
                         //   range.start = relative_offset + local_memory_offset()
@@ -1292,6 +1297,17 @@ where
 
 // ── Stylus WASM dispatch ────────────────────────────────────────────
 
+/// Exits the Stylus frame on drop.
+struct StylusFrameGuard<'a> {
+    ctx: &'a std::sync::Arc<arb_context::ArbPrecompileCtx>,
+}
+
+impl Drop for StylusFrameGuard<'_> {
+    fn drop(&mut self) {
+        self.ctx.exit_stylus_frame();
+    }
+}
+
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
 ///
 /// Validates the program, computes upfront gas costs (memory pages + init/cached
@@ -1310,6 +1326,9 @@ where
     DB: Database,
 {
     use arbos::programs::types::UserOutcome;
+
+    let stylus_frame_depth = ctx.enter_stylus_frame();
+    let _stylus_frame_guard = StylusFrameGuard { ctx };
 
     let zero_gas = || EvmGas::new(0);
     let write_pages = |open: u16, ever: u16| {
@@ -1380,7 +1399,11 @@ where
     let total_gas = inputs.gas_limit;
 
     if total_gas < upfront_cost {
-        ctx.add_stylus_upfront_oog_gas(total_gas);
+        // Only the outermost Stylus frame leaves its abort gas undimensioned; a
+        // Stylus ancestor folds a nested abort into its own computation.
+        if stylus_frame_depth == 1 {
+            ctx.add_stylus_upfront_oog_gas(total_gas);
+        }
         return InterpreterResult::new(InstructionResult::OutOfGas, Bytes::new(), zero_gas());
     }
     let gas_for_wasm = total_gas - upfront_cost;

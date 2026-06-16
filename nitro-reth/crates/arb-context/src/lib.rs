@@ -252,6 +252,9 @@ pub struct ArbPrecompileCtx {
     /// precompile handlers can resolve the on-chain caller at arbitrary
     /// depth (alloy-evm's `EvmInternals` does not surface this).
     pub caller_stack: Arc<Mutex<Vec<Address>>>,
+    /// Number of Stylus program frames currently on the call stack. Lets a
+    /// frame tell whether it has a Stylus ancestor.
+    pub stylus_frame_depth: Arc<AtomicUsize>,
 }
 
 impl ArbPrecompileCtx {
@@ -265,6 +268,7 @@ impl ArbPrecompileCtx {
             tx: Arc::new(Mutex::new(TxCtx::default())),
             evm_depth: Arc::new(AtomicUsize::new(0)),
             caller_stack: Arc::new(Mutex::new(Vec::new())),
+            stylus_frame_depth: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -317,6 +321,20 @@ impl ArbPrecompileCtx {
 
     pub fn evm_depth(&self) -> usize {
         self.evm_depth.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Marks entry to a Stylus frame, returning the new Stylus call depth (1 for
+    /// the outermost Stylus frame).
+    pub fn enter_stylus_frame(&self) -> usize {
+        self.stylus_frame_depth
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
+    }
+
+    /// Marks exit from a Stylus frame.
+    pub fn exit_stylus_frame(&self) {
+        self.stylus_frame_depth
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn push_caller(&self, caller: Address) {
