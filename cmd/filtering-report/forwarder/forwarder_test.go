@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
-	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -163,32 +161,6 @@ func TestForwarder_ReceiveError(t *testing.T) {
 
 	if interval != forwarder.config.PollInterval {
 		t.Fatalf("expected poll interval %v on receive error, got %v", forwarder.config.PollInterval, interval)
-	}
-}
-
-func TestForwarder_FailsConstructionOnExpiredLeaf(t *testing.T) {
-	opts := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
-	opts.NotAfter = time.Now().Add(-time.Minute)
-	pemPath, _ := signertest.SigningFixture(t, opts)
-
-	signerCfg := signer.DefaultConfig
-	signerCfg.PEMFile = pemPath
-	config := &Config{
-		Workers:            1,
-		PollInterval:       10 * time.Millisecond,
-		SQSWaitTimeSeconds: DefaultConfig.SQSWaitTimeSeconds,
-		ExternalEndpoint: genericconf.HTTPClientConfig{
-			URL:     "http://127.0.0.1:0",
-			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
-		},
-		Signer: signerCfg,
-	}
-	_, err := New(config, &sqsclient.MockQueueClient{}, nil)
-	if err == nil {
-		t.Fatal("expected New to fail on expired leaf")
-	}
-	if !strings.Contains(err.Error(), "leaf certificate") {
-		t.Fatalf("expected signer leaf-certificate error, got: %v", err)
 	}
 }
 

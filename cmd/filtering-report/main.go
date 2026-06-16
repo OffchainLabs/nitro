@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -222,7 +223,15 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	fwd, err := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient)
+	sgn, err := signer.NewSigner(&config.ReportForwarder.Signer)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating signer: %v\n", err)
+		return 1
+	}
+	sgn.Start(ctx)
+	defer sgn.StopAndWait()
+
+	fwd, err := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient, sgn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating forwarder: %v\n", err)
 		return 1
@@ -230,7 +239,7 @@ func mainImpl() int {
 	fwd.Start(ctx)
 	defer fwd.StopAndWait()
 
-	stack, err := api.NewStack(&stackConf, queueClient, &config.FilterSetReporting, fwd.Signer())
+	stack, err := api.NewStack(&stackConf, queueClient, &config.FilterSetReporting, sgn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

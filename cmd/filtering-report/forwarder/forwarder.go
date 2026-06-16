@@ -168,16 +168,15 @@ type Forwarder struct {
 	signer            *signer.Signer
 }
 
-func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient) (*Forwarder, error) {
+func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, sgn *signer.Signer) (*Forwarder, error) {
 	if config == nil {
 		return nil, errors.New("config must not be nil")
 	}
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
 	}
-	sgn, err := signer.NewSigner(&config.Signer)
-	if err != nil {
-		return nil, fmt.Errorf("create signer: %w", err)
+	if sgn == nil {
+		return nil, errors.New("signer must not be nil")
 	}
 	return &Forwarder{
 		config:            config,
@@ -190,7 +189,6 @@ func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sq
 
 func (r *Forwarder) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
-	r.StartAndTrackChild(r.signer)
 	for i := uint(0); i < r.config.Workers; i++ {
 		var consecutiveRetryableErrors int
 		r.CallIteratively(func(ctx context.Context) time.Duration {
@@ -259,13 +257,6 @@ func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message,
 	} else {
 		sqsDeleteSuccessesCounter.Inc(1)
 	}
-}
-
-// Signer returns the forwarder's request signer so other senders in the same
-// process (e.g. the filter-set-id reporter) can share the single signing
-// identity and its reload loop, which the forwarder owns.
-func (r *Forwarder) Signer() *signer.Signer {
-	return r.signer
 }
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {

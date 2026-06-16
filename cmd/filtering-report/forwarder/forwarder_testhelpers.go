@@ -108,7 +108,11 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQue
 		ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
 		Signer:                                 signerCfg,
 	}
-	fwd, err := New(config, queueClient, poisonQueueClient)
+	sgn, err := signer.NewSigner(&signerCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fwd, err := New(config, queueClient, poisonQueueClient, sgn)
 	if err != nil {
 		t.Fatal(err)
 	}
