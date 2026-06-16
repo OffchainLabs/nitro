@@ -25,10 +25,10 @@ type TransactionFeedMessage struct {
 	Version     TransactionFeedMessageVersion `json:"version"`
 	TimestampMs uint64                        `json:"timestamp_ms"`
 	PGARound    uint64                        `json:"pga_round"`
-	Transaction TransactionIncluded           `json:"transaction"`
+	Transaction IncludedTransaction           `json:"transaction"`
 }
 
-type TransactionIncluded struct {
+type IncludedTransaction struct {
 	BlockNumber uint64            `json:"block_number"`
 	TxIndex     uint32            `json:"tx_index"`
 	RawTx       string            `json:"raw_tx"`
@@ -37,7 +37,7 @@ type TransactionIncluded struct {
 }
 
 type IncompleteReceipt struct {
-	Status            uint64 `json:"status"`
+	Status            uint8  `json:"status"`
 	GasUsed           uint64 `json:"gas_used"`
 	GasUsedForL1      uint64 `json:"gas_used_for_l1"`
 	CumulativeGasUsed uint64 `json:"cumulative_gas_used"`
@@ -99,13 +99,13 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 		Version:     TransactionFeedV1,
 		PGARound:    1, // TODO: placeholder until we connect with PGA round logic
 		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
-		Transaction: TransactionIncluded{
+		Transaction: IncludedTransaction{
 			BlockNumber: header.Number.Uint64(),
 			TxIndex:     arbmath.SaturatingUUCast[uint32](receipt.TransactionIndex),
 			RawTx:       hexutil.Encode(rawTx),
 			TxHash:      tx.Hash().Hex(),
 			Receipt: IncompleteReceipt{
-				Status:            receipt.Status,
+				Status:            arbmath.SaturatingUUCast[uint8](receipt.Status),
 				GasUsed:           receipt.GasUsed,
 				CumulativeGasUsed: receipt.CumulativeGasUsed,
 				EffectiveGasPrice: hexutil.EncodeBig(effectiveGasPrice),
