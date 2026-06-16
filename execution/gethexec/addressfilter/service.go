@@ -118,9 +118,6 @@ func (s *FilterService) GetHashStore() *HashStore {
 }
 
 func (s *FilterService) CurrentFilterSetID() uuid.UUID {
-	if !s.config.Enable {
-		return uuid.Nil
-	}
 	return s.hashStore.Id()
 }
 
