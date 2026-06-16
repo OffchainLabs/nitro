@@ -677,7 +677,7 @@ func getDAProviders(
 
 		if alwaysFallback {
 			if config.DA.AnyTrust.RestAggregator.Enable {
-				log.Error("DANGEROUS: always-fallback-to-parent-chain-da is set; AnyTrust writer suppressed; reader continues serving batches via rest-aggregator")
+				log.Info("DANGEROUS: always-fallback-to-parent-chain-da is set; AnyTrust writer suppressed; reader continues serving batches via rest-aggregator")
 			} else {
 				log.Error("DANGEROUS: always-fallback-to-parent-chain-da is set and rest-aggregator is disabled; node will halt on any AnyTrust batch encountered")
 			}
