@@ -6,6 +6,8 @@ package gethexec
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -14,16 +16,19 @@ import (
 
 const FilteringReportNamespace = "filteringreport"
 
-// DefaultFilteringReportRPCClientConfig keeps Retries=0 by default. The
-// filter-set-id report is rescheduled on each periodic tick, so transport-
-// level retries would only risk duplicate posts. Filtered-tx reports run
-// through this same client and accept the same trade-off — a network blip
-// drops a single report, which is preferable to the duplicate-delivery risk
-// retries would create downstream.
+var (
+	reportFilteredTransactionsCallFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/failure_total", nil,
+	)
+	reportFilteredTransactionsCallSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/success_total", nil,
+	)
+)
+
 var DefaultFilteringReportRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",
 	JWTSecret:                 "",
-	Retries:                   0,
+	Retries:                   2,
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
@@ -54,6 +59,11 @@ func (c *FilteringReportRPCClient) StopAndWait() {
 func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
+		if err != nil {
+			reportFilteredTransactionsCallFailuresCounter.Inc(1)
+		} else {
+			reportFilteredTransactionsCallSuccessesCounter.Inc(1)
+		}
 		return struct{}{}, err
 	})
 }

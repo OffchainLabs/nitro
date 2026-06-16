@@ -220,7 +220,7 @@ impl Program {
 
     /// Ensures an access is within bounds
     fn check_memory_access(&self, ptr: GuestPtr, bytes: u32) -> Result<(), MemoryBoundsError> {
-        let end = ptr.to_u64() + bytes as u64;
+        let end = u64::from(ptr) + bytes as u64;
         if end > self.memory_size_bytes() {
             return Err(MemoryBoundsError);
         }

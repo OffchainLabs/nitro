@@ -5,6 +5,7 @@ package addressfilter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/util/s3syncer"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -27,12 +29,7 @@ type FilterService struct {
 }
 
 // NewFilterService creates a new address-filteress service.
-// Returns nil if the service is not enabled in the configuration.
 func NewFilterService(config *Config) (*FilterService, error) {
-	if !config.Enable {
-		return nil, nil
-	}
-
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -63,6 +60,10 @@ func (s *FilterService) Initialize(ctx context.Context) error {
 
 	// Force download (ignore ETag check for initial load)
 	if err := s.syncMgr.Syncer.DownloadAndLoad(ctx); err != nil {
+		syncFailureCounter.Inc(1)
+		if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+			fileTooLargeCounter.Inc(1)
+		}
 		return fmt.Errorf("failed to load initial hash list: %w", err)
 	}
 
@@ -81,7 +82,13 @@ func (s *FilterService) Start(ctx context.Context) {
 	// Start periodic polling goroutine
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		if err := s.syncMgr.Syncer.CheckAndSync(ctx); err != nil {
-			log.Error("failed to sync address-filter list", "err", err)
+			syncFailureCounter.Inc(1)
+			if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+				fileTooLargeCounter.Inc(1)
+				log.Error("address-filter S3 file exceeds max-file-size, skipping download; keeping previously loaded list", "err", err)
+			} else {
+				log.Error("failed to sync address-filter list; keeping previously loaded list", "err", err)
+			}
 		}
 		return s.config.PollInterval
 	})
@@ -94,31 +101,19 @@ func (s *FilterService) Start(ctx context.Context) {
 }
 
 func (s *FilterService) GetHashCount() int {
-	if !s.config.Enable {
-		return 0
-	}
 	return s.hashStore.Size()
 }
 
 // GetHashStoreDigest GetETag returns the S3 ETag Digest of the currently loaded hash list.
 func (s *FilterService) GetHashStoreDigest() string {
-	if !s.config.Enable {
-		return ""
-	}
 	return s.hashStore.Digest()
 }
 
 func (s *FilterService) GetLoadedAt() time.Time {
-	if !s.config.Enable {
-		return time.Time{}
-	}
 	return s.hashStore.LoadedAt()
 }
 
 func (s *FilterService) GetHashStore() *HashStore {
-	if !s.config.Enable {
-		return nil
-	}
 	return s.hashStore
 }
 
@@ -130,8 +125,5 @@ func (s *FilterService) CurrentFilterSetID() uuid.UUID {
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {
-	if !s.config.Enable {
-		return nil
-	}
 	return s.addressChecker
 }

@@ -7,11 +7,13 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -384,4 +386,53 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMultigasStylus_BurnGasFailAttribution(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).
+		WithArbOSVersion(params.ArbosVersion_MultiGasRefundFix)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	stylusAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	// Trampoline runtime: CALL(forwardGas, stylusAddr, 0, 0, 0, 0, 0); STOP.
+	// forwardGas << callCost guarantees BurnGas drains the inner frame.
+	const forwardGas uint16 = 1000
+	runtime := []byte{
+		byte(vm.PUSH1), 0, // retSize
+		byte(vm.PUSH1), 0, // retOff
+		byte(vm.PUSH1), 0, // argSize
+		byte(vm.PUSH1), 0, // argOff
+		byte(vm.PUSH1), 0, // value
+		byte(vm.PUSH20),
+	}
+	runtime = append(runtime, stylusAddr.Bytes()...)
+	runtime = append(runtime, byte(vm.PUSH2), byte(forwardGas>>8), byte(forwardGas&0xff))
+	runtime = append(runtime, byte(vm.CALL), byte(vm.STOP))
+
+	trampoline := deployContract(t, ctx, auth, l2client, runtime)
+
+	tx := l2info.PrepareTxTo("Owner", &trampoline, l2info.TransferGas, nil, nil)
+	require.NoError(t, l2client.SendTransaction(ctx, tx))
+
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 10*time.Second)
+	require.NoError(t, err)
+	require.NotNil(t, receipt)
+	t.Logf("receipt status=%d gasUsed=%d multiGas=%+v", receipt.Status, receipt.GasUsed, receipt.MultiGasUsed)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "trampoline tx must succeed (inner OOG absorbed)")
+
+	mg := receipt.MultiGasUsed
+	require.False(t, mg.IsZero(), "MultiGasUsed is zero (multigas exposure disabled)")
+	require.Equalf(t, receipt.GasUsed, mg.SingleGas(),
+		"BurnGas-fail drain not attributed: gasUsed=%d singleGas=%d diff=%d wasm=%d",
+		receipt.GasUsed, mg.SingleGas(), receipt.GasUsed-mg.SingleGas(),
+		mg.Get(multigas.ResourceKindWasmComputation),
+	)
 }

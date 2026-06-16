@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/httperror"
 )
 
 // errorBodyLimit caps how much of a non-2xx response body we surface in errors,
@@ -40,11 +41,13 @@ func PostJSON(ctx context.Context, client *http.Client, url string, v any) error
 		resp.Body.Close()
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit)) // cap error body to avoid unbounded reads
+		respBodyStr := string(respBody)
 		if readErr != nil {
-			return fmt.Errorf("post to %s returned status %d (body read error: %w)", url, resp.StatusCode, readErr)
+			log.Warn("Failed reading error response body", "err", readErr, "statusCode", resp.StatusCode)
+			respBodyStr = fmt.Sprintf("%s (body read error: %s)", respBodyStr, readErr)
 		}
-		return fmt.Errorf("post to %s returned status %d: %q", url, resp.StatusCode, respBody)
+		return &httperror.HTTPError{StatusCode: resp.StatusCode, Body: respBodyStr}
 	}
 	return nil
 }
