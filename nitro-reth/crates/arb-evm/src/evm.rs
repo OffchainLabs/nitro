@@ -1155,6 +1155,11 @@ where
                 // corrupts the input to ecrecover, transferFrom, etc.
                 let resolved_input: Bytes = match &sub_call.input {
                     revm::interpreter::CallInput::Bytes(b) => b.clone(),
+                    // A zero-length range carries no input; its start offset may
+                    // sit past the un-grown memory, so skip the slice read.
+                    revm::interpreter::CallInput::SharedBuffer(range) if range.is_empty() => {
+                        Bytes::new()
+                    }
                     revm::interpreter::CallInput::SharedBuffer(range) => {
                         // The range was computed by call_helpers as
                         //   range.start = relative_offset + local_memory_offset()
