@@ -28,10 +28,6 @@ type FilteringReportAPI struct {
 	filterSetReporter *filterSetReporter
 }
 
-// NewFilteringReportAPI builds the RPC service. When filter-set-id reporting is
-// enabled (a non-empty URL), sgn must be non-nil: reports are forwarded to an
-// external endpoint that verifies the service's signature, so sgn is shared
-// with the forwarder to reuse a single signing identity.
 func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig, sgn *signer.Signer) (*FilteringReportAPI, error) {
 	if queueClient == nil {
 		return nil, errors.New("queueClient must not be nil")
