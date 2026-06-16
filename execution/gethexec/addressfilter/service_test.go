@@ -344,9 +344,8 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 	unknownSchemeJSON, err := json.Marshal(unknownSchemePayload)
 	require.NoError(t, err)
-	parsedJson, err = parseHashListJSON(unknownSchemeJSON)
-	if err != nil {
-		t.Fatalf("failed to parse JSON with unknown hashing_scheme: %v", err)
+	if _, err := parseHashListJSON(unknownSchemeJSON); err == nil {
+		t.Error("expected error for unknown hashing_scheme")
 	}
 
 	// Case-sensitivity: uppercase scheme must hard-error too (spec is lowercase).
