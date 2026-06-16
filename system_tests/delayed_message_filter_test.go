@@ -30,7 +30,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
-	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -213,7 +212,7 @@ func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndp
 	queueClient := &sqsclient.MockQueueClient{}
 	sgn, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
 
-	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 
 	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), sgn)
 	fwd.Start(t.Context())

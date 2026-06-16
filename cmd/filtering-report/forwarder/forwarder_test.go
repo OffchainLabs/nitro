@@ -28,7 +28,7 @@ func TestForwarder_ForwardsMessages(t *testing.T) {
 	sgn, endpoint := NewMockExternalEndpoint(t)
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	filteringReportClient := stack.Attach()
 	t.Cleanup(func() { filteringReportClient.Close() })
 
@@ -169,7 +169,7 @@ func TestForwarder_DeleteError(t *testing.T) {
 	queueClient := &sqsclient.MockQueueClient{
 		DeleteErr: fmt.Errorf("simulated SQS delete error"),
 	}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
