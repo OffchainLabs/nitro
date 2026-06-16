@@ -117,9 +117,9 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 }
 
 func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Address) {
-	db.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil}})
+	db.TouchAddress(&filter.FilteredAddressWithReason{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil}})
 	if tx.To() != nil {
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
 	}
 	// For tx types that alias the sender (unsigned contract txs, retryables),
 	// also check the original L1 address. The sender in the tx is already
@@ -127,7 +127,7 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	// original (non-aliased) addresses.
 	txType := tx.Type()
 	if arbosutil.DoesTxTypeAlias(&txType) {
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
 	touchRetryableAddresses(db, tx)
 }
@@ -226,8 +226,8 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 	}
 	logs := db.GetCurrentTxLogs()
 	for _, l := range logs {
-		for _, record := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
-			db.TouchAddress(&record)
+		for _, touched := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address) {
+			db.TouchAddress(&touched)
 		}
 	}
 }
@@ -238,13 +238,13 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 // aliased by the Inbox contract.
 func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
 	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
 		if inner.RetryTo != nil {
-			db.TouchAddress(&filter.FilteredAddressRecord{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
+			db.TouchAddress(&filter.FilteredAddressWithReason{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
 		}
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
 	}
 }
 
@@ -742,9 +742,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	if s.addressChecker != nil {
-		statedb.SetAddressChecker(s.addressChecker)
-	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, errors.New("can't find block for current header")
@@ -775,6 +772,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		false,
 		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
+		s.addressChecker,
 	)
 	if err != nil {
 		return nil, err
@@ -955,11 +953,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 
-	// Set up address checker for filtering if configured
-	if s.addressChecker != nil {
-		statedb.SetAddressChecker(s.addressChecker)
-	}
-
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
@@ -1012,6 +1005,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			isMsgForPrefetch,
 			runCtx,
 			s.exposeMultiGas,
+			s.addressChecker,
 		)
 		if err != nil {
 			return nil, nil, nil, err

@@ -16,7 +16,6 @@ use std::{
 
 use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
-use digest::Digest;
 use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
@@ -24,8 +23,8 @@ use lazy_static::lazy_static;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use sha3::Keccak256;
 use smallvec::SmallVec;
+use tiny_keccak::{Hasher, Keccak};
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 #[cfg(feature = "native")]
@@ -72,11 +71,11 @@ pub fn reset_counters() {
 }
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update("Call indirect:");
-    h.update((table as u64).to_be_bytes());
-    h.update(ty.hash());
-    h.finalize().into()
+    crypto::keccak_seq(&[
+        b"Call indirect:",
+        &(table as u64).to_be_bytes(),
+        ty.hash().as_ref(),
+    ])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -192,10 +191,7 @@ impl Function {
     }
 
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Function:");
-        h.update(self.code_merkle.root());
-        h.finalize().into()
+        crypto::keccak_seq(&[b"Function:", self.code_merkle.root().as_ref()])
     }
 }
 
@@ -209,19 +205,18 @@ struct StackFrame {
 
 impl StackFrame {
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Stack frame:");
-        h.update(self.return_ref.hash());
-        h.update(
+        crypto::keccak_seq(&[
+            b"Stack frame:",
+            self.return_ref.hash().as_ref(),
             Merkle::new(
                 MerkleType::Value,
                 self.locals.iter().map(|v| v.hash()).collect(),
             )
-            .root(),
-        );
-        h.update(self.caller_module.to_be_bytes());
-        h.update(self.caller_module_internals.to_be_bytes());
-        h.finalize().into()
+            .root()
+            .as_ref(),
+            &self.caller_module.to_be_bytes(),
+            &self.caller_module_internals.to_be_bytes(),
+        ])
     }
 
     #[cfg(feature = "native")]
@@ -258,11 +253,11 @@ impl Default for TableElement {
 
 impl TableElement {
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Table element:");
-        h.update(self.func_ty.hash());
-        h.update(self.val.hash());
-        h.finalize().into()
+        crypto::keccak_seq(&[
+            b"Table element:",
+            self.func_ty.hash().as_ref(),
+            self.val.hash().as_ref(),
+        ])
     }
 }
 
@@ -286,12 +281,12 @@ impl Table {
     }
 
     fn hash(&self) -> Result<Bytes32> {
-        let mut h = Keccak256::new();
-        h.update("Table:");
-        h.update([ArbValueType::try_from(self.ty.element_type)?.serialize()]);
-        h.update((self.elems.len() as u64).to_be_bytes());
-        h.update(self.elems_merkle.root());
-        Ok(h.finalize().into())
+        Ok(crypto::keccak_seq(&[
+            b"Table:",
+            &[ArbValueType::try_from(self.ty.element_type)?.serialize()],
+            &(self.elems.len() as u64).to_be_bytes(),
+            self.elems_merkle.root().as_ref(),
+        ]))
     }
 }
 
@@ -653,21 +648,20 @@ impl Module {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Module:");
-        h.update(
+        crypto::keccak_seq(&[
+            b"Module:",
             Merkle::new(
                 MerkleType::Value,
                 self.globals.iter().map(|v| v.hash()).collect(),
             )
-            .root(),
-        );
-        h.update(self.memory.hash());
-        h.update(self.tables_merkle.root());
-        h.update(self.funcs_merkle.root());
-        h.update(*self.extra_hash);
-        h.update(self.internals_offset.to_be_bytes());
-        h.finalize().into()
+            .root()
+            .as_ref(),
+            self.memory.hash().as_ref(),
+            self.tables_merkle.root().as_ref(),
+            self.funcs_merkle.root().as_ref(),
+            (*self.extra_hash).as_ref(),
+            &self.internals_offset.to_be_bytes(),
+        ])
     }
 
     #[cfg(feature = "native")]
@@ -846,16 +840,18 @@ impl From<GlobalState> for validation::GoGlobalState {
 
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Global state:");
+        let mut h = Keccak::v256();
+        h.update(b"Global state:");
         let end_idx = self.bytes32_last_non_zero_index();
         for i in 0..=end_idx {
-            h.update(self.bytes32_vals[i]);
+            h.update(self.bytes32_vals[i].as_ref());
         }
         for item in self.u64_vals {
-            h.update(item.to_be_bytes())
+            h.update(&item.to_be_bytes());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     #[cfg(feature = "native")]
@@ -1084,14 +1080,7 @@ where
             heights = &heights[1..];
         }
 
-        use digest::Update;
-
-        hash = Keccak256::new()
-            .chain(prefix)
-            .chain(item.as_ref())
-            .chain(hash)
-            .finalize()
-            .into();
+        hash = crypto::keccak_seq(&[prefix.as_bytes(), item.as_ref(), hash.as_ref()]);
 
         count += 1;
     }
@@ -2900,18 +2889,15 @@ impl Machine {
                     hash_multistack(&$stacks[1..$stacks.len() - 1], $hasher)
                 };
 
-                hash = Keccak256::new()
-                    .chain("multistack:")
-                    .chain(first_hash)
-                    .chain(last_hash)
-                    .chain(hash)
-                    .finalize()
-                    .into();
+                hash = crypto::keccak_seq(&[
+                    b"multistack:",
+                    first_hash.as_ref(),
+                    last_hash.as_ref(),
+                    hash.as_ref(),
+                ]);
                 hash
             }};
         }
-
-        use digest::Update;
         let frame_stacks = compute_multistack!(
             |x| x.frame_stack,
             self.get_frame_stacks(),
@@ -2930,34 +2916,28 @@ impl Machine {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
                 let (frame_stacks, value_stacks, inter_stack) = self.stack_hashes();
-
-                h.update(b"Machine running:");
-                h.update(value_stacks);
-                h.update(inter_stack);
-                h.update(frame_stacks);
-                h.update(self.global_state.hash());
-                h.update(self.pc.module.to_be_bytes());
-                h.update(self.pc.func.to_be_bytes());
-                h.update(self.pc.inst.to_be_bytes());
-                h.update(self.thread_state.serialize());
-                h.update(self.get_modules_root());
+                crypto::keccak_seq(&[
+                    b"Machine running:",
+                    value_stacks.as_ref(),
+                    inter_stack.as_ref(),
+                    frame_stacks.as_ref(),
+                    self.global_state.hash().as_ref(),
+                    &self.pc.module.to_be_bytes(),
+                    &self.pc.func.to_be_bytes(),
+                    &self.pc.inst.to_be_bytes(),
+                    self.thread_state.serialize().as_ref(),
+                    self.get_modules_root().as_ref(),
+                ])
             }
             MachineStatus::Finished => {
-                h.update("Machine finished:");
-                h.update(self.global_state.hash());
+                crypto::keccak_seq(&[b"Machine finished:", self.global_state.hash().as_ref()])
             }
-            MachineStatus::Errored => {
-                h.update("Machine errored:");
-            }
-            MachineStatus::TooFar => {
-                h.update("Machine too far:");
-            }
+            MachineStatus::Errored => crypto::keccak_seq(&[b"Machine errored:"]),
+            MachineStatus::TooFar => crypto::keccak_seq(&[b"Machine too far:"]),
         }
-        h.finalize().into()
     }
 
     #[cfg(feature = "native")]
@@ -3452,29 +3432,33 @@ mod global_state_hash_tests {
     // assertion proof was generated against this format, so hash() for a
     // state with slots 2 and 3 zero must still match byte-for-byte.
     fn legacy_two_slot_hash(gs: &GlobalState) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Global state:");
-        h.update(gs.bytes32_vals[0]);
-        h.update(gs.bytes32_vals[1]);
+        let mut h = Keccak::v256();
+        h.update(b"Global state:");
+        h.update(gs.bytes32_vals[0].as_ref());
+        h.update(gs.bytes32_vals[1].as_ref());
         for item in gs.u64_vals {
-            h.update(item.to_be_bytes());
+            h.update(&item.to_be_bytes());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     // Recomputes hash() including all 4 bytes32 slots unconditionally. Used
     // as the golden vector for states where slot 3 is non-zero (so all four
     // slots must be serialized).
     fn full_four_slot_hash(gs: &GlobalState) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Global state:");
+        let mut h = Keccak::v256();
+        h.update(b"Global state:");
         for v in gs.bytes32_vals {
-            h.update(v);
+            h.update(v.as_ref());
         }
         for item in gs.u64_vals {
-            h.update(item.to_be_bytes());
+            h.update(&item.to_be_bytes());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     #[test]

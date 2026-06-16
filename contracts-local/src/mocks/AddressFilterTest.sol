@@ -24,6 +24,24 @@ contract AddressFilterTest {
         emit CallResult(success);
     }
 
+    /// @notice Makes a DELEGATECALL to the target address
+    function delegatecallTarget(
+        address target
+    ) external returns (bool success) {
+        (success,) = target.delegatecall("");
+        emit CallResult(success);
+    }
+
+    /// @notice Makes a CALLCODE to the target address (Solidity has no direct callcode syntax)
+    function callcodeTarget(
+        address target
+    ) external returns (bool success) {
+        assembly {
+            success := callcode(gas(), target, 0, 0, 0, 0, 0)
+        }
+        emit CallResult(success);
+    }
+
     /// @notice Makes a STATICCALL to the target address (view function for eth_call)
     function staticcallTarget(
         address target
@@ -36,6 +54,14 @@ contract AddressFilterTest {
         address target
     ) external returns (bool success) {
         dummy++;
+        (success,) = target.staticcall("");
+        emit CallResult(success);
+    }
+
+    /// @notice Makes a STATICCALL to the target address (non-view, sendable as a transaction)
+    function staticcallTargetTx(
+        address target
+    ) external returns (bool success) {
         (success,) = target.staticcall("");
         emit CallResult(success);
     }
