@@ -490,7 +490,7 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 		t.Fatalf("redeem tx_index mismatch: feed=%d receipt=%d",
 			m.Transaction.TxIndex, redeemReceipt.TransactionIndex)
 	}
-	if m.Transaction.Receipt.Status != types.ReceiptStatusSuccessful {
+	if uint64(m.Transaction.Receipt.Status) != types.ReceiptStatusSuccessful {
 		t.Fatalf("redeem feed status: got %d, want %d",
 			m.Transaction.Receipt.Status, types.ReceiptStatusSuccessful)
 	}
@@ -504,7 +504,7 @@ func TestTransactionFeedManualRetryableRedeem(t *testing.T) {
 		t.Fatalf("redeem tx_index mismatch: feed=%d receipt=%d",
 			m.Transaction.TxIndex, retryReceipt.TransactionIndex)
 	}
-	if m.Transaction.Receipt.Status != types.ReceiptStatusSuccessful {
+	if uint64(m.Transaction.Receipt.Status) != types.ReceiptStatusSuccessful {
 		t.Fatalf("redeem feed status: got %d, want %d",
 			m.Transaction.Receipt.Status, types.ReceiptStatusSuccessful)
 	}
@@ -733,7 +733,7 @@ func TestTransactionFeedSlowConsumerEviction(t *testing.T) {
 	largeHex := "0x" + strings.Repeat("ab", 4096) // ~8 KB raw_tx field
 	msg := &transactionfeed.TransactionFeedMessage{
 		Version: transactionfeed.TransactionFeedV1,
-		Transaction: transactionfeed.TransactionIncluded{
+		Transaction: transactionfeed.IncludedTransaction{
 			RawTx:  largeHex,
 			TxHash: "0x" + strings.Repeat("00", 32),
 		},
