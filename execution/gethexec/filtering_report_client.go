@@ -28,7 +28,7 @@ var (
 var DefaultFilteringReportRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",
 	JWTSecret:                 "",
-	Retries:                   2,
+	Retries:                   3,
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
