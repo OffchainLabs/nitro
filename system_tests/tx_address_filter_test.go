@@ -29,7 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
-	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
@@ -1248,23 +1247,13 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 }
 
-// TestPeriodicFilterSetIDReporting exercises the end-to-end flow:
-// sequencer -> filtering-report RPC -> external HTTP endpoint. It also
-// rotates the hash store mid-run to verify a new filter-set id is picked up.
 func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Signing identity shared by the filtering-report service, plus a verifier
 	// the external endpoint uses to assert reports arrive signed.
-	leaf := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
-	pemPath, caPath := signertest.SigningFixture(t, leaf)
-	verifier, err := signertest.NewVerifier(&signertest.VerifierConfig{
-		CARootPEMFile: caPath,
-		ExpectedSAN:   leaf.URI,
-		TimestampSkew: signertest.DefaultTimestampSkew,
-	})
-	require.NoError(t, err)
+	signingPair := signertest.NewSigningPair(t)
 
 	// Capture every POST sent to the "external provider".
 	reportCh := make(chan addressfilter.FilterSetIDReport, 16)
@@ -1283,7 +1272,7 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 			http.Error(w, "read failed", http.StatusInternalServerError)
 			return
 		}
-		if err := verifier.VerifyHTTPRequest(r, body); err != nil {
+		if err := signingPair.Verifier.VerifyHTTPRequest(r, body); err != nil {
 			t.Errorf("verifier rejected filter-set id report: %v", err)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -1303,15 +1292,10 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	defer externalEndpoint.Close()
 
 	// Stand up the filtering-report service pointing at the external endpoint.
-	signerCfg := signer.DefaultConfig
-	signerCfg.PEMFile = pemPath
-	signerCfg.ReloadInterval = time.Minute
-	sgn, err := signer.NewSigner(&signerCfg)
-	require.NoError(t, err)
 	filteringReportStack := filteringreportapi.NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
 		URL:     externalEndpoint.URL,
 		Timeout: 5 * time.Second,
-	}, sgn)
+	}, signingPair.Signer)
 
 	// Build an active sequencer node wired to the filtering-report service.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
