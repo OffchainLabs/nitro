@@ -30,15 +30,50 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
+  # --- Skip the Go suite if this exact tree already passed PR CI ---
+  tested-tree:
+    runs-on: ubuntu-4
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      already-tested: ${{ steps.check.outputs.already-tested }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Look up tree marker
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_ID: ${{ github.repository_id }}
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          # A fork PR run can upload an artifact of any name, so the marker's
+          # existence alone does not prove this repo's CI ran the suite. Only
+          # count markers from runs whose head repo is this repo (head_repository_id
+          # differs for fork runs), which fork-controlled workflows cannot forge.
+          count=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=go-tests-passed-tree-${tree}&per_page=100" \
+            | jq --argjson repo "$REPO_ID" '[.artifacts[] | select(.workflow_run.head_repository_id == $repo)] | length')
+          echo "Found ${count} trusted marker artifact(s) for tree ${tree}"
+          if [ "$count" -gt 0 ]; then
+            echo "already-tested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already-tested=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # --- Full GO tests ---
   go-tests:
+    needs: [changes, tested-tree]
+    # !cancelled() so a failed marker lookup falls back to running the suite
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed == 'true' && needs.tested-tree.outputs.already-tested != 'true' }}
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
   # --- Summarize test results ---
   codecov:
     needs: [go-tests, rust-tests]
-    if: always()
+    if: '!cancelled() && (needs.go-tests.result != ''skipped'' || needs.rust-tests.result != ''skipped'')'
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
     permissions:
@@ -50,7 +85,7 @@ jobs:
 
   can_proceed:
     runs-on: ubuntu-4
-    needs: [fast, rust-tests, bold-legacy, go-tests]
+    needs: [changes, fast, rust-tests, bold-legacy, go-tests, tested-tree]
     if: always()
     steps:
       - name: Aggregate results
@@ -59,12 +94,16 @@ jobs:
           go_tests_result="${{ needs['go-tests'].result }}"
           rust_tests_result="${{ needs['rust-tests'].result }}"
           bold_legacy_result="${{ needs['bold-legacy'].result }}"
+          already_tested="${{ needs['tested-tree'].outputs.already-tested }}"
+          code_changed="${{ needs.changes.outputs.code_changed }}"
           ok=1
           if [ "$fast_result" != "success" ]; then
             ok=0
             echo "Fast job failed or was skipped"
           fi
-          if [ "$go_tests_result" != "success" ]; then
+          if [ "$go_tests_result" == "skipped" ] && { [ "$already_tested" == "true" ] || [ "$code_changed" != "true" ]; }; then
+            echo "Go tests skipped: tree already passed PR CI or no code changed"
+          elif [ "$go_tests_result" != "success" ]; then
             ok=0
             echo "Go tests job failed or was skipped"
           fi
