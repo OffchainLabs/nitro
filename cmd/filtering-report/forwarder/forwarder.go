@@ -168,23 +168,14 @@ type Forwarder struct {
 	signer            *signer.Signer
 }
 
-func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, sgn *signer.Signer) (*Forwarder, error) {
-	if config == nil {
-		return nil, errors.New("config must not be nil")
-	}
-	if queueClient == nil {
-		return nil, errors.New("queueClient must not be nil")
-	}
-	if sgn == nil {
-		return nil, errors.New("signer must not be nil")
-	}
+func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, sgn *signer.Signer) *Forwarder {
 	return &Forwarder{
 		config:            config,
 		queueClient:       queueClient,
 		poisonQueueClient: poisonQueueClient,
 		httpClient:        &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 		signer:            sgn,
-	}, nil
+	}
 }
 
 func (r *Forwarder) Start(ctx context.Context) {

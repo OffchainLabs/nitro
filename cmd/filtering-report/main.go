@@ -231,11 +231,7 @@ func mainImpl() int {
 	sgn.Start(ctx)
 	defer sgn.StopAndWait()
 
-	fwd, err := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient, sgn)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating forwarder: %v\n", err)
-		return 1
-	}
+	fwd := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient, sgn)
 	fwd.Start(ctx)
 	defer fwd.StopAndWait()
 
