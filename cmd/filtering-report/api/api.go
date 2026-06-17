@@ -17,9 +17,9 @@ import (
 )
 
 type filterSetReporter struct {
-	url    string
-	client *http.Client
-	signer *signer.Signer
+	url        string
+	httpClient *http.Client
+	signer     *signer.Signer
 }
 
 type FilteringReportAPI struct {
@@ -31,9 +31,9 @@ func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporterC
 	var reporter *filterSetReporter
 	if filterSetReporterConfig.URL != "" {
 		reporter = &filterSetReporter{
-			url:    filterSetReporterConfig.URL,
-			client: &http.Client{Timeout: filterSetReporterConfig.Timeout},
-			signer: sgn,
+			url:        filterSetReporterConfig.URL,
+			httpClient: &http.Client{Timeout: filterSetReporterConfig.Timeout},
+			signer:     sgn,
 		}
 	}
 	return &FilteringReportAPI{

@@ -19,5 +19,5 @@ func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, repor
 		return errors.New("nil filter-set id report")
 	}
 	reporter := a.filterSetReporter
-	return httpclient.PostJSON(ctx, reporter.client, reporter.url, report, reporter.signer.SignHTTPRequest)
+	return httpclient.PostJSON(ctx, reporter.httpClient, reporter.url, report, reporter.signer.SignHTTPRequest)
 }
