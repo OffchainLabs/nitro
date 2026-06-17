@@ -90,7 +90,6 @@ type Config struct {
 	ExternalEndpoint                       genericconf.HTTPClientConfig                 `koanf:"external-endpoint"`
 	ExternalEndpointRetryableErrorSlowdown ExternalEndpointRetryableErrorSlowdownConfig `koanf:"external-endpoint-retryable-error-slowdown"`
 	PoisonQueue                            sqsclient.QueueConfig                        `koanf:"poison-queue"`
-	Signer                                 signer.Config                                `koanf:"signer"`
 }
 
 var DefaultConfig = Config{
@@ -100,7 +99,6 @@ var DefaultConfig = Config{
 	ExternalEndpoint:                       genericconf.HTTPClientConfigDefault,
 	ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
 	PoisonQueue:                            sqsclient.DefaultQueueConfig,
-	Signer:                                 signer.DefaultConfig,
 }
 
 func (c *Config) Validate() error {
@@ -118,10 +116,7 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
-	if err := c.ExternalEndpoint.Validate(); err != nil {
-		return err
-	}
-	return c.Signer.Validate()
+	return c.ExternalEndpoint.Validate()
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -131,7 +126,6 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 	ExternalEndpointRetryableErrorSlowdownConfigAddOptions(prefix+".external-endpoint-retryable-error-slowdown", f)
 	sqsclient.QueueConfigAddOptions(prefix+".poison-queue", f, "SQS queue URL for messages that failed with non-retryable errors")
-	signer.ConfigAddOptions(prefix+".signer", f)
 }
 
 // Forwarder polls messages from an SQS queue and forwards them to an external

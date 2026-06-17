@@ -45,6 +45,7 @@ type FilteringReportConfig struct {
 	Queue              sqsclient.QueueConfig        `koanf:"queue"`
 	ReportForwarder    forwarder.Config             `koanf:"report-forwarder"`
 	FilterSetReporting genericconf.HTTPClientConfig `koanf:"filter-set-reporting"`
+	Signer             signer.Config                `koanf:"signer"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -85,6 +86,7 @@ var DefaultFilteringReportConfig = FilteringReportConfig{
 	Queue:              sqsclient.DefaultQueueConfig,
 	ReportForwarder:    forwarder.DefaultConfig,
 	FilterSetReporting: genericconf.HTTPClientConfigDefault,
+	Signer:             signer.DefaultConfig,
 }
 
 func (c *FilteringReportConfig) Validate() error {
@@ -100,6 +102,9 @@ func (c *FilteringReportConfig) Validate() error {
 		if err := c.FilterSetReporting.Validate(); err != nil {
 			return fmt.Errorf("filter-set-reporting config: %w", err)
 		}
+	}
+	if err := c.Signer.Validate(); err != nil {
+		return fmt.Errorf("signer config: %w", err)
 	}
 	return nil
 }
@@ -125,6 +130,7 @@ func addFlags(f *pflag.FlagSet) {
 	sqsclient.QueueConfigAddOptions("queue", f, "SQS queue URL for filtered transaction reports")
 	forwarder.ConfigAddOptions("report-forwarder", f)
 	genericconf.HTTPClientConfigAddOptions("filter-set-reporting", f)
+	signer.ConfigAddOptions("signer", f)
 }
 
 func parseConfig(args []string) (*FilteringReportConfig, error) {
@@ -223,7 +229,7 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	sgn, err := signer.NewSigner(&config.ReportForwarder.Signer)
+	sgn, err := signer.NewSigner(&config.Signer)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating signer: %v\n", err)
 		return 1

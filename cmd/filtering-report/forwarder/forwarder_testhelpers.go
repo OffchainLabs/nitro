@@ -107,7 +107,6 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQue
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 		ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
-		Signer:                                 signer.DefaultConfig,
 	}
 	return New(config, queueClient, poisonQueueClient, sgn)
 }
