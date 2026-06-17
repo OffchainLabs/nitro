@@ -67,6 +67,12 @@ on:
       run-flaky-mel:
         required: false
         type: boolean
+      run-consensus-execution-rpc-a:
+        required: false
+        type: boolean
+      run-consensus-execution-rpc-b:
+        required: false
+        type: boolean
 
 permissions:
   contents: read
@@ -78,6 +84,8 @@ jobs:
     # Per-job hard cap so a hung test terminates with a Go stack trace rather
     # than GitHub killing the runner (which yields no useful diagnostics).
     timeout-minutes: 150
+    env:
+      COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     services:
       redis:
         image: redis
@@ -123,14 +131,14 @@ jobs:
         if: inputs.run-pathdb-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --tags cionly --timeout 90m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-a.xml --run '^Test[A-L]' --reduce-parallelism
 
       - name: run tests without race detection and path state scheme (B-batch)
         if: inputs.run-pathdb-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --tags cionly --timeout 90m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-b.xml --skip '^Test[A-L]' --reduce-parallelism
 
       # --------------------- DEFAULTS MODE ---------------------
@@ -139,28 +147,45 @@ jobs:
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --cover --coverprofile coverage-a.txt --test_state_scheme hash
+          --tags cionly --timeout 60m $COVER --coverprofile coverage-a.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --cover --coverprofile coverage-b.txt --test_state_scheme hash
+          --tags cionly --timeout 60m $COVER --coverprofile coverage-b.txt --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
+
+      # --------------------- CONSENSUS AND EXECUTION OVER RPC MODE ---------------------
+
+      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
+        if: inputs.run-consensus-execution-rpc-a
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --cover --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
+          --junitfile test-results/junit-consensus-execution-rpc-a.xml --run '^Test[A-L]'
+
+      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
+        if: inputs.run-consensus-execution-rpc-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --cover --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
+          --junitfile test-results/junit-consensus-execution-rpc-b.xml --skip '^Test[A-L]'
+
       # --------------------- PATHDB MEL MODE ---------------------
 
       - name: run tests without race detection and path state scheme (A-batch, MEL)
         if: inputs.run-pathdb-a-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --tags cionly --timeout 90m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-a-mel.xml --run '^Test[A-L]' --reduce-parallelism --test_mel
 
       - name: run tests without race detection and path state scheme (B-batch, MEL)
         if: inputs.run-pathdb-b-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m --cover --test_state_scheme path
+          --tags cionly --timeout 90m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-b-mel.xml --skip '^Test[A-L]' --reduce-parallelism --test_mel
 
       # --------------------- DEFAULTS MEL MODE ---------------------
@@ -176,12 +201,12 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel      
+          --junitfile test-results/junit-defaults-b-mel.xml --skip '^Test[A-L]' --test_mel
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
           gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
-          -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
+          ${COVER:+-coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...} -- --test_redis=redis://localhost:6379/0
 
       # --------------------- FLAKY MODE --------------------------
 
@@ -225,28 +250,28 @@ jobs:
         if: inputs.run-challenge-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
-          --run TestChallengeProtocolBOLDCustomDA --timeout 120m --cover
+          --run TestChallengeProtocolBOLDCustomDA --timeout 120m $COVER
           --junitfile test-results/junit-challenge-a.xml
 
       - name: run challenge tests (B-batch)
         if: inputs.run-challenge-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
-          --run TestChallenge --skip TestChallengeProtocolBOLDCustomDA --timeout 120m --cover
+          --run TestChallenge --skip TestChallengeProtocolBOLDCustomDA --timeout 120m $COVER
           --junitfile test-results/junit-challenge-b.xml
 
       - name: run L3 challenge tests
         if: inputs.run-l3challenge
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags challengetest --run TestL3Challenge --timeout 120m --cover
+          --tags challengetest --run TestL3Challenge --timeout 120m $COVER
           --junitfile test-results/junit-l3challenge.xml
 
       - name: run legacy challenge tests
         if: inputs.run-legacy-challenge
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
-          --run TestChallenge --timeout 60m --cover
+          --run TestChallenge --timeout 60m $COVER
           --junitfile test-results/junit-legacy-challenge.xml
 
       # --------------------- STYLUS MODE ---------------------
@@ -255,7 +280,7 @@ jobs:
         if: inputs.run-stylus
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
+          --tags stylustest --run TestProgramArbitrator --timeout 60m $COVER
           --junitfile test-results/junit-stylus.xml
 
       # --------------------- RACE MODE ---------------------
@@ -263,7 +288,7 @@ jobs:
       - name: run race tests
         if: inputs.run-race
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh 
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --race --timeout 90m --test_state_scheme hash
           --junitfile test-results/junit-race.xml
 
@@ -273,7 +298,7 @@ jobs:
         if: inputs.run-long
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest
-          --run TestProgramLong --timeout 60m --cover
+          --run TestProgramLong --timeout 60m $COVER
           --junitfile test-results/junit-long.xml
 
       # --------------------- EXECUTION SPEC MODE ---------------------
@@ -296,6 +321,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
           --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
+
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
       - name: Process JUnit XML logs
@@ -310,6 +336,7 @@ jobs:
           path: test-results/junit*.xml
 
       - name: Upload coverage to Codecov
+        if: github.event_name != 'merge_group'
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false

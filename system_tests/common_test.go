@@ -266,6 +266,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	FilterSetReportingInterval:   time.Minute,
+	ExperimentalPGA:              gethexec.DefaultPGAConfig,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {

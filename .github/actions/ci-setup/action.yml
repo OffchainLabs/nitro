@@ -21,6 +21,8 @@ runs:
       uses: actions/setup-go@v6
       with:
         go-version-file: "go.mod"
+        # The Go caches are managed by the explicit cache steps below.
+        cache: false
 
     - name: Install wasm-ld
       run: |
@@ -39,26 +41,40 @@ runs:
         version: v1.0.0
 
     - name: Install cbindgen
-      run: cargo install --force cbindgen
-      shell: bash
+      uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2
+      with:
+        tool: cbindgen@0.29
 
     - name: Cache Go build
       uses: actions/cache@v5
       with:
         path: ~/.cache/go-build
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        # github.sha prevents exact-key hits, which would skip the save and
+        # let the cache go stale.
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.sha }}
+        # Stale restores are safe: the build cache is content-addressed.
+        restore-keys: |
+          ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
+          ${{ runner.os }}-go-
 
-    - name: Cache Rust build
+    - name: Cache Go modules
+      uses: actions/cache@v5
+      with:
+        path: ~/go/pkg/mod
+        # The module cache is determined by go.sum, so an exact key suffices.
+        key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+        restore-keys: ${{ runner.os }}-go-mod-
+
+    # Crate sources are immutable, so stale restores are safe.
+    - name: Cache Cargo registry
       uses: actions/cache@v5
       with:
         path: |
-          ~/.cargo/
-          target/
-          crates/wasm-libraries/target/
-          crates/wasm-libraries/soft-float/
-          target/etc/initial-machine-cache/
-          /home/runner/.rustup/toolchains/
-        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-registry-
 
     - name: Cache cbrotli
       id: cache-cbrotli
