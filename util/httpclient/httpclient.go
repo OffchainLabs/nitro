@@ -18,9 +18,7 @@ import (
 
 const errorBodyLimit = 1024
 
-type RequestOption func(req *http.Request, body []byte) error
-
-func PostJSON(ctx context.Context, client *http.Client, url string, v any, opts ...RequestOption) error {
+func PostJSON(ctx context.Context, client *http.Client, url string, v any, beforeSend func(req *http.Request, body []byte)) error {
 	body, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal body: %w", err)
@@ -30,10 +28,8 @@ func PostJSON(ctx context.Context, client *http.Client, url string, v any, opts 
 		return fmt.Errorf("build request to %s: %w", url, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	for _, opt := range opts {
-		if err := opt(req, body); err != nil {
-			return fmt.Errorf("apply request option for %s: %w", url, err)
-		}
+	if beforeSend != nil {
+		beforeSend(req, body)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -261,8 +261,7 @@ func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message,
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, json.RawMessage(body),
-		func(req *http.Request, signedBody []byte) error {
+		func(req *http.Request, signedBody []byte) {
 			r.signer.SignHTTPRequest(req, signedBody, time.Now())
-			return nil
 		})
 }

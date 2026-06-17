@@ -22,8 +22,7 @@ func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, repor
 	}
 	reporter := a.filterSetReporter
 	return httpclient.PostJSON(ctx, reporter.client, reporter.url, report,
-		func(req *http.Request, signedBody []byte) error {
+		func(req *http.Request, signedBody []byte) {
 			reporter.signer.SignHTTPRequest(req, signedBody, time.Now())
-			return nil
 		})
 }
