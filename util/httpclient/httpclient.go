@@ -12,16 +12,12 @@ import (
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/util/httperror"
 )
 
-// errorBodyLimit caps how much of a non-2xx response body we surface in errors,
-// so a misbehaving upstream that returns megabytes of HTML doesn't dominate
-// our logs.
 const errorBodyLimit = 1024
 
-// RequestOption mutates the outgoing request before it is sent. It receives the
-// marshalled request body so callers can, for example, sign it.
 type RequestOption func(req *http.Request, body []byte) error
 
 func PostJSON(ctx context.Context, client *http.Client, url string, v any, opts ...RequestOption) error {
