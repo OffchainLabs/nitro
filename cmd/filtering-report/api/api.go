@@ -28,15 +28,18 @@ type FilteringReportAPI struct {
 }
 
 func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig, sgn *signer.Signer) *FilteringReportAPI {
-	api := &FilteringReportAPI{queueClient: queueClient}
+	var reporter *filterSetReporter
 	if filterSetReporting.URL != "" {
-		api.filterSetReporter = &filterSetReporter{
+		reporter = &filterSetReporter{
 			url:    filterSetReporting.URL,
 			client: &http.Client{Timeout: filterSetReporting.Timeout},
 			signer: sgn,
 		}
 	}
-	return api
+	return &FilteringReportAPI{
+		queueClient:       queueClient,
+		filterSetReporter: reporter,
+	}
 }
 
 var DefaultStackConfig = node.Config{
