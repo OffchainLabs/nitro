@@ -1251,8 +1251,6 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Signing identity shared by the filtering-report service, plus a verifier
-	// the external endpoint uses to assert reports arrive signed.
 	signingPair := signertest.NewSigningPair(t)
 
 	// Capture every POST sent to the "external provider".
