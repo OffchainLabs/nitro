@@ -27,12 +27,12 @@ type FilteringReportAPI struct {
 	filterSetReporter *filterSetReporter
 }
 
-func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig, sgn *signer.Signer) *FilteringReportAPI {
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporterConfig *genericconf.HTTPClientConfig, sgn *signer.Signer) *FilteringReportAPI {
 	var reporter *filterSetReporter
-	if filterSetReporting.URL != "" {
+	if filterSetReporterConfig.URL != "" {
 		reporter = &filterSetReporter{
-			url:    filterSetReporting.URL,
-			client: &http.Client{Timeout: filterSetReporting.Timeout},
+			url:    filterSetReporterConfig.URL,
+			client: &http.Client{Timeout: filterSetReporterConfig.Timeout},
 			signer: sgn,
 		}
 	}
@@ -66,7 +66,7 @@ var DefaultStackConfig = node.Config{
 func NewStack(
 	stackConfig *node.Config,
 	queueClient sqsclient.QueueClient,
-	filterSetReporting *genericconf.HTTPClientConfig,
+	filterSetReporterConfig *genericconf.HTTPClientConfig,
 	sgn *signer.Signer,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
@@ -74,7 +74,7 @@ func NewStack(
 		return nil, err
 	}
 
-	api := NewFilteringReportAPI(queueClient, filterSetReporting, sgn)
+	api := NewFilteringReportAPI(queueClient, filterSetReporterConfig, sgn)
 
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,
