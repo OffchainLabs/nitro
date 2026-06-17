@@ -25,7 +25,7 @@ import (
 )
 
 func TestLiveness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -38,7 +38,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -51,7 +51,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -80,7 +80,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -98,7 +98,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, mock, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack, err := NewStack(&stackConfig, mock, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 }
 
 func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	client := stack.Attach()
 	defer client.Close()
 

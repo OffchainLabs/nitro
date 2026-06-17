@@ -25,22 +25,8 @@ type MockExternalEndpoint struct {
 	requestCount atomic.Int64
 }
 
-func NewMockExternalEndpoint(t *testing.T) (sgn *signer.Signer, endpoint *MockExternalEndpoint) {
+func NewMockExternalEndpoint(t *testing.T, verifier *signertest.Verifier) *MockExternalEndpoint {
 	t.Helper()
-	leaf := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
-	pemPath, caPath := signertest.SigningFixture(t, leaf)
-	verifier, err := signertest.NewVerifier(&signertest.VerifierConfig{
-		CARootPEMFile: caPath,
-		ExpectedSAN:   leaf.URI,
-		TimestampSkew: signertest.DefaultTimestampSkew,
-	})
-	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
-	}
-	sgn, err = signer.NewSigner(&signer.Config{PEMFile: pemPath, ReloadInterval: time.Minute})
-	if err != nil {
-		t.Fatalf("NewSigner: %v", err)
-	}
 	m := &MockExternalEndpoint{
 		reports: make(chan *addressfilter.FilteredTxReport, 100),
 	}
@@ -65,7 +51,7 @@ func NewMockExternalEndpoint(t *testing.T) (sgn *signer.Signer, endpoint *MockEx
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(func() { m.server.Close() })
-	return sgn, m
+	return m
 }
 
 func (m *MockExternalEndpoint) NextReport(t *testing.T) *addressfilter.FilteredTxReport {
