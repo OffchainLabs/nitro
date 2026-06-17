@@ -96,7 +96,8 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	filteringReportClient := stack.Attach()
 	t.Cleanup(func() { filteringReportClient.Close() })
 
@@ -118,7 +119,7 @@ func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, sgn)
 	var consecutiveRetryableErrors int
 	forwarder.pollAndForward(ctx, &consecutiveRetryableErrors)
 
@@ -214,11 +215,12 @@ func TestForwarder_RetryableHTTPErrorSlowdown_AfterThreshold(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
-	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, sgn)
 	threshold := forwarder.config.ExternalEndpointRetryableErrorSlowdown.ConsecutiveRetryableErrors
 
 	// Enqueue enough messages to exceed the threshold.
@@ -274,7 +276,8 @@ func TestForwarder_RetryableHTTPErrorSlowdown_ResetOnSuccess(t *testing.T) {
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -299,7 +302,7 @@ func TestForwarder_RetryableHTTPErrorSlowdown_ResetOnSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, sgn)
 	ctx := t.Context()
 	var consecutiveRetryableErrors int
 
@@ -331,7 +334,8 @@ func TestForwarder_RetryableHTTPErrorSlowdown_ResetOnNonRetryableError(t *testin
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -356,7 +360,7 @@ func TestForwarder_RetryableHTTPErrorSlowdown_ResetOnNonRetryableError(t *testin
 		t.Fatal(err)
 	}
 
-	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, sgn)
 	ctx := t.Context()
 	var consecutiveRetryableErrors int
 
@@ -382,11 +386,12 @@ func TestForwarder_RetryableHTTPErrorSlowdown_NonRetryableErrorDoesNotCount(t *t
 	defer externalEndpointServer.Close()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
-	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, nil, externalEndpointServer.URL, sgn)
 	threshold := forwarder.config.ExternalEndpointRetryableErrorSlowdown.ConsecutiveRetryableErrors
 
 	reports := make([]addressfilter.FilteredTxReport, threshold+1)
@@ -433,7 +438,8 @@ func TestForwarder_PoisonQueue_NonRetryableErrorSentToPoisonQueue(t *testing.T) 
 	queueClient := &sqsclient.MockQueueClient{}
 	poisonQueueClient := &sqsclient.MockQueueClient{}
 
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -454,7 +460,7 @@ func TestForwarder_PoisonQueue_NonRetryableErrorSentToPoisonQueue(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	forwarder := NewTestForwarder(t, queueClient, poisonQueueClient, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, poisonQueueClient, externalEndpointServer.URL, sgn)
 	var consecutiveRetryableErrors int
 	forwarder.pollAndForward(t.Context(), &consecutiveRetryableErrors)
 
@@ -489,11 +495,12 @@ func TestForwarder_TransportError_FallsThroughToSlowdown(t *testing.T) {
 
 	queueClient := &sqsclient.MockQueueClient{}
 	poisonQueueClient := &sqsclient.MockQueueClient{}
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
-	forwarder := NewTestForwarder(t, queueClient, poisonQueueClient, endpointURL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, poisonQueueClient, endpointURL, sgn)
 	threshold := forwarder.config.ExternalEndpointRetryableErrorSlowdown.ConsecutiveRetryableErrors
 
 	reports := make([]addressfilter.FilteredTxReport, threshold)
@@ -553,7 +560,8 @@ func TestForwarder_PoisonQueue_SendFailureLeavesMessageInQueue(t *testing.T) {
 		SendErr: fmt.Errorf("simulated poison queue send error"),
 	}
 
-	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signertest.NewSigner(t))
+	sgn := signertest.NewSigner(t)
+	stack := api.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, sgn)
 	rpcClient := stack.Attach()
 	t.Cleanup(func() { rpcClient.Close() })
 
@@ -574,7 +582,7 @@ func TestForwarder_PoisonQueue_SendFailureLeavesMessageInQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := NewTestForwarder(t, queueClient, poisonQueueClient, externalEndpointServer.URL, signertest.NewSigner(t))
+	forwarder := NewTestForwarder(t, queueClient, poisonQueueClient, externalEndpointServer.URL, sgn)
 	var consecutiveRetryableErrors int
 	forwarder.pollAndForward(t.Context(), &consecutiveRetryableErrors)
 
