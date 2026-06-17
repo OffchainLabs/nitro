@@ -165,7 +165,7 @@ func GetNativeStackSize() uint64 {
 }
 
 // RustWavmFormatVersion returns the WAVM wire-format version Rust will
-// produce and accept. `validateOrUpgradeWavmSerializeVersion` in
+// produce and accept. `reconcileWavmSerializeVersion` in
 // cmd/nitro/init compares this against `WavmSerializeVersion` on startup
 // and refuses to proceed on mismatch.
 func RustWavmFormatVersion() uint32 {

@@ -646,7 +646,7 @@ func TestPurgeIncompatibleWavmSerializeVersionEntries(t *testing.T) {
 	// this as incompatible (existing nodes upgrading from bincode have no key
 	// and their stored bytes are in the old format), purge wavm entries, leave
 	// the wasmer-managed prefixes untouched, and write the current version.
-	purged, err := validateOrUpgradeWavmSerializeVersion(db)
+	purged, err := reconcileWavmSerializeVersion(db)
 	Require(t, err)
 	if !purged {
 		t.Fatal("Case 1: validator must report purged=true when wavm keys existed without a version key")
@@ -665,7 +665,7 @@ func TestPurgeIncompatibleWavmSerializeVersionEntries(t *testing.T) {
 	// Case 2: matching version. Re-seed wavm keys and confirm the validator
 	// preserves them and reports purged=false.
 	writeKeys(t, db, wavmKeys)
-	purged, err = validateOrUpgradeWavmSerializeVersion(db)
+	purged, err = reconcileWavmSerializeVersion(db)
 	Require(t, err)
 	if purged {
 		t.Fatal("Case 2: validator must report purged=false on matching version")
@@ -679,7 +679,7 @@ func TestPurgeIncompatibleWavmSerializeVersionEntries(t *testing.T) {
 	// Case 3: mismatched version. Wavm entries are purged, the wasmer-managed
 	// prefixes survive untouched, and the version key is rewritten to current.
 	Require(t, rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion+1))
-	purged, err = validateOrUpgradeWavmSerializeVersion(db)
+	purged, err = reconcileWavmSerializeVersion(db)
 	Require(t, err)
 	if !purged {
 		t.Fatal("Case 3: validator must report purged=true on mismatched version")
@@ -714,7 +714,7 @@ func TestValidateOrUpgradeWavmOnEmptyDbWritesVersionKey(t *testing.T) {
 	}
 
 	// DB is empty: validator must write the version key and otherwise do nothing.
-	purged, err := validateOrUpgradeWavmSerializeVersion(db)
+	purged, err := reconcileWavmSerializeVersion(db)
 	Require(t, err)
 	if purged {
 		t.Fatal("empty wasmdb must report purged=false; nothing was deleted")
@@ -750,7 +750,7 @@ func TestValidateOrUpgradeWavmSkipsPurgeOnWasmerOnlyDb(t *testing.T) {
 	writeKeys(t, db, x86Keys)
 	writeKeys(t, db, hostKeys)
 
-	purged, err := validateOrUpgradeWavmSerializeVersion(db)
+	purged, err := reconcileWavmSerializeVersion(db)
 	Require(t, err)
 	if purged {
 		t.Fatal("wasmer-only wasmdb must take the no-wavm-entries branch (purged=false)")
@@ -846,7 +846,7 @@ func TestValidateOrUpgradeWavmRefusesOnFFIMismatch(t *testing.T) {
 	t.Cleanup(func() { readRustWavmFormatVersion = original })
 	readRustWavmFormatVersion = func() uint32 { return WavmSerializeVersion + 1 }
 
-	purged, err := validateOrUpgradeWavmSerializeVersion(db)
+	purged, err := reconcileWavmSerializeVersion(db)
 	if err == nil {
 		t.Fatal("expected mismatch error")
 	}
@@ -890,7 +890,7 @@ func TestValidateOrUpgradeWavmPropagatesProbeError(t *testing.T) {
 		injected:   injected,
 	}
 
-	purged, err := validateOrUpgradeWavmSerializeVersion(wrapped)
+	purged, err := reconcileWavmSerializeVersion(wrapped)
 	if err == nil {
 		t.Fatal("expected probe error to be propagated")
 	}
@@ -935,7 +935,7 @@ func TestValidateOrUpgradeWavmPropagatesIteratorError(t *testing.T) {
 		injected:      injected,
 	}
 
-	purged, err := validateOrUpgradeWavmSerializeVersion(wrapped)
+	purged, err := reconcileWavmSerializeVersion(wrapped)
 	if err == nil {
 		t.Fatal("expected iterator error to be propagated")
 	}
@@ -986,7 +986,7 @@ func TestValidateOrUpgradeWavmPropagatesIteratorErrorAtBatchBoundary(t *testing.
 		injected:   injected,
 	}
 
-	purged, err := validateOrUpgradeWavmSerializeVersion(wrapped)
+	purged, err := reconcileWavmSerializeVersion(wrapped)
 	if err == nil {
 		t.Fatal("expected mid-loop iterator error to be propagated")
 	}
@@ -1023,7 +1023,7 @@ func TestValidateOrUpgradeWavmPropagatesIteratorErrorAtBatchBoundary(t *testing.
 	}
 }
 
-// Pins outer-caller behavior: when validateOrUpgradeWavmSerializeVersion
+// Pins outer-caller behavior: when reconcileWavmSerializeVersion
 // reports purged=true, openDownloadedExecutionDB must skip the
 // RebuildingDone stamp so the recovery rebuild runs.
 func TestOpenDownloadedExecutionDBSkipsStampOnPurge(t *testing.T) {
@@ -1126,7 +1126,7 @@ func TestValidateOrUpgradeWavmResetsRebuildingPositionAfterPurge(t *testing.T) {
 	writeKeys(t, db, wavmKeys)
 	Require(t, gethexec.WriteToKeyValueStore(db, gethexec.RebuildingPositionKey, gethexec.RebuildingDone))
 
-	purged, err := validateOrUpgradeWavmSerializeVersion(db)
+	purged, err := reconcileWavmSerializeVersion(db)
 	Require(t, err)
 	if !purged {
 		t.Fatal("missing version key + wavm entries must trigger a purge")

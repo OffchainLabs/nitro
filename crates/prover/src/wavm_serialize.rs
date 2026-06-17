@@ -8,7 +8,7 @@
 //! its own internal length/count framing. There are **no per-field tags and no
 //! skip-unknown machinery** — the schema is locked by `WAVM_SERIALIZE_VERSION`,
 //! and any change to it requires bumping that version (the Go-side
-//! `validateOrUpgradeWavmSerializeVersion` then purges incompatible entries on
+//! `reconcileWavmSerializeVersion` then purges incompatible entries on
 //! next start).
 //!
 //! Opcodes are carried by their stable `Opcode::repr()` value via

@@ -257,7 +257,7 @@ pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
 }
 
-/// On-disk WAVM module wire format version. `validateOrUpgradeWavmSerializeVersion`
+/// On-disk WAVM module wire format version. `reconcileWavmSerializeVersion`
 /// in `cmd/nitro/init` reads this and bails on mismatch with the Go-side
 /// `WavmSerializeVersion`, so a one-sided bump fails fast.
 #[unsafe(no_mangle)]

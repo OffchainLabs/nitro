@@ -580,21 +580,23 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 	return nil
 }
 
-// Purges activated Stylus WAVM entries when the on-disk version is absent or
-// mismatched. A missing key in a wasmdb that already has WAVM entries is
-// treated as incompatible (legacy bincode bytes). A fresh wasmdb (no
-// wavm-prefixed entries) just gets the version key written; scoping the
-// predicate to wavm prefixes avoids a misleading empty purge on upgrading
-// nodes that only have wasmer entries.
+// reconcileWavmSerializeVersion makes the wasmdb's cached WAVM modules agree
+// with the current on-disk format version. It does not migrate data in place:
+//   - no wavm entries:       stamp the version key, no purge.
+//   - version key matches:   no-op.
+//   - key missing/mismatched (entries present): purge them, reset the rebuild
+//     marker, then stamp the current version.
 //
-// Returns purged=true when entries were deleted. Callers that stamp
-// RebuildingPositionKey=RebuildingDone after open must gate it on
-// purged=false, or the rebuild that recovers the purged entries is
-// short-circuited on the same boot.
-func validateOrUpgradeWavmSerializeVersion(db ethdb.Database) (bool, error) {
-	// Fail fast on a Go/Rust build inconsistency before touching the wasmdb;
-	// a mismatch would let Go purge based on its own version while Rust
-	// rejects every new entry at LinkModule time.
+// A missing key alongside existing entries means legacy bincode bytes, so it
+// counts as incompatible. Probing only wavm prefixes avoids a misleading purge
+// on nodes that carry only wasmer entries.
+//
+// purged is true when entries were deleted. A caller that stamps
+// RebuildingPositionKey=RebuildingDone after open MUST gate on it, or the
+// rebuild that recovers the purged entries is short-circuited on the same boot.
+func reconcileWavmSerializeVersion(db ethdb.Database) (purged bool, err error) {
+	// Fail fast on a Go/Rust build mismatch before touching the wasmdb: Go would
+	// purge on its own version while Rust rejects every new entry at LinkModule.
 	if rustVersion := readRustWavmFormatVersion(); rustVersion != WavmSerializeVersion {
 		return false, fmt.Errorf(
 			"WavmSerializeVersion mismatch between Go (%d) and Rust (%d); "+
@@ -607,8 +609,8 @@ func validateOrUpgradeWavmSerializeVersion(db ethdb.Database) (bool, error) {
 		return false, fmt.Errorf("failed to probe wavm prefixes: %w", err)
 	}
 	if !hasEntries {
-		// Write the version key so the next non-empty startup doesn't read
-		// the absence as legacy bincode and purge legitimate new entries.
+		// Stamp the version so a later non-empty boot doesn't read the absence
+		// as legacy bincode and purge valid entries.
 		if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
 			return false, fmt.Errorf("failed to write wavm serialize version on wasmdb with no wavm entries: %w", err)
 		}
@@ -629,7 +631,7 @@ func validateOrUpgradeWavmSerializeVersion(db ethdb.Database) (bool, error) {
 	if missing {
 		log.Warn("No WavmSerializeVersion key found, removing old WAVM stylus module entries", "expected", WavmSerializeVersion)
 	} else {
-		log.Warn("Detected wavm serialize version, removing old WAVM stylus module entries", "found", versionInDB, "expected", WavmSerializeVersion)
+		log.Warn("Detected wavm serialize version mismatch, removing old WAVM stylus module entries", "found", versionInDB, "expected", WavmSerializeVersion)
 	}
 	prefixes := rawdb.WavmPrefixes()
 	if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
@@ -1100,7 +1102,7 @@ func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Databas
 type openedExecutionDB struct {
 	executionDB ethdb.Database
 	wasmDB      ethdb.Database
-	// wavmPurged is true when validateOrUpgradeWavmSerializeVersion deleted
+	// wavmPurged is true when reconcileWavmSerializeVersion deleted
 	// entries on this open. Callers that stamp RebuildingPositionKey must
 	// gate on it, or the rebuild that recovers the purged entries is
 	// short-circuited on the same boot.
@@ -1127,7 +1129,7 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 	if err := validateOrUpgradeWasmerSerializeVersion(wasmDB); err != nil {
 		return nil, err
 	}
-	wavmPurged, err := validateOrUpgradeWavmSerializeVersion(wasmDB)
+	wavmPurged, err := reconcileWavmSerializeVersion(wasmDB)
 	if err != nil {
 		return nil, err
 	}
