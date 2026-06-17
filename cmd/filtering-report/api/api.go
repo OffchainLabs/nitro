@@ -4,7 +4,6 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/node"
@@ -28,22 +27,16 @@ type FilteringReportAPI struct {
 	filterSetReporter *filterSetReporter
 }
 
-func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig, sgn *signer.Signer) (*FilteringReportAPI, error) {
-	if queueClient == nil {
-		return nil, errors.New("queueClient must not be nil")
-	}
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporting *genericconf.HTTPClientConfig, sgn *signer.Signer) *FilteringReportAPI {
 	api := &FilteringReportAPI{queueClient: queueClient}
-	if filterSetReporting != nil && filterSetReporting.URL != "" {
-		if sgn == nil {
-			return nil, errors.New("signer must not be nil when filter-set-id reporting is enabled")
-		}
+	if filterSetReporting.URL != "" {
 		api.filterSetReporter = &filterSetReporter{
 			url:    filterSetReporting.URL,
 			client: &http.Client{Timeout: filterSetReporting.Timeout},
 			signer: sgn,
 		}
 	}
-	return api, nil
+	return api
 }
 
 var DefaultStackConfig = node.Config{
@@ -78,10 +71,7 @@ func NewStack(
 		return nil, err
 	}
 
-	api, err := NewFilteringReportAPI(queueClient, filterSetReporting, sgn)
-	if err != nil {
-		return nil, err
-	}
+	api := NewFilteringReportAPI(queueClient, filterSetReporting, sgn)
 
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,
