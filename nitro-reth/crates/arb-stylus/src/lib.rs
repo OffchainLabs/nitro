@@ -27,7 +27,7 @@ pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
 pub use ink::{Gas, Ink};
 pub use meter::{MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
-pub use native::NativeInstance;
+pub use native::{compile_module, NativeInstance};
 pub use run::RunProgram;
 
 /// Prefix bytes that identify a Stylus WASM program in contract bytecode.

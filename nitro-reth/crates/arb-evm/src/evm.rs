@@ -1451,110 +1451,124 @@ where
         )
     };
 
+    // Reuse the program's compiled module from the process-wide cache, compiling
+    // and inserting it on a miss. Keyed by module hash, independent of block/tx state.
     let long_term_tag = if program.cached { 1u32 } else { 0u32 };
-    let mut instance = if let Some((module, store)) =
-        arb_stylus::cache::InitCache::get(code_hash, params.version, long_term_tag, false)
-    {
-        let compile = match arb_stylus::CompileConfig::version(params.version, false) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
-                write_pages(parent_open, start_ever);
-                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
-            }
-        };
-        let mut env =
-            arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
-        env.set_pages(
-            start_open,
-            start_ever,
-            params.free_pages,
-            params.page_gas,
-            params.page_limit,
-            arbos_version,
-        );
-        match arb_stylus::NativeInstance::from_module(module, store, env) {
-            Ok(inst) => inst,
-            Err(e) => {
-                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
-                write_pages(parent_open, start_ever);
-                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+    let (module, store) = match arb_stylus::cache::InitCache::get(
+        module_hash,
+        params.version,
+        long_term_tag,
+        false,
+    ) {
+        Some(loaded) => loaded,
+        None => {
+            // A root program's WASM is reconstructed from its fragments; execution
+            // does not charge for the reads (the activation path does) and reads
+            // fragment code straight from the database so it is not warmed.
+            let decompressed_result = if arb_stylus::is_stylus_root(bytecode) {
+                arb_stylus::get_wasm_from_root(
+                    bytecode,
+                    params.max_wasm_size,
+                    params.max_fragment_count,
+                    false,
+                    |addr| {
+                        let db = &mut context.journaled_state.database;
+                        let info = db
+                            .basic(addr)
+                            .map_err(|e| arb_stylus::StylusError::Backend(format!("{e:?}")))?
+                            .unwrap_or_default();
+                        let code = match info.code {
+                            Some(c) => c,
+                            None => db
+                                .code_by_hash(info.code_hash)
+                                .map_err(|e| arb_stylus::StylusError::Backend(format!("{e:?}")))?,
+                        };
+                        Ok(code.original_bytes().to_vec())
+                    },
+                )
+            } else {
+                arb_stylus::decompress_wasm(bytecode)
+            };
+            let decompressed = match decompressed_result {
+                Ok(w) => w,
+                // A backing-store failure is an infrastructure error: abort rather
+                // than revert, so a transient read error can't pass as a bad program.
+                Err(arb_stylus::StylusError::Backend(e)) => {
+                    tracing::error!(target: "stylus", codehash = %code_hash, err = %e, "fragment read failed");
+                    write_pages(parent_open, start_ever);
+                    return InterpreterResult::new(
+                        InstructionResult::FatalExternalError,
+                        Bytes::new(),
+                        zero_gas(),
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
+                    write_pages(parent_open, start_ever);
+                    return InterpreterResult::new(
+                        InstructionResult::Revert,
+                        Bytes::new(),
+                        zero_gas(),
+                    );
+                }
+            };
+            let serialized = match arb_stylus::compile_module(&decompressed, params.version, false)
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
+                    write_pages(parent_open, start_ever);
+                    return InterpreterResult::new(
+                        InstructionResult::Revert,
+                        Bytes::new(),
+                        zero_gas(),
+                    );
+                }
+            };
+            match arb_stylus::cache::InitCache::insert(
+                module_hash,
+                &serialized,
+                params.version,
+                long_term_tag,
+                false,
+            ) {
+                Ok(loaded) => loaded,
+                Err(e) => {
+                    tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to load compiled module");
+                    write_pages(parent_open, start_ever);
+                    return InterpreterResult::new(
+                        InstructionResult::Revert,
+                        Bytes::new(),
+                        zero_gas(),
+                    );
+                }
             }
         }
-    } else {
-        // A root program's WASM is reconstructed from its fragments; execution
-        // does not charge for the reads (the activation path does) and reads
-        // fragment code straight from the database so it is not warmed.
-        let decompressed_result = if arb_stylus::is_stylus_root(bytecode) {
-            arb_stylus::get_wasm_from_root(
-                bytecode,
-                params.max_wasm_size,
-                params.max_fragment_count,
-                false,
-                |addr| {
-                    let db = &mut context.journaled_state.database;
-                    let info = db
-                        .basic(addr)
-                        .map_err(|e| arb_stylus::StylusError::Backend(format!("{e:?}")))?
-                        .unwrap_or_default();
-                    let code = match info.code {
-                        Some(c) => c,
-                        None => db
-                            .code_by_hash(info.code_hash)
-                            .map_err(|e| arb_stylus::StylusError::Backend(format!("{e:?}")))?,
-                    };
-                    Ok(code.original_bytes().to_vec())
-                },
-            )
-        } else {
-            arb_stylus::decompress_wasm(bytecode)
-        };
-        let decompressed = match decompressed_result {
-            Ok(w) => w,
-            // A backing-store failure is an infrastructure error: abort rather
-            // than revert, so a transient read error can't pass as a bad program.
-            Err(arb_stylus::StylusError::Backend(e)) => {
-                tracing::error!(target: "stylus", codehash = %code_hash, err = %e, "fragment read failed");
-                write_pages(parent_open, start_ever);
-                return InterpreterResult::new(
-                    InstructionResult::FatalExternalError,
-                    Bytes::new(),
-                    zero_gas(),
-                );
-            }
-            Err(e) => {
-                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM decompression failed");
-                write_pages(parent_open, start_ever);
-                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
-            }
-        };
-        let compile = match arb_stylus::CompileConfig::version(params.version, false) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
-                write_pages(parent_open, start_ever);
-                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
-            }
-        };
-        match arb_stylus::NativeInstance::from_bytes_with_pages(
-            &decompressed,
-            evm_api,
-            evm_data,
-            &compile,
-            stylus_config,
-            start_open,
-            start_ever,
-            params.free_pages,
-            params.page_gas,
-            params.page_limit,
-            arbos_version,
-        ) {
-            Ok(inst) => inst,
-            Err(e) => {
-                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
-                write_pages(parent_open, start_ever);
-                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
-            }
+    };
+
+    let compile = match arb_stylus::CompileConfig::version(params.version, false) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "unsupported Stylus version");
+            write_pages(parent_open, start_ever);
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    };
+    let mut env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
+    env.set_pages(
+        start_open,
+        start_ever,
+        params.free_pages,
+        params.page_gas,
+        params.page_limit,
+        arbos_version,
+    );
+    let mut instance = match arb_stylus::NativeInstance::from_module(module, store, env) {
+        Ok(inst) => inst,
+        Err(e) => {
+            tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to build instance");
+            write_pages(parent_open, start_ever);
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
 
