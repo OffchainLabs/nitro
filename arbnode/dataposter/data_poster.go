@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/Knetic/govaluate"
 	"github.com/holiman/uint256"
@@ -17,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,14 +23,11 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/mainloop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/state"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/txs"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -212,31 +207,8 @@ func (p *DataPoster) RetrieveMetadata(ctx context.Context, blockNum *big.Int) ([
 	return p.metadataRetriever(ctx, blockNum)
 }
 
-func (p *DataPoster) PostSimpleTransaction(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	return txs.PostSimpleTx(ctx, p, to, calldata, gasLimit, value)
-}
-
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
-	tx := txs.Tx{
-		DataCreatedAt: dataCreatedAt,
-		Nonce:         nonce,
-		Meta:          meta,
-		To:            to,
-		Calldata:      calldata,
-		GasLimit:      gasLimit,
-		Value:         value,
-		KzgBlobs:      kzgBlobs,
-		AccessList:    accessList,
-	}
-	return tx.Post(ctx, p)
-}
-
-func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (*lifecycle.NonceAndMeta, error) {
-	return lifecycle.GetNextNonceAndMeta(ctx, p)
-}
-
 // Tries to acquire redis lock, updates balance and nonce,
 func (p *DataPoster) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
-	p.CallIteratively(func(ctx context.Context) time.Duration { return mainloop.Tick(ctx, p) })
+	p.CallIteratively(p.tick)
 }

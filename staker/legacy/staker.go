@@ -25,7 +25,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
@@ -565,7 +564,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	isAheadOfOnChainNonceEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
-	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, lifecycle.ErrExceedsMaxMempoolSize.Error(), 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), 0)
 	blockValidationPendingEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "block validation is still pending", 0)
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {

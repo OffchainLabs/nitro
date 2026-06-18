@@ -1,7 +1,7 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package mainloop
+package dataposter
 
 import (
 	"context"
@@ -9,41 +9,39 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	datapostermetrics "github.com/offchainlabs/nitro/arbnode/dataposter/metrics"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/txs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const minWait = time.Second * 10
 
-func Tick(ctx context.Context, p dataPoster) time.Duration {
-	lockedState := p.InternalState().Lock()
-	defer p.InternalState().Unlock()
+func (p *DataPoster) tick(ctx context.Context) time.Duration {
+	lockedState := p.internalState.Lock()
+	defer p.internalState.Unlock()
 
-	err := lifecycle.UpdateBalance(ctx, p, lockedState)
+	err := p.updateBalance(ctx, lockedState)
 	if err != nil {
 		log.Warn("failed to update tx poster balance", "err", err)
 		return minWait
 	}
 
-	err = lifecycle.UpdateNonce(ctx, p, lockedState)
+	err = p.updateNonce(ctx, lockedState)
 	if err != nil {
 		// This is non-fatal because it's only needed for clearing out old queue items.
 		log.Warn("failed to update tx poster nonce", "err", err)
 	}
 
 	now := time.Now()
-	nextCheck := now.Add(p.Config().ReplacementTimes[0])
-	if len(p.Config().BlobTxReplacementTimes) > 0 {
-		nextCheck = now.Add(arbmath.MinInt(p.Config().ReplacementTimes[0], p.Config().BlobTxReplacementTimes[0]))
+	nextCheck := now.Add(p.config().ReplacementTimes[0])
+	if len(p.config().BlobTxReplacementTimes) > 0 {
+		nextCheck = now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
 	}
 
-	maxTxsToRbf := p.Config().MaxMempoolTransactions
+	maxTxsToRbf := p.config().MaxMempoolTransactions
 	if maxTxsToRbf == 0 {
 		maxTxsToRbf = 512
 	}
-	unconfirmedNonce, err := p.Client().NonceAt(ctx, p.Sender(), nil)
+	unconfirmedNonce, err := p.client.NonceAt(ctx, p.Sender(), nil)
 	if err != nil {
 		log.Warn("Failed to get latest nonce", "err", err)
 		return minWait
@@ -87,11 +85,11 @@ func Tick(ctx context.Context, p dataPoster) time.Duration {
 		if now.After(tx.NextReplacement) {
 			weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 			nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
-			err := txs.ReplaceTx(ctx, p, lockedState, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
-			lifecycle.MaybeLogError(err, lockedState, tx, "failed to replace-by-fee transaction")
+			err := p.replaceTx(ctx, lockedState, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
+			maybeLogError(err, lockedState, tx, "failed to replace-by-fee transaction")
 		} else {
-			err := txs.SendTx(ctx, p, lockedState, tx, tx)
-			lifecycle.MaybeLogError(err, lockedState, tx, "failed to re-send transaction")
+			err := p.sendTx(ctx, lockedState, tx, tx)
+			maybeLogError(err, lockedState, tx, "failed to re-send transaction")
 		}
 		nonce := tx.FullTx.Nonce()
 		tx, err = lockedState.Queue.Get(ctx, nonce)

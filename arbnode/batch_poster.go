@@ -36,7 +36,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -2090,7 +2089,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
-	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, lifecycle.ErrExceedsMaxMempoolSize.Error(), time.Minute)
+	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute)
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
 	normalGasEstimationFailedEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, ErrNormalGasEstimationFailed.Error(), time.Minute)
 	accumulatorNotFoundEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, AccumulatorNotFoundErr.Error(), time.Minute)

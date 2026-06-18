@@ -26,9 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/fees"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/lifecycle"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/txs"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -544,7 +542,7 @@ func TestMaybeLogError(t *testing.T) {
 				s.ErrorCount[nonce] = tt.initialCount
 			}
 
-			lifecycle.MaybeLogError(tt.err, s, tx, "test message")
+			maybeLogError(tt.err, s, tx, "test message")
 
 			gotCount, exists := s.ErrorCount[nonce]
 			if tt.expectedCount == -1 {
@@ -578,7 +576,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(50) // same as header
 		s.Nonce = 5
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -611,7 +609,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.ErrorCount[4] = 5
 		s.ErrorCount[5] = 1
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -666,7 +664,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(100) // different from header
 		s.Nonce = 5                   // same as on-chain nonce
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -689,7 +687,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(100)
 		s.Nonce = 5
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -713,7 +711,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = big.NewInt(100) // non-nil
 		s.Nonce = 5
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err != nil {
 			t.Errorf("expected nil error when NonceAt fails with LastBlock set, got: %v", err)
 		}
@@ -734,7 +732,7 @@ func TestUpdateNonce(t *testing.T) {
 		s.LastBlock = nil
 		s.Nonce = 0
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err == nil {
 			t.Error("expected error when NonceAt fails with LastBlock nil")
 		}
@@ -748,7 +746,7 @@ func TestUpdateNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		err := lifecycle.UpdateNonce(ctx, dp, s)
+		err := dp.updateNonce(ctx, s)
 		if err == nil {
 			t.Error("expected error when HeaderByNumber fails")
 		}
@@ -764,7 +762,7 @@ func TestUpdateNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		_ = lifecycle.UpdateNonce(ctx, dp, s)
+		_ = dp.updateNonce(ctx, s)
 
 		// Verify that eth_getBlockByNumber was called with "finalized" tag
 		found := false
@@ -791,7 +789,7 @@ func TestUpdateNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		_ = lifecycle.UpdateNonce(ctx, dp, s)
+		_ = dp.updateNonce(ctx, s)
 
 		// Verify that eth_getBlockByNumber was called with "latest" tag
 		found := false
@@ -823,7 +821,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// Empty queue, nonce 0, well under limits
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 0, 1)
+		err := dp.canPostWithNonce(ctx, s, 0, 1)
 		if err != nil {
 			t.Errorf("expected nil, got: %v", err)
 		}
@@ -845,7 +843,7 @@ func TestCanPostWithNonce(t *testing.T) {
 			putTxInQueue(t, ctx, s, i, nil, tx)
 		}
 
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 2, 1)
+		err := dp.canPostWithNonce(ctx, s, 2, 1)
 		if err == nil {
 			t.Error("expected error when queue is at MaxQueuedTransactions")
 		}
@@ -869,7 +867,7 @@ func TestCanPostWithNonce(t *testing.T) {
 			putTxInQueue(t, ctx, s, i, nil, tx)
 		}
 
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 50, 1)
+		err := dp.canPostWithNonce(ctx, s, 50, 1)
 		if err != nil {
 			t.Errorf("expected nil with MaxQueuedTransactions=0 (unlimited), got: %v", err)
 		}
@@ -887,10 +885,10 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// nextNonce=5 >= MaxMempoolTransactions(5) + unconfirmedNonce(0) = 5
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 5, 1)
+		err := dp.canPostWithNonce(ctx, s, 5, 1)
 		if err == nil {
 			t.Error("expected ErrExceedsMaxMempoolSize")
-		} else if !errors.Is(err, lifecycle.ErrExceedsMaxMempoolSize) {
+		} else if !errors.Is(err, ErrExceedsMaxMempoolSize) {
 			t.Errorf("expected ErrExceedsMaxMempoolSize, got: %v", err)
 		}
 	})
@@ -907,7 +905,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// nextNonce=4 < MaxMempoolTransactions(5) + unconfirmedNonce(0) = 5
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 4, 1)
+		err := dp.canPostWithNonce(ctx, s, 4, 1)
 		if err != nil {
 			t.Errorf("expected nil (under limit), got: %v", err)
 		}
@@ -925,7 +923,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 100, 1)
+		err := dp.canPostWithNonce(ctx, s, 100, 1)
 		if err != nil {
 			t.Errorf("expected nil with all limits=0, got: %v", err)
 		}
@@ -943,7 +941,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 5, 1)
+		err := dp.canPostWithNonce(ctx, s, 5, 1)
 		if err == nil {
 			t.Error("expected error when unconfirmedNonce > nextNonce")
 		}
@@ -965,7 +963,7 @@ func TestCanPostWithNonce(t *testing.T) {
 		defer is.Unlock()
 
 		// Large weight, but Post4844Blobs=false so weight check is effectively disabled
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 0, 999999)
+		err := dp.canPostWithNonce(ctx, s, 0, 999999)
 		if err != nil {
 			t.Errorf("expected nil (weight check is no-op when Post4844Blobs=false), got: %v", err)
 		}
@@ -990,7 +988,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		tx.Meta = meta
 		putTxInQueue(t, ctx, s, 5, nil, tx)
 
-		result, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
+		result, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1019,7 +1017,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		defer is.Unlock()
 		s.LastBlock = big.NewInt(0) // different from header, so updateNonce proceeds
 
-		result, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
+		result, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1049,7 +1047,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		defer is.Unlock()
 
 		// slice storage is non-persistent, waitForL1Finality=true → no fallback
-		_, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
+		_, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
 		if err == nil {
 			t.Error("expected error when updateNonce fails with non-persistent queue + waitForL1Finality")
 		}
@@ -1069,7 +1067,7 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		s := is.Lock()
 		defer is.Unlock()
 
-		result, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
+		result, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
 		if err != nil {
 			t.Fatalf("expected fallback to succeed, got: %v", err)
 		}
@@ -1110,10 +1108,10 @@ func TestGetNextNonceAndMaybeMeta(t *testing.T) {
 		putTxInQueue(t, ctx, s, 0, nil, tx)
 
 		// nextNonce=1 >= MaxMempoolTransactions(1) + unconfirmedNonce(0) = 1
-		_, err := lifecycle.GetNextNonceAndMaybeMeta(ctx, dp, s, 1)
+		_, err := dp.getNextNonceAndMaybeMeta(ctx, s, 1)
 		if err == nil {
 			t.Error("expected error from canPostWithNonce")
-		} else if !errors.Is(err, lifecycle.ErrExceedsMaxMempoolSize) {
+		} else if !errors.Is(err, ErrExceedsMaxMempoolSize) {
 			t.Errorf("expected ErrExceedsMaxMempoolSize, got: %v", err)
 		}
 	})
@@ -1133,7 +1131,7 @@ func TestSendTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1163,7 +1161,7 @@ func TestSendTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Errorf("expected nil (nonce too low treated as already known), got: %v", err)
 		}
@@ -1187,7 +1185,7 @@ func TestSendTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err == nil {
 			t.Error("expected error to be propagated")
 		} else if !strings.Contains(err.Error(), "connection refused") {
@@ -1220,7 +1218,7 @@ func TestSendTx(t *testing.T) {
 		// New tx at nonce 1: BlobTx (different type!), not yet sent
 		newTx := makeTestBlobQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), big.NewInt(1*params.GWei), 1, false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1255,7 +1253,7 @@ func TestSendTx(t *testing.T) {
 		// New tx at nonce 1: same type (DynamicFeeTx), not yet sent
 		newTx := makeTestQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1275,7 +1273,7 @@ func TestSendTx(t *testing.T) {
 		// New tx at nonce 5
 		newTx := makeTestQueuedTx(5, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1433,7 +1431,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx.Created = time.Now().Add(-2 * time.Minute) // some elapsed time
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := dp.replaceTx(ctx, s, prevTx, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1485,7 +1483,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx.Created = time.Now() // just created, so elapsed time is tiny → low fee formula result
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := dp.replaceTx(ctx, s, prevTx, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1525,7 +1523,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx.Created = time.Now().Add(-30 * time.Second)
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := dp.replaceTx(ctx, s, prevTx, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1554,7 +1552,7 @@ func TestReplaceTx(t *testing.T) {
 		prevTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), true)
 		putTxInQueue(t, ctx, s, 0, nil, prevTx)
 
-		err := txs.ReplaceTx(ctx, dp, s, prevTx, 0)
+		err := dp.replaceTx(ctx, s, prevTx, 0)
 		if err == nil {
 			t.Error("expected error when header unavailable")
 		}
@@ -1568,7 +1566,7 @@ func TestSaveTx(t *testing.T) {
 
 	t.Run("nonce mismatch returns error", func(t *testing.T) {
 		stub := defaultTestStub()
-		dp, is := newTestDataPoster(t, stub, nil)
+		_, is := newTestDataPoster(t, stub, nil)
 
 		s := is.Lock()
 		defer is.Unlock()
@@ -1576,7 +1574,7 @@ func TestSaveTx(t *testing.T) {
 		prevTx := makeTestQueuedTx(5, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), true)
 		newTx := makeTestQueuedTx(6, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SaveTx(ctx, dp, s, prevTx, newTx)
+		err := saveTx(ctx, s, prevTx, newTx)
 		if err == nil {
 			t.Error("expected error for nonce mismatch")
 		} else if !strings.Contains(err.Error(), "doesn't match") {
@@ -1586,7 +1584,7 @@ func TestSaveTx(t *testing.T) {
 
 	t.Run("identical prevTx and newTx skips save", func(t *testing.T) {
 		stub := defaultTestStub()
-		dp, is := newTestDataPoster(t, stub, nil)
+		_, is := newTestDataPoster(t, stub, nil)
 
 		s := is.Lock()
 		defer is.Unlock()
@@ -1596,7 +1594,7 @@ func TestSaveTx(t *testing.T) {
 
 		// Pass the same tx as both prevTx and newTx — RLP should be identical
 		identical := *tx
-		err := txs.SaveTx(ctx, dp, s, tx, &identical)
+		err := saveTx(ctx, s, tx, &identical)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1613,7 +1611,7 @@ func TestSaveTx(t *testing.T) {
 
 	t.Run("different newTx replaces in queue", func(t *testing.T) {
 		stub := defaultTestStub()
-		dp, is := newTestDataPoster(t, stub, nil)
+		_, is := newTestDataPoster(t, stub, nil)
 
 		s := is.Lock()
 		defer is.Unlock()
@@ -1623,7 +1621,7 @@ func TestSaveTx(t *testing.T) {
 
 		newTx := makeTestQueuedTx(0, big.NewInt(20*params.GWei), big.NewInt(2*params.GWei), true)
 
-		err := txs.SaveTx(ctx, dp, s, prevTx, newTx)
+		err := saveTx(ctx, s, prevTx, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1661,7 +1659,7 @@ func TestCanPostWithNonce_WeightPath(t *testing.T) {
 		defer is.Unlock()
 
 		// Weight of 1 (single blob), well under limit of 18
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 0, 1)
+		err := dp.canPostWithNonce(ctx, s, 0, 1)
 		if err != nil {
 			t.Errorf("expected nil, got: %v", err)
 		}
@@ -1689,10 +1687,10 @@ func TestCanPostWithNonce_WeightPath(t *testing.T) {
 		}
 
 		// nextNonce=3, weight=6 (6 blobs) — should exceed MaxMempoolWeight=2
-		err := lifecycle.CanPostWithNonce(ctx, dp, s, 3, 6)
+		err := dp.canPostWithNonce(ctx, s, 3, 6)
 		if err == nil {
 			t.Error("expected ErrExceedsMaxMempoolSize")
-		} else if !errors.Is(err, lifecycle.ErrExceedsMaxMempoolSize) {
+		} else if !errors.Is(err, ErrExceedsMaxMempoolSize) {
 			t.Errorf("expected ErrExceedsMaxMempoolSize, got: %v", err)
 		}
 	})
@@ -1720,7 +1718,7 @@ func TestSendTx_NonceGap_UnsentPreceding(t *testing.T) {
 		// New tx at nonce 1: same type, also not sent
 		newTx := makeTestQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1747,7 +1745,7 @@ func TestSendTx_NonceGap_UnsentPreceding(t *testing.T) {
 		// New tx at nonce 1: nonce 1 <= reorgResistantCount 5, so send proceeds
 		newTx := makeTestQueuedTx(1, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-		err := txs.SendTx(ctx, dp, s, nil, newTx)
+		err := dp.sendTx(ctx, s, nil, newTx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1782,7 +1780,7 @@ func TestSendTx_PrevTxSentBypassesGapCheck(t *testing.T) {
 	prevTxForReplace := makeTestQueuedTx(1, big.NewInt(5*params.GWei), big.NewInt(500_000_000), true) // Sent=true
 	putTxInQueue(t, ctx, s, 1, nil, prevTxForReplace)
 
-	err := txs.SendTx(ctx, dp, s, prevTxForReplace, newTx)
+	err := dp.sendTx(ctx, s, prevTxForReplace, newTx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1814,7 +1812,7 @@ func TestUpdateNonce_EmptyErrorCount(t *testing.T) {
 		putTxInQueue(t, ctx, s, i, nil, tx)
 	}
 
-	err := lifecycle.UpdateNonce(ctx, dp, s)
+	err := dp.updateNonce(ctx, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1831,14 +1829,14 @@ func TestSaveTx_NilPrevTx(t *testing.T) {
 	ctx := context.Background()
 
 	stub := defaultTestStub()
-	dp, is := newTestDataPoster(t, stub, nil)
+	_, is := newTestDataPoster(t, stub, nil)
 
 	s := is.Lock()
 	defer is.Unlock()
 
 	newTx := makeTestQueuedTx(0, big.NewInt(10*params.GWei), big.NewInt(1*params.GWei), false)
 
-	err := txs.SaveTx(ctx, dp, s, nil, newTx)
+	err := saveTx(ctx, s, nil, newTx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
