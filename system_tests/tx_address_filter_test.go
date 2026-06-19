@@ -6,7 +6,11 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"math/big"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
@@ -161,6 +166,78 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterArbSysWithdrawEth(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	filteringReportStack, endpoint := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Withdrawer")
+	builder.L2.TransferBalance(t, "Owner", "Withdrawer", big.NewInt(1e18), builder.L2Info)
+
+	builder.L1Info.GenerateAccount("FilteredL1Dest")
+	filteredL1Dest := builder.L1Info.GetAddress("FilteredL1Dest")
+	builder.L1Info.GenerateAccount("OkL1Dest")
+	okL1Dest := builder.L1Info.GetAddress("OkL1Dest")
+
+	addrFilter := newHashedChecker([]common.Address{filteredL1Dest})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
+	Require(t, err)
+
+	withdrawAmount := big.NewInt(1e15)
+
+	authBad := builder.L2Info.GetDefaultTransactOpts("Withdrawer", ctx)
+	authBad.Value = withdrawAmount
+	tx, err := arbSys.WithdrawEth(&authBad, filteredL1Dest)
+	if err == nil {
+		t.Fatal("expected withdrawEth to filtered L1 destination to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	report := endpoint.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, tx)
+	if report.IsDelayed {
+		t.Fatal("report should not be marked as delayed")
+	}
+	foundDestReason := false
+	for _, fa := range report.FilteredAddresses {
+		if fa.Address != filteredL1Dest {
+			continue
+		}
+		if fa.FilterReason.Reason != filter.ReasonToL1 {
+			t.Fatalf("expected filter reason %q for L1 destination, got %q", filter.ReasonToL1, fa.FilterReason.Reason)
+		}
+		if fa.FilterReason.EventRuleMatch != nil {
+			t.Fatal("expected nil EventRuleMatch for direct destination touch")
+		}
+		foundDestReason = true
+	}
+	if !foundDestReason {
+		t.Fatalf("report should contain filtered L1 destination %s with ReasonToL1", filteredL1Dest.Hex())
+	}
+	// Reset local nonce tracker since the Signer callback increments it on
+	// every signing attempt, including for the rejected tx above.
+	builder.L2Info.GetInfoWithPrivKey("Withdrawer").Nonce.Store(0)
+
+	authGood := builder.L2Info.GetDefaultTransactOpts("Withdrawer", ctx)
+	authGood.Value = withdrawAmount
+	tx, err = arbSys.WithdrawEth(&authGood, okL1Dest)
+	Require(t, err, "withdrawEth to unfiltered L1 destination should not be rejected")
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
@@ -1208,4 +1285,84 @@ func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestGenerateAddressHashesFixtureScript(t *testing.T) {
+	const script = "../scripts/generate-address-hashes-fixture.sh"
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available; skipping generator script test")
+	}
+	salt := uuid.MustParse("ce823987-8c5b-42c8-9d44-11df313b91e9")
+	addrs := []common.Address{
+		common.HexToAddress("0xddfabcdc4d8ffc6d5beaf154f18b778f892a0740"), // vendor vector
+		common.HexToAddress("0x0000000000000000000000000000000000000000"), // all-zero
+		common.HexToAddress("0xffffffffffffffffffffffffffffffffffffffff"), // all-ff
+	}
+	addrStrs := make([]string, len(addrs))
+	for i, a := range addrs {
+		addrStrs[i] = a.Hex()
+	}
+	csv := strings.Join(addrStrs, ",")
+
+	for _, scheme := range []addressfilter.HashingScheme{
+		addressfilter.HashingSchemeStringInput,
+		addressfilter.HashingSchemeRawBytesInput,
+	} {
+		t.Run(string(scheme), func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "list.json")
+			cmd := exec.Command("bash", script, // #nosec G204 -- test-only, all args are in-test constants
+				"--hashing-scheme", string(scheme),
+				"--salt", salt.String(),
+				"--addresses", csv,
+				"--size", "1MB", "--out", out)
+			if b, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("generator failed: %v\n%s", err, b)
+			}
+
+			var payload struct {
+				Salt          string   `json:"salt"`
+				HashingScheme string   `json:"hashing_scheme"`
+				Hashes        []string `json:"hashes"`
+			}
+			data, err := os.ReadFile(out)
+			Require(t, err)
+			Require(t, json.Unmarshal(data, &payload))
+			if payload.HashingScheme != string(scheme) {
+				t.Fatalf("hashing_scheme: got %q want %q", payload.HashingScheme, scheme)
+			}
+
+			hashes := make([]common.Hash, len(payload.Hashes))
+			set := make(map[common.Hash]struct{}, len(payload.Hashes))
+			for i, h := range payload.Hashes {
+				hashes[i] = common.HexToHash(h)
+				set[hashes[i]] = struct{}{}
+			}
+
+			// Each address's production-computed hash must appear in the generated file.
+			prefix := addressfilter.GetHashStringInputPrefix(salt)
+			for _, a := range addrs {
+				var want common.Hash
+				if scheme == addressfilter.HashingSchemeRawBytesInput {
+					want = addressfilter.HashRawBytesInput(salt, a)
+				} else {
+					want = addressfilter.HashStringInputWithPrefix(prefix, a)
+				}
+				if _, ok := set[want]; !ok {
+					t.Fatalf("addr %s: production hash %s missing from generated file", a.Hex(), want.Hex())
+				}
+			}
+
+			// The generated file loads and filters via the production HashStore.
+			store := addressfilter.NewHashStore(100)
+			store.Store(uuid.New(), salt, scheme, hashes, "test")
+			for _, a := range addrs {
+				if restricted, _ := store.IsRestricted(a); !restricted {
+					t.Fatalf("addr %s should be restricted under %s", a.Hex(), scheme)
+				}
+			}
+			if restricted, _ := store.IsRestricted(common.HexToAddress("0x00000000000000000000000000000000cafef00d")); restricted {
+				t.Fatal("unlisted address must not be restricted")
+			}
+		})
+	}
 }
