@@ -4,6 +4,8 @@
 package pga
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -34,7 +36,9 @@ func TestScheduleAdvanceRoundWaitsForBoundary(t *testing.T) {
 		deadline := s.Deadline()
 
 		// Round 1 has not reached its deadline, so AdvanceRound sleeps to it.
-		s.AdvanceRound()
+		if err := s.AdvanceRound(context.Background()); err != nil {
+			t.Fatalf("AdvanceRound returned %v, want nil at the boundary", err)
+		}
 
 		if got := time.Since(start); got != testRoundLength {
 			t.Errorf("AdvanceRound slept %v, want %v", got, testRoundLength)
@@ -56,7 +60,9 @@ func TestScheduleAdvanceRoundReturnsImmediatelyAfterOverrun(t *testing.T) {
 		time.Sleep(testRoundLength + 50*time.Millisecond)
 		overran := time.Now()
 
-		s.AdvanceRound()
+		if err := s.AdvanceRound(context.Background()); err != nil {
+			t.Fatalf("AdvanceRound returned %v, want nil after overrun", err)
+		}
 
 		if got := time.Now(); !got.Equal(overran) {
 			t.Errorf("AdvanceRound advanced the clock to %v, want immediate return at %v", got, overran)
@@ -70,6 +76,26 @@ func TestScheduleAdvanceRoundReturnsImmediatelyAfterOverrun(t *testing.T) {
 	})
 }
 
+func TestScheduleAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		start := time.Now()
+		s := NewSchedule(2, testRoundLength)
+
+		cancel()
+
+		if err := s.AdvanceRound(ctx); !errors.Is(err, context.Canceled) {
+			t.Errorf("AdvanceRound returned %v, want context.Canceled", err)
+		}
+		if got := time.Since(start); got != 0 {
+			t.Errorf("AdvanceRound waited %v, want immediate return", got)
+		}
+		if got := s.Round(); got != 1 {
+			t.Errorf("round = %d, want 1 (unchanged) after interruption", got)
+		}
+	})
+}
+
 func TestScheduleAdvancesThroughBlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const rounds = 3
@@ -79,7 +105,9 @@ func TestScheduleAdvancesThroughBlock(t *testing.T) {
 			if s.IsLastRound() {
 				t.Fatalf("round %d should not be the last of %d", r, rounds)
 			}
-			s.AdvanceRound()
+			if err := s.AdvanceRound(context.Background()); err != nil {
+				t.Fatalf("round %d AdvanceRound returned %v, want nil", r, err)
+			}
 			if got, want := time.Since(blockStart), time.Duration(r)*testRoundLength; got != want {
 				t.Fatalf("round %d boundary at +%v, want +%v", r+1, got, want)
 			}

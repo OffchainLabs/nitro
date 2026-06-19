@@ -3,7 +3,10 @@
 
 package pga
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Schedule tracks which PGA round of the block is active and decides when each execute phase begins.
 type Schedule struct {
@@ -35,16 +38,24 @@ func (s *Schedule) Deadline() time.Time {
 	return s.deadline
 }
 
-// AdvanceRound moves to the next round, sleeping until the current round's deadline when called before it and returning
-// immediately when called after it.
-func (s *Schedule) AdvanceRound() {
+// AdvanceRound moves to the next round, waiting until the current round's deadline when called before it and returning
+// immediately when called after it. If ctx is cancelled before the deadline, AdvanceRound returns its error without
+// advancing so the caller can stop building the block; otherwise it returns nil.
+func (s *Schedule) AdvanceRound(ctx context.Context) error {
 	now := time.Now()
 	boundary := s.deadline
 	if now.Before(boundary) {
-		time.Sleep(boundary.Sub(now))
+		timer := time.NewTimer(boundary.Sub(now))
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	} else {
 		boundary = now
 	}
 	s.deadline = boundary.Add(s.roundLength)
 	s.activeRound++
+	return nil
 }
