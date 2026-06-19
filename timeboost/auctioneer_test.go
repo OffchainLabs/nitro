@@ -55,7 +55,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		DbDirectory:            tmpDir,
 		StreamTimeout:          time.Minute,
 		Wallet: genericconf.WalletConfig{
-			PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+			PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
 		},
 	}
 	fetcher := func() *AuctioneerServerConfig {
@@ -144,7 +144,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDir,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
 			},
 		}
 	}
@@ -515,7 +515,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirPrimary,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
 			},
 		}
 	}
@@ -603,7 +603,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirSecondary, // Different DB directory
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
 			},
 		}
 	}

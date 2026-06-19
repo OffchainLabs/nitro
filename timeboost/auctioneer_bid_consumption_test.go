@@ -555,7 +555,7 @@ func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pub
 			StreamTimeout:            time.Minute,
 			ReserveOriginatorAddress: reserveOriginatorAddr,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
 			},
 		}
 	}

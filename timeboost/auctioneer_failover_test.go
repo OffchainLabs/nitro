@@ -40,7 +40,7 @@ func createAndStartAuctioneer(t *testing.T, ctx context.Context, redisURL string
 			ConsumerConfig:         testCoordinationConfig,
 			StreamTimeout:          10 * time.Millisecond, // Very short for tests
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
 			},
 		}
 	}
@@ -266,6 +266,13 @@ func TestAuctioneerFailover_ConcurrentStart(t *testing.T) {
 	}()
 
 	wg.Wait()
+
+	// A require failure in a goroutine leaves its auctioneer/helper nil; guard
+	// cleanup so the real error surfaces instead of a nil-pointer panic.
+	require.NotNil(t, a1)
+	require.NotNil(t, a2)
+	require.NotNil(t, h1)
+	require.NotNil(t, h2)
 
 	defer a1.StopAndWait()
 	defer h1.producer.StopAndWait()
