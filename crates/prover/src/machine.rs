@@ -18,7 +18,6 @@ use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
 #[cfg(feature = "kzg")]
 use c_kzg::BYTES_PER_BLOB;
-use digest::Digest;
 use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
