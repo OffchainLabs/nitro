@@ -4,6 +4,14 @@
 #![cfg_attr(target_os = "zkvm", no_main)]
 
 #[cfg(target_os = "zkvm")]
+const _: () = match option_env!("SP1_PATCHES_APPLIED") {
+    Some(_) => (),
+    None => panic!(
+        "sp1 program must be built via the sp1 builder crate, which applies required crate patches"
+    ),
+};
+
+#[cfg(target_os = "zkvm")]
 sp1_zkvm::entrypoint!(main);
 
 fn main() {
