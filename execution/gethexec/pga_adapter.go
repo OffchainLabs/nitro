@@ -20,10 +20,17 @@ import (
 // txQueue channel.
 var _ pga.Tx = txQueueItem{}
 
-func (i txQueueItem) ComputePriorityFee(baseFee *big.Int) (uint64, error) {
+func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
+	// Mirror the FIFO gather path (sequencer.go): a fee cap below the basefee is the only fee-cap-too-low case,
+	// reported as core.ErrFeeCapTooLow. Checking it explicitly keeps the client-visible error identical to FIFO and
+	// lets any other EffectiveGasTip failure (such as types.ErrUint256Overflow for >256-bit fee/tip/basefee values)
+	// propagate unchanged instead of being mislabeled as fee-cap-too-low.
+	if arbmath.BigLessThan(i.tx.GasFeeCap(), baseFee) {
+		return 0, fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, i.tx.GasFeeCap(), baseFee)
+	}
 	tip, err := i.tx.EffectiveGasTip(baseFee)
 	if err != nil {
-		return 0, fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, i.tx.GasFeeCap(), baseFee)
+		return 0, err
 	}
 	// TODO(NIT-5043): add anti-starvation boost
 	return arbmath.BigToUintSaturating(tip), nil

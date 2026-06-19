@@ -14,11 +14,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// TestTxQueueItemComputePriorityFee covers the concrete pga.Tx priority-fee
+// TestTxQueueItemComputePgaPriority covers the concrete pga.Tx priority-fee
 // computation over real dynamic-fee transactions: the EffectiveGasTip bounds,
-// uint64 saturation, and the core.ErrFeeCapTooLow translation step 2 requires.
-func TestTxQueueItemComputePriorityFee(t *testing.T) {
+// uint64 saturation, the core.ErrFeeCapTooLow mapping for a fee cap below the
+// basefee, and propagation of other EffectiveGasTip errors such as
+// types.ErrUint256Overflow for >256-bit fee/tip/basefee values.
+func TestTxQueueItemComputePgaPriority(t *testing.T) {
 	huge := new(big.Int).Lsh(big.NewInt(1), 70) // ~1.18e21, well above math.MaxUint64
+	// over256 exceeds uint256, so EffectiveGasTip returns types.ErrUint256Overflow rather than fee-cap-too-low.
+	over256 := new(big.Int).Lsh(big.NewInt(1), 300)
 	for _, tc := range []struct {
 		name      string
 		gasFeeCap *big.Int
@@ -33,6 +37,7 @@ func TestTxQueueItemComputePriorityFee(t *testing.T) {
 		{name: "fee cap equals base fee", gasFeeCap: big.NewInt(40), gasTipCap: big.NewInt(10), baseFee: big.NewInt(40), want: 0},
 		{name: "fee cap below base fee", gasFeeCap: big.NewInt(30), gasTipCap: big.NewInt(10), baseFee: big.NewInt(40), wantErr: core.ErrFeeCapTooLow},
 		{name: "saturates to max uint64", gasFeeCap: huge, gasTipCap: huge, baseFee: big.NewInt(1), want: math.MaxUint64},
+		{name: "fee cap exceeds 256 bits", gasFeeCap: over256, gasTipCap: over256, baseFee: big.NewInt(40), wantErr: types.ErrUint256Overflow},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			item := txQueueItem{tx: types.NewTx(&types.DynamicFeeTx{
@@ -43,7 +48,7 @@ func TestTxQueueItemComputePriorityFee(t *testing.T) {
 				To:        &common.Address{},
 				Value:     big.NewInt(0),
 			})}
-			got, err := item.ComputePriorityFee(tc.baseFee)
+			got, err := item.ComputePgaPriority(tc.baseFee)
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("err = %v, want errors.Is(%v)", err, tc.wantErr)

@@ -6,49 +6,14 @@ package pga
 
 import (
 	"container/heap"
-	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/core/txpool"
 )
 
-// Tx is a transaction managed by the priority mempool. The sequencer's txQueueItem implements it; the mempool depends
-// only on this interface so it stays decoupled from that concrete type.
-type Tx interface {
-	// ComputePriorityFee returns the transaction's priority fee per gas against the given basefee, saturated to a
-	// uint64. It errors when the fee cap is below the basefee, matching the sequencer's gather-time fee-cap check.
-	ComputePriorityFee(baseFee *big.Int) (uint64, error)
-	// ReturnResult resolves the submitting client's result channel.
-	ReturnResult(err error)
-	// GetContext returns the submission context, used to drop expired entries.
-	GetContext() context.Context
-	// GetSize returns the size in bytes of the marshalled transaction.
-	GetSize() int
-	// GetFirstAppearance returns when the transaction first reached the sequencer; it breaks ties between
-	// equal-priority entries.
-	GetFirstAppearance() time.Time
-}
-
-// txItem pairs a queued transaction with its priority key.
-type txItem[T Tx] struct {
-	tx       T
-	priority uint64
-}
-
-// setPriority sets the item's priority from ComputePriorityFee.
-func (item *txItem[T]) setPriority(baseFee *big.Int) error {
-	fee, err := item.tx.ComputePriorityFee(baseFee)
-	if err != nil {
-		return err
-	}
-	item.priority = fee
-	return nil
-}
-
 // txHeap implements heap.Interface as a max-heap on priority, ties broken by earliest GetFirstAppearance.
-type txHeap[T Tx] []txItem[T]
+type txHeap[T Tx] []prioritizedTx[T]
 
 func (h txHeap[T]) Len() int {
 	return len(h)
@@ -66,7 +31,7 @@ func (h txHeap[T]) Swap(i, j int) {
 }
 
 func (h *txHeap[T]) Push(x any) {
-	item, ok := x.(txItem[T])
+	item, ok := x.(prioritizedTx[T])
 	if !ok {
 		panic(fmt.Sprintf("txHeap.Push: unexpected element type %T", x)) // impossible
 	}
@@ -77,7 +42,7 @@ func (h *txHeap[T]) Pop() any {
 	old := *h
 	n := len(old)
 	item := old[n-1]
-	old[n-1] = txItem[T]{} // zero the slot so it doesn't pin the popped item's references
+	old[n-1] = prioritizedTx[T]{} // zero the slot so it doesn't pin the popped item's references
 	*h = old[:n-1]
 	return item
 }
@@ -106,8 +71,9 @@ func (m *Mempool[T]) AreThereTxsForNextRound() bool {
 
 // StartNewBlock begins a block: it records the block's basefee and max transaction size, then re-keys the queued
 // transactions against the new basefee, dropping those whose context expired, whose size exceeds the (hot-reloadable)
-// max transaction size, or whose fee cap fell below the basefee, and re-establishes the heap. Call it once per block,
-// before its PGA rounds.
+// max transaction size, or whose fee cap fell below the basefee. It finishes by calling StartNewPGARound, which
+// promotes the waiting list and re-establishes the heap, so it doubles as the block's first PGA round. Call it once
+// per block; use StartNewPGARound directly for any further rounds.
 func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 	m.baseFee = baseFee
 	m.maxTxDataSize = maxTxDataSize
@@ -134,14 +100,16 @@ func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 	}
 	// Clear the vacated tail so dropped or moved entries aren't pinned.
 	for i := kept; i < len(m.heap); i++ {
-		m.heap[i] = txItem[T]{}
+		m.heap[i] = prioritizedTx[T]{}
 	}
 	m.heap = m.heap[:kept]
-	heap.Init(&m.heap)
+	// Run the block's first PGA round, which promotes the waiting list and re-establishes the heap after the re-key.
+	m.StartNewPGARound()
 }
 
 // StartNewPGARound promotes a snapshot of the waiting list into the priority queue, then re-establishes the heap.
-// Intake drops expired contexts and fee caps below the basefee, and rejects oversized transactions.
+// Intake drops expired contexts and fee caps below the basefee, and rejects oversized transactions. StartNewBlock
+// runs a block's first round; call this directly to run further rounds within the same block.
 func (m *Mempool[T]) StartNewPGARound() {
 	// n (the waiting-list length) is captured once; we are the sole consumer, so these receives never block, and
 	// arrivals after the snapshot stay buffered for the next round.
@@ -156,18 +124,16 @@ func (m *Mempool[T]) StartNewPGARound() {
 			item.ReturnResult(txpool.ErrOversizedData)
 			continue
 		}
-		entry := txItem[T]{tx: item}
+		entry := prioritizedTx[T]{tx: item}
 		if err := entry.setPriority(m.baseFee); err != nil {
 			item.ReturnResult(err)
 			continue
 		}
 		m.heap = append(m.heap, entry)
 	}
-	// Re-heapify only when the waiting list had arrivals; an empty round appends nothing and leaves the heap (set up
-	// by StartNewBlock) untouched.
-	if n != 0 {
-		heap.Init(&m.heap)
-	}
+	// Always re-establish the heap, even for an empty round: StartNewBlock re-keys the queued transactions and then
+	// relies on this call to restore the heap invariant.
+	heap.Init(&m.heap)
 }
 
 // Peek returns the highest-priority transaction without removing it. The caller must check Len() > 0 first.
@@ -178,7 +144,7 @@ func (m *Mempool[T]) Peek() T {
 // Pop removes and returns the highest-priority transaction. The caller must check Len() > 0 first; popping an empty
 // queue panics, like container/heap.
 func (m *Mempool[T]) Pop() T {
-	entry, ok := heap.Pop(&m.heap).(txItem[T])
+	entry, ok := heap.Pop(&m.heap).(prioritizedTx[T])
 	if !ok {
 		panic("Mempool.Pop: unexpected heap element type") // impossible
 	}
@@ -187,7 +153,7 @@ func (m *Mempool[T]) Pop() T {
 
 // Push re-inserts a transaction popped from the queue, re-keying it against the block's basefee.
 func (m *Mempool[T]) Push(item T) {
-	entry := txItem[T]{tx: item}
+	entry := prioritizedTx[T]{tx: item}
 	if err := entry.setPriority(m.baseFee); err != nil {
 		item.ReturnResult(err)
 		return
