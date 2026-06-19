@@ -34,7 +34,7 @@ unsafe extern "C" {
 /// which point to immutable, process-lifetime data initialized once via `lazy_static`.
 struct ForceSyncSend<T>(T);
 
-// SAFETY: ForceSync only wraps raw pointers to immutable, static dictionary data.
+// SAFETY: ForceSyncSend only wraps raw pointers to immutable, static dictionary data.
 // The data is initialized once (via lazy_static) and never mutated or freed,
 // so sharing across threads is safe.
 unsafe impl<T> Sync for ForceSyncSend<T> {}
