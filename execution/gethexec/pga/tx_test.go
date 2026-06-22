@@ -53,35 +53,33 @@ func (m mockTx) GetSize() int { return m.size }
 
 func (m mockTx) GetFirstAppearance() time.Time { return m.firstAppearance }
 
-func TestPgaPrioritizedTxSetPriority(t *testing.T) {
-	t.Run("sets priority from the computed fee", func(t *testing.T) {
-		item := prioritizedTx[mockTx]{tx: mockTx{fee: constFee(42)}}
-		if err := item.setPriority(big.NewInt(7)); err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
-		if item.priority != 42 {
-			t.Fatalf("priority = %d, want 42", item.priority)
-		}
-	})
+func TestPgaPrioritizedTxSetPriorityFromComputedFee(t *testing.T) {
+	item := prioritizedTx[mockTx]{tx: mockTx{fee: constFee(42)}}
+	if err := item.setPriority(big.NewInt(7)); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if item.priority != 42 {
+		t.Fatalf("priority = %d, want 42", item.priority)
+	}
+}
 
-	t.Run("forwards the basefee", func(t *testing.T) {
-		var seen *big.Int
-		item := prioritizedTx[mockTx]{tx: mockTx{fee: func(baseFee *big.Int) (uint64, error) {
-			seen = baseFee
-			return 0, nil
-		}}}
-		if err := item.setPriority(big.NewInt(99)); err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
-		if seen == nil || seen.Int64() != 99 {
-			t.Fatalf("basefee passed to ComputePgaPriority = %v, want 99", seen)
-		}
-	})
+func TestPgaPrioritizedTxSetPriorityForwardsBaseFee(t *testing.T) {
+	var seen *big.Int
+	item := prioritizedTx[mockTx]{tx: mockTx{fee: func(baseFee *big.Int) (uint64, error) {
+		seen = baseFee
+		return 0, nil
+	}}}
+	if err := item.setPriority(big.NewInt(99)); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if seen == nil || seen.Int64() != 99 {
+		t.Fatalf("basefee passed to ComputePgaPriority = %v, want 99", seen)
+	}
+}
 
-	t.Run("propagates the error", func(t *testing.T) {
-		item := prioritizedTx[mockTx]{tx: mockTx{fee: failFee(errFeeCapTooLow)}}
-		if err := item.setPriority(big.NewInt(7)); !errors.Is(err, errFeeCapTooLow) {
-			t.Fatalf("err = %v, want errors.Is(errFeeCapTooLow)", err)
-		}
-	})
+func TestPgaPrioritizedTxSetPriorityPropagatesError(t *testing.T) {
+	item := prioritizedTx[mockTx]{tx: mockTx{fee: failFee(errFeeCapTooLow)}}
+	if err := item.setPriority(big.NewInt(7)); !errors.Is(err, errFeeCapTooLow) {
+		t.Fatalf("err = %v, want errors.Is(errFeeCapTooLow)", err)
+	}
 }
