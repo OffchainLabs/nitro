@@ -6,7 +6,7 @@ coverage:
 github_checks:
   annotations: false
 comment:
-  layout: "reach, diff, flags, components, files"
+  layout: "reach, diff, components, files"
   behavior: once
   after_n_builds: 2
 component_management:
