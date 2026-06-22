@@ -101,7 +101,7 @@ func TestScheduleAdvancesThroughBlock(t *testing.T) {
 		const rounds = 3
 		blockStart := time.Now()
 		s := NewSchedule(rounds, testRoundLength)
-		for r := 1; r < rounds; r++ {
+		for r := uint(1); r < rounds; r++ {
 			if s.IsLastRound() {
 				t.Fatalf("round %d should not be the last of %d", r, rounds)
 			}

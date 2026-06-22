@@ -10,14 +10,15 @@ import (
 
 // Schedule tracks which PGA round of the block is active and decides when each execute phase begins.
 type Schedule struct {
-	roundsPerBlock int
+	roundsPerBlock uint
 	roundLength    time.Duration
-	activeRound    int
+	activeRound    uint
 	deadline       time.Time
 }
 
-// NewSchedule returns a Schedule at round 1 of a block whose first execute phase begins now.
-func NewSchedule(roundsPerBlock int, roundLength time.Duration) *Schedule {
+// NewSchedule returns a Schedule at round 1 of a block whose first execute phase begins now. It assumes roundsPerBlock
+// is greater than 0; with roundsPerBlock of 0 every round reports as the last round.
+func NewSchedule(roundsPerBlock uint, roundLength time.Duration) *Schedule {
 	return &Schedule{
 		roundsPerBlock: roundsPerBlock,
 		roundLength:    roundLength,
@@ -26,7 +27,7 @@ func NewSchedule(roundsPerBlock int, roundLength time.Duration) *Schedule {
 	}
 }
 
-func (s *Schedule) Round() int {
+func (s *Schedule) Round() uint {
 	return s.activeRound
 }
 
