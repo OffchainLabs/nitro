@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/txpool"
 )
 
 // errFeeCapTooLow stands in for the fee-cap-below-basefee error that the real ComputePgaPriority returns.
@@ -55,8 +57,8 @@ func (m mockTx) GetFirstAppearance() time.Time { return m.firstAppearance }
 
 func TestPgaPrioritizedTxSetPriorityFromComputedFee(t *testing.T) {
 	item := prioritizedTx[mockTx]{tx: mockTx{fee: constFee(42)}}
-	if err := item.setPriority(big.NewInt(7)); err != nil {
-		t.Fatalf("unexpected err: %v", err)
+	if !item.setPriority(big.NewInt(7)) {
+		t.Fatal("setPriority returned false, want true")
 	}
 	if item.priority != 42 {
 		t.Fatalf("priority = %d, want 42", item.priority)
@@ -69,17 +71,78 @@ func TestPgaPrioritizedTxSetPriorityForwardsBaseFee(t *testing.T) {
 		seen = baseFee
 		return 0, nil
 	}}}
-	if err := item.setPriority(big.NewInt(99)); err != nil {
-		t.Fatalf("unexpected err: %v", err)
+	if !item.setPriority(big.NewInt(99)) {
+		t.Fatal("setPriority returned false, want true")
 	}
 	if seen == nil || seen.Int64() != 99 {
 		t.Fatalf("basefee passed to ComputePgaPriority = %v, want 99", seen)
 	}
 }
 
-func TestPgaPrioritizedTxSetPriorityPropagatesError(t *testing.T) {
-	item := prioritizedTx[mockTx]{tx: mockTx{fee: failFee(errFeeCapTooLow)}}
-	if err := item.setPriority(big.NewInt(7)); !errors.Is(err, errFeeCapTooLow) {
-		t.Fatalf("err = %v, want errors.Is(errFeeCapTooLow)", err)
+func TestPgaPrioritizedTxSetPriorityReportsError(t *testing.T) {
+	resultChan := make(chan error, 1)
+	item := prioritizedTx[mockTx]{tx: mockTx{
+		fee:            failFee(errFeeCapTooLow),
+		resultChan:     resultChan,
+		returnedResult: &atomic.Bool{},
+	}}
+	if item.setPriority(big.NewInt(7)) {
+		t.Fatal("setPriority returned true, want false")
 	}
+	expectResult(t, resultChan, errFeeCapTooLow)
+}
+
+func TestPgaPrioritizedTxValidateAcceptsValidTx(t *testing.T) {
+	// size == maxTxDataSize is allowed: the check is a strict greater-than.
+	item := prioritizedTx[mockTx]{tx: mockTx{ctx: context.Background(), size: 100}}
+	if !item.validate(100) {
+		t.Fatal("validate returned false, want true")
+	}
+}
+
+func TestPgaPrioritizedTxValidateDropsExpiredContext(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resultChan := make(chan error, 1)
+	item := prioritizedTx[mockTx]{tx: mockTx{
+		ctx:            canceledCtx,
+		size:           10,
+		resultChan:     resultChan,
+		returnedResult: &atomic.Bool{},
+	}}
+	if item.validate(100) {
+		t.Fatal("validate returned true, want false")
+	}
+	expectResult(t, resultChan, context.Canceled)
+}
+
+func TestPgaPrioritizedTxValidateDropsOversized(t *testing.T) {
+	resultChan := make(chan error, 1)
+	item := prioritizedTx[mockTx]{tx: mockTx{
+		ctx:            context.Background(),
+		size:           101,
+		resultChan:     resultChan,
+		returnedResult: &atomic.Bool{},
+	}}
+	if item.validate(100) {
+		t.Fatal("validate returned true, want false")
+	}
+	expectResult(t, resultChan, txpool.ErrOversizedData)
+}
+
+func TestPgaPrioritizedTxValidateChecksContextBeforeSize(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resultChan := make(chan error, 1)
+	// Both checks would fail; context is checked first, so the reported error is the context error.
+	item := prioritizedTx[mockTx]{tx: mockTx{
+		ctx:            canceledCtx,
+		size:           101,
+		resultChan:     resultChan,
+		returnedResult: &atomic.Bool{},
+	}}
+	if item.validate(100) {
+		t.Fatal("validate returned true, want false")
+	}
+	expectResult(t, resultChan, context.Canceled)
 }

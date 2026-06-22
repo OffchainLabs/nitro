@@ -8,8 +8,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math/big"
-
-	"github.com/ethereum/go-ethereum/core/txpool"
 )
 
 // txHeap implements heap.Interface as a max-heap on priority, ties broken by earliest GetFirstAppearance.
@@ -70,29 +68,17 @@ func (m *Mempool[T]) AreThereTxsForNextRound() bool {
 }
 
 // StartNewBlock begins a block: it records the block's basefee and max transaction size, then re-keys the queued
-// transactions against the new basefee, dropping those whose context expired, whose size exceeds the (hot-reloadable)
-// max transaction size, or whose fee cap fell below the basefee. It finishes by calling StartNewPGARound, which
-// promotes the waiting list and re-establishes the heap, so it doubles as the block's first PGA round. Call it once
-// per block; use StartNewPGARound directly for any further rounds.
+// transactions against the new basefee, dropping any whose fee cap fell below it. It finishes by calling
+// StartNewPGARound, which promotes the waiting list and re-establishes the heap, so it doubles as the block's first PGA
+// round.
 func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 	m.baseFee = baseFee
 	m.maxTxDataSize = maxTxDataSize
 
-	// Re-key the queued transactions, compacting in place.
+	// Re-key the queued transactions against the new basefee, compacting in place.
 	kept := 0
 	for _, entry := range m.heap {
-		if err := entry.tx.GetContext().Err(); err != nil {
-			entry.tx.ReportError(err)
-			continue
-		}
-		// maxTxDataSize is hot-reloadable, so a tx accepted under a larger limit can
-		// linger in the queue; drop it if it no longer fits the current block.
-		if entry.tx.GetSize() > m.maxTxDataSize {
-			entry.tx.ReportError(txpool.ErrOversizedData)
-			continue
-		}
-		if err := entry.setPriority(m.baseFee); err != nil {
-			entry.tx.ReportError(err)
+		if !entry.setPriority(m.baseFee) {
 			continue
 		}
 		m.heap[kept] = entry
@@ -108,25 +94,13 @@ func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 }
 
 // StartNewPGARound promotes a snapshot of the waiting list into the priority queue, then re-establishes the heap.
-// Intake drops expired contexts and fee caps below the basefee, and rejects oversized transactions. StartNewBlock
-// runs a block's first round; call this directly to run further rounds within the same block.
 func (m *Mempool[T]) StartNewPGARound() {
 	// n (the waiting-list length) is captured once; we are the sole consumer, so these receivers never block, and
 	// arrivals after the snapshot stay buffered for the next round.
 	n := len(m.txQueue)
 	for range n {
-		item := <-m.txQueue
-		if err := item.GetContext().Err(); err != nil {
-			item.ReportError(err)
-			continue
-		}
-		if item.GetSize() > m.maxTxDataSize {
-			item.ReportError(txpool.ErrOversizedData)
-			continue
-		}
-		entry := prioritizedTx[T]{tx: item}
-		if err := entry.setPriority(m.baseFee); err != nil {
-			item.ReportError(err)
+		entry := prioritizedTx[T]{tx: <-m.txQueue}
+		if !entry.setPriority(m.baseFee) {
 			continue
 		}
 		m.heap = append(m.heap, entry)
@@ -136,26 +110,25 @@ func (m *Mempool[T]) StartNewPGARound() {
 	heap.Init(&m.heap)
 }
 
-// Peek returns the highest-priority transaction without removing it. The caller must check Len() > 0 first.
-func (m *Mempool[T]) Peek() T {
-	return m.heap[0].tx
-}
-
-// Pop removes and returns the highest-priority transaction. The caller must check Len() > 0 first; popping an empty
-// queue panics, like container/heap.
-func (m *Mempool[T]) Pop() T {
-	entry, ok := heap.Pop(&m.heap).(prioritizedTx[T])
-	if !ok {
-		panic("Mempool.Pop: unexpected heap element type") // impossible
+// Pop removes and returns the highest-priority valid transaction. It validates each candidate against the block's max
+// transaction size and context, dropping those that fail.
+func (m *Mempool[T]) Pop() (tx T, ok bool) {
+	for m.heap.Len() > 0 {
+		entry, valid := heap.Pop(&m.heap).(prioritizedTx[T])
+		if !valid {
+			panic("Mempool.Pop: unexpected heap element type") // impossible
+		}
+		if entry.validate(m.maxTxDataSize) {
+			return entry.tx, true
+		}
 	}
-	return entry.tx
+	return tx, false
 }
 
 // Push re-inserts a transaction popped from the queue, re-keying it against the block's basefee.
 func (m *Mempool[T]) Push(item T) {
 	entry := prioritizedTx[T]{tx: item}
-	if err := entry.setPriority(m.baseFee); err != nil {
-		item.ReportError(err)
+	if !entry.setPriority(m.baseFee) {
 		return
 	}
 	heap.Push(&m.heap, entry)

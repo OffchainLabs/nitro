@@ -7,6 +7,8 @@ import (
 	"context"
 	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/txpool"
 )
 
 // Tx is a transaction managed by the priority mempool. The sequencer's txQueueItem implements it; the mempool depends
@@ -31,12 +33,27 @@ type prioritizedTx[T Tx] struct {
 	priority uint64
 }
 
-// setPriority sets the item's priority from ComputePgaPriority.
-func (item *prioritizedTx[T]) setPriority(baseFee *big.Int) error {
+// setPriority computes the item's priority from ComputePgaPriority. On error it returns false, signalling that the
+// transaction was dropped.
+func (item *prioritizedTx[T]) setPriority(baseFee *big.Int) bool {
 	fee, err := item.tx.ComputePgaPriority(baseFee)
 	if err != nil {
-		return err
+		item.tx.ReportError(err)
+		return false
 	}
 	item.priority = fee
-	return nil
+	return true
+}
+
+// validate returns false if the transaction was dropped.
+func (item *prioritizedTx[T]) validate(maxTxDataSize int) bool {
+	if err := item.tx.GetContext().Err(); err != nil {
+		item.tx.ReportError(err)
+		return false
+	}
+	if item.tx.GetSize() > maxTxDataSize {
+		item.tx.ReportError(txpool.ErrOversizedData)
+		return false
+	}
+	return true
 }
