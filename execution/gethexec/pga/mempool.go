@@ -111,7 +111,7 @@ func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 // Intake drops expired contexts and fee caps below the basefee, and rejects oversized transactions. StartNewBlock
 // runs a block's first round; call this directly to run further rounds within the same block.
 func (m *Mempool[T]) StartNewPGARound() {
-	// n (the waiting-list length) is captured once; we are the sole consumer, so these receives never block, and
+	// n (the waiting-list length) is captured once; we are the sole consumer, so these receivers never block, and
 	// arrivals after the snapshot stay buffered for the next round.
 	n := len(m.txQueue)
 	for range n {
