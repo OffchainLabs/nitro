@@ -92,10 +92,16 @@ type blockBuildState struct {
 	activeGroupCP        *groupCheckpoint
 }
 
+// txCheckpoint is the rollback state captured before a tx runs: the state snapshot
+// plus a copy of the Stylus warm-start cache
+type txCheckpoint struct {
+	snap        int
+	recentWasms state.RecentWasms
+}
+
 // lint:require-exhaustive-initialization
 type groupCheckpoint struct {
 	backup               *state.StateDB
-	snap                 int
 	headerGasUsed        uint64
 	blockGasLeft         uint64
 	expectedBalanceDelta *big.Int
@@ -103,19 +109,19 @@ type groupCheckpoint struct {
 	completeLen          int
 	receiptsLen          int
 	userTx               *types.Transaction
+	tx                   txCheckpoint
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTx *types.Transaction) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint txCheckpoint, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
 	s.activeGroupCP = &groupCheckpoint{
 		backup:               s.statedb.Copy(),
-		snap:                 snap,
 		headerGasUsed:        header.GasUsed,
 		blockGasLeft:         s.blockGasLeft,
 		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
@@ -123,6 +129,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
 		userTx:               userTx,
+		tx:                   checkpoint,
 	}
 	return nil
 }
@@ -132,8 +139,11 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 // GasUsed, which lives outside blockBuildState.
 func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
-	cp.backup.RevertToSnapshot(cp.snap)
+	cp.backup.RevertToSnapshot(cp.tx.snap)
 	s.statedb = cp.backup
+	// Reset the warm-start cache to before the group ran: its redeems warmed only
+	// the now-discarded live statedb, and backup carries the post-execution cache.
+	s.statedb.RestoreRecentWasms(cp.tx.recentWasms)
 	header.GasUsed = cp.headerGasUsed
 	s.blockGasLeft = cp.blockGasLeft
 	s.expectedBalanceDelta.Set(cp.expectedBalanceDelta)
@@ -490,6 +500,14 @@ func ProduceBlockAdvanced(
 			snap := buildState.statedb.Snapshot()
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
+			// Also snapshot the warm-start cache so a dropped tx that warmed a
+			// program leaves nothing behind for later included txs
+			checkpoint := txCheckpoint{snap: snap}
+			canDropExecutedTx := sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback()
+			if canDropExecutedTx {
+				checkpoint.recentWasms = buildState.statedb.GetRecentWasms().Copy()
+			}
+
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
@@ -510,7 +528,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, snap, tx); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, checkpoint, tx); err != nil {
 							return err
 						}
 					}
@@ -519,7 +537,11 @@ func ProduceBlockAdvanced(
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
-				buildState.statedb.RevertToSnapshot(snap)
+				buildState.statedb.RevertToSnapshot(checkpoint.snap)
+				if canDropExecutedTx {
+					// Undo any warm-start this dropped tx left behind.
+					buildState.statedb.RestoreRecentWasms(checkpoint.recentWasms)
+				}
 				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
