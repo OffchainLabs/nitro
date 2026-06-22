@@ -29,19 +29,19 @@ func TestScheduleInitialState(t *testing.T) {
 	})
 }
 
-func TestScheduleAdvanceRoundWaitsForBoundary(t *testing.T) {
+func TestScheduleWaitAndAdvanceRoundWaitsForBoundary(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Now()
 		s := NewSchedule(2, testRoundLength)
 		deadline := s.Deadline()
 
-		// Round 1 has not reached its deadline, so AdvanceRound sleeps to it.
-		if err := s.AdvanceRound(context.Background()); err != nil {
-			t.Fatalf("AdvanceRound returned %v, want nil at the boundary", err)
+		// Round 1 has not reached its deadline, so WaitAndAdvanceRound sleeps to it.
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil at the boundary", err)
 		}
 
 		if got := time.Since(start); got != testRoundLength {
-			t.Errorf("AdvanceRound slept %v, want %v", got, testRoundLength)
+			t.Errorf("WaitAndAdvanceRound slept %v, want %v", got, testRoundLength)
 		}
 		if got := s.Round(); got != 2 {
 			t.Errorf("round = %d, want 2", got)
@@ -52,7 +52,7 @@ func TestScheduleAdvanceRoundWaitsForBoundary(t *testing.T) {
 	})
 }
 
-func TestScheduleAdvanceRoundReturnsImmediatelyAfterOverrun(t *testing.T) {
+func TestScheduleWaitAndAdvanceRoundReturnsImmediatelyAfterOverrun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := NewSchedule(2, testRoundLength)
 
@@ -60,12 +60,12 @@ func TestScheduleAdvanceRoundReturnsImmediatelyAfterOverrun(t *testing.T) {
 		time.Sleep(testRoundLength + 50*time.Millisecond)
 		overran := time.Now()
 
-		if err := s.AdvanceRound(context.Background()); err != nil {
-			t.Fatalf("AdvanceRound returned %v, want nil after overrun", err)
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil after overrun", err)
 		}
 
 		if got := time.Now(); !got.Equal(overran) {
-			t.Errorf("AdvanceRound advanced the clock to %v, want immediate return at %v", got, overran)
+			t.Errorf("WaitAndAdvanceRound advanced the clock to %v, want immediate return at %v", got, overran)
 		}
 		if got := s.Round(); got != 2 {
 			t.Errorf("round = %d, want 2", got)
@@ -76,7 +76,7 @@ func TestScheduleAdvanceRoundReturnsImmediatelyAfterOverrun(t *testing.T) {
 	})
 }
 
-func TestScheduleAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
+func TestScheduleWaitAndAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		start := time.Now()
@@ -84,11 +84,11 @@ func TestScheduleAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
 
 		cancel()
 
-		if err := s.AdvanceRound(ctx); !errors.Is(err, context.Canceled) {
-			t.Errorf("AdvanceRound returned %v, want context.Canceled", err)
+		if err := s.WaitAndAdvanceRound(ctx); !errors.Is(err, context.Canceled) {
+			t.Errorf("WaitAndAdvanceRound returned %v, want context.Canceled", err)
 		}
 		if got := time.Since(start); got != 0 {
-			t.Errorf("AdvanceRound waited %v, want immediate return", got)
+			t.Errorf("WaitAndAdvanceRound waited %v, want immediate return", got)
 		}
 		if got := s.Round(); got != 1 {
 			t.Errorf("round = %d, want 1 (unchanged) after interruption", got)
@@ -96,7 +96,7 @@ func TestScheduleAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
 	})
 }
 
-func TestScheduleAdvanceRoundOnLastRoundReturnsError(t *testing.T) {
+func TestScheduleWaitAndAdvanceRoundOnLastRoundReturnsError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Now()
 		s := NewSchedule(1, testRoundLength)
@@ -104,14 +104,14 @@ func TestScheduleAdvanceRoundOnLastRoundReturnsError(t *testing.T) {
 			t.Fatal("round 1 of 1 should be the last round")
 		}
 
-		if err := s.AdvanceRound(context.Background()); !errors.Is(err, ErrNoMoreRounds) {
-			t.Errorf("AdvanceRound on the last round returned %v, want ErrNoMoreRounds", err)
+		if err := s.WaitAndAdvanceRound(context.Background()); !errors.Is(err, ErrNoMoreRounds) {
+			t.Errorf("WaitAndAdvanceRound on the last round returned %v, want ErrNoMoreRounds", err)
 		}
 		if got := time.Since(start); got != 0 {
-			t.Errorf("AdvanceRound waited %v on the last round, want immediate return", got)
+			t.Errorf("WaitAndAdvanceRound waited %v on the last round, want immediate return", got)
 		}
 		if got := s.Round(); got != 1 {
-			t.Errorf("round = %d, want 1 (unchanged) after AdvanceRound on the last round", got)
+			t.Errorf("round = %d, want 1 (unchanged) after WaitAndAdvanceRound on the last round", got)
 		}
 	})
 }
@@ -125,8 +125,8 @@ func TestScheduleAdvancesThroughBlock(t *testing.T) {
 			if s.IsLastRound() {
 				t.Fatalf("round %d should not be the last of %d", r, rounds)
 			}
-			if err := s.AdvanceRound(context.Background()); err != nil {
-				t.Fatalf("round %d AdvanceRound returned %v, want nil", r, err)
+			if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+				t.Fatalf("round %d WaitAndAdvanceRound returned %v, want nil", r, err)
 			}
 			if got, want := time.Since(blockStart), time.Duration(r)*testRoundLength; got != want {
 				t.Fatalf("round %d boundary at +%v, want +%v", r+1, got, want)

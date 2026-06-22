@@ -40,15 +40,15 @@ func (s *Schedule) Deadline() time.Time {
 	return s.deadline
 }
 
-// ErrNoMoreRounds is returned by AdvanceRound when the schedule is already on the last round of the block, so there is
-// no next round to advance to.
+// ErrNoMoreRounds is returned by WaitAndAdvanceRound when the schedule is already on the last round of the block, so
+// there is no next round to advance to.
 var ErrNoMoreRounds = errors.New("pga: no rounds remaining in the block")
 
-// AdvanceRound moves to the next round, waiting until the current round's deadline when called before it and returning
-// immediately when called after it. It returns ErrNoMoreRounds without waiting when the schedule is already on the last
-// round. If ctx is cancelled before the deadline, AdvanceRound returns its error without advancing so the caller can
-// stop building the block; otherwise it returns nil.
-func (s *Schedule) AdvanceRound(ctx context.Context) error {
+// WaitAndAdvanceRound moves to the next round, waiting until the current round's deadline when called before it and
+// returning immediately when called after it. It returns ErrNoMoreRounds without waiting when the schedule is already
+// on the last round. If ctx is cancelled before the deadline, WaitAndAdvanceRound returns its error without advancing
+// so the caller can stop building the block; otherwise it returns nil.
+func (s *Schedule) WaitAndAdvanceRound(ctx context.Context) error {
 	if s.IsLastRound() {
 		return ErrNoMoreRounds
 	}
