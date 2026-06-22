@@ -96,6 +96,35 @@ func TestScheduleWaitAndAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
 	})
 }
 
+func TestScheduleWaitAndAdvanceRoundContextCancelMidWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		start := time.Now()
+		s := NewSchedule(2, testRoundLength)
+
+		// WaitAndAdvanceRound blocks on the round-1 deadline in its own goroutine.
+		errc := make(chan error, 1)
+		go func() {
+			errc <- s.WaitAndAdvanceRound(ctx)
+		}()
+
+		// Cancel partway through the round, while the call is still waiting.
+		const elapsed = testRoundLength / 2
+		time.Sleep(elapsed)
+		cancel()
+
+		if err := <-errc; !errors.Is(err, context.Canceled) {
+			t.Errorf("WaitAndAdvanceRound returned %v, want context.Canceled", err)
+		}
+		if got := time.Since(start); got != elapsed {
+			t.Errorf("WaitAndAdvanceRound returned after %v, want %v (mid-wait cancellation)", got, elapsed)
+		}
+		if got := s.Round(); got != 1 {
+			t.Errorf("round = %d, want 1 (unchanged) after interruption", got)
+		}
+	})
+}
+
 func TestScheduleWaitAndAdvanceRoundOnLastRoundReturnsError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Now()
