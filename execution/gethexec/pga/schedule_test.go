@@ -157,7 +157,9 @@ func TestScheduleAdvancesThroughBlock(t *testing.T) {
 			if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
 				t.Fatalf("round %d WaitAndAdvanceRound returned %v, want nil", r, err)
 			}
-			if got, want := time.Since(blockStart), time.Duration(r)*testRoundLength; got != want {
+			// r is a small loop counter, so converting it to a duration cannot overflow.
+			want := time.Duration(r) * testRoundLength // #nosec G115
+			if got := time.Since(blockStart); got != want {
 				t.Fatalf("round %d boundary at +%v, want +%v", r+1, got, want)
 			}
 			if gotRound := s.Round(); gotRound != r+1 {
