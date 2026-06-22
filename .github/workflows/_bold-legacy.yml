@@ -10,6 +10,8 @@ jobs:
   bold-legacy:
     name: Run Bold Legacy challenge tests
     runs-on: arbitrator-ci
+    env:
+      COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -31,7 +33,7 @@ jobs:
       - name: run challenge tests
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
-          --run TestChallenge --timeout 60m --cover
+          --run TestChallenge --timeout 60m $COVER
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v6
@@ -40,6 +42,7 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
+        if: github.event_name != 'merge_group'
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
         with:
           fail_ci_if_error: false
