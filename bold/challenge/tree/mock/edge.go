@@ -12,8 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var _ = protocol.ReadOnlyEdge(&Edge{})
@@ -89,27 +89,27 @@ func (e *Edge) ComputeMutualId() string {
 }
 
 // ClaimId of the edge, if any
-func (e *Edge) ClaimId() option.Option[protocol.ClaimId] {
+func (e *Edge) ClaimId() containers.Option[protocol.ClaimId] {
 	if e.ClaimID == "" {
-		return option.None[protocol.ClaimId]()
+		return containers.None[protocol.ClaimId]()
 	}
-	return option.Some(protocol.ClaimId(common.BytesToHash([]byte(e.ClaimID))))
+	return containers.Some(protocol.ClaimId(common.BytesToHash([]byte(e.ClaimID))))
 }
 
 // LowerChild of the edge, if any.
-func (e *Edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
+func (e *Edge) LowerChild(_ context.Context) (containers.Option[protocol.EdgeId], error) {
 	if e.LowerChildID == "" {
-		return option.None[protocol.EdgeId](), nil
+		return containers.None[protocol.EdgeId](), nil
 	}
-	return option.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.LowerChildID))}), nil
+	return containers.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.LowerChildID))}), nil
 }
 
 // UpperChild of the edge, if any.
-func (e *Edge) UpperChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
+func (e *Edge) UpperChild(_ context.Context) (containers.Option[protocol.EdgeId], error) {
 	if e.UpperChildID == "" {
-		return option.None[protocol.EdgeId](), nil
+		return containers.None[protocol.EdgeId](), nil
 	}
-	return option.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.UpperChildID))}), nil
+	return containers.Some(protocol.EdgeId{Hash: common.BytesToHash([]byte(e.UpperChildID))}), nil
 }
 
 func (e *Edge) HasChildren(ctx context.Context) (bool, error) {
@@ -117,8 +117,8 @@ func (e *Edge) HasChildren(ctx context.Context) (bool, error) {
 }
 
 // MiniStaker of an edge. Only existing for level zero edges.
-func (*Edge) MiniStaker() option.Option[common.Address] {
-	return option.None[common.Address]()
+func (*Edge) MiniStaker() containers.Option[common.Address] {
+	return containers.None[common.Address]()
 }
 
 // AssertionHash of the parent assertion that originated the challenge

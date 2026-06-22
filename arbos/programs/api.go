@@ -9,6 +9,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -169,6 +170,8 @@ func newApiClosures(
 			returnGas      uint64
 			returnMultiGas multigas.MultiGas
 		)
+
+		db.TouchAddress(&filter.FilteredAddressWithReason{Address: contract, FilterReason: filter.FilterReason{Reason: filter.ReasonCallTarget, EventRuleMatch: nil}})
 
 		switch opcode {
 		case vm.CALL:

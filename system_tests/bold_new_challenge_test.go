@@ -22,10 +22,10 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/state"
@@ -33,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type incorrectBlockStateProvider struct {
@@ -54,7 +55,7 @@ func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
-	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, state.Batch(maxInboxCount), option.Some(state.Height(maxNumberOfBlocks)))
+	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, state.Batch(maxInboxCount), containers.Some(state.Height(maxNumberOfBlocks)))
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
 	batchLimit state.Batch,
-	toHeight option.Option[state.Height],
+	toHeight containers.Option[state.Height],
 ) ([]common.Hash, error) {
 	states, err := s.honest.L2MessageStatesUpTo(ctx, fromState, batchLimit, toHeight)
 	if err != nil {
@@ -316,7 +317,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
-		nil, // Api db
+		containers.None[db.Database](), // Api db
 	)
 
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(builder.addresses.Rollup, builder.L1.Client)

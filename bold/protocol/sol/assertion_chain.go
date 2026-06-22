@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/retry"
@@ -34,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/testgen"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -721,7 +721,7 @@ func TryConfirmingAssertion(
 	confirmableAfterBlock uint64,
 	chain protocol.AssertionChain,
 	averageTimeForBlockCreation time.Duration,
-	winningEdgeId option.Option[protocol.EdgeId],
+	winningEdgeId util_containers.Option[protocol.EdgeId],
 ) (bool, error) {
 	status, err := chain.AssertionStatus(ctx, assertionHash)
 	if err != nil {
@@ -1022,10 +1022,22 @@ func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protoc
 func (a *AssertionChain) ReadAssertionCreationInfo(
 	ctx context.Context, id protocol.AssertionHash,
 ) (*protocol.AssertionCreatedInfo, error) {
+	return a.readAssertionCreationInfo(ctx, id, a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+}
+
+func (a *AssertionChain) ReadAssertionCreationInfoAtLatest(
+	ctx context.Context, id protocol.AssertionHash,
+) (*protocol.AssertionCreatedInfo, error) {
+	return a.readAssertionCreationInfo(ctx, id, &bind.CallOpts{Context: ctx})
+}
+
+func (a *AssertionChain) readAssertionCreationInfo(
+	ctx context.Context, id protocol.AssertionHash, callOpts *bind.CallOpts,
+) (*protocol.AssertionCreatedInfo, error) {
 	var assertionCreationBlock uint64
 	var topics [][]common.Hash
 	if id == (protocol.AssertionHash{}) {
-		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
+		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(callOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -1037,11 +1049,14 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], id.Bytes())
-		var err error
-		assertionCreationBlock, err = a.GetAssertionCreationParentBlock(ctx, b)
+		createdAtBlock, err := a.userLogic.GetAssertionCreationBlockForLogLookup(callOpts, b)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "could not get assertion creation block for assertion hash %#x", b)
 		}
+		if !createdAtBlock.IsUint64() {
+			return nil, fmt.Errorf("for assertion hash %#x, createdAtBlock was not a uint64", b)
+		}
+		assertionCreationBlock = createdAtBlock.Uint64()
 		topics = [][]common.Hash{{assertionCreatedId}, {id.Hash}}
 	}
 	var query = ethereum.FilterQuery{
@@ -1066,7 +1081,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
-	res, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), parsedLog.AssertionHash)
+	res, err := a.rollup.GetAssertion(callOpts, parsedLog.AssertionHash)
 	if err != nil {
 		return nil, err
 	}

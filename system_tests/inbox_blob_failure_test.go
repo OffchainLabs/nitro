@@ -20,6 +20,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/containers"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // failingBlobReader wraps a real BlobReader and can be configured to fail.
@@ -102,7 +104,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 
 	// Build follower with failing blob reader
 	wrappedBlobReader := &failingBlobReader{
-		inner:     builder.L1.L1BlobReader,
+		inner:     builder.L1.L1BlobReader.Unwrap(),
 		returnErr: errors.New("simulated blob fetch failure"),
 	}
 
@@ -110,7 +112,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	nodeConfigB.MessageExtraction.Enable = true
 	testClientB, cleanupB := builder.Build2ndNodeWithBlobReader(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
-	}, wrappedBlobReader)
+	}, containers.Some[daprovider.BlobReader](wrappedBlobReader))
 	defer cleanupB()
 
 	// Wait for follower to attempt sync
@@ -247,7 +249,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 }
 
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
-func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader daprovider.BlobReader) (*TestClient, func()) {
+func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader containers.Option[daprovider.BlobReader]) (*TestClient, func()) {
 	t.Helper()
 	// Use WaitAndRun (weight 2, matching BuildL1) so a full second L2 node build
 	// participates in the weighted semaphore instead of being forced through regardless
@@ -286,6 +288,9 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 	}
 	if b.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
+	}
+	if *testflag.ConsensusExecutionInSameProcessUseRPC {
+		configureConsensusExecutionOverRPC(params.execConfig, params.nodeConfig, params.stackConfig)
 	}
 
 	var cleanup func()

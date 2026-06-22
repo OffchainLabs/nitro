@@ -98,6 +98,7 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
+	ExperimentalPGA              PGAConfig        `koanf:"experimental-pga"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
@@ -106,6 +107,22 @@ type SequencerConfig struct {
 type DangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
+}
+
+type PGAConfig struct {
+	Enable         bool `koanf:"enable"`
+	RoundsPerBlock uint `koanf:"rounds-per-block"`
+}
+
+const minPGARoundLength = 50 * time.Millisecond
+
+// PGARoundLength returns the length of a PGA round. It is derived from the
+// block time rather than configured directly, so MaxBlockSpeed remains the
+// single source of truth.
+func (c *SequencerConfig) PGARoundLength() time.Duration {
+	// RoundsPerBlock is a small round count bounded by Validate; the conversion cannot overflow.
+	// #nosec G115
+	return c.MaxBlockSpeed / time.Duration(c.ExperimentalPGA.RoundsPerBlock)
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -157,6 +174,17 @@ func (c *SequencerConfig) Validate() error {
 			}
 		}
 	}
+	if c.ExperimentalPGA.RoundsPerBlock == 0 {
+		return errors.New("experimental-pga.rounds-per-block must be at least 1")
+	}
+	if c.ExperimentalPGA.Enable {
+		if c.Timeboost.Enable {
+			return errors.New("experimental-pga.enable and timeboost.enable are mutually exclusive")
+		}
+		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
+			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
+		}
+	}
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
 	}
@@ -187,11 +215,17 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    timeboost.DefaultConfig,
+	ExperimentalPGA:              DefaultPGAConfig,
 	Dangerous:                    DefaultDangerousConfig,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
+}
+
+var DefaultPGAConfig = PGAConfig{
+	Enable:         false,
+	RoundsPerBlock: 2,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -203,6 +237,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
+	PGAAddOptions(prefix+".experimental-pga", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
@@ -220,6 +255,11 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
+}
+
+func PGAAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultPGAConfig.Enable, "EXPERIMENTAL: enable priority gas auction (PGA) transaction ordering; mutually exclusive with timeboost")
+	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -771,8 +811,8 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
-			for _, record := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(&record)
+			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address) {
+				statedb.TouchAddress(&addr)
 			}
 		}
 	}
@@ -1882,10 +1922,24 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
 	}
 
+	s.pendingFilteredTxReports = nil
 	block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
 	if err != nil {
 		t.Fatalf("SequenceTransactionsForTest: %v", err)
 	}
+
+	// Mirror createBlock: dispatch any reports accumulated by preTxFilter so
+	// tests inspecting the filtering-report endpoint observe them.
+	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
+		reports := s.pendingFilteredTxReports
+		s.LaunchThread(func(ctx context.Context) {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
+			}
+		})
+	}
+	s.pendingFilteredTxReports = nil
+
 	return block, hooks.GetTxErrors()
 }
 

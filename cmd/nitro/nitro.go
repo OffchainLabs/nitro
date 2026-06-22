@@ -60,6 +60,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -283,9 +284,10 @@ func mainImpl() int {
 	})
 
 	var rollupAddrs chaininfo.RollupAddresses
+	l1ClientOpt := containers.None[*ethclient.Client]()
 	var l1Client *ethclient.Client
 	var l1Reader *headerreader.HeaderReader
-	var blobReader daprovider.BlobReader
+	var blobReader containers.Option[daprovider.BlobReader]
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -294,6 +296,7 @@ func mainImpl() int {
 			log.Crit("couldn't connect to L1", "err", err)
 		}
 		l1Client = ethclient.NewClient(rpcClient)
+		l1ClientOpt = containers.Some(l1Client)
 		l1ChainId, err := l1Client.ChainID(ctx)
 		if err != nil {
 			log.Crit("couldn't read L1 chainid", "err", err)
@@ -322,7 +325,7 @@ func mainImpl() int {
 			if err != nil {
 				log.Crit("failed to initialize blob client", "err", err)
 			}
-			blobReader = blobClient
+			blobReader = containers.Some[daprovider.BlobReader](blobClient)
 		}
 	}
 
@@ -434,7 +437,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDB, initDataReader, l2BlockChain, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	executionDB, initDataReader, l2BlockChain, dbFreshlyCreated, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -445,8 +448,13 @@ func mainImpl() int {
 		return 1
 	}
 
-	if initDataReader != nil && nodeConfig.Init.ValidateGenesisAssertion {
-		if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client); err != nil {
+	shouldValidate, err := nitroinit.ShouldValidateGenesisAssertion(l2BlockChain.CurrentBlock(), l2BlockChain.Genesis().Hash(), &nodeConfig.Init)
+	if err != nil {
+		log.Error("error checking whether to validate genesis assertion", "err", err)
+		return 1
+	}
+	if shouldValidate {
+		if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client, dbFreshlyCreated); err != nil {
 			log.Error("error trying to validate genesis assertion", "err", err)
 			if !nodeConfig.Init.Force {
 				return 1
@@ -539,7 +547,7 @@ func mainImpl() int {
 			stack,
 			executionDB,
 			l2BlockChain,
-			l1Client,
+			l1ClientOpt,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 			parentChain,
