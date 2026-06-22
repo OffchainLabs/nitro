@@ -29,7 +29,7 @@ func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
 			// Preserve the existing fee-cap-too-low error message from sequencer.go.
 			return 0, fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, i.tx.GasFeeCap(), baseFee)
 		}
-		return 0, err
+		return 0, fmt.Errorf("unexpected EffectiveGasTip error for tx %v: %w", i.tx.Hash(), err)
 	}
 	// TODO(NIT-5043): add anti-starvation boost
 	return arbmath.BigToUintSaturating(tip), nil
