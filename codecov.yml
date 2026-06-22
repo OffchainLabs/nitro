@@ -2,17 +2,17 @@ coverage:
   status:
     project:
       default: false
-    patch: false
+    patch: true
 github_checks:
   annotations: false
 comment:
-  layout: "diff"
+  layout: "reach, diff, flags, components, files"
   behavior: once
   after_n_builds: 2
 component_management:
   default_rules:
     statuses:
-      - type: project # in this case every component that doens't have a status defined will have a project type one
+      - type: project # in this case every component that doesn't have a status defined will have a project type one
         target: 30
   individual_components:
     - component_id: module_stf
@@ -127,7 +127,7 @@ component_management:
         - cmd/nitro/init/**
         - execution/gethexec/**
         - execution/nodeinterface/**
-        #Consensus Layer
+        # Consensus Layer
         - arbnode/**
         - daprovider/**
         # Startup Orchestration
@@ -135,3 +135,98 @@ component_management:
         - blocks_reexecutor/**
         - util/signature/**
         - util/iostat/**
+    - component_id: module_validation
+      name: Validation
+      paths:
+        # BoLD dispute protocol (bisection, edge tracking, assertion chain, history commitments)
+        - bold/**
+        # Staker: assertion posting, stake management, challenge backends, validator wallet
+        - staker/**
+        # Block validator and validation-server clients (arb prover, JIT, common plumbing)
+        - validator/**
+        # Standalone validation-server binary
+        - cmd/nitro-val/**
+        # Replaying recorded blocks for spot checks / reexecution
+        - blocks_reexecutor/**
+        # Merkle proofs used by challenge history commitments
+        - util/merkletree/**
+    - component_id: module_sequencing
+      name: Sequencing
+      paths:
+        # Sequencer: tx ordering, express-lane sequencing, pre-check, forwarding to active sequencer
+        - execution/gethexec/sequencer.go
+        - execution/gethexec/tx_pre_checker.go
+        - execution/gethexec/forwarder.go
+        # Transaction streamer (canonical message feed into execution)
+        - arbnode/transaction_streamer.go
+        # Batch poster (compresses messages, posts batches to the parent-chain SequencerInbox)
+        - arbnode/batch_poster.go
+        - arbnode/compression_level.go
+        # Parent-chain transaction posting (nonce management, gas pricing, blob/calldata posting)
+        - arbnode/dataposter/**
+        # Inbox: reading parent-chain batches, tracking delayed messages, sequencer inbox decode
+        - arbnode/inbox_reader.go
+        - arbnode/inbox_tracker.go
+        - arbnode/sequencer_inbox.go
+        - arbnode/delayed.go
+        - arbnode/delayed_sequencer.go
+        - arbnode/delay_buffer.go
+        # Highly-available sequencer coordination via Redis (failover, chosen-sequencer election)
+        - arbnode/seq_coordinator.go
+        - arbnode/redislock/**
+        - cmd/seq-coordinator-manager/**
+        - cmd/seq-coordinator-invalidate/**
+        # Message DB pruning and node maintenance windows
+        - arbnode/message_pruner.go
+        - arbnode/maintenance.go
+        # Redis and DB helpers backing coordination and persistence
+        - util/redisutil/**
+        - util/dbutil/**
+    - component_id: module_feed
+      name: Feed
+      paths:
+        # Broadcaster: serves the sequencer feed, message backlog, wire message format
+        - broadcaster/**
+        # WebSocket broadcast server (client connection/management, rate limiting)
+        - wsbroadcastserver/**
+        # Feed clients (single endpoint and multi-endpoint aggregation/dedup)
+        - broadcastclient/**
+        - broadcastclients/**
+        # Relay: re-broadcasts the feed to downstream clients
+        - relay/**
+        - cmd/relay/**
+    - component_id: module_da
+      name: DataAvailability
+      paths:
+        # DA provider registry, readers/writers, AnyTrust tree/util, reference DA, data streaming
+        - daprovider/**
+        # BLS signatures used for AnyTrust committee keyset validation
+        - blsSignatures/**
+        # DA-related binaries (provider server, AnyTrust committee server/tooling)
+        - cmd/daprovider/**
+        - cmd/anytrustserver/**
+        - cmd/anytrusttool/**
+        - cmd/dataavailability/**
+        # Blob (EIP-4844) encoding/decoding helpers
+        - util/blobs/**
+        # S3 client used by DA storage backends
+        - util/s3client/**
+    - component_id: module_timeboost
+      name: Timeboost
+      paths:
+        # Express-lane auction: auctioneer, bid cache/validation, bidder client, generated bindings
+        - timeboost/**
+        # Autonomous auctioneer binary and bidder client binary
+        - cmd/autonomous-auctioneer/**
+        - cmd/bidder-client/**
+    - component_id: module_mel
+      name: MEL
+      paths:
+        # Message Execution Layer core types and state on the consensus node
+        - arbnode/mel/**
+        # MEL replay program (delayed-message DB, state derivation under replay)
+        - mel-replay/**
+        # WASM I/O shim for the MEL replay binary
+        - melwavmio/**
+        # MEL replay binary entry point
+        - cmd/mel-replay/**
