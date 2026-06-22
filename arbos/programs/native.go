@@ -164,6 +164,11 @@ func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
 }
 
+// WasmerSerializeVersion returns wasmer's MetadataHeader::CURRENT_VERSION
+func WasmerSerializeVersion() uint32 {
+	return uint32(C.stylus_wasmer_serialize_version())
+}
+
 // DrainStackPool discards all cached Wasmer coroutine stacks so that
 // subsequent allocations use the current process-wide stack size.
 func DrainStackPool() {

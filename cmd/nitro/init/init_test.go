@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -531,6 +532,15 @@ func generateKeys(prefix []byte, numKeys int) [][]byte {
 		keys = append(keys, append(prefix, testhelpers.RandomSlice(32)...))
 	}
 	return keys
+}
+
+func TestWasmerSerializeVersionMatchesRust(t *testing.T) {
+	got := programs.WasmerSerializeVersion()
+	if WasmerSerializeVersion != got {
+		t.Fatalf("WasmerSerializeVersion mismatch: Go constant = %d, wasmer "+
+			"MetadataHeader::CURRENT_VERSION = %d. Update WasmerSerializeVersion in "+
+			"cmd/nitro/init/init.go to match wasmer.", WasmerSerializeVersion, got)
+	}
 }
 
 func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {

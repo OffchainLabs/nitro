@@ -254,6 +254,14 @@ pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
 }
 
+/// Returns wasmer's MetadataHeader::CURRENT_VERSION, the source-of-truth version stamped into
+/// serialized Stylus modules. Go mirrors it in cmd/nitro/init to purge stale cached modules;
+/// exported so a test can catch the two drifting apart.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_wasmer_serialize_version() -> u32 {
+    wasmer_types::MetadataHeader::CURRENT_VERSION
+}
+
 /// Calls an activated user program.
 ///
 /// Returns `UserOutcomeKind::NativeStackOverflow` if the Wasmer coroutine
