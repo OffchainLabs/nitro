@@ -35,7 +35,7 @@ func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
 	return arbmath.BigToUintSaturating(tip), nil
 }
 
-func (i txQueueItem) ReturnResult(err error) { i.returnResult(err) }
+func (i txQueueItem) ReportError(err error) { i.returnResult(err) }
 
 func (i txQueueItem) GetContext() context.Context { return i.ctx }
 

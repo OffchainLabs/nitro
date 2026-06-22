@@ -39,7 +39,7 @@ type mockTx struct {
 
 func (m mockTx) ComputePgaPriority(baseFee *big.Int) (uint64, error) { return m.fee(baseFee) }
 
-func (m mockTx) ReturnResult(err error) {
+func (m mockTx) ReportError(err error) {
 	if m.returnedResult.Swap(true) {
 		return
 	}

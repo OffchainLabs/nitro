@@ -82,17 +82,17 @@ func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 	kept := 0
 	for _, entry := range m.heap {
 		if err := entry.tx.GetContext().Err(); err != nil {
-			entry.tx.ReturnResult(err)
+			entry.tx.ReportError(err)
 			continue
 		}
 		// maxTxDataSize is hot-reloadable, so a tx accepted under a larger limit can
 		// linger in the queue; drop it if it no longer fits the current block.
 		if entry.tx.GetSize() > m.maxTxDataSize {
-			entry.tx.ReturnResult(txpool.ErrOversizedData)
+			entry.tx.ReportError(txpool.ErrOversizedData)
 			continue
 		}
 		if err := entry.setPriority(m.baseFee); err != nil {
-			entry.tx.ReturnResult(err)
+			entry.tx.ReportError(err)
 			continue
 		}
 		m.heap[kept] = entry
@@ -117,16 +117,16 @@ func (m *Mempool[T]) StartNewPGARound() {
 	for range n {
 		item := <-m.txQueue
 		if err := item.GetContext().Err(); err != nil {
-			item.ReturnResult(err)
+			item.ReportError(err)
 			continue
 		}
 		if item.GetSize() > m.maxTxDataSize {
-			item.ReturnResult(txpool.ErrOversizedData)
+			item.ReportError(txpool.ErrOversizedData)
 			continue
 		}
 		entry := prioritizedTx[T]{tx: item}
 		if err := entry.setPriority(m.baseFee); err != nil {
-			item.ReturnResult(err)
+			item.ReportError(err)
 			continue
 		}
 		m.heap = append(m.heap, entry)
@@ -155,7 +155,7 @@ func (m *Mempool[T]) Pop() T {
 func (m *Mempool[T]) Push(item T) {
 	entry := prioritizedTx[T]{tx: item}
 	if err := entry.setPriority(m.baseFee); err != nil {
-		item.ReturnResult(err)
+		item.ReportError(err)
 		return
 	}
 	heap.Push(&m.heap, entry)

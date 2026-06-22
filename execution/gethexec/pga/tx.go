@@ -14,8 +14,8 @@ import (
 type Tx interface {
 	// ComputePgaPriority returns the transaction's priority for PGA.
 	ComputePgaPriority(baseFee *big.Int) (uint64, error)
-	// ReturnResult resolves the submitting client's result channel.
-	ReturnResult(err error)
+	// ReportError resolves the submitting client's result channel with err.
+	ReportError(err error)
 	// GetContext returns the submission context, used to drop expired entries.
 	GetContext() context.Context
 	// GetSize returns the size in bytes of the marshalled transaction.
