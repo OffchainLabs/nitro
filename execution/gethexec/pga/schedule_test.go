@@ -96,6 +96,26 @@ func TestScheduleAdvanceRoundContextCancelInterruptsWait(t *testing.T) {
 	})
 }
 
+func TestScheduleAdvanceRoundOnLastRoundReturnsError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		s := NewSchedule(1, testRoundLength)
+		if !s.IsLastRound() {
+			t.Fatal("round 1 of 1 should be the last round")
+		}
+
+		if err := s.AdvanceRound(context.Background()); !errors.Is(err, ErrNoMoreRounds) {
+			t.Errorf("AdvanceRound on the last round returned %v, want ErrNoMoreRounds", err)
+		}
+		if got := time.Since(start); got != 0 {
+			t.Errorf("AdvanceRound waited %v on the last round, want immediate return", got)
+		}
+		if got := s.Round(); got != 1 {
+			t.Errorf("round = %d, want 1 (unchanged) after AdvanceRound on the last round", got)
+		}
+	})
+}
+
 func TestScheduleAdvancesThroughBlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const rounds = 3
