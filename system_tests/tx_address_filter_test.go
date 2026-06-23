@@ -20,11 +20,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
@@ -725,6 +728,146 @@ func TestAddressFilterStylusCallToContract(t *testing.T) {
 
 func TestAddressFilterStylusCallToEOA(t *testing.T) {
 	runStylusCallFilterTest(t, true)
+}
+
+// TestAddressFilterStylusCacheNoLeak verifies a dropped (filtered) tx doesn't
+// leave its Stylus program warm for a later committed tx in the same block. If it
+// did, the sequencer would charge cached init gas where replay (which never saw
+// the dropped tx) charges cold.
+func TestAddressFilterStylusCacheNoLeak(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The recent-wasms cache is gated to ArbOS 60; filtering is installed
+	// directly via SetAddressChecker, independent of the on-chain gate.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_60)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	multicallAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	builder.L2Info.GenerateAccount("FilteredEOA")
+	filteredAddr := builder.L2Info.GetAddress("FilteredEOA")
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+
+	// Distinct senders so nonces don't couple the txs.
+	for _, name := range []string{"SenderA", "SenderB", "SenderC"} {
+		builder.L2Info.GenerateAccount(name)
+		builder.L2.TransferBalance(t, "Owner", name, big.NewInt(1e18), builder.L2Info)
+	}
+	txA := builder.L2Info.PrepareTxTo("SenderA", &multicallAddr, 1e7, nil, argsForMulticall(vm.CALL, filteredAddr, nil, nil))
+	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+
+	sequencer := builder.L2.ExecNode.Sequencer
+	sequencer.Pause()
+	defer sequencer.Activate()
+
+	block, txErrors := sequencer.SequenceTransactionsForTest(t, types.Transactions{txA, txB, txC})
+	require.NotNil(t, block, "block should have been created")
+	require.Len(t, txErrors, 3)
+	require.Error(t, txErrors[0], "txA should be dropped by the filter")
+	require.Truef(t, isFilteredError(txErrors[0]), "txA must fail with a filter error (not be included), got: %v", txErrors[0])
+	require.NoError(t, txErrors[1], "txB should commit")
+	require.NoError(t, txErrors[2], "txC should commit")
+
+	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
+	require.NoError(t, err)
+	rcptC, err := builder.L2.EnsureTxSucceeded(txC)
+	require.NoError(t, err)
+	require.Equal(t, rcptB.BlockNumber.Uint64(), rcptC.BlockNumber.Uint64(), "txB and txC must share a block")
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	require.NoError(t, err)
+	initGas, err := arbWasm.ProgramInitGas(nil, multicallAddr)
+	require.NoError(t, err)
+	discount := initGas.Gas - initGas.GasWhenCached
+	require.Greater(t, discount, uint64(0), "sanity: cached init must be cheaper than cold")
+
+	// txB pays cold init and txC cached; the difference is charged to the
+	// WasmComputation dimension. If txA had leaked its warm-start, txB would be
+	// cached too and the dimensions would match.
+	assertStylusInitGasDelta(t, rcptB, rcptC, discount)
+}
+
+// assertStylusInitGasDelta asserts that two receipts for byte-identical Stylus
+// calls match in every multi-gas dimension except WasmComputation, where `cold`
+// exceeds `cached` by wantDelta
+func assertStylusInitGasDelta(t *testing.T, cold, cached *types.Receipt, wantDelta uint64) {
+	t.Helper()
+	for k := multigas.ResourceKindUnknown; k < multigas.NumResourceKind; k++ {
+		coldGas, cachedGas := cold.MultiGasUsed.Get(k), cached.MultiGasUsed.Get(k)
+		if k == multigas.ResourceKindWasmComputation {
+			require.Equalf(t, wantDelta, coldGas-cachedGas,
+				"WasmComputation must differ by the init discount (cold=%d cached=%d)", coldGas, cachedGas)
+		} else {
+			require.Equalf(t, cachedGas, coldGas, "dimension %v must match between the two calls", k)
+		}
+	}
+}
+
+// TestStylusWarmStartCacheSurvivesRevert is the complement to
+// TestAddressFilterStylusCacheNoLeak: a tx that warms a Stylus program and then
+// reverts but is still included must keep the warming, so a later committed call in
+// the same block is charged cached, not cold. Guards against dropping warmings on
+// revert
+func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_60)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	multicallAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	// multicall -> CALL ArbDebug.customRevert: the multicall program is warmed
+	// (init paid) before it calls the precompile, which reverts the whole tx.
+	customRevert, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "customRevert")
+	revertCalldata, err := customRevert(uint64(32))
+	require.NoError(t, err)
+	revertArgs := argsForMulticall(vm.CALL, types.ArbDebugAddress, nil, revertCalldata)
+
+	for _, name := range []string{"Reverter", "SenderW1", "SenderW2"} {
+		builder.L2Info.GenerateAccount(name)
+		builder.L2.TransferBalance(t, "Owner", name, big.NewInt(1e18), builder.L2Info)
+	}
+	txRevert := builder.L2Info.PrepareTxTo("Reverter", &multicallAddr, 1e7, nil, revertArgs)
+	txW1 := builder.L2Info.PrepareTxTo("SenderW1", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+	txW2 := builder.L2Info.PrepareTxTo("SenderW2", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+
+	sequencer := builder.L2.ExecNode.Sequencer
+	sequencer.Pause()
+	defer sequencer.Activate()
+
+	block, txErrors := sequencer.SequenceTransactionsForTest(t, types.Transactions{txRevert, txW1, txW2})
+	require.NotNil(t, block)
+	require.Len(t, txErrors, 3)
+	// A reverted tx is still included (not a sequencing drop), so no error here.
+	require.NoError(t, txErrors[0])
+	require.NoError(t, txErrors[1])
+	require.NoError(t, txErrors[2])
+
+	// txRevert is included with failed status (reverted), proving it ran and warmed
+	// the program rather than being dropped.
+	rcptRevert, err := builder.L2.Client.TransactionReceipt(ctx, txRevert.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, rcptRevert.Status, "txRevert should be included but reverted")
+
+	rcptW1, err := builder.L2.EnsureTxSucceeded(txW1)
+	require.NoError(t, err)
+	rcptW2, err := builder.L2.EnsureTxSucceeded(txW2)
+	require.NoError(t, err)
+	require.Equal(t, rcptW1.BlockNumber.Uint64(), rcptW2.BlockNumber.Uint64(), "txW1 and txW2 must share a block")
+
+	// Both committed calls are warm (txRevert kept the program warm), so they match
+	// in every multi-gas dimension. If the warming were dropped on revert, txW1
+	// would pay cold init and WasmComputation would differ.
+	assertStylusInitGasDelta(t, rcptW1, rcptW2, 0)
 }
 
 func TestAddressFilterDisabled(t *testing.T) {
