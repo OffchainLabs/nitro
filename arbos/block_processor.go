@@ -96,7 +96,16 @@ type blockBuildState struct {
 // plus a copy of the Stylus warm-start cache
 type txCheckpoint struct {
 	snap        int
-	recentWasms state.RecentWasms
+	recentWasms *state.RecentWasms
+}
+
+// restore rolls statedb back to this checkpoint: the state snapshot, and the
+// warm-start cache only if it was captured
+func (c txCheckpoint) restore(statedb *state.StateDB) {
+	statedb.RevertToSnapshot(c.snap)
+	if c.recentWasms != nil {
+		statedb.RestoreRecentWasms(*c.recentWasms)
+	}
 }
 
 // lint:require-exhaustive-initialization
@@ -139,11 +148,10 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint t
 // GasUsed, which lives outside blockBuildState.
 func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
-	cp.backup.RevertToSnapshot(cp.txCheckpoint.snap)
+	// Roll the backup back to before the user tx ran (state + warm-start cache),
+	// then make it live; its redeems warmed only the now-discarded live statedb.
+	cp.txCheckpoint.restore(cp.backup)
 	s.statedb = cp.backup
-	// Reset the warm-start cache to before the group ran: its redeems warmed only
-	// the now-discarded live statedb, and backup carries the post-execution cache.
-	s.statedb.RestoreRecentWasms(cp.txCheckpoint.recentWasms)
 	header.GasUsed = cp.headerGasUsed
 	s.blockGasLeft = cp.blockGasLeft
 	s.expectedBalanceDelta.Set(cp.expectedBalanceDelta)
@@ -503,9 +511,9 @@ func ProduceBlockAdvanced(
 			// Also snapshot the warm-start cache so a dropped tx that warmed a
 			// program leaves nothing behind for later included txs
 			checkpoint := txCheckpoint{snap: snap}
-			canDropExecutedTx := sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback()
-			if canDropExecutedTx {
-				checkpoint.recentWasms = buildState.statedb.GetRecentWasms().Copy()
+			if sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback() {
+				rw := buildState.statedb.GetRecentWasms().Copy()
+				checkpoint.recentWasms = &rw
 			}
 
 			gasPool := gethGas
@@ -536,12 +544,9 @@ func ProduceBlockAdvanced(
 				},
 			)
 			if err != nil {
-				// Ignore this transaction if it's invalid under the state transition function
-				buildState.statedb.RevertToSnapshot(checkpoint.snap)
-				if canDropExecutedTx {
-					// Undo any warm-start this dropped tx left behind.
-					buildState.statedb.RestoreRecentWasms(checkpoint.recentWasms)
-				}
+				// Ignore this transaction if it's invalid under the state transition
+				// function; restore also undoes any warm-start it left behind.
+				checkpoint.restore(buildState.statedb)
 				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
