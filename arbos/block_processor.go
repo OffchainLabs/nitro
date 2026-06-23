@@ -109,7 +109,7 @@ type groupCheckpoint struct {
 	completeLen          int
 	receiptsLen          int
 	userTx               *types.Transaction
-	tx                   txCheckpoint
+	txCheckpoint         txCheckpoint
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
@@ -129,7 +129,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint t
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
 		userTx:               userTx,
-		tx:                   checkpoint,
+		txCheckpoint:         checkpoint,
 	}
 	return nil
 }
@@ -139,11 +139,11 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint t
 // GasUsed, which lives outside blockBuildState.
 func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
-	cp.backup.RevertToSnapshot(cp.tx.snap)
+	cp.backup.RevertToSnapshot(cp.txCheckpoint.snap)
 	s.statedb = cp.backup
 	// Reset the warm-start cache to before the group ran: its redeems warmed only
 	// the now-discarded live statedb, and backup carries the post-execution cache.
-	s.statedb.RestoreRecentWasms(cp.tx.recentWasms)
+	s.statedb.RestoreRecentWasms(cp.txCheckpoint.recentWasms)
 	header.GasUsed = cp.headerGasUsed
 	s.blockGasLeft = cp.blockGasLeft
 	s.expectedBalanceDelta.Set(cp.expectedBalanceDelta)
