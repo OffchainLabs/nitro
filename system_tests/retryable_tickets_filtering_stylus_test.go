@@ -213,10 +213,10 @@ func TestRetryableFilteringStylusGroupRollbackNoCacheLeak(t *testing.T) {
 	discount := initGas.Gas - initGas.GasWhenCached
 	require.Greater(t, discount, uint64(0), "sanity: cached init must be cheaper than cold")
 
-	gasB := rcptB.GasUsedForL2()
-	gasC := rcptC.GasUsedForL2()
-	require.Equalf(t, discount, gasB-gasC,
-		"txB must pay cold init and txC cached init; if equal, the rolled-back group leaked its warm-start (gasB=%d gasC=%d)", gasB, gasC)
+	// txB pays cold init and txC cached; the difference is charged to the
+	// WasmComputation dimension. If the rolled-back group leaked its warm-start,
+	// txB would be cached too and the dimensions would match.
+	assertStylusInitGasDelta(t, rcptB, rcptC, discount)
 }
 
 // TestRetryableFilteringStylusDelayedSandwichRollback is the L1 version of the

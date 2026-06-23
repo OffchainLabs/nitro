@@ -20,6 +20,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -785,10 +786,26 @@ func TestAddressFilterStylusCacheNoLeak(t *testing.T) {
 	discount := initGas.Gas - initGas.GasWhenCached
 	require.Greater(t, discount, uint64(0), "sanity: cached init must be cheaper than cold")
 
-	gasB := rcptB.GasUsedForL2()
-	gasC := rcptC.GasUsedForL2()
-	require.Equalf(t, discount, gasB-gasC,
-		"txB must pay cold init and txC cached init; if equal, the dropped txA leaked its warm-start (gasB=%d gasC=%d)", gasB, gasC)
+	// txB pays cold init and txC cached; the difference is charged to the
+	// WasmComputation dimension. If txA had leaked its warm-start, txB would be
+	// cached too and the dimensions would match.
+	assertStylusInitGasDelta(t, rcptB, rcptC, discount)
+}
+
+// assertStylusInitGasDelta asserts that two receipts for byte-identical Stylus
+// calls match in every multi-gas dimension except WasmComputation, where `cold`
+// exceeds `cached` by wantDelta
+func assertStylusInitGasDelta(t *testing.T, cold, cached *types.Receipt, wantDelta uint64) {
+	t.Helper()
+	for k := multigas.ResourceKindUnknown; k < multigas.NumResourceKind; k++ {
+		coldGas, cachedGas := cold.MultiGasUsed.Get(k), cached.MultiGasUsed.Get(k)
+		if k == multigas.ResourceKindWasmComputation {
+			require.Equalf(t, wantDelta, coldGas-cachedGas,
+				"WasmComputation must differ by the init discount (cold=%d cached=%d)", coldGas, cachedGas)
+		} else {
+			require.Equalf(t, cachedGas, coldGas, "dimension %v must match between the two calls", k)
+		}
+	}
 }
 
 // TestStylusWarmStartCacheSurvivesRevert is the complement to
@@ -847,10 +864,10 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, rcptW1.BlockNumber.Uint64(), rcptW2.BlockNumber.Uint64(), "txW1 and txW2 must share a block")
 
-	gasW1 := rcptW1.GasUsedForL2()
-	gasW2 := rcptW2.GasUsedForL2()
-	require.Equalf(t, gasW1, gasW2,
-		"a reverted-but-included tx must keep its warm-start: txW1 should already be warm (gasW1=%d gasW2=%d)", gasW1, gasW2)
+	// Both committed calls are warm (txRevert kept the program warm), so they match
+	// in every multi-gas dimension. If the warming were dropped on revert, txW1
+	// would pay cold init and WasmComputation would differ.
+	assertStylusInitGasDelta(t, rcptW1, rcptW2, 0)
 }
 
 func TestAddressFilterDisabled(t *testing.T) {

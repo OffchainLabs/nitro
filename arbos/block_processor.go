@@ -508,7 +508,7 @@ func ProduceBlockAdvanced(
 			snap := buildState.statedb.Snapshot()
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
-			// Also snapshot the warm-start cache so a dropped tx that warmed a
+			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
 			// program leaves nothing behind for later included txs
 			checkpoint := txCheckpoint{snap: snap}
 			if sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback() {
