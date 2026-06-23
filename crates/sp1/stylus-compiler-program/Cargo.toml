@@ -14,5 +14,5 @@ rust-version.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sp1-zkvm = { workspace = true }
-wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }
+wasmer = { workspace = true, features = ["sys", "compiler", "singlepass", "baremetal"] }
 prover = { workspace = true, features = ["native"] }
