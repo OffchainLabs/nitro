@@ -5,6 +5,7 @@ package testhelpers
 
 import (
 	"context"
+	"crypto/ecdsa"
 	crypto "crypto/rand"
 	"log/slog"
 	"math/big"
@@ -17,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/colors"
@@ -62,6 +64,11 @@ func RandomAddress() common.Address {
 
 func RandomCallValue(limit int64) *big.Int {
 	return big.NewInt(rand.Int63n(limit))
+}
+
+// PrivateKeyToHex returns the zero-padded 64-char hex key.
+func PrivateKeyToHex(privKey *ecdsa.PrivateKey) string {
+	return common.Bytes2Hex(ethcrypto.FromECDSA(privKey))
 }
 
 // Computes a pseudo-random uint64 on the interval [min, max]

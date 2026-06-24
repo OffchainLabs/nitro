@@ -5,7 +5,6 @@ package timeboost
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
@@ -55,7 +55,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		DbDirectory:            tmpDir,
 		StreamTimeout:          time.Minute,
 		Wallet: genericconf.WalletConfig{
-			PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
+			PrivateKey: testhelpers.PrivateKeyToHex(testSetup.accounts[0].privKey),
 		},
 	}
 	fetcher := func() *AuctioneerServerConfig {
@@ -144,7 +144,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDir,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
+				PrivateKey: testhelpers.PrivateKeyToHex(testSetup.accounts[0].privKey),
 			},
 		}
 	}
@@ -515,7 +515,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirPrimary,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
+				PrivateKey: testhelpers.PrivateKeyToHex(testSetup.accounts[0].privKey),
 			},
 		}
 	}
@@ -603,7 +603,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirSecondary, // Different DB directory
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%064x", testSetup.accounts[0].privKey.D),
+				PrivateKey: testhelpers.PrivateKeyToHex(testSetup.accounts[0].privKey),
 			},
 		}
 	}
