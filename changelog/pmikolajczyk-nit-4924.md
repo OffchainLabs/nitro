@@ -1,0 +1,2 @@
+### Ignored
+- Update wasmer pin
