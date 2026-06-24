@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -138,6 +139,53 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	}
 	if len(entries) != 2 {
 		testhelpers.FailImpl(t, "Unexpected number of files in test dir:", len(entries))
+	}
+}
+
+// A runtime crash can only be exercised by really crashing, so the child
+// re-execs, rotates the log, then panics; the .crash file must survive rotation.
+func TestCrashOutputWrittenToLogFile(t *testing.T) {
+	const marker = "nitro-test-crash-marker"
+	if logFile := os.Getenv("TEST_CRASH_LOG_FILE"); logFile != "" {
+		config := DefaultFileLoggingConfig
+		config.File = logFile
+		config.MaxSize = 1
+		config.Compress = false
+		if err := InitLog("json", "info", &config, func(s string) string { return s }); err != nil {
+			t.Fatalf("InitLog failed in child: %v", err)
+		}
+		// Force a rotation before crashing; the .crash file must survive it.
+		big := strings.Repeat("x", 512*1024)
+		log.Warn(big)
+		log.Warn(big)
+		dir := filepath.Dir(logFile)
+		base := strings.TrimSuffix(filepath.Base(logFile), filepath.Ext(logFile))
+		for i := 0; i < 100; i++ {
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), base+"-") {
+					panic(marker)
+				}
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		panic(marker)
+	}
+
+	logFile := filepath.Join(t.TempDir(), "node.log")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestCrashOutputWrittenToLogFile$")
+	cmd.Env = append(os.Environ(), "TEST_CRASH_LOG_FILE="+logFile)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		testhelpers.FailImpl(t, "expected child process to crash, but it exited cleanly; output:", string(output))
+	}
+	data, err := os.ReadFile(logFile + ".crash")
+	testhelpers.RequireImpl(t, err)
+	if !strings.Contains(string(data), marker) {
+		testhelpers.FailImpl(t, "panic message not written to crash file; contents:", string(data))
+	}
+	if !strings.Contains(string(data), "goroutine") {
+		testhelpers.FailImpl(t, "panic traceback not written to crash file; contents:", string(data))
 	}
 }
 
