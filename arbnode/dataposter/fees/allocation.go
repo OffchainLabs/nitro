@@ -71,12 +71,12 @@ type costSplitter struct {
 func newCostSplitter(numBlobs uint64, lastTx *types.Transaction, minRbfIncrease arbmath.Bips, currentBlobFee *big.Int, currentNonBlobFee *big.Int) *costSplitter {
 	blobGasUsed := params.BlobTxBlobGasPerBlob * numBlobs
 	return &costSplitter{
-		numBlobs,
-		lastTx,
-		minRbfIncrease,
-		currentBlobFee,
-		currentNonBlobFee,
-		blobGasUsed,
+		numBlobs:          numBlobs,
+		lastTx:            lastTx,
+		minRbfIncrease:    minRbfIncrease,
+		currentBlobFee:    currentBlobFee,
+		currentNonBlobFee: currentNonBlobFee,
+		blobGasUsed:       blobGasUsed,
 	}
 }
 
