@@ -182,6 +182,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
+	MaxQueuedTransactions:  0,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          1.2,
