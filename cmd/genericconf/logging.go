@@ -110,17 +110,8 @@ func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConf
 			globalFileLoggerFactory.newFileWriter(fileLoggingConfig, filename),
 		)
 		crashFile = filename + ".crash"
-		// Runtime panics go to fd 2, bypassing the handler; a dup'd fd to the
-		// rotated log would be orphaned, so crash output needs its own file.
-		if err := setCrashOutputFile(crashFile); err != nil {
-			return fmt.Errorf("failed to set crash output file: %w", err)
-		}
 	} else {
 		output = io.Writer(os.Stderr)
-		// Undo a prior call: a reload may have switched file logging off.
-		if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
-			return fmt.Errorf("failed to clear crash output file: %w", err)
-		}
 	}
 	handler, err := HandlerFromLogType(logType, output)
 	if err != nil {
@@ -131,6 +122,17 @@ func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConf
 	if err != nil {
 		flag.Usage()
 		return fmt.Errorf("error parsing log level: %w", err)
+	}
+
+	// Arm crash output only after the fallible parsing above, so a parse error
+	// can't leave the crash fd changed while the logger stays unconfigured. It
+	// gets its own .crash file: a dup'd fd to the rotated log would be orphaned.
+	if crashFile != "" {
+		if err := setCrashOutputFile(crashFile); err != nil {
+			return fmt.Errorf("failed to set crash output file: %w", err)
+		}
+	} else if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
+		return fmt.Errorf("failed to clear crash output file: %w", err)
 	}
 
 	glogger = log.NewGlogHandler(handler)

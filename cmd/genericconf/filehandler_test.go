@@ -173,7 +173,8 @@ func TestCrashOutputWrittenToLogFile(t *testing.T) {
 	}
 
 	logFile := filepath.Join(t.TempDir(), "node.log")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestCrashOutputWrittenToLogFile$")
+	testBinary := os.Args[0]
+	cmd := exec.Command(testBinary, "-test.run=^TestCrashOutputWrittenToLogFile$")
 	cmd.Env = append(os.Environ(), "TEST_CRASH_LOG_FILE="+logFile)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
