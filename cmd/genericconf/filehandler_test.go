@@ -160,14 +160,21 @@ func TestCrashOutputWrittenToLogFile(t *testing.T) {
 		log.Warn(big)
 		dir := filepath.Dir(logFile)
 		base := strings.TrimSuffix(filepath.Base(logFile), filepath.Ext(logFile))
-		for i := 0; i < 100; i++ {
+		rotated := false
+		for i := 0; i < 100 && !rotated; i++ {
 			entries, _ := os.ReadDir(dir)
 			for _, e := range entries {
 				if strings.HasPrefix(e.Name(), base+"-") {
-					panic(marker)
+					rotated = true
 				}
 			}
-			time.Sleep(20 * time.Millisecond)
+			if !rotated {
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		if !rotated {
+			// distinct message so the parent's marker check fails instead of passing without a rotation
+			panic("rotation did not occur")
 		}
 		panic(marker)
 	}
@@ -187,6 +194,71 @@ func TestCrashOutputWrittenToLogFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "goroutine") {
 		testhelpers.FailImpl(t, "panic traceback not written to crash file; contents:", string(data))
+	}
+
+	// crash output must live in the dedicated .crash file, never in a rotated log
+	dir := filepath.Dir(logFile)
+	base := strings.TrimSuffix(filepath.Base(logFile), filepath.Ext(logFile))
+	entries, err := os.ReadDir(dir)
+	testhelpers.RequireImpl(t, err)
+	rotatedFound := false
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), base+"-") {
+			continue
+		}
+		rotatedFound = true
+		rotatedData, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		testhelpers.RequireImpl(t, err)
+		if strings.Contains(string(rotatedData), marker) {
+			testhelpers.FailImpl(t, "crash output leaked into rotated log file:", e.Name())
+		}
+	}
+	if !rotatedFound {
+		testhelpers.FailImpl(t, "expected a rotated backup log file; rotation did not occur")
+	}
+}
+
+// InitLog must reject bad input rather than half-applying a (re)configuration.
+func TestInitLogRejectsInvalidLogType(t *testing.T) {
+	if err := InitLog("not-a-log-type", "info", &FileLoggingConfig{Enable: false}, nil); err == nil {
+		testhelpers.FailImpl(t, "expected InitLog to reject an unknown log type")
+	}
+}
+
+// TestCrashOutputReloadRearmsCrashFile checks that a second InitLog (a reload)
+// re-points crash output at the new file and not the old one.
+func TestCrashOutputReloadRearmsCrashFile(t *testing.T) {
+	const marker = "nitro-test-reload-marker"
+	if dir := os.Getenv("TEST_REARM_DIR"); dir != "" {
+		id := func(s string) string { return s }
+		cfgA := DefaultFileLoggingConfig
+		cfgA.File = filepath.Join(dir, "a.log")
+		if err := InitLog("json", "info", &cfgA, id); err != nil {
+			t.Fatalf("InitLog A failed in child: %v", err)
+		}
+		cfgB := DefaultFileLoggingConfig
+		cfgB.File = filepath.Join(dir, "b.log")
+		if err := InitLog("json", "info", &cfgB, id); err != nil {
+			t.Fatalf("InitLog B failed in child: %v", err)
+		}
+		panic(marker)
+	}
+
+	dir := t.TempDir()
+	testBinary := os.Args[0]
+	cmd := exec.Command(testBinary, "-test.run=^TestCrashOutputReloadRearmsCrashFile$")
+	cmd.Env = append(os.Environ(), "TEST_REARM_DIR="+dir)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		testhelpers.FailImpl(t, "expected child process to crash; output:", string(output))
+	}
+	newData, err := os.ReadFile(filepath.Join(dir, "b.log.crash"))
+	testhelpers.RequireImpl(t, err)
+	if !strings.Contains(string(newData), marker) {
+		testhelpers.FailImpl(t, "panic not written to the re-armed crash file; contents:", string(newData))
+	}
+	if oldData, _ := os.ReadFile(filepath.Join(dir, "a.log.crash")); strings.Contains(string(oldData), marker) {
+		testhelpers.FailImpl(t, "panic written to the stale crash file after reload")
 	}
 }
 
