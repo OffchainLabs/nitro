@@ -99,8 +99,8 @@ func TestPgaMempoolStartNewBlockDrainsWaitingList(t *testing.T) {
 
 	env.mempool.StartNewBlock(base, 1000)
 
-	if env.mempool.Len() != 3 {
-		t.Fatalf("len = %d, want 3", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 3 {
+		t.Fatalf("len = %d, want 3", env.mempool.PriorityQueueLen())
 	}
 	if len(env.ch) != 0 {
 		t.Fatalf("waiting list not drained: %d remaining", len(env.ch))
@@ -117,8 +117,8 @@ func TestPgaMempoolStartNewBlockDrainsWaitingList(t *testing.T) {
 
 	// second drain on the empty channel must return, not block
 	env.mempool.StartNewBlock(base, 1000)
-	if env.mempool.Len() != 0 {
-		t.Fatalf("len = %d after second StartNewBlock, want 0", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("len = %d after second StartNewBlock, want 0", env.mempool.PriorityQueueLen())
 	}
 }
 
@@ -160,8 +160,8 @@ func TestPgaMempoolMultipleRoundsPerBlock(t *testing.T) {
 	round1, _ := env.makePgaTestItem(context.Background(), constFee(10), 10, defaultArrival)
 	env.ch <- round1
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
-	if env.mempool.Len() != 1 {
-		t.Fatalf("after round 1: len = %d, want 1", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 1 {
+		t.Fatalf("after round 1: len = %d, want 1", env.mempool.PriorityQueueLen())
 	}
 
 	// Round 2 of the same block: a higher-tip arrival is promoted using the
@@ -169,8 +169,8 @@ func TestPgaMempoolMultipleRoundsPerBlock(t *testing.T) {
 	round2, _ := env.makePgaTestItem(context.Background(), constFee(50), 10, defaultArrival)
 	env.ch <- round2
 	env.mempool.StartNewPGARound()
-	if env.mempool.Len() != 2 {
-		t.Fatalf("after round 2: len = %d, want 2", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 2 {
+		t.Fatalf("after round 2: len = %d, want 2", env.mempool.PriorityQueueLen())
 	}
 
 	// Highest priority pops first, across rounds.
@@ -209,8 +209,8 @@ func TestPgaMempoolStartNewBlockDrainsOnlySnapshot(t *testing.T) {
 	close(stop)
 	<-done
 
-	if env.mempool.Len() != testChanCap {
-		t.Fatalf("promoted %d, want exactly the snapshot of %d", env.mempool.Len(), testChanCap)
+	if env.mempool.PriorityQueueLen() != testChanCap {
+		t.Fatalf("promoted %d, want exactly the snapshot of %d", env.mempool.PriorityQueueLen(), testChanCap)
 	}
 }
 
@@ -226,8 +226,8 @@ func TestPgaMempoolStartNewBlockRejectsFeeCapBelowBaseFee(t *testing.T) {
 	env.mempool.StartNewBlock(base, 1000)
 
 	expectResult(t, lowResult, errFeeCapTooLow)
-	if env.mempool.Len() != 1 {
-		t.Fatalf("len = %d, want 1", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 1 {
+		t.Fatalf("len = %d, want 1", env.mempool.PriorityQueueLen())
 	}
 	expectNoResult(t, atBaseResult)
 	if got := mustPop(t, env.mempool); got.id != atBase.id {
@@ -293,8 +293,8 @@ func TestPgaMempoolStartNewBlockDropsRequeuedFeeCapTooLow(t *testing.T) {
 
 	expectResult(t, resultB, errFeeCapTooLow)
 	expectNoResult(t, resultA)
-	if env.mempool.Len() != 1 {
-		t.Fatalf("len = %d, want 1", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 1 {
+		t.Fatalf("len = %d, want 1", env.mempool.PriorityQueueLen())
 	}
 	if got := mustPop(t, env.mempool); got.id != idA {
 		t.Fatalf("survivor = %d, want A", got.id)
@@ -316,8 +316,8 @@ func TestPgaMempoolPopSkipsMultipleInvalidInOneCall(t *testing.T) {
 	env.ch <- good
 
 	env.mempool.StartNewBlock(big.NewInt(40), maxSize)
-	if env.mempool.Len() != 3 {
-		t.Fatalf("len = %d, want 3 (lazy validation promotes all three)", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 3 {
+		t.Fatalf("len = %d, want 3 (lazy validation promotes all three)", env.mempool.PriorityQueueLen())
 	}
 
 	// One Pop walks past both invalid entries (expired, then oversized) and returns the valid one.
@@ -327,8 +327,8 @@ func TestPgaMempoolPopSkipsMultipleInvalidInOneCall(t *testing.T) {
 	expectResult(t, expiredResult, context.Canceled)
 	expectResult(t, oversizedResult, txpool.ErrOversizedData)
 	expectNoResult(t, goodResult)
-	if env.mempool.Len() != 0 {
-		t.Fatalf("len = %d after draining, want 0", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("len = %d after draining, want 0", env.mempool.PriorityQueueLen())
 	}
 }
 
@@ -343,8 +343,8 @@ func TestPgaMempoolPopDropsOversizedAfterMaxSizeDecrease(t *testing.T) {
 	env.ch <- small
 	env.ch <- large
 	env.mempool.StartNewBlock(base, 100) // both fit under the initial max size of 100
-	if env.mempool.Len() != 2 {
-		t.Fatalf("after first StartNewBlock: len = %d, want 2", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 2 {
+		t.Fatalf("after first StartNewBlock: len = %d, want 2", env.mempool.PriorityQueueLen())
 	}
 
 	// A later block shrinks the hot-reloadable max transaction size. The previously-accepted tx is not swept on re-key;
@@ -383,8 +383,8 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 			t.Fatalf("remaining pop = %d, want %d", got.id, want)
 		}
 	}
-	if env.mempool.Len() != 0 {
-		t.Fatalf("queue not empty after draining: len %d", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("queue not empty after draining: len %d", env.mempool.PriorityQueueLen())
 	}
 }
 
@@ -401,8 +401,8 @@ func TestPgaMempoolPushDropsOnFeeError(t *testing.T) {
 	env.mempool.Push(item)
 
 	expectResult(t, result, errFeeCapTooLow)
-	if env.mempool.Len() != 0 {
-		t.Fatalf("len = %d, want 0 (a failed re-key should drop the tx, not queue it)", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("len = %d, want 0 (a failed re-key should drop the tx, not queue it)", env.mempool.PriorityQueueLen())
 	}
 }
 
@@ -423,8 +423,8 @@ func TestPgaMempoolPopDropsAllInvalidThenReturnsFalse(t *testing.T) {
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
 
 	// Lazy validation: the expired tx is promoted and only dropped when Pop reaches it.
-	if env.mempool.Len() != 1 {
-		t.Fatalf("len = %d, want 1", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 1 {
+		t.Fatalf("len = %d, want 1", env.mempool.PriorityQueueLen())
 	}
 	if _, ok := env.mempool.Pop(); ok {
 		t.Fatal("Pop returned ok=true, want false (the only tx is invalid)")
@@ -434,12 +434,12 @@ func TestPgaMempoolPopDropsAllInvalidThenReturnsFalse(t *testing.T) {
 
 func TestPgaMempoolEmptyOps(t *testing.T) {
 	env := newPgaMempoolTestEnv() // empty waiting list
-	if env.mempool.Len() != 0 {
-		t.Fatalf("fresh len = %d, want 0", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("fresh len = %d, want 0", env.mempool.PriorityQueueLen())
 	}
 	// StartNewBlock must not block on the empty channel and must not panic.
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
-	if env.mempool.Len() != 0 {
-		t.Fatalf("len = %d after no-op StartNewBlock, want 0", env.mempool.Len())
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("len = %d after no-op StartNewBlock, want 0", env.mempool.PriorityQueueLen())
 	}
 }

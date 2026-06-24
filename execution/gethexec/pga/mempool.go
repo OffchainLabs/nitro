@@ -21,7 +21,9 @@ func NewMempool[T Tx](txQueue <-chan T) *Mempool[T] {
 	return &Mempool[T]{txQueue: txQueue}
 }
 
-func (m *Mempool[T]) Len() int {
+// PriorityQueueLen returns the number of transactions promoted into the priority queue (stage two); it does not count
+// the waiting list.
+func (m *Mempool[T]) PriorityQueueLen() int {
 	return m.heap.Len()
 }
 
