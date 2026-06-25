@@ -183,6 +183,9 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 	if err != nil {
 		return err
 	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
 
 	// For testing only. When migrating we treat the expiry time of existing flat layout
 	// files to be the modification time + the max allowed retention. So when creating
@@ -206,14 +209,21 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 				return err
 			}
 			renamed = true
+			if err = syncDir(path.Dir(batchPath)); err != nil {
+				return err
+			}
 		} else {
 			return err
 		}
 	}
 
 	if !s.enableLegacyLayout {
-		if err := createHardLink(batchPath, s.layout.expiryPath(key, expiry)); err != nil {
+		expiryPath := s.layout.expiryPath(key, expiry)
+		if err := createHardLink(batchPath, expiryPath); err != nil {
 			return fmt.Errorf("couldn't create by-expiry-path index entry: %w", err)
+		}
+		if err := syncDir(path.Dir(expiryPath)); err != nil {
+			return err
 		}
 	}
 
@@ -317,6 +327,16 @@ var hex64Regex = regexp.MustCompile(fmt.Sprintf("^[a-fA-F0-9]{%d}$", common.Hash
 
 func isStorageServiceKey(key string) bool {
 	return hex64Regex.MatchString(key)
+}
+
+// syncDir fsyncs the directory at dirPath to ensure its entries are durable on disk.
+func syncDir(dirPath string) error {
+	d, err := os.Open(dirPath)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // Copies a file by its contents to a new file, making any directories needed
