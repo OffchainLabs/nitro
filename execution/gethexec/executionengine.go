@@ -872,6 +872,12 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 	return bits
 }
 
+func (s *ExecutionEngine) hasPendingDelayedMsgs() bool {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	return s.delayedMsgs.Len() > 0
+}
+
 func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, error) {
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
