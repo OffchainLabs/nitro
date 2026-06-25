@@ -1655,14 +1655,19 @@ func CreateConsensusNode(
 	var executionRecorder execution.ExecutionRecorder
 	var executionSequencer containers.Option[execution.ExecutionSequencer]
 	var arbOSVersionGetter execution.ArbOSVersionGetter
-	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+	if executionRPCClientURL := configFetcher.Get().ExecutionRPCClient.URL; executionRPCClientURL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
 		executionClient = rpcClient
 		executionRecorder = rpcClient
 		arbOSVersionGetter = rpcClient
-		// RPC client does not implement ExecutionSequencer.
-		executionSequencer = containers.None[execution.ExecutionSequencer]()
+		if executionRPCClientURL == "self" || executionRPCClientURL == "self-auth" {
+			// Sequencing over RPC is not supported yet, so the in-process
+			// execution node handles sequencing.
+			executionSequencer = containers.Some[execution.ExecutionSequencer](fullExecutionClient)
+		} else {
+			executionSequencer = containers.None[execution.ExecutionSequencer]()
+		}
 	} else {
 		executionClient = fullExecutionClient
 		executionRecorder = fullExecutionClient

@@ -44,6 +44,28 @@ jobs:
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
+  # --- Record the tested tree so the merge queue can skip an identical re-run ---
+  record-tested-tree:
+    runs-on: ubuntu-4
+    needs: go-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Create tree marker
+        id: tree
+        run: |
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          touch go-tests-passed
+
+      - name: Upload tree marker
+        uses: actions/upload-artifact@v6
+        with:
+          name: go-tests-passed-tree-${{ steps.tree.outputs.tree }}
+          path: go-tests-passed
+
   # --- MEL test modes: opt-in per-PR via the `test-mel` label. ---
   # MEL triples runner contention on arbitrator-ci; see _mel-go-test-suite.yml.
   mel-tests:
