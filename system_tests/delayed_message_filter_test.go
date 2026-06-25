@@ -1190,7 +1190,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Configure short retry interval so we don't have to wait long
-	builder.nodeConfig.DelayedSequencer.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	builder.execConfig.TransactionFiltering.FilteredTxFullRetryInterval = 200 * time.Millisecond
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1269,7 +1269,7 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Configure short retry interval so we don't have to wait long
-	builder.nodeConfig.DelayedSequencer.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	builder.execConfig.TransactionFiltering.FilteredTxFullRetryInterval = 200 * time.Millisecond
 	cleanup := builder.Build(t)
 	defer cleanup()
 

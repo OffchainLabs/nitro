@@ -152,6 +152,7 @@ type TransactionFilteringConfig struct {
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
+	FilteredTxFullRetryInterval    time.Duration                 `koanf:"filtered-tx-full-retry-interval"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -170,6 +171,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 	if err := c.FilteringReportRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
 	}
+	if c.FilteredTxFullRetryInterval <= 0 {
+		return fmt.Errorf("filtered-tx-full-retry-interval must be positive, got %v", c.FilteredTxFullRetryInterval)
+	}
 	return nil
 }
 
@@ -181,6 +185,18 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
 	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
+	FilteredTxFullRetryInterval:    30 * time.Second,
+}
+
+var TestTransactionFilteringConfig = TransactionFilteringConfig{
+	Enable:                         false,
+	DisableDelayedSequencingFilter: false,
+	EnableETHCallFilter:            false,
+	EventFilter:                    eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                  addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
+	FilteredTxFullRetryInterval:    time.Second,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -191,6 +207,7 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
 	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
+	f.Duration(prefix+".filtered-tx-full-retry-interval", DefaultTransactionFilteringConfig.FilteredTxFullRetryInterval, "how often to do a full re-execution when halted on a filtered delayed message")
 }
 
 type Config struct {
@@ -392,7 +409,7 @@ func CreateExecutionNode(
 		filteringReportRPCClient = NewFilteringReportRPCClient(filteringReportConfigFetcher)
 	}
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient)
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient, config.TransactionFiltering.FilteredTxFullRetryInterval)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}

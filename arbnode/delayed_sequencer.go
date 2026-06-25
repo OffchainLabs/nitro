@@ -47,12 +47,11 @@ type DelayedSequencer struct {
 }
 
 type DelayedSequencerConfig struct {
-	Enable                      bool          `koanf:"enable" reload:"hot"`
-	FinalizeDistance            int64         `koanf:"finalize-distance" reload:"hot"`
-	RequireFullFinality         bool          `koanf:"require-full-finality" reload:"hot"`
-	UseMergeFinality            bool          `koanf:"use-merge-finality" reload:"hot"`
-	RescanInterval              time.Duration `koanf:"rescan-interval" reload:"hot"`
-	FilteredTxFullRetryInterval time.Duration `koanf:"filtered-tx-full-retry-interval" reload:"hot"`
+	Enable              bool          `koanf:"enable" reload:"hot"`
+	FinalizeDistance    int64         `koanf:"finalize-distance" reload:"hot"`
+	RequireFullFinality bool          `koanf:"require-full-finality" reload:"hot"`
+	UseMergeFinality    bool          `koanf:"use-merge-finality" reload:"hot"`
+	RescanInterval      time.Duration `koanf:"rescan-interval" reload:"hot"`
 }
 
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
@@ -63,7 +62,6 @@ func DelayedSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 	f.Duration(prefix+".rescan-interval", DefaultDelayedSequencerConfig.RescanInterval, "frequency to rescan for new delayed messages (the parent chain reader's poll-interval config is more important than this)")
-	f.Duration(prefix+".filtered-tx-full-retry-interval", DefaultDelayedSequencerConfig.FilteredTxFullRetryInterval, "how often to do a full re-execution when halted on a filtered delayed message")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{

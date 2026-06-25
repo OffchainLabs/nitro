@@ -290,7 +290,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
-	config.TransactionFiltering.EnableETHCallFilter = false
+	config.TransactionFiltering = gethexec.TestTransactionFilteringConfig
 
 	Require(t, config.Validate())
 

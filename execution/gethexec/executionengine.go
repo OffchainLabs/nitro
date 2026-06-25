@@ -324,6 +324,7 @@ type ExecutionEngine struct {
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
 	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
+	filteredTxFullRetryInterval    time.Duration
 	waitingForFilteredTx           *FilteredTxWaitState
 }
 
@@ -347,6 +348,7 @@ func NewExecutionEngine(
 	disableDelayedSequencingFilter bool,
 	addressChecker state.AddressChecker,
 	filteringReportRPCClient *FilteringReportRPCClient,
+	filteredTxFullRetryInterval time.Duration,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                             bc,
@@ -357,6 +359,7 @@ func NewExecutionEngine(
 		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 		addressChecker:                 addressChecker,
 		filteringReportRPCClient:       filteringReportRPCClient,
+		filteredTxFullRetryInterval:    filteredTxFullRetryInterval,
 	}
 }
 
@@ -896,8 +899,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 		// Periodically attempt full re-execution even if the tx hashes aren't in the
 		// onchain filter yet. The filtered address set may have changed since the
 		// last attempt, which could allow the tx to succeed without needing bypass.
-		// TODO: add FilteredTxFullRetryInterval config
-		needsFullRetry := time.Since(s.waitingForFilteredTx.LastFullRetry) >= 1*time.Second
+		needsFullRetry := time.Since(s.waitingForFilteredTx.LastFullRetry) >= s.filteredTxFullRetryInterval
 		if !needsFullRetry {
 			// Fast-path: check if all filtered tx hashes are now in the onchain filter
 			allInFilter := true
