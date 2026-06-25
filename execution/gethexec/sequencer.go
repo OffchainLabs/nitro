@@ -1921,10 +1921,7 @@ func (s *Sequencer) StopAndWait() {
 	}
 }
 
-// SequenceTransactionsForTest sequences the given transactions in a single block,
-// using the sequencer's real preTxFilter and postTxFilter. This bypasses the
-// txQueue, guaranteeing all transactions land in the same block.
-func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transactions) (*types.Block, []error) {
+func (s *Sequencer) MakeSameBlockSequencingHooksAndHeaderForTest(t *testing.T, txes types.Transactions) (*arbostypes.L1IncomingMessageHeader, *FullSequencingHooks) {
 	t.Helper()
 	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s.preTxFilter, s.postTxFilter, nil)
 
@@ -1940,13 +1937,12 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 	}
 
 	s.pendingFilteredTxReports = nil
-	_, block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
-	if err != nil {
-		t.Fatalf("SequenceTransactionsForTest: %v", err)
-	}
 
-	// Mirror createBlock: dispatch any reports accumulated by preTxFilter so
-	// tests inspecting the filtering-report endpoint observe them.
+	return header, hooks
+}
+
+func (s *Sequencer) DispatchPendingFilteredTxReportsForTest(t *testing.T) {
+	t.Helper()
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
 		s.LaunchThread(func(ctx context.Context) {
@@ -1956,8 +1952,6 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 		})
 	}
 	s.pendingFilteredTxReports = nil
-
-	return block, hooks.GetTxErrors()
 }
 
 func (s *Sequencer) SetAddressFilterServiceForTest(t *testing.T, service *addressfilter.FilterService) {
