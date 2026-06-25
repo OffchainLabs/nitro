@@ -335,7 +335,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		RunScheduledTxes: retryables.RunScheduledTxes,
 		TxFilterer:       c.txFilterer,
 	})
-	if errors.Is(err, state.ErrArbTxFilter) {
+	if errors.Is(err, state.ErrSeqFilter) {
 		return err
 	}
 	// Other execution errors are ignored since the pre-check is only concerned

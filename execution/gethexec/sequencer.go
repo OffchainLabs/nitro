@@ -536,7 +536,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 	if err != nil {
 		// MarshalBinary should essentially never fail for a well-formed transaction already
 		// in memory. We log instead of returning an error so that the caller can return a
-		// plain ErrArbTxFilter, avoiding exposure of internal operation errors (e.g.
+		// plain ErrSeqFilter, avoiding exposure of internal operation errors (e.g.
 		// marshalling failures) to end users.
 		log.Error("failed to marshal transaction for filtered tx report", "err", err, "txHash", tx.Hash())
 		return
@@ -796,13 +796,13 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 
 	touchAddresses(statedb, tx, sender)
 	if statedb.IsTxFiltered() {
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 
 	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
 	if addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	return nil
 }
@@ -817,11 +817,11 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		}
 	}
 	if statedb.IsTxFiltered() {
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 
 	// For redeems, skip nonce/revert-gas checks since those

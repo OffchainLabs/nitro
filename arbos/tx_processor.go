@@ -209,7 +209,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				return true, multigas.ZeroGas(), err, nil
 			}
 			to = &recipient
-			txnErr = &core.ErrFilteredTx{TxHash: txHash}
+			txnErr = &core.ErrFilteredOnChain{TxHash: txHash}
 		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
@@ -250,14 +250,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			}
 			// For symmetry with other filtered tx paths, deletion from the onchain filter
 			// is handled by the external tx authority service rather than here.
-			// Note: deletion here *would* be committed despite the ErrFilteredTx in
+			// Note: deletion here *would* be committed despite the ErrFilteredOnChain in
 			// result.Err, because endTxNow=true means the outer error is nil and state
 			// is not reverted. May move to direct deletion here in future.
 			// p.state.FilteredTransactions().DeleteFree(ticketId)
 			tx.FeeRefundAddr = recipient
 			tx.Beneficiary = recipient
 			isFiltered = true
-			filteredErr = &core.ErrFilteredTx{TxHash: ticketId}
+			filteredErr = &core.ErrFilteredOnChain{TxHash: ticketId}
 		}
 
 		// mint funds with the deposit, then charge fees later
@@ -987,7 +987,7 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 		*gasRemaining = 0
 		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(usedGas))
 
-		return usedMultiGas, &core.ErrFilteredTx{TxHash: txHash}
+		return usedMultiGas, &core.ErrFilteredOnChain{TxHash: txHash}
 	}
 
 	return usedMultiGas, nil
