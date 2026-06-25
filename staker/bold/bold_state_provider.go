@@ -432,7 +432,11 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetMachineHashesWithStepSize(
+	spawner, err := s.statelessValidator.BOLDExecutionSpawnerForModuleRoot(cfg.AssertionMetadata.WasmModuleRoot)
+	if err != nil {
+		return nil, err
+	}
+	result, err := spawner.GetMachineHashesWithStepSize(
 		ctx,
 		cfg.AssertionMetadata.WasmModuleRoot,
 		input,
@@ -558,7 +562,11 @@ func (s *BOLDStateProvider) CollectProof(
 		"machineIndex", machineIndex,
 		"startState", fmt.Sprintf("%+v", input.StartState),
 	)
-	baseProof, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
+	spawner, err := s.statelessValidator.BOLDExecutionSpawnerForModuleRoot(assertionMetadata.WasmModuleRoot)
+	if err != nil {
+		return nil, err
+	}
+	baseProof, err := spawner.GetProofAt(
 		ctx,
 		assertionMetadata.WasmModuleRoot,
 		input,

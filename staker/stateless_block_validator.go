@@ -308,6 +308,22 @@ func (v *StatelessBlockValidator) BOLDExecutionSpawners() []validator.BOLDExecut
 	return v.boldExecSpawners
 }
 
+func (v *StatelessBlockValidator) BOLDExecutionSpawnerForModuleRoot(moduleRoot common.Hash) (validator.BOLDExecutionSpawner, error) {
+	for _, spawner := range v.boldExecSpawners {
+		supportedRoots, err := spawner.WasmModuleRoots()
+		if err != nil {
+			log.Warn("WasmModuleRoots returned error", "err", err)
+			continue
+		}
+		for _, root := range supportedRoots {
+			if root == moduleRoot {
+				return spawner, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("validation with WasmModuleRoot %v not supported by node", moduleRoot)
+}
+
 func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum uint64) (bool, *FullBatchInfo, error) {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
