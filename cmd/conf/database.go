@@ -46,11 +46,15 @@ var PersistentConfigDefault = PersistentConfig{
 	Pebble:       PebbleConfigDefault,
 }
 
-func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	PersistentConfigAddOptionsWithDefault(prefix, f, &PersistentConfigDefault)
+func persistentConfigDefaultNoReadCompact() PersistentConfig {
+	c := PersistentConfigDefault
+	c.Pebble = PebbleConfigDefaultNoReadCompact
+	return c
 }
 
-func PersistentConfigAddOptionsWithDefault(prefix string, f *pflag.FlagSet, defaultConfig *PersistentConfig) {
+var PersistentConfigDefaultNoReadCompact = persistentConfigDefaultNoReadCompact()
+
+func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig PersistentConfig) {
 	f.String(prefix+".global-config", defaultConfig.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", defaultConfig.Chain, "directory to store chain state")
 	f.String(prefix+".log-dir", defaultConfig.LogDir, "directory to store log file")
@@ -142,6 +146,14 @@ var PebbleConfigDefault = PebbleConfig{
 	MaxConcurrentCompactions: util.GoMaxProcs(),
 	Experimental:             PebbleExperimentalConfigDefault,
 }
+
+func pebbleConfigDefaultNoReadCompact() PebbleConfig {
+	c := PebbleConfigDefault
+	c.Experimental.ReadSamplingMultiplier = -1 // disable read sampling multiplier
+	return c
+}
+
+var PebbleConfigDefaultNoReadCompact = pebbleConfigDefaultNoReadCompact()
 
 func PebbleConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *PebbleConfig) {
 	f.Bool(prefix+".sync-mode", defaultConfig.SyncMode, "if true sync mode is used (data needs to be written to WAL before the write is marked as completed)")

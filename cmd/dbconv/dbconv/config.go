@@ -21,26 +21,20 @@ type DBConfig struct {
 	Pebble    conf.PebbleConfig `koanf:"pebble"`
 }
 
-func DBConvPebbleConfigDefault() conf.PebbleConfig {
-	c := conf.PebbleConfigDefault
-	c.Experimental.ReadSamplingMultiplier = -1 // disable read sampling multiplier
-	return c
-}
-
 var DBConfigDefaultDst = DBConfig{
 	DBEngine:  "pebble",
-	Handles:   conf.PersistentConfigDefault.Handles,
+	Handles:   conf.PersistentConfigDefaultNoReadCompact.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "dstdb/",
-	Pebble:    DBConvPebbleConfigDefault(),
+	Pebble:    conf.PebbleConfigDefaultNoReadCompact,
 }
 
 var DBConfigDefaultSrc = DBConfig{
 	DBEngine:  "leveldb",
-	Handles:   conf.PersistentConfigDefault.Handles,
+	Handles:   conf.PersistentConfigDefaultNoReadCompact.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "srcdb/",
-	Pebble:    DBConvPebbleConfigDefault(),
+	Pebble:    conf.PebbleConfigDefaultNoReadCompact,
 }
 
 func DBConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *DBConfig) {
