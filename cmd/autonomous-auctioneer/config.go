@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -131,7 +133,7 @@ func (c *AutonomousAuctioneerConfig) GetReloadInterval() time.Duration {
 }
 
 func (c *AutonomousAuctioneerConfig) Validate() error {
-	if err := c.AuctioneerServer.S3Storage.Validate(); err != nil {
+	if err := c.AuctioneerServer.Validate(); err != nil {
 		return err
 	}
 	return nil

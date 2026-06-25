@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbnode
 
 import (
@@ -14,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -63,14 +66,16 @@ func checkMetadataBackendChainId(ctx context.Context, client *rpcclient.RpcClien
 }
 
 // BlockMetadataFetcher looks for missing blockMetadata of block numbers starting from trackBlockMetadataFrom (config option of tx streamer)
-// and adds them to arbDB. BlockMetadata is fetched by querying the source's bulk blockMetadata fetching API "arb_getRawBlockMetadata".
-// Missing trackers are removed after their corresponding blockMetadata are added to the arbDB
+// and adds them to consensusDB. BlockMetadata is fetched by querying the source's bulk blockMetadata fetching API "arb_getRawBlockMetadata".
+// Missing trackers are removed after their corresponding blockMetadata are added to the consensusDB
 type BlockMetadataFetcher struct {
 	stopwaiter.StopWaiter
 	config                 BlockMetadataFetcherConfig
 	db                     ethdb.Database
+	genesisBlockNum        uint64
 	client                 *rpcclient.RpcClient
 	exec                   execution.ExecutionClient
+	startBlockNum          uint64
 	trackBlockMetadataFrom arbutil.MessageIndex
 	expectedChainId        uint64
 
@@ -83,18 +88,12 @@ func NewBlockMetadataFetcher(
 	ctx context.Context,
 	c BlockMetadataFetcherConfig,
 	db ethdb.Database,
+	genesisBlockNum uint64,
 	exec execution.ExecutionClient,
-	startPos uint64,
+	startBlockNum uint64,
 	expectedChainId uint64,
 ) (*BlockMetadataFetcher, error) {
-	var trackBlockMetadataFrom arbutil.MessageIndex
 	var err error
-	if startPos != 0 {
-		trackBlockMetadataFrom, err = exec.BlockNumberToMessageIndex(startPos).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
 	client := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &c.Source }, nil)
 	if err = client.Start(ctx); err != nil {
 		return nil, err
@@ -110,14 +109,15 @@ func NewBlockMetadataFetcher(
 	}
 
 	fetcher := &BlockMetadataFetcher{
-		config:                 c,
-		db:                     db,
-		client:                 client,
-		exec:                   exec,
-		trackBlockMetadataFrom: trackBlockMetadataFrom,
-		expectedChainId:        expectedChainId,
-		chainIdChecked:         chainIdChecked,
-		currentSyncInterval:    c.SyncInterval,
+		config:              c,
+		db:                  db,
+		genesisBlockNum:     genesisBlockNum,
+		client:              client,
+		exec:                exec,
+		startBlockNum:       startBlockNum,
+		expectedChainId:     expectedChainId,
+		chainIdChecked:      chainIdChecked,
+		currentSyncInterval: c.SyncInterval,
 	}
 	return fetcher, nil
 }
@@ -151,15 +151,15 @@ func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query [
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {
-		pos, err := b.exec.BlockNumberToMessageIndex(elem.BlockNumber).Await(ctx)
+		pos, err := arbutil.BlockNumberToMessageIndex(elem.BlockNumber, b.genesisBlockNum)
 		if err != nil {
 			return err
 		}
 		if _, ok := queryMap[uint64(pos)]; ok {
-			if err := batch.Put(dbKey(blockMetadataInputFeedPrefix, uint64(pos)), elem.RawMetadata); err != nil {
+			if err := batch.Put(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(pos)), elem.RawMetadata); err != nil {
 				return err
 			}
-			if err := batch.Delete(dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
+			if err := batch.Delete(dbKey(schema.MissingBlockMetadataInputFeedPrefix, uint64(pos))); err != nil {
 				return err
 			}
 			// If we reached the ideal batch size, commit and reset
@@ -184,16 +184,8 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	}
 
 	handleQuery := func(query []uint64) bool {
-		fromBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0])).Await(ctx)
-		if err != nil {
-			log.Error("Error getting fromBlock", "err", err)
-			return false
-		}
-		toBlock, err := b.exec.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1])).Await(ctx)
-		if err != nil {
-			log.Error("Error getting toBlock", "err", err)
-			return false
-		}
+		fromBlock := arbutil.MessageIndexToBlockNumber(arbutil.MessageIndex(query[0]), b.genesisBlockNum)
+		toBlock := arbutil.MessageIndexToBlockNumber(arbutil.MessageIndex(query[len(query)-1]), b.genesisBlockNum)
 
 		result, err := b.fetch(
 			ctx,
@@ -205,7 +197,7 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 			return false
 		}
 		if err = b.persistBlockMetadata(ctx, query, result); err != nil {
-			log.Error("Error committing result from bulk blockMetadata API to ArbDB", "err", err)
+			log.Error("Error committing result from bulk blockMetadata API to ConsensusDB", "err", err)
 			return false
 		}
 		return true
@@ -214,11 +206,11 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	if b.trackBlockMetadataFrom != 0 {
 		start = uint64ToKey(uint64(b.trackBlockMetadataFrom))
 	}
-	iter := b.db.NewIterator(missingBlockMetadataInputFeedPrefix, start)
+	iter := b.db.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, start)
 	defer iter.Release()
-	var query []uint64
+	query := make([]uint64, 0, b.config.APIBlocksLimit)
 	for iter.Next() {
-		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
+		keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
 		query = append(query, binary.BigEndian.Uint64(keyBytes))
 		end := len(query) - 1
 		if query[end]-query[0]+1 >= uint64(b.config.APIBlocksLimit) {
@@ -247,9 +239,24 @@ func (b *BlockMetadataFetcher) Update(ctx context.Context) time.Duration {
 	return b.config.SyncInterval
 }
 
-func (b *BlockMetadataFetcher) Start(ctx context.Context) {
+func (b *BlockMetadataFetcher) InitializeTrackBlockMetadataFrom() error {
+	var err error
+	if b.startBlockNum != 0 {
+		b.trackBlockMetadataFrom, err = arbutil.BlockNumberToMessageIndex(b.startBlockNum, b.genesisBlockNum)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *BlockMetadataFetcher) Start(ctx context.Context) error {
 	b.StopWaiter.Start(ctx, b)
+	if err := b.InitializeTrackBlockMetadataFrom(); err != nil {
+		return err
+	}
 	b.CallIteratively(b.Update)
+	return nil
 }
 
 func (b *BlockMetadataFetcher) StopAndWait() {

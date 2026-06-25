@@ -1,11 +1,15 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"strings"
+	"unicode"
 
 	"github.com/spf13/pflag"
 
@@ -99,26 +103,26 @@ func (c *LegacyConfig) Print(w io.Writer) {
 	fmt.Fprintln(w, "Backlog tolerance:\t", c.BacklogTolerance)
 }
 
-type ConstraintsConfig struct {
+type SingleGasConfig struct {
 	CommonConfig
 	Targets  []int64
 	Windows  []int64
 	Backlogs []int64
 }
 
-var DefaultConstraintConfig = ConstraintsConfig{
+var DefaultConstraintConfig = SingleGasConfig{
 	Targets: []int64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000},
 	Windows: []int64{9, 52, 329, 2_105, 13_485, 86_400},
 }
 
-func (c *ConstraintsConfig) AddFlags(flags *pflag.FlagSet) {
+func (c *SingleGasConfig) AddFlags(flags *pflag.FlagSet) {
 	c.CommonConfig.AddFlags(flags)
 	flags.Int64SliceVar(&c.Targets, "targets", DefaultConstraintConfig.Targets, "List of constraints' targets; previously speed-limit")
 	flags.Int64SliceVar(&c.Windows, "windows", DefaultConstraintConfig.Windows, "List of constraints' adjustment windows; previously inertia")
 	flags.Int64SliceVar(&c.Backlogs, "backlogs", DefaultConstraintConfig.Backlogs, "List of constraints' initial backlogs")
 }
 
-func (c *ConstraintsConfig) Print(w io.Writer) {
+func (c *SingleGasConfig) Print(w io.Writer) {
 	c.CommonConfig.Print(w)
 	fmt.Fprintln(w, "Number of constraints:\t", len(c.Targets))
 	for i := range len(c.Targets) {
@@ -132,7 +136,7 @@ func (c *ConstraintsConfig) Print(w io.Writer) {
 	}
 }
 
-func (c *ConstraintsConfig) Validate() error {
+func (c *SingleGasConfig) Validate() error {
 	for _, target := range c.Targets {
 		if target < 0 {
 			return fmt.Errorf("invalid negative target")
@@ -156,6 +160,69 @@ func (c *ConstraintsConfig) Validate() error {
 	}
 	if len(c.Backlogs) > len(c.Targets) {
 		return fmt.Errorf("too many initial backlogs")
+	}
+	return nil
+}
+
+type MultiGasConfig struct {
+	CommonConfig
+	Constraints         []MultiGasConstraint
+	constraintsJson     string
+	constraintsJsonPath string
+	printConstraints    bool
+}
+
+var DefaultMultiGasConfig = MultiGasConfig{
+	constraintsJson:  DefaultMultiGasConstraints,
+	printConstraints: false,
+}
+
+func (c *MultiGasConfig) AddFlags(flags *pflag.FlagSet) {
+	c.CommonConfig.AddFlags(flags)
+	defaultConstraints := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, DefaultMultiGasConstraints)
+	flags.StringVar(&c.constraintsJson, "constraints", defaultConstraints, "Multi-gas constraints specified as JSON")
+	flags.StringVar(&c.constraintsJsonPath, "constraints-path", "", "If set, load the constraints from the file")
+	flags.BoolVar(&c.printConstraints, "print-constraints", DefaultMultiGasConfig.printConstraints, "print the constraints")
+}
+
+func (c *MultiGasConfig) Print(w io.Writer) {
+	c.CommonConfig.Print(w)
+	if c.printConstraints {
+		result, err := json.MarshalIndent(c.Constraints, "             ", "  ")
+		if err != nil {
+			fmt.Fprintf(w, "Failed to print constraints: %v\n", err.Error())
+		} else {
+			fmt.Fprintf(w, "Constraints: %v\n", string(result))
+		}
+	} else {
+		fmt.Fprintf(w, "Number of constraints: %v\n", len(c.Constraints))
+	}
+}
+
+func (c *MultiGasConfig) Validate() error {
+	var constraintsJson []byte
+	if c.constraintsJsonPath != "" {
+		var err error
+		constraintsJson, err = os.ReadFile(c.constraintsJsonPath)
+		if err != nil {
+			return fmt.Errorf("failed to read constraints file: %w", err)
+		}
+	} else {
+		constraintsJson = []byte(c.constraintsJson)
+	}
+	err := json.Unmarshal(constraintsJson, &c.Constraints)
+	if err != nil {
+		return fmt.Errorf("failed to parse constraints: %w", err)
+	}
+	for _, constraint := range c.Constraints {
+		if err := constraint.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

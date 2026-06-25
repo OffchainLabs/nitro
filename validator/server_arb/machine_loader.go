@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_arb
 
 import (
@@ -14,7 +16,7 @@ type ArbitratorMachineConfig struct {
 }
 
 var DefaultArbitratorMachineConfig = ArbitratorMachineConfig{
-	WavmBinaryPath:       "machine.wavm.br",
+	WavmBinaryPath:       "machine.v2.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
 }
 

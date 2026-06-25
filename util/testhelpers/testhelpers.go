@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package testhelpers
@@ -6,13 +6,13 @@ package testhelpers
 import (
 	"context"
 	crypto "crypto/rand"
-	"io"
 	"log/slog"
 	"math/big"
 	"math/rand"
 	"os"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"testing"
 
@@ -107,12 +107,56 @@ func (h *LogHandler) Handle(_ context.Context, record slog.Record) error {
 }
 
 func (h *LogHandler) WasLogged(pattern string) bool {
+	return h.wasLoggedWithFilter(pattern, nil)
+}
+
+// Clear removes all recorded log entries.
+func (h *LogHandler) Clear() {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.records = h.records[:0]
+}
+
+func (h *LogHandler) WasLoggedAtLevel(pattern string, lvl slog.Level) bool {
+	return h.wasLoggedWithFilter(pattern, &lvl)
+}
+
+func (h *LogHandler) wasLoggedWithFilter(pattern string, lvl *slog.Level) bool {
 	re, err := regexp.Compile(pattern)
 	RequireImpl(h.t, err)
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 	for _, record := range h.records {
+		if lvl != nil && record.Level != *lvl {
+			continue
+		}
 		if re.MatchString(record.Message) {
+			return true
+		}
+	}
+	return false
+}
+
+// WasLoggedWithAttr checks whether a log record matching msgPattern has an
+// attribute whose key equals attrKey and whose string value contains attrSubstr.
+func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrSubstr string) bool {
+	msgRe, err := regexp.Compile(msgPattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if !msgRe.MatchString(record.Message) {
+			continue
+		}
+		found := false
+		record.Attrs(func(a slog.Attr) bool {
+			if a.Key == attrKey && strings.Contains(a.Value.String(), attrSubstr) {
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
 			return true
 		}
 	}
@@ -122,12 +166,18 @@ func (h *LogHandler) WasLogged(pattern string) bool {
 func newLogHandler(t *testing.T) *LogHandler {
 	return &LogHandler{
 		t:               t,
-		records:         make([]slog.Record, 0),
-		terminalHandler: log.NewTerminalHandler(io.Writer(os.Stderr), false),
+		terminalHandler: log.NewTerminalHandler(os.Stderr, false),
 	}
 }
 
+var initTestLogMu sync.Mutex
+
 func InitTestLog(t *testing.T, level slog.Level) *LogHandler {
+	t.Helper()
+	if !initTestLogMu.TryLock() {
+		t.Fatal("InitTestLog called concurrently - this test must not run in parallel")
+	}
+	t.Cleanup(initTestLogMu.Unlock)
 	handler := newLogHandler(t)
 	glogger := log.NewGlogHandler(handler)
 	glogger.Verbosity(level)

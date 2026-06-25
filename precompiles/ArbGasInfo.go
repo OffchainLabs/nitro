@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -8,9 +8,9 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -241,7 +241,7 @@ func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.I
 	if err != nil {
 		return nil, err
 	}
-	haveFunds := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	haveFunds := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
 	return arbmath.BigSub(haveFunds.ToBig(), needFunds), nil
 }
@@ -351,17 +351,19 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 			return nil, fmt.Errorf("failed to read backlog for constraint %d: %w", i, err)
 		}
 
-		resourceMap, err := constraint.ResourcesWithWeights()
+		weights, err := constraint.GetResourceWeights()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read resource weights for constraint %d: %w", i, err)
 		}
-
-		resources := make([]WeightedResource, 0, len(resourceMap))
-		for kind, weight := range resourceMap {
-			resources = append(resources, WeightedResource{
-				Resource: uint8(kind),
-				Weight:   weight,
-			})
+		var resources []WeightedResource
+		for kind, weight := range weights {
+			if weight != 0 {
+				// #nosec G115 safe: kind < NumResourceKind
+				resources = append(resources, WeightedResource{
+					Resource: uint8(kind),
+					Weight:   weight,
+				})
+			}
 		}
 
 		result = append(result, MultiGasConstraint{
@@ -373,4 +375,16 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 	}
 
 	return result, nil
+}
+
+// GetMultiGasBaseFee gets the current base fee for each resource type used by the Multi-Constraint Pricer
+func (con ArbGasInfo) GetMultiGasBaseFee(
+	c ctx,
+	evm mech,
+) ([]*big.Int, error) {
+	basefee := evm.Context.BaseFeeInBlock
+	if basefee == nil {
+		basefee = evm.Context.BaseFee
+	}
+	return c.State.L2PricingState().GetMultiGasBaseFeePerResource(basefee)
 }

@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_common
 
 import (
@@ -69,7 +71,7 @@ func (l *MachineLoader[M]) ForEachReadyMachine(runme func(*M)) {
 	for _, stat := range l.machines {
 		if stat.Ready() {
 			machine, err := stat.Current()
-			if err != nil {
+			if err == nil {
 				runme(machine)
 			}
 		}

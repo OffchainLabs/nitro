@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbosState
@@ -52,6 +52,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 		SendCount:          0,
 		L1BlockNumber:      0,
 		ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion,
+		CollectTips:        false,
 	}
 	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 

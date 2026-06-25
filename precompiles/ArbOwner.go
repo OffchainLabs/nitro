@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -11,11 +11,12 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,22 +25,51 @@ import (
 // which ensures only a chain owner can access these methods. For methods that
 // are safe for non-owners to call, see ArbOwnerOld
 type ArbOwner struct {
-	Address          addr // 0x70
+	Address addr // 0x70
+
 	OwnerActs        func(ctx, mech, bytes4, addr, []byte) error
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
+
+	TransactionFiltererAdded        func(ctx, mech, common.Address) error
+	TransactionFiltererAddedGasCost func(common.Address) (uint64, error)
+
+	TransactionFiltererRemoved        func(ctx, mech, common.Address) error
+	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
+
+	FilteredFundsRecipientSet        func(ctx, mech, common.Address) error
+	FilteredFundsRecipientSetGasCost func(common.Address) (uint64, error)
+
+	ChainOwnerAdded        func(ctx, mech, common.Address) error
+	ChainOwnerAddedGasCost func(common.Address) (uint64, error)
+
+	ChainOwnerRemoved        func(ctx, mech, common.Address) error
+	ChainOwnerRemovedGasCost func(common.Address) (uint64, error)
+
+	NativeTokenOwnerAdded        func(ctx, mech, common.Address) error
+	NativeTokenOwnerAddedGasCost func(common.Address) (uint64, error)
+
+	NativeTokenOwnerRemoved        func(ctx, mech, common.Address) error
+	NativeTokenOwnerRemovedGasCost func(common.Address) (uint64, error)
 }
 
-const NativeTokenEnableDelay = 7 * 24 * 60 * 60
+const maxGetAllMembers = 65536
+const FeatureEnableDelay = 7 * 24 * 60 * 60 // one week
 
 var (
-	ErrOutOfBounds         = errors.New("value out of bounds")
-	ErrNativeTokenDelay    = errors.New("native token feature must be enabled at least 7 days in the future")
-	ErrNativeTokenBackward = errors.New("native token feature cannot be updated to a time earlier than the current time at which it is scheduled to be enabled")
+	ErrOutOfBounds = errors.New("value out of bounds")
+	ErrDelay       = errors.New("feature must be enabled at least 7 days in the future")
+	ErrBackward    = errors.New("feature cannot be updated to a time earlier than the current scheduled enable time")
 )
 
 // AddChainOwner adds account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
-	return c.State.ChainOwners().Add(newOwner)
+	if err := c.State.ChainOwners().Add(newOwner); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.ChainOwnerAdded(c, evm, newOwner)
+	}
+	return nil
 }
 
 // RemoveChainOwner removes account from the list of chain owners
@@ -48,7 +78,13 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	if !member {
 		return errors.New("tried to remove non-owner")
 	}
-	return c.State.ChainOwners().Remove(addr, c.State.ArbOSVersion())
+	if err := c.State.ChainOwners().Remove(addr, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.ChainOwnerRemoved(c, evm, addr)
+	}
+	return nil
 }
 
 // IsChainOwner checks if the account is a chain owner
@@ -58,37 +94,48 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers(65536)
+	return c.State.ChainOwners().AllMembers(maxGetAllMembers)
 }
 
-// SetNativeTokenManagementFrom sets a time in epoch seconds when the native token
-// management becomes enabled. Setting it to 0 disables the feature.
-// If the feature is disabled, then the time must be at least 7 days in the
-// future.
-func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
+// setFeatureFromTime sets a time in epoch seconds when a feature becomes enabled.
+// Setting it to 0 disables the feature.
+// If the feature is disabled, then the time must be at least FeatureEnableDelay days in the future.
+func setFeatureFromTime(field storage.StorageBackedUint64, now, timestamp uint64) error {
 	if timestamp == 0 {
-		return c.State.SetNativeTokenManagementFromTime(0)
+		return field.Set(0)
 	}
-	stored, err := c.State.NativeTokenManagementFromTime()
+	stored, err := field.Get()
 	if err != nil {
 		return err
 	}
-	now := evm.Context.Time
-	// If the feature is disabled, then the time must be at least 7 days in the
+
+	// If the feature is disabled, then the time must be at least FeatureEnableDelay days in the
 	// future.
 	// If the feature is scheduled to be enabled more than 7 days in the future,
 	// and the new time is also in the future, then it must be at least 7 days
 	// in the future.
-	if (stored == 0 && timestamp < now+NativeTokenEnableDelay) ||
-		(stored > now+NativeTokenEnableDelay && timestamp < now+NativeTokenEnableDelay) {
-		return ErrNativeTokenDelay
+	if (stored == 0 && timestamp < now+FeatureEnableDelay) ||
+		(stored > now+FeatureEnableDelay && timestamp < now+FeatureEnableDelay) {
+		return ErrDelay
 	}
+
 	// If the feature is scheduled to be enabled earlier than the minimum delay,
 	// then the new time to enable it must be only further in the future.
-	if stored > now && stored <= now+NativeTokenEnableDelay && timestamp < stored {
-		return ErrNativeTokenBackward
+	if stored > now && stored <= now+FeatureEnableDelay && timestamp < stored {
+		return ErrBackward
 	}
-	return c.State.SetNativeTokenManagementFromTime(timestamp)
+
+	return field.Set(timestamp)
+}
+
+// SetNativeTokenManagementFrom sets native token management enabled-from time.
+func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
+	return setFeatureFromTime(c.State.NativeTokenEnabledTimeHandle(), evm.Context.Time, timestamp)
+}
+
+// SetTransactionFilteringFrom sets transaction filtering enabled-from time.
+func (con ArbOwner) SetTransactionFilteringFrom(c ctx, evm mech, timestamp uint64) error {
+	return setFeatureFromTime(c.State.TransactionFilteringEnabledTimeHandle(), evm.Context.Time, timestamp)
 }
 
 // AddNativeTokenOwner adds account as a native token owner
@@ -100,7 +147,13 @@ func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
 	if enabledTime == 0 || enabledTime > evm.Context.Time {
 		return errors.New("native token feature is not enabled yet")
 	}
-	return c.State.NativeTokenOwners().Add(newOwner)
+	if err := c.State.NativeTokenOwners().Add(newOwner); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.NativeTokenOwnerAdded(c, evm, newOwner)
+	}
+	return nil
 }
 
 // RemoveNativeTokenOwner removes account from the list of native token owners
@@ -109,7 +162,13 @@ func (con ArbOwner) RemoveNativeTokenOwner(c ctx, evm mech, addr addr) error {
 	if !member {
 		return errors.New("tried to remove non native token owner")
 	}
-	return c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion())
+	if err := c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.NativeTokenOwnerRemoved(c, evm, addr)
+	}
+	return nil
 }
 
 // IsNativeTokenOwner checks if the account is a native token owner
@@ -119,7 +178,64 @@ func (con ArbOwner) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error)
 
 // GetAllNativeTokenOwners retrieves the list of native token owners
 func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.NativeTokenOwners().AllMembers(65536)
+	return c.State.NativeTokenOwners().AllMembers(maxGetAllMembers)
+}
+
+// AddTransactionFilterer adds account as a transaction filterer (authorized to use ArbFilteredTransactionsManager)
+func (con ArbOwner) AddTransactionFilterer(c ctx, evm mech, filterer addr) error {
+	enabledTime, err := c.State.TransactionFilteringFromTime()
+	if err != nil {
+		return err
+	}
+	if enabledTime == 0 || enabledTime > evm.Context.Time {
+		return errors.New("transaction filtering feature is not enabled yet")
+	}
+
+	if err := c.State.TransactionFilterers().Add(filterer); err != nil {
+		return err
+	}
+	return con.TransactionFiltererAdded(c, evm, filterer)
+}
+
+// RemoveTransactionFilterer removes account from the list of transaction filterers
+func (con ArbOwner) RemoveTransactionFilterer(c ctx, evm mech, filterer addr) error {
+	member, err := con.IsTransactionFilterer(c, evm, filterer)
+	if err != nil {
+		return err
+	}
+	if !member {
+		return errors.New("tried to remove non existing transaction filterer")
+	}
+
+	if err := c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	return con.TransactionFiltererRemoved(c, evm, filterer)
+}
+
+// IsTransactionFilterer checks if the account is a transaction filterer
+func (con ArbOwner) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool, error) {
+	return c.State.TransactionFilterers().IsMember(filterer)
+}
+
+// GetAllTransactionFilterers retrieves the list of transaction filterers
+func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
+}
+
+// SetFilteredFundsRecipient sets the address that receives funds redirected from filtered transactions.
+// Set to address(0) to use the networkFeeAccount as fallback.
+func (con ArbOwner) SetFilteredFundsRecipient(c ctx, evm mech, newRecipient addr) error {
+	if err := c.State.SetFilteredFundsRecipient(newRecipient); err != nil {
+		return err
+	}
+	return con.FilteredFundsRecipientSet(c, evm, newRecipient)
+}
+
+// GetFilteredFundsRecipient gets the address that receives funds redirected from filtered transactions.
+// Returns address(0) if not explicitly set (networkFeeAccount is used as fallback at runtime).
+func (con ArbOwner) GetFilteredFundsRecipient(c ctx, evm mech) (addr, error) {
+	return c.State.FilteredFundsRecipient()
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
@@ -247,7 +363,7 @@ func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) err
 
 // Releases surplus funds from L1PricerFundsPoolAddress for use
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
-	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	balance := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()
 	recognized, err := l1p.L1FeesAvailable()
 	if err != nil {
@@ -277,7 +393,7 @@ func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
 		return errors.New("ink price must be a positive uint24")
 	}
 	params.InkPrice = ink
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
@@ -287,7 +403,7 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 		return err
 	}
 	params.MaxStackDepth = depth
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the number of free wasm pages a tx receives
@@ -297,7 +413,7 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 		return err
 	}
 	params.FreePages = pages
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the base cost of each additional wasm page
@@ -307,7 +423,7 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 		return err
 	}
 	params.PageGas = gas
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the initial number of pages a wasm may allocate
@@ -317,7 +433,7 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 		return err
 	}
 	params.PageLimit = limit
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the minimum costs to invoke a program
@@ -328,7 +444,7 @@ func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
 	}
 	params.MinInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(gas, programs.MinInitGasUnits))
 	params.MinCachedInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(cached, programs.MinCachedGasUnits))
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the linear adjustment made to program init costs
@@ -338,7 +454,7 @@ func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
 		return err
 	}
 	params.InitCostScalar = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(percent, programs.CostScalarPercent))
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the number of days after which programs deactivate
@@ -348,7 +464,7 @@ func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
 		return err
 	}
 	params.ExpiryDays = days
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the age a program must be to perform a keepalive
@@ -358,7 +474,7 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 		return err
 	}
 	params.KeepaliveDays = days
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Sets the number of extra programs ArbOS caches during a given block
@@ -368,7 +484,7 @@ func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 		return err
 	}
 	params.BlockCacheSize = count
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // SetMaxWasmSize sets the maximum size the wasm code can be in bytes after
@@ -379,7 +495,7 @@ func (con ArbOwner) SetWasmMaxSize(c ctx, _ mech, maxWasmSize uint32) error {
 		return err
 	}
 	params.MaxWasmSize = maxWasmSize
-	return params.Save()
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
 }
 
 // Adds account as a wasm cache manager
@@ -467,7 +583,8 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
-	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+	arbosVersion := c.State.ArbOSVersion()
+	if arbosVersion >= params.ArbosVersion_MultiConstraintFix && arbosVersion < params.ArbosVersion_MultiGasConstraintsVersion {
 		limit := l2pricing.GasConstraintsMaxNum
 		if len(constraints) > limit {
 			return fmt.Errorf("too many constraints. Max: %d", limit)
@@ -497,15 +614,12 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
-	limit := l2pricing.MultiGasConstraintsMaxNum
-	if len(constraints) > limit {
-		return fmt.Errorf("too many constraints. Max: %d", limit)
-	}
-
+	// Clear existing constraints
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}
 
+	// Setup new multi-gas constraints
 	for _, constraint := range constraints {
 		if constraint.TargetPerSec == 0 || constraint.AdjustmentWindowSecs == 0 {
 			return fmt.Errorf(
@@ -528,18 +642,43 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 		); err != nil {
 			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
 		}
+	}
 
-		exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
-		if err != nil {
-			return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
-		}
+	// Calculate exponents for all constraints at once
+	exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
+	if err != nil {
+		return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
+	}
 
-		// Ensure no exponent exceeds the maximum allowed value
-		for _, exp := range exps {
-			if exp > l2pricing.MaxPricingExponentBips {
-				return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
-			}
+	// Ensure no exponent exceeds the maximum allowed value
+	for _, exp := range exps {
+		if exp > l2pricing.MaxPricingExponentBips {
+			return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
 		}
 	}
+
 	return nil
+}
+
+// SetCollectTips enables or disables tip collection.
+// When enabled, transaction tips are collected by the network fee account.
+// When disabled (default), tips are dropped.
+func (con ArbOwner) SetCollectTips(c ctx, evm mech, collectTips bool) error {
+	return c.State.SetCollectTips(collectTips)
+}
+
+func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint8) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.MaxFragmentCount = maxFragments
+	return params.Save(c.txProcessor.RunContext().IsExecutedOnChain())
+}
+
+// Sets the constant gas charge applied before each stylus contract activation.
+// Defaults to zero. Can be raised to deter DOS via activations, or set to a
+// value exceeding the block gas limit to block all activations entirely.
+func (con ArbOwner) SetWasmActivationGas(c ctx, _ mech, gas uint64) error {
+	return c.State.Programs().SetActivationGas(gas)
 }

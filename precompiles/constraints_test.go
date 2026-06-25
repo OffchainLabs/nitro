@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -38,7 +39,7 @@ func setupResourceConstraintHandles(
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	require.NoError(t, err)
 
-	state.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+	state.L2PricingState().ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	arbGasInfo := &ArbGasInfo{}
 	arbOwner := &ArbOwner{}
@@ -215,7 +216,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 5},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 7},
 			},
 			AdjustmentWindowSecs: 12,
 			TargetPerSec:         7_000_000,
@@ -257,7 +258,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 2},
 			},
 			AdjustmentWindowSecs: 1,
 			TargetPerSec:         30_000_000,
@@ -266,7 +267,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 2},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 3},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 3},
 			},
 			AdjustmentWindowSecs: 102,
 			TargetPerSec:         15_000_000,
@@ -295,10 +296,10 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(800_000), backlog)
 
-	resMap, err := first.ResourcesWithWeights()
+	resMap, err := first.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), resMap[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(2), resMap[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(2), resMap[multigas.ResourceKindStorageAccessRead])
 
 	// Second constraint
 	target, err = second.Target()
@@ -311,10 +312,10 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1_600_000), backlog)
 
-	resMap, err = second.ResourcesWithWeights()
+	resMap, err = second.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), resMap[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(3), resMap[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(3), resMap[multigas.ResourceKindStorageAccessRead])
 
 	// Verify via getter precompile
 	results, err := arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
@@ -336,7 +337,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 5},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 7},
 			},
 			AdjustmentWindowSecs: 12,
 			TargetPerSec:         7_000_000,
@@ -362,10 +363,10 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(50_000_000), backlog)
 
-	resMap, err = first.ResourcesWithWeights()
+	resMap, err = first.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), resMap[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(7), resMap[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(7), resMap[multigas.ResourceKindStorageAccessRead])
 
 	results, err = arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
 	require.NoError(t, err)
@@ -374,10 +375,13 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint64(7_000_000), results[0].TargetPerSec)
 	require.Equal(t, uint64(50_000_000), results[0].Backlog)
 	require.Equal(t, 2, len(results[0].Resources))
-	require.Equal(t, uint8(multigas.ResourceKindComputation), results[0].Resources[0].Resource)
-	require.Equal(t, uint64(5), results[0].Resources[0].Weight)
-	require.Equal(t, uint8(multigas.ResourceKindStorageAccess), results[0].Resources[1].Resource)
-	require.Equal(t, uint64(7), results[0].Resources[1].Weight)
+
+	gotWeights := make(map[uint8]uint64, len(results[0].Resources))
+	for _, r := range results[0].Resources {
+		gotWeights[r.Resource] = r.Weight
+	}
+	require.Equal(t, uint64(5), gotWeights[uint8(multigas.ResourceKindComputation)])
+	require.Equal(t, uint64(7), gotWeights[uint8(multigas.ResourceKindStorageAccessRead)])
 }
 
 func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
@@ -390,7 +394,7 @@ func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
+				{Resource: uint8(multigas.ResourceKindStorageAccessWrite), Weight: 2},
 			},
 			AdjustmentWindowSecs: 1,
 			TargetPerSec:         30_000_000,

@@ -1,3 +1,5 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbnode
 
 import (
@@ -69,7 +71,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgr
 			t.Fatal(err)
 		}
 		lock.Start(ctx)
-		defer lock.StopAndWait()
+		t.Cleanup(lock.StopAndWait)
 		locks = append(locks, lock)
 	}
 	if background {

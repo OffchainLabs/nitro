@@ -1,16 +1,14 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package api
 
 import (
-	"reflect"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/protocol"
 )
 
 type JsonAssertion struct {
@@ -120,8 +118,4 @@ type JsonCollectMachineHashes struct {
 	StepSize             uint64      `json:"stepSize" db:"StepSize"`
 	StartTime            time.Time   `json:"startTime" db:"StartTime"`
 	FinishTime           *time.Time  `json:"finishTime" db:"FinishTime"`
-}
-
-func IsNil(i any) bool {
-	return i == nil || reflect.ValueOf(i).IsNil()
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -42,6 +42,23 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 		redisClient.Del(ctx, fmt.Sprintf("%s%d", redisutil.MESSAGE_KEY_PREFIX, msg))
 	}
 	redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
+}
+
+// waitForChosenSequencer polls redis until CHOSENSEQ_KEY is set, indicating
+// a sequencer has been elected.
+func waitForChosenSequencer(t *testing.T, ctx context.Context, redisClient redis.UniversalClient, pollInterval time.Duration) {
+	t.Helper()
+	pollUntil(t, ctx, 30*time.Second, pollInterval, "sequencer to become chosen", func() bool {
+		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
+		if errors.Is(err, redis.Nil) {
+			return false
+		}
+		if err != nil {
+			t.Logf("redis error (will retry): %v", err)
+			return false
+		}
+		return true
+	})
 }
 
 func TestRedisSeqCoordinatorPrioritiesFlaky(t *testing.T) {
@@ -179,7 +196,7 @@ func TestRedisSeqCoordinatorPrioritiesFlaky(t *testing.T) {
 
 	messagesPerRound := arbutil.MessageIndex(10)
 	currentSequencer := 0
-	sequencedMesssages := arbutil.MessageIndex(1) // we start with 1 so messageCountKey will be written
+	sequencedMesssages := arbutil.MessageIndex(1) // we start with 1 so dbschema.MessageCountKey will be written
 
 	t.Log("Starting node 0")
 	// give node 0 room to set himself primary
@@ -311,15 +328,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	defer redisClient.Close()
 
 	// wait for sequencerA to become master
-	for {
-		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
-		if errors.Is(err, redis.Nil) {
-			time.Sleep(builder.nodeConfig.SeqCoordinator.UpdateInterval)
-			continue
-		}
-		Require(t, err)
-		break
-	}
+	waitForChosenSequencer(t, ctx, redisClient, builder.nodeConfig.SeqCoordinator.UpdateInterval)
 
 	builder.L2Info.GenerateAccount("User2")
 
@@ -414,15 +423,7 @@ func TestRedisSwitchover(t *testing.T) {
 	Require(t, err)
 
 	// wait for sequencerA to become master
-	for {
-		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
-		if errors.Is(err, redis.Nil) {
-			time.Sleep(builder.nodeConfig.SeqCoordinator.UpdateInterval)
-			continue
-		}
-		Require(t, err)
-		break
-	}
+	waitForChosenSequencer(t, ctx, redisClient, builder.nodeConfig.SeqCoordinator.UpdateInterval)
 
 	builder.L2Info.GenerateAccount("User2")
 

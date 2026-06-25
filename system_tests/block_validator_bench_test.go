@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
@@ -12,7 +12,7 @@ import (
 
 func TestBlockValidatorBenchmark(t *testing.T) {
 	opts := Options{
-		dasModeString: "onchain",
+		daModeString:  "onchain",
 		workloadLoops: 1,
 		workload:      depleteGas,
 		arbitrator:    true,

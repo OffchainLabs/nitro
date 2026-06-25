@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
@@ -113,6 +113,10 @@ func (w *EOA) Start(ctx context.Context) {
 
 func (b *EOA) StopAndWait() {
 	b.dataPoster.StopAndWait()
+}
+
+func (b *EOA) StopOnly() {
+	b.dataPoster.StopOnly()
 }
 
 func (b *EOA) DataPoster() *dataposter.DataPoster {

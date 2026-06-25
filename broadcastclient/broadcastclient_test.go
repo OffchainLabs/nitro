@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
@@ -100,10 +100,31 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, expectedCount, chainId, &wg, &sequencerAddr)
 	}
 
+	wg.Add(1)
 	go func() {
-		for i := 0; i < messageCount; i++ {
-			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
-			Require(t, err)
+		defer wg.Done()
+		msgCount := arbutil.MessageIndex(messageCount) // #nosec G115
+		for i := range msgCount {
+			msg := arbostypes.MessageWithMetadataAndBlockInfo{
+				MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+				BlockHash:       nil,
+				BlockMetadata:   nil,
+			}
+			broadcastMsg, err := b.NewBroadcastFeedMessage(msg, i)
+			if err != nil {
+				if ctx.Err() == nil {
+					t.Errorf("NewBroadcastFeedMessage failed at index %d: %v", i, err)
+				}
+				cancel()
+				return
+			}
+			if err := b.BroadcastFeedMessages([]*message.BroadcastFeedMessage{broadcastMsg}); err != nil {
+				if ctx.Err() == nil {
+					t.Errorf("BroadcastFeedMessages failed at index %d: %v", i, err)
+				}
+				cancel()
+				return
+			}
 		}
 	}()
 
@@ -592,6 +613,134 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 	}
 }
 
+type accumulatingTransactionStreamer struct {
+	mu       sync.Mutex
+	messages []*message.BroadcastFeedMessage
+}
+
+func (ts *accumulatingTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.messages = append(ts.messages, feedMessages...)
+	return nil
+}
+
+func (ts *accumulatingTransactionStreamer) getMessages() []*message.BroadcastFeedMessage {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	result := make([]*message.BroadcastFeedMessage, len(ts.messages))
+	copy(result, ts.messages)
+	return result
+}
+
+// awaitCount waits until at least count messages have been received.
+// The timeout is a safety net to prevent the test from hanging.
+func (ts *accumulatingTransactionStreamer) awaitCount(t *testing.T, count int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if len(ts.getMessages()) >= count {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d messages, got %d", count, len(ts.getMessages()))
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func TestInvalidSignatureMessagesAreSkipped(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	chainId := uint64(9742)
+
+	// Trusted key: broadcaster signs with this, client trusts this
+	trustedKey, err := crypto.GenerateKey()
+	Require(t, err)
+	trustedAddr := crypto.PubkeyToAddress(trustedKey.PublicKey)
+	trustedSigner := signature.DataSignerFromPrivateKey(trustedKey)
+
+	// Untrusted key: used to create messages with invalid signatures
+	untrustedKey, err := crypto.GenerateKey()
+	Require(t, err)
+	untrustedSigner := signature.DataSignerFromPrivateKey(untrustedKey)
+
+	feedErrChan := make(chan error, 10)
+	trustedBroadcaster := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &wsbroadcastserver.DefaultTestBroadcasterConfig }, chainId, feedErrChan, trustedSigner)
+
+	Require(t, trustedBroadcaster.Initialize())
+	Require(t, trustedBroadcaster.Start(ctx))
+	defer trustedBroadcaster.StopAndWait()
+
+	// Second broadcaster (not started) used only to create messages signed with the untrusted key
+	untrustedBroadcaster := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &wsbroadcastserver.DefaultTestBroadcasterConfig }, chainId, make(chan error, 1), untrustedSigner)
+
+	ts := &accumulatingTransactionStreamer{}
+
+	clientFeedErrChan := make(chan error, 10)
+	broadcastClient, err := newTestBroadcastClient(
+		DefaultTestConfig,
+		trustedBroadcaster.ListenerAddr(),
+		chainId,
+		0,
+		ts,
+		nil,
+		clientFeedErrChan,
+		&trustedAddr,
+		t,
+	)
+	Require(t, err)
+	broadcastClient.Start(ctx)
+	defer broadcastClient.StopAndWait()
+
+	// Batch 1: valid messages (seq 0, 1) - should be delivered.
+	// Send seq 0 and wait for it to arrive before sending more, to ensure
+	// the client is connected and receiving messages.
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 0)))
+	ts.awaitCount(t, 1, 10*time.Second)
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 1)))
+	ts.awaitCount(t, 2, 10*time.Second)
+
+	// Batch 2: invalid messages (seq 2, 3) signed with untrusted key - should be skipped.
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, untrustedBroadcaster, 2)))
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, untrustedBroadcaster, 3)))
+
+	// Sentinel (seq 2): a valid message that deterministically proves the client has
+	// processed and skipped the invalid messages. WebSocket messages are ordered, so the
+	// sentinel can only arrive after the invalid ones have been processed (and skipped).
+	// Invalid messages don't advance nextSeqNum (stays at 2), so the sentinel is seq 2.
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 2)))
+	ts.awaitCount(t, 3, 10*time.Second)
+
+	// Verify: only valid messages were delivered, and all have trusted signatures.
+	got := ts.getMessages()
+	if len(got) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(got))
+	}
+	for i, msg := range got {
+		if msg.SequenceNumber != arbutil.MessageIndex(i) { // nolint: gosec
+			t.Fatalf("message %d: unexpected seq number: %d", i, msg.SequenceNumber)
+		}
+		hash := msg.SignatureHash(chainId)
+		sigPub, err := crypto.SigToPub(hash.Bytes(), msg.Signature)
+		Require(t, err)
+		signerAddr := crypto.PubkeyToAddress(*sigPub)
+		if signerAddr != trustedAddr {
+			t.Fatalf("message %d (seq %d): signed by %s, expected trusted signer %s", i, msg.SequenceNumber, signerAddr, trustedAddr)
+		}
+	}
+
+	// Verify no fatal errors occurred (invalid signatures are non-fatal since NIT-4017)
+	select {
+	case err := <-clientFeedErrChan:
+		t.Fatalf("unexpected fatal feed error: %v", err)
+	default:
+	}
+}
+
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -644,7 +793,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 }
 
-func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
+func TestBroadcasterSendsCachedMessagesOnClientConnectFlaky(t *testing.T) {
 	t.Parallel()
 	/* Uncomment to enable logging
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))

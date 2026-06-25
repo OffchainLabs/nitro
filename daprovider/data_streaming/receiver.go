@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package data_streaming
@@ -205,7 +205,11 @@ func (ms *messageStore) registerNewMessage(nChunks, timeout, chunkSize, totalSiz
 		message, stillExists := ms.messages[id]
 		if !stillExists {
 			return
-		} else if time.Since(message.lastUpdateTime) > ms.messageCollectionExpiry {
+		}
+		message.mutex.Lock()
+		lastUpdate := message.lastUpdateTime
+		message.mutex.Unlock()
+		if time.Since(lastUpdate) > ms.messageCollectionExpiry {
 			if ms.expirationCallback != nil {
 				ms.expirationCallback(id)
 			}

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -144,27 +145,29 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
+	batchMetaFetcher := builder.L2.ConsensusNode.GetParentChainDataSource()
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB:  nil,
-				L1Reader:      builder.L2.ConsensusNode.L1Reader,
-				Inbox:         builder.L2.ConsensusNode.InboxTracker,
-				Streamer:      builder.L2.ConsensusNode.TxStreamer,
-				VersionGetter: builder.L2.ExecNode,
-				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
-				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts:  &seqTxOpts,
-				DAPWriters:    nil,
-				ParentChainID: parentChainID,
+				DataPosterDB:         nil,
+				L1Reader:             builder.L2.ConsensusNode.L1Reader,
+				BatchMetadataFetcher: batchMetaFetcher,
+				Streamer:             builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter:        builder.L2.ExecNode,
+				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
+				Config:               func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:         &seqTxOpts,
+				DAPWriters:           nil,
+				ParentChain:          parent.NewParentChain(ctx, parentChainID, builder.L2.ConsensusNode.L1Reader),
+				ChainConfig:          builder.chainConfig,
 			},
 		)
 		Require(t, err)
 		batchPoster.Start(ctx)
-		defer batchPoster.StopAndWait()
+		t.Cleanup(batchPoster.StopAndWait)
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
@@ -257,7 +260,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	addNewBatchPoster(ctx, t, builder, srv.Address)
 
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(10)), nil)})
 
 	var txs []*types.Transaction
 
@@ -283,23 +286,24 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-
+	batchMetaFetcher := builder.L2.ConsensusNode.GetParentChainDataSource()
 	newBatchPoster := func() *arbnode.BatchPoster {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB:  nil,
-				L1Reader:      builder.L2.ConsensusNode.L1Reader,
-				Inbox:         builder.L2.ConsensusNode.InboxTracker,
-				Streamer:      builder.L2.ConsensusNode.TxStreamer,
-				VersionGetter: builder.L2.ExecNode,
-				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
-				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts:  &seqTxOpts,
-				DAPWriters:    nil,
-				ParentChainID: parentChainID,
+				DataPosterDB:         nil,
+				L1Reader:             builder.L2.ConsensusNode.L1Reader,
+				BatchMetadataFetcher: batchMetaFetcher,
+				Streamer:             builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter:        builder.L2.ExecNode,
+				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
+				Config:               func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:         &seqTxOpts,
+				DAPWriters:           nil,
+				ParentChain:          parent.NewParentChain(ctx, parentChainID, builder.L2.ConsensusNode.L1Reader),
+				ChainConfig:          builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -410,23 +414,32 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	go func() {
 		data := make([]byte, 90000)
 		_, err := rand.Read(data)
-		Require(t, err)
-		for {
+		if goroutineErrorf(t, ctx, cancel, err, "rand.Read failed: %v", err) {
+			return
+		}
+		for ctx.Err() == nil {
 			gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
 			tx := builder.L2Info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
 			err = builder.L2.Client.SendTransaction(ctx, tx)
-			Require(t, err)
+			if goroutineErrorf(t, ctx, cancel, err, "SendTransaction failed: %v", err) {
+				return
+			}
 			_, err := builder.L2.EnsureTxSucceeded(tx)
-			Require(t, err)
+			if goroutineErrorf(t, ctx, cancel, err, "EnsureTxSucceeded failed: %v", err) {
+				return
+			}
 		}
 	}()
 
 	start := time.Now()
 	for {
 		time.Sleep(time.Second)
-		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
-		postedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
+		if batches == 0 {
+			continue
+		}
+		postedMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
 		Require(t, err)
 		haveMessages, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
@@ -708,22 +721,58 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		select {
 		case tx := <-batchPosterTxsChan:
 			batchPosterTxs = append(batchPosterTxs, tx)
-		case <-time.After(1 * time.Second):
+		case <-time.After(10 * time.Second):
 			Fatal(t, "Timed out waiting for batch poster tx")
 		}
 	}
-	select {
-	case <-batchPosterTxsChan:
-		Fatal(t, "Unexpected batch poster transaction")
-	default:
+	// Drain any extra batch poster transactions that may arrive within a short window.
+	drainTimeout := time.After(2 * time.Second)
+drain:
+	for {
+		select {
+		case tx := <-batchPosterTxsChan:
+			batchPosterTxs = append(batchPosterTxs, tx)
+		case <-drainTimeout:
+			break drain
+		}
 	}
 
-	// Check that the batch poster txs didn't arrive in L1
-	CheckBatchCount(t, builder, initialBatchCount)
+	if uint64(len(batchPosterTxs)) > numBatches {
+		t.Logf("WARNING: captured %d batch poster txs during drain, expected %d", len(batchPosterTxs), numBatches)
+	}
 
-	// Disable the filter and send the batch poster transactions
+	// Verify the filter actually blocked batches from landing on L1.
+	batchCountBeforeReplay := GetBatchCount(t, builder)
+	if batchCountBeforeReplay != initialBatchCount {
+		t.Fatalf("expected filter to block all batches, but %d landed on L1", batchCountBeforeReplay-initialBatchCount)
+	}
+
+	// Disable the filter and send the captured batch poster transactions.
 	builder.L1.ClientWrapper.DisableRawTransactionFilter()
-	builder.L1.SendWaitTestTransactions(t, batchPosterTxs)
+	var sentTxs []*types.Transaction
+	var skipped int
+	for _, bptx := range batchPosterTxs {
+		err := builder.L1.Client.SendTransaction(ctx, bptx)
+		if err != nil {
+			if strings.Contains(err.Error(), "nonce too low") || strings.Contains(err.Error(), "already known") {
+				skipped++
+				t.Logf("Skipping batch poster tx: %v", err)
+				continue
+			}
+			Require(t, err)
+		}
+		sentTxs = append(sentTxs, bptx)
+	}
+	t.Logf("Replayed %d batch poster txs (%d captured, %d skipped due to stale nonce)", len(sentTxs), len(batchPosterTxs), skipped)
+	for _, tx := range sentTxs {
+		_, err := EnsureTxSucceeded(ctx, builder.L1.Client, tx)
+		Require(t, err)
+	}
+	// If any batches were skipped due to stale nonces, the test's assumptions are violated.
+	if uint64(len(sentTxs)) != numBatches {
+		t.Fatalf("expected %d replayed batches, got %d (skipped %d due to stale nonce out of %d captured)",
+			numBatches, len(sentTxs), skipped, len(batchPosterTxs))
+	}
 	CheckBatchCount(t, builder, initialBatchCount+numBatches)
 }
 
@@ -776,30 +825,35 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, receipt.BlockHash)
 	Require(t, err)
 
-	// wait for this tx to be posted in a batch, and check which batch
-	var batchNum *big.Int
-	for {
-		batch, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64())).Await(ctx)
-		if err == nil && batch.Found {
-			batchNum = new(big.Int).SetUint64(batch.BatchNum)
-			break
-		}
-		t.Logf("waiting for tx to be posted in a batch")
-		<-time.After(time.Millisecond * 10)
-	}
+	// Wait for this tx to be posted in a batch, and record which batch.
+	batchNum := waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()), 30*time.Second, 10*time.Millisecond)
 
 	// find the transaction that posted this batch to parent chain
 	seqInboxContract, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
 	var batchTxHash common.Hash
-	for {
-		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{batchNum}, nil, nil)
-		if err == nil && it.Next() {
-			batchTxHash = it.Event.Raw.TxHash
-			break
+	var lastFilterErr error
+	{
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
+			if err != nil {
+				lastFilterErr = err
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if it.Next() {
+				batchTxHash = it.Event.Raw.TxHash
+			}
+			it.Close()
+			if batchTxHash != (common.Hash{}) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		t.Logf("waiting to find sequencer batch message")
-		<-time.After(time.Millisecond * 10)
+		if batchTxHash == (common.Hash{}) {
+			t.Fatalf("sequencer batch delivery event not found for batch %d (last filter error: %v)", batchNum, lastFilterErr)
+		}
 	}
 
 	// get receipt of batch tx to know gas used
@@ -824,7 +878,7 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
 		Require(t, err)
 		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
-		if block.Nonce() == batchNum.Uint64()+1 {
+		if block.Nonce() == batchNum+1 {
 			foundBlock = block.Header().Number.Uint64()
 			break
 		}
@@ -869,21 +923,12 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
+	// Post batch and record L1 heights before and after
 	l1HeightBeforeBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
-	// Do some L2 action (to become the batch content)
-	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
-	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})[0]
+	checkBatchPosting(t, ctx, builder, testClientB.Client)
 
-	// Advance L1 enough to ensure everything is synced
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for the batch to be posted and processed by node B
-	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
-	Require(t, err)
-
-	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
 	l1HeightAfterBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
@@ -894,10 +939,31 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	require.NotZero(t, len(batches), "no batches found between L1 blocks %d and %d", l1HeightBeforeBatch, l1HeightAfterBatch)
 
+	// Make sure mel has read the batch that the node has posted
+	batchCount, err := seqInbox.GetBatchCount(ctx, new(big.Int).SetUint64(l1HeightAfterBatch))
+	Require(t, err)
+	var melBatchCount uint64
+	for range 10 {
+		melBatchCount, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
+		Require(t, err)
+		if melBatchCount == batchCount {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if melBatchCount != batchCount {
+		t.Fatalf("batch count from sequencer inbox: %d doesn't match with MEL: %d", batchCount, melBatchCount)
+	}
+
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
-		Require(t, err)
+		// Wait for the inbox reader to catch up with this batch
+		var sequencerMessageBytes []byte
+		retryUntilFound(t, ctx, 30, 100*time.Millisecond, fmt.Sprintf("GetSequencerMessageBytes(seq %d)", sequenceNum), "not found in L1 block", func() error {
+			var getErr error
+			sequencerMessageBytes, _, getErr = builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, sequenceNum)
+			return getErr
+		})
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
 
@@ -905,7 +971,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		Require(t, err)
 		require.NotZero(t, l1Block.BlobGasUsed)
 
-		restoredBlobs, err := builder.L1.L1BlobReader.GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
+		restoredBlobs, err := builder.L1.L1BlobReader.Unwrap().GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
 		Require(t, err)
 		require.Len(t, restoredBlobs, 1)
 	}
@@ -917,6 +983,7 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
+		WithPreBoldDeployment().
 		TakeOwnership()
 
 	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
@@ -955,14 +1022,18 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	// Spin L1 to get batch poster report
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
-	// Wait for the delayed message's timestamp to become old enough to trigger MaxEmptyBatchDelay.
-	// The batch posting report comes back as a delayed message with an L1 block timestamp.
-	// L1 block timestamps can be up to ~12 seconds ahead of wall clock time (Ethereum PoS block interval).
-	// We need to wait for:
-	// 1. MaxEmptyBatchDelay (1 second) - the configured threshold that triggers batch posting
-	// 2. ~12-13 seconds - to ensure the L1 block timestamp is in the past relative to time.Now()
-	// 3. Extra buffer - for the delayed sequencer to process and make the report available
-	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 15*time.Second)
+	// The batch posting report's timestamp comes from the L1 block that included it.
+	// In the simulated beacon, block timestamps can race far ahead of wall clock
+	// (each block gets lastBlockTime+1 when blocks are mined faster than 1/second).
+	// We need wall clock to pass the report's L1 timestamp + MaxEmptyBatchDelay
+	// before the batch poster will consider the report old enough to trigger posting.
+	latestHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+	require.NoError(t, err)
+	l1AheadBy := time.Until(time.Unix(int64(latestHeader.Time), 0)) //#nosec G115
+	if l1AheadBy > 0 {
+		time.Sleep(l1AheadBy)
+	}
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay)
 
 	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)

@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
@@ -25,7 +25,8 @@ type L2PricingState struct {
 	backlogTolerance    storage.StorageBackedUint64
 	perTxGasLimit       storage.StorageBackedUint64
 	gasConstraints      *storage.SubStorageVector
-	multigasConstraints *storage.SubStorageVector
+	multiGasConstraints *storage.SubStorageVector
+	multiGasFees        *MultiGasFees
 
 	ArbosVersion uint64
 }
@@ -42,13 +43,14 @@ const (
 )
 
 var gasConstraintsKey []byte = []byte{0}
-var multigasConstraintsKey []byte = []byte{1}
+var multiGasConstraintsKey []byte = []byte{1}
+var multiGasBaseFeesKey []byte = []byte{2}
 
 const GethBlockGasLimit = 1 << 50
 
-// TODO(NIT-4152): Number of constraints limited because of retryable redeem gas cost calculation.
+// Number of single-gas constraints limited because of retryable redeem gas cost calculation.
+// The limit is ignored starting from ArbOS version 60.
 const GasConstraintsMaxNum = 20
-const MultiGasConstraintsMaxNum = 15
 
 // MaxPricingExponentBips caps the basefee growth: exp(8.5) ~= x5,000 min base fee.
 const MaxPricingExponentBips = arbmath.Bips(85_000)
@@ -75,7 +77,8 @@ func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingSta
 		backlogTolerance:    sto.OpenStorageBackedUint64(backlogToleranceOffset),
 		perTxGasLimit:       sto.OpenStorageBackedUint64(perTxGasLimitOffset),
 		gasConstraints:      storage.OpenSubStorageVector(sto.OpenSubStorage(gasConstraintsKey)),
-		multigasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multigasConstraintsKey)),
+		multiGasConstraints: storage.OpenSubStorageVector(sto.OpenSubStorage(multiGasConstraintsKey)),
+		multiGasFees:        OpenMultiGasFees(sto.OpenCachedSubStorage(multiGasBaseFeesKey)),
 		ArbosVersion:        arbosVersion,
 	}
 }
@@ -203,12 +206,13 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 
 		// Transfer to multi-gas constraint with equal weights
 		weights := map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):     1,
-			uint8(multigas.ResourceKindHistoryGrowth):   1,
-			uint8(multigas.ResourceKindStorageAccess):   1,
-			uint8(multigas.ResourceKindStorageGrowth):   1,
-			uint8(multigas.ResourceKindL2Calldata):      1,
-			uint8(multigas.ResourceKindWasmComputation): 1,
+			uint8(multigas.ResourceKindComputation):        1,
+			uint8(multigas.ResourceKindHistoryGrowth):      1,
+			uint8(multigas.ResourceKindStorageAccessRead):  1,
+			uint8(multigas.ResourceKindStorageAccessWrite): 1,
+			uint8(multigas.ResourceKindStorageGrowth):      1,
+			uint8(multigas.ResourceKindL2Calldata):         1,
+			uint8(multigas.ResourceKindWasmComputation):    1,
 		}
 
 		var adjustmentWindow uint32
@@ -275,11 +279,11 @@ func (ps *L2PricingState) ClearGasConstraints() error {
 }
 
 func (ps *L2PricingState) MultiGasConstraintsLength() (uint64, error) {
-	return ps.multigasConstraints.Length()
+	return ps.multiGasConstraints.Length()
 }
 
 func (ps *L2PricingState) OpenMultiGasConstraintAt(i uint64) *MultiGasConstraint {
-	return OpenMultiGasConstraint(ps.multigasConstraints.At(i))
+	return OpenMultiGasConstraint(ps.multiGasConstraints.At(i))
 }
 
 func (ps *L2PricingState) AddMultiGasConstraint(
@@ -288,7 +292,7 @@ func (ps *L2PricingState) AddMultiGasConstraint(
 	backlog uint64,
 	weights map[uint8]uint64,
 ) error {
-	subStorage, err := ps.multigasConstraints.Push()
+	subStorage, err := ps.multiGasConstraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push multi-gas constraint: %w", err)
 	}
@@ -315,7 +319,7 @@ func (ps *L2PricingState) ClearMultiGasConstraints() error {
 		return err
 	}
 	for range length {
-		subStorage, err := ps.multigasConstraints.Pop()
+		subStorage, err := ps.multiGasConstraints.Pop()
 		if err != nil {
 			return err
 		}

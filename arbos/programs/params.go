@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
@@ -24,13 +24,14 @@ const InitialPageGas = 1000           // linear cost per allocation.
 const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term.
 const initialPageLimit = 128          // reject wasms with memories larger than 8MB.
 const initialInkPrice = 10000         // 1 evm gas buys 10k ink.
-const initialMinInitGas = 72          // charge 72 * 128 = 9216 gas.
-const initialMinCachedGas = 11        // charge 11 *  32 = 352 gas.
-const initialInitCostScalar = 50      // scale costs 1:1 (100%)
-const initialCachedCostScalar = 50    // scale costs 1:1 (100%)
-const initialExpiryDays = 365         // deactivate after 1 year.
-const initialKeepaliveDays = 31       // wait a month before allowing reactivation.
-const initialRecentCacheSize = 32     // cache the 32 most recent programs.
+const initialMaxFragmentCount = 4
+const initialMinInitGas = 72       // charge 72 * 128 = 9216 gas.
+const initialMinCachedGas = 11     // charge 11 *  32 = 352 gas.
+const initialInitCostScalar = 50   // scale costs 1:1 (100%)
+const initialCachedCostScalar = 50 // scale costs 1:1 (100%)
+const initialExpiryDays = 365      // deactivate after 1 year.
+const initialKeepaliveDays = 31    // wait a month before allowing reactivation.
+const initialRecentCacheSize = 32  // cache the 32 most recent programs.
 
 const v2MinInitGas = 69 // charge 69 * 128 = 8832 gas (minCachedGas will also be charged in v2).
 
@@ -38,7 +39,8 @@ const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
 const CostScalarPercent = 2  // 2% for each unit
 
-const arbOS50MaxWasmSize = 22000 // Default wasmer stack depth for ArbOS 50
+const arbOS50MaxStackDepth = 22000    // Default wasmer stack depth for ArbOS 50
+const arbOS60MaxWasmSize = 256 * 1024 // 256 KB max decompressed wasm size for ArbOS 60
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -60,6 +62,7 @@ type StylusParams struct {
 	KeepaliveDays    uint16
 	BlockCacheSize   uint16
 	MaxWasmSize      uint32
+	MaxFragmentCount uint8
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -110,11 +113,21 @@ func (p Programs) Params() (*StylusParams, error) {
 	} else {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
+	if p.ArbosVersion >= params.ArbosVersion_StylusContractLimit {
+		stylusParams.MaxFragmentCount = arbmath.BytesToUint8(take(1))
+	} else {
+		stylusParams.MaxFragmentCount = 0
+	}
+	// Slot 0 layout (32 bytes): 25 base bytes + 4 (MaxWasmSize) + 1 (MaxFragmentCount) = 30 bytes used.
+	// 2 bytes remain in slot 0. A new field of ≤ 2 bytes can be appended here;
+	// a larger field must start at the beginning of slot 1 with 2 bytes of explicit
+	// zero-padding appended first to stay slot-aligned.
 	return stylusParams, nil
 }
 
-// Writes the params to permanent storage.
-func (p *StylusParams) Save() error {
+// Writes the params to permanent storage. If persistToStorage is false, the params
+// are not actually written but the equivalent storage gas is still charged.
+func (p *StylusParams) Save(persistToStorage bool) error {
 	if p.backingStorage == nil {
 		log.Error("tried to Save invalid StylusParams")
 		return errors.New("invalid StylusParams")
@@ -139,6 +152,10 @@ func (p *StylusParams) Save() error {
 	if p.arbosVersion >= params.ArbosVersion_40 {
 		data = append(data, arbmath.Uint32ToBytes(p.MaxWasmSize)...)
 	}
+	if p.arbosVersion >= params.ArbosVersion_StylusContractLimit {
+		data = append(data, arbmath.Uint8ToBytes(p.MaxFragmentCount)...)
+	}
+	// Slot 0 is 30/32 bytes full here. See the matching comment in Params() before adding fields.
 
 	slot := uint64(0)
 	for len(data) != 0 {
@@ -148,8 +165,17 @@ func (p *StylusParams) Save() error {
 
 		word := common.Hash{}
 		copy(word[:], info) // right-pad with zeros
-		if err := p.backingStorage.SetByUint64(slot, word); err != nil {
-			return err
+		if persistToStorage {
+			if err := p.backingStorage.SetByUint64(slot, word); err != nil {
+				return err
+			}
+		} else {
+			if err := p.backingStorage.Burner().Burn(multigas.ResourceKindStorageAccessWrite, storage.WriteCost(word)); err != nil {
+				return err
+			}
+			if info := p.backingStorage.Burner().TracingInfo(); info != nil {
+				info.RecordStorageSet(p.backingStorage.GetStorageSlot(util.UintToHash(slot)), word)
+			}
 		}
 		slot += 1
 	}
@@ -165,29 +191,37 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 		p.Version = 2
 		p.MinInitGas = v2MinInitGas
 		return nil
+	case 3:
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 3
+		return nil
 	default:
-		return fmt.Errorf("unsupported upgrade to %d. Only 2 is supported", version)
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 and 3 are supported", version)
 	}
 }
 
 func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
-	if newArbosVersion == params.ArbosVersion_50 {
-		if p.arbosVersion >= params.ArbosVersion_50 {
-			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
-		}
-		if p.MaxStackDepth > arbOS50MaxWasmSize {
-			p.MaxStackDepth = arbOS50MaxWasmSize
-		}
+	if p.arbosVersion >= newArbosVersion {
+		return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
 	}
-	if newArbosVersion == params.ArbosVersion_40 {
-		if p.arbosVersion >= params.ArbosVersion_40 {
-			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+
+	switch newArbosVersion {
+	case params.ArbosVersion_50:
+		if p.MaxStackDepth > arbOS50MaxStackDepth {
+			p.MaxStackDepth = arbOS50MaxStackDepth
 		}
+	case params.ArbosVersion_40:
 		if p.Version != 2 {
 			return fmt.Errorf("unexpected arbosVersion upgrade to %d while stylus version %d", newArbosVersion, p.Version)
 		}
 		p.MaxWasmSize = initialMaxWasmSize
+	case params.ArbosVersion_StylusContractLimit:
+		p.MaxWasmSize = arbOS60MaxWasmSize
+		p.MaxFragmentCount = initialMaxFragmentCount
 	}
+
 	p.arbosVersion = newArbosVersion
 	return nil
 }
@@ -211,8 +245,14 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 		KeepaliveDays:    initialKeepaliveDays,
 		BlockCacheSize:   initialRecentCacheSize,
 	}
-	if arbosVersion >= params.ArbosVersion_40 {
+	if arbosVersion >= params.ArbosVersion_60 {
+		stylusParams.MaxWasmSize = arbOS60MaxWasmSize
+	} else if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
-	_ = stylusParams.Save()
+	if arbosVersion >= params.ArbosVersion_StylusContractLimit {
+		stylusParams.MaxFragmentCount = initialMaxFragmentCount
+	}
+
+	_ = stylusParams.Save(true)
 }

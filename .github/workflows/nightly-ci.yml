@@ -8,33 +8,58 @@ on:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   # Only run on schedule
   tests-scheduled:
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private' || github.repository == 'OffchainLabs/nitro'
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble]
+        test-mode: [legacychallenge, long, challenge-A, challenge-B, l3challenge, execution-spec-tests, pebble-a, pebble-b]
     uses: ./.github/workflows/_go-tests.yml
+    secrets: inherit
     with:
       run-name: ${{ matrix.test-mode }}
       run-legacy-challenge: ${{ matrix.test-mode == 'legacychallenge' }}
       run-long: ${{ matrix.test-mode == 'long' }}
-      run-challenge: ${{ matrix.test-mode == 'challenge' }}
+      run-challenge-a: ${{ matrix.test-mode == 'challenge-A' }}
+      run-challenge-b: ${{ matrix.test-mode == 'challenge-B' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
       run-execution-spec-tests: ${{ matrix.test-mode == 'execution-spec-tests' }}
-      run-pebble: ${{ matrix.test-mode == 'pebble' }}
+      run-pebble-a: ${{ matrix.test-mode == 'pebble-a' }}
+      run-pebble-b: ${{ matrix.test-mode == 'pebble-b' }}
+
+  # MEL test modes are gated out of default CI; run them nightly so master
+  # coverage is preserved without blocking every PR.
+  mel-tests-scheduled:
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private' || github.repository == 'OffchainLabs/nitro'
+    uses: ./.github/workflows/_mel-go-test-suite.yml
+    secrets: inherit
+
+  # --- Upload nightly test results to Codecov for flaky-test tracking ---
+  codecov:
+    needs: [tests-scheduled, mel-tests-scheduled]
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/_codecov.yml
+    secrets: inherit
+    with:
+      post_comment: false
+      upload_report: true
+      report-name: Nightly CI Test Results
 
   notify-on-failure:
     name: Notify Slack on failure
-    needs: [tests-scheduled]
+    needs: [tests-scheduled, mel-tests-scheduled]
     runs-on: ubuntu-4
     if: ${{ failure() }}
     env:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a  # v2.1.1
         with:
           errors: true
           method: chat.postMessage

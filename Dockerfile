@@ -2,7 +2,8 @@ FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
-    git clone https://github.com/emscripten-core/emsdk.git && \
+    git clone --depth 1 --branch 3.1.46 https://github.com/emscripten-core/emsdk.git && \
+    test "$(git -C emsdk rev-parse HEAD)" = "93360d3670018769b424e4e8f1d3d9b26d32c977" && \
     cd emsdk && \
     ./emsdk install 3.1.7 && \
     ./emsdk activate 3.1.7
@@ -49,16 +50,11 @@ FROM wasm-base AS wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
-    # pinned rust 1.88.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+    # pinned rust 1.93.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY Cargo.* ./
+COPY crates/ crates/
 COPY brotli brotli
 COPY scripts/build-brotli.sh scripts/
 COPY scripts/remove_reference_types.sh scripts/
@@ -72,7 +68,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.25.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.25.9.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -83,8 +79,8 @@ COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./daprovider ./daprovider
-COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
-COPY ./daprovider/das/dastree ./daprovider/das/dastree
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
@@ -93,7 +89,6 @@ COPY ./zeroheavy ./zeroheavy
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
 COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
-COPY ./contracts-local/gas-dimensions/ ./contracts-local/gas-dimensions/
 COPY ./contracts-local/lib/ ./contracts-local/lib/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
@@ -108,23 +103,15 @@ COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/pre
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.88.0-slim-bookworm AS prover-header-builder
+FROM rust:1.93.0-slim-bookworm AS prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
-    cargo install --force cbindgen --version 0.24.3
-COPY arbitrator/Cargo.* arbitrator/
+    cargo install --force cbindgen --version 0.29.2
+COPY Cargo.* ./
 COPY ./Makefile ./
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY crates/ crates/
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -134,7 +121,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.88.0-slim-bookworm AS prover-builder
+FROM rust:1.93.0-slim-bookworm AS prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -144,42 +131,17 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover/Cargo.toml arbitrator/prover/
-COPY arbitrator/prover/benches arbitrator/prover/benches
-COPY arbitrator/bench/Cargo.toml arbitrator/bench/
-COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
-COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
-RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
-    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
-    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
-    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    rm arbitrator/prover/benches/merkle_bench.rs && \
-    rm arbitrator/bench/src/lib.rs
+COPY Cargo.* ./
+COPY crates/ crates/
 COPY ./Makefile ./
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN touch -a -m arbitrator/prover/src/lib.rs
+RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
 
 FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -193,15 +155,14 @@ COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
-COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
-COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
-COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
-COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
-COPY --from=wasm-libs-builder /workspace/arbitrator/brotli arbitrator/brotli
-COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
+COPY --from=wasm-libs-builder /workspace/crates/prover/ crates/prover/
+COPY --from=wasm-libs-builder /workspace/crates/tools/wasmer/ crates/tools/wasmer/
+COPY --from=wasm-libs-builder /workspace/crates/wasm-libraries/ crates/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/crates/arbutil crates/arbutil
+COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
+COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
-COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 COPY ./contracts-legacy ./contracts-legacy
@@ -210,7 +171,7 @@ COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM debian:bookworm-slim AS machine-versions
-RUN apt-get update && apt-get install -y unzip wget curl
+RUN apt-get update && apt-get install -y unzip wget curl jq
 WORKDIR /workspace/machines
 # Download WAVM machines
 COPY ./scripts/download-machine.sh .
@@ -248,8 +209,13 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
+RUN ./download-machine.sh consensus-v60-rc.4 0x333f5e036235b1ce1a34cbbe254ccbb2615218f9ae6f84aeef0511cb09ef9b67
+RUN ./download-machine.sh consensus-v60-rc.5 0x7a9e6a77354888257a9989ce0b6bb39df5fedf222d453932933fdf7a489cbb57
+RUN ./download-machine.sh consensus-v61-rc.2 0xc10cd7ec6acaf1c441a3f6bd0900ad20f15855ba775a96f1939118cbc629dc97
+RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
-FROM golang:1.25-bookworm AS node-builder
+# Factored out of node-builder so the stripped variant doesn't depend on it.
+FROM golang:1.25-bookworm AS node-builder-base
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -274,9 +240,11 @@ COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-acc
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
-COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
+
+FROM node-builder-base AS node-builder
+COPY --from=prover-export / target/
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM node-builder AS fuzz-builder
@@ -289,18 +257,9 @@ COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
 ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "FuzzStateTransition", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
-FROM debian:bookworm-slim AS nitro-node-slim
+# Factored out of nitro-node-slim so the stripped variant can share layers.
+FROM debian:bookworm-slim AS nitro-node-slim-base
 WORKDIR /home/user
-COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/prover /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/dbconv /usr/local/bin/
-COPY ./scripts/convert-databases.bash /usr/local/bin/
-COPY --from=machine-versions /workspace/machines /home/user/target/machines
-COPY ./scripts/validate-wasm-module-root.sh .
-RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -312,31 +271,39 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     useradd -s /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
-    chown -R user:user /home/user && \
-    chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
-    nitro --version
-
+    echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
+COPY ./scripts/convert-databases.bash /usr/local/bin/
+COPY --from=machine-versions /workspace/machines /home/user/target/machines
+COPY ./scripts/validate-wasm-module-root.sh .
+RUN chown -R user:user /home/user && \
+    chmod -R 555 /home/user/target/machines
 USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
+FROM nitro-node-slim-base AS nitro-node-slim
+USER root
+COPY --from=node-builder /workspace/target/bin/nitro                    /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/relay                    /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/nitro-val                /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager  /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/prover                   /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/dbconv                   /usr/local/bin/
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
+    nitro --version
+USER user
+
+
 FROM offchainlabs/nitro-node:v3.7.6-c0fe95e AS nitro-legacy
 
-FROM nitro-node-slim AS nitro-node
+# Factored out of nitro-node so the stripped variant can share layers.
+FROM nitro-node-slim-base AS nitro-node-full-base
 USER root
-COPY --from=prover-export /bin/jit                        /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
-COPY --from=contracts-builder  /workspace/contracts/  /contracts/
-COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/
-COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
+COPY --from=contracts-builder /workspace/contracts/       /contracts/
+COPY --from=contracts-builder /workspace/contracts-local/ /contracts-local/
+COPY --from=nitro-legacy      /home/user/target/machines  /home/user/nitro-legacy/machines
 RUN rm -rf /workspace/target/legacy-machines/latest
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -345,10 +312,44 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     node-ws vim-tiny python3 \
     dnsutils && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
-    nitro --version
-ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/home/user/target/machines"]
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+ENTRYPOINT [ "/usr/local/bin/nitro", "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/home/user/target/machines" ]
+USER user
 
+FROM nitro-node-full-base AS nitro-node
+USER root
+COPY --from=node-builder  /workspace/target/bin/nitro                    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/relay                    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/nitro-val                /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/seq-coordinator-manager  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/prover                   /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/dbconv                   /usr/local/bin/
+COPY --from=prover-export /bin/jit                                       /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrustserver           /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrusttool             /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/daprovider               /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/bidder-client            /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/blobtool                 /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/el-proxy                 /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/filtering-report         /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/genesis-generator        /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/transaction-filterer     /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/validator                /usr/local/bin/
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
+    nitro --version
+USER user
+
+# The nitro-node-rust-validator runs a single Rust validation server that handles all WASM module roots.
+FROM nitro-node AS nitro-node-rust-validator
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd curl netcat-traditional && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+COPY --from=prover-export /bin/validator /usr/local/bin/
+COPY scripts/rust-val-entry.sh /usr/local/bin/
+ENTRYPOINT [ "/usr/local/bin/rust-val-entry.sh" ]
 USER user
 
 # The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
@@ -357,8 +358,6 @@ USER user
 # We keep the code (commented out), and the docker-target, for use in case such an update is needed again.
 FROM nitro-node AS nitro-node-validator
 USER root
-COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
-COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y xxd netcat-traditional && \
@@ -375,7 +374,8 @@ COPY --from=prover-export /bin/jit                                         /usr/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
-COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
+COPY --from=node-builder  /workspace/target/bin/stylus-raw-deploycode        /usr/local/bin/
+COPY --from=module-root-calc /workspace/target/machines/latest/machine.v2.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home/user/target/machines/latest/
@@ -389,8 +389,78 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
+USER user
 
+# ---------------------------------------------------------------------------
+# Stripped variants: same contents as nitro-node-slim / nitro-node but built
+# with debug info and symbols removed:
+#   Go:   -ldflags="-s -w" -trimpath      (STRIP=1 make flag)
+#   Rust: [profile.stripped] in arbitrator/Cargo.toml (strip = symbols)
+# ---------------------------------------------------------------------------
+
+FROM rust:1.93.0-slim-bookworm AS prover-builder-stripped
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev
+COPY --from=brotli-library-export / target/
+COPY Cargo.* ./
+COPY crates/ crates/
+COPY ./Makefile ./
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN touch -a -m crates/prover/src/lib.rs
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-lib
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build-jit
+
+FROM scratch AS prover-export-stripped
+COPY --from=prover-builder-stripped /workspace/target/ /
+
+FROM node-builder-base AS node-builder-stripped
+COPY --from=prover-export-stripped / target/
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 STRIP=1 make build
+
+FROM nitro-node-slim-base AS nitro-node-slim-stripped
+USER root
+COPY --from=node-builder-stripped /workspace/target/bin/nitro                    /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/relay                    /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/nitro-val                /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/seq-coordinator-manager  /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/prover                   /usr/local/bin/
+COPY --from=node-builder-stripped /workspace/target/bin/dbconv                   /usr/local/bin/
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
+    nitro --version
+USER user
+
+FROM nitro-node-full-base AS nitro-node-stripped
+USER root
+COPY --from=node-builder-stripped  /workspace/target/bin/nitro                    /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/relay                    /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/nitro-val                /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/seq-coordinator-manager  /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/prover                   /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/dbconv                   /usr/local/bin/
+COPY --from=prover-export-stripped /bin/jit                                       /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/anytrustserver           /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/anytrusttool             /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/daprovider               /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/autonomous-auctioneer    /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/bidder-client            /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/blobtool                 /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/el-proxy                 /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/filtering-report         /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/genesis-generator        /usr/local/bin/
+COPY --from=node-builder-stripped  /workspace/target/bin/transaction-filterer     /usr/local/bin/
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover && \
+    nitro --version
 USER user
 
 FROM nitro-node AS nitro-node-default
-# Just to ensure nitro-node-dist is default
+# Just to ensure nitro-node is default
+

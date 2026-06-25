@@ -21,30 +21,30 @@ api/
     API for monitoring and visualizing challenges
 assertions/
     Logic for scanning and posting assertions
-chain-abstraction/
+protocol/
     High-level wrappers around Solidity bindings for the Rollup contracts
-challenge-manager/
-    All logic related to challenging, managing challenges
+challenge/
+    All logic related to challenging and managing challenges
 containers/
     Data structures used in the repository, including FSMs
 contracts/
     All Rollup / challenge smart contracts
 docs/
     Diagrams and architecture
-layer2-state-provider/
+state/
     Interface to request state and proofs from an L2 backend
-math/
-    Utilities for challenge calculations
-runtime/
-    Tools for managing function lifecycles
-state-commitments/
+commitment/
     Proofs, history commitments, and Merkleizations
+retry/
+    Tools for managing function lifecycles
+clock/
+    Abstract time utilities
+log/
+    Ephemeral logging helpers
 testing/
     All non-production code
 third_party/
     Build artifacts for dependencies
-time/
-    Abstract time utilities
 ```
 
 ## Research Specification

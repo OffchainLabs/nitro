@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -90,7 +91,12 @@ func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
-	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
+	if err := a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg); err != nil {
+		return err
+	}
+	sender, _ := types.Sender(types.LatestSignerForChainID(goMsg.ChainId), goMsg.Transaction)
+	log.Info("Submitted express lane transaction", "hash", goMsg.Transaction.Hash().Hex(), "from", sender, "nonce", goMsg.Transaction.Nonce(), "round", goMsg.Round, "sequenceNumber", goMsg.SequenceNumber)
+	return nil
 }
 
 type ArbDebugAPI struct {

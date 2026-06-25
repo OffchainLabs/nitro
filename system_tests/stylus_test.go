@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build stylustest && !race
@@ -108,4 +108,8 @@ func TestProgramLongArbitratorCall(t *testing.T) {
 
 func TestProgramArbitratorStylusUpgrade(t *testing.T) {
 	testStylusUpgrade(t, false)
+}
+
+func TestProgramArbitratorMemoryGrowMachineLimit(t *testing.T) {
+	testMemoryGrowMachineLimit(t, false)
 }

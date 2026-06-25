@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
@@ -7,21 +7,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbitrum/retryables"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -65,15 +69,32 @@ type TxPreChecker struct {
 	TransactionPublisher
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
-	expressLaneTracker *ExpressLaneTracker
+	expressLaneTracker *timeboost.ExpressLaneTracker
+	backend            core.NodeInterfaceBackendAPI
+	// nil disables prechecker address-filter dry-run (e.g. on sequencer nodes).
+	txFilterer core.TxFilterer
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
+func NewTxPreChecker(
+	publisher TransactionPublisher,
+	bc *core.BlockChain,
+	config TxPreCheckerConfigFetcher,
+	txFilterer core.TxFilterer,
+) *TxPreChecker {
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
 		config:               config,
+		txFilterer:           txFilterer,
 	}
+}
+
+func (c *TxPreChecker) SetTxFiltererForTest(_ *testing.T, execEngine *ExecutionEngine, ef *eventfilter.EventFilter) {
+	c.txFilterer = &txFilterer{execEngine: execEngine, eventFilter: ef, filteringReportRPCClient: execEngine.filteringReportRPCClient}
+}
+
+func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {
+	c.backend = backend
 }
 
 type NonceError struct {
@@ -226,6 +247,9 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
+	if err := c.checkFilteredAddresses(ctx, tx, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }
 
@@ -255,6 +279,9 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
+	if err := c.checkFilteredAddresses(ctx, msg.Transaction, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
 }
 
@@ -272,9 +299,46 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	if err := c.checkFilteredAddresses(ctx, tx, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
 }
 
-func (c *TxPreChecker) SetExpressLaneTracker(tracker *ExpressLaneTracker) {
+func (c *TxPreChecker) SetExpressLaneTracker(tracker *timeboost.ExpressLaneTracker) {
 	c.expressLaneTracker = tracker
+}
+
+func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Transaction, header *types.Header) error {
+	if c.txFilterer == nil || c.backend == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
+		return nil
+	}
+	statedb, err := c.bc.StateAt(header.Root)
+	if err != nil {
+		return err
+	}
+
+	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
+	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
+	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, core.NewMessageGasEstimationContext())
+	if err != nil {
+		return err
+	}
+	msg.SkipNonceChecks = true
+
+	_, err = gasestimator.Run(ctx, msg, &gasestimator.Options{
+		Config:           c.bc.Config(),
+		Chain:            c.bc,
+		Header:           header,
+		State:            statedb,
+		Backend:          c.backend,
+		RunScheduledTxes: retryables.RunScheduledTxes,
+		TxFilterer:       c.txFilterer,
+	})
+	if errors.Is(err, state.ErrArbTxFilter) {
+		return err
+	}
+	// Other execution errors are ignored since the pre-check is only concerned
+	// with address filtering results, not with exact execution results.
+	return nil
 }

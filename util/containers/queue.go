@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package containers
@@ -23,6 +23,14 @@ func (q *Queue[T]) shrink() {
 		q.slice = make([]T, len(oldSlice), len(oldSlice)*2)
 		copy(q.slice, oldSlice)
 	}
+}
+
+func (q *Queue[T]) Peek() T {
+	var empty T
+	if len(q.slice) == 0 {
+		return empty
+	}
+	return q.slice[0]
 }
 
 func (q *Queue[T]) Pop() T {

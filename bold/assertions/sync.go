@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package assertions
 
@@ -16,11 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/bold/api"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/retry"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func (m *Manager) syncAssertions(ctx context.Context) {
@@ -163,17 +163,17 @@ func (m *Manager) processAllAssertionsInRange(
 	for it.Next() {
 		if it.Error() != nil {
 			return errors.Wrapf(
-				err,
+				it.Error(),
 				"got iterator error when scanning assertion creations from block %d to %d",
 				filterOpts.Start,
 				*filterOpts.End,
 			)
 		}
-		assertionOpt, err := retry.UntilSucceeds(ctx, func() (option.Option[*protocol.AssertionCreatedInfo], error) {
+		assertionOpt, err := retry.UntilSucceeds(ctx, func() (containers.Option[*protocol.AssertionCreatedInfo], error) {
 			item, innerErr := m.extractAssertionFromEvent(ctx, it.Event)
 			if innerErr != nil {
 				log.Error("Could not extract assertion from event", "err", innerErr)
-				return option.None[*protocol.AssertionCreatedInfo](), innerErr
+				return containers.None[*protocol.AssertionCreatedInfo](), innerErr
 			}
 			return item, nil
 		})
@@ -249,8 +249,8 @@ func (m *Manager) processAllAssertionsInRange(
 func (m *Manager) extractAssertionFromEvent(
 	ctx context.Context,
 	event *rollupgen.RollupUserLogicAssertionCreated,
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+) (containers.Option[*protocol.AssertionCreatedInfo], error) {
+	none := containers.None[*protocol.AssertionCreatedInfo]()
 	if event.AssertionHash == (common.Hash{}) {
 		log.Warn("Encountered an assertion with a zero hash",
 			"creationEvent", fmt.Sprintf("%+v", event),
@@ -265,7 +265,7 @@ func (m *Manager) extractAssertionFromEvent(
 	if creationInfo.ParentAssertionHash.Hash == (common.Hash{}) {
 		return none, nil
 	}
-	return option.Some(creationInfo), nil
+	return containers.Some(creationInfo), nil
 }
 
 // Finds all canonical assertions from an ordered list by creation time.
@@ -286,7 +286,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 			agreedWithAssertion, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 				expectedState, err := m.ExecutionStateAfterParent(ctx, fullInfo.parent)
 				switch {
-				case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
+				case errors.Is(err, state.ErrChainCatchingUp):
 					// Otherwise, we return the error that we are still catching up to the
 					// execution state claimed by the assertion, and this function will be retried
 					// by the caller if wrapped in a retryable call.
@@ -295,14 +295,14 @@ func (m *Manager) findCanonicalAssertionBranch(
 						"will reattempt processing when caught up", "err", err)
 					// If the chain is catching up, we wait for a bit and try again.
 					time.Sleep(m.times.avgBlockTime / 10)
-					return false, l2stateprovider.ErrChainCatchingUp
+					return false, state.ErrChainCatchingUp
 				case err != nil:
 					return false, err
 				}
 				return expectedState.Equals(protocol.GoExecutionStateFromSolidity(assertion.AfterState)), nil
 			}, func(rc *retry.RetryConfig) {
 				rc.LevelWarningError = "could not check if we have result at count"
-				rc.LevelInfoError = l2stateprovider.ErrChainCatchingUp.Error()
+				rc.LevelInfoError = state.ErrChainCatchingUp.Error()
 			})
 			if err != nil {
 				return errors.New("could not check for assertion agreements")
@@ -435,6 +435,18 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		return nil, nil
 	}
 
+	if postedRival.AssertionHash == args.invalidAssertion.AssertionHash {
+		selfChallengeBailoutCounter.Inc(1)
+		log.Warn(
+			"Computed correct rival has the same hash as the detected invalid assertion; "+
+				"skipping challenge to avoid challenging a canonical assertion",
+			"assertionHash", postedRival.AssertionHash,
+			"parentAssertionHash", args.canonicalParent.AssertionHash,
+			"validatorName", m.validatorName,
+		)
+		return postedRival, nil
+	}
+
 	if m.rivalHandler == nil {
 		return nil, errors.New("rival handler not set")
 	}
@@ -453,15 +465,15 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 func (m *Manager) maybePostRivalAssertion(
 	ctx context.Context,
 	canonicalParent *protocol.AssertionCreatedInfo,
-) (option.Option[*protocol.AssertionCreatedInfo], error) {
-	none := option.None[*protocol.AssertionCreatedInfo]()
+) (containers.Option[*protocol.AssertionCreatedInfo], error) {
+	none := containers.None[*protocol.AssertionCreatedInfo]()
 	// Post what we believe is the correct assertion that follows the ancestor we agree with.
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
 		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
+	var assertionOpt containers.Option[protocol.Assertion]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -474,7 +486,17 @@ func (m *Manager) maybePostRivalAssertion(
 		)
 	}
 	if postErr != nil {
-		return none, postErr
+		if !errors.Is(postErr, sol.ErrAlreadyExists) {
+			return none, postErr
+		}
+		// ErrAlreadyExists means the correct rival assertion already exists onchain.
+		// Treat this as success and fall through to return it.
+		if assertionOpt.IsSome() {
+			log.Info("Rival assertion already exists onchain",
+				"assertionHash", assertionOpt.Unwrap().Id(),
+				"validatorName", m.validatorName,
+			)
+		}
 	}
 	if assertionOpt.IsSome() {
 		creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionOpt.Unwrap().Id())
@@ -500,13 +522,13 @@ func (m *Manager) maybePostRivalAssertion(
 				log.Error("Could not save assertion to DB", "err", err2)
 			}
 		}()
-		return option.Some(creationInfo), nil
+		return containers.Some(creationInfo), nil
 	}
 	return none, nil
 }
 
 func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.AssertionCreatedInfo) error {
-	if api.IsNil(m.apiDB) {
+	if m.apiDB.IsNone() {
 		return nil
 	}
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
@@ -536,7 +558,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 	if err != nil {
 		return err
 	}
-	return m.apiDB.InsertAssertion(&api.JsonAssertion{
+	return m.apiDB.Unwrap().InsertAssertion(&api.JsonAssertion{
 		Hash:                     assertionHash.Hash,
 		ConfirmPeriodBlocks:      creationInfo.ConfirmPeriodBlocks,
 		RequiredStake:            creationInfo.RequiredStake.String(),

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,9 +32,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das/dastree"
-	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider/anytrust/tree"
+	anytrustutil "github.com/offchainlabs/nitro/daprovider/anytrust/util"
 	"github.com/offchainlabs/nitro/gethhook"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -132,30 +132,30 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessag
 	})
 }
 
-type PreimageDASReader struct {
+type AnyTrustPreimageReader struct {
 }
 
-func (*PreimageDASReader) String() string {
-	return "PreimageDASReader"
+func (*AnyTrustPreimageReader) String() string {
+	return "AnyTrustPreimageReader"
 }
 
-func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (r *AnyTrustPreimageReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	}
-	return dastree.Content(hash, oracle)
+	return tree.Content(hash, oracle)
 }
 
-func (dasReader *PreimageDASReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return dasReader.GetByHash(ctx, hash)
+func (r *AnyTrustPreimageReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return r.GetByHash(ctx, hash)
 }
 
-func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
+func (r *AnyTrustPreimageReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
-	return dasutil.DiscardImmediately, nil
+func (r *AnyTrustPreimageReader) ExpirationPolicy(ctx context.Context) (anytrustutil.ExpirationPolicy, error) {
+	return anytrustutil.DiscardImmediately, nil
 }
 
 type BlobPreimageReader struct {
@@ -186,29 +186,77 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// To generate:
-// key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
-// sig, _ := crypto.Sign(make([]byte, 32), key)
-// println(hex.EncodeToString(sig))
-const sampleSignature = "a0b37f8fba683cc68f6574cd43b39f0343a50008bf6ccea9d13231d9e7e2e1e411edc8d307254296264aebfc3dc76cd8b668373a072fd64665b50000e9fcce5201"
+type DACertificatePreimageReader struct {
+}
 
-// We call this early to populate the secp256k1 ecc basepoint cache in the cached early machine state.
-// That means we don't need to re-compute it for every block.
-func populateEcdsaCaches() {
-	signature, err := hex.DecodeString(sampleSignature)
-	if err != nil {
-		log.Warn("failed to decode sample signature to populate ECDSA cache", "err", err)
-		return
-	}
-	_, err = crypto.Ecrecover(make([]byte, 32), signature)
-	if err != nil {
-		log.Warn("failed to recover signature to populate ECDSA cache", "err", err)
-		return
-	}
+func (r *DACertificatePreimageReader) RecoverPayload(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadResult, error) {
+		if len(sequencerMsg) <= 40 {
+			return daprovider.PayloadResult{}, fmt.Errorf("sequencer message too small")
+		}
+		certificate := sequencerMsg[40:]
+
+		// Hash the entire sequencer message to get the preimage key
+		customDAPreimageHash := crypto.Keccak256Hash(certificate)
+
+		// Validate the certificate before trying to read it
+		if !wavmio.ValidateCertificate(arbutil.DACertificatePreimageType, customDAPreimageHash) {
+			// Preimage is not available - treat as invalid batch
+			log.Warn("DACertificate preimage validation failed, treating as invalid batch",
+				"batchNum", batchNum,
+				"batchBlockHash", batchBlockHash,
+				"hash", customDAPreimageHash.Hex())
+			return daprovider.PayloadResult{Payload: []byte{}}, nil
+		}
+
+		// Read the preimage (which contains the actual batch data)
+		payload, err := wavmio.ResolveTypedPreimage(arbutil.DACertificatePreimageType, customDAPreimageHash)
+		if err != nil {
+			// This should not happen after successful validation
+			panic(fmt.Errorf("failed to resolve DACertificate preimage after validation: %w", err))
+		}
+
+		log.Info("DACertificate batch recovered",
+			"batchNum", batchNum,
+			"hash", customDAPreimageHash.Hex(),
+			"payloadSize", len(payload))
+
+		return daprovider.PayloadResult{Payload: payload}, nil
+	})
+}
+
+func (r *DACertificatePreimageReader) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
+		// Stub implementation: CollectPreimages is only called by the stateless validator
+		// to gather preimages before replay. In replay context, preimages have already been
+		// collected and injected into the execution environment.
+		return daprovider.PreimagesResult{Preimages: make(daprovider.PreimagesMap)}, nil
+	})
+}
+
+func (r *DACertificatePreimageReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		// Stub implementation: RecoverPayloadAndPreimages is only called
+		// by the MEL validator to gather preimages before validation
+		return daprovider.PayloadAndPreimagesResult{Preimages: make(daprovider.PreimagesMap), Payload: nil}, nil
+	})
 }
 
 func main() {
-	wavmio.StubInit()
+	setupGarbageCollector()
+	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
 	glogger := log.NewGlogHandler(
@@ -216,11 +264,12 @@ func main() {
 	glogger.Verbosity(log.LevelError)
 	log.SetDefault(log.NewLogger(glogger))
 
-	populateEcdsaCaches()
+	wavmio.PopulateEcdsaCaches()
 
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 
+	wavmio.OnReady()
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	var lastBlockHeader *types.Header
@@ -243,17 +292,17 @@ func main() {
 		}
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
-	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
+	readMessage := func(anyTrustEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader dasutil.DASReader
-		var dasKeysetFetcher dasutil.DASKeysetFetcher
-		if dasEnabled {
-			// DAS batch and keysets are all together in the same preimage binary.
-			dasReader = &PreimageDASReader{}
-			dasKeysetFetcher = &PreimageDASReader{}
+		var anyTrustReader anytrustutil.Reader
+		var anyTrustKeysetFetcher anytrustutil.KeysetFetcher
+		if anyTrustEnabled {
+			// AnyTrust batch and keysets are all together in the same preimage binary.
+			anyTrustReader = &AnyTrustPreimageReader{}
+			anyTrustKeysetFetcher = &AnyTrustPreimageReader{}
 		}
 		backend := WavmInbox{}
 		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
@@ -261,10 +310,10 @@ func main() {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
 		dapReaders := daprovider.NewDAProviderRegistry()
-		if dasReader != nil {
-			err = dapReaders.SetupDASReader(dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher, keysetValidationMode), nil)
+		if anyTrustReader != nil {
+			err = dapReaders.SetupAnyTrustReader(anytrustutil.NewReader(anyTrustReader, anyTrustKeysetFetcher, keysetValidationMode), nil)
 			if err != nil {
-				panic(fmt.Sprintf("Failed to register DAS reader: %v", err))
+				panic(fmt.Sprintf("Failed to register AnyTrust reader: %v", err))
 			}
 		}
 		err = dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
@@ -272,7 +321,12 @@ func main() {
 			panic(fmt.Sprintf("Failed to register blob reader: %v", err))
 		}
 
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
+		err = dapReaders.SetupDACertificateReader(&DACertificatePreimageReader{}, nil)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))
+		}
+
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -328,17 +382,19 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
+		newBlock, _, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
 		if err != nil {
 			panic(err)
 		}
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
+		// However, the init message is never compressed, so we can safely pass nil here.
+		message := readMessage(false, nil)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
@@ -373,5 +429,5 @@ func main() {
 	wavmio.SetLastBlockHash(newBlockHash)
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
-	wavmio.StubFinal()
+	wavmio.OnFinal()
 }

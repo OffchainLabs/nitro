@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package assertions
 
@@ -16,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/bold/containers"
-	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util"
+	util_containers "github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -30,14 +29,16 @@ var (
 	chainCatchingUpCounter       = metrics.NewRegisteredCounter("arb/validator/poster/chain_catching_up", nil)
 )
 
+var errAssertionNotYetFinalized = errors.New("assertion visible at latest but not yet at configured RPC head")
+
 func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	if !m.mode.SupportsStaking() {
 		log.Warn("Staker strategy not configured to stake on latest assertions")
 		return
 	}
 
-	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 
 	log.Info("Ready to post")
 	ticker := time.NewTicker(m.times.postInterval)
@@ -46,9 +47,12 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		_, err := m.PostAssertion(ctx)
 		if err != nil {
 			switch {
-			case errors.Is(err, solimpl.ErrAlreadyExists):
-			case errors.Is(err, solimpl.ErrBatchNotYetFound):
+			case errors.Is(err, sol.ErrAlreadyExists):
+			case errors.Is(err, sol.ErrBatchNotYetFound):
 				log.Info("Waiting for more batches to post assertions about them onchain")
+			case errors.Is(err, errAssertionNotYetFinalized):
+				log.Debug("Posted assertion not yet visible at configured RPC head; "+
+					"will advance cursor once it finalizes", "err", err)
 			default:
 				logLevel := log.Error
 				logLevel = exceedsMaxMempoolSizeEphemeralErrorHandler.LogLevel(err, logLevel)
@@ -87,48 +91,120 @@ func (m *Manager) awaitPostingSignal(ctx context.Context) {
 	}
 }
 
+// recordAgreedAssertion reads at the configured RPC head so cached data is
+// reorg-safe, then applies it. Returns errAssertionNotYetFinalized when the
+// assertion is visible only at latest.
+func (m *Manager) recordAgreedAssertion(ctx context.Context, assertionId protocol.AssertionHash) error {
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionId)
+	if err != nil {
+		if ctx.Err() == nil {
+			if _, latestErr := m.chain.ReadAssertionCreationInfoAtLatest(ctx, assertionId); latestErr == nil {
+				return fmt.Errorf("%w: assertion %#x", errAssertionNotYetFinalized, assertionId.Hash)
+			}
+		}
+		return fmt.Errorf("could not read creation info for assertion %#x: %w", assertionId.Hash, err)
+	}
+	m.applyRecordAgreedAssertion(creationInfo)
+	return nil
+}
+
+// applyRecordAgreedAssertion is the lock-side of recordAgreedAssertion, split
+// out so the parent-linkage invariant can be exercised in unit tests without
+// an on-chain ReadAssertionCreationInfo round-trip.
+func (m *Manager) applyRecordAgreedAssertion(creationInfo *protocol.AssertionCreatedInfo) {
+	m.assertionChainData.Lock()
+	defer m.assertionChainData.Unlock()
+	m.assertionChainData.canonicalAssertions[creationInfo.AssertionHash] = creationInfo
+	if creationInfo.ParentAssertionHash == m.assertionChainData.latestAgreedAssertion {
+		m.assertionChainData.latestAgreedAssertion = creationInfo.AssertionHash
+	} else {
+		// Skip path: a slow catchup write landed after sync already advanced
+		// the cursor past this assertion (or wrote a fork). The cursor stays
+		// put — that's the fix — but we surface a signal so the silent skip
+		// isn't indistinguishable from "validator stuck for some other reason."
+		assertionPointerSkipNonChildCounter.Inc(1)
+		log.Debug(
+			"applyRecordAgreedAssertion: not advancing latestAgreedAssertion because supplied assertion is not its direct child",
+			"assertionHash", creationInfo.AssertionHash,
+			"parentAssertionHash", creationInfo.ParentAssertionHash,
+			"latestAgreedAssertion", m.assertionChainData.latestAgreedAssertion,
+			"validatorName", m.validatorName,
+		)
+	}
+	m.submittedAssertions.Insert(creationInfo.AssertionHash)
+}
+
 // PostAssertion differs depending on whether or not the validator is currently staked.
-func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Assertion], error) {
+// It advances through any assertions that already exist onchain before attempting
+// to post a genuinely new one, ensuring the chain tracking stays up to date.
+func (m *Manager) PostAssertion(ctx context.Context) (util_containers.Option[protocol.Assertion], error) {
 	if !m.isReadyToPost {
 		m.awaitPostingSignal(ctx)
 	}
-	// Ensure that we only build on a valid parent from this validator's perspective.
-	// the validator should also have ready access to historical commitments to make sure it can select
-	// the valid parent based on its commitment state root.
-	m.assertionChainData.Lock()
-	parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
-	m.assertionChainData.Unlock()
-	none := option.None[protocol.Assertion]()
-	if !ok {
-		return none, fmt.Errorf(
-			"latest agreed assertion %#x not part of canonical mapping, something is wrong",
-			m.assertionChainData.latestAgreedAssertion.Hash,
-		)
-	}
+	none := util_containers.None[protocol.Assertion]()
+
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
 		return none, err
 	}
-	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
-	var postErr error
-	if staked {
-		assertionOpt, postErr = m.PostAssertionBasedOnParent(
-			ctx, parentAssertionCreationInfo, m.chain.StakeOnNewAssertion,
-		)
-	} else {
-		// Otherwise, we post a new assertion and place a new stake on it.
-		assertionOpt, postErr = m.PostAssertionBasedOnParent(
-			ctx, parentAssertionCreationInfo, m.chain.NewStakeOnNewAssertion,
-		)
+
+	for {
+		if ctx.Err() != nil {
+			return none, ctx.Err()
+		}
+		// Ensure that we only build on a valid parent from this validator's perspective.
+		m.assertionChainData.RLock()
+		parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
+		m.assertionChainData.RUnlock()
+		if !ok {
+			return none, fmt.Errorf(
+				"latest agreed assertion %#x not part of canonical mapping, something is wrong",
+				m.assertionChainData.latestAgreedAssertion.Hash,
+			)
+		}
+
+		// If the validator is already staked, we post an assertion and move existing stake to it.
+		var assertionOpt util_containers.Option[protocol.Assertion]
+		var postErr error
+		if staked {
+			assertionOpt, postErr = m.PostAssertionBasedOnParent(
+				ctx, parentAssertionCreationInfo, m.chain.StakeOnNewAssertion,
+			)
+		} else {
+			// Otherwise, we post a new assertion and place a new stake on it.
+			assertionOpt, postErr = m.PostAssertionBasedOnParent(
+				ctx, parentAssertionCreationInfo, m.chain.NewStakeOnNewAssertion,
+			)
+		}
+		if postErr != nil {
+			if errors.Is(postErr, sol.ErrAlreadyExists) && assertionOpt.IsSome() {
+				// The assertion we tried to post already exists onchain.
+				// Advance our local chain pointer and loop to try the next assertion.
+				existingId := assertionOpt.Unwrap().Id()
+				if err := m.recordAgreedAssertion(ctx, existingId); err != nil {
+					return none, err
+				}
+				m.sendToConfirmationQueue(existingId, "PostAssertion-catchup")
+				log.Info("Assertion already exists onchain, advancing chain tracking",
+					"assertionHash", existingId,
+					"validatorName", m.validatorName,
+				)
+				continue
+			}
+			return none, postErr
+		}
+
+		// Successfully posted a new assertion. Advance our local chain pointer
+		// so the next posting attempt uses this assertion as the parent.
+		// Note: sendToConfirmationQueue is already called inside PostAssertionBasedOnParent
+		// for newly posted assertions, so we don't call it again here.
+		if assertionOpt.IsSome() {
+			if err := m.recordAgreedAssertion(ctx, assertionOpt.Unwrap().Id()); err != nil {
+				return none, err
+			}
+		}
+		return assertionOpt, nil
 	}
-	if postErr != nil {
-		return none, postErr
-	}
-	if assertionOpt.IsSome() {
-		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id())
-	}
-	return assertionOpt, nil
 }
 
 // Posts a new assertion onchain based on a parent assertion we agree with.
@@ -140,8 +216,8 @@ func (m *Manager) PostAssertionBasedOnParent(
 		parentCreationInfo *protocol.AssertionCreatedInfo,
 		newState *protocol.ExecutionState,
 	) (protocol.Assertion, error),
-) (option.Option[protocol.Assertion], error) {
-	none := option.None[protocol.Assertion]()
+) (util_containers.Option[protocol.Assertion], error) {
+	none := util_containers.None[protocol.Assertion]()
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
 		return none, errors.New("inbox max count not a uint64")
 	}
@@ -151,7 +227,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	parentBlockHash := protocol.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
 	newState, err := m.ExecutionStateAfterParent(ctx, parentCreationInfo)
 	if err != nil {
-		if errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if errors.Is(err, state.ErrChainCatchingUp) {
 			chainCatchingUpCounter.Inc(1)
 			log.Info(
 				"Waiting for more batches to post next assertion",
@@ -187,6 +263,11 @@ func (m *Manager) PostAssertionBasedOnParent(
 		newState,
 	)
 	if err != nil {
+		if errors.Is(err, sol.ErrAlreadyExists) {
+			// The assertion already exists on-chain. Return it with the error
+			// so the caller can advance the chain pointer.
+			return util_containers.Some(assertion), err
+		}
 		return none, err
 	}
 	assertionPostedCounter.Inc(1)
@@ -198,7 +279,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	)
 
 	m.sendToConfirmationQueue(assertion.Id(), "PostAssertionBasedOnParent")
-	return option.Some(assertion), nil
+	return util_containers.Some(assertion), nil
 }
 
 func (m *Manager) waitToPostIfNeeded(

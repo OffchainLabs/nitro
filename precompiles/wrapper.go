@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -61,8 +61,9 @@ func (wrapper *DebugPrecompile) Name() string {
 
 // OwnerPrecompile is a precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
-	precompile  ArbosPrecompile
-	emitSuccess func(mech, bytes4, addr, []byte) error
+	precompile     ArbosPrecompile
+	emitSuccess    func(mech, bytes4, addr, []byte) error
+	disableEthCall bool
 }
 
 func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr, []byte) error) (addr, ArbosPrecompile) {
@@ -70,6 +71,10 @@ func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr,
 		precompile:  impl,
 		emitSuccess: emit,
 	}
+}
+
+func (wrapper *OwnerPrecompile) SetDisableEthCall(disable bool) {
+	wrapper.disableEthCall = disable
 }
 
 func (wrapper *OwnerPrecompile) Address() common.Address {
@@ -85,6 +90,10 @@ func (wrapper *OwnerPrecompile) Call(
 	gasSupplied uint64,
 	evm *vm.EVM,
 ) ([]byte, uint64, multigas.MultiGas, error) {
+	if wrapper.disableEthCall && evm.ProcessingHook.MsgIsNonMutating() {
+		return nil, gasSupplied, multigas.ZeroGas(), errors.New("ArbOwner precompile is disabled outside on-chain execution")
+	}
+
 	con := wrapper.precompile
 
 	burner := &Context{
@@ -130,5 +139,70 @@ func (wrapper *OwnerPrecompile) Precompile() *Precompile {
 }
 
 func (wrapper *OwnerPrecompile) Name() string {
+	return wrapper.precompile.Name()
+}
+
+// FreeAccessPrecompile wraps ArbFilteredTransactionsManager to preserve free storage access for filterers.
+// Call forwards the call and decides whether storage access is free based on caller role.
+type FreeAccessPrecompile struct {
+	precompile ArbosPrecompile
+}
+
+func filtererOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
+	return address, &FreeAccessPrecompile{precompile: impl}
+}
+
+func (wrapper *FreeAccessPrecompile) Address() common.Address {
+	return wrapper.precompile.Address()
+}
+
+// Call decides gas charging based on caller role, but always forwards the call.
+func (wrapper *FreeAccessPrecompile) Call(
+	input []byte,
+	actingAsAddress common.Address,
+	caller common.Address,
+	value *big.Int,
+	readOnly bool,
+	gasSupplied uint64,
+	evm *vm.EVM,
+) ([]byte, uint64, multigas.MultiGas, error) {
+	con := wrapper.precompile
+
+	burner := &Context{
+		gasSupplied: gasSupplied,
+		gasUsed:     multigas.ZeroGas(),
+		tracingInfo: util.NewTracingInfo(evm, caller, wrapper.precompile.Address(), util.TracingDuringEVM),
+	}
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, burner.GasLeft(), burner.gasUsed, err
+	}
+
+	filterers := state.TransactionFilterers()
+	isFilterer, err := filterers.IsMember(caller)
+	if err != nil {
+		return nil, burner.GasLeft(), burner.gasUsed, err
+	}
+
+	output, _, _, err := con.Call(
+		input,
+		actingAsAddress,
+		caller,
+		value,
+		readOnly,
+		gasSupplied,
+		evm,
+	)
+	if isFilterer {
+		return output, gasSupplied, multigas.ZeroGas(), err
+	}
+	return output, burner.GasLeft(), burner.gasUsed, err
+}
+
+func (wrapper *FreeAccessPrecompile) Precompile() *Precompile {
+	return wrapper.precompile.Precompile()
+}
+
+func (wrapper *FreeAccessPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }

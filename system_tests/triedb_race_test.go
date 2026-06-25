@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -9,14 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestTrieDBCommitRace(t *testing.T) {
-	_ = testhelpers.InitTestLog(t, log.LevelError)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

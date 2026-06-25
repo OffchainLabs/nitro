@@ -24,7 +24,7 @@ Our detailed architecture looks like this:
 Here's how it works:
 
 1. An **Assertion Poster** frequently takes validated messages from the L2 validator and posts them onchain
-2. An **Assertion Scanner** checks smart contracts on Ethereum for newly posted assertions and compares them against the local Nitro node’s DB. This is done via an abstraction known as a **L2 State Provider**. This is within `assertions/scanner.go`
+2. An **Assertion Scanner** checks smart contracts on Ethereum for newly posted assertions and compares them against the local Nitro node's DB. This is done via an abstraction known as a **L2 State Provider**. This is within `assertions/sync.go`
 3. If we disagree with an assertion, our **Challenge Manager** submits an onchain challenge by creating a level zero edge, and tracks that edge as a go routine
 4. Our **Chain Watcher**, in the background, scans for other created edges onchain and spawns edge tracker goroutines for honest edges we are not yet tracking
 

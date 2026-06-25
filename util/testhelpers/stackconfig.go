@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package testhelpers
@@ -19,10 +19,10 @@ func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf.DataDir = dataDir
 	stackConf.UseLightweightKDF = true
 	stackConf.WSPort = 0
-	stackConf.WSModules = append(stackConf.WSModules, "eth", "debug")
+	stackConf.WSModules = append(stackConf.WSModules, "eth", "debug", "arb", "arbdebug", "arbtrace", "auctioneer", "validation")
 	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth", "debug")
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth", "debug", "arb", "arbdebug", "arbtrace", "auctioneer", "validation")
 	stackConf.AuthPort = 0
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.NoDial = true

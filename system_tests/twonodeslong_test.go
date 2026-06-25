@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-func testTwoNodesLong(t *testing.T, dasModeStr string) {
+func testTwoNodesLong(t *testing.T, daModeStr string) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -37,7 +37,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -47,11 +47,11 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	builder.Build(t)
 	defer requireClose(t, builder.L1.Stack)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
 
-	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
+	l1NodeConfigBDataAvailability := l1NodeConfigA.DA.AnyTrust
 	l1NodeConfigBDataAvailability.RPCAggregator.Enable = false
-	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{dasConfig: &l1NodeConfigBDataAvailability})
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{anyTrustConfig: &l1NodeConfigBDataAvailability})
 	defer cleanupB()
 
 	builder.L2Info.GenerateAccount("DelayedFaucet")
@@ -153,10 +153,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		}
 	}
 
-	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
+	// Under -race both pipelines are significantly slower; use a generous
+	// 60s timeout for each to avoid flakes.
+	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*60)
 	Require(t, err, "Failed waiting for Tx on main node")
 
-	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
+	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*60)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
@@ -190,6 +192,6 @@ func TestTwoNodesLong(t *testing.T) {
 	testTwoNodesLong(t, "onchain")
 }
 
-func TestTwoNodesLongLocalDAS(t *testing.T) {
+func TestTwoNodesLongLocalAnyTrust(t *testing.T) {
 	testTwoNodesLong(t, "files")
 }

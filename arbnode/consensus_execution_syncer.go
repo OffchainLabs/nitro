@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -39,46 +40,56 @@ func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality and sync data is pushed from consensus to execution")
 }
 
+type MessageCountFetcher interface {
+	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	SupportsPushingFinalityData() bool
+}
+
+// lint:require-exhaustive-initialization
 type ConsensusExecutionSyncer struct {
 	stopwaiter.StopWaiter
 
 	config func() *ConsensusExecutionSyncerConfig
 
-	inboxReader    *InboxReader
-	execClient     execution.ExecutionClient
-	blockValidator *staker.BlockValidator
-	txStreamer     *TransactionStreamer
-	syncMonitor    *SyncMonitor
+	msgCountFetcher      MessageCountFetcher
+	execClient           execution.ExecutionClient
+	blockValidator       *staker.BlockValidator
+	txStreamer           *TransactionStreamer
+	syncMonitor          *SyncMonitor
+	msgCountErrorHandler *util.EphemeralErrorHandler
 }
 
 func NewConsensusExecutionSyncer(
 	config func() *ConsensusExecutionSyncerConfig,
-	inboxReader *InboxReader,
+	msgCountFetcher MessageCountFetcher,
 	execClient execution.ExecutionClient,
 	blockValidator *staker.BlockValidator,
 	txStreamer *TransactionStreamer,
 	syncMonitor *SyncMonitor,
 ) *ConsensusExecutionSyncer {
 	return &ConsensusExecutionSyncer{
-		config:         config,
-		inboxReader:    inboxReader,
-		execClient:     execClient,
-		blockValidator: blockValidator,
-		txStreamer:     txStreamer,
-		syncMonitor:    syncMonitor,
+		StopWaiter:      stopwaiter.StopWaiter{},
+		config:          config,
+		msgCountFetcher: msgCountFetcher,
+		execClient:      execClient,
+		blockValidator:  blockValidator,
+		txStreamer:      txStreamer,
+		syncMonitor:     syncMonitor,
+		// For the first 2 minutes, log msg count error as WARN, then as ERROR.
+		msgCountErrorHandler: util.NewEphemeralErrorHandler(2*time.Minute, "", 0),
 	}
 }
 
 func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.StopWaiter.Start(ctx_in, c)
-	if c.inboxReader != nil {
+	if c.msgCountFetcher != nil && c.msgCountFetcher.SupportsPushingFinalityData() {
 		c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
 	}
 	c.CallIteratively(c.pushConsensusSyncDataToExecution)
 }
 
 func (c *ConsensusExecutionSyncer) getFinalityData(
-	ctx context.Context,
 	msgCount arbutil.MessageIndex,
 	errMsgCount error,
 	scenario string,
@@ -87,9 +98,10 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 		log.Debug("Finality not supported, not pushing finality data to execution")
 		return nil, errMsgCount
 	} else if errMsgCount != nil {
-		log.Error("Error getting finality msg count", "scenario", scenario, "err", errMsgCount)
+		c.msgCountErrorHandler.LogLevel(errMsgCount, log.Error)("Error getting finality msg count", "scenario", scenario, "err", errMsgCount)
 		return nil, errMsgCount
 	}
+	c.msgCountErrorHandler.Reset()
 
 	if msgCount == 0 {
 		return nil, nil
@@ -112,14 +124,20 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 }
 
 func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
-	safeMsgCount, err := c.inboxReader.GetSafeMsgCount(ctx)
-	safeFinalityData, err := c.getFinalityData(ctx, safeMsgCount, err, "safe")
+	safeMsgCount, err := c.msgCountFetcher.GetSafeMsgCount(ctx)
+	if err != nil {
+		return c.config().SyncInterval
+	}
+	safeFinalityData, err := c.getFinalityData(safeMsgCount, err, "safe")
 	if err != nil {
 		return c.config().SyncInterval
 	}
 
-	finalizedMsgCount, err := c.inboxReader.GetFinalizedMsgCount(ctx)
-	finalizedFinalityData, err := c.getFinalityData(ctx, finalizedMsgCount, err, "finalized")
+	finalizedMsgCount, err := c.msgCountFetcher.GetFinalizedMsgCount(ctx)
+	if err != nil {
+		return c.config().SyncInterval
+	}
+	finalizedFinalityData, err := c.getFinalityData(finalizedMsgCount, err, "finalized")
 	if err != nil {
 		return c.config().SyncInterval
 	}
@@ -128,7 +146,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	var validatedMsgCount arbutil.MessageIndex
 	if c.blockValidator != nil {
 		validatedMsgCount = c.blockValidator.GetValidated()
-		validatedFinalityData, err = c.getFinalityData(ctx, validatedMsgCount, nil, "validated")
+		validatedFinalityData, err = c.getFinalityData(validatedMsgCount, nil, "validated")
 		if err != nil {
 			return c.config().SyncInterval
 		}

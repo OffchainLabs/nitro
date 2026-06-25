@@ -1,3 +1,5 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbos
 
 import (
@@ -385,7 +387,7 @@ func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArb
 	if batchDataStats != nil {
 		legacyGas = arbostypes.LegacyCostForStats(batchDataStats)
 		if legacyBatchGas != nil && *legacyBatchGas != legacyGas {
-			log.Error("legacy gas doesn't fit local compute", "local", legacyGas, "legacy", legacyBatchGas, "timestamp", batchTimestamp)
+			log.Error("legacy gas doesn't fit local compute", "local", legacyGas, "legacy", *legacyBatchGas, "timestamp", batchTimestamp)
 		}
 	} else {
 		if legacyBatchGas == nil {

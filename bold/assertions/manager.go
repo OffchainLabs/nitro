@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package assertions contains testing utilities for posting and scanning for
 // assertions on chain, which are useful for simulating the responsibilities of
@@ -24,11 +23,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/api/db"
-	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/types"
+	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	retry "github.com/offchainlabs/nitro/bold/runtime"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/retry"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -38,6 +38,19 @@ var (
 	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
 	latestConfirmedAssertionGauge         = metrics.NewRegisteredGauge("arb/validator/scanner/latest_confirmed_assertion_block_number", nil)
 	safeBlockDelayCounter                 = metrics.GetOrRegisterCounter("arb/validator/scanner/safe_block_delay", nil)
+	// assertionPointerSkipNonChildCounter increments when the catchup goroutine
+	// tries to advance latestAgreedAssertion to an assertion that is not a
+	// direct child of the current cursor — the cursor stays put. Non-zero in
+	// production means the catchup-vs-sync race documented in
+	// applyRecordAgreedAssertion is firing; sustained increments warrant
+	// investigation.
+	assertionPointerSkipNonChildCounter = metrics.NewRegisteredCounter("arb/validator/scanner/assertion_pointer_skip_non_child", nil)
+	// selfChallengeBailoutCounter increments when the rival path computed an
+	// "evil" assertion whose hash equals the assertion under review — meaning
+	// the validator was about to challenge a canonical assertion. The same-hash
+	// short-circuit in maybePostRivalAssertionAndChallenge catches it; this
+	// counter exists so SRE can see how often the upstream race fires.
+	selfChallengeBailoutCounter = metrics.NewRegisteredCounter("arb/validator/scanner/self_challenge_bailout", nil)
 )
 
 type timings struct {
@@ -73,7 +86,7 @@ type Manager struct {
 	stopwaiter.StopWaiter
 	chain                       protocol.AssertionChain
 	backend                     protocol.ChainBackend
-	execProvider                l2stateprovider.ExecutionProvider
+	execProvider                state.ExecutionProvider
 	times                       timings
 	rollupAddr                  common.Address
 	validatorName               string
@@ -81,7 +94,7 @@ type Manager struct {
 	assertionsProcessedCount    uint64
 	submittedRivalsCount        uint64
 	submittedAssertions         *threadsafe.LruSet[protocol.AssertionHash]
-	apiDB                       db.Database
+	apiDB                       containers.Option[db.Database]
 	assertionChainData          *assertionChainData
 	observedCanonicalAssertions chan protocol.AssertionHash
 	isReadyToPost               bool
@@ -145,7 +158,7 @@ func WithoutAutoAllowanceApproval() Opt {
 // WithAPIDB sets the database to use for the assertion manager.
 func WithAPIDB(db db.Database) Opt {
 	return func(m *Manager) {
-		m.apiDB = db
+		m.apiDB = containers.Some(db)
 	}
 }
 
@@ -218,7 +231,7 @@ func WithMinimumGapToParentAssertion(t time.Duration) Opt {
 // NewManager creates a manager from the required dependencies.
 func NewManager(
 	chain protocol.AssertionChain,
-	execProvider l2stateprovider.ExecutionProvider,
+	execProvider state.ExecutionProvider,
 	validatorName string,
 	mode types.Mode,
 	opts ...Opt,
@@ -229,7 +242,7 @@ func NewManager(
 	}
 	m := &Manager{
 		chain:                    chain,
-		apiDB:                    nil,
+		apiDB:                    containers.None[db.Database](),
 		backend:                  chain.Backend(),
 		execProvider:             execProvider,
 		rollupAddr:               chain.RollupAddress(),
@@ -272,6 +285,10 @@ func (m *Manager) SetRivalHandler(handler types.RivalHandler) {
 
 func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
+	m.LaunchThread(m.initialize)
+}
+
+func (m *Manager) initialize(ctx context.Context) {
 	if m.mode != types.WatchTowerMode {
 		if m.delegatedStaking {
 			// Attempt to become a new staker onchain until successful.

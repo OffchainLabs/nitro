@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
@@ -196,6 +196,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				errors.Is(err, ErrIncorrectChainId) ||
 				errors.Is(err, ErrMissingFeedServerVersion) ||
 				errors.Is(err, ErrIncorrectFeedServerVersion) {
+				log.Error("Fatal feed connection error, node will shut down", "url", bc.websocketUrl, "err", err)
 				select {
 				case bc.fatalErrChan <- fmt.Errorf("failed connecting to server feed due to %w", err):
 				case <-ctx.Done():
@@ -291,13 +292,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		Extensions: extensions,
 		NetDial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			var netDialer net.Dialer
-			// For tcp connections, prefer IPv4 over IPv6 to avoid rate limiting issues
 			if network == "tcp" {
-				conn, err := netDialer.DialContext(ctx, "tcp4", addr)
-				if err == nil {
-					return conn, nil
-				}
-				return netDialer.DialContext(ctx, "tcp6", addr)
+				return netDialer.DialContext(ctx, "tcp4", addr)
 			}
 			return netDialer.DialContext(ctx, network, addr)
 		},
@@ -341,7 +337,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		}
 	}
 	if !compressionNegotiated && config.EnableCompression {
-		log.Warn("Compression was not negotiated when connecting to feed server.")
+		log.Warn("Compression was not negotiated when connecting to feed server, non-critical: node will continue without compression")
 	}
 	if compressionNegotiated && !config.EnableCompression {
 		err := conn.Close()

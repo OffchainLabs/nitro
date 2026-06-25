@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -25,12 +25,12 @@ func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 
 // GetCode retrieves a contract's deployed code
 func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
-	if err := c.Burn(multigas.ResourceKindStorageAccess, params.ColdSloadCostEIP2929); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessRead, params.ColdSloadCostEIP2929); err != nil {
 		return nil, err
 	}
 	code := evm.StateDB.GetCode(account)
 	words := arbmath.WordsForBytes(uint64(len(code)))
-	if err := c.Burn(multigas.ResourceKindStorageAccess, params.CopyGas*words); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessRead, params.CopyGas*words); err != nil {
 		return nil, err
 	}
 	return code, nil
