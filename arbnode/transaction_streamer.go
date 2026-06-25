@@ -249,8 +249,8 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 	if s.execSequencer.IsSome() {
 		execSequencer := s.execSequencer.Unwrap()
 
-		if err := s.ExpectChosenSequencer(); err != nil {
-			log.Warn("Not active sequencer, not resequencing reorged messages", "err", err)
+		if !execSequencer.IsActive() {
+			log.Warn("Sequencer is not active, not resequencing reorged messages")
 			return
 		}
 
@@ -1121,16 +1121,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 	return oldMessages, nil
 }
 
-// The caller must hold the insertionMutex
-func (s *TransactionStreamer) ExpectChosenSequencer() error {
-	if s.coordinator != nil {
-		if !s.coordinator.CurrentlyChosen() {
-			return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
-		}
-	}
-	return nil
-}
-
 func (s *TransactionStreamer) WriteSequencedMsg(sequencedMsg *execution.SequencedMsg) error {
 	headMsgIdx, err := s.GetHeadMessageIndex()
 	expectedMsgIdx := headMsgIdx + 1
@@ -1631,8 +1621,8 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 
 	execSequencer := s.execSequencer.Unwrap()
 
-	if err := s.ExpectChosenSequencer(); err != nil {
-		log.Debug("Not active sequencer, retrying", "err", err)
+	if !execSequencer.IsActive() {
+		log.Debug("Sequencer is not active, not sequencing")
 		return 50 * time.Millisecond
 	}
 

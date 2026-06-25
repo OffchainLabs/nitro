@@ -775,6 +775,13 @@ func (n *ExecutionNode) Activate() {
 	}
 }
 
+func (n *ExecutionNode) IsActive() bool {
+	if n.Sequencer != nil {
+		return n.Sequencer.IsActive()
+	}
+	return false
+}
+
 func (n *ExecutionNode) ForwardTo(url string) error {
 	if n.Sequencer != nil {
 		return n.Sequencer.ForwardTo(url)

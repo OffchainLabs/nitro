@@ -87,6 +87,7 @@ type ExecutionSequencer interface {
 	ExecutionClient
 	Pause()
 	Activate()
+	IsActive() bool
 	ForwardTo(url string) error
 	StartSequencing(ctx context.Context) (*SequencedMsg, time.Duration)
 	EndSequencing(ctx context.Context, errWhileSequencing error)

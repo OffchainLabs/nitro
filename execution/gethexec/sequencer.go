@@ -850,7 +850,7 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-	isActive := s.getIsActive()
+	isActive := s.IsActive()
 	if !isActive {
 		return errors.New("sequencer is not active")
 	}
@@ -922,7 +922,7 @@ func (s *Sequencer) getForwarder() *TxForwarder {
 	return s.forwarder
 }
 
-func (s *Sequencer) getIsActive() bool {
+func (s *Sequencer) IsActive() bool {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	return s.isActive
