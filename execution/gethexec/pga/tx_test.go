@@ -37,9 +37,24 @@ type mockTx struct {
 	firstAppearance time.Time
 	resultChan      chan error
 	returnedResult  *atomic.Bool
+	boost           *uint64 // pointer-backed like txQueueItem.pgaPriorityBoost, so the value receiver can mutate it
 }
 
-func (m mockTx) ComputePgaPriority(baseFee *big.Int) (uint64, error) { return m.fee(baseFee) }
+// ComputePgaPriority folds the accumulated boost into the computed fee, mirroring the real adapter so the mempool
+// tests exercise the same boost-into-priority path.
+func (m mockTx) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
+	fee, err := m.fee(baseFee)
+	if err != nil {
+		return 0, err
+	}
+	var boost uint64
+	if m.boost != nil {
+		boost = *m.boost
+	}
+	return fee + boost, nil
+}
+
+func (m mockTx) IncreaseBoost(delta uint64) { *m.boost += delta }
 
 func (m mockTx) ReportError(err error) {
 	if m.returnedResult.Swap(true) {
@@ -56,7 +71,7 @@ func (m mockTx) GetSize() int { return m.size }
 func (m mockTx) GetFirstAppearance() time.Time { return m.firstAppearance }
 
 func TestPgaPrioritizedTxSetPriorityFromComputedFee(t *testing.T) {
-	item := prioritizedTx[mockTx]{tx: mockTx{fee: constFee(42)}}
+	item := PrioritizedTx[mockTx]{tx: mockTx{fee: constFee(42)}}
 	if !item.setPriority(big.NewInt(7)) {
 		t.Fatal("setPriority returned false, want true")
 	}
@@ -67,7 +82,7 @@ func TestPgaPrioritizedTxSetPriorityFromComputedFee(t *testing.T) {
 
 func TestPgaPrioritizedTxSetPriorityForwardsBaseFee(t *testing.T) {
 	var seen *big.Int
-	item := prioritizedTx[mockTx]{tx: mockTx{fee: func(baseFee *big.Int) (uint64, error) {
+	item := PrioritizedTx[mockTx]{tx: mockTx{fee: func(baseFee *big.Int) (uint64, error) {
 		seen = baseFee
 		return 0, nil
 	}}}
@@ -81,7 +96,7 @@ func TestPgaPrioritizedTxSetPriorityForwardsBaseFee(t *testing.T) {
 
 func TestPgaPrioritizedTxSetPriorityReportsError(t *testing.T) {
 	resultChan := make(chan error, 1)
-	item := prioritizedTx[mockTx]{tx: mockTx{
+	item := PrioritizedTx[mockTx]{tx: mockTx{
 		fee:            failFee(errFeeCapTooLow),
 		resultChan:     resultChan,
 		returnedResult: &atomic.Bool{},
@@ -94,7 +109,7 @@ func TestPgaPrioritizedTxSetPriorityReportsError(t *testing.T) {
 
 func TestPgaPrioritizedTxValidateAcceptsValidTx(t *testing.T) {
 	// size == maxTxDataSize is allowed: the check is a strict greater-than.
-	item := prioritizedTx[mockTx]{tx: mockTx{ctx: context.Background(), size: 100}}
+	item := PrioritizedTx[mockTx]{tx: mockTx{ctx: context.Background(), size: 100}}
 	if !item.validate(100) {
 		t.Fatal("validate returned false, want true")
 	}
@@ -104,7 +119,7 @@ func TestPgaPrioritizedTxValidateDropsExpiredContext(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 	resultChan := make(chan error, 1)
-	item := prioritizedTx[mockTx]{tx: mockTx{
+	item := PrioritizedTx[mockTx]{tx: mockTx{
 		ctx:            canceledCtx,
 		size:           10,
 		resultChan:     resultChan,
@@ -118,7 +133,7 @@ func TestPgaPrioritizedTxValidateDropsExpiredContext(t *testing.T) {
 
 func TestPgaPrioritizedTxValidateDropsOversized(t *testing.T) {
 	resultChan := make(chan error, 1)
-	item := prioritizedTx[mockTx]{tx: mockTx{
+	item := PrioritizedTx[mockTx]{tx: mockTx{
 		ctx:            context.Background(),
 		size:           101,
 		resultChan:     resultChan,
@@ -135,7 +150,7 @@ func TestPgaPrioritizedTxValidateChecksContextBeforeSize(t *testing.T) {
 	cancel()
 	resultChan := make(chan error, 1)
 	// Both checks would fail; context is checked first, so the reported error is the context error.
-	item := prioritizedTx[mockTx]{tx: mockTx{
+	item := PrioritizedTx[mockTx]{tx: mockTx{
 		ctx:            canceledCtx,
 		size:           101,
 		resultChan:     resultChan,

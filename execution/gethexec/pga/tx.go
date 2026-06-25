@@ -16,6 +16,9 @@ import (
 type Tx interface {
 	// ComputePgaPriority returns the transaction's priority for PGA.
 	ComputePgaPriority(baseFee *big.Int) (uint64, error)
+	// IncreaseBoost adds delta to the transaction's accumulated anti-starvation boost, which ComputePgaPriority folds
+	// into the priority. The mempool calls it on every queued transaction at a round boundary.
+	IncreaseBoost(delta uint64)
 	// ReportError resolves the submitting client's result channel with err.
 	ReportError(err error)
 	// GetContext returns the submission context, used to drop expired entries.
@@ -27,15 +30,21 @@ type Tx interface {
 	GetFirstAppearance() time.Time
 }
 
-// prioritizedTx pairs a queued transaction with its priority key.
-type prioritizedTx[T Tx] struct {
+// PrioritizedTx pairs a queued transaction with its priority key.
+type PrioritizedTx[T Tx] struct {
 	tx       T
 	priority uint64
 }
 
+// Tx returns the wrapped transaction.
+func (item PrioritizedTx[T]) Tx() T { return item.tx }
+
+// Priority returns the entry's priority key.
+func (item PrioritizedTx[T]) Priority() uint64 { return item.priority }
+
 // setPriority computes the item's priority from ComputePgaPriority. On error it returns false, signalling that the
 // transaction was dropped.
-func (item *prioritizedTx[T]) setPriority(baseFee *big.Int) bool {
+func (item *PrioritizedTx[T]) setPriority(baseFee *big.Int) bool {
 	fee, err := item.tx.ComputePgaPriority(baseFee)
 	if err != nil {
 		item.tx.ReportError(err)
@@ -46,7 +55,7 @@ func (item *prioritizedTx[T]) setPriority(baseFee *big.Int) bool {
 }
 
 // validate returns false if the transaction was dropped.
-func (item *prioritizedTx[T]) validate(maxTxDataSize int) bool {
+func (item *PrioritizedTx[T]) validate(maxTxDataSize int) bool {
 	if err := item.tx.GetContext().Err(); err != nil {
 		item.tx.ReportError(err)
 		return false

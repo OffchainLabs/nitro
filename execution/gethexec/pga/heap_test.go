@@ -13,7 +13,7 @@ import (
 
 // newMockEntry builds a heap entry around a mock tx with a working result channel, returning the entry and that
 // channel so tests can assert what the heap reported. fee may be nil for tests that never recompute the priority.
-func newMockEntry(id int, fee priorityFeeFunc, priority uint64) (prioritizedTx[mockTx], chan error) {
+func newMockEntry(id int, fee priorityFeeFunc, priority uint64) (PrioritizedTx[mockTx], chan error) {
 	resultChan := make(chan error, 1)
 	tx := mockTx{
 		id:              id,
@@ -22,8 +22,9 @@ func newMockEntry(id int, fee priorityFeeFunc, priority uint64) (prioritizedTx[m
 		firstAppearance: defaultArrival,
 		resultChan:      resultChan,
 		returnedResult:  &atomic.Bool{},
+		boost:           new(uint64),
 	}
-	return prioritizedTx[mockTx]{tx: tx, priority: priority}, resultChan
+	return PrioritizedTx[mockTx]{tx: tx, priority: priority}, resultChan
 }
 
 func TestTxHeapPushAndPopConcrete(t *testing.T) {
@@ -48,8 +49,8 @@ func TestTxHeapPushAndPopConcrete(t *testing.T) {
 func TestTxHeapPopConcreteBreaksTiesByArrival(t *testing.T) {
 	var h txHeap[mockTx]
 	// Equal priority; the earlier firstAppearance must pop first regardless of push order.
-	mk := func(id int, offset time.Duration) prioritizedTx[mockTx] {
-		return prioritizedTx[mockTx]{
+	mk := func(id int, offset time.Duration) PrioritizedTx[mockTx] {
+		return PrioritizedTx[mockTx]{
 			tx:       mockTx{id: id, ctx: context.Background(), firstAppearance: defaultArrival.Add(offset)},
 			priority: 7,
 		}
@@ -69,7 +70,7 @@ func TestTxHeapPushBatch(t *testing.T) {
 	seed, _ := newMockEntry(0, nil, 4)
 	h.pushConcrete(seed)
 
-	batch := make([]prioritizedTx[mockTx], 0, 3)
+	batch := make([]PrioritizedTx[mockTx], 0, 3)
 	for i, p := range []uint64{8, 2, 6} {
 		entry, _ := newMockEntry(i+1, nil, p)
 		batch = append(batch, entry)
@@ -125,6 +126,33 @@ func TestTxHeapRekeyRecomputesPriority(t *testing.T) {
 	}
 	if got := h.popConcrete(); got.tx.id != entryB.tx.id || got.priority != 5 {
 		t.Fatalf("second = (id %d, prio %d), want B with prio 5", got.tx.id, got.priority)
+	}
+}
+
+func TestTxHeapAddBoost(t *testing.T) {
+	var h txHeap[mockTx]
+	// Three entries with distinct priorities; addBoost lifts every key by the same delta and leaves the order intact.
+	a, _ := newMockEntry(1, constFee(30), 30)
+	b, _ := newMockEntry(2, constFee(10), 10)
+	c, _ := newMockEntry(3, constFee(20), 20)
+	h.pushConcrete(a)
+	h.pushConcrete(b)
+	h.pushConcrete(c)
+
+	h.addBoost(5)
+
+	// Order is preserved (a > c > b), every key rose by 5, and each tx's accumulated boost rose to 5.
+	for _, want := range []struct {
+		id       int
+		priority uint64
+	}{{1, 35}, {3, 25}, {2, 15}} {
+		got := h.popConcrete()
+		if got.tx.id != want.id || got.priority != want.priority {
+			t.Fatalf("pop = (id %d, prio %d), want (id %d, prio %d)", got.tx.id, got.priority, want.id, want.priority)
+		}
+		if *got.tx.boost != 5 {
+			t.Fatalf("tx %d boost = %d, want 5", got.tx.id, *got.tx.boost)
+		}
 	}
 }
 

@@ -11,14 +11,22 @@ import (
 // Mempool is a two-stage mempool for PGA. The first stage is a channel with the waiting list and the second stage is a
 // priority queue. It is not safe for concurrent use; every method runs on the block-production goroutine.
 type Mempool[T Tx] struct {
-	txQueue       <-chan T  // stage one: the waiting list
-	heap          txHeap[T] // stage two: the priority queue
-	baseFee       *big.Int  // basefee of the block under construction
-	maxTxDataSize int       // max promoted-transaction size, for the block under construction
+	txQueue              <-chan T  // stage one: the waiting list
+	heap                 txHeap[T] // stage two: the priority queue
+	baseFee              *big.Int  // basefee of the block under construction
+	maxTxDataSize        int       // max promoted-transaction size, for the block under construction
+	boostDivisor         uint64    // used to compute the priority boost
+	lastIncludedPriority uint64    // the priority of the last transaction included in the block
 }
 
-func NewMempool[T Tx](txQueue <-chan T) *Mempool[T] {
-	return &Mempool[T]{txQueue: txQueue}
+func NewMempool[T Tx](txQueue <-chan T, roundsPerBlock uint) *Mempool[T] {
+	if roundsPerBlock == 0 {
+		panic("roundsPerBlock is zero; impossible")
+	}
+	return &Mempool[T]{
+		txQueue:      txQueue,
+		boostDivisor: 2 * uint64(roundsPerBlock),
+	}
 }
 
 // PriorityQueueLen returns the number of transactions promoted into the priority queue (stage two); it does not count
@@ -43,14 +51,20 @@ func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
 	m.StartNewPGARound()
 }
 
-// StartNewPGARound promotes a snapshot of the waiting list into the priority queue, then re-establishes the heap.
+// StartNewPGARound advances the mempool to a new PGA round. It applies the anti-starvation boost to transactions that
+// are still in the priority queue, and promotes transactions from the waiting list.
 func (m *Mempool[T]) StartNewPGARound() {
+	if delta := m.lastIncludedPriority / m.boostDivisor; delta != 0 {
+		m.heap.addBoost(delta)
+	}
+	m.lastIncludedPriority = 0
+
 	// n (the waiting-list length) is captured once; we are the sole consumer, so these receivers never block, and
 	// arrivals after the snapshot stay buffered for the next round.
 	n := len(m.txQueue)
-	promoted := make([]prioritizedTx[T], 0, n)
+	promoted := make([]PrioritizedTx[T], 0, n)
 	for range n {
-		entry := prioritizedTx[T]{tx: <-m.txQueue}
+		entry := PrioritizedTx[T]{tx: <-m.txQueue}
 		if !entry.setPriority(m.baseFee) {
 			continue
 		}
@@ -59,23 +73,33 @@ func (m *Mempool[T]) StartNewPGARound() {
 	m.heap.pushBatch(promoted)
 }
 
-// Pop removes and returns the highest-priority valid transaction. It validates each candidate against the block's max
-// transaction size and context, dropping those that fail.
-func (m *Mempool[T]) Pop() (tx T, ok bool) {
+// RecordIncludedTx records the priority of a transaction just included in the block during the current round.
+func (m *Mempool[T]) RecordIncludedTx(priority uint64) {
+	m.lastIncludedPriority = priority
+}
+
+// Pop removes and returns the highest-priority valid entry, dropping candidates that fail the size or context checks.
+func (m *Mempool[T]) Pop() (PrioritizedTx[T], bool) {
 	for m.heap.Len() > 0 {
 		entry := m.heap.popConcrete()
 		if entry.validate(m.maxTxDataSize) {
-			return entry.tx, true
+			return entry, true
 		}
 	}
-	return tx, false
+	return PrioritizedTx[T]{}, false
 }
 
-// Push re-inserts a transaction popped from the queue, re-keying it against the block's basefee.
+// Push re-inserts a transaction and re-keys it against the current basefee; use it for a transaction returning in a
+// later block.
 func (m *Mempool[T]) Push(item T) {
-	entry := prioritizedTx[T]{tx: item}
+	entry := PrioritizedTx[T]{tx: item}
 	if !entry.setPriority(m.baseFee) {
 		return
 	}
+	m.heap.pushConcrete(entry)
+}
+
+// PushPrioritized re-inserts an entry without re-keying; use it for a transaction returning within the same block round.
+func (m *Mempool[T]) PushPrioritized(entry PrioritizedTx[T]) {
 	m.heap.pushConcrete(entry)
 }
