@@ -938,7 +938,7 @@ func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
 
 	// Fast-path: only attempt if all filtered tx hashes are now in the onchain filter.
 	for _, txHash := range s.waitingForFilteredTx.TxHashes {
-		isInFilter, err := s.IsTxHashInOnchainFilter(txHash)
+		isInFilter, err := s.isTxHashInOnchainFilter(txHash)
 		if err != nil {
 			log.Error("error checking onchain filter", "err", err, "txHash", txHash)
 			return false
@@ -1570,7 +1570,7 @@ func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFil
 	s.transactionFiltererRPCClient = client
 }
 
-func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+func (s *ExecutionEngine) isTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return false, err

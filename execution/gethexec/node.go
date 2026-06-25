@@ -754,9 +754,6 @@ func (n *ExecutionNode) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMess
 func (n *ExecutionNode) AppendLastSequencedBlock() error {
 	return n.ExecEngine.AppendLastSequencedBlock()
 }
-func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
-	return n.ExecEngine.IsTxHashInOnchainFilter(txHash)
-}
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
