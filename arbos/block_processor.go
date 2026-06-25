@@ -92,10 +92,25 @@ type blockBuildState struct {
 	activeGroupCP        *groupCheckpoint
 }
 
+// txCheckpoint is the rollback state captured before a tx runs: the state snapshot
+// plus a copy of the Stylus warm-start cache
+type txCheckpoint struct {
+	snap        int
+	recentWasms *state.RecentWasms
+}
+
+// restore rolls statedb back to this checkpoint: the state snapshot, and the
+// warm-start cache only if it was captured
+func (c txCheckpoint) restore(statedb *state.StateDB) {
+	statedb.RevertToSnapshot(c.snap)
+	if c.recentWasms != nil {
+		statedb.RestoreRecentWasms(*c.recentWasms)
+	}
+}
+
 // lint:require-exhaustive-initialization
 type groupCheckpoint struct {
 	backup               *state.StateDB
-	snap                 int
 	headerGasUsed        uint64
 	gasPool              *core.GasPool
 	blockGasLeft         uint64
@@ -104,6 +119,7 @@ type groupCheckpoint struct {
 	completeLen          int
 	receiptsLen          int
 	userTx               *types.Transaction
+	txCheckpoint         txCheckpoint
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
@@ -113,13 +129,12 @@ type groupCheckpoint struct {
 // taken BEFORE the user tx ran, so that a rollback can restore the gas
 // pool's cumulativeUsed and prevent the rolled-back tx's gas from being
 // attributed to subsequent receipts via DeriveFields.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, preTxGasPool *core.GasPool, snap int, userTx *types.Transaction) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, preTxGasPool *core.GasPool, checkpoint txCheckpoint, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
 	s.activeGroupCP = &groupCheckpoint{
 		backup:               s.statedb.Copy(),
-		snap:                 snap,
 		headerGasUsed:        header.GasUsed,
 		gasPool:              preTxGasPool,
 		blockGasLeft:         s.blockGasLeft,
@@ -128,6 +143,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, preTxGasPool
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
 		userTx:               userTx,
+		txCheckpoint:         checkpoint,
 	}
 	return nil
 }
@@ -139,7 +155,9 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, preTxGasPool
 // to subsequent receipts via DeriveFields.
 func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header, gasPool *core.GasPool) error {
 	cp := s.activeGroupCP
-	cp.backup.RevertToSnapshot(cp.snap)
+	// Roll the backup back to before the user tx ran (state + warm-start cache),
+	// then make it live; its redeems warmed only the now-discarded live statedb.
+	cp.txCheckpoint.restore(cp.backup)
 	s.statedb = cp.backup
 	header.GasUsed = cp.headerGasUsed
 	gasPool.Set(cp.gasPool)
@@ -498,6 +516,14 @@ func ProduceBlockAdvanced(
 			snap := buildState.statedb.Snapshot()
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
+			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
+			// program leaves nothing behind for later included txs
+			checkpoint := txCheckpoint{snap: snap}
+			if sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback() {
+				rw := buildState.statedb.GetRecentWasms().Copy()
+				checkpoint.recentWasms = &rw
+			}
+
 			gasPool := gethGas
 			// Snapshot gasPool BEFORE running the tx so a later group rollback
 			// can restore the gas pool's cumulativeUsed (otherwise the rolled-back
@@ -521,7 +547,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, preTxGasPool, snap, tx); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, preTxGasPool, checkpoint, tx); err != nil {
 							return err
 						}
 					}
@@ -529,14 +555,15 @@ func ProduceBlockAdvanced(
 				},
 			)
 			if err != nil {
-				// Ignore this transaction if it's invalid under the state transition function.
+				// Ignore this transaction if it's invalid under the state transition
+				// function; restore also undoes any warm-start it left behind.
+				checkpoint.restore(buildState.statedb)
+				buildState.statedb.ClearTxFilter()
 				// Restore gas pool: state_transition's normal path already ran SubGas/ReturnGas
 				// before resultFilter (which is what reported the error here), so gp's
 				// cumulativeUsed and remaining were charged for this discarded tx.
 				// Leaving them as-is would inflate subsequent receipts' CumulativeGasUsed
 				// and break receipt.GasUsed (computed via DeriveFields as a cumulative diff).
-				buildState.statedb.RevertToSnapshot(snap)
-				buildState.statedb.ClearTxFilter()
 				gasPool.Set(preTxGasPool)
 				return nil, nil, err
 			}
