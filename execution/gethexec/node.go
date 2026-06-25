@@ -417,11 +417,16 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+		filtererURL := config.TransactionFiltering.TransactionFiltererRPCClient.URL
+		if filtererURL == TransactionFiltererURLNone {
+			log.Warn("transaction filtering enabled without a transaction-filterer (url is \"none\") - filtered delayed messages will HALT the delayed sequencer and cannot auto-resolve until their hashes are added to the onchain filter")
+		} else if filtererURL != "" {
 			filtererConfigFetcher := func() *rpcclient.ClientConfig {
 				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
 			}
 			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		} else if config.TransactionFiltering.Enable && !config.TransactionFiltering.DisableDelayedSequencingFilter {
+			return nil, errors.New("transaction filtering enabled but transaction-filterer-rpc-client.url is not set; set it to \"none\" to run without a transaction-filterer (filtered delayed messages will halt the delayed sequencer)")
 		}
 		sequencer, err = NewSequencer(
 			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
@@ -445,7 +450,7 @@ func CreateExecutionNode(
 	var precheckerFilterer core.TxFilterer
 	// Sequencer filters via block-production hooks; skip prechecker dry-run when it is the publisher.
 	if config.TransactionFiltering.Enable && txPublisher != sequencer {
-		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter, filteringReportRPCClient: filteringReportRPCClient}
 	}
 
 	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher, precheckerFilterer)

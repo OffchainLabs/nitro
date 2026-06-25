@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
 	"strings"
@@ -742,9 +743,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	if s.addressChecker != nil {
-		statedb.SetAddressChecker(s.addressChecker)
-	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, errors.New("can't find block for current header")
@@ -775,6 +773,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		false,
 		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
+		s.addressChecker,
 	)
 	if err != nil {
 		return nil, err
@@ -955,11 +954,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 
-	// Set up address checker for filtering if configured
-	if s.addressChecker != nil {
-		statedb.SetAddressChecker(s.addressChecker)
-	}
-
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
@@ -1012,6 +1006,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			isMsgForPrefetch,
 			runCtx,
 			s.exposeMultiGas,
+			s.addressChecker,
 		)
 		if err != nil {
 			return nil, nil, nil, err
@@ -1214,6 +1209,19 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(msgIdx arbutil.MessageIndex, blo
 	}
 }
 
+// Best-effort cache warming; failures must not affect the real digest path, so panics are recovered.
+func (s *ExecutionEngine) prefetchNextBlock(msgForPrefetch *arbostypes.MessageWithMetadata) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("panic during prefetch block creation",
+				"recover", r, "stack", string(debug.Stack()))
+		}
+	}()
+	if _, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false); err != nil {
+		log.Warn("error during prefetch block creation", "err", err)
+	}
+}
+
 // DigestMessage is used to create a block by executing msg against the latest state and storing it.
 // Also, while creating a block by executing msg against the latest state,
 // in parallel, creates a block by executing msgForPrefetch (msg+1) against the latest state
@@ -1242,12 +1250,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
-		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
-			if err != nil {
-				return
-			}
-		}()
+		go s.prefetchNextBlock(msgForPrefetch)
 	}
 
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false, false)

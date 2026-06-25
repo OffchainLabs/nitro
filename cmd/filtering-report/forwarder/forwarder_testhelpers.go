@@ -92,7 +92,7 @@ func (m *MockExternalEndpoint) AssertNoReport(t *testing.T, within time.Duration
 	}
 }
 
-func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointURL, pemPath string) *Forwarder {
+func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, endpointURL string, pemPath string) *Forwarder {
 	t.Helper()
 	signerCfg := signer.DefaultConfig
 	signerCfg.PEMFile = pemPath
@@ -105,9 +105,10 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, endpointU
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
-		Signer: signerCfg,
+		ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
+		Signer:                                 signerCfg,
 	}
-	fwd, err := New(config, queueClient)
+	fwd, err := New(config, queueClient, poisonQueueClient)
 	if err != nil {
 		t.Fatal(err)
 	}

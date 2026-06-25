@@ -4,20 +4,25 @@
 package addressfilter
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/johannesboyne/gofakes3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/s3syncer/s3syncertest"
 )
 
 func TestHashStore_IsRestricted(t *testing.T) {
@@ -485,6 +490,134 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	loadedAt := store.LoadedAt()
 	if loadedAt.Before(before) || loadedAt.After(after) {
 		t.Errorf("LoadedAt should be between %v and %v, got %v", before, after, loadedAt)
+	}
+}
+
+const filteringTestBucket = "addressfilter-test"
+
+func newFilteringTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
+	cfg := DefaultConfig
+	cfg.S3 = s3syncer.Config{
+		Config: s3client.Config{
+			Region:    "us-east-1",
+			AccessKey: "dummy-access-key",
+			SecretKey: "dummy-secret-key",
+			Endpoint:  endpoint,
+		},
+		Bucket:        filteringTestBucket,
+		ObjectKey:     key,
+		ChunkSizeMB:   s3syncer.DefaultS3Config.ChunkSizeMB,
+		MaxRetries:    s3syncer.DefaultS3Config.MaxRetries,
+		Concurrency:   s3syncer.DefaultS3Config.Concurrency,
+		MaxFileSizeMB: maxFileSizeMB,
+	}
+	return &cfg
+}
+
+func TestFilterService_Initialize_RejectsOversizedFile(t *testing.T) {
+	key := "oversized.json"
+	body := bytes.Repeat([]byte("X"), 2*1024*1024) // 2 MB
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: body})
+
+	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
+	syncFailureBefore := syncFailureCounter.Snapshot().Count()
+
+	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	require.NoError(t, err)
+
+	err = service.Initialize(context.Background())
+	if err == nil {
+		t.Fatal("expected Initialize to return error for oversized file")
+	}
+	if !errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		t.Errorf("expected error chain to include ErrObjectTooLarge, got %v", err)
+	}
+
+	tooLargeDelta := fileTooLargeCounter.Snapshot().Count() - tooLargeBefore
+	syncFailureDelta := syncFailureCounter.Snapshot().Count() - syncFailureBefore
+	if tooLargeDelta != 1 {
+		t.Errorf("fileTooLargeCounter delta: got %d, want 1", tooLargeDelta)
+	}
+	if syncFailureDelta != 1 {
+		t.Errorf("syncFailureCounter delta: got %d, want 1", syncFailureDelta)
+	}
+}
+
+func TestFilterService_Initialize_GenericFailure(t *testing.T) {
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, nil) // bucket exists, key does not
+
+	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
+	syncFailureBefore := syncFailureCounter.Snapshot().Count()
+
+	service, err := NewFilterService(newFilteringTestConfig(endpoint, "missing.json", 1))
+	require.NoError(t, err)
+
+	err = service.Initialize(context.Background())
+	if err == nil {
+		t.Fatal("expected Initialize to return error for missing key")
+	}
+	if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		t.Errorf("missing-key error should not match ErrObjectTooLarge: %v", err)
+	}
+
+	tooLargeDelta := fileTooLargeCounter.Snapshot().Count() - tooLargeBefore
+	syncFailureDelta := syncFailureCounter.Snapshot().Count() - syncFailureBefore
+	if tooLargeDelta != 0 {
+		t.Errorf("fileTooLargeCounter delta: got %d, want 0", tooLargeDelta)
+	}
+	if syncFailureDelta != 1 {
+		t.Errorf("syncFailureCounter delta: got %d, want 1", syncFailureDelta)
+	}
+}
+
+func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
+	salt := uuid.New()
+	restrictedAddr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), restrictedAddr)
+	payload := map[string]interface{}{
+		"id":             uuid.NewString(),
+		"salt":           salt.String(),
+		"hashing_scheme": "sha256-stringinput",
+		"hashes":         []string{hex.EncodeToString(hash[:])},
+	}
+	initialBody, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	key := "filter.json"
+	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: initialBody})
+
+	// 1 MB limit; initial body is well under, the swap body will be 2 MB.
+	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	require.NoError(t, err)
+
+	require.NoError(t, service.Initialize(context.Background()))
+
+	digestBefore := service.GetHashStoreDigest()
+	countBefore := service.GetHashCount()
+	require.NotEmpty(t, digestBefore, "initial digest should be set")
+	require.Equal(t, 1, countBefore)
+	restricted, _ := service.hashStore.IsRestricted(restrictedAddr)
+	require.True(t, restricted, "address should be restricted after initial load")
+
+	// Swap the S3 object for a payload that exceeds the configured limit.
+	oversized := bytes.Repeat([]byte("X"), 2*1024*1024)
+	_, err = backend.PutObject(filteringTestBucket, key, map[string]string{}, bytes.NewReader(oversized), int64(len(oversized)), &gofakes3.PutConditions{})
+	require.NoError(t, err)
+
+	// Drive one sync tick directly — same call the Start() poll loop makes.
+	err = service.syncMgr.Syncer.CheckAndSync(context.Background())
+	if !errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		t.Fatalf("expected ErrObjectTooLarge from oversized swap, got %v", err)
+	}
+
+	if got := service.GetHashStoreDigest(); got != digestBefore {
+		t.Errorf("digest changed after failed sync: got %q, want %q", got, digestBefore)
+	}
+	if got := service.GetHashCount(); got != countBefore {
+		t.Errorf("hash count changed after failed sync: got %d, want %d", got, countBefore)
+	}
+	if restricted, _ := service.hashStore.IsRestricted(restrictedAddr); !restricted {
+		t.Error("address should still be restricted after failed sync")
 	}
 }
 

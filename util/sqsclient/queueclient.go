@@ -26,8 +26,8 @@ func (c *QueueConfig) Validate() error {
 	return nil
 }
 
-func QueueConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".queue-url", DefaultQueueConfig.QueueURL, "SQS queue URL for filtered transaction reports")
+func QueueConfigAddOptions(prefix string, f *pflag.FlagSet, queueURLDescription string) {
+	f.String(prefix+".queue-url", DefaultQueueConfig.QueueURL, queueURLDescription)
 	SQSClientConfigAddOptions(prefix+".sqs-client", f)
 }
 
