@@ -879,46 +879,8 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 		return nil, nil
 	}
 
-	// Periodic logging if halted waiting for filtered tx to be added to onchain filter
-	if s.waitingForFilteredTx != nil {
-		now := time.Now()
-		waitDuration := now.Sub(s.waitingForFilteredTx.FirstSeen)
-		delayedSequencerFilteredTxWaitSeconds.Update(int64(waitDuration.Seconds()))
-		if now.Sub(s.waitingForFilteredTx.LastLogTime) >= 5*time.Minute {
-			logLevel := log.Warn
-			if waitDuration > 1*time.Hour {
-				logLevel = log.Error
-			}
-			logLevel("DelayedSequencer halted on filtered tx - waiting for tx hashes to be added to onchain filter",
-				"txHashes", s.waitingForFilteredTx.TxHashes,
-				"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
-				"waitingSince", s.waitingForFilteredTx.FirstSeen)
-			s.waitingForFilteredTx.LastLogTime = now
-		}
-
-		// Periodically attempt full re-execution even if the tx hashes aren't in the
-		// onchain filter yet. The filtered address set may have changed since the
-		// last attempt, which could allow the tx to succeed without needing bypass.
-		needsFullRetry := time.Since(s.waitingForFilteredTx.LastFullRetry) >= s.filteredTxFullRetryInterval
-		if !needsFullRetry {
-			// Fast-path: check if all filtered tx hashes are now in the onchain filter
-			allInFilter := true
-			for _, txHash := range s.waitingForFilteredTx.TxHashes {
-				isInFilter, err := s.IsTxHashInOnchainFilter(txHash)
-				if err != nil {
-					log.Error("error checking onchain filter", "err", err, "txHash", txHash)
-					allInFilter = false
-					break
-				}
-				if !isInFilter {
-					allInFilter = false
-					break
-				}
-			}
-			if !allInFilter {
-				return nil, nil
-			}
-		}
+	if !s.shouldAttemptWhileWaitingForFilteredTx() {
+		return nil, nil
 	}
 
 	delayedMsgToSequence := s.delayedMsgs.Peek()
@@ -930,25 +892,8 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 	if err != nil {
 		var filteredErr *ErrFilteredDelayedMessage
 		if errors.As(err, &filteredErr) {
-			now := time.Now()
-			if s.waitingForFilteredTx == nil {
-				log.Error("SequenceDelaydeMessage4.1")
-				// First time hitting filtered tx(es) - log and set waiting state
-				log.Error("Delayed message filtered - HALTING delayed sequencing",
-					"txHashes", filteredErr.TxHashes,
-					"delayedMsgIdx", filteredErr.DelayedMsgIdx)
-				s.waitingForFilteredTx = &FilteredTxWaitState{
-					TxHashes:      filteredErr.TxHashes,
-					DelayedMsgIdx: filteredErr.DelayedMsgIdx,
-					FirstSeen:     now,
-					LastLogTime:   now,
-					LastFullRetry: now,
-				}
-			} else {
-				s.waitingForFilteredTx.TxHashes = filteredErr.TxHashes
-				s.waitingForFilteredTx.LastFullRetry = now
-			}
-			// Return nil to halt without propagating error up - will retry on next interval
+			s.handleFilteredDelayedMessage(filteredErr)
+			// Halt without propagating the error - will retry on next interval.
 			return nil, nil
 		}
 
@@ -958,19 +903,83 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 		s.delayedMsgs = containers.Queue[*delayedMsg]{}
 	}
 
-	// Success - clear waiting state if we were waiting
-	if s.waitingForFilteredTx != nil {
-		log.Info("Filtered tx resolved - resuming delayed sequencing",
-			"txHashes", s.waitingForFilteredTx.TxHashes,
-			"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
-			"waitedFor", time.Since(s.waitingForFilteredTx.FirstSeen))
-		s.waitingForFilteredTx = nil
-		delayedSequencerFilteredTxWaitSeconds.Update(0)
-	}
-
+	s.clearFilteredTxWaitState()
 	s.delayedMsgs.Pop()
 
 	return sequencedMsg, err
+}
+
+func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
+	if s.waitingForFilteredTx == nil {
+		return true
+	}
+
+	now := time.Now()
+	waitDuration := now.Sub(s.waitingForFilteredTx.FirstSeen)
+	delayedSequencerFilteredTxWaitSeconds.Update(int64(waitDuration.Seconds()))
+	if now.Sub(s.waitingForFilteredTx.LastLogTime) >= 5*time.Minute {
+		logLevel := log.Warn
+		if waitDuration > 1*time.Hour {
+			logLevel = log.Error
+		}
+		logLevel("DelayedSequencer halted on filtered tx - waiting for tx hashes to be added to onchain filter",
+			"txHashes", s.waitingForFilteredTx.TxHashes,
+			"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
+			"waitingSince", s.waitingForFilteredTx.FirstSeen)
+		s.waitingForFilteredTx.LastLogTime = now
+	}
+
+	// Periodically attempt full re-execution even if the tx hashes aren't in the
+	// onchain filter yet. The filtered address set may have changed since the
+	// last attempt, which could allow the tx to succeed without needing bypass.
+	if time.Since(s.waitingForFilteredTx.LastFullRetry) >= s.filteredTxFullRetryInterval {
+		return true
+	}
+
+	// Fast-path: only attempt if all filtered tx hashes are now in the onchain filter.
+	for _, txHash := range s.waitingForFilteredTx.TxHashes {
+		isInFilter, err := s.IsTxHashInOnchainFilter(txHash)
+		if err != nil {
+			log.Error("error checking onchain filter", "err", err, "txHash", txHash)
+			return false
+		}
+		if !isInFilter {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *ExecutionEngine) handleFilteredDelayedMessage(filteredErr *ErrFilteredDelayedMessage) {
+	now := time.Now()
+	if s.waitingForFilteredTx == nil {
+		// First time hitting filtered tx(es) - log and set waiting state.
+		log.Error("Delayed message filtered - HALTING delayed sequencing",
+			"txHashes", filteredErr.TxHashes,
+			"delayedMsgIdx", filteredErr.DelayedMsgIdx)
+		s.waitingForFilteredTx = &FilteredTxWaitState{
+			TxHashes:      filteredErr.TxHashes,
+			DelayedMsgIdx: filteredErr.DelayedMsgIdx,
+			FirstSeen:     now,
+			LastLogTime:   now,
+			LastFullRetry: now,
+		}
+		return
+	}
+	s.waitingForFilteredTx.TxHashes = filteredErr.TxHashes
+	s.waitingForFilteredTx.LastFullRetry = now
+}
+
+func (s *ExecutionEngine) clearFilteredTxWaitState() {
+	if s.waitingForFilteredTx == nil {
+		return
+	}
+	log.Info("Filtered tx resolved - resuming delayed sequencing",
+		"txHashes", s.waitingForFilteredTx.TxHashes,
+		"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
+		"waitedFor", time.Since(s.waitingForFilteredTx.FirstSeen))
+	s.waitingForFilteredTx = nil
+	delayedSequencerFilteredTxWaitSeconds.Update(0)
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
