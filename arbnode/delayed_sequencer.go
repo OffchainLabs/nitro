@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -24,9 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
-	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 
 type DelayedMessageFetcher interface {
 	GetDelayedCount() (uint64, error)
