@@ -4,7 +4,7 @@
 package logfmt
 
 import (
-	"github.com/ethereum/go-ethereum/log"
+	"go-ethereum/log"
 )
 
 func badFormatVerbs() {

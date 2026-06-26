@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-const gethLogPkgPath = "github.com/ethereum/go-ethereum/log"
+const gethLogPkgSuffix = "go-ethereum/log"
 
 var logFuncNames = map[string]bool{
 	"Trace": true, "Debug": true, "Info": true,
@@ -93,7 +93,7 @@ func isLogCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if ident, ok := sel.X.(*ast.Ident); ok {
 		if obj := pass.TypesInfo.Uses[ident]; obj != nil {
 			if pkgName, ok := obj.(*types.PkgName); ok {
-				return pkgName.Imported().Path() == gethLogPkgPath
+				return strings.HasSuffix(pkgName.Imported().Path(), gethLogPkgSuffix)
 			}
 		}
 	}
@@ -101,7 +101,7 @@ func isLogCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	// Method call on Logger instance: logger.Warn(...)
 	if selection, ok := pass.TypesInfo.Selections[sel]; ok {
 		if obj := selection.Obj(); obj != nil && obj.Pkg() != nil {
-			return obj.Pkg().Path() == gethLogPkgPath
+			return strings.HasSuffix(obj.Pkg().Path(), gethLogPkgSuffix)
 		}
 	}
 

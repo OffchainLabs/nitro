@@ -19,7 +19,7 @@ func TestAll(t *testing.T) {
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	res := analysistest.Run(t, testdata, Analyzer, "logfmt")
-	want := []int{8, 9, 10, 11, 12, 13}
+	want := []int{11, 12, 13, 14, 15, 16}
 	got := errorLines(res)
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("analysistest.Run() unexpected diff in error lines:\n%s\n", diff)
