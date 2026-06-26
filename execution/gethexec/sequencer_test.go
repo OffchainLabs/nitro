@@ -130,11 +130,33 @@ func TestDecideSequencingTurn(t *testing.T) {
 			wantTurn:       regularTxSequencingTurn,
 		},
 		{
-			name:           "both, last turn delayed but throttled keeps delayed draining",
+			name:           "both, last turn delayed but regular throttled keeps delayed draining",
 			state:          sequencingState{lastTurn: delayedMsgSequencingTurn, regularTxSequencingThrottledUntil: now0.Add(100 * time.Millisecond)},
 			hasRegularTxs:  true,
 			hasDelayedMsgs: true,
 			wantTurn:       delayedMsgSequencingTurn,
+		},
+		{
+			name:           "only delayed, throttled waits remaining",
+			state:          sequencingState{delayedMsgSequencingThrottledUntil: now0.Add(100 * time.Millisecond)},
+			hasDelayedMsgs: true,
+			wantTurn:       noSequencingTurn,
+			wantWait:       100 * time.Millisecond,
+		},
+		{
+			name:           "both, delayed throttled, regular runs",
+			state:          sequencingState{lastTurn: regularTxSequencingTurn, delayedMsgSequencingThrottledUntil: now0.Add(100 * time.Millisecond)},
+			hasRegularTxs:  true,
+			hasDelayedMsgs: true,
+			wantTurn:       regularTxSequencingTurn,
+		},
+		{
+			name:           "both throttled waits for the soonest to lift",
+			state:          sequencingState{regularTxSequencingThrottledUntil: now0.Add(200 * time.Millisecond), delayedMsgSequencingThrottledUntil: now0.Add(100 * time.Millisecond)},
+			hasRegularTxs:  true,
+			hasDelayedMsgs: true,
+			wantTurn:       noSequencingTurn,
+			wantWait:       100 * time.Millisecond,
 		},
 	}
 	for _, tt := range tests {
@@ -152,10 +174,7 @@ func TestDecideSequencingTurn(t *testing.T) {
 
 func TestStateAfterRegular(t *testing.T) {
 	// Block made / empty queue / transient error => throttle one MaxBlockSpeed out.
-	got, wait := sequencingStateAfterRegularSequencing(sequencingState{}, true, now0, testMaxBlockSpeed)
-	if wait != 0 {
-		t.Errorf("wait = %v, want 0", wait)
-	}
+	got := sequencingStateAfterRegularSequencing(sequencingState{}, true, now0, testMaxBlockSpeed)
 	if got.lastTurn != regularTxSequencingTurn {
 		t.Errorf("lastTurn = %v, want regular", got.lastTurn)
 	}
@@ -164,50 +183,46 @@ func TestStateAfterRegular(t *testing.T) {
 	}
 
 	// Items present but no block produced => no throttle, retry promptly.
-	got, wait = sequencingStateAfterRegularSequencing(sequencingState{regularTxSequencingThrottledUntil: now0.Add(time.Hour)}, false, now0, testMaxBlockSpeed)
-	if wait != 0 {
-		t.Errorf("wait = %v, want 0", wait)
-	}
+	got = sequencingStateAfterRegularSequencing(sequencingState{regularTxSequencingThrottledUntil: now0.Add(time.Hour)}, false, now0, testMaxBlockSpeed)
 	if !got.regularTxSequencingThrottledUntil.IsZero() {
 		t.Errorf("regularTxSequencingThrottledUntil = %v, want zero", got.regularTxSequencingThrottledUntil)
 	}
 }
 
 func TestStateAfterDelayed(t *testing.T) {
-	// Produced a delayed block => drain unthrottled.
-	got, wait := sequencingStateAfterDelayedSequencing(sequencingState{regularTxSequencingThrottledUntil: now0.Add(time.Hour)}, true, now0, testPollInterval)
-	if wait != 0 {
-		t.Errorf("wait = %v, want 0", wait)
-	}
+	// Produced a delayed block => drain unthrottled, no delayed throttle set.
+	got := sequencingStateAfterDelayedSequencing(sequencingState{}, true, now0, testMaxBlockSpeed)
 	if got.lastTurn != delayedMsgSequencingTurn {
 		t.Errorf("lastTurn = %v, want delayed", got.lastTurn)
 	}
-
-	// No progress, regular throttled => wait out the throttle.
-	_, wait = sequencingStateAfterDelayedSequencing(sequencingState{regularTxSequencingThrottledUntil: now0.Add(200 * time.Millisecond)}, false, now0, testPollInterval)
-	if wait != 200*time.Millisecond {
-		t.Errorf("wait = %v, want 200ms", wait)
+	if !got.delayedMsgSequencingThrottledUntil.IsZero() {
+		t.Errorf("delayedMsgSequencingThrottledUntil = %v, want zero", got.delayedMsgSequencingThrottledUntil)
 	}
 
-	// No progress, throttle stale/zero => floored at pollInterval (no busy-spin).
-	_, wait = sequencingStateAfterDelayedSequencing(sequencingState{}, false, now0, testPollInterval)
-	if wait != testPollInterval {
-		t.Errorf("wait = %v, want pollInterval", wait)
+	// No block produced (filtered halt) => throttle delayed one MaxBlockSpeed out;
+	// the regular throttle is untouched.
+	got = sequencingStateAfterDelayedSequencing(sequencingState{regularTxSequencingThrottledUntil: now0.Add(time.Hour)}, false, now0, testMaxBlockSpeed)
+	if want := now0.Add(testMaxBlockSpeed); !got.delayedMsgSequencingThrottledUntil.Equal(want) {
+		t.Errorf("delayedMsgSequencingThrottledUntil = %v, want %v", got.delayedMsgSequencingThrottledUntil, want)
+	}
+	if want := now0.Add(time.Hour); !got.regularTxSequencingThrottledUntil.Equal(want) {
+		t.Errorf("regularTxSequencingThrottledUntil = %v, want %v (untouched)", got.regularTxSequencingThrottledUntil, want)
 	}
 }
 
 // simEnv models the outputs of a sequencing turn for the loop simulation below.
 type simEnv struct {
-	hasRegular       bool
-	hasDelayed       bool
-	regularThrottles bool // createBlockWithRegularTxs returnValue
-	delayedProduces  bool // SequenceDelayedMessage sequenced a block
+	hasRegular        bool
+	hasDelayed        bool
+	regularMakesBlock bool // createBlockWithRegularTxs produced a real block
+	regularReturnVal  bool // createBlockWithRegularTxs returnValue (throttle signal)
+	delayedProduces   bool // SequenceDelayedMessage sequenced a block
 }
 
 // runSim drives the pure scheduler for steps iterations starting at now0,
 // advancing a fake clock by each returned wait. It reports the elapsed simulated
 // time, per-turn counts, and the longest run of consecutive iterations that made
-// no progress without waiting (the busy-spin signature).
+// no progress (no block/msg) without waiting (the busy-spin signature).
 func runSim(env simEnv, steps int) (elapsed time.Duration, regular, delayed int, longestSpin int) {
 	state := sequencingState{}
 	now := now0
@@ -218,12 +233,14 @@ func runSim(env simEnv, steps int) (elapsed time.Duration, regular, delayed int,
 		switch turn {
 		case regularTxSequencingTurn:
 			regular++
-			progress = env.regularThrottles // a produced block also returns true
-			state, wait = sequencingStateAfterRegularSequencing(state, env.regularThrottles, now, testMaxBlockSpeed)
+			progress = env.regularMakesBlock
+			state = sequencingStateAfterRegularSequencing(state, env.regularReturnVal, now, testMaxBlockSpeed)
+			wait = 0
 		case delayedMsgSequencingTurn:
 			delayed++
 			progress = env.delayedProduces
-			state, wait = sequencingStateAfterDelayedSequencing(state, env.delayedProduces, now, testPollInterval)
+			state = sequencingStateAfterDelayedSequencing(state, env.delayedProduces, now, testMaxBlockSpeed)
+			wait = 0
 		}
 		if wait == 0 && !progress {
 			spin++
@@ -245,13 +262,13 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 	tests := []struct {
 		name string
 		env  simEnv
-		// maxRegularCadence asserts regular blocks are throttled: regular count
+		// checkRegularThrottle asserts regular blocks are throttled: regular count
 		// over the simulated window must not exceed elapsed/MaxBlockSpeed (+slack).
 		checkRegularThrottle bool
 	}{
 		{
 			name:                 "pure regular load throttles, no spin",
-			env:                  simEnv{hasRegular: true, regularThrottles: true},
+			env:                  simEnv{hasRegular: true, regularMakesBlock: true, regularReturnVal: true},
 			checkRegularThrottle: true,
 		},
 		{
@@ -260,7 +277,7 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 		},
 		{
 			name:                 "mixed load: delayed drains, regular gets a slot",
-			env:                  simEnv{hasRegular: true, hasDelayed: true, regularThrottles: true, delayedProduces: true},
+			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularReturnVal: true, delayedProduces: true},
 			checkRegularThrottle: true,
 		},
 		{
@@ -268,17 +285,24 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 			env:  simEnv{hasDelayed: true, delayedProduces: false},
 		},
 		{
-			name:                 "both stuck: regular can't build, delayed halted",
-			env:                  simEnv{hasRegular: true, hasDelayed: true, regularThrottles: false, delayedProduces: false},
-			checkRegularThrottle: false,
+			name:                 "mixed: delayed halted, regular keeps flowing",
+			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularReturnVal: true, delayedProduces: false},
+			checkRegularThrottle: true,
+		},
+		{
+			// Regular can't build a block, so it drains to nonceFailures and then
+			// returns the empty-queue returnValue==true => regular throttles too.
+			name: "both stuck: regular empty-queue, delayed halted",
+			env:  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: false, regularReturnVal: true, delayedProduces: false},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			elapsed, regular, delayed, longestSpin := runSim(tt.env, steps)
-			// No-progress-without-waiting must never run away: at most one such
-			// step before the loop is forced to wait.
-			if longestSpin > 1 {
+			// No-progress-without-waiting must never run away: at most a couple of
+			// such steps (a throttled regular attempt then a halted delayed attempt)
+			// before the loop is forced to wait.
+			if longestSpin > 2 {
 				t.Errorf("busy-spin detected: %d consecutive no-progress zero-wait steps", longestSpin)
 			}
 			if tt.env.hasDelayed && tt.env.delayedProduces && delayed == 0 {

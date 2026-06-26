@@ -1848,32 +1848,47 @@ type sequencingState struct {
 	// regular tx turn asks to wait before the next block (a block was made, the
 	// queue was empty, or a transient error occurred).
 	regularTxSequencingThrottledUntil time.Time
+	// delayedMsgSequencingThrottledUntil is the earliest time a delayed message
+	// may be sequenced again. It is set only when a delayed turn fails to produce
+	// a block (the head message is halted on a filtered tx), so a stuck delayed
+	// message is retried at most once per MaxBlockSpeed instead of every iteration.
+	delayedMsgSequencingThrottledUntil time.Time
 }
 
 func decideSequencingTurn(state sequencingState, hasRegular, hasDelayed bool, now time.Time, pollInterval time.Duration) (sequencingTurn, time.Duration) {
-	regularTxSequencingThrottled := now.Before(state.regularTxSequencingThrottledUntil)
+	canSequenceRegular := hasRegular && !now.Before(state.regularTxSequencingThrottledUntil)
+	canSequenceDelayed := hasDelayed && !now.Before(state.delayedMsgSequencingThrottledUntil)
 	switch {
-	case !hasRegular && !hasDelayed:
-		return noSequencingTurn, pollInterval
-	case hasRegular && !hasDelayed:
-		if regularTxSequencingThrottled {
-			return noSequencingTurn, state.regularTxSequencingThrottledUntil.Sub(now)
-		}
-		return regularTxSequencingTurn, 0
-	case !hasRegular && hasDelayed:
-		return delayedMsgSequencingTurn, 0
-	default:
-		// Both pending: yield to delayed if we just took a regular turn or if
-		// regular is still throttled, so delayed keeps draining while regular is
-		// guaranteed a slot once per MaxBlockSpeed.
-		if state.lastTurn == regularTxSequencingTurn || regularTxSequencingThrottled {
+	case canSequenceRegular && canSequenceDelayed:
+		// Both runnable: alternate so neither starves the other.
+		if state.lastTurn == regularTxSequencingTurn {
 			return delayedMsgSequencingTurn, 0
 		}
 		return regularTxSequencingTurn, 0
+	case canSequenceRegular:
+		return regularTxSequencingTurn, 0
+	case canSequenceDelayed:
+		return delayedMsgSequencingTurn, 0
+	case !hasRegular && !hasDelayed:
+		return noSequencingTurn, pollInterval
+	default:
+		// Work is pending but throttled; wait for the soonest throttle to lift.
+		return noSequencingTurn, state.soonestThrottleWait(hasRegular, hasDelayed, now)
 	}
 }
 
-func sequencingStateAfterRegularSequencing(state sequencingState, waitUntilNextRegular bool, now time.Time, maxBlockSpeed time.Duration) (sequencingState, time.Duration) {
+func (state sequencingState) soonestThrottleWait(hasRegular, hasDelayed bool, now time.Time) time.Duration {
+	var wakeAt time.Time
+	if hasRegular {
+		wakeAt = state.regularTxSequencingThrottledUntil
+	}
+	if hasDelayed && (wakeAt.IsZero() || state.delayedMsgSequencingThrottledUntil.Before(wakeAt)) {
+		wakeAt = state.delayedMsgSequencingThrottledUntil
+	}
+	return wakeAt.Sub(now)
+}
+
+func sequencingStateAfterRegularSequencing(state sequencingState, waitUntilNextRegular bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
 	state.lastTurn = regularTxSequencingTurn
 	if waitUntilNextRegular {
 		state.regularTxSequencingThrottledUntil = now.Add(maxBlockSpeed)
@@ -1882,23 +1897,17 @@ func sequencingStateAfterRegularSequencing(state sequencingState, waitUntilNextR
 		// round); retry promptly.
 		state.regularTxSequencingThrottledUntil = time.Time{}
 	}
-	return state, 0
+	return state
 }
 
-func sequencingStateAfterDelayedSequencing(state sequencingState, producedMsg bool, now time.Time, pollInterval time.Duration) (sequencingState, time.Duration) {
+func sequencingStateAfterDelayedSequencing(state sequencingState, producedMsg bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
 	state.lastTurn = delayedMsgSequencingTurn
-	if producedMsg {
-		// Drain delayed messages unthrottled.
-		return state, 0
+	if !producedMsg {
+		// The head delayed message is present but not sequenceable (halted on a
+		// filtered tx); retry it at most once per MaxBlockSpeed.
+		state.delayedMsgSequencingThrottledUntil = now.Add(maxBlockSpeed)
 	}
-	// The head delayed message is currently un-sequenceable (e.g. halted on a
-	// filtered tx). Sleep until a regular tx turn is due, but never less than
-	// pollInterval, so the loop neither busy-spins nor postpones a due regular turn.
-	wait := state.regularTxSequencingThrottledUntil.Sub(now)
-	if wait < pollInterval {
-		wait = pollInterval
-	}
-	return state, wait
+	return state
 }
 
 func (s *Sequencer) hasPendingRegularTxs() bool {
@@ -1920,15 +1929,15 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 	switch turn {
 	case regularTxSequencingTurn:
 		sequencedMsg, waitUntilNextRegular := s.createBlockWithRegularTxs(ctx)
-		s.sequencingState, wait = sequencingStateAfterRegularSequencing(s.sequencingState, waitUntilNextRegular, now, s.config().MaxBlockSpeed)
-		return sequencedMsg, wait
+		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, waitUntilNextRegular, now, s.config().MaxBlockSpeed)
+		return sequencedMsg, 0
 	case delayedMsgSequencingTurn:
 		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
 		if err != nil {
 			return nil, 0
 		}
-		s.sequencingState, wait = sequencingStateAfterDelayedSequencing(s.sequencingState, sequencedMsg != nil, now, sequencerPollInterval)
-		return sequencedMsg, wait
+		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, sequencedMsg != nil, now, s.config().MaxBlockSpeed)
+		return sequencedMsg, 0
 	default:
 		return nil, wait
 	}
