@@ -96,7 +96,7 @@ func getAddressesWithDefaults(u *url.URL) []string {
 	for _, urlHost := range urlHosts {
 		host, port, err := net.SplitHostPort(urlHost)
 		if err != nil {
-			host = u.Host
+			host = strings.TrimPrefix(strings.TrimSuffix(urlHost, "]"), "[")
 		}
 		if host == "" {
 			host = "localhost"
