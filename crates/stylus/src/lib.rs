@@ -140,10 +140,13 @@ pub unsafe extern "C" fn stylus_activate(
             Err(err) => return write_err(output, err),
         };
 
+        let bytes = match module.to_wavm_bytes() {
+            Ok(b) => b,
+            Err(err) => return write_err(output, err),
+        };
         *module_hash = module.hash();
         *stylus_data = info;
-
-        output.write(module.into_bytes());
+        output.write(bytes);
         UserOutcomeKind::Success
     }
 }
@@ -252,6 +255,14 @@ pub extern "C" fn stylus_set_native_stack_size(size: u64) {
 #[unsafe(no_mangle)]
 pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
+}
+
+/// On-disk WAVM module wire format version. `reconcileWavmSerializeVersion`
+/// in `cmd/nitro/init` reads this and bails on mismatch with the Go-side
+/// `WavmSerializeVersion`, so a one-sided bump fails fast.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_wavm_format_version() -> u32 {
+    prover::wavm_serialize::WAVM_SERIALIZE_VERSION
 }
 
 /// Calls an activated user program.
