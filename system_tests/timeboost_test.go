@@ -1818,7 +1818,7 @@ func setupExpressLaneAuction(
 		DbDirectory:            dbDirPath,
 		StreamTimeout:          time.Minute,
 		Wallet: genericconf.WalletConfig{
-			PrivateKey: fmt.Sprintf("00%x", seqInfo.Accounts["AuctionContract"].PrivateKey.D.Bytes()),
+			PrivateKey: testhelpers.PrivateKeyToHex(seqInfo.Accounts["AuctionContract"].PrivateKey),
 		},
 	}
 	auctioneerFetcher := func() *timeboost.AuctioneerServerConfig {
@@ -1839,7 +1839,7 @@ func setupExpressLaneAuction(
 			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   fmt.Sprintf("http://localhost:%d", seqPort),
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("00%x", alicePriv.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(alicePriv),
 			},
 		}
 	}
@@ -1856,7 +1856,7 @@ func setupExpressLaneAuction(
 			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   fmt.Sprintf("http://localhost:%d", seqPort),
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("00%x", bobPriv.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(bobPriv),
 			},
 		}
 	}
