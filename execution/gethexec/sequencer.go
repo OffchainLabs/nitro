@@ -1924,7 +1924,7 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		s.hasPendingRegularTxs(),
 		s.execEngine.hasPendingDelayedMsgs(),
 		now,
-		sequencerPollInterval,
+		min(sequencerPollInterval, s.config().MaxBlockSpeed),
 	)
 	switch turn {
 	case regularTxSequencingTurn:
