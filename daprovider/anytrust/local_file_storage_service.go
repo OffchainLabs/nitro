@@ -209,7 +209,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 				return err
 			}
 			renamed = true
-			if err = syncDir(path.Dir(batchPath)); err != nil {
+			if err = syncDir(path.Dir(batchPath), s.config.DataDir); err != nil {
 				return err
 			}
 		} else {
@@ -222,7 +222,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 		if err := createHardLink(batchPath, expiryPath); err != nil {
 			return fmt.Errorf("couldn't create by-expiry-path index entry: %w", err)
 		}
-		if err := syncDir(path.Dir(expiryPath)); err != nil {
+		if err := syncDir(path.Dir(expiryPath), s.config.DataDir); err != nil {
 			return err
 		}
 	}
@@ -329,14 +329,32 @@ func isStorageServiceKey(key string) bool {
 	return hex64Regex.MatchString(key)
 }
 
-// syncDir fsyncs the directory at dirPath to ensure its entries are durable on disk.
-func syncDir(dirPath string) error {
-	d, err := os.Open(dirPath)
-	if err != nil {
-		return err
+// syncDir fsyncs all directories from dirPath up to and including rootDir
+// to ensure all directory entries along the path are durable on disk.
+func syncDir(dirPath, rootDir string) error {
+	dirPath = filepath.Clean(dirPath)
+	rootDir = filepath.Clean(rootDir)
+	for {
+		d, err := os.Open(dirPath)
+		if err != nil {
+			return err
+		}
+		err = d.Sync()
+		d.Close()
+		if err != nil {
+			return err
+		}
+		if dirPath == rootDir {
+			break
+		}
+		parent := filepath.Dir(dirPath)
+		if parent == dirPath {
+			// Reached filesystem root without finding rootDir
+			break
+		}
+		dirPath = parent
 	}
-	defer d.Close()
-	return d.Sync()
+	return nil
 }
 
 // Copies a file by its contents to a new file, making any directories needed
