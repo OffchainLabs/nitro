@@ -48,4 +48,4 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 
 git submodule sync --recursive
-git submodule update --init --recursive
+git submodule update --init --recursive --force
