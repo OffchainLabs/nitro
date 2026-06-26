@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/config"
 )
 
-func rpcClient(ctx context.Context, opts *config.ExternalSignerCfg) (*rpc.Client, error) {
+func rpcClient(ctx context.Context, opts *config.ExternalSignerConfig) (*rpc.Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		// Dataposter verifies that signed transaction was signed by the account

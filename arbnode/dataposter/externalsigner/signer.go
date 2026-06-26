@@ -32,7 +32,7 @@ type ExternalSigner struct {
 //
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
-func NewExternalSigner(ctx context.Context, opts *config.ExternalSignerCfg) (*ExternalSigner, error) {
+func NewExternalSigner(ctx context.Context, opts *config.ExternalSignerConfig) (*ExternalSigner, error) {
 	if opts.Address == "" {
 		return nil, errors.New("external signer (From) address specified")
 	}

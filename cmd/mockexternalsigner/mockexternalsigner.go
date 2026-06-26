@@ -33,7 +33,7 @@ func main() {
 			panic(err)
 		}
 	}()
-	signerCfg, err := dataposterconfig.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		panic(err)
 	}

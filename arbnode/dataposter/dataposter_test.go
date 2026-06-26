@@ -71,7 +71,7 @@ func TestExternalSigner(t *testing.T) {
 			return
 		}
 	}()
-	signerCfg, err := config.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := config.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting signer test config: %v", err)
 	}

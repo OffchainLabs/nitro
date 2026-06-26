@@ -304,7 +304,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	err = stakerA.Initialize(ctx)
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	signerCfg, err := dataposterconfig.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	err = stakerA.Initialize(ctx)
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	signerCfg, err := dataposterconfig.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}

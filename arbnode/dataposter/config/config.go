@@ -22,34 +22,34 @@ type DataPosterConfig struct {
 	BlobTxReplacementTimes []time.Duration            `koanf:"blob-tx-replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
-	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxMempoolTransactions uint64            `koanf:"max-mempool-transactions" reload:"hot"`
-	MaxMempoolWeight       uint64            `koanf:"max-mempool-weight" reload:"hot"`
-	MaxQueuedTransactions  int               `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei        float64           `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei            float64           `koanf:"urgency-gwei" reload:"hot"`
-	MinTipCapGwei          float64           `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
-	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
-	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
-	MaxFeeBidMultipleBips  arbmath.UBips     `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
-	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
-	Post4844Blobs          bool              `koanf:"post-4844-blobs" reload:"hot"`
-	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
-	UseDBStorage           bool              `koanf:"use-db-storage"`
-	UseNoOpStorage         bool              `koanf:"use-noop-storage"`
-	LegacyStorageEncoding  bool              `koanf:"legacy-storage-encoding" reload:"hot"`
-	Dangerous              DangerousConfig   `koanf:"dangerous"`
-	ExternalSigner         ExternalSignerCfg `koanf:"external-signer"`
-	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
-	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
-	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
+	WaitForL1Finality      bool                 `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64               `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxMempoolWeight       uint64               `koanf:"max-mempool-weight" reload:"hot"`
+	MaxQueuedTransactions  int                  `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64              `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64              `koanf:"urgency-gwei" reload:"hot"`
+	MinTipCapGwei          float64              `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MinBlobTxTipCapGwei    float64              `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
+	MaxTipCapGwei          float64              `koanf:"max-tip-cap-gwei" reload:"hot"`
+	MaxBlobTxTipCapGwei    float64              `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
+	MaxFeeBidMultipleBips  arbmath.UBips        `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
+	NonceRbfSoftConfs      uint64               `koanf:"nonce-rbf-soft-confs" reload:"hot"`
+	Post4844Blobs          bool                 `koanf:"post-4844-blobs" reload:"hot"`
+	AllocateMempoolBalance bool                 `koanf:"allocate-mempool-balance" reload:"hot"`
+	UseDBStorage           bool                 `koanf:"use-db-storage"`
+	UseNoOpStorage         bool                 `koanf:"use-noop-storage"`
+	LegacyStorageEncoding  bool                 `koanf:"legacy-storage-encoding" reload:"hot"`
+	Dangerous              DangerousConfig      `koanf:"dangerous"`
+	ExternalSigner         ExternalSignerConfig `koanf:"external-signer"`
+	MaxFeeCapFormula       string               `koanf:"max-fee-cap-formula" reload:"hot"`
+	ElapsedTimeBase        time.Duration        `koanf:"elapsed-time-base" reload:"hot"`
+	ElapsedTimeImportance  float64              `koanf:"elapsed-time-importance" reload:"hot"`
 	// When set, dataposter will not post new batches, but will keep running to
 	// get existing batches confirmed.
 	DisableNewTx bool `koanf:"disable-new-tx" reload:"hot"`
 }
 
-type ExternalSignerCfg struct {
+type ExternalSignerConfig struct {
 	// URL of the external signer rpc server, if set this overrides transaction
 	// options and uses external signer
 	// for signing transactions.
@@ -70,12 +70,12 @@ type ExternalSignerCfg struct {
 	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
-func ExternalSignerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
+func ExternalSignerTestConfig(addr common.Address, url string) (*ExternalSignerConfig, error) {
 	cp, err := externalsignertest.CertPaths()
 	if err != nil {
 		return nil, fmt.Errorf("getting certificates path: %w", err)
 	}
-	return &ExternalSignerCfg{
+	return &ExternalSignerConfig{
 		Address:          common.Bytes2Hex(addr.Bytes()),
 		URL:              url,
 		Method:           externalsignertest.SignerMethod,
@@ -195,7 +195,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
+	ExternalSigner:         ExternalSignerConfig{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
@@ -234,7 +234,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
+	ExternalSigner:         ExternalSignerConfig{Method: "eth_signTransaction", InsecureSkipVerify: true},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,

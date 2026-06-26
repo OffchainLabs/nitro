@@ -160,7 +160,7 @@ func createCompleteTestNodeOnL1(
 	assertionChain *sol.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts, l2blockchain *core.BlockChain, addresses *chaininfo.RollupAddresses,
 ) {
 	// First set up L1 and deploy contracts
-	var signerCfg *dataposterconfig.ExternalSignerCfg
+	var signerCfg *dataposterconfig.ExternalSignerConfig
 	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
 		t, ctx, rollupStackConf, useExternalSigner, nodeConfig, chainConfig, enableCustomDA,
 	)
@@ -186,7 +186,7 @@ func setupL1WithRollupAddresses(
 ) (
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
-	signerCfg *dataposterconfig.ExternalSignerCfg,
+	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) {
 	var srv *externalsignertest.SignerServer
 	if useExternalSigner {
@@ -212,7 +212,7 @@ func setupL1WithRollupAddresses(
 
 	var err error
 	if useExternalSigner {
-		signerCfg, err = dataposterconfig.ExternalSignerTestCfg(srv.Address, srv.URL())
+		signerCfg, err = dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 		if err != nil {
 			t.Fatalf("Error getting external signer config: %v", err)
 		}
@@ -282,7 +282,7 @@ func createL2NodeWithRollupAddresses(
 	addresses *chaininfo.RollupAddresses,
 	useExternalSigner bool,
 	asserterOpts *bind.TransactOpts,
-	signerCfg *dataposterconfig.ExternalSignerCfg,
+	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *sol.AssertionChain, l2blockchain *core.BlockChain,
