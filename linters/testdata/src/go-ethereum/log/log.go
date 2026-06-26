@@ -21,3 +21,4 @@ func Warn(msg string, ctx ...interface{})  {}
 func Error(msg string, ctx ...interface{}) {}
 func Crit(msg string, ctx ...interface{})  {}
 func New(ctx ...interface{}) Logger        { return nil }
+func Root() Logger                         { return nil }

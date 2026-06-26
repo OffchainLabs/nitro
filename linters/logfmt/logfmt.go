@@ -9,6 +9,7 @@ import (
 	"go/types"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -22,7 +23,9 @@ var logFuncNames = map[string]bool{
 }
 
 // Matches printf format verbs like %v, %s, %d, %w, %+v, %02x, etc.
-var formatVerbRe = regexp.MustCompile(`%[+\-# 0]*\*?[0-9]*\.?\*?[0-9]*[vTtbcdoOqxXUeEfFgGspw]`)
+// Space is a valid printf flag (e.g. "% d") but is deliberately excluded to
+// avoid false positives on prose like "100% done".
+var formatVerbRe = regexp.MustCompile(`%[+\-#0]*\*?[0-9]*\.?\*?[0-9]*[vTtbcdoOqxXUeEfFgGspw]`)
 
 var Analyzer = &analysis.Analyzer{
 	Name:       "logfmt",
@@ -58,17 +61,20 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				return true
 			}
 
-			// Strip escaped percent signs before checking for format verbs.
-			cleaned := strings.ReplaceAll(lit.Value, "%%", "")
-			if formatVerbRe.MatchString(cleaned) {
-				err := logfmtError{
+			msg, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return true
+			}
+
+			if formatVerbRe.MatchString(msg) {
+				e := logfmtError{
 					Pos:     pass.Fset.Position(lit.Pos()),
 					Message: "log message contains printf-style format verb; structured logger does not interpret format verbs",
 				}
-				ret.Errors = append(ret.Errors, err)
+				ret.Errors = append(ret.Errors, e)
 				pass.Report(analysis.Diagnostic{
-					Pos:      pass.Fset.File(f.Pos()).Pos(err.Pos.Offset),
-					Message:  err.Message,
+					Pos:      lit.Pos(),
+					Message:  e.Message,
 					Category: "logfmt",
 				})
 			}
