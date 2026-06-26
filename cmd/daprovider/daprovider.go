@@ -270,15 +270,19 @@ func startup() error {
 
 	switch config.Mode {
 	case "anytrust":
-		factory := anytrust.NewFactory(
+		mode := anytrust.ModeReader
+		if config.ProviderServer.EnableDAWriter {
+			mode = anytrust.ModeWriter
+		}
+		factory, err := anytrust.NewFactory(
 			&config.Anytrust,
 			dataSigner,
 			l1Client,
 			l1Reader,
 			seqInboxAddr,
-			config.ProviderServer.EnableDAWriter,
+			mode,
 		)
-		if err := factory.ValidateConfig(); err != nil {
+		if err != nil {
 			return err
 		}
 		var readerCleanup func()
