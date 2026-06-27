@@ -253,6 +253,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ReadFromTxQueueTimeout:       time.Second, // Dont want this to affect tests
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
+	PollInterval:                 50 * time.Millisecond,
 	SenderWhitelist:              []string{},
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,

@@ -85,6 +85,7 @@ type SequencerConfig struct {
 	ReadFromTxQueueTimeout       time.Duration    `koanf:"read-from-tx-queue-timeout" reload:"hot"`
 	MaxRevertGasReject           uint64           `koanf:"max-revert-gas-reject" reload:"hot"`
 	MaxAcceptableTimestampDelta  time.Duration    `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	PollInterval                 time.Duration    `koanf:"poll-interval" reload:"hot"`
 	SenderWhitelist              []string         `koanf:"sender-whitelist"`
 	Forwarder                    ForwarderConfig  `koanf:"forwarder"`
 	QueueSize                    int              `koanf:"queue-size"`
@@ -200,6 +201,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ReadFromTxQueueTimeout:      time.Millisecond * 10,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
+	PollInterval:                50 * time.Millisecond,
 	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
@@ -234,6 +236,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
+	f.Duration(prefix+".poll-interval", DefaultSequencerConfig.PollInterval, "interval the sequencer waits before re-checking for pending work when idle")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
@@ -1828,8 +1831,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-const sequencerPollInterval = 50 * time.Millisecond
-
 type sequencingTurn int
 
 const (
@@ -1924,7 +1925,7 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		s.hasPendingRegularTxs(),
 		s.execEngine.hasPendingDelayedMsgs(),
 		now,
-		min(sequencerPollInterval, s.config().MaxBlockSpeed),
+		min(s.config().PollInterval, s.config().MaxBlockSpeed),
 	)
 	switch turn {
 	case regularTxSequencingTurn:
