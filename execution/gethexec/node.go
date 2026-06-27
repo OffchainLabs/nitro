@@ -884,8 +884,9 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 
 		var isActiveFunc func() bool
 		if n.Sequencer != nil {
+			s := n.Sequencer
 			isActiveFunc = func() bool {
-				return n.Sequencer.isActive
+				return s.IsActive()
 			}
 		}
 
