@@ -29,6 +29,66 @@ var transferAmount = big.NewInt(1e12) // amount of ether to use for transactions
 
 const nodesCount = 5 // number of testnodes to create in tests
 
+func TestInactiveSequencerProducesNoBlocks(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Sequencer.MaxBlockSpeed = time.Millisecond * 100
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+
+	// Pause the sequencer: IsActive() must report false, which gates triggerSequencing.
+	builder.L2.ExecNode.Pause()
+	if builder.L2.ExecNode.IsActive() {
+		t.Fatal("paused sequencer should not be active")
+	}
+
+	blockBefore, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	// Submit a tx while paused. It sits in the queue; SendTransaction blocks until
+	// the sequencer is active again, so run it in the background.
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	sendErr := make(chan error, 1)
+	go func() { sendErr <- builder.L2.Client.SendTransaction(ctx, tx) }()
+
+	// Give the sequencer several block intervals; no block should be produced while inactive.
+	time.Sleep(2 * time.Second)
+	blockWhilePaused, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	if blockWhilePaused != blockBefore {
+		t.Fatalf("no blocks should be produced while inactive: before=%d, while paused=%d", blockBefore, blockWhilePaused)
+	}
+	balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Sign() != 0 {
+		t.Fatalf("tx must not be sequenced while inactive, balance=%s", balance.String())
+	}
+
+	// Activate: the queued tx must now be sequenced.
+	builder.L2.ExecNode.Activate()
+	if !builder.L2.ExecNode.IsActive() {
+		t.Fatal("activated sequencer should be active")
+	}
+
+	select {
+	case err := <-sendErr:
+		Require(t, err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("timeout waiting for SendTransaction to return after activation")
+	}
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	balance, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatalf("tx should be sequenced after activation, balance=%s", balance.String())
+	}
+}
+
 func TestSetForwardToWhilePaused(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
