@@ -1817,8 +1817,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			return 5 * time.Second
 		})
 
-		s.CallIteratively(s.backgroundForwarder)
-
 		headerChan, cancel := s.l1Reader.Subscribe(false)
 
 		s.LaunchThread(func(ctx context.Context) {
@@ -1836,6 +1834,8 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			}
 		})
 	}
+
+	s.CallIteratively(s.backgroundForwarder)
 
 	return nil
 }
