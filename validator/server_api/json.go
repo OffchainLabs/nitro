@@ -20,6 +20,7 @@ import (
 
 const Namespace string = "validation"
 
+// lint:require-exhaustive-initialization
 type MachineStepResultJson struct {
 	Hash        common.Hash
 	Position    uint64
