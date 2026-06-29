@@ -57,7 +57,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 
 	// Store the hashes
 	filterSetID := uuid.New()
-	store.Store(filterSetID, salt, HashingSchemeStringInput, hashes, "test-etag")
+	require.NoError(t, store.Store(context.Background(), filterSetID, salt, HashingSchemeStringInput, hashes, "test-etag"))
 
 	// Test restricted addresses
 	for _, addr := range addresses {
@@ -98,7 +98,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 
 	// Store first set
 	filterSetID1 := uuid.New()
-	store.Store(filterSetID1, salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1")
+	require.NoError(t, store.Store(context.Background(), filterSetID1, salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1"))
 	restricted, returnedID := store.IsRestricted(addr1)
 	if !restricted {
 		t.Error("addr1 should be restricted after first load")
@@ -113,7 +113,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	hash2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr2)
 
 	filterSetID2 := uuid.New()
-	store.Store(filterSetID2, salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2")
+	require.NoError(t, store.Store(context.Background(), filterSetID2, salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2"))
 
 	// addr1 should no longer be restricted (different salt)
 	restricted, returnedID = store.IsRestricted(addr1)
@@ -150,7 +150,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr)
 		hashes1 = append(hashes1, hash)
 	}
-	store.Store(uuid.New(), salt1, HashingSchemeStringInput, hashes1, "etag")
+	require.NoError(t, store.Store(context.Background(), uuid.New(), salt1, HashingSchemeStringInput, hashes1, "etag"))
 
 	// prepare second set for swapping
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
@@ -203,13 +203,14 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		for i := 0; i < 20; i++ {
 			switch i % 4 {
 			case 0:
-				store.Store(uuid.New(), salt1, HashingSchemeStringInput, hashes1, "salt1-str")
+				// It is fine to ignore errors here because Store only return error when the context is canceled
+				_ = store.Store(context.Background(), uuid.New(), salt1, HashingSchemeStringInput, hashes1, "salt1-str")
 			case 1:
-				store.Store(uuid.New(), salt2, HashingSchemeStringInput, hashes2, "salt2-str")
+				_ = store.Store(context.Background(), uuid.New(), salt2, HashingSchemeStringInput, hashes2, "salt2-str")
 			case 2:
-				store.Store(uuid.New(), salt1, HashingSchemeRawBytesInput, rawHashes1, "salt1-raw")
+				_ = store.Store(context.Background(), uuid.New(), salt1, HashingSchemeRawBytesInput, rawHashes1, "salt1-raw")
 			case 3:
-				store.Store(uuid.New(), salt2, HashingSchemeRawBytesInput, rawHashes2, "salt2-raw")
+				_ = store.Store(context.Background(), uuid.New(), salt2, HashingSchemeRawBytesInput, rawHashes2, "salt2-raw")
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -457,7 +458,7 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	}
 
 	// Store the hashes
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
+	require.NoError(t, store.Store(context.Background(), uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag"))
 
 	// Verify store works correctly with custom size
 	if restricted, _ := store.IsRestricted(addresses[0]); !restricted {
@@ -484,7 +485,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	// After load, should have current time
 	before := time.Now()
 	salt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, nil, "etag")
+	require.NoError(t, store.Store(context.Background(), uuid.New(), salt, HashingSchemeStringInput, nil, "etag"))
 	after := time.Now()
 
 	loadedAt := store.LoadedAt()
@@ -692,7 +693,7 @@ func TestHashStore_RawBytesScheme(t *testing.T) {
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 	hashRestricted := HashRawBytesInput(salt, addrRestricted)
 
-	store.Store(uuid.New(), salt, HashingSchemeRawBytesInput, []common.Hash{hashRestricted}, "raw")
+	require.NoError(t, store.Store(context.Background(), uuid.New(), salt, HashingSchemeRawBytesInput, []common.Hash{hashRestricted}, "raw"))
 
 	if restricted, _ := store.IsRestricted(addrRestricted); !restricted {
 		t.Fatal("restricted address should match under raw bytes scheme")
@@ -702,7 +703,7 @@ func TestHashStore_RawBytesScheme(t *testing.T) {
 	}
 
 	// Same hash bytes reloaded under string scheme must not match: scheme drives the lookup function.
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{hashRestricted}, "str")
+	require.NoError(t, store.Store(context.Background(), uuid.New(), salt, HashingSchemeStringInput, []common.Hash{hashRestricted}, "str"))
 	if restricted, _ := store.IsRestricted(addrRestricted); restricted {
 		t.Fatal("raw-bytes hash should not match under string input scheme")
 	}
@@ -729,7 +730,7 @@ func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
 	require.NoError(t, err)
 
 	store := NewHashStore(8)
-	store.Store(parsed.Id, parsed.Salt, parsed.Scheme, parsed.Hashes, "etag")
+	require.NoError(t, store.Store(context.Background(), parsed.Id, parsed.Salt, parsed.Scheme, parsed.Hashes, "etag"))
 
 	if restricted, _ := store.IsRestricted(addr); !restricted {
 		t.Fatal("vendor address must be restricted after parse+Store under raw bytes scheme")
@@ -768,6 +769,8 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 
 	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
 	require.NoError(t, err)
+	// Reuse buffers immediately so the reload below does not wait out the grace.
+	service.hashStore.reuseGrace = 0
 
 	// Preallocation engaged: backing and ping-pong buffers exist and are sized.
 	require.NotNil(t, service.syncMgr.hashesBacking)

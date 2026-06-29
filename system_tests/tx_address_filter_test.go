@@ -64,7 +64,8 @@ func newHashedCheckerWithScheme(addrs []common.Address, scheme addressfilter.Has
 				hashes[i] = addressfilter.HashStringInputWithPrefix(hashPrefix, addr)
 			}
 		}
-		store.Store(uuid.New(), salt, scheme, hashes, "test")
+		// It is fine to ignore the error because Store only fails when context fails
+		_ = store.Store(context.Background(), uuid.New(), salt, scheme, hashes, "test")
 	}
 	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -1372,7 +1373,8 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Store hashes to the hashstore so FilteringReady returns true
 	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	Require(t, err)
-	filterService.GetHashStore().Store(uuid.New(), salt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	err = filterService.GetHashStore().Store(ctx, uuid.New(), salt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	Require(t, err)
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -1497,7 +1499,8 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 
 			// The generated file loads and filters via the production HashStore.
 			store := addressfilter.NewHashStore(100)
-			store.Store(uuid.New(), salt, scheme, hashes, "test")
+			err = store.Store(context.Background(), uuid.New(), salt, scheme, hashes, "test")
+			Require(t, err)
 			for _, a := range addrs {
 				if restricted, _ := store.IsRestricted(a); !restricted {
 					t.Fatalf("addr %s should be restricted under %s", a.Hex(), scheme)
