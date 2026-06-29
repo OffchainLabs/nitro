@@ -748,8 +748,6 @@ func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 		false,
 	)
 
-	s.lastSequencedBlockInfo.statedb.StopPrefetcher()
-
 	return nil
 }
 
