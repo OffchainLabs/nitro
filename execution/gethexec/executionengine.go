@@ -263,11 +263,12 @@ type L1PriceData struct {
 }
 
 type sequencedBlockInfo struct {
-	block         *types.Block
-	receipts      types.Receipts
-	statedb       *state.StateDB
-	blockCalcTime time.Duration
-	msgIdx        arbutil.MessageIndex
+	block                         *types.Block
+	receipts                      types.Receipts
+	statedb                       *state.StateDB
+	blockCalcTime                 time.Duration
+	msgIdx                        arbutil.MessageIndex
+	blockBuiltUsingDelayedMessage bool
 }
 
 type delayedMsg struct {
@@ -745,7 +746,7 @@ func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 	s.cacheL1PriceDataOfMsg(
 		s.lastSequencedBlockInfo.msgIdx,
 		s.lastSequencedBlockInfo.block,
-		false,
+		s.lastSequencedBlockInfo.blockBuiltUsingDelayedMessage,
 	)
 
 	return nil
@@ -834,11 +835,12 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	s.lastSequencedBlockInfo = &sequencedBlockInfo{
-		block:         block,
-		receipts:      receipts,
-		statedb:       statedb,
-		blockCalcTime: blockCalcTime,
-		msgIdx:        msgIdx,
+		block:                         block,
+		receipts:                      receipts,
+		statedb:                       statedb,
+		blockCalcTime:                 blockCalcTime,
+		msgIdx:                        msgIdx,
+		blockBuiltUsingDelayedMessage: false,
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
@@ -1025,11 +1027,12 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	s.lastSequencedBlockInfo = &sequencedBlockInfo{
-		block:         block,
-		receipts:      receipts,
-		statedb:       statedb,
-		blockCalcTime: blockCalcTime,
-		msgIdx:        msgIdx,
+		block:                         block,
+		receipts:                      receipts,
+		statedb:                       statedb,
+		blockCalcTime:                 blockCalcTime,
+		msgIdx:                        msgIdx,
+		blockBuiltUsingDelayedMessage: true,
 	}
 
 	sequencedMsg := &execution.SequencedMsg{
