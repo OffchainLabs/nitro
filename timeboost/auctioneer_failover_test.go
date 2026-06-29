@@ -4,7 +4,6 @@ package timeboost
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 // Test configuration with shorter timeouts for faster tests
@@ -40,7 +40,7 @@ func createAndStartAuctioneer(t *testing.T, ctx context.Context, redisURL string
 			ConsumerConfig:         testCoordinationConfig,
 			StreamTimeout:          10 * time.Millisecond, // Very short for tests
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(testSetup.accounts[0].privKey),
 			},
 		}
 	}
@@ -266,6 +266,13 @@ func TestAuctioneerFailover_ConcurrentStart(t *testing.T) {
 	}()
 
 	wg.Wait()
+
+	// A require failure in a goroutine leaves its auctioneer/helper nil; guard
+	// cleanup so the real error surfaces instead of a nil-pointer panic.
+	require.NotNil(t, a1)
+	require.NotNil(t, a2)
+	require.NotNil(t, h1)
+	require.NotNil(t, h2)
 
 	defer a1.StopAndWait()
 	defer h1.producer.StopAndWait()
