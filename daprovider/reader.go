@@ -5,6 +5,7 @@ package daprovider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -67,6 +68,47 @@ func (r *FallbackDACertReader) RecoverPayloadAndPreimages(
 		&CertificateValidationError{
 			Reason: "certificate validation failed: no custom DA provider configured",
 		})
+}
+
+var ErrAnyTrustRequiresFallback = errors.New("AnyTrust DA committee required but unavailable")
+
+type AnyTrustRequiresFallbackError struct {
+	BatchNum uint64
+}
+
+func (e *AnyTrustRequiresFallbackError) Error() string {
+	return fmt.Sprintf("dangerous always-fallback-to-parent-chain-da is set but batch %d requires the AnyTrust DA committee", e.BatchNum)
+}
+
+func (e *AnyTrustRequiresFallbackError) Is(target error) bool {
+	return target == ErrAnyTrustRequiresFallback
+}
+
+// DangerousAlwaysFallbackReader rejects every AnyTrust batch with AnyTrustRequiresFallbackError.
+type DangerousAlwaysFallbackReader struct{}
+
+func (r *DangerousAlwaysFallbackReader) RecoverPayload(
+	batchNum uint64,
+	_ common.Hash,
+	_ []byte,
+) containers.PromiseInterface[PayloadResult] {
+	return containers.NewReadyPromise(PayloadResult{}, &AnyTrustRequiresFallbackError{BatchNum: batchNum})
+}
+
+func (r *DangerousAlwaysFallbackReader) CollectPreimages(
+	batchNum uint64,
+	_ common.Hash,
+	_ []byte,
+) containers.PromiseInterface[PreimagesResult] {
+	return containers.NewReadyPromise(PreimagesResult{}, &AnyTrustRequiresFallbackError{BatchNum: batchNum})
+}
+
+func (r *DangerousAlwaysFallbackReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	_ common.Hash,
+	_ []byte,
+) containers.PromiseInterface[PayloadAndPreimagesResult] {
+	return containers.NewReadyPromise(PayloadAndPreimagesResult{}, &AnyTrustRequiresFallbackError{BatchNum: batchNum})
 }
 
 // PayloadResult contains the recovered payload data

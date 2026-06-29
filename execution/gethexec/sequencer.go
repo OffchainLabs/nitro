@@ -1254,8 +1254,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 }
 
 func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) ([]txQueueItem, bool) {
-	lastBlock := s.execEngine.bc.CurrentBlock()
-
 	txQueueLen := int64(len(s.txQueue))
 	sequencerQueueGauge.Update(txQueueLen)
 	sequencerQueueHistogram.Update(txQueueLen)
@@ -1336,6 +1334,8 @@ func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) 
 			queueItem.returnResult(txpool.ErrOversizedData)
 			continue
 		}
+		// Re-read for each tx: the head can advance while this loop runs.
+		lastBlock := s.execEngine.bc.CurrentBlock()
 		if queueItem.isTimeboosted &&
 			queueItem.blockStamp != 0 &&
 			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
