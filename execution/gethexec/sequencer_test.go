@@ -173,8 +173,8 @@ func TestDecideSequencingTurn(t *testing.T) {
 }
 
 func TestStateAfterRegular(t *testing.T) {
-	// Block made / empty queue / transient error => throttle one MaxBlockSpeed out.
-	got := sequencingStateAfterRegularSequencing(sequencingState{}, true, now0, testMaxBlockSpeed)
+	// Block made / transient error => throttle one MaxBlockSpeed out.
+	got := sequencingStateAfterRegularSequencing(sequencingState{}, testMaxBlockSpeed, now0)
 	if got.lastTurn != regularSequencingTurn {
 		t.Errorf("lastTurn = %v, want regular", got.lastTurn)
 	}
@@ -182,8 +182,15 @@ func TestStateAfterRegular(t *testing.T) {
 		t.Errorf("regularSequencingThrottledUntil = %v, want %v", got.regularSequencingThrottledUntil, want)
 	}
 
+	// Empty queue => throttle only the idle poll interval out, matching the wait
+	// decideSequencingTurn uses when there is no pending work (not MaxBlockSpeed).
+	got = sequencingStateAfterRegularSequencing(sequencingState{}, testPollInterval, now0)
+	if want := now0.Add(testPollInterval); !got.regularSequencingThrottledUntil.Equal(want) {
+		t.Errorf("regularSequencingThrottledUntil = %v, want %v", got.regularSequencingThrottledUntil, want)
+	}
+
 	// Items present but no block produced => no throttle, retry promptly.
-	got = sequencingStateAfterRegularSequencing(sequencingState{regularSequencingThrottledUntil: now0.Add(time.Hour)}, false, now0, testMaxBlockSpeed)
+	got = sequencingStateAfterRegularSequencing(sequencingState{regularSequencingThrottledUntil: now0.Add(time.Hour)}, 0, now0)
 	if !got.regularSequencingThrottledUntil.IsZero() {
 		t.Errorf("regularSequencingThrottledUntil = %v, want zero", got.regularSequencingThrottledUntil)
 	}
@@ -212,11 +219,11 @@ func TestStateAfterDelayed(t *testing.T) {
 
 // simEnv models the outputs of a sequencing turn for the loop simulation below.
 type simEnv struct {
-	hasRegular          bool
-	hasDelayed          bool
-	regularMakesBlock   bool // createBlockWithRegularTxs produced a real block
-	regularThrottleNext bool // createBlockWithRegularTxs throttleNextRegularSequencing (throttle signal)
-	delayedProduces     bool // SequenceDelayedMessage sequenced a block
+	hasRegular        bool
+	hasDelayed        bool
+	regularMakesBlock bool          // createBlockWithRegularTxs produced a real block
+	regularThrottle   time.Duration // createBlockWithRegularTxs throttleRegularSequencingFor
+	delayedProduces   bool          // SequenceDelayedMessage sequenced a block
 }
 
 // runSim drives the pure scheduler for steps iterations starting at now0,
@@ -234,7 +241,7 @@ func runSim(env simEnv, steps int) (elapsed time.Duration, regular, delayed int,
 		case regularSequencingTurn:
 			regular++
 			progress = env.regularMakesBlock
-			state = sequencingStateAfterRegularSequencing(state, env.regularThrottleNext, now, testMaxBlockSpeed)
+			state = sequencingStateAfterRegularSequencing(state, env.regularThrottle, now)
 			wait = 0
 		case delayedSequencingTurn:
 			delayed++
@@ -268,7 +275,7 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 	}{
 		{
 			name:                 "pure regular load throttles, no spin",
-			env:                  simEnv{hasRegular: true, regularMakesBlock: true, regularThrottleNext: true},
+			env:                  simEnv{hasRegular: true, regularMakesBlock: true, regularThrottle: testMaxBlockSpeed},
 			checkRegularThrottle: true,
 		},
 		{
@@ -277,7 +284,7 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 		},
 		{
 			name:                 "mixed load: delayed drains, regular gets a slot",
-			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularThrottleNext: true, delayedProduces: true},
+			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularThrottle: testMaxBlockSpeed, delayedProduces: true},
 			checkRegularThrottle: true,
 		},
 		{
@@ -286,14 +293,15 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 		},
 		{
 			name:                 "mixed: delayed halted, regular keeps flowing",
-			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularThrottleNext: true, delayedProduces: false},
+			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularThrottle: testMaxBlockSpeed, delayedProduces: false},
 			checkRegularThrottle: true,
 		},
 		{
 			// Regular can't build a block, so it drains to nonceFailures and then
-			// returns the empty-queue throttleNextRegularSequencing==true => regular throttles too.
+			// returns the empty-queue throttle of one poll interval => regular
+			// re-checks on the idle cadence rather than waiting a full block.
 			name: "both stuck: regular empty-queue, delayed halted",
-			env:  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: false, regularThrottleNext: true, delayedProduces: false},
+			env:  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: false, regularThrottle: testPollInterval, delayedProduces: false},
 		},
 	}
 	for _, tt := range tests {

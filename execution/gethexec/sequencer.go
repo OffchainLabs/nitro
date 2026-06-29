@@ -1358,7 +1358,7 @@ func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) 
 	return queueItems, false
 }
 
-func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleNextRegularSequencing bool) {
+func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
@@ -1381,7 +1381,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			}
 			s.lastCreatedBlockWithRegularTxsInfo = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
-			throttleNextRegularSequencing = true
+			throttleRegularSequencingFor = s.config().MaxBlockSpeed
 		}
 	}()
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
@@ -1392,9 +1392,16 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	s.nonceFailures.Resize(config.NonceFailureCacheSize)
 	s.expireNonceFailures()
 
-	queueItems, throttleNextRegularSequencing = s.getQueueItems(ctx, config)
+	queueItems, queueEmpty := s.getQueueItems(ctx, config)
 	if queueItems == nil {
-		return nil, throttleNextRegularSequencing
+		if queueEmpty {
+			// No regular txs to sequence right now; re-check on the idle poll
+			// cadence rather than waiting a full block interval. This matches the
+			// wait decideSequencingTurn uses when there is no pending work.
+			return nil, min(config.PollInterval, config.MaxBlockSpeed)
+		}
+		// Context canceled; retry promptly.
+		return nil, 0
 	}
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
@@ -1435,7 +1442,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
 			"localTimestamp", time.Unix(timestamp, 0),
 		)
-		return nil, true
+		return nil, config.MaxBlockSpeed
 	}
 
 	header := &arbostypes.L1IncomingMessageHeader{
@@ -1493,13 +1500,13 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			for _, item := range queueItems {
 				s.txRetryQueue.Push(item)
 			}
-			return nil, true // don't return failure to avoid retrying immediately
+			return nil, config.MaxBlockSpeed // don't return failure to avoid retrying immediately
 		}
 		log.Error("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
-		return nil, false
+		return nil, 0
 	}
 
 	madeBlock := false
@@ -1515,7 +1522,13 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		queueItems: queueItems,
 	}
 
-	return sequencedMsg, madeBlock
+	if madeBlock {
+		// Rate-limit block production to at most one block per MaxBlockSpeed.
+		return sequencedMsg, config.MaxBlockSpeed
+	}
+	// Items were present but no block was produced (e.g. all txs failed this
+	// round); retry promptly.
+	return sequencedMsg, 0
 }
 
 func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error) {
@@ -1845,9 +1858,11 @@ const (
 type sequencingState struct {
 	lastTurn sequencingTurn
 	// regularSequencingThrottledUntil is the earliest time a regular tx block
-	// may be created again. It is set MaxBlockSpeed into the future whenever a
-	// regular tx turn asks to wait before the next block (a block was made, the
-	// queue was empty, or a transient error occurred).
+	// may be created again. It is set MaxBlockSpeed into the future after a block
+	// is made (rate-limiting block production) or on a transient error. When a
+	// regular turn instead finds the queue empty, it is set only the idle poll
+	// interval into the future, matching the wait decideSequencingTurn uses when
+	// there is no pending work.
 	regularSequencingThrottledUntil time.Time
 	// delayedSequencingThrottledUntil is the earliest time a delayed message
 	// may be sequenced again. It is set only when a delayed turn fails to produce
@@ -1889,13 +1904,13 @@ func (state sequencingState) soonestThrottleWait(hasRegular, hasDelayed bool, no
 	return wakeAt.Sub(now)
 }
 
-func sequencingStateAfterRegularSequencing(state sequencingState, throttleNextRegularSequencing bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
+func sequencingStateAfterRegularSequencing(state sequencingState, throttleRegularSequencingFor time.Duration, now time.Time) sequencingState {
 	state.lastTurn = regularSequencingTurn
-	if throttleNextRegularSequencing {
-		state.regularSequencingThrottledUntil = now.Add(maxBlockSpeed)
+	if throttleRegularSequencingFor > 0 {
+		state.regularSequencingThrottledUntil = now.Add(throttleRegularSequencingFor)
 	} else {
-		// Items were present but no block was produced (e.g. all txs failed this
-		// round); retry promptly.
+		// Retry promptly (e.g. items were present but no block was produced
+		// because all txs failed this round).
 		state.regularSequencingThrottledUntil = time.Time{}
 	}
 	return state
@@ -1929,8 +1944,8 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 	)
 	switch turn {
 	case regularSequencingTurn:
-		sequencedMsg, throttleNextRegularSequencing := s.createBlockWithRegularTxs(ctx)
-		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleNextRegularSequencing, now, s.config().MaxBlockSpeed)
+		sequencedMsg, throttleRegularSequencingFor := s.createBlockWithRegularTxs(ctx)
+		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleRegularSequencingFor, now)
 		return sequencedMsg, 0
 	case delayedSequencingTurn:
 		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
