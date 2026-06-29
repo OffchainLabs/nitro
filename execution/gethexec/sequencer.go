@@ -857,10 +857,6 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-	isActive := s.IsActive()
-	if !isActive {
-		return errors.New("sequencer is not active")
-	}
 	return nil
 }
 
