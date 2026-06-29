@@ -579,7 +579,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	deleteMsgsAndUpdateFinalizedMsgCount := func(keys []string) error {
 		if len(keys) > 0 {
 			// To support cases during init we delete keys from reverse (i.e lowest seq num first), so that even if deletion fails in one of the iterations
-			// next time deleteFinalizedMsgsFromRedis is called we dont miss undeleted messages, as exists is checked from higher seqnum to lower.
+			// next time deleteFinalizedMsgsFromRedis is called we don't miss undeleted messages, as exists is checked from higher seqnum to lower.
 			// In non-init cases it doesn't matter how we delete as we always try to delete from prevFinalized to finalized
 			batchDeleteCount := 1000
 			for i := len(keys); i > 0; i -= batchDeleteCount {

@@ -164,7 +164,7 @@ type AuthRPCConfig struct {
 func (a AuthRPCConfig) Apply(stackConf *node.Config) {
 	stackConf.AuthAddr = a.Addr
 	stackConf.AuthPort = a.Port
-	stackConf.AuthVirtualHosts = []string{} // dont allow http access
+	stackConf.AuthVirtualHosts = []string{} // don't allow http access
 	stackConf.JWTSecret = a.JwtSecret
 	stackConf.AuthModules = a.API
 	stackConf.AuthOrigins = a.Origins
