@@ -165,7 +165,7 @@ func (l *Simple) AttemptLockAndPeriodicallyRefreshIt(ctx context.Context, releas
 				case <-ticker.C:
 					gotLock, err := l.attemptLock(ctx)
 					if err != nil {
-						log.Error("attemptLock returned error during refresh: %w", err)
+						log.Error("attemptLock returned error during refresh", "err", err)
 					}
 					if !gotLock {
 						log.Error("unable to refresh lock since it is already taken by other")
