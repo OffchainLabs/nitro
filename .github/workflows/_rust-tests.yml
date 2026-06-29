@@ -46,6 +46,15 @@ jobs:
           #  so make sure it doesn't conflict with anything!
           no-cache: true
 
+      # setup-emsdk prepends emscripten's bundled Node.js (14) to PATH, which
+      # shadows the Node 24 from ci-setup and breaks `npm install` in the build
+      # steps below. emcc locates its own Node via EMSDK_NODE, so re-asserting
+      # Node 24 on PATH is safe.
+      - name: Restore Node 24 on PATH after emsdk
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2
         with:

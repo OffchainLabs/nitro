@@ -8,7 +8,7 @@ on:
         description: Token to upload reports to Codecov. Required if `upload_report` is on.
     inputs:
       post_comment:
-        description: 'Set to true to post a test summary comment on the PR.'
+        description: 'Set to true so Codecov posts a test summary comment on PRs from the uploaded test results.'
         type: boolean
         required: true
       upload_report:

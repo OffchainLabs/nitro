@@ -88,7 +88,6 @@ jobs:
     secrets: inherit
     permissions:
       contents: read
-      pull-requests: write
     with:
       post_comment: true
       upload_report: false
