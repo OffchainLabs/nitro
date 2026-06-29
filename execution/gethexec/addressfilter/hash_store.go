@@ -5,6 +5,7 @@ package addressfilter
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"sync/atomic"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
+
+	"github.com/offchainlabs/nitro/util/warmbuffer"
 )
 
 type HashingScheme string
@@ -39,9 +42,18 @@ type hashData struct {
 // It uses atomic.Pointer for lock-free reads during updates, implementing
 // a double-buffering strategy where new data is prepared in the background
 // and then atomically swapped in.
+//
+// When maxHashes > 0 the store preallocates two ping-pong hashData buffers and
+// reuses them on every Store, so a reload performs no large allocation. The
+// buffer cleared by Store was retired at least one poll interval earlier and a
+// reader holds a snapshot only for a single IsRestricted call, so no reader can
+// reference the buffer being cleared.
 type HashStore struct {
 	data      atomic.Pointer[hashData]
 	cacheSize int
+	maxHashes int
+	buffers   [2]*hashData
+	active    int
 }
 
 func HashStringInputWithPrefix(prefix string, address common.Address) common.Hash {
@@ -67,9 +79,40 @@ func (d *hashData) hashAddress(addr common.Address) common.Hash {
 	return HashStringInputWithPrefix(d.hashStringInputPrefix, addr)
 }
 
+// NewHashStore creates a hash store without preallocation.
 func NewHashStore(cacheSize int) *HashStore {
+	return newHashStore(cacheSize, 0)
+}
+
+// distinctHashGen returns a generator that yields a distinct hash on each call,
+// used to fault the bucket memory of a warmed map.
+func distinctHashGen() func() common.Hash {
+	var counter uint64
+	return func() common.Hash {
+		var h common.Hash
+		binary.LittleEndian.PutUint64(h[:8], counter)
+		counter++
+		return h
+	}
+}
+
+// newHashStore creates a hash store. When maxHashes > 0 it preallocates and
+// commits two ping-pong buffers sized for maxHashes and reuses them on Store.
+func newHashStore(cacheSize int, maxHashes int) *HashStore {
 	h := &HashStore{
 		cacheSize: cacheSize,
+		maxHashes: maxHashes,
+	}
+	if maxHashes > 0 {
+		for i := range h.buffers {
+			d := &hashData{
+				hashes: warmbuffer.MakeWarmMap[common.Hash, struct{}](maxHashes, distinctHashGen()),
+				cache:  lru.NewCache[common.Address, bool](cacheSize),
+			}
+			h.buffers[i] = d
+		}
+		h.data.Store(h.buffers[0]) // empty, salt Nil: reports uninitialized
+		return h
 	}
 	h.data.Store(&hashData{
 		hashes: make(map[common.Hash]struct{}),
@@ -78,24 +121,41 @@ func NewHashStore(cacheSize int) *HashStore {
 	return h
 }
 
+// fillData populates the scalar fields and hash map of d from a parsed list.
+func fillData(d *hashData, id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
+	d.id = id
+	d.salt = salt
+	d.useRawBytesInput = scheme == HashingSchemeRawBytesInput
+	d.hashStringInputPrefix = GetHashStringInputPrefix(salt)
+	for _, hash := range hashes {
+		d.hashes[hash] = struct{}{}
+	}
+	d.digest = digest
+	d.loadedAt = time.Now()
+}
+
 // Store atomically swaps in a new hash list.
 // This is called after a new hash list has been downloaded and parsed.
-// A new LRU cache is created for the new data, ensuring atomic consistency.
+// In preallocated mode it reuses a ping-pong buffer; otherwise it builds a new
+// hashData. Either way the LRU cache is reset so it stays consistent with the
+// new data. Store is single-writer (serialized by the syncer mutex).
 func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
-	newData := &hashData{
-		id:                    id,
-		salt:                  salt,
-		useRawBytesInput:      scheme == HashingSchemeRawBytesInput,
-		hashStringInputPrefix: GetHashStringInputPrefix(salt),
-		hashes:                make(map[common.Hash]struct{}, len(hashes)),
-		digest:                digest,
-		loadedAt:              time.Now(),
-		cache:                 lru.NewCache[common.Address, bool](h.cacheSize),
+	if h.maxHashes == 0 {
+		newData := &hashData{
+			hashes: make(map[common.Hash]struct{}, len(hashes)),
+			cache:  lru.NewCache[common.Address, bool](h.cacheSize),
+		}
+		fillData(newData, id, salt, scheme, hashes, digest)
+		h.data.Store(newData) // Atomic pointer swap
+		return
 	}
-	for _, hash := range hashes {
-		newData.hashes[hash] = struct{}{}
-	}
-	h.data.Store(newData) // Atomic pointer swap
+	next := 1 - h.active
+	d := h.buffers[next]
+	clear(d.hashes) // retains bucket memory
+	d.cache.Purge()
+	fillData(d, id, salt, scheme, hashes, digest)
+	h.data.Store(d) // Atomic pointer swap
+	h.active = next
 }
 
 // IsRestricted returns whether the address is restricted and the filter set ID,
