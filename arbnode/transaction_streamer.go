@@ -1626,7 +1626,7 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 		return 50 * time.Millisecond
 	}
 
-	sequencedMsg, timeToWaitUntilNextSequencing := execSequencer.StartSequencing(ctx)
+	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
 	if sequencedMsg != nil {
 		err := s.WriteSequencedMsg(sequencedMsg)
 		if err != nil {
@@ -1644,7 +1644,7 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 	}
 
 	execSequencer.EndSequencing(ctx, nil)
-	return time.Until(startSequencingTime.Add(timeToWaitUntilNextSequencing))
+	return time.Until(startSequencingTime.Add(throttleWait))
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {

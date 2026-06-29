@@ -1358,7 +1358,7 @@ func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) 
 	return queueItems, false
 }
 
-func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleNextRegular bool) {
+func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleNextRegularSequencing bool) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
@@ -1381,7 +1381,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			}
 			s.lastCreatedBlockWithRegularTxsInfo = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
-			throttleNextRegular = true
+			throttleNextRegularSequencing = true
 		}
 	}()
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
@@ -1392,9 +1392,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	s.nonceFailures.Resize(config.NonceFailureCacheSize)
 	s.expireNonceFailures()
 
-	queueItems, waitUntilSequencingNextBlock := s.getQueueItems(ctx, config)
+	queueItems, throttleNextRegularSequencing = s.getQueueItems(ctx, config)
 	if queueItems == nil {
-		return nil, waitUntilSequencingNextBlock
+		return nil, throttleNextRegularSequencing
 	}
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
@@ -1835,8 +1835,8 @@ type sequencingTurn int
 
 const (
 	noSequencingTurn sequencingTurn = iota
-	regularTxSequencingTurn
-	delayedMsgSequencingTurn
+	regularSequencingTurn
+	delayedSequencingTurn
 )
 
 // sequencingState lets delayed messages drain unthrottled while limiting regular
@@ -1844,32 +1844,32 @@ const (
 // starving the other.
 type sequencingState struct {
 	lastTurn sequencingTurn
-	// regularTxSequencingThrottledUntil is the earliest time a regular tx block
+	// regularSequencingThrottledUntil is the earliest time a regular tx block
 	// may be created again. It is set MaxBlockSpeed into the future whenever a
 	// regular tx turn asks to wait before the next block (a block was made, the
 	// queue was empty, or a transient error occurred).
-	regularTxSequencingThrottledUntil time.Time
-	// delayedMsgSequencingThrottledUntil is the earliest time a delayed message
+	regularSequencingThrottledUntil time.Time
+	// delayedSequencingThrottledUntil is the earliest time a delayed message
 	// may be sequenced again. It is set only when a delayed turn fails to produce
 	// a block (the head message is halted on a filtered tx), so a stuck delayed
 	// message is retried at most once per MaxBlockSpeed instead of every iteration.
-	delayedMsgSequencingThrottledUntil time.Time
+	delayedSequencingThrottledUntil time.Time
 }
 
 func decideSequencingTurn(state sequencingState, hasRegular, hasDelayed bool, now time.Time, pollInterval time.Duration) (sequencingTurn, time.Duration) {
-	canSequenceRegular := hasRegular && !now.Before(state.regularTxSequencingThrottledUntil)
-	canSequenceDelayed := hasDelayed && !now.Before(state.delayedMsgSequencingThrottledUntil)
+	canSequenceRegular := hasRegular && !now.Before(state.regularSequencingThrottledUntil)
+	canSequenceDelayed := hasDelayed && !now.Before(state.delayedSequencingThrottledUntil)
 	switch {
 	case canSequenceRegular && canSequenceDelayed:
 		// Both runnable: alternate so neither starves the other.
-		if state.lastTurn == regularTxSequencingTurn {
-			return delayedMsgSequencingTurn, 0
+		if state.lastTurn == regularSequencingTurn {
+			return delayedSequencingTurn, 0
 		}
-		return regularTxSequencingTurn, 0
+		return regularSequencingTurn, 0
 	case canSequenceRegular:
-		return regularTxSequencingTurn, 0
+		return regularSequencingTurn, 0
 	case canSequenceDelayed:
-		return delayedMsgSequencingTurn, 0
+		return delayedSequencingTurn, 0
 	case !hasRegular && !hasDelayed:
 		return noSequencingTurn, pollInterval
 	default:
@@ -1881,32 +1881,32 @@ func decideSequencingTurn(state sequencingState, hasRegular, hasDelayed bool, no
 func (state sequencingState) soonestThrottleWait(hasRegular, hasDelayed bool, now time.Time) time.Duration {
 	var wakeAt time.Time
 	if hasRegular {
-		wakeAt = state.regularTxSequencingThrottledUntil
+		wakeAt = state.regularSequencingThrottledUntil
 	}
-	if hasDelayed && (wakeAt.IsZero() || state.delayedMsgSequencingThrottledUntil.Before(wakeAt)) {
-		wakeAt = state.delayedMsgSequencingThrottledUntil
+	if hasDelayed && (wakeAt.IsZero() || state.delayedSequencingThrottledUntil.Before(wakeAt)) {
+		wakeAt = state.delayedSequencingThrottledUntil
 	}
 	return wakeAt.Sub(now)
 }
 
-func sequencingStateAfterRegularSequencing(state sequencingState, throttleNextRegular bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
-	state.lastTurn = regularTxSequencingTurn
-	if throttleNextRegular {
-		state.regularTxSequencingThrottledUntil = now.Add(maxBlockSpeed)
+func sequencingStateAfterRegularSequencing(state sequencingState, throttleNextRegularSequencing bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
+	state.lastTurn = regularSequencingTurn
+	if throttleNextRegularSequencing {
+		state.regularSequencingThrottledUntil = now.Add(maxBlockSpeed)
 	} else {
 		// Items were present but no block was produced (e.g. all txs failed this
 		// round); retry promptly.
-		state.regularTxSequencingThrottledUntil = time.Time{}
+		state.regularSequencingThrottledUntil = time.Time{}
 	}
 	return state
 }
 
 func sequencingStateAfterDelayedSequencing(state sequencingState, producedMsg bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
-	state.lastTurn = delayedMsgSequencingTurn
+	state.lastTurn = delayedSequencingTurn
 	if !producedMsg {
 		// The head delayed message is present but not sequenceable (halted on a
 		// filtered tx); retry it at most once per MaxBlockSpeed.
-		state.delayedMsgSequencingThrottledUntil = now.Add(maxBlockSpeed)
+		state.delayedSequencingThrottledUntil = now.Add(maxBlockSpeed)
 	}
 	return state
 }
@@ -1928,11 +1928,11 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		min(s.config().PollInterval, s.config().MaxBlockSpeed),
 	)
 	switch turn {
-	case regularTxSequencingTurn:
-		sequencedMsg, throttleNextRegular := s.createBlockWithRegularTxs(ctx)
-		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleNextRegular, now, s.config().MaxBlockSpeed)
+	case regularSequencingTurn:
+		sequencedMsg, throttleNextRegularSequencing := s.createBlockWithRegularTxs(ctx)
+		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleNextRegularSequencing, now, s.config().MaxBlockSpeed)
 		return sequencedMsg, 0
-	case delayedMsgSequencingTurn:
+	case delayedSequencingTurn:
 		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
 		if err != nil {
 			return nil, 0
