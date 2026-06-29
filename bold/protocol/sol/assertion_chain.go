@@ -7,7 +7,6 @@
 package sol
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -239,10 +238,11 @@ func NewAssertionChain(
 		return nil, fmt.Errorf("stake token address %#x has no code", stakeTokenAddr)
 	}
 	chain.stakeTokenAddr = stakeTokenAddr
-	// Check if the stake token supports WETH-style deposits by looking for
-	// the deposit() function selector (0xd0e30db0) in the contract bytecode.
-	wethDepositSelector := []byte{0xd0, 0xe3, 0x0d, 0xb0}
-	chain.stakeTokenIsWeth = bytes.Contains(code, wethDepositSelector)
+	stakeTokenIsWeth, err := stakeTokenSupportsWethDeposit(ctx, chain.backend, chain.txOpts.From, stakeTokenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine whether stake token %#x supports WETH-style deposits: %w", stakeTokenAddr, err)
+	}
+	chain.stakeTokenIsWeth = stakeTokenIsWeth
 	log.Info("Minimum assertion period", "blocks", minPeriod.Uint64())
 	chain.minAssertionPeriodBlocks = minPeriod.Uint64()
 	chain.userLogic = assertionChainBinding
@@ -436,6 +436,28 @@ func (a *AssertionChain) AutoDepositTokenForStaking(
 		return nil
 	}
 	return a.autoDepositFunds(ctx, amount)
+}
+
+// wethDepositSelector is the 4-byte function selector for WETH9's deposit().
+var wethDepositSelector = []byte{0xd0, 0xe3, 0x0d, 0xb0}
+
+func stakeTokenSupportsWethDeposit(ctx context.Context, backend protocol.ChainBackend, from, stakeToken common.Address) (bool, error) {
+	_, err := backend.CallContract(ctx, ethereum.CallMsg{
+		From: from,
+		To:   &stakeToken,
+		Data: wethDepositSelector,
+	}, nil)
+	if err == nil {
+		return true, nil
+	}
+	if isExecutionReverted(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func isExecutionReverted(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "execution reverted")
 }
 
 // Attempts to auto-wrap ETH to WETH with the required amount that is specified to the function.
