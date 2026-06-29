@@ -119,6 +119,9 @@ type SecondNodeParams struct {
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
 	useExecutionClientOnly bool
+	// fatalErrChan, when non-nil, replaces the default fatalErrChan and also
+	// suppresses StartWatchChanErr, so the caller owns the channel and must drain it.
+	fatalErrChan chan error
 }
 
 type TestClient struct {
@@ -1270,7 +1273,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, noHistoryIndexDelay)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, noHistoryIndexDelay, params.fatalErrChan)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -2445,6 +2448,7 @@ func Create2ndNodeWithConfig(
 	blobReader containers.Option[daprovider.BlobReader],
 	parentChain *parent.ParentChain,
 	noHistoryIndexDelay bool,
+	customFatalErrChan chan error,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -2454,7 +2458,10 @@ func Create2ndNodeWithConfig(
 	}
 	Require(t, execConfig.Validate())
 
-	feedErrChan := make(chan error, 10)
+	feedErrChan := customFatalErrChan
+	if feedErrChan == nil {
+		feedErrChan = make(chan error, 10)
+	}
 	parentChainRpcClient := parentChainStack.Attach()
 	parentChainClient := ethclient.NewClient(parentChainRpcClient)
 
@@ -2517,10 +2524,33 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
-	Require(t, err)
+	if err != nil {
+		// With a caller-owned fatalErrChan, surface init failure on the channel instead of failing here.
+		if customFatalErrChan != nil {
+			select {
+			case customFatalErrChan <- err:
+			default:
+				t.Fatalf("custom fatal channel full, dropping init error: %v", err)
+			}
+			return nil, currentNode, currentExec, func() {
+				if currentNode != nil {
+					currentNode.StopAndWait()
+				}
+				if currentExec != nil {
+					currentExec.StopAndWait()
+				}
+				if err := chainStack.Close(); err != nil {
+					t.Logf("failed-init cleanup: stack close error: %v", err)
+				}
+			}, consensusConfigFetcher, execConfigFetcher
+		}
+		Require(t, err)
+	}
 	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
-	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	if customFatalErrChan == nil {
+		StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	}
 
 	return chainClient, currentNode, currentExec, cleanup, consensusConfigFetcher, execConfigFetcher
 }
