@@ -5,6 +5,9 @@
   `--execution.transaction-filtering.filtered-tx-full-retry-interval` (default 30s,
   now validated to be positive). The dead field on `DelayedSequencerConfig` was
   removed.
+- New `--execution.sequencer.poll-interval` (default 50ms, hot-reloadable): the
+  interval an idle sequencer waits before re-checking for pending work, instead of
+  busy-looping. Capped at `MaxBlockSpeed`.
 
 ### Changed
 - Block production is now driven by consensus (`TransactionStreamer`) and gated on
