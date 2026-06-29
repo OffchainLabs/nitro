@@ -189,6 +189,48 @@ func TestExecuteNextMsgEphemeralAccumulatorNotFound(t *testing.T) {
 	}
 }
 
+func TestExecuteNextMsgYieldsWhileBlockProductionMutexHeld(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	exec, streamer, _, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
+
+	streamer.StopWaiter.Start(ctx, streamer)
+	defer streamer.StopAndWait()
+	Require(t, exec.Start(ctx))
+	defer exec.StopAndWait()
+
+	// consensusHead=1, execHead=0, so ExecuteNextMsg would otherwise have work.
+	Require(t, streamer.AddMessages(1, false, []arbostypes.MessageWithMetadata{buildL2NormalMessage()}, nil))
+
+	execHeadBefore, err := exec.HeadMessageIndex()
+	Require(t, err)
+
+	// Simulate a concurrent block producer holding the gate.
+	streamer.blockProductionMutex.Lock()
+
+	done := make(chan bool, 1)
+	go func() { done <- streamer.ExecuteNextMsg(ctx) }()
+
+	select {
+	case again := <-done:
+		if again {
+			t.Fatal("ExecuteNextMsg should return false (yield) while blockProductionMutex is held")
+		}
+	case <-time.After(2 * time.Second):
+		streamer.blockProductionMutex.Unlock()
+		t.Fatal("ExecuteNextMsg blocked on blockProductionMutex; expected non-blocking TryLock yield")
+	}
+
+	execHeadAfter, err := exec.HeadMessageIndex()
+	Require(t, err)
+	if execHeadAfter != execHeadBefore {
+		t.Fatalf("exec head advanced (%d -> %d) while blockProductionMutex was held; digest was not gated", execHeadBefore, execHeadAfter)
+	}
+
+	streamer.blockProductionMutex.Unlock()
+}
+
 type checkResultFixture struct {
 	streamer     *TransactionStreamer
 	db           ethdb.Database

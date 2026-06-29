@@ -72,9 +72,15 @@ type TransactionStreamer struct {
 	fatalErrChan chan<- error
 	config       TransactionStreamerConfigFetcher
 
-	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
-	reorgMutex         sync.RWMutex
-	newMessageNotifier chan struct{}
+	// Lock ordering when more than one is held: insertionMutex -> blockProductionMutex -> reorgMutex.
+	insertionMutex sync.Mutex // cannot be acquired while reorgMutex is held
+	// blockProductionMutex gates every action that produces a block on the
+	// execution side (digest, sequence, reorg, resequence), so those actions are
+	// mutually exclusive at the consensus layer rather than relying on the
+	// execution engine's createBlocksMutex to reject concurrent callers.
+	blockProductionMutex sync.Mutex
+	reorgMutex           sync.RWMutex
+	newMessageNotifier   chan struct{}
 
 	nextAllowedFeedReorgLog time.Time
 
@@ -245,6 +251,7 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 	return s.ReorgAtAndEndBatch(s.db.NewBatch(), firstMsgIdxReorged)
 }
 
+// resequenceReorgedMessages must be called with insertionMutex held.
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
 	if s.execSequencer.IsSome() {
 		execSequencer := s.execSequencer.Unwrap()
@@ -253,6 +260,9 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 			log.Warn("Sequencer is not active, not resequencing reorged messages")
 			return
 		}
+
+		s.blockProductionMutex.Lock()
+		defer s.blockProductionMutex.Unlock()
 
 		for _, msg := range msgs {
 			sequencedMsg, err := execSequencer.ResequenceReorgedMessage(msg)
@@ -440,6 +450,9 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 
 		oldMessages = append(oldMessages, oldMessage)
 	}
+
+	s.blockProductionMutex.Lock()
+	defer s.blockProductionMutex.Unlock()
 
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
@@ -1456,10 +1469,10 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	if ctx.Err() != nil {
 		return false
 	}
-	if !s.reorgMutex.TryRLock() {
+	if !s.blockProductionMutex.TryLock() {
 		return false
 	}
-	defer s.reorgMutex.RUnlock()
+	defer s.blockProductionMutex.Unlock()
 	start := time.Now()
 
 	prevHeadMsgIdx := s.prevHeadMsgIdx
@@ -1625,6 +1638,9 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 		log.Debug("Sequencer is not active, not sequencing")
 		return 50 * time.Millisecond
 	}
+
+	s.blockProductionMutex.Lock()
+	defer s.blockProductionMutex.Unlock()
 
 	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
 	if sequencedMsg != nil {
