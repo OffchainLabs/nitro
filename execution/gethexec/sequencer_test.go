@@ -212,11 +212,11 @@ func TestStateAfterDelayed(t *testing.T) {
 
 // simEnv models the outputs of a sequencing turn for the loop simulation below.
 type simEnv struct {
-	hasRegular        bool
-	hasDelayed        bool
-	regularMakesBlock bool // createBlockWithRegularTxs produced a real block
-	regularReturnVal  bool // createBlockWithRegularTxs returnValue (throttle signal)
-	delayedProduces   bool // SequenceDelayedMessage sequenced a block
+	hasRegular          bool
+	hasDelayed          bool
+	regularMakesBlock   bool // createBlockWithRegularTxs produced a real block
+	regularThrottleNext bool // createBlockWithRegularTxs throttleNextRegular (throttle signal)
+	delayedProduces     bool // SequenceDelayedMessage sequenced a block
 }
 
 // runSim drives the pure scheduler for steps iterations starting at now0,
@@ -234,7 +234,7 @@ func runSim(env simEnv, steps int) (elapsed time.Duration, regular, delayed int,
 		case regularTxSequencingTurn:
 			regular++
 			progress = env.regularMakesBlock
-			state = sequencingStateAfterRegularSequencing(state, env.regularReturnVal, now, testMaxBlockSpeed)
+			state = sequencingStateAfterRegularSequencing(state, env.regularThrottleNext, now, testMaxBlockSpeed)
 			wait = 0
 		case delayedMsgSequencingTurn:
 			delayed++
@@ -268,7 +268,7 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 	}{
 		{
 			name:                 "pure regular load throttles, no spin",
-			env:                  simEnv{hasRegular: true, regularMakesBlock: true, regularReturnVal: true},
+			env:                  simEnv{hasRegular: true, regularMakesBlock: true, regularThrottleNext: true},
 			checkRegularThrottle: true,
 		},
 		{
@@ -277,7 +277,7 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 		},
 		{
 			name:                 "mixed load: delayed drains, regular gets a slot",
-			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularReturnVal: true, delayedProduces: true},
+			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularThrottleNext: true, delayedProduces: true},
 			checkRegularThrottle: true,
 		},
 		{
@@ -286,14 +286,14 @@ func TestSequencingLoopNoBusySpin(t *testing.T) {
 		},
 		{
 			name:                 "mixed: delayed halted, regular keeps flowing",
-			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularReturnVal: true, delayedProduces: false},
+			env:                  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: true, regularThrottleNext: true, delayedProduces: false},
 			checkRegularThrottle: true,
 		},
 		{
 			// Regular can't build a block, so it drains to nonceFailures and then
-			// returns the empty-queue returnValue==true => regular throttles too.
+			// returns the empty-queue throttleNextRegular==true => regular throttles too.
 			name: "both stuck: regular empty-queue, delayed halted",
-			env:  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: false, regularReturnVal: true, delayedProduces: false},
+			env:  simEnv{hasRegular: true, hasDelayed: true, regularMakesBlock: false, regularThrottleNext: true, delayedProduces: false},
 		},
 	}
 	for _, tt := range tests {

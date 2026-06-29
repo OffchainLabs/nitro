@@ -1358,7 +1358,7 @@ func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) 
 	return queueItems, false
 }
 
-func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, returnValue bool) {
+func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleNextRegular bool) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
@@ -1381,7 +1381,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			}
 			s.lastCreatedBlockWithRegularTxsInfo = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
-			returnValue = true
+			throttleNextRegular = true
 		}
 	}()
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
@@ -1889,9 +1889,9 @@ func (state sequencingState) soonestThrottleWait(hasRegular, hasDelayed bool, no
 	return wakeAt.Sub(now)
 }
 
-func sequencingStateAfterRegularSequencing(state sequencingState, waitUntilNextRegular bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
+func sequencingStateAfterRegularSequencing(state sequencingState, throttleNextRegular bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
 	state.lastTurn = regularTxSequencingTurn
-	if waitUntilNextRegular {
+	if throttleNextRegular {
 		state.regularTxSequencingThrottledUntil = now.Add(maxBlockSpeed)
 	} else {
 		// Items were present but no block was produced (e.g. all txs failed this
@@ -1929,8 +1929,8 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 	)
 	switch turn {
 	case regularTxSequencingTurn:
-		sequencedMsg, waitUntilNextRegular := s.createBlockWithRegularTxs(ctx)
-		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, waitUntilNextRegular, now, s.config().MaxBlockSpeed)
+		sequencedMsg, throttleNextRegular := s.createBlockWithRegularTxs(ctx)
+		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleNextRegular, now, s.config().MaxBlockSpeed)
 		return sequencedMsg, 0
 	case delayedMsgSequencingTurn:
 		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
