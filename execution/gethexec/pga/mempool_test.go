@@ -268,7 +268,7 @@ func TestPgaMempoolStartNewBlockRecomputesAgainstNewBaseFee(t *testing.T) {
 	if top.tx.id != idB {
 		t.Fatalf("before re-key: top = %d, want B", top.tx.id)
 	}
-	env.mempool.Push(top) // restore for the re-key
+	env.mempool.PushPrioritized(top) // restore for the re-key
 
 	// A second StartNewBlock against a higher basefee re-keys the queued txs.
 	env.mempool.StartNewBlock(big.NewInt(55), 1000) // base 55: A=10, B=5 -> A first
@@ -385,7 +385,7 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 	if top.tx.id != idA {
 		t.Fatalf("first pop = %d, want A", top.tx.id)
 	}
-	env.mempool.Push(top) // push back; re-keyed to the same priority, so it pops first again
+	env.mempool.PushPrioritized(top) // push back; re-keyed to the same priority, so it pops first again
 
 	if again := mustPop(t, env.mempool); again.id != idA {
 		t.Fatalf("after push-back = %d, want A", again.id)
@@ -400,17 +400,17 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 	}
 }
 
-// TestPgaMempoolPushDropsOnFeeError covers Push's re-key failure branch: a
-// push-back whose ComputePgaPriority errors is dropped with that error rather
-// than queued. The basefee is constant within a block, so a re-key that
-// succeeded on the way out cannot fail on push-back today; this pins the
+// TestPgaMempoolPushDropsOnFeeError covers PushPrioritized's re-key failure
+// branch: a push-back whose ComputePgaPriority errors is dropped with that
+// error rather than queued. The basefee is constant within a block, so a re-key
+// that succeeded on the way out cannot fail on push-back today; this pins the
 // public API's behavior regardless.
 func TestPgaMempoolPushDropsOnFeeError(t *testing.T) {
 	env := newPgaMempoolTestEnv()
-	env.mempool.StartNewBlock(big.NewInt(40), 1000) // sets the basefee Push re-keys against
+	env.mempool.StartNewBlock(big.NewInt(40), 1000) // sets the basefee PushPrioritized re-keys against
 
 	item, result := env.makePgaTestItem(context.Background(), failFee(errFeeCapTooLow), 10, defaultArrival)
-	env.mempool.Push(PrioritizedTx[mockTx]{tx: item})
+	env.mempool.PushPrioritized(PrioritizedTx[mockTx]{tx: item})
 
 	expectResult(t, result, errFeeCapTooLow)
 	if env.mempool.PriorityQueueLen() != 0 {
@@ -516,13 +516,13 @@ func TestPgaMempoolBoostFoldedIntoNextBlock(t *testing.T) {
 	}
 }
 
-func TestPgaMempoolBoostFreezeForCachedEntry(t *testing.T) {
+func TestPgaMempoolPushPrioritizedPreservesBoost(t *testing.T) {
 	env := newPgaMempoolTestEnv()
 	base := big.NewInt(40)
 
-	cached, _ := env.makePgaTestItem(context.Background(), constFee(50), 10, defaultArrival)
+	deferred, _ := env.makePgaTestItem(context.Background(), constFee(50), 10, defaultArrival)
 	remaining, _ := env.makePgaTestItem(context.Background(), constFee(10), 10, defaultArrival)
-	env.ch <- cached
+	env.ch <- deferred
 	env.ch <- remaining
 	env.mempool.StartNewBlock(base, 1000)
 
@@ -530,29 +530,29 @@ func TestPgaMempoolBoostFreezeForCachedEntry(t *testing.T) {
 	env.mempool.RecordIncludedTx(40)
 	env.mempool.StartNewPGARound()
 
-	// cached leaves the queue (as if moved to the nonce-failure cache) carrying its round-1 boost of 10. The popped
-	// entry is a detached copy, so later boosts cannot touch it.
+	// deferred is popped but does not fit in the block, carrying its round-1 boost of 10. The popped entry is a
+	// detached copy, so later boosts cannot touch it.
 	popped := mustPopEntry(t, env.mempool)
-	if popped.tx.id != cached.id || popped.cachedPriority != 60 { // 50 + 10
-		t.Fatalf("popped = (id %d, prio %d), want cached with prio 60", popped.tx.id, popped.cachedPriority)
+	if popped.tx.id != deferred.id || popped.cachedPriority != 60 { // 50 + 10
+		t.Fatalf("popped = (id %d, prio %d), want deferred with prio 60", popped.tx.id, popped.cachedPriority)
 	}
 	if popped.boost != 10 {
-		t.Fatalf("cached boost at pop = %d, want 10", popped.boost)
+		t.Fatalf("deferred boost at pop = %d, want 10", popped.boost)
 	}
 
-	// Round 2 boost runs while cached is out: lastIncludedPriority 20 -> delta 5 lifts only the still-queued tx.
+	// Round 2 boost runs while deferred is out: lastIncludedPriority 20 -> delta 5 lifts only the still-queued tx.
 	env.mempool.RecordIncludedTx(20)
 	env.mempool.StartNewPGARound()
 	if popped.boost != 10 {
-		t.Fatalf("cached boost while out = %d, want 10 (frozen while cached)", popped.boost)
+		t.Fatalf("deferred boost while out = %d, want 10 (untouched while out of the queue)", popped.boost)
 	}
 
-	// Revive cached. It re-enters with its frozen boost of 10, not the round-2 boost it never received.
-	env.mempool.Push(popped)
+	// PushPrioritized re-adds deferred with its boost of 10, not the round-2 boost it never received.
+	env.mempool.PushPrioritized(popped)
 
 	first := mustPopEntry(t, env.mempool)
-	if first.tx.id != cached.id || first.cachedPriority != 60 { // 50 + 10, unaffected by round 2
-		t.Fatalf("revived pop = (id %d, prio %d), want cached with prio 60", first.tx.id, first.cachedPriority)
+	if first.tx.id != deferred.id || first.cachedPriority != 60 { // 50 + 10, unaffected by round 2
+		t.Fatalf("re-added pop = (id %d, prio %d), want deferred with prio 60", first.tx.id, first.cachedPriority)
 	}
 	second := mustPopEntry(t, env.mempool)
 	if second.tx.id != remaining.id || second.cachedPriority != 25 { // 10 + 10 + 5
@@ -560,5 +560,31 @@ func TestPgaMempoolBoostFreezeForCachedEntry(t *testing.T) {
 	}
 	if second.boost != 15 {
 		t.Fatalf("remaining boost = %d, want 15 (round 1 + round 2)", second.boost)
+	}
+}
+
+// TestPgaMempoolPushDropsBoost covers Push, the entry point for a transaction revived from the nonce-failure cache: it
+// re-enters keyed on its fee alone, dropping any boost it accumulated before being cached.
+func TestPgaMempoolPushDropsBoost(t *testing.T) {
+	env := newPgaMempoolTestEnv()
+	base := big.NewInt(40)
+
+	revived, _ := env.makePgaTestItem(context.Background(), constFee(50), 10, defaultArrival)
+	env.ch <- revived
+	env.mempool.StartNewBlock(base, 1000)
+
+	// Accumulate a boost on the queued tx, then pop it as if it were sent to the nonce-failure cache.
+	env.mempool.RecordIncludedTx(40)
+	env.mempool.StartNewPGARound() // delta 10
+	popped := mustPopEntry(t, env.mempool)
+	if popped.boost != 10 {
+		t.Fatalf("boost before re-add = %d, want 10", popped.boost)
+	}
+
+	// Push re-adds the bare transaction, as the nonce-failure cache does, so the boost is dropped.
+	env.mempool.Push(popped.tx)
+	got := mustPopEntry(t, env.mempool)
+	if got.tx.id != revived.id || got.cachedPriority != 50 || got.boost != 0 {
+		t.Fatalf("re-added pop = (id %d, prio %d, boost %d), want (id %d, 50, 0)", got.tx.id, got.cachedPriority, got.boost, revived.id)
 	}
 }
