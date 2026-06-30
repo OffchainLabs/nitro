@@ -476,7 +476,7 @@ type Sequencer struct {
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
 	pendingQueueItemsResults *pendingQueueItemsResults
-	createBlockMutex                   sync.Mutex
+	createBlockMutex         sync.Mutex
 
 	pendingDelayedMsgCommit bool
 
