@@ -1958,11 +1958,12 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		return sequencedMsg, 0
 	case delayedSequencingTurn:
 		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
+		producedMsg := err == nil && sequencedMsg != nil
+		s.pendingDelayedMsgCommit = producedMsg
+		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, producedMsg, now, s.config().MaxBlockSpeed)
 		if err != nil {
 			return nil, 0
 		}
-		s.pendingDelayedMsgCommit = sequencedMsg != nil
-		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, sequencedMsg != nil, now, s.config().MaxBlockSpeed)
 		return sequencedMsg, 0
 	default:
 		return nil, wait

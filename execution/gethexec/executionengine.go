@@ -909,15 +909,22 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 			return nil, nil
 		}
 
+		if errors.Is(err, ExecutionEngineBlockCreationStopped) {
+			log.Debug("delayed sequencing halted: execution engine stopped block creation")
+			return nil, err
+		}
+
 		// Unexpected error occurred.
 		// Clears delayedMsgs to remove any possible inconsistencies.
 		// delayedMsgs will eventually be filled again by Consensus.
+		log.Error("unexpected error sequencing delayed message, resetting delayed queue", "delayedMsgIdx", delayedMsgToSequence.msgIdx, "err", err)
 		s.delayedMsgs = containers.Queue[*delayedMsg]{}
+		return nil, err
 	}
 
 	s.clearFilteredTxWaitState()
 
-	return sequencedMsg, err
+	return sequencedMsg, nil
 }
 
 func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
