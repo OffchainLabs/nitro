@@ -1935,9 +1935,12 @@ func sequencingStateAfterDelayedSequencing(state sequencingState, producedMsg bo
 }
 
 func (s *Sequencer) hasPendingRegularTxs() bool {
+	s.createBlockMutex.Lock()
+	nonceFailures := s.nonceFailures.Len()
+	s.createBlockMutex.Unlock()
 	return s.txRetryQueue.Len() > 0 ||
 		len(s.txQueue) > 0 ||
-		s.nonceFailures.Len() > 0 ||
+		nonceFailures > 0 ||
 		len(s.timeboostAuctionResolutionTxQueue) > 0
 }
 
