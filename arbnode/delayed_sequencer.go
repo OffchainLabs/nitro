@@ -200,7 +200,13 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
+	// Normally there's nothing to do until the block we're waiting for finalizes. The exception is
+	// when we're halted on a filtered tx: that (already-finalized) message must be re-attempted as
+	// soon as its onchain-filter condition is met, regardless of a later message's finality. The
+	// collection loop below still enforces per-message finality, so nothing unfinalized gets sequenced.
+	awaitingLaterFinalization := d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized
+	haltedOnFilteredTx := d.waitingForFilteredTx != nil
+	if awaitingLaterFinalization && !haltedOnFilteredTx {
 		return nil
 	}
 
