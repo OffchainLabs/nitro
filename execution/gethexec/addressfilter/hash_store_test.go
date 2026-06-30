@@ -5,6 +5,8 @@ package addressfilter
 
 import (
 	"context"
+	"encoding/binary"
+	"math/rand/v2"
 	"sync"
 	"testing"
 	"time"
@@ -126,4 +128,55 @@ func TestHashStorePreallocConcurrentReuseRaceFree(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
+}
+
+// benchIsRestrictedAddrs is the number of restricted addresses each IsRestricted
+// benchmark loads and queries.
+const benchIsRestrictedAddrs = 10000
+
+// benchmarkIsRestricted measures IsRestricted against benchIsRestrictedAddrs restricted
+// addresses, querying them in random order so the LRU hit rate tracks the cache capacity:
+// a cacheSize of 0, half, or all of the addresses gives roughly 0%, 50%, or 100% hits.
+func benchmarkIsRestricted(b *testing.B, cacheSize int) {
+	salt := uuid.New()
+	prefix := GetHashStringInputPrefix(salt)
+	addrs := make([]common.Address, benchIsRestrictedAddrs)
+	hashes := make([]common.Hash, benchIsRestrictedAddrs)
+	for i := range addrs {
+		binary.LittleEndian.PutUint64(addrs[i][:], uint64(i)+1)
+		hashes[i] = HashStringInputWithPrefix(prefix, addrs[i])
+	}
+
+	store := NewHashStore(cacheSize)
+	require.NoError(b, store.Store(context.Background(), uuid.New(), salt, HashingSchemeStringInput, hashes, "bench"))
+
+	// Precompute random indices so the timed loop does no RNG work. The length is a
+	// power of two far larger than the cache, so masking is cheap and cycling back to
+	// the start does not noticeably perturb the hit rate.
+	rng := rand.New(rand.NewPCG(1, 2))
+	const idxCount = 1 << 20
+	idxs := make([]uint32, idxCount)
+	for k := range idxs {
+		idxs[k] = uint32(rng.IntN(benchIsRestrictedAddrs))
+	}
+
+	// b.Loop resets the timer on first call, so the setup above is not measured.
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		store.IsRestricted(addrs[idxs[i&(idxCount-1)]])
+		i++
+	}
+}
+
+func BenchmarkIsRestrictedNoCache(b *testing.B) {
+	benchmarkIsRestricted(b, 0)
+}
+
+func BenchmarkIsRestrictedHalfCache(b *testing.B) {
+	benchmarkIsRestricted(b, benchIsRestrictedAddrs/2)
+}
+
+func BenchmarkIsRestrictedFullCache(b *testing.B) {
+	benchmarkIsRestricted(b, benchIsRestrictedAddrs)
 }
