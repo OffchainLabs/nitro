@@ -356,6 +356,15 @@ func (d *DelayedSequencer) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bo
 	return d.waitingForFilteredTx.TxHashes, true
 }
 
+func (d *DelayedSequencer) WaitingForFinalizedBlock(t *testing.T) (uint64, bool) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if d.waitingForFinalizedBlock == nil {
+		return 0, false
+	}
+	return *d.waitingForFinalizedBlock, true
+}
+
 func (d *DelayedSequencer) checkAccumulatorReorg(
 	ctx context.Context,
 	lastDelayedAcc common.Hash,
