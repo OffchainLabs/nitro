@@ -23,7 +23,7 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 	}
 
 	handlerReturn = handlerErr
-	if err := s.applyHandled(context.Background(), "etag-bad", []byte("x")); err == nil {
+	if err := s.applyHandled("etag-bad", []byte("x")); err == nil {
 		t.Fatal("expected handler error to propagate")
 	}
 	if s.failedETag != "etag-bad" {
@@ -34,7 +34,7 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 	}
 
 	handlerReturn = nil
-	if err := s.applyHandled(context.Background(), "etag-good", []byte("y")); err != nil {
+	if err := s.applyHandled("etag-good", []byte("y")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if s.digestETag != "etag-good" {
@@ -42,18 +42,6 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 	}
 	if s.failedETag != "" {
 		t.Fatalf("failedETag should clear on success, got %q", s.failedETag)
-	}
-
-	// A handler error under a cancelled context is an aborted load, not a bad object,
-	// so it must not be recorded as a failed etag.
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
-	handlerReturn = handlerErr
-	if err := s.applyHandled(cancelled, "etag-cancelled", []byte("z")); err == nil {
-		t.Fatal("expected handler error to propagate")
-	}
-	if s.failedETag != "" {
-		t.Fatalf("failedETag must not be set when the context is cancelled, got %q", s.failedETag)
 	}
 }
 

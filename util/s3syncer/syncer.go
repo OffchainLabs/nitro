@@ -170,17 +170,12 @@ func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string, objec
 		return fmt.Errorf("download failed for s3://%s/%s: %w", s.config.Bucket, s.config.ObjectKey, err)
 	}
 
-	return s.applyHandled(ctx, etagDigest, buffer.Bytes())
+	return s.applyHandled(etagDigest, buffer.Bytes())
 }
 
-func (s *Syncer) applyHandled(ctx context.Context, etagDigest string, data []byte) error {
+func (s *Syncer) applyHandled(etagDigest string, data []byte) error {
 	if err := s.handleData(data, etagDigest); err != nil {
-		// A cancelled context means the load was aborted (e.g. shutdown), not that the
-		// object content is bad. Recording it as failed would skip re-downloading this
-		// same etag on a later poll, so only mark genuine failures.
-		if ctx.Err() == nil {
-			s.failedETag = etagDigest
-		}
+		s.failedETag = etagDigest
 		return err
 	}
 	s.digestETag = etagDigest
