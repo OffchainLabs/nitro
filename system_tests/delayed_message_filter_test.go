@@ -84,8 +84,6 @@ func checkDelayedReportFields(t *testing.T, report *addressfilter.FilteredTxRepo
 		"InboxRequestId should be populated")
 }
 
-// sendDelayedTx sends a transaction via L1 delayed inbox. Returns the L2 tx hash that will be used
-// when sequenced, along with the L1 block number the delayed message landed in.
 func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *types.Transaction) (common.Hash, uint64) {
 	t.Helper()
 	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
@@ -104,7 +102,6 @@ func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *
 	return tx.Hash(), l1Receipt.BlockNumber.Uint64()
 }
 
-// advanceL1To advances the parent chain until its head reaches at least targetHead.
 func advanceL1To(t *testing.T, ctx context.Context, builder *NodeBuilder, targetHead uint64) {
 	t.Helper()
 	head, err := builder.L1.Client.BlockNumber(ctx)
