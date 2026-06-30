@@ -295,11 +295,11 @@ type ExecutionEngine struct {
 
 	createBlocksMutex sync.Mutex
 
-	newBlockNotifier       chan struct{}
-	reorgEventsNotifier    chan struct{}
-	latestBlockMutex       sync.Mutex
-	latestBlock            *types.Block
-	pendingAppendBlock *pendingAppendBlock
+	newBlockNotifier    chan struct{}
+	reorgEventsNotifier chan struct{}
+	latestBlockMutex    sync.Mutex
+	latestBlock         *types.Block
+	pendingAppendBlock  *pendingAppendBlock
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
