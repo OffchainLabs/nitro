@@ -132,8 +132,10 @@ func benchmarkIsRestricted(b *testing.B, cacheSize int) {
 	prefix := GetHashStringInputPrefix(salt)
 	addrs := make([]common.Address, benchIsRestrictedAddrs)
 	hashes := make([]common.Hash, benchIsRestrictedAddrs)
+	var addrSeed uint64
 	for i := range addrs {
-		binary.LittleEndian.PutUint64(addrs[i][:], uint64(i)+1)
+		addrSeed++
+		binary.LittleEndian.PutUint64(addrs[i][:], addrSeed)
 		hashes[i] = HashStringInputWithPrefix(prefix, addrs[i])
 	}
 
@@ -147,7 +149,7 @@ func benchmarkIsRestricted(b *testing.B, cacheSize int) {
 	const idxCount = 1 << 20
 	idxs := make([]uint32, idxCount)
 	for k := range idxs {
-		idxs[k] = uint32(rng.IntN(benchIsRestrictedAddrs))
+		idxs[k] = rng.Uint32N(benchIsRestrictedAddrs)
 	}
 
 	// b.Loop resets the timer on first call, so the setup above is not measured.
