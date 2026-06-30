@@ -878,6 +878,12 @@ func (s *ExecutionEngine) hasPendingDelayedMsgs() bool {
 	return s.delayedMsgs.Len() > 0
 }
 
+func (s *ExecutionEngine) popSequencedDelayedMessage() {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	s.delayedMsgs.Pop()
+}
+
 func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, error) {
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
@@ -910,7 +916,6 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 	}
 
 	s.clearFilteredTxWaitState()
-	s.delayedMsgs.Pop()
 
 	return sequencedMsg, err
 }

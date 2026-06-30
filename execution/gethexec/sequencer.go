@@ -478,6 +478,8 @@ type Sequencer struct {
 	lastCreatedBlockWithRegularTxsInfo *createdBlockInfo
 	createBlockMutex                   sync.Mutex
 
+	pendingDelayedMsgCommit bool
+
 	eventFilter              *eventfilter.EventFilter
 	addressFilterService     *addressfilter.FilterService
 	pendingFilteredTxReports []addressfilter.FilteredTxReport
@@ -1531,6 +1533,16 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
+	if s.pendingDelayedMsgCommit {
+		s.pendingDelayedMsgCommit = false
+		if errWhileSequencing == nil {
+			// The block was durably written; remove the delayed message now.
+			s.execEngine.popSequencedDelayedMessage()
+		}
+		// On error (e.g. ErrRetrySequencer) leave the message queued for retry.
+		return
+	}
+
 	if s.lastCreatedBlockWithRegularTxsInfo == nil {
 		return
 	}
@@ -1930,6 +1942,7 @@ func (s *Sequencer) hasPendingRegularTxs() bool {
 }
 
 func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	s.pendingDelayedMsgCommit = false
 	now := time.Now()
 	turn, wait := decideSequencingTurn(
 		s.sequencingState,
@@ -1948,6 +1961,7 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		if err != nil {
 			return nil, 0
 		}
+		s.pendingDelayedMsgCommit = sequencedMsg != nil
 		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, sequencedMsg != nil, now, s.config().MaxBlockSpeed)
 		return sequencedMsg, 0
 	default:
