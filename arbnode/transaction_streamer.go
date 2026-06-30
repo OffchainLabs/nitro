@@ -355,7 +355,6 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 }
 
 // The insertion mutex must be held. This acquires the reorg mutex.
-// Note: oldMessages will be empty if reorgHook is nil
 func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*arbostypes.MessageWithMetadata, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out init message")

@@ -933,7 +933,6 @@ func (s *Sequencer) IsActive() bool {
 	return s.isActive
 }
 
-// only called from createBlock, may be paused
 func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueItem) {
 	if forwarder == nil {
 		return
