@@ -749,6 +749,8 @@ func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 		s.lastSequencedBlockInfo.blockBuiltUsingDelayedMessage,
 	)
 
+	s.lastSequencedBlockInfo = nil
+
 	return nil
 }
 
