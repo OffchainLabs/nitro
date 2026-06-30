@@ -1782,12 +1782,13 @@ func (s *Sequencer) backgroundForwarder(ctx context.Context) time.Duration {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
+	config := s.config()
 	forwarder := s.getForwarder()
 	if forwarder != nil {
-		queueItems, _ := s.getQueueItems(ctx, s.config())
+		queueItems, _ := s.getQueueItems(ctx, config)
 		s.handleInactive(forwarder, queueItems)
 	}
-	return time.Millisecond * 100
+	return config.PollInterval
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
