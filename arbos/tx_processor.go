@@ -161,20 +161,24 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.
 // pair is back-to-back with no statedb ops between, the tracing journal's revert (on
 // reverted=true) iterates zero entries and is a no-op; callers must therefore invoke this
 // as the LAST statement before the skip-return, after any nonce/gas mutation. depth is
-// evm.Depth()==0 at every such site. A nil tracer makes this a no-op, and a nil `to` is
-// normalized to the zero address (the deposit nil-To case).
+// evm.Depth()==0 at every such site. A nil tracer makes this a no-op. A nil `to` is a
+// contract creation: it is traced as CREATE (matching a real evm.Create) with a zero
+// address, since the would-be contract address is unknown for a skipped creation.
 func (p *TxProcessor) emitSkippedCallFrame(to *common.Address, gasUsed uint64, err error) {
 	tracer := p.evm.Config.Tracer
 	if tracer == nil {
 		return
 	}
+	typ := vm.CALL
 	dest := common.Address{}
 	if to != nil {
 		dest = *to
+	} else {
+		typ = vm.CREATE
 	}
 	depth := p.evm.Depth()
 	if tracer.OnEnter != nil {
-		tracer.OnEnter(depth, byte(vm.CALL), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		tracer.OnEnter(depth, byte(typ), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 	}
 	if tracer.OnExit != nil {
 		tracer.OnExit(depth, nil, gasUsed, err, err != nil)
