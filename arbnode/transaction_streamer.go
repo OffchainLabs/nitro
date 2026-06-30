@@ -1647,23 +1647,20 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 	defer s.blockProductionMutex.Unlock()
 
 	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
+	var seqErr error
+	defer func() { execSequencer.EndSequencing(ctx, seqErr) }()
 	if sequencedMsg != nil {
-		err := s.WriteSequencedMsg(sequencedMsg)
-		if err != nil {
-			log.Error("Error writing sequenced message", "err", err)
-			execSequencer.EndSequencing(ctx, err)
+		if seqErr = s.WriteSequencedMsg(sequencedMsg); seqErr != nil {
+			log.Error("Error writing sequenced message", "err", seqErr)
 			return 0
 		}
 
-		err = execSequencer.AppendLastSequencedBlock()
-		if err != nil {
-			log.Error("Error appending last sequenced block", "err", err)
-			execSequencer.EndSequencing(ctx, err)
+		if seqErr = execSequencer.AppendLastSequencedBlock(); seqErr != nil {
+			log.Error("Error appending last sequenced block", "err", seqErr)
 			return 0
 		}
 	}
 
-	execSequencer.EndSequencing(ctx, nil)
 	return time.Until(startSequencingTime.Add(throttleWait))
 }
 
