@@ -1401,6 +1401,13 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		return nil, 0
 	}
 
+	if forwarder != nil {
+		// We are forwarding (no longer the active sequencer); forward these
+		// items and do not sequence them locally.
+		s.handleInactive(forwarder, queueItems)
+		return nil, config.MaxBlockSpeed
+	}
+
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
@@ -1419,8 +1426,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
 		}
 	}
-
-	s.handleInactive(forwarder, queueItems)
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
