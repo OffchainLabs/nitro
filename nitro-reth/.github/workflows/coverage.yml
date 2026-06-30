@@ -39,7 +39,7 @@ jobs:
       - name: Generate coverage report
         run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
