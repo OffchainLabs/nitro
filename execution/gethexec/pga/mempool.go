@@ -89,17 +89,11 @@ func (m *Mempool[T]) Pop() (PrioritizedTx[T], bool) {
 	return PrioritizedTx[T]{}, false
 }
 
-// Push re-inserts a transaction and re-keys it against the current basefee; use it for a transaction returning in a
-// later block.
-func (m *Mempool[T]) Push(item T) {
-	entry := PrioritizedTx[T]{tx: item}
+// Push re-inserts a previously popped entry, re-keying it against the current basefee and preserving its accumulated
+// boost. Within a block the basefee is unchanged, so re-keying a same-round push-back is idempotent.
+func (m *Mempool[T]) Push(entry PrioritizedTx[T]) {
 	if !entry.setPriority(m.baseFee) {
 		return
 	}
-	m.heap.pushConcrete(entry)
-}
-
-// PushPrioritized re-inserts an entry without re-keying; use it for a transaction returning within the same block round.
-func (m *Mempool[T]) PushPrioritized(entry PrioritizedTx[T]) {
 	m.heap.pushConcrete(entry)
 }

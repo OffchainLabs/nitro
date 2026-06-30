@@ -12,7 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -32,24 +31,7 @@ func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
 		}
 		return 0, fmt.Errorf("unexpected EffectiveGasTip error for tx %v: %w", i.tx.Hash(), err)
 	}
-	// Increment the priority by the accumulated anti-starvation boost. The boost shifts ordering only; it never
-	// changes the fee charged on inclusion.
-	var boost uint64
-	if i.pgaPriorityBoost != nil {
-		boost = *i.pgaPriorityBoost
-	} else {
-		log.Warn("PGA priority boost field is nil, treating it as zero", "tx", i.tx.Hash())
-	}
-	return arbmath.SaturatingUAdd(arbmath.BigToUintSaturating(tip), boost), nil
-}
-
-// IncreaseBoost adds delta to the accumulated anti-starvation boost.
-func (i txQueueItem) IncreaseBoost(delta uint64) {
-	if i.pgaPriorityBoost == nil {
-		log.Warn("PGA priority boost field is nil, cannot apply boost", "tx", i.tx.Hash())
-		return
-	}
-	*i.pgaPriorityBoost = arbmath.SaturatingUAdd(*i.pgaPriorityBoost, delta)
+	return arbmath.BigToUintSaturating(tip), nil
 }
 
 func (i txQueueItem) ReportError(err error) { i.returnResult(err) }

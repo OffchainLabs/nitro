@@ -52,7 +52,6 @@ func (env *pgaMempoolTestEnv) makePgaTestItem(ctx context.Context, fee priorityF
 		firstAppearance: firstAppearance,
 		resultChan:      resultChan,
 		returnedResult:  &atomic.Bool{},
-		boost:           new(uint64),
 	}
 	return item, resultChan
 }
@@ -88,14 +87,15 @@ func mustPop(t *testing.T, m *Mempool[mockTx]) mockTx {
 	return entry.tx
 }
 
-// mustPopPriority pops the next valid transaction and returns it with its priority, failing if the mempool is empty.
-func mustPopPriority(t *testing.T, m *Mempool[mockTx]) (mockTx, uint64) {
+// mustPopEntry pops the next valid entry, failing if the mempool is empty. Tests use it when they need the entry's
+// priority or boost, or want to re-insert it.
+func mustPopEntry(t *testing.T, m *Mempool[mockTx]) PrioritizedTx[mockTx] {
 	t.Helper()
 	entry, ok := m.Pop()
 	if !ok {
 		t.Fatal("Pop returned ok=false, want a transaction")
 	}
-	return entry.tx, entry.priority
+	return entry
 }
 
 func TestPgaMempoolStartNewBlockDrainsWaitingList(t *testing.T) {
@@ -264,9 +264,9 @@ func TestPgaMempoolStartNewBlockRecomputesAgainstNewBaseFee(t *testing.T) {
 	env.ch <- itemB
 
 	env.mempool.StartNewBlock(big.NewInt(10), 1000) // base 10: A=10, B=50 -> B first
-	top := mustPop(t, env.mempool)
-	if top.id != idB {
-		t.Fatalf("before re-key: top = %d, want B", top.id)
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != idB {
+		t.Fatalf("before re-key: top = %d, want B", top.tx.id)
 	}
 	env.mempool.Push(top) // restore for the re-key
 
@@ -381,9 +381,9 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 	env.ch <- itemC
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
 
-	top := mustPop(t, env.mempool)
-	if top.id != idA {
-		t.Fatalf("first pop = %d, want A", top.id)
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != idA {
+		t.Fatalf("first pop = %d, want A", top.tx.id)
 	}
 	env.mempool.Push(top) // push back; re-keyed to the same priority, so it pops first again
 
@@ -410,25 +410,11 @@ func TestPgaMempoolPushDropsOnFeeError(t *testing.T) {
 	env.mempool.StartNewBlock(big.NewInt(40), 1000) // sets the basefee Push re-keys against
 
 	item, result := env.makePgaTestItem(context.Background(), failFee(errFeeCapTooLow), 10, defaultArrival)
-	env.mempool.Push(item)
+	env.mempool.Push(PrioritizedTx[mockTx]{tx: item})
 
 	expectResult(t, result, errFeeCapTooLow)
 	if env.mempool.PriorityQueueLen() != 0 {
 		t.Fatalf("len = %d, want 0 (a failed re-key should drop the tx, not queue it)", env.mempool.PriorityQueueLen())
-	}
-}
-
-func TestPgaMempoolPushPrioritizedKeepsStoredPriority(t *testing.T) {
-	env := newPgaMempoolTestEnv()
-	env.mempool.StartNewBlock(big.NewInt(40), 1000)
-
-	// The fee func would key this tx to 5, but PushPrioritized must keep the entry's stored priority of 99.
-	item, _ := env.makePgaTestItem(context.Background(), constFee(5), 10, defaultArrival)
-	env.mempool.PushPrioritized(PrioritizedTx[mockTx]{tx: item, priority: 99})
-
-	entry, ok := env.mempool.Pop()
-	if !ok || entry.priority != 99 {
-		t.Fatalf("Pop = (prio %d, ok %v), want prio 99", entry.priority, ok)
 	}
 }
 
@@ -481,20 +467,20 @@ func TestPgaMempoolBoostAccumulation(t *testing.T) {
 	env.ch <- remaining
 	env.mempool.StartNewBlock(base, 1000)
 
-	top, prio := mustPopPriority(t, env.mempool)
-	if top.id != included.id || prio != 100 {
-		t.Fatalf("first pop = (id %d, prio %d), want included with prio 100", top.id, prio)
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != included.id || top.cachedPriority != 100 {
+		t.Fatalf("first pop = (id %d, prio %d), want included with prio 100", top.tx.id, top.cachedPriority)
 	}
-	env.mempool.RecordIncludedTx(prio)
+	env.mempool.RecordIncludedTx(top.cachedPriority)
 
 	// Next round boosts the queue by lastIncludedPriority / (2K) = 100 / 4 = 25, lifting remaining from 0 to 25.
 	env.mempool.StartNewPGARound()
-	got, gotPrio := mustPopPriority(t, env.mempool)
-	if got.id != remaining.id || gotPrio != 25 {
-		t.Fatalf("boosted pop = (id %d, prio %d), want remaining with prio 25", got.id, gotPrio)
+	got := mustPopEntry(t, env.mempool)
+	if got.tx.id != remaining.id || got.cachedPriority != 25 {
+		t.Fatalf("boosted pop = (id %d, prio %d), want remaining with prio 25", got.tx.id, got.cachedPriority)
 	}
-	if *got.boost != 25 {
-		t.Fatalf("remaining boost = %d, want 25", *got.boost)
+	if got.boost != 25 {
+		t.Fatalf("remaining boost = %d, want 25", got.boost)
 	}
 }
 
@@ -514,19 +500,19 @@ func TestPgaMempoolBoostFoldedIntoNextBlock(t *testing.T) {
 	env.ch <- remaining
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
 
-	top, prio := mustPopPriority(t, env.mempool)
-	if top.id != included.id {
-		t.Fatalf("first pop = %d, want included", top.id)
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != included.id {
+		t.Fatalf("first pop = %d, want included", top.tx.id)
 	}
-	env.mempool.RecordIncludedTx(prio) // 100
-	env.mempool.StartNewPGARound()     // boost remaining by 100 / 4 = 25
+	env.mempool.RecordIncludedTx(top.cachedPriority) // 100
+	env.mempool.StartNewPGARound()                   // boost remaining by 100 / 4 = 25
 
 	// A new block re-keys against base 50: remaining = fee(50) + boost = 7 + 25 = 32, proving the boost folds into the
 	// recomputed priority.
 	env.mempool.StartNewBlock(big.NewInt(50), 1000)
-	got, gotPrio := mustPopPriority(t, env.mempool)
-	if got.id != remaining.id || gotPrio != 32 {
-		t.Fatalf("after re-key pop = (id %d, prio %d), want remaining with prio 32", got.id, gotPrio)
+	got := mustPopEntry(t, env.mempool)
+	if got.tx.id != remaining.id || got.cachedPriority != 32 {
+		t.Fatalf("after re-key pop = (id %d, prio %d), want remaining with prio 32", got.tx.id, got.cachedPriority)
 	}
 }
 
@@ -544,34 +530,35 @@ func TestPgaMempoolBoostFreezeForCachedEntry(t *testing.T) {
 	env.mempool.RecordIncludedTx(40)
 	env.mempool.StartNewPGARound()
 
-	// cached leaves the queue (as if moved to the nonce-failure cache) carrying its round-1 boost of 10.
-	popped, poppedPrio := mustPopPriority(t, env.mempool)
-	if popped.id != cached.id || poppedPrio != 60 { // 50 + 10
-		t.Fatalf("popped = (id %d, prio %d), want cached with prio 60", popped.id, poppedPrio)
+	// cached leaves the queue (as if moved to the nonce-failure cache) carrying its round-1 boost of 10. The popped
+	// entry is a detached copy, so later boosts cannot touch it.
+	popped := mustPopEntry(t, env.mempool)
+	if popped.tx.id != cached.id || popped.cachedPriority != 60 { // 50 + 10
+		t.Fatalf("popped = (id %d, prio %d), want cached with prio 60", popped.tx.id, popped.cachedPriority)
 	}
-	if *popped.boost != 10 {
-		t.Fatalf("cached boost at pop = %d, want 10", *popped.boost)
+	if popped.boost != 10 {
+		t.Fatalf("cached boost at pop = %d, want 10", popped.boost)
 	}
 
 	// Round 2 boost runs while cached is out: lastIncludedPriority 20 -> delta 5 lifts only the still-queued tx.
 	env.mempool.RecordIncludedTx(20)
 	env.mempool.StartNewPGARound()
-	if *popped.boost != 10 {
-		t.Fatalf("cached boost while out = %d, want 10 (frozen while cached)", *popped.boost)
+	if popped.boost != 10 {
+		t.Fatalf("cached boost while out = %d, want 10 (frozen while cached)", popped.boost)
 	}
 
 	// Revive cached. It re-enters with its frozen boost of 10, not the round-2 boost it never received.
 	env.mempool.Push(popped)
 
-	first, firstPrio := mustPopPriority(t, env.mempool)
-	if first.id != cached.id || firstPrio != 60 { // 50 + 10, unaffected by round 2
-		t.Fatalf("revived pop = (id %d, prio %d), want cached with prio 60", first.id, firstPrio)
+	first := mustPopEntry(t, env.mempool)
+	if first.tx.id != cached.id || first.cachedPriority != 60 { // 50 + 10, unaffected by round 2
+		t.Fatalf("revived pop = (id %d, prio %d), want cached with prio 60", first.tx.id, first.cachedPriority)
 	}
-	second, secondPrio := mustPopPriority(t, env.mempool)
-	if second.id != remaining.id || secondPrio != 25 { // 10 + 10 + 5
-		t.Fatalf("remaining pop = (id %d, prio %d), want remaining with prio 25", second.id, secondPrio)
+	second := mustPopEntry(t, env.mempool)
+	if second.tx.id != remaining.id || second.cachedPriority != 25 { // 10 + 10 + 5
+		t.Fatalf("remaining pop = (id %d, prio %d), want remaining with prio 25", second.tx.id, second.cachedPriority)
 	}
-	if *second.boost != 15 {
-		t.Fatalf("remaining boost = %d, want 15 (round 1 + round 2)", *second.boost)
+	if second.boost != 15 {
+		t.Fatalf("remaining boost = %d, want 15 (round 1 + round 2)", second.boost)
 	}
 }

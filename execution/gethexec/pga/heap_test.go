@@ -22,9 +22,8 @@ func newMockEntry(id int, fee priorityFeeFunc, priority uint64) (PrioritizedTx[m
 		firstAppearance: defaultArrival,
 		resultChan:      resultChan,
 		returnedResult:  &atomic.Bool{},
-		boost:           new(uint64),
 	}
-	return PrioritizedTx[mockTx]{tx: tx, priority: priority}, resultChan
+	return PrioritizedTx[mockTx]{tx: tx, cachedPriority: priority}, resultChan
 }
 
 func TestTxHeapPushAndPopConcrete(t *testing.T) {
@@ -37,8 +36,8 @@ func TestTxHeapPushAndPopConcrete(t *testing.T) {
 		if h.Len() == 0 {
 			t.Fatalf("heap emptied before priority %d", want)
 		}
-		if got := h.popConcrete(); got.priority != want {
-			t.Fatalf("popConcrete priority = %d, want %d", got.priority, want)
+		if got := h.popConcrete(); got.cachedPriority != want {
+			t.Fatalf("popConcrete priority = %d, want %d", got.cachedPriority, want)
 		}
 	}
 	if h.Len() != 0 {
@@ -51,8 +50,8 @@ func TestTxHeapPopConcreteBreaksTiesByArrival(t *testing.T) {
 	// Equal priority; the earlier firstAppearance must pop first regardless of push order.
 	mk := func(id int, offset time.Duration) PrioritizedTx[mockTx] {
 		return PrioritizedTx[mockTx]{
-			tx:       mockTx{id: id, ctx: context.Background(), firstAppearance: defaultArrival.Add(offset)},
-			priority: 7,
+			tx:             mockTx{id: id, ctx: context.Background(), firstAppearance: defaultArrival.Add(offset)},
+			cachedPriority: 7,
 		}
 	}
 	h.pushConcrete(mk(3, 2*time.Millisecond))
@@ -81,8 +80,8 @@ func TestTxHeapPushBatch(t *testing.T) {
 		t.Fatalf("len = %d, want 4", h.Len())
 	}
 	for _, want := range []uint64{8, 6, 4, 2} {
-		if got := h.popConcrete(); got.priority != want {
-			t.Fatalf("popConcrete priority = %d, want %d", got.priority, want)
+		if got := h.popConcrete(); got.cachedPriority != want {
+			t.Fatalf("popConcrete priority = %d, want %d", got.cachedPriority, want)
 		}
 	}
 }
@@ -97,8 +96,8 @@ func TestTxHeapPushBatchEmptyKeepsHeapValid(t *testing.T) {
 	if h.Len() != 1 {
 		t.Fatalf("len = %d, want 1", h.Len())
 	}
-	if got := h.popConcrete(); got.priority != 5 {
-		t.Fatalf("priority = %d, want 5", got.priority)
+	if got := h.popConcrete(); got.cachedPriority != 5 {
+		t.Fatalf("priority = %d, want 5", got.cachedPriority)
 	}
 }
 
@@ -121,11 +120,11 @@ func TestTxHeapRekeyRecomputesPriority(t *testing.T) {
 	if h.Len() != 2 {
 		t.Fatalf("len = %d, want 2", h.Len())
 	}
-	if got := h.popConcrete(); got.tx.id != entryA.tx.id || got.priority != 10 {
-		t.Fatalf("top = (id %d, prio %d), want A with prio 10", got.tx.id, got.priority)
+	if got := h.popConcrete(); got.tx.id != entryA.tx.id || got.cachedPriority != 10 {
+		t.Fatalf("top = (id %d, prio %d), want A with prio 10", got.tx.id, got.cachedPriority)
 	}
-	if got := h.popConcrete(); got.tx.id != entryB.tx.id || got.priority != 5 {
-		t.Fatalf("second = (id %d, prio %d), want B with prio 5", got.tx.id, got.priority)
+	if got := h.popConcrete(); got.tx.id != entryB.tx.id || got.cachedPriority != 5 {
+		t.Fatalf("second = (id %d, prio %d), want B with prio 5", got.tx.id, got.cachedPriority)
 	}
 }
 
@@ -141,17 +140,17 @@ func TestTxHeapAddBoost(t *testing.T) {
 
 	h.addBoost(5)
 
-	// Order is preserved (a > c > b), every key rose by 5, and each tx's accumulated boost rose to 5.
+	// Order is preserved (a > c > b), every key rose by 5, and each entry's accumulated boost rose to 5.
 	for _, want := range []struct {
 		id       int
 		priority uint64
 	}{{1, 35}, {3, 25}, {2, 15}} {
 		got := h.popConcrete()
-		if got.tx.id != want.id || got.priority != want.priority {
-			t.Fatalf("pop = (id %d, prio %d), want (id %d, prio %d)", got.tx.id, got.priority, want.id, want.priority)
+		if got.tx.id != want.id || got.cachedPriority != want.priority {
+			t.Fatalf("pop = (id %d, prio %d), want (id %d, prio %d)", got.tx.id, got.cachedPriority, want.id, want.priority)
 		}
-		if *got.tx.boost != 5 {
-			t.Fatalf("tx %d boost = %d, want 5", got.tx.id, *got.tx.boost)
+		if got.boost != 5 {
+			t.Fatalf("tx %d boost = %d, want 5", got.tx.id, got.boost)
 		}
 	}
 }

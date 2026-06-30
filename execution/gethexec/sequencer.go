@@ -276,9 +276,6 @@ type txQueueItem struct {
 	firstAppearance time.Time
 	isTimeboosted   bool
 	blockStamp      uint64 // block number at which timeboosted tx was added to the txQueue
-	// pgaPriorityBoost is the accumulated PGA anti-starvation boost; it is a pointer because it is mutated while
-	// txQueueItem is passed around by value.
-	pgaPriorityBoost *uint64
 }
 
 func (i *txQueueItem) returnResultMaybeLog(err error, outputLog bool) {
@@ -669,15 +666,14 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	}
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
 	s.timeboostAuctionResolutionTxQueue <- txQueueItem{
-		tx:               tx,
-		txSize:           int(tx.Size()), // #nosec G115
-		options:          nil,
-		resultChan:       make(chan error, 1),
-		returnedResult:   &atomic.Bool{},
-		ctx:              s.GetContext(),
-		firstAppearance:  time.Now(),
-		isTimeboosted:    false,
-		pgaPriorityBoost: new(uint64),
+		tx:              tx,
+		txSize:          int(tx.Size()), // #nosec G115
+		options:         nil,
+		resultChan:      make(chan error, 1),
+		returnedResult:  &atomic.Bool{},
+		ctx:             s.GetContext(),
+		firstAppearance: time.Now(),
+		isTimeboosted:   false,
 	}
 	return nil
 }
@@ -762,16 +758,15 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	}
 
 	queueItem := txQueueItem{
-		tx:               tx,
-		txSize:           int(tx.Size()), // #nosec G115
-		options:          options,
-		resultChan:       resultChan,
-		returnedResult:   &atomic.Bool{},
-		ctx:              queueCtx,
-		firstAppearance:  time.Now(),
-		isTimeboosted:    isExpressLaneController,
-		blockStamp:       blockStamp,
-		pgaPriorityBoost: new(uint64),
+		tx:              tx,
+		txSize:          int(tx.Size()), // #nosec G115
+		options:         options,
+		resultChan:      resultChan,
+		returnedResult:  &atomic.Bool{},
+		ctx:             queueCtx,
+		firstAppearance: time.Now(),
+		isTimeboosted:   isExpressLaneController,
+		blockStamp:      blockStamp,
 	}
 	select {
 	case s.txQueue <- queueItem:

@@ -7,8 +7,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math/big"
-
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // txHeap implements heap.Interface as a max-heap on priority, ties broken by earliest GetFirstAppearance. It owns the
@@ -20,8 +18,8 @@ func (h txHeap[T]) Len() int {
 }
 
 func (h txHeap[T]) Less(i, j int) bool {
-	if h[i].priority != h[j].priority {
-		return h[i].priority > h[j].priority // max-heap: higher priority first
+	if h[i].cachedPriority != h[j].cachedPriority {
+		return h[i].cachedPriority > h[j].cachedPriority // max-heap: higher priority first
 	}
 	return h[i].tx.GetFirstAppearance().Before(h[j].tx.GetFirstAppearance()) // tie-break: earlier arrival
 }
@@ -95,10 +93,9 @@ func (h *txHeap[T]) pushBatch(entries []PrioritizedTx[T]) {
 
 // addBoost adds delta to every entry's accumulated boost and priority key, applying the anti-starvation boost to the
 // whole queue. Adding the same delta to every key preserves the relative order, so the heap invariant holds without a
-// re-heapify. The add saturates so a key near the uint64 ceiling cannot wrap.
+// re-heapify.
 func (h txHeap[T]) addBoost(delta uint64) {
 	for i := range h {
-		h[i].tx.IncreaseBoost(delta)
-		h[i].priority = arbmath.SaturatingUAdd(h[i].priority, delta)
+		h[i].addBoost(delta)
 	}
 }

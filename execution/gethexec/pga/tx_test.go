@@ -37,24 +37,12 @@ type mockTx struct {
 	firstAppearance time.Time
 	resultChan      chan error
 	returnedResult  *atomic.Bool
-	boost           *uint64 // pointer-backed like txQueueItem.pgaPriorityBoost, so the value receiver can mutate it
 }
 
-// ComputePgaPriority folds the accumulated boost into the computed fee, mirroring the real adapter so the mempool
-// tests exercise the same boost-into-priority path.
+// ComputePgaPriority returns the base priority from the test fee func; the boost lives on PrioritizedTx now.
 func (m mockTx) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
-	fee, err := m.fee(baseFee)
-	if err != nil {
-		return 0, err
-	}
-	var boost uint64
-	if m.boost != nil {
-		boost = *m.boost
-	}
-	return fee + boost, nil
+	return m.fee(baseFee)
 }
-
-func (m mockTx) IncreaseBoost(delta uint64) { *m.boost += delta }
 
 func (m mockTx) ReportError(err error) {
 	if m.returnedResult.Swap(true) {
@@ -75,8 +63,18 @@ func TestPgaPrioritizedTxSetPriorityFromComputedFee(t *testing.T) {
 	if !item.setPriority(big.NewInt(7)) {
 		t.Fatal("setPriority returned false, want true")
 	}
-	if item.priority != 42 {
-		t.Fatalf("priority = %d, want 42", item.priority)
+	if item.cachedPriority != 42 {
+		t.Fatalf("priority = %d, want 42", item.cachedPriority)
+	}
+}
+
+func TestPgaPrioritizedTxSetPriorityFoldsInBoost(t *testing.T) {
+	item := PrioritizedTx[mockTx]{tx: mockTx{fee: constFee(42)}, boost: 8}
+	if !item.setPriority(big.NewInt(7)) {
+		t.Fatal("setPriority returned false, want true")
+	}
+	if item.cachedPriority != 50 {
+		t.Fatalf("priority = %d, want 50 (42 base + 8 boost)", item.cachedPriority)
 	}
 }
 
