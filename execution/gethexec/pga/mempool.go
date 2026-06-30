@@ -16,7 +16,7 @@ type Mempool[T Tx] struct {
 	baseFee              *big.Int  // basefee of the block under construction
 	maxTxDataSize        int       // max promoted-transaction size, for the block under construction
 	boostDivisor         uint64    // used to compute the priority boost
-	lastIncludedPriority uint64    // the priority of the last transaction included in the block
+	lastIncludedPriority uint64    // the priority of the last transaction included in the pga round
 }
 
 func NewMempool[T Tx](txQueue <-chan T, roundsPerBlock uint) *Mempool[T] {
