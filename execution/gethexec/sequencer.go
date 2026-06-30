@@ -440,7 +440,7 @@ func (q *synchronizedTxQueue) Len() int {
 	return q.queue.Len()
 }
 
-type createdBlockInfo struct {
+type pendingQueueItemsResults struct {
 	block      *types.Block
 	queueItems []txQueueItem
 	hooks      *FullSequencingHooks
@@ -475,7 +475,7 @@ type Sequencer struct {
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
-	lastCreatedBlockWithRegularTxsInfo *createdBlockInfo
+	pendingQueueItemsResults *pendingQueueItemsResults
 	createBlockMutex                   sync.Mutex
 
 	pendingDelayedMsgCommit bool
@@ -1359,7 +1359,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
-	s.lastCreatedBlockWithRegularTxsInfo = nil
+	s.pendingQueueItemsResults = nil
 
 	forwarder := s.getForwarder()
 
@@ -1376,7 +1376,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 					item.returnResult(sequencerInternalError)
 				}
 			}
-			s.lastCreatedBlockWithRegularTxsInfo = nil
+			s.pendingQueueItemsResults = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
 			throttleRegularSequencingFor = s.config().MaxBlockSpeed
 		}
@@ -1518,7 +1518,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		}
 	}
 
-	s.lastCreatedBlockWithRegularTxsInfo = &createdBlockInfo{
+	s.pendingQueueItemsResults = &pendingQueueItemsResults{
 		block:      block,
 		hooks:      hooks,
 		queueItems: queueItems,
@@ -1547,7 +1547,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		return
 	}
 
-	if s.lastCreatedBlockWithRegularTxsInfo == nil {
+	if s.pendingQueueItemsResults == nil {
 		return
 	}
 
@@ -1555,34 +1555,34 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		forwarder := s.getForwarder()
 		if forwarder != nil {
 			// forward if we have where to
-			s.handleInactive(forwarder, s.lastCreatedBlockWithRegularTxsInfo.queueItems)
+			s.handleInactive(forwarder, s.pendingQueueItemsResults.queueItems)
 			return
 		}
 
 		// adds back to queue otherwise
-		for _, item := range s.lastCreatedBlockWithRegularTxsInfo.queueItems {
+		for _, item := range s.pendingQueueItemsResults.queueItems {
 			s.txRetryQueue.Push(item)
 		}
 
-		s.lastCreatedBlockWithRegularTxsInfo = nil
+		s.pendingQueueItemsResults = nil
 		return
 	}
 
-	if s.lastCreatedBlockWithRegularTxsInfo.block != nil {
+	if s.pendingQueueItemsResults.block != nil {
 		successfulBlocksCounter.Inc(1)
-		s.nonceCache.Finalize(s.lastCreatedBlockWithRegularTxsInfo.block)
+		s.nonceCache.Finalize(s.pendingQueueItemsResults.block)
 	}
 
 	if errWhileSequencing != nil {
-		for _, queueItem := range s.lastCreatedBlockWithRegularTxsInfo.queueItems {
+		for _, queueItem := range s.pendingQueueItemsResults.queueItems {
 			queueItem.returnResult(errWhileSequencing)
 		}
 	} else {
 		madeBlock := false
 		var blockTxSize int64
 		blockGasLimitReached := false
-		for i, err := range s.lastCreatedBlockWithRegularTxsInfo.hooks.txErrors {
-			queueItem := s.lastCreatedBlockWithRegularTxsInfo.queueItems[i]
+		for i, err := range s.pendingQueueItemsResults.hooks.txErrors {
+			queueItem := s.pendingQueueItemsResults.queueItems[i]
 			if err == nil {
 				madeBlock = true
 				blockTxSize += int64(queueItem.txSize)
@@ -1611,7 +1611,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if s.lastCreatedBlockWithRegularTxsInfo.hooks.txSizeLimitReached {
+			if s.pendingQueueItemsResults.hooks.txSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
 			} else if blockGasLimitReached {
 				gasLimitedBlocksCounter.Inc(1)
@@ -1622,7 +1622,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		}
 	}
 
-	s.lastCreatedBlockWithRegularTxsInfo = nil
+	s.pendingQueueItemsResults = nil
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {

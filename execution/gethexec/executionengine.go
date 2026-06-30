@@ -262,7 +262,7 @@ type L1PriceData struct {
 	msgToL1PriceData        []L1PriceDataOfMsg
 }
 
-type sequencedBlockInfo struct {
+type pendingAppendBlock struct {
 	block                         *types.Block
 	receipts                      types.Receipts
 	statedb                       *state.StateDB
@@ -299,7 +299,7 @@ type ExecutionEngine struct {
 	reorgEventsNotifier    chan struct{}
 	latestBlockMutex       sync.Mutex
 	latestBlock            *types.Block
-	lastSequencedBlockInfo *sequencedBlockInfo
+	pendingAppendBlock *pendingAppendBlock
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
@@ -730,26 +730,26 @@ func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 
-	if s.lastSequencedBlockInfo == nil {
+	if s.pendingAppendBlock == nil {
 		return errors.New("no last sequenced block info")
 	}
 
 	err := s.appendBlock(
-		s.lastSequencedBlockInfo.block,
-		s.lastSequencedBlockInfo.statedb,
-		s.lastSequencedBlockInfo.receipts,
-		s.lastSequencedBlockInfo.blockCalcTime,
+		s.pendingAppendBlock.block,
+		s.pendingAppendBlock.statedb,
+		s.pendingAppendBlock.receipts,
+		s.pendingAppendBlock.blockCalcTime,
 	)
 	if err != nil {
 		return err
 	}
 	s.cacheL1PriceDataOfMsg(
-		s.lastSequencedBlockInfo.msgIdx,
-		s.lastSequencedBlockInfo.block,
-		s.lastSequencedBlockInfo.blockBuiltUsingDelayedMessage,
+		s.pendingAppendBlock.msgIdx,
+		s.pendingAppendBlock.block,
+		s.pendingAppendBlock.blockBuiltUsingDelayedMessage,
 	)
 
-	s.lastSequencedBlockInfo = nil
+	s.pendingAppendBlock = nil
 
 	return nil
 }
@@ -836,7 +836,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, err
 	}
 
-	s.lastSequencedBlockInfo = &sequencedBlockInfo{
+	s.pendingAppendBlock = &pendingAppendBlock{
 		block:                         block,
 		receipts:                      receipts,
 		statedb:                       statedb,
@@ -1040,7 +1040,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	s.lastSequencedBlockInfo = &sequencedBlockInfo{
+	s.pendingAppendBlock = &pendingAppendBlock{
 		block:                         block,
 		receipts:                      receipts,
 		statedb:                       statedb,
