@@ -91,21 +91,73 @@ func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "filtered tx should be mined with failed status")
 	require.Equal(t, delayedTx.Gas(), receipt.GasUsed, "filtered tx should consume all gas (punishment)")
 
-	// Before the fix, both calls return "incorrect number of top-level calls" because the
-	// filtered tx skipped the EVM without faking a top-level frame.
+	senderAddr := builder.L2Info.GetAddress("Sender")
 	l2rpc := builder.L2.Stack.Attach()
 	defer l2rpc.Close()
-	for _, tracer := range []string{"callTracer", "flatCallTracer", "erc7562Tracer"} {
+
+	// 1. callTracer (default and onlyTopCall, the latter being how production traces): the
+	//    synthetic frame must be exactly one top-level reverted CALL with no children, the
+	//    real sender/recipient, and the filter error. Before the fix this returned
+	//    "incorrect number of top-level calls" because no frame was captured at all.
+	for _, cfg := range []map[string]interface{}{
+		{"tracer": "callTracer"},
+		{"tracer": "callTracer", "tracerConfig": map[string]interface{}{"onlyTopCall": true}},
+	} {
+		var frame callFrame
+		err := l2rpc.CallContext(ctx, &frame, "debug_traceTransaction", txHash, cfg)
+		require.NoErrorf(t, err, "debug_traceTransaction %v must not fail on a filtered tx", cfg)
+		require.Equalf(t, "CALL", frame.Type, "filtered tx %v should trace as a CALL frame", cfg)
+		require.Equalf(t, senderAddr, frame.From, "frame.from should be the tx sender (%v)", cfg)
+		require.NotNilf(t, frame.To, "frame.to should be set (%v)", cfg)
+		require.Equalf(t, filteredAddr, *frame.To, "frame.to should be the tx recipient (%v)", cfg)
+		require.NotEmptyf(t, frame.Error, "skipped filtered frame should carry the filter error (%v)", cfg)
+		require.Emptyf(t, frame.Calls, "synthetic top-level frame must have no children (%v)", cfg)
+	}
+
+	// 2. Other tracers use different output shapes; just require a successful, non-empty
+	//    trace (i.e. no callstack-balance error).
+	for _, tracer := range []string{"flatCallTracer", "erc7562Tracer"} {
 		var txTrace json.RawMessage
 		err := l2rpc.CallContext(ctx, &txTrace, "debug_traceTransaction", txHash,
 			map[string]interface{}{"tracer": tracer})
 		require.NoErrorf(t, err, "debug_traceTransaction with %s must not fail on a filtered tx", tracer)
 		require.NotEmpty(t, txTrace, "tracer %s returned an empty trace", tracer)
+	}
 
-		var blockTrace json.RawMessage
-		err = l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber",
+	// 3. Block-level tracing is where the incident manifested. Every tracer must trace the
+	//    whole block, and the filtered tx's entry must carry a result rather than an error.
+	for _, tracer := range []string{"callTracer", "flatCallTracer", "erc7562Tracer"} {
+		var blockTrace []blockTraceEntry
+		err := l2rpc.CallContext(ctx, &blockTrace, "debug_traceBlockByNumber",
 			rpc.BlockNumber(receipt.BlockNumber.Int64()),
 			map[string]interface{}{"tracer": tracer})
-		require.NoErrorf(t, err, "debug_traceBlockByNumber with %s must not fail on a block with a filtered tx", tracer)
+		require.NoErrorf(t, err, "debug_traceBlockByNumber with %s must not fail", tracer)
+		require.NotEmptyf(t, blockTrace, "tracer %s returned an empty block trace", tracer)
+		found := false
+		for _, entry := range blockTrace {
+			if entry.TxHash != txHash {
+				continue
+			}
+			found = true
+			require.Emptyf(t, entry.Error, "tracer %s: filtered tx entry must not carry an error", tracer)
+			require.NotEmptyf(t, entry.Result, "tracer %s: filtered tx entry must have a result", tracer)
+		}
+		require.Truef(t, found, "tracer %s: block trace should include the filtered tx", tracer)
 	}
+}
+
+// callFrame mirrors the fields of go-ethereum's callTracer output that this test asserts on.
+type callFrame struct {
+	Type  string          `json:"type"`
+	From  common.Address  `json:"from"`
+	To    *common.Address `json:"to"`
+	Error string          `json:"error"`
+	Calls []callFrame     `json:"calls"`
+}
+
+// blockTraceEntry mirrors go-ethereum's per-tx debug_traceBlock* result envelope.
+type blockTraceEntry struct {
+	TxHash common.Hash     `json:"txHash"`
+	Result json.RawMessage `json:"result"`
+	Error  string          `json:"error"`
 }

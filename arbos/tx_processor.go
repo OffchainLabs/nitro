@@ -151,19 +151,25 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.
 }
 
 // emitSkippedCallFrame fakes a balanced top-level call frame for txs whose real
-// evm.Call/evm.Create is skipped (system-tx short-circuit in StartTxHook, pre-recorded
-// revert, or onchain-filtered tx in RevertedTxHook). Without it the tracer's callstack
-// never gets its single top-level frame, and callTracer/flatCall/erc7562 fail in
-// GetResult with "incorrect number of top-level calls".
+// evm.Call/evm.Create is skipped: the deposit/retryable error short-circuits in
+// StartTxHook (endTxNow=true) and the pre-recorded-revert / onchain-filtered paths in
+// RevertedTxHook (vmerr != nil). Without it the tracer's callstack never gets its single
+// top-level frame, so callTracer/erc7562Tracer fail in GetResult with "incorrect number of
+// top-level calls" and flatCallTracer with "invalid number of calls".
 //
-// It emits OnEnter immediately followed by OnExit (no body in between), which is the
-// EVM-skipped analogue of the OnEnter/OnExit pair a real evm.Call produces. Because the
-// pair is back-to-back with no statedb ops between, the tracing journal's revert (on
-// reverted=true) iterates zero entries and is a no-op; callers must therefore invoke this
-// as the LAST statement before the skip-return, after any nonce/gas mutation. depth is
-// evm.Depth()==0 at every such site. A nil tracer makes this a no-op. A nil `to` is a
-// contract creation: it is traced as CREATE (matching a real evm.Create) with a zero
-// address, since the would-be contract address is unknown for a skipped creation.
+// It emits OnEnter immediately followed by OnExit (no body in between) — the EVM-skipped
+// analogue of the pair a real evm.Call produces, including the vm.VMErrorFromErr wrapping
+// on the error. Because the pair is back-to-back with no statedb ops between, the tracing
+// journal's revert (on reverted=true) iterates zero entries and is a no-op; callers must
+// therefore invoke this as the LAST statement before the skip-return, after any nonce/gas
+// mutation. depth is evm.Depth()==0 at every such site.
+//
+// reverted is true whenever err != nil: these paths do no EVM work and surface as failed
+// txs, so the frame mirrors a reverted top-level call. (The deposit/internal/submit-retryable
+// success paths use startTracer instead, which reports reverted=false because they do apply
+// ArbOS state changes.) A nil tracer makes this a no-op. A nil `to` is a contract creation:
+// it is traced as CREATE (matching a real evm.Create) with a zero address, since the
+// would-be contract address is unknown for a skipped creation.
 func (p *TxProcessor) emitSkippedCallFrame(to *common.Address, gasUsed uint64, err error) {
 	tracer := p.evm.Config.Tracer
 	if tracer == nil {
@@ -181,7 +187,10 @@ func (p *TxProcessor) emitSkippedCallFrame(to *common.Address, gasUsed uint64, e
 		tracer.OnEnter(depth, byte(typ), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 	}
 	if tracer.OnExit != nil {
-		tracer.OnExit(depth, nil, gasUsed, err, err != nil)
+		// Wrap with VMErrorFromErr to match the real evm.Call (core/vm/evm.go), so tracers
+		// that read ErrorCode()/type-assert *vm.VMError treat this skipped frame like a real
+		// reverted call rather than diverging on the raw *core.ErrFilteredTx.
+		tracer.OnExit(depth, nil, gasUsed, vm.VMErrorFromErr(err), err != nil)
 	}
 }
 
