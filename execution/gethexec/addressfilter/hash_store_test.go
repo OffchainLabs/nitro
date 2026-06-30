@@ -4,12 +4,10 @@
 package addressfilter
 
 import (
-	"context"
 	"encoding/binary"
 	"math/rand/v2"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -19,8 +17,6 @@ import (
 
 func TestHashStorePingPongReuse(t *testing.T) {
 	store := newHashStore(100, 1000)
-	store.reuseGrace = 0 // reuse buffers immediately; deterministic ping-pong
-	ctx := context.Background()
 	salt := uuid.New()
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
@@ -32,7 +28,7 @@ func TestHashStorePingPongReuse(t *testing.T) {
 	require.NotNil(t, d0)
 	require.NotNil(t, d1)
 
-	require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
 	require.Same(t, d1, store.data.Load(), "first store should publish buffer 1")
 	if r, _ := store.IsRestricted(addr1); !r {
 		t.Fatal("addr1 should be restricted after first store")
@@ -42,7 +38,7 @@ func TestHashStorePingPongReuse(t *testing.T) {
 	}
 	require.Equal(t, 1, store.Size())
 
-	require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2")
 	require.Same(t, d0, store.data.Load(), "second store should publish buffer 0")
 	if r, _ := store.IsRestricted(addr2); !r {
 		t.Fatal("addr2 should be restricted after second store")
@@ -59,19 +55,17 @@ func TestHashStorePingPongReuse(t *testing.T) {
 
 func TestHashStoreSnapshotStableAcrossSwap(t *testing.T) {
 	store := newHashStore(100, 1000)
-	store.reuseGrace = 0
-	ctx := context.Background()
 	salt := uuid.New()
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
 	h1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr1)
 	h2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr2)
 
-	require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
 	snap := store.data.Load() // hold the old snapshot
 
 	// The next store reuses the other buffer; it must not mutate snap.
-	require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2")
 
 	_, ok := snap.hashes[snap.hashAddress(addr1)]
 	require.True(t, ok, "old snapshot should still contain addr1 after a swap")
@@ -80,28 +74,25 @@ func TestHashStoreSnapshotStableAcrossSwap(t *testing.T) {
 func TestHashStoreDisabledModeAllocatesNewData(t *testing.T) {
 	store := NewHashStore(100) // maxHashes == 0
 	require.Equal(t, 0, store.maxHashes)
-	ctx := context.Background()
 	salt := uuid.New()
 	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
 
-	require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e1"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e1")
 	d1 := store.data.Load()
-	require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e2"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e2")
 	d2 := store.data.Load()
 	require.NotSame(t, d1, d2, "disabled mode should allocate a new hashData each Store")
 }
 
 // TestHashStorePreallocConcurrentReuseRaceFree is the regression guard for the
-// buffer-reuse data race. Run under -race: each Store waits out the grace before
-// recycling a buffer, so no concurrent reader can still hold it. Without the
-// grace wait this fails under -race. The grace is set well above any plausible
-// reader deschedule so the test is not timing-flaky; with the wait removed the
-// race fires regardless of the grace value.
+// buffer-reuse data race. Readers hammer IsRestricted while Store rapidly
+// recycles the ping-pong buffers in place. The per-buffer RWMutex makes Store
+// wait for in-flight readers before clearing a buffer, so the concurrent map
+// read/write (a fatal, unrecoverable error in Go) never happens. Run under
+// -race; with the locking removed this fails.
 func TestHashStorePreallocConcurrentReuseRaceFree(t *testing.T) {
 	store := newHashStore(100, 1000)
-	store.reuseGrace = 400 * time.Millisecond
-	ctx := context.Background()
 	salt := uuid.New()
 	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
@@ -121,10 +112,9 @@ func TestHashStorePreallocConcurrentReuseRaceFree(t *testing.T) {
 		})
 	}
 
-	// Each store after the first waits out the grace, so a buffer is recycled
-	// only long after it was retired, while readers keep hammering it.
-	for range 5 {
-		require.NoError(t, store.Store(ctx, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e"))
+	// Recycle the buffers many times in quick succession while readers hammer them.
+	for range 1000 {
+		store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e")
 	}
 	close(stop)
 	wg.Wait()
@@ -148,7 +138,7 @@ func benchmarkIsRestricted(b *testing.B, cacheSize int) {
 	}
 
 	store := NewHashStore(cacheSize)
-	require.NoError(b, store.Store(context.Background(), uuid.New(), salt, HashingSchemeStringInput, hashes, "bench"))
+	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "bench")
 
 	// Precompute random indices so the timed loop does no RNG work. The length is a
 	// power of two far larger than the cache, so masking is cheap and cycling back to

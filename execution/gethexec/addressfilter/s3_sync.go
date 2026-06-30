@@ -122,15 +122,14 @@ func (s *S3SyncManager) Initialize(ctx context.Context) error {
 }
 
 // handleHashListData parses the downloaded JSON data and loads it into the hashStore.
-func (s *S3SyncManager) handleHashListData(ctx context.Context, data []byte, digest string) error {
+// ctx is unused: the generic DataHandler provides it, but Store cannot block or fail.
+func (s *S3SyncManager) handleHashListData(_ context.Context, data []byte, digest string) error {
 	parsedData, err := parseHashListJSONInto(data, s.hashesBacking)
 	if err != nil {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	if err := s.hashStore.Store(ctx, parsedData.Id, parsedData.Salt, parsedData.Scheme, parsedData.Hashes, digest); err != nil {
-		return err
-	}
+	s.hashStore.Store(parsedData.Id, parsedData.Salt, parsedData.Scheme, parsedData.Hashes, digest)
 	log.Info("loaded restricted addr list", "filterSetID", parsedData.Id, "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data), "scheme", parsedData.Scheme)
 	return nil
 }

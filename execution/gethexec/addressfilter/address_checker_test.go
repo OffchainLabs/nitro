@@ -38,7 +38,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	hash := common.HexToHash("0x8fb74f22f0aed996e7548101ae1cea812ccdf86e7ad8a781eebea00f797ce4a6")
 	hash2 := common.HexToHash("0xe4c758332a0fe49872f79ae15d2e1c0d76daeb5a9b33578e7f11d3e2571dad1a")
 	filterSetID := uuid.New()
-	require.NoError(t, store.Store(context.Background(), filterSetID, salt, HashingSchemeStringInput, []common.Hash{hash, hash2}, "test"))
+	store.Store(filterSetID, salt, HashingSchemeStringInput, []common.Hash{hash, hash2}, "test")
 
 	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -132,7 +132,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 
 	store := NewHashStore(cacheSize)
 	filterSetID := uuid.New()
-	require.NoError(t, store.Store(context.Background(), filterSetID, salt, HashingSchemeStringInput, filteredHashes, "heavy"))
+	store.Store(filterSetID, salt, HashingSchemeStringInput, filteredHashes, "heavy")
 
 	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())

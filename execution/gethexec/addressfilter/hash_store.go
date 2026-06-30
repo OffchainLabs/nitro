@@ -4,9 +4,9 @@
 package addressfilter
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,10 +25,12 @@ const (
 	HashingSchemeRawBytesInput HashingScheme = "sha256-rawbytesinput"
 )
 
-// hashData holds the immutable hash list data.
-// Once created, this struct is never modified, making it safe for concurrent reads.
-// The cache is included here so it gets swapped atomically with the hash data.
+// hashData holds a hash list snapshot. In preallocated mode Store recycles a
+// snapshot in place, so mu guards its mutable fields: readers take the read
+// lock, Store the write lock. The cache swaps atomically with the data and is
+// itself safe for concurrent use.
 type hashData struct {
+	mu                    sync.RWMutex
 	id                    uuid.UUID
 	salt                  uuid.UUID
 	useRawBytesInput      bool
@@ -39,35 +41,25 @@ type hashData struct {
 	cache                 *lru.Cache[common.Address, bool] // LRU cache for address lookup results
 }
 
-// HashStore provides thread-safe access to restricted address hashes.
-// It uses atomic.Pointer for lock-free reads during updates, implementing
-// a double-buffering strategy where new data is prepared in the background
-// and then atomically swapped in.
+// HashStore provides thread-safe access to restricted address hashes using a
+// double-buffering strategy: new data is prepared and then atomically swapped
+// in via an atomic.Pointer, so a reader loads the current snapshot without
+// blocking the swap.
 //
 // When maxHashes > 0 the store preallocates two ping-pong hashData buffers and
 // reuses them on every Store, so a reload performs no large allocation. Store
-// recycles a buffer in place, so it must not touch a buffer a reader still
-// holds. A reader holds a snapshot only for a single IsRestricted call, so Store
-// recycles a buffer only after it has been free (unpublished) for reuseGrace,
-// blocking until then; freeAt records when each buffer was retired. With the
-// grace far larger than any read, no reader can reference the buffer being
-// cleared. Store is single-writer (serialized by the syncer mutex), so active,
-// freeAt, and reuseGrace need no synchronization.
+// recycles a buffer in place, so it must not clear one a reader still holds.
+// Each hashData carries an RWMutex: a reader holds the read lock for the whole
+// call, and Store write-locks the buffer it is about to recycle, blocking until
+// every in-flight reader of that buffer has released it. Store is single-writer
+// (serialized by the syncer mutex), so active needs no synchronization.
 type HashStore struct {
-	data       atomic.Pointer[hashData]
-	cacheSize  int
-	maxHashes  int
-	buffers    [2]*hashData
-	active     int
-	freeAt     [2]time.Time
-	reuseGrace time.Duration
+	data      atomic.Pointer[hashData]
+	cacheSize int
+	maxHashes int
+	buffers   [2]*hashData
+	active    int
 }
-
-// defaultBufferReuseGracePeriod is how long a preallocated buffer must sit
-// unpublished before Store may recycle it. It is far larger than any plausible
-// IsRestricted call yet far smaller than the default poll interval, so a
-// steady-state reload never waits.
-const defaultBufferReuseGracePeriod = 10 * time.Second
 
 func HashStringInputWithPrefix(prefix string, address common.Address) common.Hash {
 	hashInput := prefix + common.Bytes2Hex(address.Bytes())
@@ -117,7 +109,6 @@ func newHashStore(cacheSize int, maxHashes int) *HashStore {
 		maxHashes: maxHashes,
 	}
 	if maxHashes > 0 {
-		h.reuseGrace = defaultBufferReuseGracePeriod
 		for i := range h.buffers {
 			d := &hashData{
 				hashes: warmbuffer.MakeWarmMap[common.Hash, struct{}](maxHashes, distinctHashGen()),
@@ -150,13 +141,12 @@ func fillData(d *hashData, id uuid.UUID, salt uuid.UUID, scheme HashingScheme, h
 
 // Store atomically swaps in a new hash list.
 // This is called after a new hash list has been downloaded and parsed.
-// In preallocated mode it reuses a ping-pong buffer, blocking until the buffer
-// has been free for reuseGrace so no reader can still hold it; otherwise it
-// builds a new hashData. Either way the LRU cache is reset so it stays
-// consistent with the new data. Store is single-writer (serialized by the syncer
-// mutex). It returns ctx.Err() if the context is cancelled while waiting, in
-// which case the currently published data is left untouched.
-func (h *HashStore) Store(ctx context.Context, id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) error {
+// In preallocated mode it recycles a ping-pong buffer in place under the
+// buffer's write lock, which blocks until every in-flight reader of that buffer
+// has released it; otherwise it builds a new hashData. Either way the LRU cache
+// is reset so it stays consistent with the new data. Store is single-writer
+// (serialized by the syncer mutex).
+func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
 	if h.maxHashes == 0 {
 		newData := &hashData{
 			hashes: make(map[common.Hash]struct{}, len(hashes)),
@@ -164,40 +154,29 @@ func (h *HashStore) Store(ctx context.Context, id uuid.UUID, salt uuid.UUID, sch
 		}
 		fillData(newData, id, salt, scheme, hashes, digest)
 		h.data.Store(newData) // Atomic pointer swap
-		return nil
+		return
 	}
+
+	// Recycle the non-published buffer in place. Its write lock blocks until every
+	// reader still holding it from a previous publish has released its read lock,
+	// so the clear and refill never race a reader.
 	next := 1 - h.active
-
-	// Reuse the non-published buffer, but only once it has been unpublished for
-	// reuseGrace (see the HashStore doc), which guarantees no reader still holds
-	// it. freeAt is when the buffer was retired; its zero value means it was never
-	// published, so the first reuse is immediate. Go timers never fire early, so a
-	// single wait is exact. Cancelling leaves the live data untouched.
-	if wait := h.reuseGrace - time.Since(h.freeAt[next]); wait > 0 {
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-
-	// The buffer is now quiescent: clear and refill it in place, then publish.
 	d := h.buffers[next]
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	clear(d.hashes) // retains bucket memory
 	d.cache.Purge()
 	fillData(d, id, salt, scheme, hashes, digest)
-	h.data.Store(d)                 // atomic pointer swap
-	h.freeAt[h.active] = time.Now() // the buffer just retired becomes free now
+	h.data.Store(d) // publish under the write lock; the deferred Unlock releases readers
 	h.active = next
-	return nil
 }
 
 // IsRestricted returns whether the address is restricted and the filter set ID,
 // both read from the same snapshot.
 func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {
-	data := h.data.Load() // Atomic load - no lock needed
+	data := h.data.Load() // lock-free snapshot load
+	data.mu.RLock()
+	defer data.mu.RUnlock()
 	if data.salt == uuid.Nil {
 		return false, uuid.Nil // Not initialized
 	}
@@ -214,13 +193,22 @@ func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {
 
 // Digest Return the digest of the current loaded hashstore.
 func (h *HashStore) Digest() string {
-	return h.data.Load().digest
+	data := h.data.Load()
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	return data.digest
 }
 
 func (h *HashStore) Size() int {
-	return len(h.data.Load().hashes)
+	data := h.data.Load()
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	return len(data.hashes)
 }
 
 func (h *HashStore) LoadedAt() time.Time {
-	return h.data.Load().loadedAt
+	data := h.data.Load()
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	return data.loadedAt
 }
