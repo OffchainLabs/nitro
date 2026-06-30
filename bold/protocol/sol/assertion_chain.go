@@ -33,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/testgen"
 	util_containers "github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 var (
@@ -450,14 +451,10 @@ func stakeTokenSupportsWethDeposit(ctx context.Context, backend protocol.ChainBa
 	if err == nil {
 		return true, nil
 	}
-	if isExecutionReverted(err) {
+	if headerreader.IsExecutionReverted(err) {
 		return false, nil
 	}
 	return false, err
-}
-
-func isExecutionReverted(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "execution reverted")
 }
 
 // Attempts to auto-wrap ETH to WETH with the required amount that is specified to the function.
