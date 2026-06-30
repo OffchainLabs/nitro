@@ -253,42 +253,43 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 
 // resequenceReorgedMessages must be called with insertionMutex held.
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
-	if s.execSequencer.IsSome() {
-		execSequencer := s.execSequencer.Unwrap()
+	if s.execSequencer.IsNone() {
+		return
+	}
+	execSequencer := s.execSequencer.Unwrap()
 
-		if !execSequencer.IsActive() {
-			log.Warn("Sequencer is not active, not resequencing reorged messages")
-			return
+	if !execSequencer.IsActive() {
+		log.Warn("Sequencer is not active, not resequencing reorged messages")
+		return
+	}
+
+	s.blockProductionMutex.Lock()
+	defer s.blockProductionMutex.Unlock()
+
+	for _, msg := range msgs {
+		sequencedMsg, err := execSequencer.ResequenceReorgedMessage(msg)
+		if err != nil {
+			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
+				log.Info("stopping resequencing reorged messages: execution engine block creation stopped")
+				return
+			}
+			// Best-effort: skip this message and keep resequencing the rest.
+			log.Error("failed to resequence reorged message, skipping it", "err", err)
+			continue
 		}
 
-		s.blockProductionMutex.Lock()
-		defer s.blockProductionMutex.Unlock()
+		if sequencedMsg == nil {
+			continue
+		}
 
-		for _, msg := range msgs {
-			sequencedMsg, err := execSequencer.ResequenceReorgedMessage(msg)
-			if err != nil {
-				if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
-					log.Info("stopping resequencing reorged messages: execution engine block creation stopped")
-					return
-				}
-				// Best-effort: skip this message and keep resequencing the rest.
-				log.Error("failed to resequence reorged message, skipping it", "err", err)
-				continue
-			}
+		if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
+			log.Error("failed to write resequenced reorged message, skipping it", "msg", sequencedMsg, "err", err)
+			continue
+		}
 
-			if sequencedMsg == nil {
-				continue
-			}
-
-			if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
-				log.Error("failed to write resequenced reorged message, skipping it", "msg", sequencedMsg, "err", err)
-				continue
-			}
-
-			if err := execSequencer.AppendLastSequencedBlock(); err != nil {
-				log.Error("failed to append resequenced reorged block, skipping it", "msg", sequencedMsg, "err", err)
-				continue
-			}
+		if err := execSequencer.AppendLastSequencedBlock(); err != nil {
+			log.Error("failed to append resequenced reorged block, skipping it", "msg", sequencedMsg, "err", err)
+			continue
 		}
 	}
 }
