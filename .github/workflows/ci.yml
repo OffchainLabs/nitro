@@ -113,9 +113,8 @@ jobs:
           [[ "${{ needs.fast.result }}" =~ ^(success|skipped)$ ]] || exit 1
 
   can_see_status:
-    # This job is just to make sure that the "can_proceed" job's status is visible
-    # on the pull request page, even if it is skipped due to all its dependencies being
-    # skipped. It does not depend on any other jobs, so it always runs.
+    # Depends on nothing, so it always runs and always reports a status on the
+    # pull request page regardless of which other jobs were skipped.
     runs-on: ubuntu-4
     steps:
       - run: true
