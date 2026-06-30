@@ -33,7 +33,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".concurrency", DefaultS3Config.Concurrency, "S3 multipart download concurrency")
 	f.Int(prefix+".max-retries", DefaultS3Config.MaxRetries, "maximum retries for S3 part body download")
 	f.Int(prefix+".max-file-size-mb", DefaultS3Config.MaxFileSizeMB, "maximum allowed S3 object size in MB; if the object is larger, skip the download (0 disables the check)")
-	f.Bool(prefix+".preallocate-memory", DefaultS3Config.PreallocateMemory, "preallocate the download buffer at startup, sized to max-file-size-mb, so downloads reuse it instead of allocating a per-object buffer; engages only when max-file-size-mb is set")
+	f.Bool(prefix+".preallocate-memory", DefaultS3Config.PreallocateMemory, "preallocate the download buffer at startup, so downloads reuse it instead of allocating a per-object buffer; engages only when max-file-size-mb is set")
 }
 
 // Validate checks that required S3 configuration fields are set.
