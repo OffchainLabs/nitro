@@ -72,7 +72,6 @@ type TransactionStreamer struct {
 	fatalErrChan chan<- error
 	config       TransactionStreamerConfigFetcher
 
-	// Lock ordering when more than one is held: insertionMutex -> blockProductionMutex -> reorgMutex.
 	insertionMutex sync.Mutex // cannot be acquired while reorgMutex is held
 	// blockProductionMutex gates every action that produces a block on the
 	// execution side (digest, sequence, reorg, resequence), so those actions are
