@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -266,22 +267,27 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 		for _, msg := range msgs {
 			sequencedMsg, err := execSequencer.ResequenceReorgedMessage(msg)
 			if err != nil {
-				log.Error("failed to resequence reorged message", "err", err)
-				return
+				if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
+					log.Info("stopping resequencing reorged messages: execution engine block creation stopped")
+					return
+				}
+				// Best-effort: skip this message and keep resequencing the rest.
+				log.Error("failed to resequence reorged message, skipping it", "err", err)
+				continue
 			}
 
-			if sequencedMsg != nil {
-				err = s.WriteSequencedMsg(sequencedMsg)
-				if err != nil {
-					log.Error("failed to write reorged message", "msg", sequencedMsg, "err", err)
-					return
-				}
+			if sequencedMsg == nil {
+				continue
+			}
 
-				err = execSequencer.AppendLastSequencedBlock()
-				if err != nil {
-					log.Error("failed to append last sequenced block", "msg", sequencedMsg, "err", err)
-					return
-				}
+			if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
+				log.Error("failed to write resequenced reorged message, skipping it", "msg", sequencedMsg, "err", err)
+				continue
+			}
+
+			if err := execSequencer.AppendLastSequencedBlock(); err != nil {
+				log.Error("failed to append resequenced reorged block, skipping it", "msg", sequencedMsg, "err", err)
+				continue
 			}
 		}
 	}
