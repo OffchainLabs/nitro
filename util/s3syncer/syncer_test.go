@@ -19,7 +19,7 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 	handlerErr := errors.New("parse boom")
 	var handlerReturn error
 	s := &Syncer{
-		handleData: func(ctx context.Context, data []byte, digest string) error { return handlerReturn },
+		handleData: func(data []byte, digest string) error { return handlerReturn },
 	}
 
 	handlerReturn = handlerErr
@@ -179,7 +179,7 @@ type syncerRecorder struct {
 	lastDigest   string
 }
 
-func (r *syncerRecorder) handleData(ctx context.Context, body []byte, digest string) error {
+func (r *syncerRecorder) handleData(body []byte, digest string) error {
 	r.handlerCalls++
 	r.lastBody = bytes.Clone(body)
 	r.lastDigest = digest

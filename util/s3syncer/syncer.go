@@ -23,7 +23,7 @@ import (
 var ErrObjectTooLarge = errors.New("s3 object exceeds max-file-size-mb")
 
 // DataHandler processes downloaded data and the associated digest.
-type DataHandler func(ctx context.Context, data []byte, digest string) error
+type DataHandler func(data []byte, digest string) error
 
 // Syncer handles S3 object syncing with ETag-based change detection.
 type Syncer struct {
@@ -174,7 +174,7 @@ func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string, objec
 }
 
 func (s *Syncer) applyHandled(ctx context.Context, etagDigest string, data []byte) error {
-	if err := s.handleData(ctx, data, etagDigest); err != nil {
+	if err := s.handleData(data, etagDigest); err != nil {
 		// A cancelled context means the load was aborted (e.g. shutdown), not that the
 		// object content is bad. Recording it as failed would skip re-downloading this
 		// same etag on a later poll, so only mark genuine failures.
