@@ -84,29 +84,9 @@ func checkDelayedReportFields(t *testing.T, report *addressfilter.FilteredTxRepo
 		"InboxRequestId should be populated")
 }
 
-// sendDelayedTx sends a transaction via L1 delayed inbox.
-// Returns the L2 tx hash that will be used when sequenced.
-func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *types.Transaction) common.Hash {
-	t.Helper()
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	Require(t, err)
-
-	txbytes, err := tx.MarshalBinary()
-	Require(t, err)
-	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
-
-	l1opts := builder.L1Info.GetDefaultTransactOpts("User", ctx)
-	l1tx, err := delayedInbox.SendL2Message(&l1opts, txwrapped)
-	Require(t, err)
-	_, err = builder.L1.EnsureTxSucceeded(l1tx)
-	Require(t, err)
-
-	return tx.Hash()
-}
-
-// sendDelayedTxReturningL1Block sends a transaction via L1 delayed inbox and returns the L2 tx hash
-// (used when sequenced) along with the L1 block number the delayed message landed in.
-func sendDelayedTxReturningL1Block(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *types.Transaction) (common.Hash, uint64) {
+// sendDelayedTx sends a transaction via L1 delayed inbox. Returns the L2 tx hash that will be used
+// when sequenced, along with the L1 block number the delayed message landed in.
+func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *types.Transaction) (common.Hash, uint64) {
 	t.Helper()
 	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
 	Require(t, err)
@@ -362,7 +342,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -437,7 +417,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -536,13 +516,13 @@ func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testin
 
 	// The filtered delayed message (transfer to FilteredUser).
 	filteredTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	filteredTxHash, filteredDelayedMsgL1Block := sendDelayedTxReturningL1Block(t, ctx, builder, filteredTx)
+	filteredTxHash, filteredDelayedMsgL1Block := sendDelayedTx(t, ctx, builder, filteredTx)
 
 	// Open a small gap (smaller than finalizeDistance) of plain L1 blocks (these do not create delayed
 	// messages), then send the later delayed message.
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 2)
 	laterTx := builder.L2Info.PrepareTx("Sender", "Receiver", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	_, laterDelayedMsgL1Block := sendDelayedTxReturningL1Block(t, ctx, builder, laterTx)
+	_, laterDelayedMsgL1Block := sendDelayedTx(t, ctx, builder, laterTx)
 	require.Greater(t, laterDelayedMsgL1Block, filteredDelayedMsgL1Block, "the later message must land in a later L1 block than the filtered one")
 	require.Less(t, laterDelayedMsgL1Block-filteredDelayedMsgL1Block, finalizeDistance, "gap between the two messages must be smaller than the finalize distance")
 
@@ -664,7 +644,7 @@ func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	// Prepare and send delayed tx TO filtered address
 	transferAmount := big.NewInt(1e12)
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, transferAmount, nil)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 again to ensure all delayed messages are processed
 	advanceL1ForDelayed(t, ctx, builder)
@@ -748,7 +728,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	// 2. TO NormalUser1 (should be blocked behind first)
 	// 3. TO NormalUser2 (should be blocked behind first)
 	delayedTx1 := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	txHash1 := sendDelayedTx(t, ctx, builder, delayedTx1)
+	txHash1, _ := sendDelayedTx(t, ctx, builder, delayedTx1)
 
 	delayedTx2 := builder.L2Info.PrepareTx("Sender", "NormalUser1", builder.L2Info.TransferGas, big.NewInt(2e12), nil)
 	sendDelayedTx(t, ctx, builder, delayedTx2)
@@ -1059,7 +1039,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1128,7 +1108,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1198,7 +1178,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1266,7 +1246,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1332,7 +1312,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", contractAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1951,7 +1931,7 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	// Submit a normal delayed transfer behind it
 	transferAmount := big.NewInt(1e12)
 	delayedTx := builder.L2Info.PrepareTx("Sender", "NormalRecipient", builder.L2Info.TransferGas, transferAmount, nil)
-	delayedTxHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	delayedTxHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -2414,7 +2394,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 
 	arbRetryableTxAddr := types.ArbRetryableTxAddress
 	signedL2Tx := prepareDelayedContractCall(t, builder, "ManualRedeemer", arbRetryableTxAddr, redeemCallData)
-	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	l2TxHash, _ := sendDelayedTx(t, ctx, builder, signedL2Tx)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Phase 4: Verify group revert fires on L2 tx hash (NOT ticketId)
@@ -2872,7 +2852,7 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", contractAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	advanceL1ForDelayed(t, ctx, builder)
 
