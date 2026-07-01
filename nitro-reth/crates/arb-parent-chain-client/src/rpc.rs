@@ -11,6 +11,12 @@ pub struct RpcParentChainReader {
     provider: RootProvider,
 }
 
+impl From<RootProvider> for RpcParentChainReader {
+    fn from(provider: RootProvider) -> Self {
+        Self { provider }
+    }
+}
+
 #[async_trait::async_trait]
 impl ParentChainReader for RpcParentChainReader {
     // NOTE: Implemented using get_header_by_number() so only works with geth/reth upstream.
