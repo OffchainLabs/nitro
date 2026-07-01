@@ -13,6 +13,7 @@ permissions:
 jobs:
   list:
     runs-on: arbitrator-ci
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
 
     steps:
       - uses: actions/checkout@v6

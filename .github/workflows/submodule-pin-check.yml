@@ -23,13 +23,16 @@ jobs:
     name: Check Submodule Pin
     runs-on: ubuntu-4
     timeout-minutes: 10
+    # secrets isn't available in a step-level `if:`; surface it as env.
+    env:
+      HAS_APP_AUTH: ${{ vars.NITRO_CI_APP_CLIENT_ID != '' && secrets.NITRO_CI_APP_PRIVATE_KEY != '' }}
     steps:
       # Mint inline rather than via the init-submodules composite action:
       # pull_request_target loads the workflow from base, but a local
       # action would be loaded from the checked-out PR head and could be
       # replaced by an attacker.
       - id: scope
-        if: vars.NITRO_CI_APP_CLIENT_ID != ''
+        if: env.HAS_APP_AUTH == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -51,7 +54,7 @@ jobs:
 
       - name: Mint GitHub App token
         id: app-token
-        if: vars.NITRO_CI_APP_CLIENT_ID != ''
+        if: env.HAS_APP_AUTH == 'true'
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}

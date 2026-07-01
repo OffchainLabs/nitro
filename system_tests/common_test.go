@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -119,6 +118,9 @@ type SecondNodeParams struct {
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
 	useExecutionClientOnly bool
+	// fatalErrChan, when non-nil, replaces the default fatalErrChan and also
+	// suppresses StartWatchChanErr, so the caller owns the channel and must drain it.
+	fatalErrChan chan error
 }
 
 type TestClient struct {
@@ -266,6 +268,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	ExperimentalPGA:              gethexec.DefaultPGAConfig,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
@@ -1259,7 +1262,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, params.fatalErrChan)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -1698,7 +1701,7 @@ func createRedisGroup(ctx context.Context, t *testing.T, streamName string, clie
 	t.Helper()
 	// Stream name and group name are the same.
 	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
-		log.Debug("Error creating stream group: %v", err)
+		log.Debug("Error creating stream group", "err", err)
 	}
 }
 
@@ -2425,6 +2428,7 @@ func Create2ndNodeWithConfig(
 	useExecutionClientOnly bool,
 	blobReader containers.Option[daprovider.BlobReader],
 	parentChain *parent.ParentChain,
+	customFatalErrChan chan error,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -2434,7 +2438,10 @@ func Create2ndNodeWithConfig(
 	}
 	Require(t, execConfig.Validate())
 
-	feedErrChan := make(chan error, 10)
+	feedErrChan := customFatalErrChan
+	if feedErrChan == nil {
+		feedErrChan = make(chan error, 10)
+	}
 	parentChainRpcClient := parentChainStack.Attach()
 	parentChainClient := ethclient.NewClient(parentChainRpcClient)
 
@@ -2497,10 +2504,33 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
-	Require(t, err)
+	if err != nil {
+		// With a caller-owned fatalErrChan, surface init failure on the channel instead of failing here.
+		if customFatalErrChan != nil {
+			select {
+			case customFatalErrChan <- err:
+			default:
+				t.Fatalf("custom fatal channel full, dropping init error: %v", err)
+			}
+			return nil, currentNode, currentExec, func() {
+				if currentNode != nil {
+					currentNode.StopAndWait()
+				}
+				if currentExec != nil {
+					currentExec.StopAndWait()
+				}
+				if err := chainStack.Close(); err != nil {
+					t.Logf("failed-init cleanup: stack close error: %v", err)
+				}
+			}, consensusConfigFetcher, execConfigFetcher
+		}
+		Require(t, err)
+	}
 	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
-	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	if customFatalErrChan == nil {
+		StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	}
 
 	return chainClient, currentNode, currentExec, cleanup, consensusConfigFetcher, execConfigFetcher
 }
@@ -2994,18 +3024,6 @@ func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	Fatal(t, "timed out waiting for TCP", addr)
-}
-
-func getFreePort(t testing.TB) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
 }
 
 // Used only by challengetest-tagged files; the linter doesn't see those callers in default builds.

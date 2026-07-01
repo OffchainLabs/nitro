@@ -32,9 +32,10 @@ import (
 type StatelessBlockValidator struct {
 	config *BlockValidatorConfig
 
-	execSpawners     []validator.ExecutionSpawner
-	boldExecSpawners []validator.BOLDExecutionSpawner
-	redisValidator   *redis.ValidationClient
+	execSpawners       []validator.ExecutionSpawner
+	boldExecSpawners   []validator.BOLDExecutionSpawner
+	redisValidator     *redis.ValidationClient
+	boldRedisValidator *redis.BOLDRedisExecutionClient
 
 	wasmTargets []rawdb.WasmTarget
 
@@ -245,14 +246,16 @@ func NewStatelessBlockValidator(
 	var executionSpawners []validator.ExecutionSpawner
 	var boldExecutionSpawners []validator.BOLDExecutionSpawner
 	var redisValClient *redis.ValidationClient
+	var boldRedisValClient *redis.BOLDRedisExecutionClient
 
 	if config().RedisValidationClientConfig.Enabled() {
 		var err error
 		redisValClient, err = redis.NewValidationClient(&config().RedisValidationClientConfig)
-		boldExecutionSpawners = append(boldExecutionSpawners, redis.NewBOLDRedisExecutionClient(redisValClient))
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
+		boldRedisValClient = redis.NewBOLDRedisExecutionClient(redisValClient)
+		boldExecutionSpawners = append(boldExecutionSpawners, boldRedisValClient)
 	}
 	configs := config().ValidationServerConfigs
 	for i := range configs {
@@ -276,6 +279,7 @@ func NewStatelessBlockValidator(
 		config:               config(),
 		recorder:             recorder,
 		redisValidator:       redisValClient,
+		boldRedisValidator:   boldRedisValClient,
 		inboxReader:          inboxReader,
 		inboxTracker:         inbox,
 		streamer:             streamer,

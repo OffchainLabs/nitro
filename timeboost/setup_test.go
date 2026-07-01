@@ -5,7 +5,6 @@ package timeboost
 import (
 	"context"
 	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type auctionSetup struct {
@@ -167,7 +167,7 @@ func setupBidderClient(
 			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   testSetup.endpoint,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", account.privKey.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(account.privKey),
 			},
 		}
 	}
@@ -231,14 +231,13 @@ func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated
 			privKey:     privKey,
 		}
 	}
-	randPort := getRandomPort(t)
 	withRPC := func(n *node.Config, _ *ethconfig.Config) {
 		n.HTTPHost = "localhost"
-		n.HTTPPort = randPort
+		n.HTTPPort = 0
 		n.HTTPModules = []string{"eth", "net", "web3", "debug"}
 	}
 	backend := simulated.NewBackend(genesis, simulated.WithBlockGasLimit(gasLimit), withRPC)
-	return accs, backend, fmt.Sprintf("http://localhost:%d", randPort)
+	return accs, backend, backend.HTTPEndpoint()
 }
 
 func mintTokens(ctx context.Context,

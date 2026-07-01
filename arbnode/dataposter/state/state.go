@@ -69,4 +69,6 @@ type QueueStorage interface {
 	Length(ctx context.Context) (int, error)
 	// IsPersistent indicates whether queue stored at disk.
 	IsPersistent() bool
+	// PruneAll removes all items from the queue.
+	PruneAll(ctx context.Context) error
 }

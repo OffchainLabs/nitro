@@ -9,8 +9,10 @@ import (
 	"github.com/offchainlabs/nitro/linters/deferinloop"
 	"github.com/offchainlabs/nitro/linters/jsonneverempty"
 	"github.com/offchainlabs/nitro/linters/koanf"
+	"github.com/offchainlabs/nitro/linters/logfmt"
 	"github.com/offchainlabs/nitro/linters/namedfieldsinit"
 	"github.com/offchainlabs/nitro/linters/pointercheck"
+	"github.com/offchainlabs/nitro/linters/prometheusmetrics"
 	"github.com/offchainlabs/nitro/linters/rightshift"
 	"github.com/offchainlabs/nitro/linters/structinit"
 )
@@ -21,8 +23,10 @@ func main() {
 		koanf.Analyzer,
 		namedfieldsinit.Analyzer,
 		pointercheck.Analyzer,
+		prometheusmetrics.Analyzer,
 		rightshift.Analyzer,
 		structinit.Analyzer,
 		jsonneverempty.Analyzer,
+		logfmt.Analyzer,
 	)
 }

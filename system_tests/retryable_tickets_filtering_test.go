@@ -657,7 +657,7 @@ func TestRetryableFilteringL1DelayedManualRedeemCascadeDepth2(t *testing.T) {
 	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketIdA)
 	require.NoError(t, err)
 	signedL2Tx := prepareDelayedContractCall(t, builder, "Redeemer", arbRetryableTxAddr, redeemCallData)
-	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	l2TxHash, _ := sendDelayedTx(t, ctx, builder, signedL2Tx)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Group revert fires on L2 tx hash (NOT ticketA)
@@ -738,7 +738,7 @@ func TestRetryableFilteringL1DelayedManualRedeemCascadeDepth3(t *testing.T) {
 	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketIdA)
 	require.NoError(t, err)
 	signedL2Tx := prepareDelayedContractCall(t, builder, "Redeemer", arbRetryableTxAddr, redeemCallData)
-	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	l2TxHash, _ := sendDelayedTx(t, ctx, builder, signedL2Tx)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Group revert fires on L2 tx hash
@@ -1747,12 +1747,10 @@ func TestRetryableFilteringAutoRedeemFilteredDepth1Report(t *testing.T) {
 	require.NotEmpty(t, report.FilteredAddresses)
 	foundTarget := false
 	for _, addr := range report.FilteredAddresses {
-		if addr.Address == filteredTarget {
-			require.Equal(t, filterTypes.ReasonContractAddress, addr.Reason,
-				"filtered target should be caught as contract_address")
+		if addr.Address == filteredTarget && addr.Reason == filterTypes.ReasonCallTarget {
 			foundTarget = true
 			break
 		}
 	}
-	require.True(t, foundTarget, "report should contain the filtered target address")
+	require.True(t, foundTarget, "report should contain the filtered target address with reason %s", filterTypes.ReasonCallTarget)
 }
