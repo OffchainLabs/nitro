@@ -1,5 +1,5 @@
 [package]
-name = "arb-mel-parent"
+name = "arb-parent-chain-client"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

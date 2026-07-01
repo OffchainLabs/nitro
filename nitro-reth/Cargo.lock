@@ -1202,19 +1202,6 @@ name = "arb-math"
 version = "0.1.5"
 
 [[package]]
-name = "arb-mel-parent"
-version = "0.1.5"
-dependencies = [
- "alloy-eips",
- "alloy-primitives",
- "alloy-provider",
- "alloy-rpc-types-eth",
- "alloy-transport",
- "async-trait",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "arb-node"
 version = "0.1.5"
 dependencies = [
@@ -1296,6 +1283,19 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "arb-parent-chain-client"
+version = "0.1.5"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types-eth",
+ "alloy-transport",
+ "async-trait",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
