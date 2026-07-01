@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -63,6 +64,14 @@ var errNotFound = errors.New("file not found")
 // taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
 const WasmerSerializeVersion = 16
 const InitialWasmerSerializeVersion = 8
+
+// Version of the WAVM module wire format used for activated Stylus programs under
+// the activatedAsmWavm prefix in wasmdb. Bump together with the on-disk format in
+// crates/prover/src/wavm_serialize.rs. Old or missing entries are purged on startup.
+const WavmSerializeVersion uint32 = 1
+
+// Seam over the Rust FFI so tests can inject a mismatched version.
+var readRustWavmFormatVersion = programs.RustWavmFormatVersion
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
@@ -405,7 +414,7 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 	}
 	unexpectedFiles := []string{}
 	allowedFiles := map[string]bool{
-		"LOCK": true, "classic-msg": true, "l2chaindata": true,
+		"LOCK": true, "classic-msg": true, "l2chaindata": true, "wasm": true,
 	}
 	for _, entry := range entries {
 		if !allowedFiles[entry.Name()] {
@@ -426,6 +435,25 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	it := db.NewIterator(nil, nil)
 	defer it.Release()
 	return !it.Next()
+}
+
+// wavmPrefixHasEntries reports whether any WAVM-prefixed key exists.
+func wavmPrefixHasEntries(db ethdb.Database) (bool, error) {
+	for _, prefix := range rawdb.WavmPrefixes() {
+		it := db.NewIterator(prefix, nil)
+		hasNext := it.Next()
+		err := it.Error()
+		it.Release()
+		// A transient I/O failure during the probe must not be misread as "no entries",
+		// which would skip the purge and leave stale entries in place for the decoder
+		if err != nil {
+			return false, fmt.Errorf("probe prefix %x: %w", prefix, err)
+		}
+		if hasNext {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func isWasmDB(path string) bool {
@@ -474,7 +502,9 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 	for _, prefix := range prefixes {
 		if err := func() error {
 			it := db.NewIterator(prefix, nil)
-			defer it.Release()
+			// Closure-bound: the loop reassigns it after each batch flush;
+			// a method-value defer would leak the post-flush iterator.
+			defer func() { it.Release() }()
 			for it.Next() {
 				key := it.Key()
 				if checkKeyLength && len(key) != expectedKeyLength {
@@ -495,9 +525,20 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 						return fmt.Errorf("failed to write batch: %w", err)
 					}
 					batch.Reset()
+					// Without this, a transient storage error on the first batch
+					// would be silently dropped when the iterator is recreated,
+					// leaving the purge half-complete but the version key written.
+					if err := it.Error(); err != nil {
+						return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
+					}
 					it.Release()
 					it = db.NewIterator(prefix, key)
 				}
+			}
+			// Surface iterator I/O errors so a mid-traversal failure does not
+			// leave the DB in a half-purged state with the version key written.
+			if err := it.Error(); err != nil {
+				return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
 			}
 			return nil
 		}(); err != nil {
@@ -524,7 +565,7 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 			}
 		}
 		if versionInDB != WasmerSerializeVersion {
-			log.Warn("Detected wasmer serialize version %v, expected version %v - removing old wasm entries", versionInDB, WasmerSerializeVersion)
+			log.Warn("Detected wasmer serialize version mismatch - removing old wasm entries", "detected", versionInDB, "expected", WasmerSerializeVersion)
 			prefixes := rawdb.WasmPrefixesExceptWavm()
 			if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
 				return fmt.Errorf("failed to purge wasm entries: %w", err)
@@ -537,6 +578,75 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 		}
 	}
 	return nil
+}
+
+// reconcileWavmSerializeVersion makes the wasmdb's cached WAVM modules agree
+// with the current on-disk format version. It does not migrate data in place:
+//   - no wavm entries:       stamp the version key, no purge.
+//   - version key matches:   no-op.
+//   - key missing/mismatched (entries present): purge them, reset the rebuild
+//     marker, then stamp the current version.
+//
+// A missing key alongside existing entries means legacy bincode bytes, so it
+// counts as incompatible. Probing only wavm prefixes avoids a misleading purge
+// on nodes that carry only wasmer entries.
+//
+// purged is true when entries were deleted. A caller that stamps
+// RebuildingPositionKey=RebuildingDone after open MUST gate on it, or the
+// rebuild that recovers the purged entries is short-circuited on the same boot.
+func reconcileWavmSerializeVersion(db ethdb.Database) (purged bool, err error) {
+	// Fail fast on a Go/Rust build mismatch before touching the wasmdb: Go would
+	// purge on its own version while Rust rejects every new entry at LinkModule.
+	if rustVersion := readRustWavmFormatVersion(); rustVersion != WavmSerializeVersion {
+		return false, fmt.Errorf(
+			"WavmSerializeVersion mismatch between Go (%d) and Rust (%d); "+
+				"this is a build inconsistency. Rebuild both sides from the same revision",
+			WavmSerializeVersion, rustVersion,
+		)
+	}
+	hasEntries, err := wavmPrefixHasEntries(db)
+	if err != nil {
+		return false, fmt.Errorf("failed to probe wavm prefixes: %w", err)
+	}
+	if !hasEntries {
+		// Stamp the version so a later non-empty boot doesn't read the absence
+		// as legacy bincode and purge valid entries.
+		if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
+			return false, fmt.Errorf("failed to write wavm serialize version on wasmdb with no wavm entries: %w", err)
+		}
+		return false, nil
+	}
+	versionInDB, err := rawdb.ReadWavmSerializeVersion(db)
+	missing := false
+	if err != nil {
+		if rawdb.IsDbErrNotFound(err) {
+			missing = true
+		} else {
+			return false, fmt.Errorf("failed to retrieve wavm serialize version: %w", err)
+		}
+	}
+	if !missing && versionInDB == WavmSerializeVersion {
+		return false, nil
+	}
+	if missing {
+		log.Warn("No WavmSerializeVersion key found, removing old WAVM stylus module entries", "expected", WavmSerializeVersion)
+	} else {
+		log.Warn("Detected wavm serialize version mismatch, removing old WAVM stylus module entries", "found", versionInDB, "expected", WavmSerializeVersion)
+	}
+	prefixes := rawdb.WavmPrefixes()
+	if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
+		return false, fmt.Errorf("failed to purge wavm entries: %w", err)
+	}
+	log.Info("WAVM stylus module entries successfully removed.")
+	// Reset the rebuild marker so rebuildLocalWasm doesn't see a prior
+	// "done" and skip recovery of the entries we just purged.
+	if err := db.Delete(gethexec.RebuildingPositionKey); err != nil {
+		return false, fmt.Errorf("failed to reset rebuilding position after wavm purge: %w", err)
+	}
+	if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
+		return false, fmt.Errorf("failed to write wavm serialize version: %w", err)
+	}
+	return true, nil
 }
 
 // if db is not empty, validates if wasm database schema version matches current version
@@ -613,61 +723,67 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return executionDB, l2BlockChain, nil
 }
 
-func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, error) {
+// Opens the execution DB, falling back to download+genesis initialization when no existing
+// DB is found. The returned bool reports whether the DB was freshly created on this call.
+func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, bool, error) {
 	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, chainId, cacheConfig, tracer, persistentConfig)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, false, err
 	}
 
 	var initDataReader statetransfer.InitDataReader
+	dbFreshlyCreated := executionDB == nil
 
-	if executionDB == nil {
-		err := checkAndDownloadDB(ctx, stack, config)
+	if dbFreshlyCreated {
+		downloaded, err := checkAndDownloadDB(ctx, stack, config)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
+		}
+		if downloaded {
+			dbFreshlyCreated = false
 		}
 
 		executionDB, wasmDB, err = openDownloadedExecutionDB(stack, config, cacheConfig, persistentConfig)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, false, err
 		}
 
 		var genesisArbOSInit *params.ArbOSInit
 
 		initDataReader, chainConfig, genesisArbOSInit, err = GetInit(config, executionDB)
 		if err != nil {
-			return executionDB, nil, nil, err
+			return executionDB, nil, nil, false, err
 		}
 
 		parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, &rollupAddrs, chainConfig)
 		if err != nil {
-			return executionDB, nil, nil, err
+			return executionDB, nil, nil, false, err
 		}
 
 		l2BlockChain, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, genesisArbOSInit, executionDB, cacheConfig, tracer)
 		if err != nil {
-			return executionDB, nil, nil, err
+			return executionDB, nil, nil, false, err
 		}
 	}
 
 	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
 	if err != nil {
-		return executionDB, nil, nil, fmt.Errorf("error pruning: %w", err)
+		return executionDB, nil, nil, false, fmt.Errorf("error pruning: %w", err)
 	}
 
 	err = ValidateBlockChain(l2BlockChain, chainConfig)
 	if err != nil {
-		return executionDB, nil, l2BlockChain, err
+		return executionDB, nil, l2BlockChain, false, err
 	}
 
 	err = recreateMissingStates(config, executionDB, l2BlockChain, cacheConfig)
 	if err != nil {
-		return executionDB, nil, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
+		return executionDB, nil, l2BlockChain, false, fmt.Errorf("failed to recreate missing states: %w", err)
 	}
 
 	executionDB, l2BlockChain, err = rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
 
-	return executionDB, initDataReader, l2BlockChain, err
+	return executionDB, initDataReader, l2BlockChain, dbFreshlyCreated, err
 }
 
 func recreateMissingStates(config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
@@ -774,7 +890,9 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		if initDataReader == nil {
 			chainConfig = gethexec.TryReadStoredChainConfig(executionDB)
 			if chainConfig == nil {
-				return nil, nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
+				return nil, nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory. " +
+					"Available modes: --init.latest pruned (recommended for new full nodes), --init.latest archive, --init.url <snapshot-url>. " +
+					"See https://docs.arbitrum.io/run-arbitrum-node/nitro/nitro-database-snapshots for more details")
 			}
 		} else {
 			genesisBlockNr, err := initDataReader.GetNextBlockNumber()
@@ -895,10 +1013,9 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *c
 	return l2BlockChain, nil
 }
 
-func checkAndDownloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig) error {
-	err := checkDBDir(stack, config)
-	if err != nil {
-		return err
+func checkAndDownloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig) (bool, error) {
+	if err := checkDBDir(stack, config); err != nil {
+		return false, err
 	}
 
 	return downloadDB(ctx, stack, config)
@@ -922,40 +1039,47 @@ func checkDBDir(stack *node.Node, config *config.NodeConfig) error {
 	return nil
 }
 
-func downloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig) error {
+func downloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig) (bool, error) {
 	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
-		return err
+		return false, err
 	}
 
 	initFile, cleanUpTmp, err := initializeAndDownloadInit(ctx, &config.Init, stack)
 	defer cleanUpTmp()
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	if initFile != "" {
-		if err := extractSnapshot(initFile, stack.InstanceDir(), config.Init.ImportWasm); err != nil {
-			return err
-		}
+	if initFile == "" {
+		return false, nil
 	}
-
-	return nil
+	if err := extractSnapshot(initFile, stack.InstanceDir(), config.Init.ImportWasm); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func openDownloadedExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
-	executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+	opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to open executionDB: %w", err)
 	}
 
+	if opened.wavmPurged {
+		// Leave RebuildingPositionKey unset so rebuildLocalWasm runs the
+		// recovery on this boot; stamping done here would short-circuit it.
+		log.Info("WAVM entries were purged during open; rebuild will run instead of stamping done")
+		return opened.executionDB, opened.wasmDB, nil
+	}
+
 	// Rebuilding wasm store is not required when just starting out
-	err = gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
+	err = gethexec.WriteToKeyValueStore(opened.wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
 	log.Info("Setting codehash position in rebuilding of wasm store to done")
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to set codehash position in rebuilding of wasm store to done: %w", err)
 	}
 
-	return executionDB, wasmDB, nil
+	return opened.executionDB, opened.wasmDB, nil
 }
 
 func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Database, error) {
@@ -973,35 +1097,52 @@ func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Databas
 	return consensusDB, nil
 }
 
-func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
+// openedExecutionDB bundles the outputs of openExecutionDB so callers can't
+// mix up the bool with another return value at the call site.
+type openedExecutionDB struct {
+	executionDB ethdb.Database
+	wasmDB      ethdb.Database
+	// wavmPurged is true when reconcileWavmSerializeVersion deleted
+	// entries on this open. Callers that stamp RebuildingPositionKey must
+	// gate on it, or the rebuild that recovers the purged entries is
+	// short-circuited on the same boot.
+	wavmPurged bool
+}
+
+// Opens l2chaindata + wasm DBs and runs schema/version validators.
+func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (*openedExecutionDB, error) {
 	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
-		return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+		return nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 	}
 
 	wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDB); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validateOrUpgradeWasmerSerializeVersion(wasmDB); err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	wavmPurged, err := reconcileWavmSerializeVersion(wasmDB)
+	if err != nil {
+		return nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(wasmDB); err != nil {
-		return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
+		return nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmDB)
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, executionDB)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return executionDB, wasmDB, nil
+	return &openedExecutionDB{executionDB: executionDB, wasmDB: wasmDB, wavmPurged: wavmPurged}, nil
 }
 
 func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
@@ -1013,17 +1154,17 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
 
-				executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
 
-				l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+				l2BlockChain, err := gethexec.GetBlockChain(opened.executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
 
-				return executionDB, wasmDB, l2BlockChain, chainConfig, nil
+				return opened.executionDB, opened.wasmDB, l2BlockChain, chainConfig, nil
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {
@@ -1144,7 +1285,15 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 	return genesisAssertionCreationInfo, assertionHash, true, err
 }
 
-func GetAndValidateGenesisAssertion(ctx context.Context, l2BlockChain *core.BlockChain, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
+// Only meaningful while head is at genesis.
+func ShouldValidateGenesisAssertion(currentBlock *types.Header, genesisHash common.Hash, cfg *conf.InitConfig) (bool, error) {
+	if currentBlock == nil {
+		return false, errors.New("failed to get current block when checking whether to validate genesis assertion")
+	}
+	return currentBlock.Hash() == genesisHash && cfg.ValidateGenesisAssertion, nil
+}
+
+func GetAndValidateGenesisAssertion(ctx context.Context, l2BlockChain *core.BlockChain, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client, dbFreshlyCreated bool) error {
 	genesisBlock := l2BlockChain.Genesis()
 	sendRoot := types.DeserializeHeaderExtraInformation(genesisBlock.Header()).SendRoot
 	genesisAssertionCreationInfo, genesisAssertionHash, isBoldChain, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, genesisBlock.Hash(), sendRoot)
@@ -1153,21 +1302,37 @@ func GetAndValidateGenesisAssertion(ctx context.Context, l2BlockChain *core.Bloc
 	}
 
 	if isBoldChain {
-		accountsReader, err := initDataReader.GetAccountDataReader()
-		if err != nil {
-			return err
+		hasAccounts := false
+		if initDataReader != nil {
+			accountsReader, err := initDataReader.GetAccountDataReader()
+			if err != nil {
+				return err
+			}
+			hasAccounts = accountsReader.More()
+		} else if !dbFreshlyCreated && isNullGenesisAssertion(genesisAssertionCreationInfo) {
+			// Warm restart of an existing DB whose original init data is no
+			// longer in memory. The init-time check ran when the DB was first
+			// created; without the original initDataReader we can't re-verify
+			// the null-assertion / has-accounts consistency. The BlockHash
+			// mismatch check below still runs.
+			log.Warn("genesis assertion is null and init data unavailable on this restart; cannot verify init-time account consistency",
+				"genesisAssertionHash", genesisAssertionHash, "genesisBlockHash", genesisBlock.Hash())
 		}
-
-		return validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, genesisBlock.Hash(), sendRoot, accountsReader.More())
+		return validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, genesisBlock.Hash(), sendRoot, hasAccounts)
 	}
 
 	return nil
 }
 
+func isNullGenesisAssertion(info *protocol.AssertionCreatedInfo) bool {
+	before := protocol.GoGlobalStateFromSolidity(info.BeforeState.GlobalState)
+	after := protocol.GoGlobalStateFromSolidity(info.AfterState.GlobalState)
+	return before.Batch == after.Batch && before.PosInBatch == after.PosInBatch
+}
+
 func validateGenesisAssertion(genesisAssertionCreationInfo *protocol.AssertionCreatedInfo, genesisAssertionHash [32]byte, genesisHash common.Hash, sendRoot common.Hash, initDataReaderHasAccounts bool) error {
-	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
 	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
-	isNullAssertion := beforeGlobalState.Batch == afterGlobalState.Batch && beforeGlobalState.PosInBatch == afterGlobalState.PosInBatch
+	isNullAssertion := isNullGenesisAssertion(genesisAssertionCreationInfo)
 	if isNullAssertion && initDataReaderHasAccounts {
 		return errors.New("genesis assertion is null but there are accounts in the init data")
 	}

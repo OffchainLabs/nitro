@@ -30,16 +30,20 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/programs"
+	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
@@ -378,7 +382,7 @@ func TestEmptyDatabaseDir(t *testing.T) {
 		},
 		{
 			name:  "succeed with expected files",
-			files: []string{"LOCK", "classic-msg", "l2chaindata"},
+			files: []string{"LOCK", "classic-msg", "l2chaindata", "wasm"},
 		},
 		{
 			name:    "fail with unexpected files",
@@ -439,7 +443,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
+	executionDB, _, blockchain, _, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -456,7 +460,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	executionDB, _, blockchain, err = OpenInitializeExecutionDB(
+	executionDB, _, blockchain, _, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -474,7 +478,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, _, err = OpenInitializeExecutionDB(
+	_, _, _, _, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -611,6 +615,540 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 	}
 }
 
+func TestPurgeIncompatibleWavmSerializeVersionEntries(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed all the wasmdb prefixes the production validators interact with.
+	// The wavm validator must purge only `wavmKeys` and leave everything else.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 20)
+	armKeys := generateKeys([]byte{0x00, 'w', 'r'}, 20)
+	x86Keys := generateKeys([]byte{0x00, 'w', 'x'}, 20)
+	hostKeys := generateKeys([]byte{0x00, 'w', 'h'}, 20)
+	otherKeys := generateKeys([]byte{0x01, 'z', 'z'}, 20)
+
+	writeKeys(t, db, wavmKeys)
+	writeKeys(t, db, armKeys)
+	writeKeys(t, db, x86Keys)
+	writeKeys(t, db, hostKeys)
+	writeKeys(t, db, otherKeys)
+
+	// Case 1: no WavmSerializeVersion key in the DB. The validator must treat
+	// this as incompatible (existing nodes upgrading from bincode have no key
+	// and their stored bytes are in the old format), purge wavm entries, leave
+	// the wasmer-managed prefixes untouched, and write the current version.
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if !purged {
+		t.Fatal("Case 1: validator must report purged=true when wavm keys existed without a version key")
+	}
+	checkKeys(t, db, wavmKeys, false)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("after missing-key purge, expected version %d, got %d", WavmSerializeVersion, got)
+	}
+
+	// Case 2: matching version. Re-seed wavm keys and confirm the validator
+	// preserves them and reports purged=false.
+	writeKeys(t, db, wavmKeys)
+	purged, err = reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if purged {
+		t.Fatal("Case 2: validator must report purged=false on matching version")
+	}
+	checkKeys(t, db, wavmKeys, true)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+
+	// Case 3: mismatched version. Wavm entries are purged, the wasmer-managed
+	// prefixes survive untouched, and the version key is rewritten to current.
+	Require(t, rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion+1))
+	purged, err = reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if !purged {
+		t.Fatal("Case 3: validator must report purged=true on mismatched version")
+	}
+	checkKeys(t, db, wavmKeys, false)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	got, err = rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("after mismatched-version purge, expected version %d, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// Empty-wasmdb startup must write the version key proactively rather than
+// running the "missing key = old format" purge branch. Without this, the next
+// non-empty startup would mistake the absence of the key for legacy bincode
+// data and purge legitimate new-format entries activated during this session.
+func TestValidateOrUpgradeWavmOnEmptyDbWritesVersionKey(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// DB is empty: validator must write the version key and otherwise do nothing.
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if purged {
+		t.Fatal("empty wasmdb must report purged=false; nothing was deleted")
+	}
+
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d on empty-db startup, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// Wasmer-only wasmdb (arm/x86/host but no wavm) must take the
+// no-wavm-entries branch: write version key, no purge, no misleading warn.
+func TestValidateOrUpgradeWavmSkipsPurgeOnWasmerOnlyDb(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed wasmer-managed prefixes but no wavm keys, no version key.
+	armKeys := generateKeys([]byte{0x00, 'w', 'r'}, 5)
+	x86Keys := generateKeys([]byte{0x00, 'w', 'x'}, 5)
+	hostKeys := generateKeys([]byte{0x00, 'w', 'h'}, 5)
+	writeKeys(t, db, armKeys)
+	writeKeys(t, db, x86Keys)
+	writeKeys(t, db, hostKeys)
+
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if purged {
+		t.Fatal("wasmer-only wasmdb must take the no-wavm-entries branch (purged=false)")
+	}
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d to be written, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// iteratorFailingDB injects iterator failures into deleteWasmEntries.
+// `failNextAfter` exercises the end-of-loop it.Error() check;
+// `errorAfter` exercises the mid-loop (batch-boundary) check by making
+// Error() return non-nil while Next() keeps working.
+type iteratorFailingDB struct {
+	ethdb.Database
+	nextCalls     *int // shared across iterators to budget by global progress
+	failNextAfter int
+	errorAfter    int
+	injected      error
+}
+
+func (d *iteratorFailingDB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+	return &erroringIter{
+		Iterator:      d.Database.NewIterator(prefix, start),
+		nextCalls:     d.nextCalls,
+		failNextAfter: d.failNextAfter,
+		errorAfter:    d.errorAfter,
+		injected:      d.injected,
+	}
+}
+
+type erroringIter struct {
+	ethdb.Iterator
+	nextCalls     *int
+	failNextAfter int
+	errorAfter    int
+	injected      error
+	tripped       bool
+}
+
+func (it *erroringIter) Next() bool {
+	if it.tripped {
+		return false
+	}
+	if it.failNextAfter > 0 && *it.nextCalls >= it.failNextAfter {
+		it.tripped = true
+		return false
+	}
+	*it.nextCalls++
+	return it.Iterator.Next()
+}
+
+func (it *erroringIter) Error() error {
+	if it.tripped {
+		return it.injected
+	}
+	if it.errorAfter > 0 && *it.nextCalls >= it.errorAfter {
+		return it.injected
+	}
+	return it.Iterator.Error()
+}
+
+// End-of-loop it.Error() check: propagated, version stamp NOT advanced.
+// FFI mismatch must short-circuit before touching the wasmdb: no purge, no
+// version key written.
+func TestValidateOrUpgradeWavmRefusesOnFFIMismatch(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed wavm entries so we'd observe a purge if the guard failed.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
+	writeKeys(t, db, wavmKeys)
+
+	// NOTE: do NOT add t.Parallel() to any test that touches
+	// readRustWavmFormatVersion: the package-level override is restored via
+	// t.Cleanup at the end of this test, which is only safe under sequential
+	// execution within the package.
+	original := readRustWavmFormatVersion
+	t.Cleanup(func() { readRustWavmFormatVersion = original })
+	readRustWavmFormatVersion = func() uint32 { return WavmSerializeVersion + 1 }
+
+	purged, err := reconcileWavmSerializeVersion(db)
+	if err == nil {
+		t.Fatal("expected mismatch error")
+	}
+	if !strings.Contains(err.Error(), "mismatch") {
+		t.Fatalf("error must mention mismatch; got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false on mismatch")
+	}
+
+	// No side effects: keys still present, version key not written.
+	checkKeys(t, db, wavmKeys, true)
+	if _, readErr := rawdb.ReadWavmSerializeVersion(db); readErr == nil {
+		t.Fatal("version key must not be written on mismatch")
+	}
+}
+
+// Probe I/O failure must bail, not silently return false (a false return
+// would skip the purge and leave stale entries for the decoder to reject
+// later as "magic mismatch").
+func TestValidateOrUpgradeWavmPropagatesProbeError(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	calls := 0
+	injected := errors.New("injected probe I/O error")
+	// errorAfter=1 fires Error() on the first Next() the probe issues.
+	wrapped := &iteratorFailingDB{
+		Database:   db,
+		nextCalls:  &calls,
+		errorAfter: 1,
+		injected:   injected,
+	}
+
+	purged, err := reconcileWavmSerializeVersion(wrapped)
+	if err == nil {
+		t.Fatal("expected probe error to be propagated")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected wrapped injected error, got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false when the probe errored out")
+	}
+
+	// Version key must NOT have been written: a future boot must retry.
+	_, readErr := rawdb.ReadWavmSerializeVersion(db)
+	if readErr == nil {
+		t.Fatal("version key must not be written when the probe fails")
+	}
+}
+
+func TestValidateOrUpgradeWavmPropagatesIteratorError(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 20)
+	writeKeys(t, db, wavmKeys)
+
+	// 1 Next() for the wavmPrefixHasEntries probe; the next Next() (first
+	// from the purge iterator) trips, exercising end-of-loop it.Error().
+	calls := 0
+	injected := errors.New("injected iterator I/O error")
+	wrapped := &iteratorFailingDB{
+		Database:      db,
+		nextCalls:     &calls,
+		failNextAfter: 1,
+		injected:      injected,
+	}
+
+	purged, err := reconcileWavmSerializeVersion(wrapped)
+	if err == nil {
+		t.Fatal("expected iterator error to be propagated")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected wrapped injected error, got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false when the purge errored out")
+	}
+
+	// Version key must NOT have been written; next boot must retry.
+	_, readErr := rawdb.ReadWavmSerializeVersion(db)
+	if readErr == nil {
+		t.Fatal("version key must not be written when the purge fails")
+	}
+}
+
+// Mid-loop it.Error() check at the batch-write boundary. Requires enough
+// keys to push batch.ValueSize() over ethdb.IdealBatchSize (100KB) so the
+// mid-loop check is the first error surface (vs the end-of-loop one tested
+// above).
+func TestValidateOrUpgradeWavmPropagatesIteratorErrorAtBatchBoundary(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// 5000 35-byte-key deletes comfortably exceed IdealBatchSize (100KB).
+	const numKeys = 5000
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, numKeys)
+	writeKeys(t, db, wavmKeys)
+
+	// Iteration runs normally; Error() starts firing after 100 Next() calls,
+	// well before exhaustion. First batch fill then bails via mid-loop check.
+	calls := 0
+	injected := errors.New("injected mid-iteration I/O error")
+	wrapped := &iteratorFailingDB{
+		Database:   db,
+		nextCalls:  &calls,
+		errorAfter: 100,
+		injected:   injected,
+	}
+
+	purged, err := reconcileWavmSerializeVersion(wrapped)
+	if err == nil {
+		t.Fatal("expected mid-loop iterator error to be propagated")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected wrapped injected error, got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false when the purge errored out")
+	}
+	// Distinguishes mid-loop from end-of-loop: end-of-loop bails without
+	// running batch.Write (all keys survive); mid-loop runs after at least
+	// one batch.Write succeeded (some keys gone).
+	survivors := 0
+	for _, k := range wavmKeys {
+		has, hasErr := db.Has(k)
+		if hasErr != nil {
+			t.Fatalf("Has(%x): %v", k, hasErr)
+		}
+		if has {
+			survivors++
+		}
+	}
+	if survivors == len(wavmKeys) {
+		t.Fatalf("no keys were deleted; mid-loop check did not fire (all %d keys survived)", survivors)
+	}
+	if survivors == 0 {
+		t.Fatalf("all keys were deleted; the error must have surfaced before the trailing batch.Write")
+	}
+
+	// Version key must not have been written.
+	_, readErr := rawdb.ReadWavmSerializeVersion(db)
+	if readErr == nil {
+		t.Fatal("version key must not be written when the purge fails")
+	}
+}
+
+// Pins outer-caller behavior: when reconcileWavmSerializeVersion
+// reports purged=true, openDownloadedExecutionDB must skip the
+// RebuildingDone stamp so the recovery rebuild runs.
+func TestOpenDownloadedExecutionDBSkipsStampOnPurge(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = 42161
+
+	// Stale wavm entries with no version key — simulates a snapshot from
+	// the bincode era; the validator must treat this as incompatible.
+	{
+		seedDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{
+			MetricsNamespace:   "wasm/",
+			Cache:              nodeConfig.Execution.Caching.DatabaseCache,
+			Handles:            nodeConfig.Persistent.Handles,
+			NoFreezer:          true,
+			PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("wasm"),
+		})
+		Require(t, err)
+		wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
+		writeKeys(t, seedDB, wavmKeys)
+		Require(t, seedDB.Close())
+	}
+
+	executionDB, wasmDB, err := openDownloadedExecutionDB(stack, &nodeConfig, gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Persistent)
+	Require(t, err)
+	defer func() { Require(t, executionDB.Close()) }()
+
+	wavmIt := wasmDB.NewIterator([]byte{0x00, 'w', 'w'}, nil)
+	if wavmIt.Next() {
+		t.Fatal("wavm entries must have been purged")
+	}
+	wavmIt.Release()
+
+	got, err := rawdb.ReadWavmSerializeVersion(wasmDB)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d after purge, got %d", WavmSerializeVersion, got)
+	}
+
+	// Centerpiece: RebuildingPositionKey must NOT be set to RebuildingDone.
+	has, err := wasmDB.Has(gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if has {
+		stored, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDB, gethexec.RebuildingPositionKey)
+		Require(t, err)
+		t.Fatalf("RebuildingPositionKey must not be set after a purge; openDownloadedExecutionDB stamped %x", stored)
+	}
+}
+
+// Fresh snapshot (no purge): the RebuildingDone stamp still fires.
+func TestOpenDownloadedExecutionDBStampsWhenNoPurge(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = 42161
+
+	executionDB, wasmDB, err := openDownloadedExecutionDB(stack, &nodeConfig, gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Persistent)
+	Require(t, err)
+	defer func() { Require(t, executionDB.Close()) }()
+
+	stored, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDB, gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if stored != gethexec.RebuildingDone {
+		t.Fatalf("expected RebuildingDone stamp on fresh open, got %x", stored)
+	}
+}
+
+// After a wavm purge, RebuildingPositionKey must be cleared so
+// rebuildLocalWasm restarts recovery (a leftover "done" would skip it).
+func TestValidateOrUpgradeWavmResetsRebuildingPositionAfterPurge(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Previously-completed rebuild + old-format wavm entries.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
+	writeKeys(t, db, wavmKeys)
+	Require(t, gethexec.WriteToKeyValueStore(db, gethexec.RebuildingPositionKey, gethexec.RebuildingDone))
+
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if !purged {
+		t.Fatal("missing version key + wavm entries must trigger a purge")
+	}
+	checkKeys(t, db, wavmKeys, false)
+
+	has, err := db.Has(gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if has {
+		t.Fatal("RebuildingPositionKey must be deleted after a wavm purge so rebuild restarts")
+	}
+}
+
+// CI drift guard: Go and Rust constants must agree. Reads via FFI so the
+// check is robust to source-format changes.
+func TestWavmSerializeVersionMatchesRustConstant(t *testing.T) {
+	rustVersion := programs.RustWavmFormatVersion()
+	if rustVersion != WavmSerializeVersion {
+		t.Fatalf("WavmSerializeVersion drift: Go=%d, Rust=%d. Bump both together.", WavmSerializeVersion, rustVersion)
+	}
+}
+
 func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = t.TempDir()
@@ -702,7 +1240,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
+	executionDB, _, blockchain, _, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -869,10 +1407,9 @@ func TestIsWasmDb(t *testing.T) {
 }
 
 func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
-	initConfig := conf.InitConfig{
-		GenesisJsonFile: "./genesis.json",
-		Empty:           true,
-	}
+	initConfig := conf.InitConfigDefault
+	initConfig.GenesisJsonFile = "./genesis.json"
+	initConfig.Empty = true
 	err := initConfig.Validate()
 	if err == nil {
 		t.Fatal("expected error when both GenesisJsonFile and Empty are set")
@@ -1017,8 +1554,9 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 
 	nodeConfig := config.NodeConfigDefault
 
-	err = checkAndDownloadDB(ctx, stack, &nodeConfig)
+	downloaded, err := checkAndDownloadDB(ctx, stack, &nodeConfig)
 	Require(t, err)
+	require.False(t, downloaded)
 }
 
 func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
@@ -1057,7 +1595,7 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, _, _, err := OpenInitializeExecutionDB(
+	executionDB, _, _, _, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -1346,6 +1884,77 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 
 	// Make sure chainConfig that was read from DB still matches expected chainConfig
 	require.Equal(t, expectedChainConfig, chainConfig)
+}
+
+func TestShouldValidateGenesisAssertion(t *testing.T) {
+	genesisHeader := &types.Header{Number: big.NewInt(0)}
+	genesisHash := genesisHeader.Hash()
+	pastGenesisHeader := &types.Header{Number: big.NewInt(1)}
+	mismatchedGenesisHeader := &types.Header{Number: big.NewInt(0), Extra: []byte("different")}
+
+	for _, tc := range []struct {
+		name       string
+		header     *types.Header
+		cfgEnabled bool
+		want       bool
+		wantErr    bool
+	}{
+		{"head at genesis with flag enabled", genesisHeader, true, true, false},
+		{"head past genesis with flag enabled", pastGenesisHeader, true, false, false},
+		{"head at genesis with flag disabled", genesisHeader, false, false, false},
+		{"head past genesis with flag disabled", pastGenesisHeader, false, false, false},
+		{"head number zero but hash mismatched", mismatchedGenesisHeader, true, false, false},
+		{"nil header is fatal", nil, true, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &conf.InitConfig{ValidateGenesisAssertion: tc.cfgEnabled}
+			got, err := ShouldValidateGenesisAssertion(tc.header, genesisHash, cfg)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestValidateGenesisAssertion(t *testing.T) {
+	genesisHash := common.HexToHash("0xaa")
+	otherHash := common.HexToHash("0xbb")
+	zeroState := rollupgen.AssertionState{GlobalState: rollupgen.GlobalState{}}
+	nonNullMatching := rollupgen.AssertionState{GlobalState: rollupgen.GlobalState{
+		Bytes32Vals: [2][32]byte{genesisHash, {}},
+		U64Vals:     [2]uint64{1, 0},
+	}}
+	nonNullMismatching := rollupgen.AssertionState{GlobalState: rollupgen.GlobalState{
+		Bytes32Vals: [2][32]byte{otherHash, {}},
+		U64Vals:     [2]uint64{1, 0},
+	}}
+
+	for _, tc := range []struct {
+		name        string
+		before      rollupgen.AssertionState
+		after       rollupgen.AssertionState
+		hasAccounts bool
+		wantErrSub  string
+	}{
+		{"null assertion without accounts is allowed", zeroState, zeroState, false, ""},
+		{"null assertion with accounts is rejected", zeroState, zeroState, true, "accounts in the init data"},
+		{"non-null assertion with matching block hash is allowed", zeroState, nonNullMatching, false, ""},
+		{"non-null assertion with matching block hash and accounts is allowed", zeroState, nonNullMatching, true, ""},
+		{"non-null assertion with mismatching block hash is rejected", zeroState, nonNullMismatching, false, "doesn't match the genesis blockHash"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := &protocol.AssertionCreatedInfo{BeforeState: tc.before, AfterState: tc.after}
+			err := validateGenesisAssertion(info, [32]byte{}, genesisHash, common.Hash{}, tc.hasAccounts)
+			if tc.wantErrSub == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErrSub)
+			}
+		})
+	}
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {

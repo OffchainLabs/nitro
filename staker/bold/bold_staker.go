@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol"
@@ -32,8 +33,10 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -203,20 +206,21 @@ func DangerousBoldConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type BOLDStaker struct {
 	stopwaiter.StopWaiter
-	config             *BoldConfig
-	strategy           legacystaker.StakerStrategy
-	chalManager        *challenge.Manager
-	blockValidator     *staker.BlockValidator
-	rollupAddress      common.Address
-	l1Reader           *headerreader.HeaderReader
-	client             protocol.ChainBackend
-	callOpts           bind.CallOpts
-	wallet             legacystaker.ValidatorWalletInterface
-	stakedNotifiers    []legacystaker.LatestStakedNotifier
-	confirmedNotifiers []legacystaker.LatestConfirmedNotifier
-	inboxTracker       staker.InboxTrackerInterface
-	inboxStreamer      staker.TransactionStreamerInterface
-	fatalErr           chan<- error
+	config                     *BoldConfig
+	strategy                   legacystaker.StakerStrategy
+	chalManager                *challenge.Manager
+	blockValidator             *staker.BlockValidator
+	rollupAddress              common.Address
+	l1Reader                   *headerreader.HeaderReader
+	client                     protocol.ChainBackend
+	callOpts                   bind.CallOpts
+	wallet                     legacystaker.ValidatorWalletInterface
+	stakedNotifiers            []legacystaker.LatestStakedNotifier
+	confirmedNotifiers         []legacystaker.LatestConfirmedNotifier
+	inboxTracker               staker.InboxTrackerInterface
+	inboxStreamer              staker.TransactionStreamerInterface
+	fatalErr                   chan<- error
+	updateModuleRootErrHandler *util.EphemeralErrorHandler
 }
 
 func NewBOLDStaker(
@@ -256,20 +260,21 @@ func NewBOLDStaker(
 		return nil, err
 	}
 	return &BOLDStaker{
-		config:             config,
-		strategy:           strategy,
-		chalManager:        manager,
-		blockValidator:     blockValidator,
-		rollupAddress:      rollupAddress,
-		l1Reader:           l1Reader,
-		client:             l1reader,
-		callOpts:           callOpts,
-		wallet:             wallet,
-		stakedNotifiers:    stakedNotifiers,
-		confirmedNotifiers: confirmedNotifiers,
-		inboxTracker:       inboxTracker,
-		inboxStreamer:      inboxStreamer,
-		fatalErr:           fatalErr,
+		config:                     config,
+		strategy:                   strategy,
+		chalManager:                manager,
+		blockValidator:             blockValidator,
+		rollupAddress:              rollupAddress,
+		l1Reader:                   l1Reader,
+		client:                     l1reader,
+		callOpts:                   callOpts,
+		wallet:                     wallet,
+		stakedNotifiers:            stakedNotifiers,
+		confirmedNotifiers:         confirmedNotifiers,
+		inboxTracker:               inboxTracker,
+		inboxStreamer:              inboxStreamer,
+		fatalErr:                   fatalErr,
+		updateModuleRootErrHandler: util.NewEphemeralErrorHandler(10*time.Minute, "", 0),
 	}, nil
 }
 
@@ -377,7 +382,9 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		err := b.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
-			log.Warn("error updating latest wasm module root", "err", err)
+			b.updateModuleRootErrHandler.LogLevel(err, log.Error)("error updating latest wasm module root", "err", err)
+		} else {
+			b.updateModuleRootErrHandler.Reset()
 		}
 		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
 		if err != nil {
@@ -496,15 +503,49 @@ func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	if b.blockValidator == nil {
 		return nil
 	}
-	boldRollup, err := rollupgen.NewRollupUserLogic(b.rollupAddress, b.client)
+	rollup, err := rollupgen.NewRollupUserLogic(b.rollupAddress, b.client)
 	if err != nil {
 		return err
 	}
-	moduleRoot, err := boldRollup.WasmModuleRoot(b.getCallOpts(ctx))
+	readInfo := func(hash common.Hash) (*protocol.AssertionCreatedInfo, error) {
+		return ReadBoldAssertionCreationInfo(ctx, rollup, b.client, b.rollupAddress, hash)
+	}
+	fallbackRoot := func() (common.Hash, error) {
+		return rollup.WasmModuleRoot(b.getCallOpts(ctx))
+	}
+	// Anchor on the latest assertion we've staked on (last created assertion)
+	latestStaked, err := rollup.LatestStakedAssertion(b.getCallOpts(ctx), b.wallet.AddressOrZero())
+	if err != nil {
+		return err
+	}
+	var latestInfo *protocol.AssertionCreatedInfo
+	if latestStaked != ([32]byte{}) {
+		latestInfo, err = readInfo(latestStaked)
+		if err != nil {
+			return err
+		}
+	}
+	moduleRoot, err := resolveWasmModuleRoot(latestInfo, readInfo, fallbackRoot)
 	if err != nil {
 		return err
 	}
 	return b.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
+}
+
+// resolveWasmModuleRoot returns the wasm module root the block validator should track.
+func resolveWasmModuleRoot(
+	latest *protocol.AssertionCreatedInfo,
+	readInfo func(common.Hash) (*protocol.AssertionCreatedInfo, error),
+	fallbackRoot func() (common.Hash, error),
+) (common.Hash, error) {
+	if latest == nil || latest.ParentAssertionHash.Hash == (common.Hash{}) {
+		return fallbackRoot()
+	}
+	parent, err := readInfo(latest.ParentAssertionHash.Hash)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return parent.WasmModuleRoot, nil
 }
 
 func (b *BOLDStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
@@ -641,7 +682,7 @@ func newBOLDChallengeManager(
 		stateProvider,
 		providerHeights,
 		stateProvider,
-		nil, // Nil API database for the history commitment provider, as it will be provided later. TODO: Improve this dependency injection.
+		containers.None[db.Database](), // Nil API database for the history commitment provider, as it will be provided later. TODO: Improve this dependency injection.
 	)
 	// The interval at which the challenge manager will attempt to post assertions.
 	postingInterval := config.AssertionPostingInterval

@@ -26,6 +26,13 @@ use {
 
 use crate::{programs::meter, value::FunctionType};
 
+/// Minimum Stylus version that uses the spec-compliant `memory.fill` implementation.
+/// Prior versions built the 64-bit fill pattern without masking the value to 8 bits.
+pub const FIXED_MEMORY_FILL_VERSION: u16 = 3;
+
+/// Minimum Stylus version that disables multi-value returns (not supported by the prover).
+pub const MULTI_VALUE_DISABLED_VERSION: u16 = 3;
+
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct StylusConfig {
@@ -165,7 +172,7 @@ impl CompileConfig {
 
         match version {
             0 => {}
-            1 | 2 => {
+            1..=3 => {
                 config.bounds.heap_bound = Pages(128); // 8 mb
                 config.bounds.max_frame_size = 10 * 1024;
                 config.bounds.max_frame_contention = 4096;

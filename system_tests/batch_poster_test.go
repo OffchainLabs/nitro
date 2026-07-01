@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -102,7 +102,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.Enable = useRedisLock
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
 	builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration = 50 * time.Millisecond
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -971,7 +971,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		Require(t, err)
 		require.NotZero(t, l1Block.BlobGasUsed)
 
-		restoredBlobs, err := builder.L1.L1BlobReader.GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
+		restoredBlobs, err := builder.L1.L1BlobReader.Unwrap().GetBlobs(ctx, l1Block.Hash(), []common.Hash{blobVersionedHash})
 		Require(t, err)
 		require.Len(t, restoredBlobs, 1)
 	}

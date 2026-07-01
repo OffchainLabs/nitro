@@ -17,9 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -96,6 +98,7 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
+	ExperimentalPGA              PGAConfig        `koanf:"experimental-pga"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
@@ -104,6 +107,22 @@ type SequencerConfig struct {
 type DangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
+}
+
+type PGAConfig struct {
+	Enable         bool `koanf:"enable"`
+	RoundsPerBlock uint `koanf:"rounds-per-block"`
+}
+
+const minPGARoundLength = 50 * time.Millisecond
+
+// PGARoundLength returns the length of a PGA round. It is derived from the
+// block time rather than configured directly, so MaxBlockSpeed remains the
+// single source of truth.
+func (c *SequencerConfig) PGARoundLength() time.Duration {
+	// RoundsPerBlock is a small round count bounded by Validate; the conversion cannot overflow.
+	// #nosec G115
+	return c.MaxBlockSpeed / time.Duration(c.ExperimentalPGA.RoundsPerBlock)
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -155,6 +174,17 @@ func (c *SequencerConfig) Validate() error {
 			}
 		}
 	}
+	if c.ExperimentalPGA.RoundsPerBlock == 0 {
+		return errors.New("experimental-pga.rounds-per-block must be at least 1")
+	}
+	if c.ExperimentalPGA.Enable {
+		if c.Timeboost.Enable {
+			return errors.New("experimental-pga.enable and timeboost.enable are mutually exclusive")
+		}
+		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
+			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
+		}
+	}
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
 	}
@@ -185,11 +215,17 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    timeboost.DefaultConfig,
+	ExperimentalPGA:              DefaultPGAConfig,
 	Dangerous:                    DefaultDangerousConfig,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
+}
+
+var DefaultPGAConfig = PGAConfig{
+	Enable:         false,
+	RoundsPerBlock: 2,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -201,6 +237,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
+	PGAAddOptions(prefix+".experimental-pga", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
@@ -218,6 +255,11 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
+}
+
+func PGAAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultPGAConfig.Enable, "EXPERIMENTAL: enable priority gas auction (PGA) transaction ordering; mutually exclusive with timeboost")
+	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -430,6 +472,8 @@ type Sequencer struct {
 
 	eventFilter          *eventfilter.EventFilter
 	addressFilterService *addressfilter.FilterService
+
+	pendingFilteredTxReports []addressfilter.FilteredTxReport
 }
 
 func NewSequencer(
@@ -482,6 +526,35 @@ func (s *Sequencer) FilteringReady() bool {
 		return true
 	}
 	return !s.addressFilterService.GetLoadedAt().IsZero()
+}
+
+func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
+	if s.execEngine.filteringReportRPCClient == nil {
+		return
+	}
+	txRLP, err := tx.MarshalBinary()
+	if err != nil {
+		// MarshalBinary should essentially never fail for a well-formed transaction already
+		// in memory. We log instead of returning an error so that the caller can return a
+		// plain ErrSeqFilter, avoiding exposure of internal operation errors (e.g.
+		// marshalling failures) to end users.
+		log.Error("failed to marshal transaction for filtered tx report", "err", err, "txHash", tx.Hash())
+		return
+	}
+	report := addressfilter.FilteredTxReport{
+		ID:                uuid.Must(uuid.NewV7()).String(),
+		TxHash:            tx.Hash(),
+		TxRLP:             txRLP,
+		FilteredAddresses: filteredAddresses,
+		ChainID:           s.execEngine.bc.Config().ChainID.Uint64(),
+		BlockNumber:       header.Number.Uint64(),
+		ParentBlockHash:   header.ParentHash,
+		PositionInBlock:   uint64(positionInBlock), // #nosec G115
+		FilteredAt:        time.Now().UTC(),
+		IsDelayed:         false,
+		DelayedReportData: nil,
+	}
+	s.pendingFilteredTxReports = append(s.pendingFilteredTxReports, report)
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -703,7 +776,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	return nil
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info, positionInBlock int) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -722,25 +795,33 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	}
 
 	touchAddresses(statedb, tx, sender)
-	addressFiltered, _ := statedb.IsAddressFiltered()
-	if statedb.IsTxFiltered() || addressFiltered {
-		return state.ErrArbTxFilter
+	if statedb.IsTxFiltered() {
+		return state.ErrSeqFilter
+	}
+
+	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
+	if addressFiltered {
+		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
+		return state.ErrSeqFilter
 	}
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
-			for _, record := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(&record)
+			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address) {
+				statedb.TouchAddress(&addr)
 			}
 		}
 	}
-
-	if addressFiltered, _ := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
-		return state.ErrArbTxFilter
+	if statedb.IsTxFiltered() {
+		return state.ErrSeqFilter
+	}
+	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
+		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
+		return state.ErrSeqFilter
 	}
 
 	// For redeems, skip nonce/revert-gas checks since those
@@ -921,8 +1002,8 @@ type FullSequencingHooks struct {
 	sequencedTxsSizeSoFar    int
 	maxSequencedTxsSize      int
 	txErrors                 []error
-	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
-	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error
+	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
 }
@@ -1024,19 +1105,19 @@ func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) 
 	return s.queueItems[txId].tx, nil
 }
 
-func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info) error {
+func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info, positionInBlock int) error {
 	if s.preTxFilter != nil {
-		return s.preTxFilter(config, header, db, a, transaction, options, address, info)
+		return s.preTxFilter(config, header, db, a, transaction, options, address, info, positionInBlock)
 	}
 	return nil
 }
 
-func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if transaction.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
 	if s.postTxFilter != nil {
-		return s.postTxFilter(header, db, a, transaction, address, u, result)
+		return s.postTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
 	}
 	return nil
 }
@@ -1051,8 +1132,8 @@ func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 func MakeSequencingHooks(
 	items []txQueueItem,
 	maxSequencedTxsSize int,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
+	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
@@ -1071,8 +1152,8 @@ func MakeSequencingHooks(
 // This allows all transactions to be included in a block regardless of size.
 func MakeZeroTxSizeSequencingHooksForTesting(
 	txes types.Transactions,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
+	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	var items []txQueueItem
@@ -1224,7 +1305,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 
 	config := s.config()
-	lastBlock := s.execEngine.bc.CurrentBlock()
 
 	// Clear out old nonceFailures
 	s.nonceFailures.Resize(config.NonceFailureCacheSize)
@@ -1326,6 +1406,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(txpool.ErrOversizedData)
 			continue
 		}
+		// Re-read for each tx: the head can advance while this loop runs.
+		lastBlock := s.execEngine.bc.CurrentBlock()
 		if queueItem.isTimeboosted &&
 			queueItem.blockStamp != 0 &&
 			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
@@ -1398,6 +1480,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
+	s.pendingFilteredTxReports = nil
+
 	start := time.Now()
 	var (
 		block *types.Block
@@ -1408,6 +1492,16 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	} else {
 		block, err = s.execEngine.SequenceTransactions(header, hooks, timeboostedTxs)
 	}
+
+	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
+		reports := s.pendingFilteredTxReports
+		s.LaunchThread(func(ctx context.Context) {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
+			}
+		})
+	}
+	s.pendingFilteredTxReports = nil
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed.Nanoseconds())
 	if elapsed >= time.Second*5 {
@@ -1829,10 +1923,24 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
 	}
 
+	s.pendingFilteredTxReports = nil
 	block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
 	if err != nil {
 		t.Fatalf("SequenceTransactionsForTest: %v", err)
 	}
+
+	// Mirror createBlock: dispatch any reports accumulated by preTxFilter so
+	// tests inspecting the filtering-report endpoint observe them.
+	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
+		reports := s.pendingFilteredTxReports
+		s.LaunchThread(func(ctx context.Context) {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
+			}
+		})
+	}
+	s.pendingFilteredTxReports = nil
+
 	return block, hooks.GetTxErrors()
 }
 

@@ -14,33 +14,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-func newTestStack(t *testing.T) *node.Node {
-	t.Helper()
-
-	stackConfig := DefaultStackConfig
-	stackConfig.HTTPHost = "127.0.0.1"
-	stackConfig.HTTPPort = 0
-	stackConfig.WSHost = "127.0.0.1"
-	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, &sqsclient.MockQueueClient{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := stack.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { stack.Close() })
-	return stack
-}
-
 func TestLiveness(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -53,7 +34,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -66,17 +47,20 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 	client := stack.Attach()
 	defer client.Close()
 
 	reports := []addressfilter.FilteredTxReport{{
 		ID:     "test-id",
 		TxHash: common.HexToHash("0x1234"),
-		TxRLP:  nil,
+		TxRLP:  hexutil.Bytes{},
 		FilteredAddresses: []filter.FilteredAddressRecord{{
-			Address:      common.HexToAddress("0xdead"),
-			FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil},
+			FilterSetID: "test-filter-set",
+			FilteredAddressWithReason: filter.FilteredAddressWithReason{
+				Address:      common.HexToAddress("0xdead"),
+				FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil},
+			},
 		}},
 		ChainID:           42161,
 		BlockNumber:       42,
@@ -92,7 +76,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := newTestStack(t)
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
 	client := stack.Attach()
 	defer client.Close()
 
@@ -129,10 +113,13 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 			TxHash: common.BigToHash(big.NewInt(int64(i))),
 			TxRLP:  nil,
 			FilteredAddresses: []filter.FilteredAddressRecord{{
-				Address: common.HexToAddress("0xdead"),
-				FilterReason: filter.FilterReason{
-					Reason:         filter.ReasonFrom,
-					EventRuleMatch: nil,
+				FilterSetID: "test-filter-set",
+				FilteredAddressWithReason: filter.FilteredAddressWithReason{
+					Address: common.HexToAddress("0xdead"),
+					FilterReason: filter.FilterReason{
+						Reason:         filter.ReasonFrom,
+						EventRuleMatch: nil,
+					},
 				},
 			}},
 			ChainID:           0,

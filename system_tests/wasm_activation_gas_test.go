@@ -29,12 +29,12 @@ type activationGasTest struct {
 	cleanup  func()
 }
 
-// setupActivationGasTest spins up a node at ArbosVersion_StylusActivationGas and wires
+// setupActivationGasTest spins up a node at ArbosVersion_59 and wires
 // up the ArbOwner / ArbWasm bindings used by the activation-gas test suite.
 func setupActivationGasTest(t *testing.T) activationGasTest {
 	t.Helper()
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.WithArbOSVersion(params.ArbosVersion_StylusActivationGas)
+		b.WithArbOSVersion(params.ArbosVersion_59)
 	})
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -142,7 +142,7 @@ func TestWasmActivationGasVersionGating(t *testing.T) {
 	// ActivationGas getter must also revert
 	_, err = arbWasm.ActivationGas(nil)
 	if err == nil {
-		Fatal(t, "expected ActivationGas to fail on pre-v60 chain")
+		Fatal(t, "expected ActivationGas to fail on pre-v59 chain")
 	}
 }
 

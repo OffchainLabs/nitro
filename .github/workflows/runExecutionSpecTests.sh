@@ -2,8 +2,12 @@
 
 set -euo pipefail
 
-# Build local nitro image
-docker build --target nitro-node-dev --tag nitro-local-build .
+if [ -n "${PRIVATE_REPO_TOKEN:-}" ]; then
+  GH_TOKEN="$PRIVATE_REPO_TOKEN" DOCKER_BUILDKIT=1 docker build --secret id=gh_token,env=GH_TOKEN --target nitro-node-dev --tag nitro-local-build .
+else
+  # No private token (e.g. public nitro): the consensus machine is fetched from public releases.
+  DOCKER_BUILDKIT=1 docker build --target nitro-node-dev --tag nitro-local-build .
+fi
 
 # Clone nitro-devnode repo
 git clone https://github.com/OffchainLabs/nitro-devnode.git

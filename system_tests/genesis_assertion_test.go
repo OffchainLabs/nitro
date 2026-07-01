@@ -24,7 +24,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -35,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/nitro/init"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -43,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -106,7 +109,7 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 		t.Fatal("initDataReader can't be nil")
 	}
 
-	err := nitroinit.GetAndValidateGenesisAssertion(ctx, l2blockchain, initDataReader, addresses, l1client)
+	err := nitroinit.GetAndValidateGenesisAssertion(ctx, l2blockchain, initDataReader, addresses, l1client, true)
 	Require(t, err)
 }
 
@@ -136,7 +139,7 @@ func TestValidateGenesisAssertionWithBuilder(t *gotesting.T) {
 		t.Fatal("initDataReader can't be nil")
 	}
 
-	err := nitroinit.GetAndValidateGenesisAssertion(ctx, builder.L2.ExecNode.Backend.ArbInterface().BlockChain(), initDataReader, builder.addresses, builder.L1.Client)
+	err := nitroinit.GetAndValidateGenesisAssertion(ctx, builder.L2.ExecNode.Backend.ArbInterface().BlockChain(), initDataReader, builder.addresses, builder.L1.Client, true)
 	Require(t, err)
 }
 
@@ -157,7 +160,7 @@ func createCompleteTestNodeOnL1(
 	assertionChain *sol.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts, l2blockchain *core.BlockChain, addresses *chaininfo.RollupAddresses,
 ) {
 	// First set up L1 and deploy contracts
-	var signerCfg *dataposter.ExternalSignerCfg
+	var signerCfg *dataposterconfig.ExternalSignerConfig
 	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
 		t, ctx, rollupStackConf, useExternalSigner, nodeConfig, chainConfig, enableCustomDA,
 	)
@@ -183,7 +186,7 @@ func setupL1WithRollupAddresses(
 ) (
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
-	signerCfg *dataposter.ExternalSignerCfg,
+	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) {
 	var srv *externalsignertest.SignerServer
 	if useExternalSigner {
@@ -209,12 +212,13 @@ func setupL1WithRollupAddresses(
 
 	var err error
 	if useExternalSigner {
-		signerCfg, err = dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+		signerCfg, err = dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 		if err != nil {
 			t.Fatalf("Error getting external signer config: %v", err)
 		}
-		asserterOpts, err = dataposter.ExternalSignerTxOpts(ctx, signerCfg)
+		externalSigner, err := externalsigner.NewExternalSigner(ctx, signerCfg)
 		Require(t, err)
+		asserterOpts = externalSigner.TxOpts()
 	} else {
 		l1info.GenerateAccount("Asserter")
 		tmpOpts := l1info.GetDefaultTransactOpts("Asserter", ctx)
@@ -278,7 +282,7 @@ func createL2NodeWithRollupAddresses(
 	addresses *chaininfo.RollupAddresses,
 	useExternalSigner bool,
 	asserterOpts *bind.TransactOpts,
-	signerCfg *dataposter.ExternalSignerCfg,
+	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *sol.AssertionChain, l2blockchain *core.BlockChain,
@@ -322,7 +326,7 @@ func createL2NodeWithRollupAddresses(
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
 	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, parentChainId, l1Reader)
-	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), 0, parentChain)
+	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain)
 	Require(t, err)
 
 	locator, err := server_common.NewMachineLocator("")
@@ -330,7 +334,7 @@ func createL2NodeWithRollupAddresses(
 	currentNode, err = arbnode.CreateConsensusNode(
 		ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
-		nil, // Blob reader.
+		containers.None[daprovider.BlobReader](), // Blob reader.
 		locator.LatestWasmModuleRoot(), parentChain,
 	)
 	Require(t, err)

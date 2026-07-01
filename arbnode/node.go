@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
@@ -134,6 +135,15 @@ func (c *Config) Validate() error {
 	}
 	if err := c.DA.Validate(); err != nil {
 		return err
+	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && c.MessageExtraction.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da is not supported with message-extraction.enable=true")
+	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && !c.DA.AnyTrust.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da requires da.anytrust.enable=true (the flag skips factory wiring but the chain config still requires AnyTrust)")
+	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && !c.DA.AnyTrust.RestAggregator.Enable && c.BlockValidator.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da with da.anytrust.rest-aggregator.enable=false is incompatible with block-validator.enable=true: the validator cannot fetch preimages for historical AnyTrust batches and will stall silently")
 	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
@@ -286,40 +296,44 @@ func ConfigDefaultL2Test() *Config {
 }
 
 type DangerousConfig struct {
-	NoL1Listener           bool `koanf:"no-l1-listener"`
-	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
-	DisableBlobReader      bool `koanf:"disable-blob-reader"`
+	NoL1Listener                  bool `koanf:"no-l1-listener"`
+	NoSequencerCoordinator        bool `koanf:"no-sequencer-coordinator"`
+	DisableBlobReader             bool `koanf:"disable-blob-reader"`
+	AlwaysFallbackToParentChainDA bool `koanf:"always-fallback-to-parent-chain-da"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	NoL1Listener:           false,
-	NoSequencerCoordinator: false,
-	DisableBlobReader:      false,
+	NoL1Listener:                  false,
+	NoSequencerCoordinator:        false,
+	DisableBlobReader:             false,
+	AlwaysFallbackToParentChainDA: false,
 }
 
 var TestDangerousConfig = DangerousConfig{
-	NoL1Listener:           false,
-	NoSequencerCoordinator: false,
-	DisableBlobReader:      true,
+	NoL1Listener:                  false,
+	NoSequencerCoordinator:        false,
+	DisableBlobReader:             true,
+	AlwaysFallbackToParentChainDA: false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
+	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! for chains being retired off AnyTrust: suppresses the AnyTrust writer and halts on any AnyTrust batch when rest-aggregator is disabled")
 }
 
 type Node struct {
 	ConsensusDB              ethdb.Database
 	Stack                    *node.Node
 	ExecutionClient          execution.ExecutionClient
-	ExecutionSequencer       execution.ExecutionSequencer
+	ExecutionSequencer       containers.Option[execution.ExecutionSequencer]
 	ExecutionRecorder        execution.ExecutionRecorder
 	L1Reader                 *headerreader.HeaderReader
 	ParentChain              *parent.ParentChain
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
-	BlobReader               daprovider.BlobReader
+	BlobReader               containers.Option[daprovider.BlobReader]
 	MessageExtractor         *melrunner.MessageExtractor
 	InboxReader              *InboxReader
 	InboxTracker             *InboxTracker
@@ -398,7 +412,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 	ctx context.Context,
 	l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts,
-	cfg *dataposter.DataPosterConfig,
+	cfg *dataposterconfig.DataPosterConfig,
 	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
 	cfg.UseNoOpStorage = true
@@ -406,7 +420,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 		&dataposter.DataPosterOpts{
 			HeaderReader: l1Reader,
 			Auth:         transactOpts,
-			Config: func() *dataposter.DataPosterConfig {
+			Config: func() *dataposterconfig.DataPosterConfig {
 				return cfg
 			},
 			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
@@ -433,7 +447,7 @@ func StakerDataposter(
 	if err != nil {
 		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
-	dpCfg := func() *dataposter.DataPosterConfig {
+	dpCfg := func() *dataposterconfig.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
 	var sender string
@@ -601,7 +615,7 @@ func getDAProviders(
 	ctx context.Context,
 	config *Config,
 	txStreamer *TransactionStreamer,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	dataSigner signature.DataSignerFunc,
@@ -643,7 +657,6 @@ func getDAProviders(
 		}
 	}
 
-	// Create AnyTrust DA provider if enabled (can coexist with external DA)
 	if config.DA.AnyTrust.Enable {
 		// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
 		if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
@@ -651,22 +664,40 @@ func getDAProviders(
 			config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
 		}
 
-		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
+		alwaysFallback := config.Dangerous.AlwaysFallbackToParentChainDA
 
-		// Create AnyTrust factory
-		daFactory := anytrust.NewFactory(
+		var mode anytrust.FactoryMode
+		switch {
+		case alwaysFallback:
+			mode = anytrust.ModeRetiring
+		case config.BatchPoster.Enable:
+			mode = anytrust.ModeWriter
+		default:
+			mode = anytrust.ModeReader
+		}
+
+		if alwaysFallback {
+			if config.DA.AnyTrust.RestAggregator.Enable {
+				log.Info("DANGEROUS: always-fallback-to-parent-chain-da is set; AnyTrust writer suppressed; reader continues serving batches via rest-aggregator")
+			} else {
+				log.Error("DANGEROUS: always-fallback-to-parent-chain-da is set and rest-aggregator is disabled; node will halt on any AnyTrust batch encountered")
+			}
+		}
+
+		log.Info("Creating AnyTrust DA provider", "mode", mode)
+
+		daFactory, err := anytrust.NewFactory(
 			&config.DA.AnyTrust,
 			dataSigner,
 			l1client,
 			l1Reader,
 			deployInfo.SequencerInbox,
-			config.BatchPoster.Enable,
+			mode,
 		)
-		log.Info("Created AnyTrust DA factory")
-
-		if err := daFactory.ValidateConfig(); err != nil {
+		if err != nil {
 			return nil, nil, nil, err
 		}
+		log.Info("Created AnyTrust DA factory")
 
 		var localCleanupFuncs []func()
 		reader, readerCleanup, err := daFactory.CreateReader(ctx)
@@ -678,7 +709,7 @@ func getDAProviders(
 		}
 
 		var writer daprovider.Writer
-		if config.BatchPoster.Enable {
+		if mode == anytrust.ModeWriter {
 			var writerCleanup func()
 			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
 			if err != nil {
@@ -694,14 +725,12 @@ func getDAProviders(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		// Register AnyTrust reader directly (no validator for AnyTrust)
 		for _, hb := range headerBytes {
 			if err := dapRegistry.Register(hb, reader, nil); err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
 			}
 		}
 
-		// Create cleanup function for AnyTrust
 		anytrustCleanup := func() {
 			for _, cleanup := range localCleanupFuncs {
 				cleanup()
@@ -710,16 +739,15 @@ func getDAProviders(
 		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
-	// Check if chain requires AnyTrust but none is configured
-	// We support a nil txStreamer for the pruning code
+	// We support a nil txStreamer for the pruning code.
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		if !config.DA.AnyTrust.Enable {
 			return nil, nil, nil, errors.New("AnyTrust DA service required but unconfigured")
 		}
 	}
 
-	if blobReader != nil {
-		if err := dapRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
+	if blobReader.IsSome() {
+		if err := dapRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader.Unwrap())); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to register blob reader: %w", err)
 		}
 	}
@@ -754,6 +782,7 @@ func getInboxTrackerAndReader(
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
+	fatalErrChan chan<- error,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
 		log.Info("Inbox reader and tracker disabled")
@@ -764,7 +793,7 @@ func getInboxTrackerAndReader(
 		return nil, nil, err
 	}
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader }, fatalErrChan)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1140,16 +1169,16 @@ func getSeqCoordinator(
 	bpVerifier *contracts.AddressVerifier,
 	txStreamer *TransactionStreamer,
 	syncMonitor *SyncMonitor,
-	exec execution.ExecutionSequencer,
+	exec containers.Option[execution.ExecutionSequencer],
 ) (*SeqCoordinator, error) {
 	var coordinator *SeqCoordinator
 	if config.SeqCoordinator.Enable {
-		if exec == nil {
+		if exec.IsNone() {
 			return nil, errors.New("sequencer coordinator requires an execution sequencer")
 		}
 
 		var err error
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec.Unwrap(), syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
@@ -1269,11 +1298,11 @@ func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
 	delayedMessageFetcher DelayedMessageFetcher,
 	delayedBridge *DelayedBridge,
-	exec execution.ExecutionSequencer,
+	exec containers.Option[execution.ExecutionSequencer],
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if exec == nil {
+	if exec.IsNone() {
 		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
@@ -1281,7 +1310,7 @@ func getDelayedSequencer(
 		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec.Unwrap(), coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1289,10 +1318,10 @@ func getNodeParentChainReaderDisabled(
 	consensusDB ethdb.Database,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
-	executionSequencer execution.ExecutionSequencer,
+	executionSequencer containers.Option[execution.ExecutionSequencer],
 	executionRecorder execution.ExecutionRecorder,
 	txStreamer *TransactionStreamer,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	broadcastServer *broadcaster.Broadcaster,
 	broadcastClients *broadcastclients.BroadcastClients,
 	coordinator *SeqCoordinator,
@@ -1348,7 +1377,7 @@ func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
 	executionClient execution.ExecutionClient,
-	executionSequencer execution.ExecutionSequencer,
+	executionSequencer containers.Option[execution.ExecutionSequencer],
 	executionRecorder execution.ExecutionRecorder,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1360,7 +1389,7 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	latestWasmModuleRoot common.Hash,
 	parentChain *parent.ParentChain,
 ) (*Node, error) {
@@ -1427,7 +1456,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1615,7 +1644,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	latestWasmModuleRoot common.Hash,
 	parentChain *parent.ParentChain,
 ) (*Node, error) {
@@ -1626,7 +1655,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, containers.None[execution.ExecutionSequencer](), nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
 	if err != nil {
 		return nil, err
 	}
@@ -1647,25 +1676,31 @@ func CreateConsensusNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	latestWasmModuleRoot common.Hash,
 	parentChain *parent.ParentChain,
 ) (*Node, error) {
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
-	var executionSequencer execution.ExecutionSequencer
+	var executionSequencer containers.Option[execution.ExecutionSequencer]
 	var arbOSVersionGetter execution.ArbOSVersionGetter
-	if configFetcher.Get().ExecutionRPCClient.URL != "" {
+	if executionRPCClientURL := configFetcher.Get().ExecutionRPCClient.URL; executionRPCClientURL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
 		executionClient = rpcClient
 		executionRecorder = rpcClient
 		arbOSVersionGetter = rpcClient
-		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
+		if executionRPCClientURL == "self" || executionRPCClientURL == "self-auth" {
+			// Sequencing over RPC is not supported yet, so the in-process
+			// execution node handles sequencing.
+			executionSequencer = containers.Some[execution.ExecutionSequencer](fullExecutionClient)
+		} else {
+			executionSequencer = containers.None[execution.ExecutionSequencer]()
+		}
 	} else {
 		executionClient = fullExecutionClient
 		executionRecorder = fullExecutionClient
-		executionSequencer = fullExecutionClient
+		executionSequencer = containers.Some[execution.ExecutionSequencer](fullExecutionClient)
 		arbOSVersionGetter = fullExecutionClient
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
@@ -1683,8 +1718,8 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
 	}
-	if n.BlobReader != nil {
-		err = n.BlobReader.Initialize(ctx)
+	if n.BlobReader.IsSome() {
+		err = n.BlobReader.Unwrap().Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing blob reader: %w", err)
 		}
@@ -1733,8 +1768,8 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
-	} else if n.ExecutionSequencer != nil {
-		n.ExecutionSequencer.Activate()
+	} else if n.ExecutionSequencer.IsSome() {
+		n.ExecutionSequencer.Unwrap().Activate()
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)

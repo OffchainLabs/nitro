@@ -6,6 +6,8 @@ package gethexec
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -13,6 +15,15 @@ import (
 )
 
 const FilteringReportNamespace = "filteringreport"
+
+var (
+	reportFilteredTransactionsCallFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/failure_total", nil,
+	)
+	reportFilteredTransactionsCallSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/success_total", nil,
+	)
+)
 
 var DefaultFilteringReportRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",
@@ -48,6 +59,11 @@ func (c *FilteringReportRPCClient) StopAndWait() {
 func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
+		if err != nil {
+			reportFilteredTransactionsCallFailuresCounter.Inc(1)
+		} else {
+			reportFilteredTransactionsCallSuccessesCounter.Inc(1)
+		}
 		return struct{}{}, err
 	})
 }

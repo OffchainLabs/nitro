@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/offchainlabs/nitro/bold/challenge/tree/mock"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func Test_localTimer(t *testing.T) {
@@ -94,7 +94,7 @@ func Test_earliestCreatedRivalBlockNumber(t *testing.T) {
 	t.Run("no rivals", func(t *testing.T) {
 		res := ct.EarliestCreatedRivalBlockNumber(edgeA)
 
-		require.Equal(t, option.None[uint64](), res)
+		require.Equal(t, containers.None[uint64](), res)
 	})
 	t.Run("one rival", func(t *testing.T) {
 		mutual := edgeA.MutualId()

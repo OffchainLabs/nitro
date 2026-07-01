@@ -147,9 +147,9 @@ func TestFragmentedContractValidation(t *testing.T) {
 			},
 		},
 		{
-			name: "Too Many Fragments (3)",
+			name: "Too Many Fragments (5)",
 			cfg: deployConfig{
-				fragmentCount:    3,
+				fragmentCount:    5,
 				expectActivation: false,
 				expectedErr:      "more fragments then the current limit",
 			},
@@ -349,7 +349,7 @@ func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
 	// Verify initial
 	count, err := arbOwnerPublic.GetMaxStylusContractFragments(callOpts)
 	Require(t, err)
-	require.Equal(t, uint8(2), count)
+	require.Equal(t, uint8(4), count)
 
 	// Change to 1
 	tx, err := arbOwner.SetMaxStylusContractFragments(&auth, 1)
@@ -384,7 +384,7 @@ func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
 
 	count, err := arbOwnerPublic.GetMaxStylusContractFragments(&bind.CallOpts{Context: builder.ctx})
 	Require(t, err)
-	require.Equal(t, uint8(2), count)
+	require.Equal(t, uint8(4), count)
 }
 
 // Generic Runners for Limit Decrease Scenarios

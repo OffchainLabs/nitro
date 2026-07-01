@@ -177,7 +177,7 @@ func (con ArbWasm) BlockCacheSize(c ctx, _ mech) (uint16, error) {
 	return params.BlockCacheSize, err
 }
 
-// Gets the constant gas charge applied before each stylus contract activation.
+// Gets the constant gas charge applied before each Stylus contract activation.
 func (con ArbWasm) ActivationGas(c ctx, _ mech) (uint64, error) {
 	return c.State.Programs().ActivationGas()
 }

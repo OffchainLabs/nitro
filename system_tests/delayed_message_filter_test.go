@@ -9,13 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	filterTypes "github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -24,17 +28,63 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-// sendDelayedTx sends a transaction via L1 delayed inbox.
-// Returns the L2 tx hash that will be used when sequenced.
-func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *types.Transaction) common.Hash {
+// CheckCommonReportFields asserts FilteredTxReport fields common to every reporter (prechecker, delayed sequencer, regular sequencer).
+func CheckCommonReportFields(t *testing.T, ctx context.Context, builder *NodeBuilder, report *addressfilter.FilteredTxReport, tx *types.Transaction) {
+	t.Helper()
+	require.NotEmpty(t, report.TxHash, "report must have tx hash")
+	require.NotEmpty(t, report.ID, "report ID must be set")
+	parsedID, err := uuid.Parse(report.ID)
+	require.NoError(t, err, "report ID must be a valid UUID")
+	require.Equal(t, uuid.Version(7), parsedID.Version(), "report ID must be a UUID v7")
+	require.NotEmpty(t, report.TxRLP, "txRLP must be set")
+	require.NotEmpty(t, report.FilteredAddresses, "report must contain at least one filtered address")
+	require.Equal(t, builder.chainConfig.ChainID.Uint64(), report.ChainID, "chainID")
+	require.NotZero(t, report.BlockNumber, "block number shouldn't be genesis")
+	require.False(t, report.FilteredAt.IsZero(), "filteredAt must be populated")
+	require.WithinDuration(t, time.Now().UTC(), report.FilteredAt, 5*time.Minute, "filteredAt must be recent")
+
+	// MarshalBinary writes the raw EIP-2718 envelope (type byte + payload) but
+	// types.Transaction.UnmarshalBinary doesn't enable Arbitrum-aware parsing.
+	// Re-wrap the bytes as an RLP byte-string so DecodeRLP (which does enable it)
+	// can decode Arbitrum tx types like ArbitrumSubmitRetryableTx.
+	encoded, err := rlp.EncodeToBytes(report.TxRLP)
+	require.NoError(t, err, "wrapping TxRLP for RLP decode")
+	var decoded types.Transaction
+	require.NoError(t, rlp.DecodeBytes(encoded, &decoded), "TxRLP should decode to a transaction")
+	require.Equal(t, decoded.Hash(), report.TxHash, "decoded txRLP hash should match txHash field")
+
+	if tx != nil {
+		require.Equal(t, tx.Hash(), report.TxHash, "reported tx hash should match actual tx hash")
+		require.Equal(t, tx.Hash(), decoded.Hash(), "decoded tx hash should match actual tx hash")
+	}
+
+	parentBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(report.BlockNumber-1))) // #nosec G115
+	require.NoError(t, err)
+	require.Equal(t, parentBlock.Hash(), report.ParentBlockHash, "parent block hash should match hash of block N-1")
+}
+
+// checkDelayedReportFields asserts FilteredTxReport fields specific to delayed messages.
+func checkDelayedReportFields(t *testing.T, report *addressfilter.FilteredTxReport) {
+	t.Helper()
+	require.True(t, report.IsDelayed)
+	require.NotNil(t, report.DelayedReportData, "delayed report data should be set")
+	require.NotEqual(t, common.Hash{}, report.DelayedReportData.InboxRequestId,
+		"InboxRequestId should be populated")
+}
+
+func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *types.Transaction) (common.Hash, uint64) {
 	t.Helper()
 	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
 	Require(t, err)
@@ -46,10 +96,20 @@ func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *
 	l1opts := builder.L1Info.GetDefaultTransactOpts("User", ctx)
 	l1tx, err := delayedInbox.SendL2Message(&l1opts, txwrapped)
 	Require(t, err)
-	_, err = builder.L1.EnsureTxSucceeded(l1tx)
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
 	Require(t, err)
 
-	return tx.Hash()
+	return tx.Hash(), l1Receipt.BlockNumber.Uint64()
+}
+
+func advanceL1To(t *testing.T, ctx context.Context, builder *NodeBuilder, targetHead uint64) {
+	t.Helper()
+	head, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	if head >= targetHead {
+		return
+	}
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(targetHead-head)) // #nosec G115
 }
 
 // sendDelayedBatch sends a batch of transactions via L1 delayed inbox as a single delayed message.
@@ -153,6 +213,21 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	return transactionFiltererAPI
 }
 
+func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndpoint) {
+	t.Helper()
+
+	queueClient := &sqsclient.MockQueueClient{}
+	pemPath, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
+
+	stack := filteringreportapi.NewTestStack(t, queueClient)
+
+	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), pemPath)
+	fwd.Start(t.Context())
+	t.Cleanup(func() { fwd.StopAndWait() })
+
+	return stack, externalEndpoint
+}
+
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
 func addTxHashToOnChainFilter(t *testing.T, ctx context.Context, builder *NodeBuilder, txHash common.Hash, filtererName string) {
 	t.Helper()
@@ -241,6 +316,8 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	filteringReportStack, reportAPI := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -262,7 +339,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -274,6 +351,26 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, finalBalance, "filtered address balance should not change")
+
+	// Verify filtering-report service received the report
+	report := reportAPI.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, delayedTx)
+	checkDelayedReportFields(t, report)
+	// Position 1: internal ArbOS start-block tx is at 0, delayed user tx follows at 1
+	require.Equal(t, uint64(1), report.PositionInBlock, "positionInBlock should be 1 (first user tx after internal start-block tx)")
+
+	require.NotEmpty(t, report.FilteredAddresses)
+	foundTo := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredAddr && addr.Reason == filterTypes.ReasonTo {
+			require.Nil(t, addr.EventRuleMatch,
+				"direct address filter should not have EventRuleMatch")
+			foundTo = true
+			break
+		}
+	}
+	require.True(t, foundTo,
+		"report should contain filtered address with reason 'to'")
 }
 
 // TestDelayedMessageFilterBypass verifies that adding tx hash to onchain filter allows tx to proceed.
@@ -317,7 +414,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -368,6 +465,146 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
+// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage asserts that the filtered
+// message processing resumes as soon as its onchain-filter condition is met, regardless of a later
+// message's finality.
+func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const finalizeDistance = uint64(20)
+	// Number of delayed messages this test enqueues: the filtered one and the later one.
+	const numDelayedMessages = uint64(2)
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = int64(finalizeDistance)
+	builder.nodeConfig.DelayedSequencer.UseMergeFinality = false
+	// Freeze the parent chain: with the batch poster posting to L1, the head would keep advancing and
+	// eventually finalize the later message. The test drives L1 advancement explicitly instead.
+	builder.nodeConfig.BatchPoster.Enable = false
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("Receiver")
+	builder.L2Info.GenerateAccount("Filterer")
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	// Grant Filterer the transaction filterer role so it can add tx hashes to the onchain filter.
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	grantTx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(grantTx)
+	require.NoError(t, err)
+
+	// Block transfers to FilteredUser.
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	delayedCountBefore, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	require.NoError(t, err)
+
+	// The filtered delayed message (transfer to FilteredUser).
+	filteredTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	filteredTxHash, filteredDelayedMsgL1Block := sendDelayedTx(t, ctx, builder, filteredTx)
+
+	// Open a small gap (smaller than finalizeDistance) of plain L1 blocks (these do not create delayed
+	// messages), then send the later delayed message.
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 2)
+	laterTx := builder.L2Info.PrepareTx("Sender", "Receiver", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	_, laterDelayedMsgL1Block := sendDelayedTx(t, ctx, builder, laterTx)
+	require.Greater(t, laterDelayedMsgL1Block, filteredDelayedMsgL1Block, "the later message must land in a later L1 block than the filtered one")
+	require.Less(t, laterDelayedMsgL1Block-filteredDelayedMsgL1Block, finalizeDistance, "gap between the two messages must be smaller than the finalize distance")
+
+	// Phase A: the L1 head currently sits at the later message's block, so nothing is finalized yet
+	// (L1 head minus finalizeDistance stays below filteredDelayedMsgL1Block). Wait until BOTH delayed
+	// messages are read into the DB. This removes the race where the delayed sequencer (which derives
+	// finality from the L1 head) could finalize and halt on the filtered message before the inbox
+	// reader has read the later one - the only pass that records waitingForFinalizedBlock is the
+	// initial halt pass, so the later message must already be present by then.
+	//
+	// The expected delayed count increment is +2: only the two SendL2Message calls (the filtered and
+	// later messages) add delayed messages; the gap-filling AdvanceL1 blocks are plain Faucet->Faucet
+	// L1 transfers that never touch the delayed inbox, so they add nothing to the delayed count.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		count, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+		require.NoError(t, err)
+		if count == delayedCountBefore+numDelayedMessages {
+			break
+		}
+		<-time.After(50 * time.Millisecond)
+	}
+	count, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	require.NoError(t, err)
+	require.Equal(t, delayedCountBefore+numDelayedMessages, count, "both delayed messages must be read into the delayed DB before crossing the filtered message's finality")
+
+	// Phase B: advance L1 so the finalized block (L1 head minus finalizeDistance) equals
+	// filteredDelayedMsgL1Block: the filtered message is finalized, the later message (at a higher
+	// block) is not. Stopping at filteredDelayedMsgL1Block + finalizeDistance (rather than the tightest
+	// laterDelayedMsgL1Block + finalizeDistance - 1) leaves a margin of
+	// (laterDelayedMsgL1Block - filteredDelayedMsgL1Block) blocks before the later message would
+	// finalize, so background noise can't accidentally finalize it. Because the later message is already
+	// read, the halt pass deterministically records waitingForFinalizedBlock = laterDelayedMsgL1Block.
+	advanceL1To(t, ctx, builder, filteredDelayedMsgL1Block+finalizeDistance)
+
+	// The sequencer halts on the filtered message and, on the same pass, records that it is waiting
+	// for the later message's finality.
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{filteredTxHash}, 10*time.Second)
+	var waitingBlock uint64
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var ok bool
+		waitingBlock, ok = builder.L2.ConsensusNode.DelayedSequencer.WaitingForFinalizedBlock(t)
+		if ok && waitingBlock == laterDelayedMsgL1Block {
+			break
+		}
+		<-time.After(100 * time.Millisecond)
+	}
+	require.Equal(t, laterDelayedMsgL1Block, waitingBlock, "precondition: sequencer must be waiting on the later message's finality while halted on the filtered one")
+
+	// Satisfy the filtered message's onchain-filter condition. This adds an L2 tx only - it does NOT
+	// advance L1 (the batch poster is disabled), so the later message stays unfinalized and resume
+	// passes are driven purely by the rescan timer.
+	addTxHashToOnChainFilter(t, ctx, builder, filteredTxHash, "Filterer")
+
+	// The filtered message is finalized and now bypassable, so it must resume without waiting for the
+	// later, still-unfinalized message.
+	resumed := false
+	var headAtResume uint64
+	deadline = time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t); !waiting {
+			headAtResume, err = builder.L1.Client.BlockNumber(ctx)
+			require.NoError(t, err)
+			resumed = true
+			break
+		}
+		<-time.After(100 * time.Millisecond)
+	}
+
+	require.True(t, resumed,
+		"delayed sequencer must resume the finalized, onchain-filtered message without waiting for the "+
+			"later unfinalized message to finalize; it is still halted, confirming that the "+
+			"waitingForFinalizedBlock gate incorrectly blocks the filtered-tx resume")
+	require.Less(t, headAtResume, laterDelayedMsgL1Block+finalizeDistance, "the filtered message must resume while the later message is still unfinalized")
+
+	// After resuming, the filtered message is sequenced as a bypassed (no-op) tx with a failed receipt status.
+	receipt, err := WaitForTx(ctx, builder.L2.Client, filteredTxHash, 10*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed filtered tx should have failed receipt status")
+	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, big.NewInt(0).Uint64(), finalBalance.Uint64(), "filtered address should not receive funds")
+}
+
 func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -404,7 +641,7 @@ func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	// Prepare and send delayed tx TO filtered address
 	transferAmount := big.NewInt(1e12)
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, transferAmount, nil)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 again to ensure all delayed messages are processed
 	advanceL1ForDelayed(t, ctx, builder)
@@ -488,7 +725,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	// 2. TO NormalUser1 (should be blocked behind first)
 	// 3. TO NormalUser2 (should be blocked behind first)
 	delayedTx1 := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	txHash1 := sendDelayedTx(t, ctx, builder, delayedTx1)
+	txHash1, _ := sendDelayedTx(t, ctx, builder, delayedTx1)
 
 	delayedTx2 := builder.L2Info.PrepareTx("Sender", "NormalUser1", builder.L2Info.TransferGas, big.NewInt(2e12), nil)
 	sendDelayedTx(t, ctx, builder, delayedTx2)
@@ -799,7 +1036,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -868,7 +1105,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -938,7 +1175,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1006,7 +1243,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", callerAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1072,7 +1309,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", contractAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1265,9 +1502,33 @@ type retryableFilterTestParams struct {
 	builder            *NodeBuilder
 	ctx                context.Context
 	delayedInbox       *bridgegen.Inbox
-	lookupL2Tx         func(*types.Receipt) *types.Transaction
+	delayedBridge      *arbnode.DelayedBridge
 	filtererName       string
 	fundsRecipientAddr common.Address
+}
+
+// lookupRetryableSubmissionTx parses the L1 receipt's delayed message and returns
+// the unique ArbitrumSubmitRetryableTx it produced.
+func lookupRetryableSubmissionTx(t *testing.T, p *retryableFilterTestParams, l1Receipt *types.Receipt) *types.Transaction {
+	t.Helper()
+	messages, err := p.delayedBridge.LookupMessagesInRange(p.ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, messages, "no delayed messages found")
+	var submissionTxs []*types.Transaction
+	for _, message := range messages {
+		if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
+			continue
+		}
+		txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
+		require.NoError(t, err)
+		for _, tx := range txs {
+			if tx.Type() == types.ArbitrumSubmitRetryableTxType {
+				submissionTxs = append(submissionTxs, tx)
+			}
+		}
+	}
+	require.Len(t, submissionTxs, 1, "expected exactly 1 retryable submission tx")
+	return submissionTxs[0]
 }
 
 // setupRetryableFilterTest sets up a node for retryable filtering tests.
@@ -1286,27 +1547,6 @@ func setupRetryableFilterTest(t *testing.T, ctx context.Context, setFundsRecipie
 
 	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
 	require.NoError(t, err)
-
-	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
-		require.NoError(t, err)
-		require.NotEmpty(t, messages, "no delayed messages found")
-		var submissionTxs []*types.Transaction
-		for _, message := range messages {
-			if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
-				continue
-			}
-			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
-			require.NoError(t, err)
-			for _, tx := range txs {
-				if tx.Type() == types.ArbitrumSubmitRetryableTxType {
-					submissionTxs = append(submissionTxs, tx)
-				}
-			}
-		}
-		require.Len(t, submissionTxs, 1, "expected exactly 1 retryable submission tx")
-		return submissionTxs[0]
-	}
 
 	builder.L2Info.GenerateAccount("Filterer")
 	builder.L2Info.GenerateAccount("FundsRecipient")
@@ -1333,7 +1573,7 @@ func setupRetryableFilterTest(t *testing.T, ctx context.Context, setFundsRecipie
 		builder:            builder,
 		ctx:                ctx,
 		delayedInbox:       delayedInbox,
-		lookupL2Tx:         lookupL2Tx,
+		delayedBridge:      delayedBridge,
 		filtererName:       "Filterer",
 		fundsRecipientAddr: fundsRecipientAddr,
 	}, cleanup
@@ -1392,7 +1632,7 @@ func submitRetryableViaL1WithGasLimit(
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusSuccessful, l1Receipt.Status)
 
-	l2Tx := p.lookupL2Tx(l1Receipt)
+	l2Tx := lookupRetryableSubmissionTx(t, p, l1Receipt)
 	return l1Receipt, l2Tx.Hash()
 }
 
@@ -1688,7 +1928,7 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	// Submit a normal delayed transfer behind it
 	transferAmount := big.NewInt(1e12)
 	delayedTx := builder.L2Info.PrepareTx("Sender", "NormalRecipient", builder.L2Info.TransferGas, transferAmount, nil)
-	delayedTxHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	delayedTxHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1999,7 +2239,7 @@ func TestManualRedeemGroupRevert(t *testing.T) {
 	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
 	require.NoError(t, err)
 
-	l2Tx := p.lookupL2Tx(l1Receipt)
+	l2Tx := lookupRetryableSubmissionTx(t, p, l1Receipt)
 	ticketId := l2Tx.Hash()
 	advanceL1ForDelayed(t, ctx, builder)
 
@@ -2121,7 +2361,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
 	require.NoError(t, err)
 
-	l2Tx := p.lookupL2Tx(l1Receipt)
+	l2Tx := lookupRetryableSubmissionTx(t, p, l1Receipt)
 	ticketId := l2Tx.Hash()
 	advanceL1ForDelayed(t, ctx, builder)
 
@@ -2151,7 +2391,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 
 	arbRetryableTxAddr := types.ArbRetryableTxAddress
 	signedL2Tx := prepareDelayedContractCall(t, builder, "ManualRedeemer", arbRetryableTxAddr, redeemCallData)
-	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	l2TxHash, _ := sendDelayedTx(t, ctx, builder, signedL2Tx)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Phase 4: Verify group revert fires on L2 tx hash (NOT ticketId)
@@ -2475,7 +2715,7 @@ func TestRetryableGroupRevertWithChainedRedeems(t *testing.T) {
 	l1ReceiptB, err := builder.L1.EnsureTxSucceeded(l1txB)
 	require.NoError(t, err)
 
-	l2TxB := p.lookupL2Tx(l1ReceiptB)
+	l2TxB := lookupRetryableSubmissionTx(t, p, l1ReceiptB)
 	ticketIdB := l2TxB.Hash()
 
 	// Process B's submission
@@ -2574,6 +2814,9 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	builder.isSequencer = true
 	builder.nodeConfig.DelayedSequencer.Enable = true
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+
+	filteringReportStack, reportAPI := SetupFilteringReport(t)
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -2606,13 +2849,50 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	require.NoError(t, err)
 
 	delayedTx := prepareDelayedContractCall(t, builder, "Sender", contractAddr, callData)
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Sequencer should halt because event filter detects the Transfer event
 	// with the filtered address in a topic
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
+
+	// Verify filtering report
+	report := reportAPI.NextReport(t)
+	CheckCommonReportFields(t, ctx, builder, report, delayedTx)
+	checkDelayedReportFields(t, report)
+	// Position 1: internal ArbOS start-block tx is at 0, delayed user tx follows at 1
+	require.Equal(t, uint64(1), report.PositionInBlock, "positionInBlock should be 1 (first user tx after internal start-block tx)")
+
+	foundEventRule := false
+	for _, addr := range report.FilteredAddresses {
+		if addr.Address == filteredAddr && addr.Reason == filterTypes.ReasonEventRule {
+			require.NotNil(t, addr.EventRuleMatch, "event rule match should be populated")
+			require.Equal(t, "Transfer(address,address,uint256)", addr.EventRuleMatch.MatchedEvent)
+			require.Equal(t, 2, addr.EventRuleMatch.MatchedTopicIndex,
+				"filteredAddr is in topic index 2 (the 'to' parameter)")
+			require.NotNil(t, addr.EventRuleMatch.RawLog, "raw log should be populated")
+
+			rawLog := addr.EventRuleMatch.RawLog
+			require.Equal(t, contractAddr, rawLog.Address,
+				"raw log emitter should be the contract")
+			require.Len(t, rawLog.Topics, 3, "Transfer has selector + 2 indexed params")
+			require.Equal(t, crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)")), rawLog.Topics[0],
+				"first topic should be Transfer event selector")
+			require.Equal(t, common.BytesToHash(senderAddr.Bytes()), rawLog.Topics[1],
+				"second topic should be sender (from)")
+			require.Equal(t, common.BytesToHash(filteredAddr.Bytes()), rawLog.Topics[2],
+				"third topic should be filtered target (to)")
+			expectedData := common.BigToHash(big.NewInt(1))
+			require.Equal(t, expectedData.Bytes(), []byte(rawLog.Data),
+				"data should be ABI-encoded uint256(1)")
+
+			foundEventRule = true
+			break
+		}
+	}
+	require.True(t, foundEventRule,
+		"report should contain filtered address with event_rule reason")
 
 	// Add tx hash to onchain filter to allow it through
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")

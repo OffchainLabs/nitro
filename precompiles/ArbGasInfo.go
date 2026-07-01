@@ -382,5 +382,9 @@ func (con ArbGasInfo) GetMultiGasBaseFee(
 	c ctx,
 	evm mech,
 ) ([]*big.Int, error) {
-	return c.State.L2PricingState().GetMultiGasBaseFeePerResource()
+	basefee := evm.Context.BaseFeeInBlock
+	if basefee == nil {
+		basefee = evm.Context.BaseFee
+	}
+	return c.State.L2PricingState().GetMultiGasBaseFeePerResource(basefee)
 }

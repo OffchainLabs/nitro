@@ -7,16 +7,17 @@ use std::{
     ops::Add,
 };
 
-use arbutil::{Bytes32, Color};
-use digest::Digest;
+use arbutil::{Bytes32, Color, crypto};
 use eyre::{ErrReport, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_with::{TryFromInto, serde_as};
-use sha3::Keccak256;
+use tiny_keccak::{Hasher, Keccak};
 use wasmparser::{FuncType, RefType, ValType};
 
 use crate::binary::FloatType;
 
+// Wire-format: bincode-reachable via `Function.local_types` and
+// `FunctionType.inputs/outputs` in `*.wavm.br` replay binaries. Append-only
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ArbValueType {
@@ -32,6 +33,19 @@ pub enum ArbValueType {
 impl ArbValueType {
     pub fn serialize(self) -> u8 {
         self as u8
+    }
+
+    pub fn from_u8(b: u8) -> Result<Self> {
+        Ok(match b {
+            0 => Self::I32,
+            1 => Self::I64,
+            2 => Self::F32,
+            3 => Self::F64,
+            4 => Self::RefNull,
+            5 => Self::FuncRef,
+            6 => Self::InternalRef,
+            other => bail!("unknown ArbValueType byte {other}"),
+        })
     }
 }
 
@@ -111,6 +125,8 @@ impl From<FloatType> for ArbValueType {
     }
 }
 
+// Wire-format: bincode-reachable as the width parameter of `Opcode::IRelOp`,
+// `IUnOp`, `IBinOp` (and other integer-width variants) in `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
@@ -189,6 +205,8 @@ impl Display for ProgramCounter {
     }
 }
 
+// Wire-format: bincode-reachable via `Module.globals: Vec<Value>` in
+// `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
@@ -263,11 +281,11 @@ impl Value {
     }
 
     pub fn hash(self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update(b"Value:");
-        h.update([self.ty() as u8]);
-        h.update(self.contents_for_proof());
-        h.finalize().into()
+        crypto::keccak_seq(&[
+            b"Value:",
+            &[self.ty() as u8],
+            self.contents_for_proof().as_ref(),
+        ])
     }
 
     pub fn default_of_type(ty: ArbValueType) -> Value {
@@ -421,17 +439,19 @@ impl FunctionType {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
+        let mut h = Keccak::v256();
         h.update(b"Function type:");
-        h.update(Bytes32::from(self.inputs.len()));
+        h.update(Bytes32::from(self.inputs.len()).as_ref());
         for input in &self.inputs {
-            h.update([*input as u8]);
+            h.update(&[*input as u8]);
         }
-        h.update(Bytes32::from(self.outputs.len()));
+        h.update(Bytes32::from(self.outputs.len()).as_ref());
         for output in &self.outputs {
-            h.update([*output as u8]);
+            h.update(&[*output as u8]);
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 }
 

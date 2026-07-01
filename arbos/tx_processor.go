@@ -10,7 +10,6 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -22,6 +21,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -43,6 +44,8 @@ type TxProcessor struct {
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Contracts        []*vm.Contract
 	Programs         map[common.Address]uint // # of distinct context spans for each program
+	stylusCallDepth  uint16                  // # of Stylus frames currently on the call stack
+	arbNodeConfig    *programs.ArbNodeConfig // resolved once at construction; nil if unset
 	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
@@ -65,6 +68,7 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
 		Contracts:           []*vm.Contract{},
 		Programs:            make(map[common.Address]uint),
+		arbNodeConfig:       programs.GetArbNodeConfig(evm.StateDB),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -80,16 +84,6 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	if !contract.IsDelegateOrCallcode() {
 		p.Programs[contract.Address()]++
 	}
-
-	// Record touched addresses for tx filtering
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
-		Address:      contract.Address(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil},
-	})
-	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
-		Address:      contract.Caller(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil},
-	})
 }
 
 func (p *TxProcessor) PopContract() {
@@ -121,6 +115,21 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.
 	contract := scope.Contract
 	acting := contract.Address()
 
+	// Node-level Stylus call-depth cap (ArbNodeConfig.MaxStylusCallDepth).
+	// Only the REJECT is off-chain-gated (IsExecutedOnChain → exempt).
+	// Config is resolved once per tx in NewTxProcessor to keep this path
+	// off the statedb interface.
+	if cfg := p.arbNodeConfig; cfg != nil && cfg.MaxStylusCallDepth > 0 {
+		if runCtx := p.RunContext(); runCtx != nil && !runCtx.IsExecutedOnChain() &&
+			p.stylusCallDepth >= cfg.MaxStylusCallDepth {
+			log.Info("stylus call depth limit exceeded",
+				"depth", p.stylusCallDepth, "limit", cfg.MaxStylusCallDepth, "contract", acting)
+			return nil, programs.ErrStylusCallDepthExceeded
+		}
+	}
+	p.stylusCallDepth++
+	defer func() { p.stylusCallDepth-- }()
+
 	var tracingInfo *util.TracingInfo
 	if evm.Config.Tracer != nil {
 		caller := contract.Caller()
@@ -139,6 +148,50 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.
 		reentrant,
 		p.RunContext(),
 	)
+}
+
+// emitSkippedCallFrame fakes a balanced top-level call frame for txs whose real
+// evm.Call/evm.Create is skipped: the deposit/retryable error short-circuits in
+// StartTxHook (endTxNow=true) and the pre-recorded-revert / onchain-filtered paths in
+// RevertedTxHook (vmerr != nil). Without it the tracer's callstack never gets its single
+// top-level frame, so callTracer/erc7562Tracer fail in GetResult with "incorrect number of
+// top-level calls" and flatCallTracer with "invalid number of calls".
+//
+// It emits OnEnter immediately followed by OnExit (no body in between) — the EVM-skipped
+// analogue of the pair a real evm.Call produces, including the vm.VMErrorFromErr wrapping
+// on the error. Because the pair is back-to-back with no statedb ops between, the tracing
+// journal's revert (on reverted=true) iterates zero entries and is a no-op; callers must
+// therefore invoke this as the LAST statement before the skip-return, after any nonce/gas
+// mutation. depth is evm.Depth()==0 at every such site.
+//
+// reverted is true whenever err != nil: these paths do no EVM work and surface as failed
+// txs, so the frame mirrors a reverted top-level call. (The deposit/internal/submit-retryable
+// success paths use startTracer instead, which reports reverted=false because they do apply
+// ArbOS state changes.) A nil tracer makes this a no-op. A nil `to` is a contract creation:
+// it is traced as CREATE (matching a real evm.Create) with a zero address, since the
+// would-be contract address is unknown for a skipped creation.
+func (p *TxProcessor) emitSkippedCallFrame(to *common.Address, gasUsed uint64, err error) {
+	tracer := p.evm.Config.Tracer
+	if tracer == nil {
+		return
+	}
+	typ := vm.CALL
+	dest := common.Address{}
+	if to != nil {
+		dest = *to
+	} else {
+		typ = vm.CREATE
+	}
+	depth := p.evm.Depth()
+	if tracer.OnEnter != nil {
+		tracer.OnEnter(depth, byte(typ), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+	}
+	if tracer.OnExit != nil {
+		// Wrap with VMErrorFromErr to match the real evm.Call (core/vm/evm.go), so tracers
+		// that read ErrorCode()/type-assert *vm.VMError treat this skipped frame like a real
+		// reverted call rather than diverging on the raw *core.ErrFilteredTx.
+		tracer.OnExit(depth, nil, gasUsed, vm.VMErrorFromErr(err), err != nil)
+	}
 }
 
 //nolint:staticcheck
@@ -187,7 +240,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		to := p.msg.To
 		value := p.msg.Value
 		if to == nil {
-			return true, multigas.ZeroGas(), errors.New("eth deposit has no To address"), nil
+			depErr := errors.New("eth deposit has no To address")
+			p.emitSkippedCallFrame(nil, 0, depErr)
+			return true, multigas.ZeroGas(), depErr, nil
 		}
 		// Check if this deposit tx is in the onchain filter.
 		// Deposits return endTxNow=true so RevertedTxHook (which normally
@@ -197,10 +252,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if p.state.FilteredTransactions().IsFilteredFree(txHash) {
 			recipient, err := p.state.FilteredFundsRecipientOrDefault()
 			if err != nil {
+				p.emitSkippedCallFrame(to, 0, err)
 				return true, multigas.ZeroGas(), err, nil
 			}
 			to = &recipient
-			txnErr = &core.ErrFilteredTx{TxHash: txHash}
+			txnErr = &core.ErrFilteredOnChain{TxHash: txHash}
 		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
@@ -241,14 +297,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			}
 			// For symmetry with other filtered tx paths, deletion from the onchain filter
 			// is handled by the external tx authority service rather than here.
-			// Note: deletion here *would* be committed despite the ErrFilteredTx in
+			// Note: deletion here *would* be committed despite the ErrFilteredOnChain in
 			// result.Err, because endTxNow=true means the outer error is nil and state
 			// is not reverted. May move to direct deletion here in future.
 			// p.state.FilteredTransactions().DeleteFree(ticketId)
 			tx.FeeRefundAddr = recipient
 			tx.Beneficiary = recipient
 			isFiltered = true
-			filteredErr = &core.ErrFilteredTx{TxHash: ticketId}
+			filteredErr = &core.ErrFilteredOnChain{TxHash: ticketId}
 		}
 
 		// mint funds with the deposit, then charge fees later
@@ -441,18 +497,26 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 
 		return true, multigas.SingleDimGas(usergas), nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
+		// Unlike the deposit/internal/submit-retryable cases above, this case does not
+		// run startTracer: a successful redeem returns endTxNow=false and the real EVM
+		// call supplies the top-level frame. The endTxNow=true error returns below skip
+		// the EVM, so they must fake a balanced frame to keep the tracer callstack valid.
 		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
 		if err != nil {
+			p.emitSkippedCallFrame(p.msg.To, 0, err)
 			return true, multigas.ZeroGas(), err, nil
 		}
 		if retryable == nil {
-			return true, multigas.ZeroGas(), fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
+			retryErr := fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId)
+			p.emitSkippedCallFrame(p.msg.To, 0, retryErr)
+			return true, multigas.ZeroGas(), retryErr, nil
 		}
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		scenario := util.TracingBeforeEVM
 		if err := util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, tracing.BalanceChangeEscrowTransfer); err != nil {
+			p.emitSkippedCallFrame(p.msg.To, 0, err)
 			return true, multigas.ZeroGas(), err, nil
 		}
 
@@ -603,11 +667,26 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
 
+	var basefee *big.Int
+	if p.evm.Context.BaseFeeInBlock != nil {
+		basefee = p.evm.Context.BaseFeeInBlock
+	} else {
+		basefee = p.evm.Context.BaseFee
+	}
+
 	var multiDimensionalCost *big.Int
-	var err error
 	if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
-		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
-		p.state.Restrict(err)
+		shouldRefund := true
+		if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasRefundFix {
+			gasModel, err := p.state.L2PricingState().GasModelToUse()
+			p.state.Restrict(err)
+			shouldRefund = gasModel == l2pricing.GasModelMultiGasConstraints
+		}
+		if shouldRefund {
+			var err error
+			multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas, basefee)
+			p.state.Restrict(err)
+		}
 	}
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
@@ -727,12 +806,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		return
 	}
 
-	var basefee *big.Int
-	if p.evm.Context.BaseFeeInBlock != nil {
-		basefee = p.evm.Context.BaseFeeInBlock
-	} else {
-		basefee = p.evm.Context.BaseFee
-	}
 	if gasUsed < p.posterGas {
 		log.Error("gas used < poster gas", "gasUsed", gasUsed, "posterGas", p.posterGas)
 	}
@@ -955,6 +1028,9 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 		*gasRemaining -= adjustedGas
 
 		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(adjustedGas))
+		// The EVM call is skipped (vmerr != nil below), so fake a balanced top-level
+		// frame after the nonce/gas mutations to keep the tracer callstack valid.
+		p.emitSkippedCallFrame(p.msg.To, adjustedGas, vm.ErrExecutionReverted)
 		return usedMultiGas, vm.ErrExecutionReverted
 	}
 
@@ -969,7 +1045,11 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 		*gasRemaining = 0
 		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(usedGas))
 
-		return usedMultiGas, &core.ErrFilteredTx{TxHash: txHash}
+		// The EVM call is skipped (vmerr != nil below), so fake a balanced top-level
+		// frame after the nonce/gas mutations to keep the tracer callstack valid.
+		filteredErr := &core.ErrFilteredOnChain{TxHash: txHash}
+		p.emitSkippedCallFrame(p.msg.To, usedGas, filteredErr)
+		return usedMultiGas, filteredErr
 	}
 
 	return usedMultiGas, nil

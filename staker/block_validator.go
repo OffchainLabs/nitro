@@ -1370,8 +1370,23 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
 	}
 	v.chosenValidator = make(map[common.Hash]*ThrottledValidationSpawner)
+	if v.redisValidator != nil {
+		err := v.redisValidator.StartValidators(moduleRoots)
+		if err != nil {
+			return fmt.Errorf("starting validators: %w", err)
+		}
+	}
+	if v.boldRedisValidator != nil {
+		err := v.boldRedisValidator.StartValidators(moduleRoots)
+		if err != nil {
+			return fmt.Errorf("starting BOLD redis validators: %w", err)
+		}
+	}
 	for _, root := range moduleRoots {
-		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
+		if v.redisValidator != nil {
+			if !validator.SpawnerSupportsModule(v.redisValidator, root) {
+				return fmt.Errorf("redis validator does not support WasmModuleRoot %v", root)
+			}
 			v.chosenValidator[root] = NewThrottledValidationSpawner(v.redisValidator)
 			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", v.redisValidator.Capacity())
 		} else {

@@ -13,6 +13,12 @@ on:
       changelog_added:
         description: 'New changelog fragments.'
         value: ${{ jobs.changes.outputs.changelog_added }}
+      code_changed:
+        description: 'True if any file other than CHANGELOG.md or changelog/** changed.'
+        value: ${{ jobs.changes.outputs.code_changed }}
+
+permissions:
+  contents: read
 
 jobs:
   changes:
@@ -22,22 +28,27 @@ jobs:
       rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
+      code_changed: ${{ steps.changed.outputs.code_any_changed }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          submodules: recursive
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
       - name: Detect changes
         id: changed
-        uses: tj-actions/changed-files@v47
+        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62  # v47.0.0
         with:
           files_yaml: |
             rust:
               - 'crates/**'
+              # Submodules aren't checked out here, so a contracts bump appears
+              # in diffs as the bare gitlink path 'contracts', which the glob
+              # form doesn't match. Keep both in case checkout behavior changes.
+              - 'contracts'
               - 'contracts/**'
               - 'Makefile'
               - '**.toml'
@@ -49,3 +60,7 @@ jobs:
               - '.github/workflows/_bold-legacy.yml'
             changelog:
               - 'changelog/**.md'
+            code:
+              - '**'
+              - '!CHANGELOG.md'
+              - '!changelog/**'

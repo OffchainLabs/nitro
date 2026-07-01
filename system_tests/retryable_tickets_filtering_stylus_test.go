@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -136,6 +138,85 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 
 	// TX3's write preserved
 	assertStorageAt(t, ctx, builder.L2.Client, multicallAddr, keyAfter, valueAfter)
+}
+
+// TestRetryableFilteringStylusGroupRollbackNoCacheLeak proves a filtered redeem
+// group rolls back the warm-start cache. The user tx is a multicall that warms the
+// multicall program and schedules a redeem whose retry calls a filtered contract,
+// so the whole group is rolled back; the rollback must reset the cache to before
+// the user tx, or the program it warmed stays warm and later txs are mischarged
+func TestRetryableFilteringStylusGroupRollbackNoCacheLeak(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	multicallAddr := deployWasm(t, ctx, builder.L2Info.GetDefaultTransactOpts("Owner", ctx), builder.L2.Client, rustFile("multicall"))
+	filteredStylusAddr := deployStylusStorageContract(t, ctx, builder)
+
+	// Retryable whose redeem-time call (multicall -> CALL filtered) trips the filter.
+	retryInner := multicallAppend(multicallEmptyArgs(), vm.CALL, filteredStylusAddr, multicallEmptyArgs())
+	_, ticketId := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", multicallAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryInner,
+	)
+	processRetryableSubmission(t, p, ticketId, types.ReceiptStatusSuccessful)
+
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredStylusAddr}))
+
+	// txRedeem: a multicall that warms the program, then CALLs ArbRetryableTx.redeem,
+	// so the user tx warms the program before scheduling the (filtered) retry.
+	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	require.NoError(t, err)
+	redeemCalldata, err := arbRetryableABI.Pack("redeem", ticketId)
+	require.NoError(t, err)
+	arbRetryableTxAddr := common.HexToAddress("6e")
+	redeemViaMulticall := multicallAppend(multicallEmptyArgs(), vm.CALL, arbRetryableTxAddr, redeemCalldata)
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+	txRedeem := builder.L2Info.PrepareTxTo("Redeemer", &multicallAddr, 1e7, nil, redeemViaMulticall)
+
+	// txB/txC: byte-identical no-op multicall calls, distinct senders.
+	for _, name := range []string{"SenderB", "SenderC"} {
+		builder.L2Info.GenerateAccount(name)
+		builder.L2.TransferBalance(t, "Owner", name, big.NewInt(1e18), builder.L2Info)
+	}
+	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+
+	sequencer := builder.L2.ExecNode.Sequencer
+	sequencer.Pause()
+	defer sequencer.Activate()
+
+	block, txErrors := sequencer.SequenceTransactionsForTest(t, types.Transactions{txRedeem, txB, txC})
+	require.NotNil(t, block)
+	require.Len(t, txErrors, 3)
+	require.Error(t, txErrors[0], "redeem group should be rolled back by the filter")
+	require.ErrorContains(t, txErrors[0], "cascading redeem filtered")
+	require.NoError(t, txErrors[1], "txB should commit")
+	require.NoError(t, txErrors[2], "txC should commit")
+
+	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
+	require.NoError(t, err)
+	rcptC, err := builder.L2.EnsureTxSucceeded(txC)
+	require.NoError(t, err)
+	require.Equal(t, rcptB.BlockNumber.Uint64(), rcptC.BlockNumber.Uint64(), "txB and txC must share a block")
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	require.NoError(t, err)
+	initGas, err := arbWasm.ProgramInitGas(nil, multicallAddr)
+	require.NoError(t, err)
+	discount := initGas.Gas - initGas.GasWhenCached
+	require.Greater(t, discount, uint64(0), "sanity: cached init must be cheaper than cold")
+
+	// txB pays cold init and txC cached; the difference is charged to the
+	// WasmComputation dimension. If the rolled-back group leaked its warm-start,
+	// txB would be cached too and the dimensions would match.
+	assertStylusInitGasDelta(t, rcptB, rcptC, discount)
 }
 
 // TestRetryableFilteringStylusDelayedSandwichRollback is the L1 version of the

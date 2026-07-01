@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -110,6 +111,11 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 
 // SendTxToL1 sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
+	evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{
+		Address:      destination,
+		FilterReason: filter.FilterReason{Reason: filter.ReasonToL1, EventRuleMatch: nil},
+	})
+
 	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
 	if err != nil {
 		return nil, err

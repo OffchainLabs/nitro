@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -51,12 +50,14 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm64           string   `koanf:"arm64"`
-	Amd64           string   `koanf:"amd64"`
-	Host            string   `koanf:"host"`
-	ExtraArchs      []string `koanf:"extra-archs"`
-	AllowFallback   bool     `koanf:"allow-fallback"`
-	NativeStackSize uint64   `koanf:"native-stack-size"`
+	Arm64              string   `koanf:"arm64"`
+	Amd64              string   `koanf:"amd64"`
+	Host               string   `koanf:"host"`
+	ExtraArchs         []string `koanf:"extra-archs"`
+	AllowFallback      bool     `koanf:"allow-fallback"`
+	MaxStylusOpenPages uint16   `koanf:"max-stylus-open-pages"`
+	MaxStylusCallDepth uint16   `koanf:"max-stylus-call-depth"`
+	NativeStackSize    uint64   `koanf:"native-stack-size"`
 
 	wasmTargets []rawdb.WasmTarget
 }
@@ -66,6 +67,11 @@ func (c *StylusTargetConfig) WasmTargets() []rawdb.WasmTarget {
 }
 
 func (c *StylusTargetConfig) Validate() error {
+	nodeCfg := programs.ArbNodeConfig{
+		MaxOpenPages:       c.MaxStylusOpenPages,
+		MaxStylusCallDepth: c.MaxStylusCallDepth,
+	}
+	nodeCfg.Validate()
 	targetsSet := make(map[rawdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {
 		target := rawdb.WasmTarget(arch)
@@ -95,12 +101,14 @@ func (c *StylusTargetConfig) Validate() error {
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64:           programs.DefaultTargetDescriptionArm,
-	Amd64:           programs.DefaultTargetDescriptionX86,
-	Host:            "",
-	ExtraArchs:      []string{string(rawdb.TargetWavm)},
-	AllowFallback:   true,
-	NativeStackSize: 0, // 0 means use the Wasmer default (1 MB)
+	Arm64:              programs.DefaultTargetDescriptionArm,
+	Amd64:              programs.DefaultTargetDescriptionX86,
+	Host:               "",
+	ExtraArchs:         []string{string(rawdb.TargetWavm)},
+	AllowFallback:      true,
+	MaxStylusOpenPages: 128, // fits the default stylus pageLimit; 0 disables the limit
+	MaxStylusCallDepth: 0,   // 0 disables the limit
+	NativeStackSize:    0,   // 0 means use the Wasmer default (1 MB)
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -109,6 +117,8 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
+	f.Uint16(prefix+".max-stylus-open-pages", DefaultStylusTargetConfig.MaxStylusOpenPages, "max open WASM pages per tx; exceeding the limit rejects non-on-chain calls and filters sequencer-committed txs (delayed inbox is exempt); 0 disables the limit")
+	f.Uint16(prefix+".max-stylus-call-depth", DefaultStylusTargetConfig.MaxStylusCallDepth, "max number of Stylus frames simultaneously on the call stack (counts only Stylus frames; EVM frames between two Stylus frames do not decrement it); exceeding the limit rejects non-on-chain calls; 0 disables the limit")
 	f.Uint64(prefix+".native-stack-size", DefaultStylusTargetConfig.NativeStackSize, "initial native stack size in bytes for Wasmer coroutines used by Stylus execution (0 = default 1MB)")
 }
 
@@ -134,6 +144,7 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type TransactionFilteringConfig struct {
+	Enable                         bool                          `koanf:"enable"`
 	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
 	EnableETHCallFilter            bool                          `koanf:"enable-ethcall-filter"`
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
@@ -143,6 +154,9 @@ type TransactionFilteringConfig struct {
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
+	if !c.Enable {
+		return nil
+	}
 	if err := c.EventFilter.Validate(); err != nil {
 		return fmt.Errorf("invalid event filter config: %w", err)
 	}
@@ -159,8 +173,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 }
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	Enable:                         false,
 	DisableDelayedSequencingFilter: false,
-	EnableETHCallFilter:            true,
+	EnableETHCallFilter:            false,
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
@@ -168,6 +183,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTransactionFilteringConfig.Enable, "enable transaction filtering")
 	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
 	f.Bool(prefix+".enable-ethcall-filter", DefaultTransactionFilteringConfig.EnableETHCallFilter, "enable address filtering for eth_estimateGas and eth_call")
 	EventFilterAddOptions(prefix+".event-filter", f)
@@ -198,6 +214,7 @@ type Config struct {
 	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
 	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
+	LegacyZeroBaseFeeUntil      uint64                     `koanf:"legacy-zero-base-fee-until"`
 
 	forwardingTarget string
 }
@@ -254,6 +271,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
+	f.Uint64(prefix+".legacy-zero-base-fee-until", ConfigDefault.LegacyZeroBaseFeeUntil, "orbit-chain compat: re-enables the pre-v3.7 behavior of treating ArbOS<=40 blocks with zero base fee as non-arbitrum, for blocks with unix timestamp strictly less than this value (0 disables; set to a timestamp past the last zero-basefee block on the chain)")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
@@ -295,6 +313,7 @@ var ConfigDefault = Config{
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
 	DisableArbOwnerEthCall:      false,
+	LegacyZeroBaseFeeUntil:      0,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -340,7 +359,7 @@ func CreateExecutionNode(
 	stack *node.Node,
 	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
-	l1client *ethclient.Client,
+	l1client containers.Option[*ethclient.Client],
 	configFetcher ConfigFetcher,
 	syncTillBlock uint64,
 	seqParentChain *parent.ParentChain,
@@ -353,12 +372,14 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create address filter service: %w", err)
-	}
+	var addressFilterService *addressfilter.FilterService
 	var addressChecker state.AddressChecker
-	if addressFilterService != nil {
+	// Tests bypass the service by injecting via ExecEngine.SetAddressChecker.
+	if config.TransactionFiltering.Enable {
+		addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create address filter service: %w", err)
+		}
 		addressChecker = addressFilterService.GetAddressChecker()
 	}
 
@@ -383,9 +404,10 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
-	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
-		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
+	if l1client.IsSome() {
+		l1clientUnwrapped := l1client.Unwrap()
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1clientUnwrapped)
+		parentChainReader, err = headerreader.New(ctx, l1clientUnwrapped, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
 			return nil, err
 		}
@@ -395,11 +417,16 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+		filtererURL := config.TransactionFiltering.TransactionFiltererRPCClient.URL
+		if filtererURL == TransactionFiltererURLNone {
+			log.Warn("transaction filtering enabled without a transaction-filterer (url is \"none\") - filtered delayed messages will HALT the delayed sequencer and cannot auto-resolve until their hashes are added to the onchain filter")
+		} else if filtererURL != "" {
 			filtererConfigFetcher := func() *rpcclient.ClientConfig {
 				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
 			}
 			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		} else if config.TransactionFiltering.Enable && !config.TransactionFiltering.DisableDelayedSequencingFilter {
+			return nil, errors.New("transaction filtering enabled but transaction-filterer-rpc-client.url is not set; set it to \"none\" to run without a transaction-filterer (filtered delayed messages will halt the delayed sequencer)")
 		}
 		sequencer, err = NewSequencer(
 			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
@@ -420,7 +447,13 @@ func CreateExecutionNode(
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 
-	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	var precheckerFilterer core.TxFilterer
+	// Sequencer filters via block-production hooks; skip prechecker dry-run when it is the publisher.
+	if config.TransactionFiltering.Enable && txPublisher != sequencer {
+		precheckerFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter, filteringReportRPCClient: filteringReportRPCClient}
+	}
+
+	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher, precheckerFilterer)
 	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
