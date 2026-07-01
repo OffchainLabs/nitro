@@ -21,9 +21,6 @@ component_management:
     - component_id: module_stf
       name: STF
       paths:
-        # Message arrival and Block Creation
-        - arbnode/**
-        - execution/gethexec/**
         # Core ArbOS (block production, tx processing, consensus engine)
         - arbos/**
         # Precompiles (L2 precompiled contracts executed during EVM txs)
