@@ -58,16 +58,16 @@ pub struct RpcParentChainReader {
 
 #[async_trait::async_trait]
 impl ParentChainReader for RpcParentChainReader {
+    // NOTE: Implemented using get_header_by_number() so only works with geth/reth upstream.
     async fn header_by_number(&self, num: BlockNumberOrTag) -> Result<Option<Header>> {
-        // TODO: could potentially use get_header_by_number if we know the parent is geth or reth
-        let block = self.provider.get_block_by_number(num).await?;
-        Ok(block.map(|b| b.header))
+        let header = self.provider.get_header_by_number(num).await?;
+        Ok(header)
     }
 
+    // NOTE: Implemented using get_header_by_hash() so only works with geth/reth upstream.
     async fn header_by_hash(&self, hash: B256) -> Result<Option<Header>> {
-        // TODO: could potentially use get_header_by_number if we know the parent is geth or reth
-        let block = self.provider.get_block_by_hash(hash).await?;
-        Ok(block.map(|b| b.header))
+        let header = self.provider.get_header_by_hash(hash).await?;
+        Ok(header)
     }
 
     async fn block_by_number(&self, num: BlockNumberOrTag) -> Result<Option<Block>> {
