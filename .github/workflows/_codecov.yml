@@ -8,7 +8,7 @@ on:
         description: Token to upload reports to Codecov. Required if `upload_report` is on.
     inputs:
       post_comment:
-        description: 'Set to true to post a test summary comment on the PR.'
+        description: 'Set to true so Codecov posts a test summary comment on PRs from the uploaded test results.'
         type: boolean
         required: true
       upload_report:
@@ -25,9 +25,9 @@ jobs:
   report_summary:
     name: Aggregate test results
     runs-on: ubuntu-4
+    if: ${{ github.repository == 'OffchainLabs/nitro-private' }}
     permissions:
       contents: read
-      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -39,17 +39,11 @@ jobs:
           pattern: junit-reports-*
           path: downloaded-reports/
 
-      - name: Post test summary comment
-        if: ${{ inputs.post_comment && github.event_name == 'pull_request' }}
-        uses: codecov/basic-test-results@c46ff461955b5cd6eb57cbe9ff22f3b77fc15824  # v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          directory: 'downloaded-reports/'
-
       - name: Upload test results to Codecov
-        if: ${{ inputs.upload_report }}
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1
+        if: ${{ (inputs.post_comment && github.event_name == 'pull_request') || inputs.upload_report }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: 'downloaded-reports/'
           name: ${{ inputs.report-name }}
+          report_type: test_results

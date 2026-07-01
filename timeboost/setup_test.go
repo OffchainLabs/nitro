@@ -5,7 +5,6 @@ package timeboost
 import (
 	"context"
 	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type auctionSetup struct {
@@ -167,7 +167,7 @@ func setupBidderClient(
 			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   testSetup.endpoint,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", account.privKey.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(account.privKey),
 			},
 		}
 	}
