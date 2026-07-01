@@ -15,5 +15,10 @@ alloy-provider.workspace = true
 alloy-rpc-types-eth.workspace = true
 alloy-transport.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-rpc-client = { workspace = true }
+
 [lints]
 workspace = true

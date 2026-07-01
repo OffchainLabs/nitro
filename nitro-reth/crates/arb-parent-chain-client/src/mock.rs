@@ -144,3 +144,367 @@ impl ParentChainReader for MockParentChainReader {
             .collect())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_consensus::{
+        transaction::{Recovered, TransactionInfo},
+        ReceiptEnvelope, SignableTransaction, TxEip1559, TxEnvelope,
+    };
+    use alloy_primitives::{Address, Signature, B256, U256};
+    use alloy_rpc_types_eth::BlockTransactions;
+
+    fn header(number: u64, hash: B256) -> Header {
+        let mut h: Header = Header::default();
+        h.inner.number = number;
+        h.hash = hash;
+        h
+    }
+
+    fn log_at(block: u64, address: Address) -> Log {
+        let mut log = Log::default();
+        log.inner.address = address;
+        log.block_number = Some(block);
+        log.block_hash = Some(B256::repeat_byte(block as u8));
+        log
+    }
+
+    /// Builds a transaction. `nonce` gives it a distinct hash; `mined_at` sets
+    /// its `(block hash, index)` (leave `None` for a pending transaction).
+    fn tx(nonce: u64, mined_at: Option<(B256, u64)>) -> Transaction {
+        let signed = TxEip1559 {
+            nonce,
+            ..Default::default()
+        }
+        .into_signed(Signature::new(U256::ZERO, U256::ZERO, false));
+        let recovered = Recovered::new_unchecked(TxEnvelope::Eip1559(signed), Address::ZERO);
+        let info = TransactionInfo {
+            hash: None,
+            index: mined_at.map(|(_, index)| index),
+            block_hash: mined_at.map(|(hash, _)| hash),
+            block_number: mined_at.map(|_| 0),
+            base_fee: None,
+        };
+        Transaction::from_transaction(recovered, info)
+    }
+
+    fn block(number: u64, hash: B256, txs: BlockTransactions<Transaction>) -> Block {
+        Block::new(header(number, hash), txs)
+    }
+
+    /// Builds a receipt for the given transaction hash.
+    fn receipt(tx_hash: B256) -> TransactionReceipt {
+        TransactionReceipt {
+            inner: ReceiptEnvelope::Eip1559(Default::default()),
+            transaction_hash: tx_hash,
+            transaction_index: None,
+            block_hash: None,
+            block_number: None,
+            gas_used: 0,
+            effective_gas_price: 0,
+            blob_gas_used: None,
+            blob_gas_price: None,
+            from: Address::ZERO,
+            to: None,
+            contract_address: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn header_by_number_returns_matching_header() {
+        let h5 = header(5, B256::repeat_byte(5));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5.clone());
+
+        assert_eq!(
+            mock.header_by_number(BlockNumberOrTag::Number(5))
+                .await
+                .unwrap(),
+            Some(h5)
+        );
+    }
+
+    #[tokio::test]
+    async fn header_by_number_latest_returns_highest() {
+        let h5 = header(5, B256::repeat_byte(5));
+        let h6 = header(6, B256::repeat_byte(6));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5).with_header(h6.clone());
+
+        assert_eq!(
+            mock.header_by_number(BlockNumberOrTag::Latest)
+                .await
+                .unwrap(),
+            Some(h6)
+        );
+    }
+
+    #[tokio::test]
+    async fn header_by_number_earliest_returns_lowest() {
+        let h5 = header(5, B256::repeat_byte(5));
+        let h6 = header(6, B256::repeat_byte(6));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5.clone()).with_header(h6);
+
+        assert_eq!(
+            mock.header_by_number(BlockNumberOrTag::Earliest)
+                .await
+                .unwrap(),
+            Some(h5)
+        );
+    }
+
+    #[tokio::test]
+    async fn header_by_number_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .header_by_number(BlockNumberOrTag::Number(99))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn header_by_hash_returns_matching_header() {
+        let h5 = header(5, B256::repeat_byte(5));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5.clone());
+
+        assert_eq!(mock.header_by_hash(h5.hash).await.unwrap(), Some(h5));
+    }
+
+    #[tokio::test]
+    async fn header_by_hash_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .header_by_hash(B256::repeat_byte(0xff))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn block_by_number_returns_matching_block() {
+        let hash = B256::repeat_byte(5);
+        let mut mock = MockParentChainReader::new();
+        mock.with_block(block(5, hash, BlockTransactions::Full(vec![])));
+
+        let got = mock
+            .block_by_number(BlockNumberOrTag::Number(5))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(got.header.hash, hash);
+    }
+
+    #[tokio::test]
+    async fn block_by_number_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .block_by_number(BlockNumberOrTag::Number(99))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn block_by_hash_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .block_by_hash(B256::repeat_byte(0xff))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn transaction_in_block_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .transaction_in_block(B256::repeat_byte(5), 0)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn transaction_receipt_returns_matching_receipt() {
+        let tx_hash = B256::repeat_byte(0xcc);
+        let r = receipt(tx_hash);
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_receipt(r.clone());
+
+        assert_eq!(mock.transaction_receipt(tx_hash).await.unwrap(), Some(r));
+    }
+
+    #[tokio::test]
+    async fn transaction_receipt_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .transaction_receipt(B256::repeat_byte(0xff))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn transaction_by_hash_returns_pending_transaction() {
+        let t = tx(1, None); // pending: no block context
+        let tx_hash = t.inner.trie_hash();
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_transaction(t.clone());
+
+        assert_eq!(mock.transaction_by_hash(tx_hash).await.unwrap(), Some(t));
+    }
+
+    #[tokio::test]
+    async fn transaction_by_hash_unknown_returns_none() {
+        let mock = MockParentChainReader::new();
+
+        assert!(mock
+            .transaction_by_hash(B256::repeat_byte(0xff))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn filter_logs_respects_range_and_address() {
+        let wanted = Address::repeat_byte(0xaa);
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_log(log_at(10, wanted)) // match
+            .with_log(log_at(30, wanted)) // out of range
+            .with_log(log_at(12, Address::repeat_byte(0xbb))); // wrong address
+
+        let filter = Filter::new().address(wanted).from_block(0).to_block(20);
+        let got = mock.filter_logs(&filter).await.unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].block_number, Some(10));
+    }
+
+    #[tokio::test]
+    async fn filter_logs_ignores_logs_without_block_context() {
+        // A log with no block_number/block_hash does not match, even against a
+        // filter with no constraints at all.
+        let mut log = Log::default();
+        log.inner.address = Address::repeat_byte(0xaa);
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_log(log);
+
+        let got = mock.filter_logs(&Filter::new()).await.unwrap();
+
+        assert!(got.is_empty());
+    }
+
+    #[tokio::test]
+    async fn with_block_registers_its_header() {
+        let hash = B256::repeat_byte(5);
+        let mut mock = MockParentChainReader::new();
+        mock.with_block(block(5, hash, BlockTransactions::Full(vec![])));
+
+        assert!(mock.header_by_hash(hash).await.unwrap().is_some());
+        assert!(mock
+            .header_by_number(BlockNumberOrTag::Number(5))
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn with_block_registers_full_transactions() {
+        let block_hash = B256::repeat_byte(5);
+        let t = tx(1, Some((block_hash, 0)));
+        let tx_hash = t.inner.trie_hash();
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_block(block(
+            5,
+            block_hash,
+            BlockTransactions::Full(vec![t.clone()]),
+        ));
+
+        assert_eq!(
+            mock.transaction_by_hash(tx_hash).await.unwrap(),
+            Some(t.clone())
+        );
+        assert_eq!(
+            mock.transaction_in_block(block_hash, 0).await.unwrap(),
+            Some(t)
+        );
+    }
+
+    #[tokio::test]
+    async fn with_block_hashes_only_registers_no_transactions() {
+        let block_hash = B256::repeat_byte(5);
+        let tx_hash = B256::repeat_byte(0xee);
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_block(block(
+            5,
+            block_hash,
+            BlockTransactions::Hashes(vec![tx_hash]),
+        ));
+
+        assert!(mock.block_by_hash(block_hash).await.unwrap().is_some());
+        assert!(mock.transaction_by_hash(tx_hash).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn with_transaction_indexes_mined_tx_by_hash_and_position() {
+        let block_hash = B256::repeat_byte(5);
+        let t = tx(1, Some((block_hash, 0)));
+        let tx_hash = t.inner.trie_hash();
+
+        let mut mock = MockParentChainReader::new();
+        mock.with_transaction(t.clone());
+
+        assert_eq!(
+            mock.transaction_by_hash(tx_hash).await.unwrap(),
+            Some(t.clone())
+        );
+        assert_eq!(
+            mock.transaction_in_block(block_hash, 0).await.unwrap(),
+            Some(t)
+        );
+    }
+
+    #[tokio::test]
+    async fn header_only_entry_does_not_shadow_latest_block() {
+        let mut mock = MockParentChainReader::new();
+        // A full block at 5, plus a bare header at 7 (a higher number).
+        mock.with_block(block(
+            5,
+            B256::repeat_byte(5),
+            BlockTransactions::Full(vec![]),
+        ));
+        mock.with_header(header(7, B256::repeat_byte(7)));
+
+        // `block_by_number(latest)` resolves against blocks only -> 5.
+        let latest_block = mock
+            .block_by_number(BlockNumberOrTag::Latest)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest_block.header.inner.number, 5);
+
+        // `header_by_number(latest)` resolves against headers -> 7.
+        let latest_header = mock
+            .header_by_number(BlockNumberOrTag::Latest)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest_header.inner.number, 7);
+    }
+}
