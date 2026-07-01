@@ -1205,11 +1205,9 @@ version = "0.1.5"
 name = "arb-mel-parent"
 version = "0.1.5"
 dependencies = [
- "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
  "alloy-provider",
- "alloy-rpc-client",
  "alloy-rpc-types-eth",
  "alloy-transport",
  "async-trait",
