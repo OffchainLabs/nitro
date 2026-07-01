@@ -200,7 +200,13 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
+	// Normally there's nothing to do until the block we're waiting for finalizes. The exception is
+	// when we're halted on a filtered tx: that (already-finalized) message must be re-attempted as
+	// soon as its onchain-filter condition is met, regardless of a later message's finality. The
+	// collection loop below still enforces per-message finality, so nothing unfinalized gets sequenced.
+	awaitingLaterFinalization := d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized
+	haltedOnFilteredTx := d.waitingForFilteredTx != nil
+	if awaitingLaterFinalization && !haltedOnFilteredTx {
 		return nil
 	}
 
@@ -250,7 +256,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 					now := time.Now()
 					if d.waitingForFilteredTx == nil {
 						// First time hitting filtered tx(es) - log and set waiting state
-						log.Error("Delayed message filtered - HALTING delayed sequencer",
+						log.Info("Delayed message filtered - HALTING delayed sequencer",
 							"txHashes", filteredErr.TxHashes,
 							"delayedMsgIdx", filteredErr.DelayedMsgIdx)
 						d.waitingForFilteredTx = &FilteredTxWaitState{
@@ -354,6 +360,15 @@ func (d *DelayedSequencer) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bo
 		return nil, false
 	}
 	return d.waitingForFilteredTx.TxHashes, true
+}
+
+func (d *DelayedSequencer) WaitingForFinalizedBlock(t *testing.T) (uint64, bool) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if d.waitingForFinalizedBlock == nil {
+		return 0, false
+	}
+	return *d.waitingForFinalizedBlock, true
 }
 
 func (d *DelayedSequencer) checkAccumulatorReorg(

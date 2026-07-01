@@ -75,7 +75,7 @@ func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
 		GasPrice: new(big.Int).Set(builder.L2Info.GasPrice),
 	})
 	require.Equal(t, uint8(types.LegacyTxType), delayedTx.Type(), "regression target must be a legacy tx")
-	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+	txHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	advanceL1ForDelayed(t, ctx, builder)
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
