@@ -1,0 +1,21 @@
+[package]
+name = "arb-mel-parent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+thiserror.workspace = true
+
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-primitives.workspace = true
+alloy-provider.workspace = true
+alloy-rpc-client.workspace = true
+alloy-rpc-types-eth.workspace = true
+alloy-transport.workspace = true
+
+[lints]
+workspace = true

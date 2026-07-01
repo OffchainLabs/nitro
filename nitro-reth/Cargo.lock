@@ -1202,6 +1202,21 @@ name = "arb-math"
 version = "0.1.5"
 
 [[package]]
+name = "arb-mel-parent"
+version = "0.1.5"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-client",
+ "alloy-rpc-types-eth",
+ "alloy-transport",
+ "async-trait",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-node"
 version = "0.1.5"
 dependencies = [
