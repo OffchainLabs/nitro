@@ -32,7 +32,11 @@ func NewFilterService(config *Config) (*FilterService, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	hashStore := NewHashStore(config.CacheSize)
+	maxHashes := config.S3.NumPreallocatedHashes()
+	if maxHashes > 0 {
+		log.Info("address-filter preallocating memory for hash list", "maxHashes", maxHashes)
+	}
+	hashStore := newHashStore(config.CacheSize, maxHashes)
 
 	return &FilterService{
 		config:         config,
