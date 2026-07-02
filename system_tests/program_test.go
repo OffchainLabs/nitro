@@ -2270,9 +2270,6 @@ func setupProgramTestWithScheme(t *testing.T, jit bool, stateScheme string, buil
 	}
 
 	if stateScheme != "" {
-		if builder.execConfig.RecordingDatabase.Mode == gethexec.BlockRecorderModeOff {
-			builder.WithLegacyBlockRecorder()
-		}
 		builder.RequireScheme(t, stateScheme)
 	}
 	builder.nodeConfig.BlockValidator.Enable = false

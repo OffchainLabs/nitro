@@ -279,6 +279,7 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethex
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
+	config.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
 
 	Require(t, config.Validate())
 
@@ -294,6 +295,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
 	config.TransactionFiltering.EnableETHCallFilter = false
+	config.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
 
 	Require(t, config.Validate())
 

@@ -93,9 +93,6 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 	// retryableSetup is being called by tests that validate blocks.
 	// For now validation only works with HashScheme set.
-	if builder.execConfig.RecordingDatabase.Mode == gethexec.BlockRecorderModeOff {
-		builder.WithLegacyBlockRecorder()
-	}
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.nodeConfig.BlockValidator.Enable = false
