@@ -298,20 +298,21 @@ pub fn run(m: Bytes) -> ! {
                             })));
                         }
                     }
-                    store.force_create();
-                    let exit = match cothread.coroutine.resume(input.clone()) {
-                        CoroutineResult::Yield(y) => match y {
-                            Some(unwind_reason) => {
-                                unsafe {
-                                    cothread.coroutine.force_reset();
+                    let exit = {
+                        let _store_guard = unsafe { store.coroutine_store_guard() };
+                        match cothread.coroutine.resume(input.clone()) {
+                            CoroutineResult::Yield(y) => match y {
+                                Some(unwind_reason) => {
+                                    unsafe {
+                                        cothread.coroutine.force_reset();
+                                    }
+                                    Some(Err(unwind_reason.into_trap().into()))
                                 }
-                                Some(Err(unwind_reason.into_trap().into()))
-                            }
-                            None => None,
-                        },
-                        CoroutineResult::Return(r) => Some(r),
+                                None => None,
+                            },
+                            CoroutineResult::Return(r) => Some(r),
+                        }
                     };
-                    store.force_clean();
                     if let Some(result) = exit {
                         let env = function_env.as_mut(store);
                         let (req_type, req_data) = {
