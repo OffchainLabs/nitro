@@ -21,6 +21,7 @@ ignore = [
     "RUSTSEC-2026-0068", # tar PAX size headers - transitive via reth
     "RUSTSEC-2026-0118", # hickory-dns NSEC3 - transitive via reth/discv5
     "RUSTSEC-2026-0119", # hickory-dns name compression - transitive via reth/discv5
+    "RUSTSEC-2022-0104", # structopt unmaintained - transitive via prover
 ]
 
 [licenses]
