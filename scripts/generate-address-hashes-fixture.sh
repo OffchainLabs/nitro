@@ -6,10 +6,11 @@
 # of arbitrary size for dev/test-net / load testing.
 #
 # Real hashes (20 hardcoded addresses + any from --addresses) are computed
-# with the production algorithm:
-#   sha256(salt_uuid_string + "::0x" + lowercase_addr_hex)
-# (mirrors execution/gethexec/addressfilter/hash_store.go: HashWithPrefix /
-# GetHashInputPrefix). The remainder is filler: zero-padded sequential
+# with the production algorithm, selected by --hashing-scheme:
+#   sha256-rawbytesinput (default): sha256(salt_16_raw_bytes || addr_20_raw_bytes)
+#   sha256-stringinput            : sha256(salt_uuid_string + "::0x" + lowercase_addr_hex)
+# (mirrors execution/gethexec/addressfilter/hash_store.go: HashStringInputWithPrefix /
+# GetHashStringInputPrefix / HashRawBytesInput). The remainder is filler: zero-padded sequential
 # counters formatted as 64-hex strings ("0x000...001", "0x000...002", ...),
 # emitted in parallel by 8 awk workers writing to per-chunk temp files,
 # then concatenated.
@@ -27,6 +28,7 @@ EXTRA_ADDRESSES=""
 SEED=""
 SALT_OVERRIDE=""
 JOBS=8
+HASHING_SCHEME="sha256-rawbytesinput"
 
 # 20 hardcoded test addresses: 0x00...01 through 0x00...14.
 readonly HARDCODED_ADDRESSES=(
@@ -72,6 +74,9 @@ Options:
       --seed STRING       Derive UUIDs deterministically from this seed (for
                           reproducible fixtures). Filler is always
                           counter-based and reproducible regardless.
+      --hashing-scheme S  Hashing scheme for real hashes: sha256-rawbytesinput
+                          (default) or sha256-stringinput. Written to the
+                          file's hashing_scheme field.
       --jobs N            Number of parallel filler workers. Default: 8.
   -h, --help              Show this help.
 EOF
@@ -121,6 +126,19 @@ sha256_hex() {
     fi
 }
 
+# Raw-bytes scheme: sha256(16 salt bytes || 20 addr bytes), mirrors HashRawBytesInput.
+hash_raw_bytes() {
+    local salt_uuid="$1" addr_hex="$2"
+    local salt_hex hex esc i
+    salt_hex=$(printf '%s' "$salt_uuid" | tr -d '-')
+    hex="${salt_hex}${addr_hex}"
+    esc=""
+    for (( i=0; i<${#hex}; i+=2 )); do
+        esc+="\\x${hex:i:2}"
+    done
+    printf '%b' "$esc" | sha256_hex
+}
+
 file_size() {
     case "$STAT_FLAVOR" in
         gnu) stat -c%s "$1" ;;
@@ -156,6 +174,7 @@ while [[ $# -gt 0 ]]; do
         --addresses)      [[ $# -ge 2 ]] || die "$1 requires a value"; EXTRA_ADDRESSES="$2"; shift 2 ;;
         --salt)           [[ $# -ge 2 ]] || die "$1 requires a value"; SALT_OVERRIDE="$2"; shift 2 ;;
         --seed)           [[ $# -ge 2 ]] || die "$1 requires a value"; SEED="$2"; shift 2 ;;
+        --hashing-scheme) [[ $# -ge 2 ]] || die "$1 requires a value"; HASHING_SCHEME="$2"; shift 2 ;;
         --jobs)           [[ $# -ge 2 ]] || die "$1 requires a value"
                           [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "invalid --jobs: $2 (expected a positive integer)"
                           JOBS="$2"; shift 2 ;;
@@ -163,6 +182,11 @@ while [[ $# -gt 0 ]]; do
         *)                die "unknown argument: $1 (use --help)" ;;
     esac
 done
+
+case "$HASHING_SCHEME" in
+    sha256-stringinput|sha256-rawbytesinput) ;;
+    *) die "invalid --hashing-scheme: $HASHING_SCHEME (expected sha256-stringinput or sha256-rawbytesinput)" ;;
+esac
 
 detect_tools
 
@@ -240,17 +264,20 @@ else
     ISSUED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 fi
 
-HASHING_SCHEME="sha256-stringinput"
-
 HASH_PREFIX="${SALT}::0x"
 
 # ---------------------------------------------------------------------------
-# Compute real hashes (mirrors HashWithPrefix in hash_store.go)
+# Compute real hashes (mirrors hashAddress in hash_store.go: string-input or
+# raw-bytes path, selected by --hashing-scheme)
 # ---------------------------------------------------------------------------
 REAL_HASHES=()
 for addr in "${REAL_ADDRESSES[@]}"; do
     addr_hex="${addr:2}"
-    h=$(printf '%s%s' "$HASH_PREFIX" "$addr_hex" | sha256_hex)
+    if [[ "$HASHING_SCHEME" == "sha256-rawbytesinput" ]]; then
+        h=$(hash_raw_bytes "$SALT" "$addr_hex")
+    else
+        h=$(printf '%s%s' "$HASH_PREFIX" "$addr_hex" | sha256_hex)
+    fi
     REAL_HASHES+=("$h")
 done
 
@@ -258,14 +285,16 @@ done
 # Filler count from byte arithmetic.
 #
 # Layout (no whitespace between entries):
-#   header               228 bytes  ({"id":"<36>","extract_uuid":"<36>","salt":"<36>","issued_at":"<20>","hashing_scheme":"sha256-stringinput","hashes":[)
+#   header        210 + len(scheme) bytes  ({"id":"<36>","extract_uuid":"<36>","salt":"<36>","issued_at":"<20>","hashing_scheme":"<scheme>","hashes":[)
 #   each non-final hash   69 bytes  ("0x<64hex>",)
 #   final hash            68 bytes  ("0x<64hex>")
 #   footer                 2 bytes  (]})
 #
-#   total = 228 + 69*(N-1) + 68 + 2 = 229 + 69*N
+#   total = HEADER_BYTES + 69*(N-1) + 68 + 2 = (HEADER_BYTES + 1) + 69*N
+# (HEADER_BYTES is 228 for sha256-stringinput, 230 for sha256-rawbytesinput.)
 # ---------------------------------------------------------------------------
-TOTAL_HASHES=$(( (TARGET_BYTES - 229) / 69 ))
+HEADER_BYTES=$(( 210 + ${#HASHING_SCHEME} ))
+TOTAL_HASHES=$(( (TARGET_BYTES - (HEADER_BYTES + 1)) / 69 ))
 FILLER_COUNT=$(( TOTAL_HASHES - REAL_COUNT ))
 
 if (( FILLER_COUNT < 1 )); then
@@ -353,7 +382,7 @@ mkdir -p "$(dirname "$OUT_PATH")"
 # Summary
 # ---------------------------------------------------------------------------
 ACTUAL_SIZE=$(file_size "$OUT_PATH")
-EXPECTED_SIZE=$(( 229 + 69 * TOTAL_HASHES ))
+EXPECTED_SIZE=$(( (HEADER_BYTES + 1) + 69 * TOTAL_HASHES ))
 
 printf '\n'
 printf 'wrote: %s\n' "$OUT_PATH"

@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -235,7 +235,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}

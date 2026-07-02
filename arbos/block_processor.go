@@ -92,10 +92,25 @@ type blockBuildState struct {
 	activeGroupCP        *groupCheckpoint
 }
 
+// txCheckpoint is the rollback state captured before a tx runs: the state snapshot
+// plus a copy of the Stylus warm-start cache
+type txCheckpoint struct {
+	snap        int
+	recentWasms *state.RecentWasms
+}
+
+// restore rolls statedb back to this checkpoint: the state snapshot, and the
+// warm-start cache only if it was captured
+func (c txCheckpoint) restore(statedb *state.StateDB) {
+	statedb.RevertToSnapshot(c.snap)
+	if c.recentWasms != nil {
+		statedb.RestoreRecentWasms(*c.recentWasms)
+	}
+}
+
 // lint:require-exhaustive-initialization
 type groupCheckpoint struct {
 	backup               *state.StateDB
-	snap                 int
 	headerGasUsed        uint64
 	blockGasLeft         uint64
 	expectedBalanceDelta *big.Int
@@ -103,19 +118,19 @@ type groupCheckpoint struct {
 	completeLen          int
 	receiptsLen          int
 	userTx               *types.Transaction
+	txCheckpoint         txCheckpoint
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTx *types.Transaction) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint txCheckpoint, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
 	s.activeGroupCP = &groupCheckpoint{
 		backup:               s.statedb.Copy(),
-		snap:                 snap,
 		headerGasUsed:        header.GasUsed,
 		blockGasLeft:         s.blockGasLeft,
 		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
@@ -123,6 +138,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
 		userTx:               userTx,
+		txCheckpoint:         checkpoint,
 	}
 	return nil
 }
@@ -132,7 +148,9 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 // GasUsed, which lives outside blockBuildState.
 func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
-	cp.backup.RevertToSnapshot(cp.snap)
+	// Roll the backup back to before the user tx ran (state + warm-start cache),
+	// then make it live; its redeems warmed only the now-discarded live statedb.
+	cp.txCheckpoint.restore(cp.backup)
 	s.statedb = cp.backup
 	header.GasUsed = cp.headerGasUsed
 	s.blockGasLeft = cp.blockGasLeft
@@ -293,7 +311,7 @@ func ProduceBlock(
 	hooks := NewNoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas, nil,
 	)
 }
 
@@ -308,6 +326,7 @@ func ProduceBlockAdvanced(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
+	addressChecker state.AddressChecker,
 ) (*types.Block, *state.StateDB, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
@@ -431,6 +450,11 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
+			var addrCheckerState state.AddressCheckerState
+			if addressChecker != nil {
+				addrCheckerState = addressChecker.NewTxState()
+			}
+			buildState.statedb.SetAddressCheckerState(addrCheckerState)
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if isUserTx {
 				if err = sequencingHooks.PreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, len(buildState.receipts)); err != nil {
@@ -484,6 +508,14 @@ func ProduceBlockAdvanced(
 			snap := buildState.statedb.Snapshot()
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
+			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
+			// program leaves nothing behind for later included txs
+			checkpoint := txCheckpoint{snap: snap}
+			if sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback() {
+				rw := buildState.statedb.GetRecentWasms().Copy()
+				checkpoint.recentWasms = &rw
+			}
+
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
@@ -504,7 +536,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, snap, tx); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, checkpoint, tx); err != nil {
 							return err
 						}
 					}
@@ -512,8 +544,9 @@ func ProduceBlockAdvanced(
 				},
 			)
 			if err != nil {
-				// Ignore this transaction if it's invalid under the state transition function
-				buildState.statedb.RevertToSnapshot(snap)
+				// Ignore this transaction if it's invalid under the state transition
+				// function; restore also undoes any warm-start it left behind.
+				checkpoint.restore(buildState.statedb)
 				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
@@ -525,7 +558,7 @@ func ProduceBlockAdvanced(
 			// If a redeem was rejected by the address filter and we have an
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
-			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrSeqFilter) {
 				// Capture everything before rollback — addressCheckerStateß
 				cp := buildState.activeGroupCP
 				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
@@ -668,7 +701,7 @@ func ProduceBlockAdvanced(
 	}
 
 	if buildState.statedb.IsTxFiltered() {
-		return nil, nil, nil, state.ErrArbTxFilter
+		return nil, nil, nil, state.ErrSeqFilter
 	}
 
 	if err = sequencingHooks.BlockFilter(header, buildState.statedb, buildState.complete, buildState.receipts); err != nil {

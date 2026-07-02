@@ -16,7 +16,6 @@ use std::{
 
 use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
-use digest::Digest;
 use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
@@ -24,8 +23,8 @@ use lazy_static::lazy_static;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use sha3::Keccak256;
 use smallvec::SmallVec;
+use tiny_keccak::{Hasher, Keccak};
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 #[cfg(feature = "native")]
@@ -53,6 +52,14 @@ use crate::{
     utils::{CBytes, RemoteTableType, file_bytes},
     value::{ArbValueType, FunctionType, ProgramCounter, Value},
     wavm::{self, FloatingPointImpls, Instruction, Opcode, pack_cross_module_call, wasm_to_wavm},
+    wavm_serialize::{
+        Cursor, FunctionParts, TableElementParts, TableParts, WAVM_MAGIC, WAVM_SERIALIZE_VERSION,
+        read_count, read_export_map, read_func_exports, read_function_parts, read_function_type,
+        read_host_call_hooks, read_names, read_table_parts, read_value, write_bytes, write_bytes32,
+        write_count, write_export_map, write_func_exports, write_function_parts,
+        write_function_type, write_host_call_hooks, write_names, write_optional_u32,
+        write_table_parts, write_u32, write_u64, write_value,
+    },
 };
 
 #[cfg(feature = "counters")]
@@ -72,11 +79,11 @@ pub fn reset_counters() {
 }
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update("Call indirect:");
-    h.update((table as u64).to_be_bytes());
-    h.update(ty.hash());
-    h.finalize().into()
+    crypto::keccak_seq(&[
+        b"Call indirect:",
+        &(table as u64).to_be_bytes(),
+        ty.hash().as_ref(),
+    ])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -191,11 +198,8 @@ impl Function {
         Instruction::serialize_for_proof(&self.code[start..end])
     }
 
-    fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Function:");
-        h.update(self.code_merkle.root());
-        h.finalize().into()
+    pub(crate) fn hash(&self) -> Bytes32 {
+        crypto::keccak_seq(&[b"Function:", self.code_merkle.root().as_ref()])
     }
 }
 
@@ -209,19 +213,18 @@ struct StackFrame {
 
 impl StackFrame {
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Stack frame:");
-        h.update(self.return_ref.hash());
-        h.update(
+        crypto::keccak_seq(&[
+            b"Stack frame:",
+            self.return_ref.hash().as_ref(),
             Merkle::new(
                 MerkleType::Value,
                 self.locals.iter().map(|v| v.hash()).collect(),
             )
-            .root(),
-        );
-        h.update(self.caller_module.to_be_bytes());
-        h.update(self.caller_module_internals.to_be_bytes());
-        h.finalize().into()
+            .root()
+            .as_ref(),
+            &self.caller_module.to_be_bytes(),
+            &self.caller_module_internals.to_be_bytes(),
+        ])
     }
 
     #[cfg(feature = "native")]
@@ -243,7 +246,7 @@ impl StackFrame {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct TableElement {
-    func_ty: FunctionType,
+    pub(crate) func_ty: FunctionType,
     pub val: Value,
 }
 
@@ -258,11 +261,11 @@ impl Default for TableElement {
 
 impl TableElement {
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Table element:");
-        h.update(self.func_ty.hash());
-        h.update(self.val.hash());
-        h.finalize().into()
+        crypto::keccak_seq(&[
+            b"Table element:",
+            self.func_ty.hash().as_ref(),
+            self.val.hash().as_ref(),
+        ])
     }
 }
 
@@ -273,7 +276,7 @@ pub(crate) struct Table {
     pub ty: TableType,
     pub elems: Vec<TableElement>,
     #[serde(skip)]
-    elems_merkle: Merkle,
+    pub(crate) elems_merkle: Merkle,
 }
 
 impl Table {
@@ -285,13 +288,13 @@ impl Table {
         Ok(data)
     }
 
-    fn hash(&self) -> Result<Bytes32> {
-        let mut h = Keccak256::new();
-        h.update("Table:");
-        h.update([ArbValueType::try_from(self.ty.element_type)?.serialize()]);
-        h.update((self.elems.len() as u64).to_be_bytes());
-        h.update(self.elems_merkle.root());
-        Ok(h.finalize().into())
+    pub(crate) fn hash(&self) -> Result<Bytes32> {
+        Ok(crypto::keccak_seq(&[
+            b"Table:",
+            &[ArbValueType::try_from(self.ty.element_type)?.serialize()],
+            &(self.elems.len() as u64).to_be_bytes(),
+            self.elems_merkle.root().as_ref(),
+        ]))
     }
 }
 
@@ -653,21 +656,20 @@ impl Module {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Module:");
-        h.update(
+        crypto::keccak_seq(&[
+            b"Module:",
             Merkle::new(
                 MerkleType::Value,
                 self.globals.iter().map(|v| v.hash()).collect(),
             )
-            .root(),
-        );
-        h.update(self.memory.hash());
-        h.update(self.tables_merkle.root());
-        h.update(self.funcs_merkle.root());
-        h.update(*self.extra_hash);
-        h.update(self.internals_offset.to_be_bytes());
-        h.finalize().into()
+            .root()
+            .as_ref(),
+            self.memory.hash().as_ref(),
+            self.tables_merkle.root().as_ref(),
+            self.funcs_merkle.root().as_ref(),
+            (*self.extra_hash).as_ref(),
+            &self.internals_offset.to_be_bytes(),
+        ])
     }
 
     #[cfg(feature = "native")]
@@ -693,126 +695,263 @@ impl Module {
         data
     }
 
-    /// Serializes the `Module` into bytes that can be stored in the db.
-    /// The format employed is forward-compatible with future brotli dictionary and caching
-    /// policies.
-    pub fn into_bytes(&self) -> Vec<u8> {
-        let data = bincode::serialize::<ModuleSerdeAll>(&self.into()).unwrap();
-        let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
-        brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
+    /// Serializes a `Module` into `MAGIC | VERSION | u32 LEN | brotli(body)`.
+    /// Body fields are positional, in `Module` declaration order; schema changes
+    /// require bumping `WAVM_SERIALIZE_VERSION`. Returns `Err` rather than
+    /// panicking so the FFI surfaces failures as status codes.
+    pub fn to_wavm_bytes(&self) -> Result<Vec<u8>> {
+        // Body follows `Module`'s declaration order; `tables_merkle` and
+        // `funcs_merkle` are re-derived on decode.
+        //
+        // Pre-size to skip the ~10 doubling reallocations a multi-MB body would otherwise cost
+        let body_capacity_hint = self.memory.size() as usize
+            + self
+                .funcs
+                .iter()
+                .map(|f| 64 + f.code.len() * 16)
+                .sum::<usize>()
+            + 4096;
+        let mut body = Vec::with_capacity(body_capacity_hint);
+
+        write_count(&mut body, self.globals.len())?;
+        for v in &self.globals {
+            write_value(&mut body, *v);
+        }
+
+        // `get_range(0, size)` is total by construction (`size == buffer.len()`);
+        // the `bail!` makes a future Memory-invariant break loud instead of
+        // silently diverging the hash from the activator's.
+        let size = self.memory.size() as usize;
+        let buffer = self.memory.get_range(0, size).ok_or_else(|| {
+            eyre!(
+                "wavm encode: memory.get_range(0, {size}) returned None — Memory invariant broken"
+            )
+        })?;
+        write_bytes(&mut body, buffer)?;
+        write_u64(&mut body, self.memory.max_size);
+
+        write_count(&mut body, self.tables.len())?;
+        for t in &self.tables {
+            let parts = TableParts {
+                ty: t.ty,
+                elems: t
+                    .elems
+                    .iter()
+                    .map(|e| TableElementParts {
+                        func_ty: e.func_ty.clone(),
+                        val: e.val,
+                    })
+                    .collect(),
+            };
+            write_table_parts(&mut body, &parts)?;
+        }
+
+        write_count(&mut body, self.funcs.len())?;
+        for f in self.funcs.iter() {
+            let parts = FunctionParts {
+                local_types: f.local_types.clone(),
+                ty: f.ty.clone(),
+                code: f.code.clone(),
+            };
+            write_function_parts(&mut body, &parts)?;
+        }
+
+        write_count(&mut body, self.types.len())?;
+        for ty in self.types.iter() {
+            write_function_type(&mut body, ty)?;
+        }
+
+        write_u32(&mut body, self.internals_offset);
+        write_names(&mut body, &self.names)?;
+        write_host_call_hooks(&mut body, &self.host_call_hooks)?;
+        write_optional_u32(&mut body, self.start_function);
+
+        write_count(&mut body, self.func_types.len())?;
+        for ty in self.func_types.iter() {
+            write_function_type(&mut body, ty)?;
+        }
+
+        write_func_exports(&mut body, &self.func_exports)?;
+        write_export_map(&mut body, &self.all_exports)?;
+        write_bytes32(&mut body, &self.extra_hash);
+
+        // q=0 shrinks realistic modules ~20–80x at sub-ms cost; higher q saves
+        // little on an already-tiny payload.
+        let compressed = brotli::compress(&body, 0, 22, Dictionary::Empty)
+            .map_err(|s| eyre!("wavm encode: brotli compression failed: {s:?}"))?;
+
+        // Length-prefix the body so the decoder catches trailing-bytes
+        // corruption regardless of brotli's behavior on extra input.
+        let mut out = Vec::with_capacity(WAVM_MAGIC.len() + 4 + 4 + compressed.len());
+        out.extend_from_slice(WAVM_MAGIC);
+        out.extend_from_slice(&WAVM_SERIALIZE_VERSION.to_be_bytes());
+        write_bytes(&mut out, &compressed)?;
+
+        Ok(out)
     }
 
-    /// Deserializes a `Module` from db bytes.
-    ///
-    /// # Safety
-    ///
-    /// The bytes must have been produced by `into_bytes` and represent a valid `Module`.
-    pub unsafe fn from_bytes(data: &[u8]) -> Self {
-        let module = if data[0] > 0 {
-            let dict = Dictionary::try_from(data[0] - 1).expect("unknown dictionary");
-            let data = brotli::decompress(&data[1..], dict).expect("failed to inflate");
-            bincode::deserialize::<ModuleSerdeAll>(&data)
-        } else {
-            bincode::deserialize::<ModuleSerdeAll>(&data[1..])
-        };
-        module.unwrap().into()
-    }
-}
+    /// Deserializes a `Module` from the stable WAVM wire format. Returns `Err` on
+    /// header mismatch, malformed payload, or trailing bytes; never panics. The
+    /// rebuilt module's `Module::hash()` matches the activator's by construction:
+    /// `Table::elems_merkle` is left as `Merkle::default()` to mirror
+    /// `Module::from_binary`.
+    pub fn from_wavm_bytes(data: &[u8]) -> Result<Module> {
+        // magic(4) + version u32(4) + envelope-length prefix u32(4) = 12 bytes
+        const HEADER_MIN: usize = WAVM_MAGIC.len() + 4 + 4;
+        ensure!(
+            data.len() >= HEADER_MIN,
+            "wavm decode: data too short for header ({} < {})",
+            data.len(),
+            HEADER_MIN,
+        );
+        ensure!(
+            &data[..WAVM_MAGIC.len()] == WAVM_MAGIC,
+            "wavm decode: magic mismatch"
+        );
+        let version_bytes: [u8; 4] = data[WAVM_MAGIC.len()..WAVM_MAGIC.len() + 4]
+            .try_into()
+            .expect("HEADER_MIN guarantees 4 bytes here");
+        let version = u32::from_be_bytes(version_bytes);
+        ensure!(
+            version == WAVM_SERIALIZE_VERSION,
+            "wavm decode: unsupported WavmSerializeVersion {version}, expected {WAVM_SERIALIZE_VERSION}",
+        );
 
-/// This type exists to provide a serde option for serializing all the fields of a `Module`.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ModuleSerdeAll {
-    globals: Vec<Value>,
-    memory: Memory,
-    tables: Vec<Table>,
-    tables_merkle: Merkle,
-    funcs: Vec<FunctionSerdeAll>,
-    funcs_merkle: Arc<Merkle>,
-    types: Arc<Vec<FunctionType>>,
-    internals_offset: u32,
-    names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
-    start_function: Option<u32>,
-    func_types: Arc<Vec<FunctionType>>,
-    func_exports: Arc<HashMap<String, u32>>,
-    all_exports: Arc<ExportMap>,
-    extra_hash: Arc<Bytes32>,
-}
+        // `is_empty()` after read rejects trailing bytes regardless of
+        // brotli's tolerance for extra input.
+        let mut env = Cursor::new(&data[WAVM_MAGIC.len() + 4..]);
+        let raw_body = env.read_bytes()?;
+        ensure!(
+            env.is_empty(),
+            "wavm decode: {} trailing byte(s) after envelope",
+            env.remaining(),
+        );
+        let body: Vec<u8> = brotli::decompress(&raw_body, Dictionary::Empty)
+            .map_err(|s| eyre!("wavm decode: brotli decompression failed: {s:?}"))?;
 
-impl From<ModuleSerdeAll> for Module {
-    fn from(module: ModuleSerdeAll) -> Self {
-        let funcs = module.funcs.into_iter().map(Function::from).collect();
-        Self {
-            globals: module.globals,
-            memory: module.memory,
-            tables: module.tables,
-            tables_merkle: module.tables_merkle,
+        let mut c = Cursor::new(&body);
+
+        // globals (each `Value` is at least 1 tag byte)
+        let n_globals = read_count(&mut c, 1)?;
+        let mut globals = Vec::with_capacity(n_globals);
+        for _ in 0..n_globals {
+            globals.push(read_value(&mut c)?);
+        }
+
+        // memory: buffer + max_size
+        let memory_buffer = c.read_bytes()?;
+        let memory_max_size = c.read_u64()?;
+
+        // tables (each table is at least kind(1) + initial(8) + maximum-flag(1)
+        // + table64(1) + shared(1) + elem-count(4) = 16 bytes)
+        let n_tables = read_count(&mut c, 16)?;
+        let mut tables = Vec::with_capacity(n_tables);
+        for _ in 0..n_tables {
+            let parts = read_table_parts(&mut c)?;
+            let elems = parts
+                .elems
+                .into_iter()
+                .map(|e| TableElement {
+                    func_ty: e.func_ty,
+                    val: e.val,
+                })
+                .collect();
+            tables.push(Table {
+                ty: parts.ty,
+                elems,
+                elems_merkle: Merkle::default(),
+            });
+        }
+
+        // funcs (each function is at least local-count(4) + input-count(4)
+        // + output-count(4) + inst-count(4) = 16 bytes)
+        let n_funcs = read_count(&mut c, 16)?;
+        let mut funcs: Vec<Function> = Vec::with_capacity(n_funcs);
+        for _ in 0..n_funcs {
+            let parts = read_function_parts(&mut c)?;
+            funcs.push(Function::new_from_wavm(
+                parts.code,
+                parts.ty,
+                parts.local_types,
+            ));
+        }
+
+        // types (each FunctionType has two u32 counts = 8 bytes minimum)
+        let n_types = read_count(&mut c, 8)?;
+        let mut types = Vec::with_capacity(n_types);
+        for _ in 0..n_types {
+            types.push(read_function_type(&mut c)?);
+        }
+
+        // internals_offset
+        let internals_offset = c.read_u32()?;
+
+        // names (module + functions map)
+        let names = read_names(&mut c)?;
+
+        // host_call_hooks
+        let host_call_hooks = read_host_call_hooks(&mut c)?;
+
+        // start_function
+        let start_function = c.read_optional_u32()?;
+
+        // func_types
+        let n_func_types = read_count(&mut c, 8)?;
+        let mut func_types = Vec::with_capacity(n_func_types);
+        for _ in 0..n_func_types {
+            func_types.push(read_function_type(&mut c)?);
+        }
+
+        // func_exports
+        let func_exports = read_func_exports(&mut c)?;
+
+        // all_exports
+        let all_exports = read_export_map(&mut c)?;
+
+        // extra_hash
+        let extra_hash = c.read_bytes32()?;
+
+        ensure!(
+            c.is_empty(),
+            "wavm decode: {} trailing byte(s) after module",
+            c.remaining(),
+        );
+
+        // Reconstruct memory.
+        let mut memory = Memory::new(memory_buffer.len(), memory_max_size);
+        if !memory_buffer.is_empty() {
+            memory.set_range(0, &memory_buffer)?;
+        }
+        memory.cache_merkle_tree();
+
+        // Mirror the activator: `Module::from_binary` leaves `elems_merkle`
+        // default, so `Module::hash()` here must too — that's the on-chain
+        // `module_hash` invariant. Repopulating would diverge.
+        let tables_hashes: Result<_> = tables.iter().map(Table::hash).collect();
+        let tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
+
+        let funcs_merkle = Arc::new(Merkle::new(
+            MerkleType::Function,
+            funcs.iter().map(Function::hash).collect(),
+        ));
+
+        Ok(Module {
+            globals,
+            memory,
+            tables,
+            tables_merkle,
             funcs: Arc::new(funcs),
-            funcs_merkle: module.funcs_merkle,
-            types: module.types,
-            internals_offset: module.internals_offset,
-            names: module.names,
-            host_call_hooks: module.host_call_hooks,
-            start_function: module.start_function,
-            func_types: module.func_types,
-            func_exports: module.func_exports,
-            all_exports: module.all_exports,
-            extra_hash: module.extra_hash,
-        }
-    }
-}
-
-impl From<&Module> for ModuleSerdeAll {
-    fn from(module: &Module) -> Self {
-        let funcs = Vec::clone(&module.funcs);
-        Self {
-            globals: module.globals.clone(),
-            memory: module.memory.clone(),
-            tables: module.tables.clone(),
-            tables_merkle: module.tables_merkle.clone(),
-            funcs: funcs.into_iter().map(FunctionSerdeAll::from).collect(),
-            funcs_merkle: module.funcs_merkle.clone(),
-            types: module.types.clone(),
-            internals_offset: module.internals_offset,
-            names: module.names.clone(),
-            host_call_hooks: module.host_call_hooks.clone(),
-            start_function: module.start_function,
-            func_types: module.func_types.clone(),
-            func_exports: module.func_exports.clone(),
-            all_exports: module.all_exports.clone(),
-            extra_hash: module.extra_hash.clone(),
-        }
-    }
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FunctionSerdeAll {
-    code: Vec<Instruction>,
-    ty: FunctionType,
-    code_merkle: Merkle,
-    local_types: Vec<ArbValueType>,
-}
-
-impl From<FunctionSerdeAll> for Function {
-    fn from(func: FunctionSerdeAll) -> Self {
-        Self {
-            code: func.code,
-            ty: func.ty,
-            code_merkle: func.code_merkle,
-            local_types: func.local_types,
-        }
-    }
-}
-
-impl From<Function> for FunctionSerdeAll {
-    fn from(func: Function) -> Self {
-        Self {
-            code: func.code,
-            ty: func.ty,
-            code_merkle: func.code_merkle,
-            local_types: func.local_types,
-        }
+            funcs_merkle,
+            types: Arc::new(types),
+            internals_offset,
+            names: Arc::new(names),
+            host_call_hooks: Arc::new(host_call_hooks),
+            start_function,
+            func_types: Arc::new(func_types),
+            func_exports: Arc::new(func_exports),
+            all_exports: Arc::new(all_exports),
+            extra_hash: Arc::new(extra_hash),
+        })
     }
 }
 
@@ -846,16 +985,18 @@ impl From<GlobalState> for validation::GoGlobalState {
 
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Global state:");
+        let mut h = Keccak::v256();
+        h.update(b"Global state:");
         let end_idx = self.bytes32_last_non_zero_index();
         for i in 0..=end_idx {
-            h.update(self.bytes32_vals[i]);
+            h.update(self.bytes32_vals[i].as_ref());
         }
         for item in self.u64_vals {
-            h.update(item.to_be_bytes())
+            h.update(&item.to_be_bytes());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     #[cfg(feature = "native")]
@@ -1046,7 +1187,7 @@ pub struct Machine {
     preimage_resolver: PreimageResolverWrapper,
     end_parent_chain_block_hash: Bytes32, // Used for MEL proving.
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
-    stylus_modules: HashMap<Bytes32, Vec<u8>>,
+    pub(crate) stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
     context: u64,
     debug_info: bool, // Not part of machine hash
@@ -1084,14 +1225,7 @@ where
             heights = &heights[1..];
         }
 
-        use digest::Update;
-
-        hash = Keccak256::new()
-            .chain(prefix)
-            .chain(item.as_ref())
-            .chain(hash)
-            .finalize()
-            .into();
+        hash = crypto::keccak_seq(&[prefix.as_bytes(), item.as_ref(), hash.as_ref()]);
 
         count += 1;
     }
@@ -1275,6 +1409,41 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
     Arc::new(|_, _, _| None) as _
 }
 
+// Extracted so a test can pin the diagnostic (operator needs the hex hash
+// to find the offending wasmdb key).
+#[cfg(any(feature = "native", test))]
+pub(crate) fn format_missing_stylus_module_error(
+    hash: Bytes32,
+    modules: &HashMap<Bytes32, Vec<u8>>,
+) -> String {
+    let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
+    let dots = if modules.len() > 16 { "..." } else { "" };
+    format!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
+}
+
+// Repopulates merkle caches on a freshly-deserialized module (replay-binary path)
+fn recompute_module_merkles(module: &mut Module) -> Result<()> {
+    for table in module.tables.iter_mut() {
+        table.elems_merkle = Merkle::new(
+            MerkleType::TableElement,
+            table.elems.iter().map(TableElement::hash).collect(),
+        );
+    }
+    let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
+    module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
+
+    let funcs = Arc::get_mut(&mut module.funcs)
+        .ok_or_else(|| eyre!("module.funcs Arc is shared; cannot recompute code merkles"))?;
+    funcs.iter_mut().for_each(Function::set_code_merkle);
+
+    module.funcs_merkle = Arc::new(Merkle::new(
+        MerkleType::Function,
+        module.funcs.iter().map(Function::hash).collect(),
+    ));
+    module.memory.cache_merkle_tree();
+    Ok(())
+}
+
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
     pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
@@ -1373,7 +1542,7 @@ impl Machine {
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data), version)?;
         let hash = module.hash();
-        self.add_stylus_module(hash, module.into_bytes());
+        self.add_stylus_module(hash, module.to_wavm_bytes()?);
         Ok(hash)
     }
 
@@ -1673,23 +1842,7 @@ impl Machine {
         };
 
         for module in modules.iter_mut() {
-            for table in module.tables.iter_mut() {
-                table.elems_merkle = Merkle::new(
-                    MerkleType::TableElement,
-                    table.elems.iter().map(TableElement::hash).collect(),
-                );
-            }
-            let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
-            module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
-
-            let funcs = Arc::get_mut(&mut module.funcs).expect("Multiple copies of module funcs");
-            funcs.iter_mut().for_each(Function::set_code_merkle);
-
-            module.funcs_merkle = Arc::new(Merkle::new(
-                MerkleType::Function,
-                module.funcs.iter().map(Function::hash).collect(),
-            ));
-            module.memory.cache_merkle_tree();
+            recompute_module_merkles(module)?;
         }
         let modules_merkle = Some(Merkle::new(
             MerkleType::Module,
@@ -1864,7 +2017,14 @@ impl Machine {
         };
         let ty = &source_func.ty;
         if ty.inputs.len() != args.len() {
-            let name = source_module.names.functions.get(&func).unwrap();
+            // `names.functions` is sparse (Wasm name section is optional); fall
+            // back to the numeric index for functions that have no symbol.
+            let name = source_module
+                .names
+                .functions
+                .get(&func)
+                .cloned()
+                .unwrap_or_else(|| format!("#{func}"));
             bail!(
                 "func {} has type {} but received args {:?}",
                 name.red(),
@@ -2659,21 +2819,27 @@ impl Machine {
                         error!("no hash for {}", ptr)
                     };
                     let Some(bytes) = self.stylus_modules.get(&hash) else {
-                        let modules = &self.stylus_modules;
-                        let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
-                        let dots = if modules.len() > 16 {
-                            "..."
-                        } else {
-                            Default::default()
-                        };
-                        bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
+                        bail!(format_missing_stylus_module_error(
+                            hash,
+                            &self.stylus_modules
+                        ))
                     };
 
-                    // put the new module's offset on the stack
+                    // Decode and hash-check BEFORE mutating `value_stack` /
+                    // `self.modules` so the pre-step state survives bail.
+                    let new_module = match Module::from_wavm_bytes(bytes) {
+                        Ok(m) => m,
+                        Err(e) => bail!("failed to decode stylus module {hash}: {e}"),
+                    };
+                    let new_hash = new_module.hash();
+                    if new_hash != hash {
+                        bail!(
+                            "decoded stylus module hash {new_hash} diverged from lookup key {hash} — wavm round-trip invariant broken",
+                        );
+                    }
                     let index = self.modules.len() as u32;
                     value_stack.push(index.into());
-
-                    self.modules.push(unsafe { Module::from_bytes(bytes) });
+                    self.modules.push(new_module);
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.push_leaf(hash);
                     }
@@ -2823,13 +2989,24 @@ impl Machine {
     }
 
     pub fn print_modules(&self) {
+        // Swallow stdout io::Error so a broken pipe doesn't crash a
+        // diagnostic dump; partial output is preferable to a panic.
+        let _ = self.write_modules(&mut std::io::stdout());
+    }
+
+    // Sink-agnostic counterpart so tests can exercise the corrupt-entry path
+    // without capturing stdout.
+    pub fn write_modules<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         for module in &self.modules {
-            println!("{module}\n");
+            writeln!(w, "{module}\n")?;
         }
         for module in self.stylus_modules.values() {
-            let module = unsafe { Module::from_bytes(module) };
-            println!("{module}\n");
+            match Module::from_wavm_bytes(module) {
+                Ok(m) => writeln!(w, "{m}\n")?,
+                Err(e) => writeln!(w, "<failed to decode stylus module: {e}>\n")?,
+            }
         }
+        Ok(())
     }
 
     pub fn is_halted(&self) -> bool {
@@ -2900,18 +3077,15 @@ impl Machine {
                     hash_multistack(&$stacks[1..$stacks.len() - 1], $hasher)
                 };
 
-                hash = Keccak256::new()
-                    .chain("multistack:")
-                    .chain(first_hash)
-                    .chain(last_hash)
-                    .chain(hash)
-                    .finalize()
-                    .into();
+                hash = crypto::keccak_seq(&[
+                    b"multistack:",
+                    first_hash.as_ref(),
+                    last_hash.as_ref(),
+                    hash.as_ref(),
+                ]);
                 hash
             }};
         }
-
-        use digest::Update;
         let frame_stacks = compute_multistack!(
             |x| x.frame_stack,
             self.get_frame_stacks(),
@@ -2930,34 +3104,28 @@ impl Machine {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
                 let (frame_stacks, value_stacks, inter_stack) = self.stack_hashes();
-
-                h.update(b"Machine running:");
-                h.update(value_stacks);
-                h.update(inter_stack);
-                h.update(frame_stacks);
-                h.update(self.global_state.hash());
-                h.update(self.pc.module.to_be_bytes());
-                h.update(self.pc.func.to_be_bytes());
-                h.update(self.pc.inst.to_be_bytes());
-                h.update(self.thread_state.serialize());
-                h.update(self.get_modules_root());
+                crypto::keccak_seq(&[
+                    b"Machine running:",
+                    value_stacks.as_ref(),
+                    inter_stack.as_ref(),
+                    frame_stacks.as_ref(),
+                    self.global_state.hash().as_ref(),
+                    &self.pc.module.to_be_bytes(),
+                    &self.pc.func.to_be_bytes(),
+                    &self.pc.inst.to_be_bytes(),
+                    self.thread_state.serialize().as_ref(),
+                    self.get_modules_root().as_ref(),
+                ])
             }
             MachineStatus::Finished => {
-                h.update("Machine finished:");
-                h.update(self.global_state.hash());
+                crypto::keccak_seq(&[b"Machine finished:", self.global_state.hash().as_ref()])
             }
-            MachineStatus::Errored => {
-                h.update("Machine errored:");
-            }
-            MachineStatus::TooFar => {
-                h.update("Machine too far:");
-            }
+            MachineStatus::Errored => crypto::keccak_seq(&[b"Machine errored:"]),
+            MachineStatus::TooFar => crypto::keccak_seq(&[b"Machine too far:"]),
         }
-        h.finalize().into()
     }
 
     #[cfg(feature = "native")]
@@ -3452,29 +3620,33 @@ mod global_state_hash_tests {
     // assertion proof was generated against this format, so hash() for a
     // state with slots 2 and 3 zero must still match byte-for-byte.
     fn legacy_two_slot_hash(gs: &GlobalState) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Global state:");
-        h.update(gs.bytes32_vals[0]);
-        h.update(gs.bytes32_vals[1]);
+        let mut h = Keccak::v256();
+        h.update(b"Global state:");
+        h.update(gs.bytes32_vals[0].as_ref());
+        h.update(gs.bytes32_vals[1].as_ref());
         for item in gs.u64_vals {
-            h.update(item.to_be_bytes());
+            h.update(&item.to_be_bytes());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     // Recomputes hash() including all 4 bytes32 slots unconditionally. Used
     // as the golden vector for states where slot 3 is non-zero (so all four
     // slots must be serialized).
     fn full_four_slot_hash(gs: &GlobalState) -> Bytes32 {
-        let mut h = Keccak256::new();
-        h.update("Global state:");
+        let mut h = Keccak::v256();
+        h.update(b"Global state:");
         for v in gs.bytes32_vals {
-            h.update(v);
+            h.update(v.as_ref());
         }
         for item in gs.u64_vals {
-            h.update(item.to_be_bytes());
+            h.update(&item.to_be_bytes());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 
     #[test]

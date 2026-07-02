@@ -1376,6 +1376,12 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 			return fmt.Errorf("starting validators: %w", err)
 		}
 	}
+	if v.boldRedisValidator != nil {
+		err := v.boldRedisValidator.StartValidators(moduleRoots)
+		if err != nil {
+			return fmt.Errorf("starting BOLD redis validators: %w", err)
+		}
+	}
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil {
 			if !validator.SpawnerSupportsModule(v.redisValidator, root) {

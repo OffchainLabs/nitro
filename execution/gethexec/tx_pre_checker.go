@@ -90,7 +90,7 @@ func NewTxPreChecker(
 }
 
 func (c *TxPreChecker) SetTxFiltererForTest(_ *testing.T, execEngine *ExecutionEngine, ef *eventfilter.EventFilter) {
-	c.txFilterer = &txFilterer{execEngine: execEngine, eventFilter: ef}
+	c.txFilterer = &txFilterer{execEngine: execEngine, eventFilter: ef, filteringReportRPCClient: execEngine.filteringReportRPCClient}
 }
 
 func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {
@@ -335,7 +335,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		RunScheduledTxes: retryables.RunScheduledTxes,
 		TxFilterer:       c.txFilterer,
 	})
-	if errors.Is(err, state.ErrArbTxFilter) {
+	if errors.Is(err, state.ErrSeqFilter) {
 		return err
 	}
 	// Other execution errors are ignored since the pre-check is only concerned

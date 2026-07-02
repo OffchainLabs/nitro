@@ -7,7 +7,6 @@
 package sol
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -34,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/testgen"
 	util_containers "github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 var (
@@ -239,10 +239,11 @@ func NewAssertionChain(
 		return nil, fmt.Errorf("stake token address %#x has no code", stakeTokenAddr)
 	}
 	chain.stakeTokenAddr = stakeTokenAddr
-	// Check if the stake token supports WETH-style deposits by looking for
-	// the deposit() function selector (0xd0e30db0) in the contract bytecode.
-	wethDepositSelector := []byte{0xd0, 0xe3, 0x0d, 0xb0}
-	chain.stakeTokenIsWeth = bytes.Contains(code, wethDepositSelector)
+	stakeTokenIsWeth, err := stakeTokenSupportsWethDeposit(ctx, chain.backend, chain.txOpts.From, stakeTokenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine whether stake token %#x supports WETH-style deposits: %w", stakeTokenAddr, err)
+	}
+	chain.stakeTokenIsWeth = stakeTokenIsWeth
 	log.Info("Minimum assertion period", "blocks", minPeriod.Uint64())
 	chain.minAssertionPeriodBlocks = minPeriod.Uint64()
 	chain.userLogic = assertionChainBinding
@@ -436,6 +437,24 @@ func (a *AssertionChain) AutoDepositTokenForStaking(
 		return nil
 	}
 	return a.autoDepositFunds(ctx, amount)
+}
+
+// wethDepositSelector is the 4-byte function selector for WETH9's deposit().
+var wethDepositSelector = []byte{0xd0, 0xe3, 0x0d, 0xb0}
+
+func stakeTokenSupportsWethDeposit(ctx context.Context, backend protocol.ChainBackend, from, stakeToken common.Address) (bool, error) {
+	_, err := backend.CallContract(ctx, ethereum.CallMsg{
+		From: from,
+		To:   &stakeToken,
+		Data: wethDepositSelector,
+	}, nil)
+	if err == nil {
+		return true, nil
+	}
+	if headerreader.IsExecutionReverted(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 // Attempts to auto-wrap ETH to WETH with the required amount that is specified to the function.
@@ -1022,10 +1041,22 @@ func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protoc
 func (a *AssertionChain) ReadAssertionCreationInfo(
 	ctx context.Context, id protocol.AssertionHash,
 ) (*protocol.AssertionCreatedInfo, error) {
+	return a.readAssertionCreationInfo(ctx, id, a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+}
+
+func (a *AssertionChain) ReadAssertionCreationInfoAtLatest(
+	ctx context.Context, id protocol.AssertionHash,
+) (*protocol.AssertionCreatedInfo, error) {
+	return a.readAssertionCreationInfo(ctx, id, &bind.CallOpts{Context: ctx})
+}
+
+func (a *AssertionChain) readAssertionCreationInfo(
+	ctx context.Context, id protocol.AssertionHash, callOpts *bind.CallOpts,
+) (*protocol.AssertionCreatedInfo, error) {
 	var assertionCreationBlock uint64
 	var topics [][]common.Hash
 	if id == (protocol.AssertionHash{}) {
-		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
+		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(callOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -1037,11 +1068,14 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], id.Bytes())
-		var err error
-		assertionCreationBlock, err = a.GetAssertionCreationParentBlock(ctx, b)
+		createdAtBlock, err := a.userLogic.GetAssertionCreationBlockForLogLookup(callOpts, b)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "could not get assertion creation block for assertion hash %#x", b)
 		}
+		if !createdAtBlock.IsUint64() {
+			return nil, fmt.Errorf("for assertion hash %#x, createdAtBlock was not a uint64", b)
+		}
+		assertionCreationBlock = createdAtBlock.Uint64()
 		topics = [][]common.Hash{{assertionCreatedId}, {id.Hash}}
 	}
 	var query = ethereum.FilterQuery{
@@ -1066,7 +1100,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		return nil, err
 	}
 	afterState := parsedLog.Assertion.AfterState
-	res, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), parsedLog.AssertionHash)
+	res, err := a.rollup.GetAssertion(callOpts, parsedLog.AssertionHash)
 	if err != nil {
 		return nil, err
 	}
