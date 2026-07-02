@@ -148,68 +148,9 @@ impl ParentChainReader for MockParentChainReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_consensus::{
-        transaction::{Recovered, TransactionInfo},
-        ReceiptEnvelope, SignableTransaction, TxEip1559, TxEnvelope,
-    };
-    use alloy_primitives::{Address, Signature, B256, U256};
+    use crate::test_utils::{block, header, log_at, receipt, tx};
+    use alloy_primitives::{Address, B256};
     use alloy_rpc_types_eth::BlockTransactions;
-
-    fn header(number: u64, hash: B256) -> Header {
-        let mut h: Header = Header::default();
-        h.inner.number = number;
-        h.hash = hash;
-        h
-    }
-
-    fn log_at(block: u64, address: Address) -> Log {
-        let mut log = Log::default();
-        log.inner.address = address;
-        log.block_number = Some(block);
-        log.block_hash = Some(B256::repeat_byte(block as u8));
-        log
-    }
-
-    /// Builds a transaction. `nonce` gives it a distinct hash; `mined_at` sets
-    /// its `(block hash, index)` (leave `None` for a pending transaction).
-    fn tx(nonce: u64, mined_at: Option<(B256, u64)>) -> Transaction {
-        let signed = TxEip1559 {
-            nonce,
-            ..Default::default()
-        }
-        .into_signed(Signature::new(U256::ZERO, U256::ZERO, false));
-        let recovered = Recovered::new_unchecked(TxEnvelope::Eip1559(signed), Address::ZERO);
-        let info = TransactionInfo {
-            hash: None,
-            index: mined_at.map(|(_, index)| index),
-            block_hash: mined_at.map(|(hash, _)| hash),
-            block_number: mined_at.map(|_| 0),
-            base_fee: None,
-        };
-        Transaction::from_transaction(recovered, info)
-    }
-
-    fn block(number: u64, hash: B256, txs: BlockTransactions<Transaction>) -> Block {
-        Block::new(header(number, hash), txs)
-    }
-
-    /// Builds a receipt for the given transaction hash.
-    fn receipt(tx_hash: B256) -> TransactionReceipt {
-        TransactionReceipt {
-            inner: ReceiptEnvelope::Eip1559(Default::default()),
-            transaction_hash: tx_hash,
-            transaction_index: None,
-            block_hash: None,
-            block_number: None,
-            gas_used: 0,
-            effective_gas_price: 0,
-            blob_gas_used: None,
-            blob_gas_price: None,
-            from: Address::ZERO,
-            to: None,
-            contract_address: None,
-        }
-    }
 
     #[tokio::test]
     async fn header_by_number_returns_matching_header() {
