@@ -966,6 +966,7 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 
 	// Check for pre-recorded reverted transactions
 	if l2GasUsed, ok := core.RevertedTxGasUsed[txHash]; ok {
+		log.Info("reached a reverted transaction", "hash", txHash, "gasUsed", l2GasUsed)
 		p.evm.StateDB.SetNonce(p.msg.From, p.evm.StateDB.GetNonce(p.msg.From)+1, tracing.NonceChangeEoACall)
 
 		// Calculate adjusted gas since l2GasUsed contains params.TxGas
