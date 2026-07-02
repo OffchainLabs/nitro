@@ -657,7 +657,7 @@ func TestRetryableFilteringL1DelayedManualRedeemCascadeDepth2(t *testing.T) {
 	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketIdA)
 	require.NoError(t, err)
 	signedL2Tx := prepareDelayedContractCall(t, builder, "Redeemer", arbRetryableTxAddr, redeemCallData)
-	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	l2TxHash, _ := sendDelayedTx(t, ctx, builder, signedL2Tx)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Group revert fires on L2 tx hash (NOT ticketA)
@@ -738,7 +738,7 @@ func TestRetryableFilteringL1DelayedManualRedeemCascadeDepth3(t *testing.T) {
 	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketIdA)
 	require.NoError(t, err)
 	signedL2Tx := prepareDelayedContractCall(t, builder, "Redeemer", arbRetryableTxAddr, redeemCallData)
-	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	l2TxHash, _ := sendDelayedTx(t, ctx, builder, signedL2Tx)
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Group revert fires on L2 tx hash

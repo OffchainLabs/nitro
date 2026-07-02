@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.11.0-rc.6](https://github.com/OffchainLabs/nitro-private/compare/v3.11.0-rc.5...v3.11.0-rc.6) - 2026-06-16
+
+### Fixed
+
+- Sequencing now stays in-process when consensus connects to execution over a same-process loopback RPC (`--node.execution-rpc-client.url=self` or `self-auth`), instead of being disabled as in the remote RPC case.
+- Consensus RPC client now restores the `ErrRetrySequencer` sentinel across the RPC boundary, so the sequencer requeues transactions during transient coordinator handovers (e.g. Redis switchover) instead of surfacing the error to `eth_sendRawTransaction` clients.
+- Tracer now returns early if the top-level frame was never captured (e.g. on timeouts).
+
+### Internal
+
+- Re-enable CI tests for consensus and execution nodes connected over JSON RPC, split into `consensus-execution-rpc-A` / `consensus-execution-rpc-B` modes of the standard go test suite, gated by the `run-consensus-execution-rpc-a` / `run-consensus-execution-rpc-b` workflow inputs.
+- Add `--hashing-scheme` option to `scripts/generate-address-hashes-fixture.sh` to select between `sha256-rawbytesinput` (default) and `sha256-stringinput`.
+
 ## [v3.11.0-rc.5](https://github.com/OffchainLabs/nitro/compare/v3.11.0-rc.4...v3.11.0-rc.5) - 2026-06-11
 
 ### Changed
