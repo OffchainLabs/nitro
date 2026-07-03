@@ -89,15 +89,15 @@ func TestDelayedMessagesBatchSequencedInOrder(t *testing.T) {
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// All delayed messages should be sequenced, each in its own block, in submission
-	// order (later messages land in equal-or-higher block numbers).
+	// order (later messages land in strictly higher block numbers).
 	prevBlock := uint64(0)
 	for i := 0; i < numMsgs; i++ {
 		receipt, err := WaitForTx(ctx, builder.L2.Client, txHashes[i], 15*time.Second)
 		require.NoError(t, err, "delayed message %d should be sequenced", i)
 		require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
 		curBlock := receipt.BlockNumber.Uint64()
-		require.GreaterOrEqual(t, curBlock, prevBlock,
-			"delayed messages should be sequenced in submission order")
+		require.Greater(t, curBlock, prevBlock,
+			"delayed messages should be sequenced in submission order, each in its own block")
 		prevBlock = curBlock
 
 		bal, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress(recipients[i]), nil)
