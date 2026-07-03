@@ -1641,7 +1641,7 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 
 	if !execSequencer.IsActive() {
 		log.Debug("Sequencer is not active, not sequencing")
-		return 50 * time.Millisecond
+		return 10 * time.Millisecond
 	}
 
 	s.blockProductionMutex.Lock()

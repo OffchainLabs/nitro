@@ -201,7 +201,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ReadFromTxQueueTimeout:      time.Millisecond * 10,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
-	PollInterval:                50 * time.Millisecond,
+	PollInterval:                10 * time.Millisecond,
 	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
