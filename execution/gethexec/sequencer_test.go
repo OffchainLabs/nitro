@@ -4,6 +4,7 @@
 package gethexec
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -72,5 +73,29 @@ func TestPGARoundLength(t *testing.T) {
 	c.ExperimentalPGA.RoundsPerBlock = 2
 	if got := c.PGARoundLength(); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
+	}
+}
+
+func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan time.Duration, 1)
+	go func() {
+		_, wait := seq.StartSequencing(context.Background())
+		done <- wait
+	}()
+
+	select {
+	case wait := <-done:
+		if wait == 0 {
+			t.Fatal("expected non-zero next sequence time")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartSequencing blocked without transactions")
 	}
 }
