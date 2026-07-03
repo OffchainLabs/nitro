@@ -74,9 +74,8 @@ var (
 )
 
 var (
-	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-	ResultNotFound                      = errors.New("result not found")
-	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+	ResultNotFound        = errors.New("result not found")
+	BlockNumBeforeGenesis = errors.New("block number is before genesis")
 )
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
@@ -634,7 +633,7 @@ func (s *ExecutionEngine) blockCreationStopped() bool {
 
 func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
 	if s.blockCreationStopped() {
-		return nil, ExecutionEngineBlockCreationStopped
+		return nil, execution.ExecutionEngineBlockCreationStopped
 	}
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
@@ -911,7 +910,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 			return nil, nil
 		}
 
-		if errors.Is(err, ExecutionEngineBlockCreationStopped) {
+		if errors.Is(err, execution.ExecutionEngineBlockCreationStopped) {
 			log.Debug("delayed sequencing halted: execution engine stopped block creation")
 			return nil, err
 		}
@@ -1004,7 +1003,7 @@ func (s *ExecutionEngine) clearFilteredTxWaitState() {
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
 	if s.blockCreationStopped() {
-		return nil, ExecutionEngineBlockCreationStopped
+		return nil, execution.ExecutionEngineBlockCreationStopped
 	}
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {

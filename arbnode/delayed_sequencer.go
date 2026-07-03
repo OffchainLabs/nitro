@@ -21,7 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -229,7 +228,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			return
 		}
 		if err := d.tryToEnqueue(ctx, latestHeader); err != nil {
-			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
+			if errors.Is(err, execution.ExecutionEngineBlockCreationStopped) {
 				log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
 				return
 			}

@@ -36,7 +36,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -269,7 +268,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.Messa
 	for _, msg := range msgs {
 		sequencedMsg, err := execSequencer.ResequenceReorgedMessage(msg)
 		if err != nil {
-			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
+			if errors.Is(err, execution.ExecutionEngineBlockCreationStopped) {
 				log.Info("stopping resequencing reorged messages: execution engine block creation stopped")
 				return
 			}

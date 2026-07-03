@@ -49,7 +49,10 @@ type ConsensusSyncData struct {
 	UpdatedAt       time.Time
 }
 
-var ErrRetrySequencer = errors.New("please retry transaction")
+var (
+	ErrRetrySequencer                   = errors.New("please retry transaction")
+	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+)
 
 // always needed
 type ExecutionClient interface {
