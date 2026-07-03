@@ -26,7 +26,7 @@ env:
 jobs:
   build:
     name: build release binaries
-    runs-on: ubuntu-latest
+    runs-on: ocl-16cpu-64ram
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
