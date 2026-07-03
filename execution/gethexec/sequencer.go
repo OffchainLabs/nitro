@@ -70,7 +70,6 @@ var (
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
-	waitForTxHistogram                      = metrics.NewRegisteredHistogram("arb/sequencer/waitfortx", nil, metrics.NewBoundedHistogramSample())
 	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit)
 	gasLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gaslimited", nil)
 	// number of blocks ended because of txes data size limit
@@ -1258,21 +1257,11 @@ func (s *Sequencer) getQueueItems(ctx context.Context, config *SequencerConfig) 
 	sequencerQueueGauge.Update(txQueueLen)
 	sequencerQueueHistogram.Update(txQueueLen)
 
-	startOfGettingTxs := time.Now()
-
 	var queueItems []txQueueItem
 	var startOfReadingFromTxQueue time.Time
 	for {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
-			waitForFirstTx := time.Since(startOfGettingTxs)
-			if waitForFirstTx < time.Millisecond {
-				// we don't care about the first iteration duration
-				// so to keep history clean we sanitize waits shorter then ms to 0
-				waitForTxHistogram.Update(0)
-			} else {
-				waitForTxHistogram.Update(waitForFirstTx.Nanoseconds())
-			}
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
 			break
 		}
