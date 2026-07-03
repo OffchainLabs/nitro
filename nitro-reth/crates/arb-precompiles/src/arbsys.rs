@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
@@ -5,7 +7,6 @@ use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::merkle_accumulator::calc_num_partials;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 use crate::{interfaces::IArbSys, ArbPrecompileError};
 
@@ -726,8 +727,9 @@ fn undo_l1_alias(addr: Address) -> Address {
 
 #[cfg(test)]
 mod alias_tests {
-    use super::*;
     use alloy_primitives::address;
+
+    use super::*;
 
     #[test]
     fn alias_simple_no_carry() {

@@ -7,6 +7,13 @@ use std::{sync::Arc, time::Duration};
 
 use alloy_primitives::{Address, StorageKey, B256, U256};
 use alloy_rpc_types_eth::{state::StateOverride, BlockId};
+use arb_storage::{
+    layout::{
+        root_slot, subspace_slot, BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET,
+        GENESIS_BLOCK_NUM_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    },
+    ARBOS_STATE_ADDRESS,
+};
 use reth_primitives_traits::{Recovered, WithEncoded};
 use reth_rpc::eth::core::EthApiInner;
 use reth_rpc_convert::{RpcConvert, RpcTxReq};
@@ -31,14 +38,6 @@ use reth_transaction_pool::{
     AddedTransactionOutcome, PoolPooledTx, PoolTransaction, TransactionOrigin, TransactionPool,
 };
 use tracing::trace;
-
-use arb_storage::{
-    layout::{
-        root_slot, subspace_slot, BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET,
-        GENESIS_BLOCK_NUM_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
-    ARBOS_STATE_ADDRESS,
-};
 
 /// Type alias matching reth's `SignersForRpc`.
 type SignersForRpc<Provider, Rpc> = parking_lot::RwLock<
@@ -1166,8 +1165,9 @@ where
         state_override: Option<StateOverride>,
     ) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send {
         async move {
-            use crate::nodeinterface_rpc::NODE_INTERFACE_ADDRESS;
             use alloy_primitives::TxKind;
+
+            use crate::nodeinterface_rpc::NODE_INTERFACE_ADDRESS;
 
             let inner = request.as_ref();
             let target: Option<Address> = match inner.to {
@@ -1225,6 +1225,8 @@ where
     ) -> impl std::future::Future<Output = Result<alloy_primitives::Bytes, Self::Error>> + Send
     {
         async move {
+            use alloy_primitives::{Address, TxKind};
+
             use crate::nodeinterface_rpc::{
                 encode_gas_estimate_components, encode_l2_block_range, encode_legacy_lookup_empty,
                 encode_u64_word, unpack_mix_hash, NODE_INTERFACE_ADDRESS, SEL_BLOCK_L1_NUM,
@@ -1232,7 +1234,6 @@ where
                 SEL_GAS_ESTIMATE_L1_COMPONENT, SEL_GET_L1_CONFIRMATIONS, SEL_L2_BLOCK_RANGE_FOR_L1,
                 SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF, SEL_NITRO_GENESIS_BLOCK,
             };
-            use alloy_primitives::{Address, TxKind};
 
             // Only intercept calls targeting the NodeInterface or
             // NodeInterfaceDebug addresses.

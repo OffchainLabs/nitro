@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-
 use arb_spec_tests::ExecutionFixture;
 
 use super::PromoteArgs;

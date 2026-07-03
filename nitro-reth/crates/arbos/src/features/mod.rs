@@ -1,6 +1,6 @@
-use alloy_primitives::U256;
 use std::marker::PhantomData;
 
+use alloy_primitives::U256;
 use arb_storage::{StorageBackedBigUint, StorageBackend, SystemStateBackend};
 
 mod error;

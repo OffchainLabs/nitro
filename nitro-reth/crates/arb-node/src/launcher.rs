@@ -8,11 +8,15 @@
 //! This is the reth SDK-native approach: implement `LaunchNode` with custom
 //! orchestrator wiring while reusing all other engine infrastructure.
 
-use crate::{
-    engine::{build_arb_engine_orchestrator, TreeSender},
-    error::LauncherError,
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, OnceLock},
 };
+
 use alloy_consensus::BlockHeader;
+use arb_payload::ArbEngineTypes;
+use arb_primitives::ArbPrimitives;
 use futures::{stream::FusedStream, stream_select, FutureExt, StreamExt};
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_engine_tree::{
@@ -49,16 +53,13 @@ use reth_tasks::TaskExecutor;
 use reth_tokio_util::EventSender;
 use reth_tracing::tracing::{debug, error, info};
 use reth_trie_db::ChangesetCache;
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::{Arc, OnceLock},
-};
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use arb_payload::ArbEngineTypes;
-use arb_primitives::ArbPrimitives;
+use crate::{
+    engine::{build_arb_engine_orchestrator, TreeSender},
+    error::LauncherError,
+};
 
 static TREE_SENDER: OnceLock<TreeSender<ArbEngineTypes, ArbPrimitives>> = OnceLock::new();
 static ENGINE_HANDLE: OnceLock<ConsensusEngineHandle<ArbEngineTypes>> = OnceLock::new();

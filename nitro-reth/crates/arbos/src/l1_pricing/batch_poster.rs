@@ -1,12 +1,11 @@
 use alloy_primitives::{Address, U256};
-use revm::Database;
-
-use crate::address_set::AddressSet;
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackend, SystemStateBackend,
 };
+use revm::Database;
 
 use super::L1PricingError;
+use crate::address_set::AddressSet;
 
 pub const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
 pub const POSTER_ADDRS_KEY: &[u8] = &[0];

@@ -1,14 +1,14 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-
 use revm::{
     context_interface::block::Block,
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
 };
-use std::sync::Arc;
 
 use crate::{interfaces::IArbGasInfo, ArbPrecompileError};
 

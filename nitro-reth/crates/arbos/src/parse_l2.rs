@@ -1,10 +1,11 @@
+use std::io::{self, Cursor, Read};
+
 use alloy_eips::eip2718::{Decodable2718, Typed2718};
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use arb_primitives::{
     signed_tx::ArbTransactionSigned,
     tx_types::{ArbContractTx, ArbDepositTx, ArbSubmitRetryableTx, ArbUnsignedTx},
 };
-use std::io::{self, Cursor, Read};
 
 use crate::{
     arbos_types::{

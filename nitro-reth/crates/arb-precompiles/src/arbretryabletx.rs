@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
@@ -7,7 +9,6 @@ use arbos::retryables::{
     CancelOutcome, LookupOutcome, RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE,
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 use crate::{interfaces::IArbRetryableTx, ArbPrecompileError};
 

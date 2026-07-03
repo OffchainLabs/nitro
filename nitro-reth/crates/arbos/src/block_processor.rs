@@ -1,5 +1,4 @@
 use alloy_primitives::{Address, B256, U256};
-
 use arb_chainspec::arbos_version as arb_ver;
 
 use crate::{header::ArbHeaderInfo, internal_tx::L1Info, l2_pricing::GETH_BLOCK_GAS_LIMIT};

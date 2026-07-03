@@ -160,13 +160,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::verify_block_execution;
     use alloy_consensus::{
         proofs::calculate_receipt_root, Eip658Value, Header, Receipt as AlloyReceipt, TxReceipt,
     };
     use alloy_primitives::{Bloom, B256};
     use arb_primitives::{ArbReceipt, ArbReceiptKind};
     use reth_consensus::ConsensusError;
+
+    use super::verify_block_execution;
 
     fn receipts() -> Vec<ArbReceipt> {
         vec![ArbReceipt::new(ArbReceiptKind::Eip1559(AlloyReceipt {

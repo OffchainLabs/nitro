@@ -1,5 +1,4 @@
 use alloy_primitives::{Address, U256};
-
 use arb_primitives::multigas::MultiGas;
 use arbos::{
     tx_processor::{

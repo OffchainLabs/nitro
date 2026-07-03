@@ -5,9 +5,6 @@
 //! consensus sidecar.
 
 use alloy_primitives::{address, Address, Bytes, B256, U256};
-use revm::{database::State, Database};
-use tracing::info;
-
 use arb_storage::{
     layout::{
         ADDRESS_TABLE_SUBSPACE, BLOCKHASHES_SUBSPACE, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
@@ -21,6 +18,8 @@ use arbos::{
     arbos_state::ArbosState, arbos_types::ParsedInitMessage, burn::SystemBurner, l1_pricing,
     l2_pricing,
 };
+use revm::{database::State, Database};
+use tracing::info;
 
 use crate::error::GenesisError;
 

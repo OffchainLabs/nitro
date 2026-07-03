@@ -12,6 +12,5 @@
 extern crate alloc;
 
 mod error;
-pub use error::{ArbError, ArbResult};
-
 pub use arb_storage_errors::{DatabaseError, DatabaseErrorInfo, StorageError};
+pub use error::{ArbError, ArbResult};

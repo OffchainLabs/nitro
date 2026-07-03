@@ -1,5 +1,13 @@
 //! Per-block and per-tx context threaded into Arbitrum precompile handlers.
 
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize},
+        Arc, OnceLock,
+    },
+};
+
 use alloy_primitives::{Address, B256, U256};
 use arb_primitives::multigas::MultiGas;
 use arb_storage::{Detached, SystemStateBackend};
@@ -8,13 +16,6 @@ use arbos::{
     burn::SystemBurner,
 };
 use parking_lot::Mutex;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize},
-        Arc, OnceLock,
-    },
-};
 
 /// LRU cache of recently invoked Stylus program codehashes.
 #[derive(Debug, Default)]
