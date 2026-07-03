@@ -91,12 +91,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps
 
-  no-hand-written-selectors:
-    name: no hand-written selectors
+  guardrails:
+    # Forbidden-pattern grep checks.
+    name: guardrails
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Fail if any bare [u8; 4] selector literals are reintroduced
+
+      - name: no hand-written selectors
+        id: no-hand-written-selectors
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE 'const\s+[A-Z_0-9]+\s*:\s*\[\s*u8\s*;\s*4\s*\]\s*=' \
@@ -108,12 +112,9 @@ jobs:
             exit 1
           fi
 
-  no-thread-local-in-precompiles:
-    name: no thread_local in arb-precompiles
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any thread_local! macro is reintroduced into arb-precompiles
+      - name: no thread_local in arb-precompiles
+        id: no-thread-local-in-precompiles
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rn 'thread_local!' crates/arb-precompiles/src/ || true)
@@ -124,14 +125,11 @@ jobs:
             exit 1
           fi
 
-  no-static-state-in-precompiles:
-    # Blocks reintroducing top-level static state (Mutex/RwLock/OnceCell)
-    # in arb-precompiles. State must be threaded through ArbPrecompileCtx.
-    name: no static state in arb-precompiles
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any static Mutex/RwLock/OnceCell is declared in arb-precompiles
+      - name: no static state in arb-precompiles
+        # Blocks reintroducing top-level static state (Mutex/RwLock/OnceCell)
+        # in arb-precompiles. State must be threaded through ArbPrecompileCtx.
+        id: no-static-state-in-precompiles
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE 'static\s+[A-Za-z0-9_]+.*(Mutex|RwLock|OnceCell)' crates/arb-precompiles/src/ || true)
@@ -142,14 +140,11 @@ jobs:
             exit 1
           fi
 
-  no-unit-error-results:
-    # Blocks Result<_, ()> in arbos/arb-evm/arb-precompiles: callers cannot
-    # diagnose failures from a bare () error.
-    name: no Result<_, ()> in core crates
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any Result<_, ()> is reintroduced
+      - name: no Result<_, ()> in core crates
+        # Blocks Result<_, ()> in arbos/arb-evm/arb-precompiles: callers cannot
+        # diagnose failures from a bare () error.
+        id: no-unit-error-results
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE 'Result<.*,\s*\(\)\s*>' \
@@ -161,15 +156,12 @@ jobs:
             exit 1
           fi
 
-  no-string-error-results:
-    # Blocks Result<_, String> in arbos/arb-evm/arb-precompiles. The single
-    # surviving site is revm's PrecompileProvider::run, whose return type is
-    # forced upstream and matches on `Self::Output`.
-    name: no Result<_, String> in core crates
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any Result<_, String> is reintroduced (PrecompileProvider trait excluded)
+      - name: no Result<_, String> in core crates
+        # Blocks Result<_, String> in arbos/arb-evm/arb-precompiles. The single
+        # surviving site is revm's PrecompileProvider::run, whose return type is
+        # forced upstream and matches on `Self::Output`.
+        id: no-string-error-results
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE 'Result<.*,\s*String\s*>' \
@@ -184,14 +176,11 @@ jobs:
             exit 1
           fi
 
-  no-unsafe-mut-deref-in-arb-evm:
-    # Blocks raw `unsafe { &mut * ... }` derefs in arb-evm. The Stylus FFI
-    # cordon stays in arb-stylus (out of scope for this grep).
-    name: no unsafe mut-deref in arb-evm
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any unsafe { &mut * } is reintroduced into arb-evm/src
+      - name: no unsafe mut-deref in arb-evm
+        # Blocks raw `unsafe { &mut * ... }` derefs in arb-evm. The Stylus FFI
+        # cordon stays in arb-stylus (out of scope for this grep).
+        id: no-unsafe-mut-deref-in-arb-evm
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE 'unsafe\s*\{\s*&mut\s*\*' crates/arb-evm/src/ || true)
@@ -202,13 +191,10 @@ jobs:
             exit 1
           fi
 
-  no-mut-state-cast-outside-stylus:
-    # Blocks `as *mut State<...>` casts everywhere except arb-stylus FFI.
-    name: no *mut State cast outside arb-stylus
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any `as *mut State<` cast appears outside crates/arb-stylus/
+      - name: no *mut State cast outside arb-stylus
+        # Blocks `as *mut State<...>` casts everywhere except arb-stylus FFI.
+        id: no-mut-state-cast-outside-stylus
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE 'as\s*\*mut\s*State<' crates/ --include='*.rs' \
@@ -220,13 +206,10 @@ jobs:
             exit 1
           fi
 
-  no-via-backend-suffix:
-    # Blocks `_via_backend` method/function names from being reintroduced.
-    name: no _via_backend suffix
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any *_via_backend symbol is reintroduced
+      - name: no _via_backend suffix
+        # Blocks `_via_backend` method/function names from being reintroduced.
+        id: no-via-backend-suffix
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rn '_via_backend' crates/ --include='*.rs' || true)
@@ -236,14 +219,11 @@ jobs:
             exit 1
           fi
 
-  no-active-ctx-helpers:
-    # Blocks `with_active`, `install_active`, `clear_active`, and `ACTIVE_CTX`
-    # symbols. ArbPrecompileCtx must be threaded through handler signatures.
-    name: no ACTIVE_CTX helpers
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Fail if any ACTIVE_CTX helper is reintroduced
+      - name: no ACTIVE_CTX helpers
+        # Blocks `with_active`, `install_active`, `clear_active`, and `ACTIVE_CTX`
+        # symbols. ArbPrecompileCtx must be threaded through handler signatures.
+        id: no-active-ctx-helpers
+        continue-on-error: true
         run: |
           set -e
           matches=$(grep -rnE '(with_active|install_active|clear_active|ACTIVE_CTX)' \
@@ -254,3 +234,23 @@ jobs:
             echo "$matches"
             exit 1
           fi
+
+      - name: Fail if any guardrail check failed
+        if: always()
+        run: |
+          failed=0
+          for outcome in \
+            "${{ steps.no-hand-written-selectors.outcome }}" \
+            "${{ steps.no-thread-local-in-precompiles.outcome }}" \
+            "${{ steps.no-static-state-in-precompiles.outcome }}" \
+            "${{ steps.no-unit-error-results.outcome }}" \
+            "${{ steps.no-string-error-results.outcome }}" \
+            "${{ steps.no-unsafe-mut-deref-in-arb-evm.outcome }}" \
+            "${{ steps.no-mut-state-cast-outside-stylus.outcome }}" \
+            "${{ steps.no-via-backend-suffix.outcome }}" \
+            "${{ steps.no-active-ctx-helpers.outcome }}"; do
+            if [ "$outcome" = "failure" ]; then
+              failed=1
+            fi
+          done
+          exit $failed
