@@ -189,6 +189,9 @@ func (c *SequencerConfig) Validate() error {
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
 	}
+	if c.PollInterval <= 0 {
+		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
+	}
 
 	return nil
 }
