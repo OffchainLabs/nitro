@@ -37,19 +37,7 @@ type execClientWrapper struct {
 	t               *testing.T
 }
 
-func (w *execClientWrapper) Pause() { w.t.Error("not supported") }
-
-func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
-
-func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
-
-func (w *execClientWrapper) EnqueueDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) {
-	w.t.Error("not supported")
-}
-
-func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
-	return w.ExecutionEngine.NextDelayedMessageNumber()
-}
+var _ execution.ExecutionClient = (*execClientWrapper)(nil)
 
 func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	markFeedStartWithReturn := func(to arbutil.MessageIndex) (struct{}, error) {
@@ -71,14 +59,6 @@ func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[str
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) Synced(ctx context.Context) bool {
-	w.t.Error("not supported")
-	return false
-}
-func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
-	w.t.Error("not supported")
-	return nil
-}
 func (w *execClientWrapper) SetFinalityData(
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
@@ -97,10 +77,6 @@ func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbosty
 
 func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
 	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages))
-}
-
-func (w *execClientWrapper) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
-	return w.ExecutionEngine.ResequenceReorgedMessage(msg)
 }
 
 func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
