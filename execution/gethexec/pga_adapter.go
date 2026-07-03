@@ -31,7 +31,6 @@ func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
 		}
 		return 0, fmt.Errorf("unexpected EffectiveGasTip error for tx %v: %w", i.tx.Hash(), err)
 	}
-	// TODO(NIT-5043): add anti-starvation boost
 	return arbmath.BigToUintSaturating(tip), nil
 }
 
