@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use alloy_primitives::B256;
 use parking_lot::Mutex;
-use std::collections::HashMap;
 use wasmer::{Engine, Module, Store};
 
 use crate::{config::CompileConfig, error::StylusError};
@@ -143,6 +144,7 @@ impl CompileConfig {
     /// Create a wasmer Engine with the configured middleware.
     pub fn engine(&self) -> Engine {
         use std::sync::Arc;
+
         // wasmer 7: Cranelift + CraneliftOptLevel moved under `sys`; CompilerConfig
         // is now re-exported via `wasmer_compiler`.
         use wasmer::sys::{Cranelift, CraneliftOptLevel, EngineBuilder};

@@ -1,5 +1,6 @@
-use alloy_primitives::{Address, B256, U256};
 use std::io::{self, Read, Write};
+
+use alloy_primitives::{Address, B256, U256};
 
 /// Reads a 32-byte hash from a reader.
 pub fn hash_from_reader<R: Read>(r: &mut R) -> io::Result<B256> {

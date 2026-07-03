@@ -9,6 +9,7 @@ pub mod retryable;
 pub mod signed_tx;
 pub mod unsigned;
 
+use alloy_primitives::Bytes;
 pub use batch::{BatchBuilder, BatchPostingVariant};
 pub use contract::ContractTxBuilder;
 pub use delayed::DelayedTxBuilder;
@@ -16,11 +17,9 @@ pub use deposit::DepositBuilder;
 pub use heartbeat::{HeartbeatBody, HeartbeatBuilder};
 pub use internal::{InternalTxBuilder, InternalTxKind};
 pub use retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder, L1_TO_L2_ALIAS_OFFSET};
+use serde::{Deserialize, Serialize};
 pub use signed_tx::{derive_address as l2_signing_key_to_address, L2TxKind, SignedL2TxBuilder};
 pub use unsigned::UnsignedUserTxBuilder;
-
-use alloy_primitives::Bytes;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct L1Message {
@@ -126,9 +125,10 @@ pub mod encoding {
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    use super::*;
     use alloy_primitives::B256;
     use base64::Engine;
+
+    use super::*;
 
     pub fn decode_body(msg: &L1Message) -> Vec<u8> {
         base64::engine::general_purpose::STANDARD

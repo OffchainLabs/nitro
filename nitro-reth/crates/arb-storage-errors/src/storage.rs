@@ -1,5 +1,6 @@
-use crate::DatabaseError;
 use alloy_primitives::U256;
+
+use crate::DatabaseError;
 
 /// Errors raised by the arb-storage layer.
 ///

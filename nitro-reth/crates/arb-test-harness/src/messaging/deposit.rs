@@ -44,10 +44,11 @@ impl MessageBuilder for DepositBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::messaging::test_support::{decode_body, round_trip};
     use alloy_primitives::address;
     use arbos::parse_l2::{parse_l2_transactions, ParsedTransaction};
+
+    use super::*;
+    use crate::messaging::test_support::{decode_body, round_trip};
 
     fn sample() -> DepositBuilder {
         DepositBuilder {

@@ -3543,10 +3543,12 @@ fn decode_retry_tx_gas(encoded: &[u8]) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::populate_l2_block_hash_window;
+    use std::collections::HashMap;
+
     use alloy_primitives::{B256, U256};
     use arb_context::BlockCtx;
-    use std::collections::HashMap;
+
+    use super::populate_l2_block_hash_window;
 
     #[test]
     fn fills_window_from_parent_and_lookup() {

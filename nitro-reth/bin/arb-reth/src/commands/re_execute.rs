@@ -9,6 +9,14 @@
 //! continuing with a now-stale bundle (which otherwise cascades into
 //! receipt divergence on every following block in the chunk).
 
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
+
 use alloy_consensus::{transaction::TxHashRef, BlockHeader, TxReceipt};
 use clap::Parser;
 use eyre::WrapErr;
@@ -28,13 +36,6 @@ use reth_provider::{
 };
 use reth_revm::database::StateProviderDatabase;
 use revm_database::{states::bundle_state::BundleRetention, State};
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
-};
 use tokio::{sync::mpsc, task::JoinSet};
 use tracing::*;
 

@@ -1,5 +1,7 @@
 mod common;
 
+use std::sync::Arc;
+
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, B256, U256};
 use arb_context::ArbPrecompileCtx;
@@ -9,7 +11,6 @@ use arb_storage::{
     ARBOS_STATE_ADDRESS,
 };
 use common::{calldata, decode_address, decode_u256, PrecompileTest};
-use std::sync::Arc;
 
 const ARBOS_V30: u64 = 30;
 const RETRYABLE_LIFETIME: u64 = 7 * 24 * 60 * 60;

@@ -1,35 +1,12 @@
 mod error;
 pub mod initialize;
 
-pub use error::ArbosStateError;
-
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
-use revm::Database;
 use std::sync::OnceLock;
 
+use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
-use arb_storage::{
-    get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
-    StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
-    StorageBackend, SystemStateBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
-};
-
-use crate::{
-    address_set::{self, AddressSet},
-    address_table::{self, AddressTable},
-    blockhash::{self, Blockhashes},
-    burn::Burner,
-    features::{self, Features},
-    filtered_transactions::FilteredTransactionsState,
-    l1_pricing::{self, L1PricingState},
-    l2_pricing::{self, L2PricingState},
-    merkle_accumulator::{self, MerkleAccumulator},
-    programs::Programs,
-    retryables::RetryableState,
-};
-
 // Root-level field offsets and subspace IDs are defined once in the storage
 // layout module; re-export the offsets that callers reference by name.
 use arb_storage::layout::{
@@ -43,6 +20,27 @@ pub use arb_storage::layout::{
     NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NETWORK_FEE_ACCOUNT_OFFSET,
     TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET, UPGRADE_TIMESTAMP_OFFSET,
     UPGRADE_VERSION_OFFSET, VERSION_OFFSET,
+};
+use arb_storage::{
+    get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
+    StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
+    StorageBackend, SystemStateBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+};
+pub use error::ArbosStateError;
+use revm::Database;
+
+use crate::{
+    address_set::{self, AddressSet},
+    address_table::{self, AddressTable},
+    blockhash::{self, Blockhashes},
+    burn::Burner,
+    features::{self, Features},
+    filtered_transactions::FilteredTransactionsState,
+    l1_pricing::{self, L1PricingState},
+    l2_pricing::{self, L2PricingState},
+    merkle_accumulator::{self, MerkleAccumulator},
+    programs::Programs,
+    retryables::RetryableState,
 };
 
 /// Cached root→subspace derivations: `keccak256(sub_key)` for each static child.

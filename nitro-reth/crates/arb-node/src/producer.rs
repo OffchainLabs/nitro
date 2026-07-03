@@ -20,6 +20,17 @@ use alloy_evm::{
 };
 use alloy_primitives::{Address, Bytes, B256, B64, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
+use arb_evm::config::{arbos_version_from_mix_hash, l1_block_number_from_mix_hash, ArbEvmConfig};
+use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
+use arb_rpc::block_producer::{
+    BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
+};
+use arbos::{
+    arbos_types::parse_init_message,
+    header::{derive_arb_header_info, ArbHeaderInfo},
+    internal_tx,
+    parse_l2::{parse_l2_transactions, parsed_tx_to_signed, ParsedTransaction},
+};
 use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
@@ -36,18 +47,6 @@ use reth_trie_common::{HashedPostState, TrieInputSorted};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
-
-use arb_evm::config::{arbos_version_from_mix_hash, l1_block_number_from_mix_hash, ArbEvmConfig};
-use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
-use arb_rpc::block_producer::{
-    BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
-};
-use arbos::{
-    arbos_types::parse_init_message,
-    header::{derive_arb_header_info, ArbHeaderInfo},
-    internal_tx,
-    parse_l2::{parse_l2_transactions, parsed_tx_to_signed, ParsedTransaction},
-};
 
 use crate::genesis;
 
@@ -1688,8 +1687,9 @@ fn augment_bundle_from_cache(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arbos::header::compute_arbos_mixhash;
+
+    use super::*;
 
     #[test]
     fn l1_block_number_clamps_to_parent() {

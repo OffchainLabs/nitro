@@ -1,11 +1,11 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Log, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::{ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS};
-
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 use crate::{interfaces::IArbFilteredTxManager, ArbPrecompileError};
 

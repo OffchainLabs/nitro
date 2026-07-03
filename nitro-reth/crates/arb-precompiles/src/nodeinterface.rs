@@ -1,12 +1,12 @@
+use std::sync::Arc;
+
 use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Bytes, ChainId, Signature, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 use crate::{interfaces::INodeInterface, ArbPrecompileError};
 

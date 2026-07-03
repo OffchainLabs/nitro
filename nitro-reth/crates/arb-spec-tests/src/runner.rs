@@ -443,8 +443,9 @@ fn merge_alloc(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn merge_keeps_system_addresses_and_adds_fixture_entry() {

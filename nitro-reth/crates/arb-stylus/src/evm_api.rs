@@ -1,5 +1,6 @@
-use crate::ink::{Gas, Ink};
 use alloy_primitives::{Address, B256, U256};
+
+use crate::ink::{Gas, Ink};
 
 /// Status codes returned by EVM API operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

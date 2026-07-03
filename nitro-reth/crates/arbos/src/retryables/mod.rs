@@ -1,11 +1,10 @@
 use alloy_primitives::{keccak256, Address, B256, U256};
-use revm::Database;
-
 use arb_storage::{
     initialize_queue, open_queue, Queue, Storage, StorageBackedAddress, StorageBackedAddressOrNil,
     StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
     SystemStateBackend,
 };
+use revm::Database;
 
 use crate::util::BalanceError;
 

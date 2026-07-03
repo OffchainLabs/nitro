@@ -1,8 +1,9 @@
+use core::error::Error;
+use std::borrow::Cow;
+
 use alloy_primitives::Bytes;
 use arb_storage_errors::StorageError;
-use core::error::Error;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
-use std::borrow::Cow;
 
 /// Errors raised by Arbitrum precompiles.
 ///

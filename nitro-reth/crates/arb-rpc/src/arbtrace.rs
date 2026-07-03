@@ -1,7 +1,7 @@
 //! `arbtrace_*` namespace — forwards pre-Arbitrum-One classic trace
 //! requests to a configured classic-node RPC endpoint.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use jsonrpsee::{
     core::{client::ClientT, RpcResult},
@@ -11,7 +11,6 @@ use jsonrpsee::{
 use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
 use parking_lot::Mutex;
 use serde_json::{self as json, value::RawValue, Value as JsonValue};
-use std::time::Duration;
 
 fn forwarding_not_configured() -> ErrorObject<'static> {
     ErrorObject::owned(

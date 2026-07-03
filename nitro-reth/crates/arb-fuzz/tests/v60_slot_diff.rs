@@ -10,7 +10,6 @@
 //!     -- --ignored v60_block1_slot_diff --nocapture
 
 use alloy_primitives::{address, keccak256, Address, B256, U256};
-
 use arb_fuzz::shared_nodes::{next_msg_idx, shared_dual_exec};
 use arb_test_harness::{
     messaging::{DepositBuilder, MessageBuilder},

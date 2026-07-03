@@ -15,6 +15,11 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use alloy_consensus::transaction::Recovered;
 use alloy_eips::Decodable2718;
+use alloy_evm::{
+    block::{BlockExecutor, BlockExecutorFactory},
+    eth::EthBlockExecutionCtx,
+    EvmFactory,
+};
 use alloy_primitives::{address, b256, hex, Address, Bytes, Signature, B256, U256};
 use arb_alloy_consensus::tx::ArbInternalTx;
 use arb_evm::{
@@ -29,12 +34,6 @@ use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};
 use revm::{database::State, primitives::hardfork::SpecId};
 use serde::Deserialize;
-
-use alloy_evm::{
-    block::{BlockExecutor, BlockExecutorFactory},
-    eth::EthBlockExecutionCtx,
-    EvmFactory,
-};
 
 const CHAIN_ID: u64 = 421614;
 const ARBOS_VERSION: u64 = 60;

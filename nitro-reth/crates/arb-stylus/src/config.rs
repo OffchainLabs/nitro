@@ -1,6 +1,5 @@
-use crate::{error::StylusError, ink::Ink};
-
 use super::ink::Gas;
+use crate::{error::StylusError, ink::Ink};
 
 /// Runtime configuration for a Stylus program execution.
 #[derive(Clone, Copy, Debug)]

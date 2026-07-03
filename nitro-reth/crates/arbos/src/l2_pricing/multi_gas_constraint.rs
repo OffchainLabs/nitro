@@ -1,5 +1,4 @@
 use alloy_primitives::{B256, U256};
-
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
 use arb_storage::{
     storage_key_map, StorageBackedUint32, StorageBackedUint64, StorageBackend, SystemStateBackend,

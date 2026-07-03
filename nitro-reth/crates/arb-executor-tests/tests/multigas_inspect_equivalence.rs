@@ -3,6 +3,8 @@
 //! path: the same contract-call block must produce identical post-state whether
 //! or not the inspector is present.
 
+use std::sync::Arc;
+
 use alloy_consensus::{
     crypto::secp256k1::sign_message, transaction::Recovered, EthereumTxEnvelope,
     SignableTransaction, TxLegacy,
@@ -27,7 +29,6 @@ use revm::{
     primitives::hardfork::SpecId,
     state::{AccountInfo, Bytecode},
 };
-use std::sync::Arc;
 
 const SECRET_KEY: [u8; 32] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,

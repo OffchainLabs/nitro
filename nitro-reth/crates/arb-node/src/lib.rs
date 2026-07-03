@@ -18,17 +18,17 @@ pub mod pool;
 pub mod producer;
 pub mod validator;
 
-pub use error::{GenesisError, LauncherError};
-
 use std::sync::Arc;
 
 use alloy_consensus::Header;
+use arb_evm::ArbEvmConfig;
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use arb_rpc::{
     stylus_debug::{StylusDebugHandler, StylusDebugServer},
     ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler,
 };
+pub use error::{GenesisError, LauncherError};
 use reth_chain_state::CanonicalInMemoryState;
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
@@ -38,8 +38,6 @@ use reth_node_builder::{
 };
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_storage_api::{CanonChainTracker, EthStorage};
-
-use arb_evm::ArbEvmConfig;
 
 use crate::{
     addons::ArbPayloadValidatorBuilder,

@@ -69,7 +69,8 @@ fn build_tx() -> arb_primitives::signed_tx::ArbTransactionSigned {
     let input = hex::decode(TX_INPUT_HEX).expect("decode input");
     sign_1559(
         CHAIN_ID,
-        /* nonce */ 0,
+        // nonce
+        0,
         TX_MAX_FEE,
         TX_MAX_PRIO,
         TX_GAS_LIMIT,

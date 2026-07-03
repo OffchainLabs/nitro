@@ -250,10 +250,12 @@ fn approx_exp_basis_points_zero_returns_one_in_bips() {
 }
 
 mod end_tx_retryable {
-    use super::*;
+    use std::cell::RefCell;
+
     use alloy_primitives::{address, Address, B256};
     use arbos::tx_processor::{EndTxRetryableParams, TxProcessor};
-    use std::cell::RefCell;
+
+    use super::*;
 
     const FROM: Address = address!("00000000000000000000000000000000000A11CE");
     const REFUND_TO: Address = address!("00000000000000000000000000000000000B0B00");
@@ -489,8 +491,9 @@ mod end_tx_retryable {
 }
 
 mod batch_poster_funds_due {
-    use super::*;
     use alloy_primitives::address;
+
+    use super::*;
 
     /// `BatchPostersTable::set_funds_due` adjusts total funds due by
     /// `prev_total + value - prev`. Test the simple positive case.
@@ -595,8 +598,9 @@ mod retryable_submission_fee_overflow {
 }
 
 mod compute_poster_gas_overflow {
-    use super::*;
     use arbos::tx_processor::compute_poster_gas;
+
+    use super::*;
 
     #[test]
     fn compute_poster_gas_with_u256_max_cost_does_not_panic() {
@@ -622,9 +626,10 @@ mod compute_poster_gas_overflow {
 }
 
 mod compute_retryable_gas_split_overflow {
-    use super::*;
     use alloy_primitives::Address;
     use arbos::tx_processor::compute_retryable_gas_split;
+
+    use super::*;
 
     #[test]
     fn retryable_gas_split_with_u64_max_gas_does_not_panic() {
@@ -644,8 +649,9 @@ mod compute_retryable_gas_split_overflow {
 }
 
 mod retryable_lifecycle_edge_cases {
-    use super::*;
     use alloy_primitives::{address, B256};
+
+    use super::*;
 
     #[test]
     fn open_retryable_at_u64_max_timestamp_does_not_panic() {

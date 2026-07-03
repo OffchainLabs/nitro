@@ -1,9 +1,10 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::Address;
 use alloy_sol_types::{SolError, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileId, PrecompileResult};
-use std::sync::Arc;
 
 use crate::interfaces::IArbosActs;
 
