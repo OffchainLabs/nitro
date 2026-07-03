@@ -82,7 +82,7 @@ func TestDelayedMessagesBatchSequencedInOrder(t *testing.T) {
 		recipients[i] = name
 		builder.L2Info.GenerateAccount(name)
 		tx := builder.L2Info.PrepareTx("Sender", name, builder.L2Info.TransferGas, transferEach, nil)
-		txHashes[i] = sendDelayedTx(t, ctx, builder, tx)
+		txHashes[i], _ = sendDelayedTx(t, ctx, builder, tx)
 	}
 
 	// A single L1 advance enqueues all pending delayed messages together as a batch.

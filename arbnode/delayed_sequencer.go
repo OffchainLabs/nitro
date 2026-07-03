@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -38,7 +40,7 @@ type DelayedSequencer struct {
 	delayedMessageFetcher    DelayedMessageFetcher
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
-	waitingForFinalizedBlock *uint64 // short-circuit: skip work until finalized parent chain block advances past this value
+	waitingForFinalizedBlock atomic.Pointer[uint64] // short-circuit: skip work until finalized parent chain block advances past this value
 	config                   DelayedSequencerConfigFetcher
 }
 
@@ -133,12 +135,12 @@ func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockH
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
+	if w := d.waitingForFinalizedBlock.Load(); w != nil && *w > finalized {
 		return nil
 	}
 
 	// Reset what block we're waiting for if we've caught up
-	d.waitingForFinalizedBlock = nil
+	d.waitingForFinalizedBlock.Store(nil)
 
 	dbDelayedCount, err := d.delayedMessageFetcher.GetDelayedCount()
 	if err != nil {
@@ -157,7 +159,7 @@ func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockH
 	for pos < dbDelayedCount {
 		msg, acc, parentChainBlockNumber, err := d.delayedMessageFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
-			d.waitingForFinalizedBlock = &parentChainBlockNumber
+			d.waitingForFinalizedBlock.Store(&parentChainBlockNumber)
 			break
 		} else if err != nil {
 			return err
@@ -239,6 +241,13 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.StopWaiter.Start(ctxIn, d)
 	d.LaunchThread(d.run)
+}
+
+func (d *DelayedSequencer) WaitingForFinalizedBlock(t *testing.T) (uint64, bool) {
+	if w := d.waitingForFinalizedBlock.Load(); w != nil {
+		return *w, true
+	}
+	return 0, false
 }
 
 func (d *DelayedSequencer) checkAccumulatorReorg(

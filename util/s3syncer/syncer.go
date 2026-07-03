@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/s3client"
+	"github.com/offchainlabs/nitro/util/warmbuffer"
 )
 
 var ErrObjectTooLarge = errors.New("s3 object exceeds max-file-size-mb")
@@ -33,6 +34,7 @@ type Syncer struct {
 	digestETag      string
 	failedETag      string
 	mutex           sync.Mutex
+	reuseBuf        []byte // when non-nil, backs the in-memory download to avoid per-download allocation
 }
 
 const bytesInMB = 1024 * 1024
@@ -42,11 +44,15 @@ func NewSyncer(
 	dataHandler DataHandler,
 	objectSizeGauge *metrics.Gauge,
 ) *Syncer {
-	return &Syncer{
+	s := &Syncer{
 		config:          config,
 		handleData:      dataHandler,
 		objectSizeGauge: objectSizeGauge,
 	}
+	if config.PreallocateMemory && config.MaxFileSizeMB > 0 {
+		s.reuseBuf = warmbuffer.MakeWarmBuffer(config.MaxFileSizeMB * bytesInMB)
+	}
+	return s
 }
 
 func (s *Syncer) Initialize(ctx context.Context) error {
@@ -134,7 +140,7 @@ func (s *Syncer) DownloadAndLoad(ctx context.Context) error {
 	return s.downloadAndHandle(ctx, newETagDigest, objectSize)
 }
 
-// downloadAndHandle downloads the S3 object to a temp file and calls the data handler.
+// downloadAndHandle downloads the S3 object into an in-memory buffer and calls the data handler.
 func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string, objectSize int64) error {
 	downloader := manager.NewDownloader(s.client.Client(), func(d *manager.Downloader) {
 		d.PartSize = int64(s.config.ChunkSizeMB) * bytesInMB
@@ -143,7 +149,17 @@ func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string, objec
 	})
 
 	// let's use an in-memory buffer to avoid file I/O
-	buffer := manager.NewWriteAtBuffer(make([]byte, 0, objectSize))
+	var backing []byte
+	if s.reuseBuf != nil {
+		if int64(cap(s.reuseBuf)) < objectSize {
+			// This is impossible, but we check it anyway
+			return fmt.Errorf("reuse buffer too small: cap %d < object size %d", cap(s.reuseBuf), objectSize)
+		}
+		backing = s.reuseBuf[:0]
+	} else {
+		backing = make([]byte, 0, objectSize)
+	}
+	buffer := manager.NewWriteAtBuffer(backing)
 
 	// Download - SDK handles chunking, concurrency, and retry
 	_, err := downloader.Download(ctx, buffer, &s3.GetObjectInput{

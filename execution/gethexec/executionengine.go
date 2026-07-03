@@ -135,8 +135,8 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Builds a FilteredTxReport and returns ErrArbTxFilter for filtered txs.
-// For redeems, returns ErrArbTxFilter without a report (originating tx is
+// Builds a FilteredTxReport and returns ErrSeqFilter for filtered txs.
+// For redeems, returns ErrSeqFilter without a report (originating tx is
 // collected in TxFailed after group rollback).
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if tx.Type() == types.ArbitrumInternalTxType {
@@ -150,11 +150,11 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		// trigger a group rollback. The block processor captures all report
 		// data before rollback and passes it through ErrFilteredCascadingRedeem.
 		if tx.Type() == types.ArbitrumRetryTxType {
-			return state.ErrArbTxFilter
+			return state.ErrSeqFilter
 		}
 		// If the STF already handled this tx via the onchain filter mechanism,
 		// the filter entry has been cleaned up and we're done.
-		var filteredErr *core.ErrFilteredTx
+		var filteredErr *core.ErrFilteredOnChain
 		if errors.As(result.Err, &filteredErr) {
 			return nil
 		}
@@ -974,7 +974,7 @@ func (s *ExecutionEngine) handleFilteredDelayedMessage(filteredErr *ErrFilteredD
 	now := time.Now()
 	if s.waitingForFilteredTx == nil {
 		// First time hitting filtered tx(es) - log and set waiting state.
-		log.Error("Delayed message filtered - HALTING delayed sequencing",
+		log.Info("Delayed message filtered - HALTING delayed sequencing",
 			"txHashes", filteredErr.TxHashes,
 			"delayedMsgIdx", filteredErr.DelayedMsgIdx)
 		s.waitingForFilteredTx = &FilteredTxWaitState{
