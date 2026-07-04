@@ -1377,10 +1377,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 
 	config := s.config()
 
-	// Clear out old nonceFailures
-	s.nonceFailures.Resize(config.NonceFailureCacheSize)
-	s.expireNonceFailures()
-
 	queueItems, queueEmpty := s.getQueueItems(ctx, config)
 	if queueItems == nil {
 		if queueEmpty {
@@ -1850,24 +1846,30 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 }
 
 func (s *Sequencer) hasPendingRegularTxs() bool {
-	s.createBlockMutex.Lock()
-	nonceFailures := s.nonceFailures.Len()
-	s.createBlockMutex.Unlock()
 	return s.txRetryQueue.Len() > 0 ||
 		len(s.txQueue) > 0 ||
-		nonceFailures > 0 ||
 		len(s.timeboostAuctionResolutionTxQueue) > 0
 }
 
 func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
 	s.pendingDelayedMsgCommit = false
+	config := s.config()
+
+	// Service the nonceFailures cache every turn, regardless of which turn is
+	// taken (or none), so stuck entries are expired even when there are no other
+	// pending regular txs.
+	s.createBlockMutex.Lock()
+	s.nonceFailures.Resize(config.NonceFailureCacheSize)
+	s.expireNonceFailures()
+	s.createBlockMutex.Unlock()
+
 	now := time.Now()
 	turn, wait := decideSequencingTurn(
 		s.sequencingState,
 		s.hasPendingRegularTxs(),
 		s.execEngine.hasPendingDelayedMsgs(),
 		now,
-		min(s.config().PollInterval, s.config().MaxBlockSpeed),
+		min(config.PollInterval, config.MaxBlockSpeed),
 	)
 	switch turn {
 	case regularSequencingTurn:
@@ -1878,7 +1880,7 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
 		producedMsg := err == nil && sequencedMsg != nil
 		s.pendingDelayedMsgCommit = producedMsg
-		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, producedMsg, now, s.config().MaxBlockSpeed)
+		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, producedMsg, now, config.MaxBlockSpeed)
 		if err != nil {
 			return nil, 0
 		}
