@@ -1647,21 +1647,28 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 	defer s.blockProductionMutex.Unlock()
 
 	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
-	var seqErr error
-	defer func() { execSequencer.EndSequencing(ctx, seqErr) }()
-	if sequencedMsg != nil {
-		if seqErr = s.WriteSequencedMsg(sequencedMsg); seqErr != nil {
-			log.Error("Error writing sequenced message", "err", seqErr)
-			return 0
-		}
-
-		if seqErr = execSequencer.AppendLastSequencedBlock(); seqErr != nil {
-			log.Error("Error appending last sequenced block", "err", seqErr)
-			return 0
-		}
+	err := s.writeSequencedBlock(execSequencer, sequencedMsg)
+	execSequencer.EndSequencing(ctx, err)
+	if err != nil {
+		return 0
 	}
 
 	return time.Until(startSequencingTime.Add(throttleWait))
+}
+
+func (s *TransactionStreamer) writeSequencedBlock(execSequencer execution.ExecutionSequencer, sequencedMsg *execution.SequencedMsg) error {
+	if sequencedMsg == nil {
+		return nil
+	}
+	if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
+		log.Error("Error writing sequenced message", "err", err)
+		return err
+	}
+	if err := execSequencer.AppendLastSequencedBlock(); err != nil {
+		log.Error("Error appending last sequenced block", "err", err)
+		return err
+	}
+	return nil
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
