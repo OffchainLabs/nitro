@@ -250,7 +250,6 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 	return s.ReorgAtAndEndBatch(s.db.NewBatch(), firstMsgIdxReorged)
 }
 
-// resequenceReorgedMessages must be called with insertionMutex held.
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
 	if s.execSequencer.IsNone() {
 		return
