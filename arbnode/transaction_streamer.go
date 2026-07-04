@@ -250,6 +250,11 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 	return s.ReorgAtAndEndBatch(s.db.NewBatch(), firstMsgIdxReorged)
 }
 
+// resequenceReorgedMessages reinserts the messages that were excluded from the
+// chain after a reorg. The sequencer does this as a best-effort task: these
+// messages don't need to be included because they are no longer canonical. Note
+// that some of their transactions can fail because the state of the chain has
+// changed since they were originally included.
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
 	if s.execSequencer.IsNone() {
 		return
