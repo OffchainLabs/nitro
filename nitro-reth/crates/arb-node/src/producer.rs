@@ -495,8 +495,11 @@ where
             .state_by_block_hash(parent_header.hash())
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
-        let state_provider: StateProviderBox =
-            match self.in_memory_state.state_by_hash(parent_header.hash()) { Some(head_state) => {
+        let state_provider: StateProviderBox = match self
+            .in_memory_state
+            .state_by_hash(parent_header.hash())
+        {
+            Some(head_state) => {
                 let overlay = self.get_or_build_overlay(parent_header.hash(), &head_state);
                 if overlay.is_empty() {
                     raw_state_provider
@@ -504,9 +507,9 @@ where
                     crate::coalesced_state::CoalescedStateProvider::new(raw_state_provider, overlay)
                         .boxed()
                 }
-            } _ => {
-                raw_state_provider
-            }};
+            }
+            _ => raw_state_provider,
+        };
 
         // Read the L2 baseFee from the parent's committed state.
         let l2_base_fee = {
@@ -636,16 +639,19 @@ where
                                 unsafe { &mut *state_ptr },
                                 target_version,
                                 true,
-                            ) { Err(e) => {
-                                info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                            } _ => {
-                                info!(
-                                    target: "block_producer",
-                                    from = current,
-                                    to = target_version,
-                                    "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
-                                );
-                            }}
+                            ) {
+                                Err(e) => {
+                                    info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
+                                }
+                                _ => {
+                                    info!(
+                                        target: "block_producer",
+                                        from = current,
+                                        to = target_version,
+                                        "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
+                                    );
+                                }
+                            }
                         }
                     }
                 }

@@ -340,37 +340,39 @@ impl StylusEvmApi {
         precompile_ctx_ptr: *const (),
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
-    ) -> Self { unsafe {
-        let journal: *mut dyn JournalAccess = {
-            // Bind the trait object with the borrow's own lifetime (so `DB` need
-            // not be `'static`), then erase that lifetime to `'static` for
-            // storage. A direct `as` cast forces the object to `'static` and
-            // thus `DB: 'static`, which the callers cannot satisfy.
-            // SAFETY: the caller guarantees the journal pointer outlives this
-            // struct (see the `# Safety` section above); transmuting a reference
-            // to a same-layout raw pointer only erases that lifetime.
-            let r: &mut dyn JournalAccess = &mut *journal;
-            core::mem::transmute(r)
-        };
-        Self {
-            journal,
-            address,
-            caller,
-            call_value,
-            storage_cache: StorageCache::new(),
-            sstore_refund: 0,
-            return_data: Vec::new(),
-            read_only,
-            arbos_version,
-            ctx_ptr,
-            precompile_ctx_ptr,
-            do_call,
-            do_create,
-            last_code: None,
-            multi_gas: MultiGas::zero(),
-            sub_call_gas: 0,
+    ) -> Self {
+        unsafe {
+            let journal: *mut dyn JournalAccess = {
+                // Bind the trait object with the borrow's own lifetime (so `DB` need
+                // not be `'static`), then erase that lifetime to `'static` for
+                // storage. A direct `as` cast forces the object to `'static` and
+                // thus `DB: 'static`, which the callers cannot satisfy.
+                // SAFETY: the caller guarantees the journal pointer outlives this
+                // struct (see the `# Safety` section above); transmuting a reference
+                // to a same-layout raw pointer only erases that lifetime.
+                let r: &mut dyn JournalAccess = &mut *journal;
+                core::mem::transmute(r)
+            };
+            Self {
+                journal,
+                address,
+                caller,
+                call_value,
+                storage_cache: StorageCache::new(),
+                sstore_refund: 0,
+                return_data: Vec::new(),
+                read_only,
+                arbos_version,
+                ctx_ptr,
+                precompile_ctx_ptr,
+                do_call,
+                do_create,
+                last_code: None,
+                multi_gas: MultiGas::zero(),
+                sub_call_gas: 0,
+            }
         }
-    }}
+    }
 
     /// Per-dimension gas attributed across this program's host calls.
     pub fn multi_gas(&self) -> MultiGas {
