@@ -514,10 +514,32 @@ func (s *ExecutionEngine) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMe
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
 
+	// No lock spans the consensus node's read of the next delayed message number
+	// and this call, so a batch may arrive misaligned after the queue changed
+	// (concurrent enqueue, Reorg, or error reset) and must not be pushed as-is.
+	expectedMsgIdx, err := s.nextDelayedMessageNumberWithMutex()
+	if err != nil {
+		log.Error("dropping delayed messages: failed to get next delayed message number", "err", err)
+		return
+	}
+
+	if firstMsgIdx > expectedMsgIdx {
+		log.Warn("dropping delayed messages enqueued past the expected index", "firstMsgIdx", firstMsgIdx, "expectedMsgIdx", expectedMsgIdx)
+		return
+	}
+	if skip := expectedMsgIdx - firstMsgIdx; skip > 0 {
+		// The delayed inbox is append-only and accumulator-checked before every
+		// enqueue, so overlapping entries are identical to what is already
+		// queued or sequenced; drop them.
+		if skip >= uint64(len(msgs)) {
+			return
+		}
+		msgs = msgs[skip:]
+	}
 	for i, msg := range msgs {
 		s.delayedMsgs.Push(&delayedMsg{
 			msg:    msg,
-			msgIdx: firstMsgIdx + uint64(i),
+			msgIdx: expectedMsgIdx + uint64(i),
 		})
 	}
 }
@@ -615,6 +637,11 @@ func (s *ExecutionEngine) HeadMessageIndexSync(t *testing.T) (arbutil.MessageInd
 func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
+	return s.nextDelayedMessageNumberWithMutex()
+}
+
+// must hold delayedMsgsMutex
+func (s *ExecutionEngine) nextDelayedMessageNumberWithMutex() (uint64, error) {
 	lastDelayedMsg := s.delayedMsgs.Tail()
 	if lastDelayedMsg != nil {
 		return lastDelayedMsg.msgIdx + 1, nil

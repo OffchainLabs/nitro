@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ type DelayedSequencer struct {
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock atomic.Pointer[uint64] // short-circuit: skip work until finalized parent chain block advances past this value
 	config                   DelayedSequencerConfigFetcher
+	mutex                    sync.Mutex
 }
 
 type DelayedSequencerConfig struct {
@@ -105,6 +107,9 @@ func (d *DelayedSequencer) tryToEnqueue(ctx context.Context, lastBlockHeader *ty
 }
 
 func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	config := d.config()
 	if !config.Enable {
 		return nil

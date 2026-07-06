@@ -162,9 +162,10 @@ type ExecutionSequencer interface {
 
 	// EnqueueDelayedMessages feeds delayed (L1-inbox) messages to the execution
 	// node, assigning them sequential delayed indices starting at firstMsgIdx. It
-	// may be called at any time, independently of the StartSequencing loop, and
-	// expects messages in contiguous index order (it does not dedupe). The queue
-	// is cleared on Reorg and must be refilled by the consensus node.
+	// may be called at any time, independently of the StartSequencing loop. A
+	// batch misaligned with the expected next index is trimmed (overlap with
+	// messages already queued or sequenced) or dropped (gap). The queue is
+	// cleared on Reorg and must be refilled by the consensus node.
 	EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMessage, firstMsgIdx uint64)
 	// AppendLastSequencedBlock commits the block staged by the most recent
 	// StartSequencing (or ResequenceReorgedMessage) to the execution chain,
