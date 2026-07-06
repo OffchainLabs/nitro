@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -149,6 +150,44 @@ func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
 				t.Error("pendingQueueItemsResults should be cleared by EndSequencing")
 			}
 		})
+	}
+}
+
+func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nonceErr := errors.New("nonce too high")
+	resultChan := make(chan error, 1)
+	seq.nonceFailures.LruCache.Add(
+		addressAndNonce{nonce: 7},
+		&nonceFailure{
+			queueItem: txQueueItem{
+				resultChan:     resultChan,
+				returnedResult: &atomic.Bool{},
+				ctx:            context.Background(),
+			},
+			nonceErr: nonceErr,
+			expiry:   time.Now().Add(-time.Second),
+		},
+	)
+
+	seq.backgroundForwarder(context.Background())
+
+	select {
+	case res := <-resultChan:
+		if !errors.Is(res, nonceErr) {
+			t.Errorf("parked tx got %v, want the original nonce error", res)
+		}
+	default:
+		t.Error("expired nonce failure was not returned to the client")
+	}
+	if seq.nonceFailures.Len() != 0 {
+		t.Errorf("nonceFailures.Len() = %d, want 0", seq.nonceFailures.Len())
 	}
 }
 
