@@ -43,11 +43,11 @@ type ChainTipBlockRecorder struct {
 
 	headerPreimageLock  sync.Mutex
 	headerPreimages     *containers.LruCache[common.Hash, arbitrum.RecordedHeaderPreimage]
-	recordsDatabase     blockRecordsDatabase
+	recordsDatabase     *freezerBlockRecordsDatabase
 	servedTipRecordings atomic.Uint64
 }
 
-func NewChainTipBlockRecorder(execEngine *ExecutionEngine, recordsDatabase blockRecordsDatabase) *ChainTipBlockRecorder {
+func NewChainTipBlockRecorder(execEngine *ExecutionEngine, recordsDatabase *freezerBlockRecordsDatabase) *ChainTipBlockRecorder {
 	recorder := &ChainTipBlockRecorder{
 		execEngine:      execEngine,
 		headerPreimages: containers.NewLruCache[common.Hash, arbitrum.RecordedHeaderPreimage](recentHeaderPreimageCacheSlots),

@@ -3,61 +3,36 @@
 package gethexec
 
 import (
-	"encoding/binary"
 	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 )
 
-const chainTipBlockRecordHotRetention = 256
+type freezerBlockRecordsDatabase struct {
+	freezer ethdb.ResettableAncientStore
 
-var (
-	blockRecordKeyPrefix      = []byte("ctbr:")
-	blockRecordFreezerBaseKey = []byte("ctbr-freezer-base")
-)
-
-type blockRecordsDatabase interface {
-	writeRecording(recording *chainTipRecording) error
-	readRecording(pos arbutil.MessageIndex) (*chainTipRecording, bool, error)
-	Close() error
+	lock                     sync.Mutex
+	firstRecordedMsgIdx      uint64
+	firstRecordedMsgIdxKnown bool
 }
 
-type keyValueBlockRecordsDatabase struct {
-	db      ethdb.KeyValueStore
-	freezer ethdb.AncientStore
-	lock    sync.Mutex
-}
-
-func newBlockRecordsDatabase(db ethdb.KeyValueStore) blockRecordsDatabase {
-	return newBlockRecordsDatabaseWithFreezer(db, nil)
-}
-
-func newBlockRecordsDatabaseWithFreezer(db ethdb.KeyValueStore, freezer ethdb.AncientStore) blockRecordsDatabase {
-	if db == nil {
+func newBlockRecordsDatabase(freezer ethdb.ResettableAncientStore) *freezerBlockRecordsDatabase {
+	if freezer == nil {
 		return nil
 	}
-	return &keyValueBlockRecordsDatabase{db: db, freezer: freezer}
-}
-
-func blockRecordKey(pos arbutil.MessageIndex) []byte {
-	key := make([]byte, len(blockRecordKeyPrefix)+8)
-	copy(key, blockRecordKeyPrefix)
-	binary.BigEndian.PutUint64(key[len(blockRecordKeyPrefix):], uint64(pos))
-	return key
-}
-
-func blockRecordPosFromKey(key []byte) arbutil.MessageIndex {
-	return arbutil.MessageIndex(binary.BigEndian.Uint64(key[len(blockRecordKeyPrefix):]))
+	return &freezerBlockRecordsDatabase{freezer: freezer}
 }
 
 type persistedChainTipRecording struct {
+	Pos               uint64
 	BlockHash         common.Hash
 	Preimages         []persistedPreimage
 	FirstHeaderNumber uint64
@@ -80,6 +55,7 @@ func persistableChainTipRecording(recording *chainTipRecording) (*persistedChain
 		return nil, fmt.Errorf("cannot persist nil chain-tip recording")
 	}
 	persisted := &persistedChainTipRecording{
+		Pos:               uint64(recording.record.Pos),
 		BlockHash:         recording.record.BlockHash,
 		Preimages:         make([]persistedPreimage, 0, len(recording.record.Preimages)),
 		FirstHeaderNumber: recording.firstHeaderNumber,
@@ -101,7 +77,7 @@ func persistableChainTipRecording(recording *chainTipRecording) (*persistedChain
 	return persisted, nil
 }
 
-func chainTipRecordingFromPersisted(pos arbutil.MessageIndex, persisted *persistedChainTipRecording) *chainTipRecording {
+func chainTipRecordingFromPersisted(persisted *persistedChainTipRecording) *chainTipRecording {
 	preimages := make(map[common.Hash][]byte, len(persisted.Preimages))
 	for _, preimage := range persisted.Preimages {
 		preimages[preimage.Hash] = common.CopyBytes(preimage.Preimage)
@@ -115,7 +91,7 @@ func chainTipRecordingFromPersisted(pos arbutil.MessageIndex, persisted *persist
 	}
 	return &chainTipRecording{
 		record: &execution.RecordResult{
-			Pos:       pos,
+			Pos:       arbutil.MessageIndex(persisted.Pos),
 			BlockHash: persisted.BlockHash,
 			Preimages: preimages,
 		},
@@ -125,10 +101,72 @@ func chainTipRecordingFromPersisted(pos arbutil.MessageIndex, persisted *persist
 	}
 }
 
-func (d *keyValueBlockRecordsDatabase) writeRecording(recording *chainTipRecording) error {
-	d.lock.Lock()
-	defer d.lock.Unlock()
+func decodeChainTipRecording(encoded []byte) (*persistedChainTipRecording, error) {
+	var persisted persistedChainTipRecording
+	if err := rlp.DecodeBytes(encoded, &persisted); err != nil {
+		return nil, fmt.Errorf("failed to decode chain-tip block record: %w", err)
+	}
+	return &persisted, nil
+}
 
+func (d *freezerBlockRecordsDatabase) freezerBounds() (uint64, uint64, error) {
+	tail, err := d.freezer.Tail()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to read chain-tip block records freezer tail: %w", err)
+	}
+	head, err := d.freezer.Ancients()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to read chain-tip block records freezer count: %w", err)
+	}
+	if head < tail {
+		return 0, 0, fmt.Errorf("chain-tip block records freezer head %d below tail %d", head, tail)
+	}
+	return tail, head, nil
+}
+
+func (d *freezerBlockRecordsDatabase) loadFirstRecordedMsgIdxLocked() (uint64, bool, error) {
+	if d.firstRecordedMsgIdxKnown {
+		return d.firstRecordedMsgIdx, true, nil
+	}
+	tail, head, err := d.freezerBounds()
+	if err != nil {
+		return 0, false, err
+	}
+	for item := tail; item < head; item++ {
+		encoded, err := d.readFreezerItem(item)
+		if err != nil {
+			log.Error("Skipping unreadable chain-tip block record during recovery", "item", item, "err", err)
+			continue
+		}
+		persisted, err := decodeChainTipRecording(encoded)
+		if err != nil {
+			log.Error("Skipping undecodable chain-tip block record during recovery", "item", item, "err", err)
+			continue
+		}
+		if persisted.Pos < item {
+			log.Error("Skipping inconsistent chain-tip block record during recovery", "item", item, "pos", persisted.Pos)
+			continue
+		}
+		d.firstRecordedMsgIdx = persisted.Pos - item
+		d.firstRecordedMsgIdxKnown = true
+		return d.firstRecordedMsgIdx, true, nil
+	}
+	return 0, false, nil
+}
+
+func (d *freezerBlockRecordsDatabase) readFreezerItem(item uint64) ([]byte, error) {
+	var encoded []byte
+	if err := d.freezer.ReadAncients(func(reader ethdb.AncientReaderOp) error {
+		var err error
+		encoded, err = reader.Ancient(rawdb.ChainTipBlockRecordsFreezerTable, item)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("failed to read chain-tip block record from freezer item %d: %w", item, err)
+	}
+	return encoded, nil
+}
+
+func (d *freezerBlockRecordsDatabase) writeRecording(recording *chainTipRecording) error {
 	persisted, err := persistableChainTipRecording(recording)
 	if err != nil {
 		return err
@@ -137,198 +175,87 @@ func (d *keyValueBlockRecordsDatabase) writeRecording(recording *chainTipRecordi
 	if err != nil {
 		return fmt.Errorf("failed to encode chain-tip block record: %w", err)
 	}
-	if err := d.db.Put(blockRecordKey(recording.record.Pos), encoded); err != nil {
-		return fmt.Errorf("failed to write chain-tip block record: %w", err)
+
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	pos := uint64(recording.record.Pos)
+	firstRecordedMsgIdx, known, err := d.loadFirstRecordedMsgIdxLocked()
+	if err != nil {
+		return err
 	}
-	if err := d.freezeRecordings(recording.record.Pos); err != nil {
-		return fmt.Errorf("failed to freeze chain-tip block records: %w", err)
+	tail, head, err := d.freezerBounds()
+	if err != nil {
+		return err
 	}
+	switch {
+	case known && pos == firstRecordedMsgIdx+head:
+		// Continuous append
+	case known && pos >= firstRecordedMsgIdx+tail && pos < firstRecordedMsgIdx+head:
+		// The position is already recorded, messages are being replayed is rewriting history
+		if _, err := d.freezer.TruncateHead(pos - firstRecordedMsgIdx); err != nil {
+			return fmt.Errorf("failed to roll back chain-tip block records freezer to message index %d: %w", pos, err)
+		}
+	default:
+		if head > 0 {
+			log.Warn("Resetting chain-tip block records freezer to restart recording", "pos", pos, "tail", tail, "head", head)
+			d.firstRecordedMsgIdxKnown = false
+			if err := d.freezer.Reset(); err != nil {
+				return fmt.Errorf("failed to reset chain-tip block records freezer: %w", err)
+			}
+		}
+		firstRecordedMsgIdx = pos
+	}
+	if _, err := d.freezer.ModifyAncients(func(writer ethdb.AncientWriteOp) error {
+		return writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, pos-firstRecordedMsgIdx, encoded)
+	}); err != nil {
+		return fmt.Errorf("failed to append chain-tip block record to freezer: %w", err)
+	}
+	// Ensure the freezer on disk is within replayable bounds
+	if err := d.freezer.SyncAncient(); err != nil {
+		return fmt.Errorf("failed to sync chain-tip block records freezer: %w", err)
+	}
+	d.firstRecordedMsgIdx = firstRecordedMsgIdx
+	d.firstRecordedMsgIdxKnown = true
 	return nil
 }
 
-func (d *keyValueBlockRecordsDatabase) Close() error {
-	if d.freezer != nil {
-		return d.freezer.Close()
-	}
-	return nil
-}
+func (d *freezerBlockRecordsDatabase) readRecording(pos arbutil.MessageIndex) (*chainTipRecording, bool, error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 
-func (d *keyValueBlockRecordsDatabase) readRecording(pos arbutil.MessageIndex) (*chainTipRecording, bool, error) {
-	key := blockRecordKey(pos)
-	exists, err := d.db.Has(key)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to check chain-tip block record: %w", err)
-	}
-	if !exists {
-		return d.readFrozenRecording(pos)
-	}
-	encoded, err := d.db.Get(key)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to read chain-tip block record: %w", err)
-	}
-	return decodeChainTipRecording(encoded, pos)
-}
-
-func decodeChainTipRecording(encoded []byte, pos arbutil.MessageIndex) (*chainTipRecording, bool, error) {
-	var persisted persistedChainTipRecording
-	if err := rlp.DecodeBytes(encoded, &persisted); err != nil {
-		return nil, false, fmt.Errorf("failed to decode chain-tip block record: %w", err)
-	}
-	return chainTipRecordingFromPersisted(pos, &persisted), true, nil
-}
-
-func (d *keyValueBlockRecordsDatabase) readFrozenRecording(pos arbutil.MessageIndex) (*chainTipRecording, bool, error) {
-	if d.freezer == nil {
-		return nil, false, nil
-	}
-	base, ok, err := d.readFreezerBase()
+	firstRecordedMsgIdx, known, err := d.loadFirstRecordedMsgIdxLocked()
 	if err != nil {
 		return nil, false, err
 	}
-	if !ok || uint64(pos) < base {
+	if !known {
 		return nil, false, nil
 	}
-	count, err := d.freezer.Ancients()
+	tail, head, err := d.freezerBounds()
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read chain-tip block records freezer count: %w", err)
+		return nil, false, err
 	}
-	if uint64(pos) >= base+count {
+	if uint64(pos) < firstRecordedMsgIdx+tail || uint64(pos) >= firstRecordedMsgIdx+head {
 		return nil, false, nil
 	}
-	var encoded []byte
-	if err := d.freezer.ReadAncients(func(reader ethdb.AncientReaderOp) error {
-		var err error
-		encoded, err = reader.Ancient(rawdb.ChainTipBlockRecordsFreezerTable, uint64(pos)-base)
-		return err
-	}); err != nil {
-		return nil, false, fmt.Errorf("failed to read frozen chain-tip block record: %w", err)
-	}
-	return decodeChainTipRecording(encoded, pos)
-}
-
-func (d *keyValueBlockRecordsDatabase) freezeRecordings(latestPos arbutil.MessageIndex) error {
-	if d.freezer == nil || uint64(latestPos) <= chainTipBlockRecordHotRetention {
-		return nil
-	}
-	cutoff := uint64(latestPos) - chainTipBlockRecordHotRetention
-	base, hasBase, err := d.readFreezerBase()
+	encoded, err := d.readFreezerItem(uint64(pos) - firstRecordedMsgIdx)
 	if err != nil {
-		return err
-	}
-	count, err := d.freezer.Ancients()
-	if err != nil {
-		return fmt.Errorf("failed to read chain-tip block records freezer count: %w", err)
-	}
-	if !hasBase {
-		if count != 0 {
-			return fmt.Errorf("chain-tip block records freezer has %d items without a base", count)
-		}
-		firstPos, ok, err := d.firstFreezablePosition(cutoff)
-		if err != nil || !ok {
-			return err
-		}
-		base = firstPos
-		if err := d.writeFreezerBase(base); err != nil {
-			return err
-		}
-	} else if count > 0 && base+count-1 >= cutoff {
-		return nil
-	}
-	nextPos := base + count
-	if nextPos > cutoff {
-		return nil
-	}
-
-	var (
-		encodedRecords [][]byte
-		positions      []uint64
-	)
-	for pos := nextPos; pos <= cutoff; pos++ {
-		encoded, ok, err := d.readKeyValueRecordingBytes(arbutil.MessageIndex(pos))
-		if err != nil {
-			return err
-		}
-		if !ok {
-			break
-		}
-		encodedRecords = append(encodedRecords, encoded)
-		positions = append(positions, pos)
-	}
-	if len(encodedRecords) == 0 {
-		return nil
-	}
-	if _, err := d.freezer.ModifyAncients(func(writer ethdb.AncientWriteOp) error {
-		item := count
-		for _, encoded := range encodedRecords {
-			if err := writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, item, encoded); err != nil {
-				return err
-			}
-			item++
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to append chain-tip block records to freezer: %w", err)
-	}
-	for _, pos := range positions {
-		if err := d.db.Delete(blockRecordKey(arbutil.MessageIndex(pos))); err != nil {
-			return fmt.Errorf("failed to delete frozen chain-tip block record %d from key-value database: %w", pos, err)
-		}
-	}
-	return nil
-}
-
-func (d *keyValueBlockRecordsDatabase) firstFreezablePosition(cutoff uint64) (uint64, bool, error) {
-	iterator := d.db.NewIterator(blockRecordKeyPrefix, nil)
-	defer iterator.Release()
-	if !iterator.Next() {
-		return 0, false, iterator.Error()
-	}
-	pos := uint64(blockRecordPosFromKey(iterator.Key()))
-	if pos > cutoff {
-		return 0, false, nil
-	}
-	return pos, true, nil
-}
-
-func (d *keyValueBlockRecordsDatabase) readKeyValueRecordingBytes(pos arbutil.MessageIndex) ([]byte, bool, error) {
-	key := blockRecordKey(pos)
-	exists, err := d.db.Has(key)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to check chain-tip block record: %w", err)
-	}
-	if !exists {
+		log.Error("Treating unreadable chain-tip block record as missing", "pos", pos, "err", err)
 		return nil, false, nil
 	}
-	encoded, err := d.db.Get(key)
+	persisted, err := decodeChainTipRecording(encoded)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read chain-tip block record: %w", err)
+		log.Error("Treating undecodable chain-tip block record as missing", "pos", pos, "err", err)
+		return nil, false, nil
 	}
-	return encoded, true, nil
+	if persisted.Pos != uint64(pos) {
+		return nil, false, fmt.Errorf("chain-tip block record at freezer item %d has message index %d, expected %d", uint64(pos)-firstRecordedMsgIdx, persisted.Pos, pos)
+	}
+	return chainTipRecordingFromPersisted(persisted), true, nil
 }
 
-func (d *keyValueBlockRecordsDatabase) readFreezerBase() (uint64, bool, error) {
-	exists, err := d.db.Has(blockRecordFreezerBaseKey)
-	if err != nil {
-		return 0, false, fmt.Errorf("failed to check chain-tip block records freezer base: %w", err)
-	}
-	if !exists {
-		return 0, false, nil
-	}
-	encoded, err := d.db.Get(blockRecordFreezerBaseKey)
-	if err != nil {
-		return 0, false, fmt.Errorf("failed to read chain-tip block records freezer base: %w", err)
-	}
-	if len(encoded) != 8 {
-		return 0, false, fmt.Errorf("invalid chain-tip block records freezer base length %d", len(encoded))
-	}
-	return binary.BigEndian.Uint64(encoded), true, nil
-}
-
-func (d *keyValueBlockRecordsDatabase) writeFreezerBase(base uint64) error {
-	encoded := make([]byte, 8)
-	binary.BigEndian.PutUint64(encoded, base)
-	if err := d.db.Put(blockRecordFreezerBaseKey, encoded); err != nil {
-		return fmt.Errorf("failed to write chain-tip block records freezer base: %w", err)
-	}
-	return nil
+func (d *freezerBlockRecordsDatabase) Close() error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	return d.freezer.Close()
 }

@@ -436,12 +436,16 @@ func CreateExecutionNode(
 	case BlockRecorderModeLegacy:
 		recorder = NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	case BlockRecorderModeChainTip:
-		ancientDir, _ := executionDB.AncientDatadir()
+		ancientDir, ancientErr := executionDB.AncientDatadir()
+		if ancientErr != nil || ancientDir == "" {
+			log.Warn("Chain-tip block recordings freezer is in-memory and will not survive restarts", "err", ancientErr)
+			ancientDir = ""
+		}
 		chainTipBlockRecordsFreezer, err := rawdb.NewChainTipBlockRecordsFreezer(ancientDir, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open chain-tip block records freezer: %w", err)
 		}
-		recorder = NewChainTipBlockRecorder(execEngine, newBlockRecordsDatabaseWithFreezer(executionDB, chainTipBlockRecordsFreezer))
+		recorder = NewChainTipBlockRecorder(execEngine, newBlockRecordsDatabase(chainTipBlockRecordsFreezer))
 	default:
 		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
 	}
