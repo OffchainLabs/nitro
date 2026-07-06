@@ -1650,29 +1650,69 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 	s.blockProductionMutex.Lock()
 	defer s.blockProductionMutex.Unlock()
 
-	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
-	err := s.writeSequencedBlock(execSequencer, sequencedMsg)
-	execSequencer.EndSequencing(ctx, err)
-	if err != nil {
-		return 0
+	if !s.execHeadMatchesConsensusHead(ctx) {
+		// Yield to executeMessages/ExecuteNextMsg: sequencing now would build a
+		// block at a msgIdx consensus already holds and fail its txs.
+		return s.config().ExecuteMessageLoopDelay
 	}
+
+	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
+	if sequencedMsg == nil {
+		execSequencer.EndSequencing(ctx, nil)
+		return time.Until(startSequencingTime.Add(throttleWait))
+	}
+
+	if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
+		log.Error("Error writing sequenced message", "err", err)
+		execSequencer.EndSequencing(ctx, err)
+		// A floor against hot-spinning on a persistent error, sized to give
+		// executeMessages a full poll cycle with blockProductionMutex free to
+		// catch exec up if the heads diverged.
+		return s.config().ExecuteMessageLoopDelay
+	}
+	// The message is durably committed.
+	// If the exec-chain append fails, exec heals by re-digesting the message via
+	// ExecuteNextMsg, which the backoff below yields the blockProductionMutex to.
+	// Popping the staged delayed message (in EndSequencing) while exec is still
+	// on the old head means NextDelayedMessageNumber temporarily under-reports,
+	// so the DelayedSequencer may re-enqueue a delayed message that is already
+	// inside the durable msg. That duplicate is never sequenced twice: the
+	// head-alignment check above blocks sequencing until exec digests the
+	// durable msg, and the first delayed turn after that rejects the stale
+	// entry and resets the delayed queue.
+	if err := execSequencer.AppendLastSequencedBlock(); err != nil {
+		log.Error("Error appending last sequenced block", "err", err)
+		execSequencer.EndSequencing(ctx, nil)
+		return s.config().ExecuteMessageLoopDelay
+	}
+	execSequencer.EndSequencing(ctx, nil)
 
 	return time.Until(startSequencingTime.Add(throttleWait))
 }
 
-func (s *TransactionStreamer) writeSequencedBlock(execSequencer execution.ExecutionSequencer, sequencedMsg *execution.SequencedMsg) error {
-	if sequencedMsg == nil {
-		return nil
+func (s *TransactionStreamer) execHeadMatchesConsensusHead(ctx context.Context) bool {
+	consensusHeadMsgIdx, err := s.GetHeadMessageIndex()
+	if errors.Is(err, ErrNoMessages) {
+		// Empty consensus DB; nothing for exec to catch up on.
+		return true
+	} else if err != nil {
+		log.Error("triggerSequencing failed to get consensus head msg index", "err", err)
+		return false
 	}
-	if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
-		log.Error("Error writing sequenced message", "err", err)
-		return err
+	execHeadMsgIdx, err := s.execClient.HeadMessageIndex().Await(ctx)
+	if err != nil {
+		log.Error("triggerSequencing failed to get exec engine head message index", "err", err)
+		return false
 	}
-	if err := execSequencer.AppendLastSequencedBlock(); err != nil {
-		log.Error("Error appending last sequenced block", "err", err)
-		return err
+	if execHeadMsgIdx < consensusHeadMsgIdx {
+		log.Debug("triggerSequencing waiting for exec engine to catch up to consensus head", "execHeadMsgIdx", execHeadMsgIdx, "consensusHeadMsgIdx", consensusHeadMsgIdx)
+		return false
 	}
-	return nil
+	if execHeadMsgIdx > consensusHeadMsgIdx {
+		log.Error("exec engine head is ahead of consensus head, not sequencing", "execHeadMsgIdx", execHeadMsgIdx, "consensusHeadMsgIdx", consensusHeadMsgIdx)
+		return false
+	}
+	return true
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {

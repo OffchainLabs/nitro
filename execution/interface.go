@@ -96,11 +96,13 @@ type ExecutionRecorder interface {
 //     (nil, wait) when there is nothing to do yet (wait is how long to back off).
 //  2. If a block was produced, the consensus node durably stores it in its own
 //     database.
-//  3. If a block was produced, AppendLastSequencedBlock commits that block to the
-//     execution node's chain.
+//  3. If a block was produced and durably stored, AppendLastSequencedBlock
+//     commits that block to the execution node's chain. An append failure is
+//     not forwarded to EndSequencing: the message is already durable, so the
+//     execution node recovers by re-digesting it (DigestMessage).
 //  4. EndSequencing finalizes the turn. It is ALWAYS called after StartSequencing
 //     (not only on error), and receives whatever error the consensus node hit
-//     while persisting the block (nil on success).
+//     while durably storing the block in its own database (nil on success).
 //
 // Independently of that loop:
 //   - EnqueueDelayedMessages may be called at any time to feed delayed (L1-inbox)
@@ -145,11 +147,12 @@ type ExecutionSequencer interface {
 	// EndSequencing finalizes the turn started by StartSequencing and must be
 	// called exactly once after each StartSequencing, whether or not a block was
 	// produced. errWhileSequencing is the error (if any) the consensus node hit
-	// while durably persisting the produced block:
-	//   - nil: the block was committed; the sequencer pops the sequenced delayed
-	//     message, finalizes nonce state, and returns results to waiting tx
-	//     submitters.
-	//   - ErrRetrySequencer: the block could not be committed now; staged regular
+	// while durably persisting the produced block in its own database (an
+	// AppendLastSequencedBlock failure is not passed here; see above):
+	//   - nil: the block was durably persisted; the sequencer pops the sequenced
+	//     delayed message, finalizes nonce state, and returns results to waiting
+	//     tx submitters.
+	//   - ErrRetrySequencer: the block could not be persisted now; staged regular
 	//     transactions are re-queued (or forwarded) for retry.
 	//   - any other error: staged regular transactions are failed back to their
 	//     submitters with that error.
@@ -166,7 +169,9 @@ type ExecutionSequencer interface {
 	// AppendLastSequencedBlock commits the block staged by the most recent
 	// StartSequencing (or ResequenceReorgedMessage) to the execution chain,
 	// caching its L1 pricing data. It returns an error if there is no staged
-	// block or if the append fails.
+	// block or if the append fails. The staged block is consumed even on
+	// failure; recovery is by re-digesting the durably stored message, never by
+	// retrying the append.
 	AppendLastSequencedBlock() error
 	// ResequenceReorgedMessage re-sequences a single message that was sequenced
 	// before a reorg, re-applying it on the reorged chain and staging the

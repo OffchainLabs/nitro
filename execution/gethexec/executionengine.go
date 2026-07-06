@@ -732,23 +732,23 @@ func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 	if s.pendingAppendBlock == nil {
 		return errors.New("no last sequenced block info")
 	}
+	pending := s.pendingAppendBlock
+	s.pendingAppendBlock = nil
 
 	err := s.appendBlock(
-		s.pendingAppendBlock.block,
-		s.pendingAppendBlock.statedb,
-		s.pendingAppendBlock.receipts,
-		s.pendingAppendBlock.blockCalcTime,
+		pending.block,
+		pending.statedb,
+		pending.receipts,
+		pending.blockCalcTime,
 	)
 	if err != nil {
 		return err
 	}
 	s.cacheL1PriceDataOfMsg(
-		s.pendingAppendBlock.msgIdx,
-		s.pendingAppendBlock.block,
-		s.pendingAppendBlock.blockBuiltUsingDelayedMessage,
+		pending.msgIdx,
+		pending.block,
+		pending.blockBuiltUsingDelayedMessage,
 	)
-
-	s.pendingAppendBlock = nil
 
 	return nil
 }

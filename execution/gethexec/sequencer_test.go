@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -74,6 +75,46 @@ func TestPGARoundLength(t *testing.T) {
 	if got := c.PGARoundLength(); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
 	}
+}
+
+// TestEndSequencingDelayedCommitOutcome verifies that the delayed-message pop
+// is keyed on the commit outcome reported to EndSequencing, not on the staged
+// result: a failed durable write leaves the message queued for retry, a
+// successful one pops it.
+func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
+	newSequencerWithPendingDelayedCommit := func(t *testing.T) *Sequencer {
+		engine := &ExecutionEngine{}
+		engine.delayedMsgs.Push(&delayedMsg{msgIdx: 7})
+		configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+		seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq.pendingDelayedMsgCommit = true
+		return seq
+	}
+
+	t.Run("failed commit leaves message queued", func(t *testing.T) {
+		seq := newSequencerWithPendingDelayedCommit(t)
+		seq.EndSequencing(context.Background(), errors.New("durable write failed"))
+		if seq.pendingDelayedMsgCommit {
+			t.Error("pendingDelayedMsgCommit should be cleared")
+		}
+		if seq.execEngine.delayedMsgs.Len() != 1 {
+			t.Error("delayed message should stay queued for retry after a failed commit")
+		}
+	})
+
+	t.Run("successful commit pops message", func(t *testing.T) {
+		seq := newSequencerWithPendingDelayedCommit(t)
+		seq.EndSequencing(context.Background(), nil)
+		if seq.pendingDelayedMsgCommit {
+			t.Error("pendingDelayedMsgCommit should be cleared")
+		}
+		if seq.execEngine.delayedMsgs.Len() != 0 {
+			t.Error("delayed message should be popped after a successful commit")
+		}
+	})
 }
 
 func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {
