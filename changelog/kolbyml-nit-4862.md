@@ -1,3 +1,3 @@
 ### Added
 
-- Prune frozen chain-tip block recordings after validator progress advances.
+- Prune chain-tip block recordings below the latest confirmed message, configurable with `--node.block-recordings-pruner.enable`.

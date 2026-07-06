@@ -408,16 +408,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	return nil
 }
 
-func (v *StatelessBlockValidator) pruneBlockRecordingsBefore(ctx context.Context, pos arbutil.MessageIndex) {
-	if v.recorder == nil {
-		return
-	}
-	_, err := v.recorder.PruneBlockRecordings(pos).Await(ctx)
-	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-		log.Error("error while pruning block recordings", "err", err)
-	}
-}
-
 func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
@@ -548,7 +538,6 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if err != nil || gsEnd != entry.End {
 		return false, &gsEnd, err
 	}
-	v.pruneBlockRecordingsBefore(ctx, pos+1)
 	return true, &entry.End, nil
 }
 
