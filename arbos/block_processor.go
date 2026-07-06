@@ -710,11 +710,7 @@ func ProduceBlockAdvanced(
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	var sendRootPreimages map[common.Hash][]byte
-	if runCtx.IsTipRecording() {
-		sendRootPreimages = buildState.statedb.Preimages()
-	}
-	finalizeBlock(header, buildState.statedb, chainConfig, sendRootPreimages)
+	FinalizeBlock(header, buildState.complete, buildState.statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
@@ -748,10 +744,6 @@ func ProduceBlockAdvanced(
 
 // Also sets header.Root
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
-	finalizeBlock(header, statedb, chainConfig, nil)
-}
-
-func finalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params.ChainConfig, sendRootPreimages map[common.Hash][]byte) {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			panic("cannot finalize blocks before genesis")
@@ -783,9 +775,6 @@ func finalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()
-			if sendRootPreimages != nil {
-				acc.RecordPreimagesTo(sendRootPreimages)
-			}
 			sendRoot, _ = acc.Root()
 			sendCount, _ = acc.Size()
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
