@@ -910,6 +910,7 @@ func (s *ExecutionEngine) popSequencedDelayedMessage() {
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
 	s.delayedMsgs.Pop()
+	s.clearFilteredTxWaitState()
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, error) {
@@ -949,8 +950,6 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 		s.delayedMsgs = containers.Queue[*delayedMsg]{}
 		return nil, err
 	}
-
-	s.clearFilteredTxWaitState()
 
 	return sequencedMsg, nil
 }

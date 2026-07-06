@@ -88,6 +88,7 @@ func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
 	newSequencerWithPendingDelayedCommit := func(t *testing.T) *Sequencer {
 		engine := &ExecutionEngine{}
 		engine.delayedMsgs.Push(&delayedMsg{msgIdx: 7})
+		engine.waitingForFilteredTx = &FilteredTxWaitState{DelayedMsgIdx: 7}
 		configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
 		seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
 		if err != nil {
@@ -106,6 +107,9 @@ func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
 		if seq.execEngine.delayedMsgs.Len() != 1 {
 			t.Error("delayed message should stay queued for retry after a failed commit")
 		}
+		if seq.execEngine.waitingForFilteredTx == nil {
+			t.Error("filtered-tx halt should not be considered resolved by a failed commit")
+		}
 	})
 
 	t.Run("successful commit pops message", func(t *testing.T) {
@@ -116,6 +120,9 @@ func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
 		}
 		if seq.execEngine.delayedMsgs.Len() != 0 {
 			t.Error("delayed message should be popped after a successful commit")
+		}
+		if seq.execEngine.waitingForFilteredTx != nil {
+			t.Error("filtered-tx halt should be resolved by a successful commit")
 		}
 	})
 }
