@@ -256,6 +256,9 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 // that some of their transactions can fail because the state of the chain has
 // changed since they were originally included.
 func (s *TransactionStreamer) resequenceReorgedMessages(msgs []*arbostypes.MessageWithMetadata) {
+	if len(msgs) == 0 {
+		return
+	}
 	if s.execSequencer.IsNone() {
 		return
 	}
