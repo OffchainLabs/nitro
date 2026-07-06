@@ -236,21 +236,17 @@ jobs:
           fi
 
       - name: Fail if any guardrail check failed
+        # Introspects every id'd step's outcome instead of hand-listing ids here,
+        # so a new guardrail step is enforced automatically as long as it has an
+        # id — nothing to remember to wire up in this step.
         if: always()
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
         run: |
-          failed=0
-          for outcome in \
-            "${{ steps.no-hand-written-selectors.outcome }}" \
-            "${{ steps.no-thread-local-in-precompiles.outcome }}" \
-            "${{ steps.no-static-state-in-precompiles.outcome }}" \
-            "${{ steps.no-unit-error-results.outcome }}" \
-            "${{ steps.no-string-error-results.outcome }}" \
-            "${{ steps.no-unsafe-mut-deref-in-arb-evm.outcome }}" \
-            "${{ steps.no-mut-state-cast-outside-stylus.outcome }}" \
-            "${{ steps.no-via-backend-suffix.outcome }}" \
-            "${{ steps.no-active-ctx-helpers.outcome }}"; do
-            if [ "$outcome" = "failure" ]; then
-              failed=1
-            fi
-          done
-          exit $failed
+          set -euo pipefail
+          not_ok=$(echo "$STEPS_JSON" | jq -r 'to_entries[] | select(.value.outcome != "success") | "\(.key): \(.value.outcome)"')
+          if [ -n "$not_ok" ]; then
+            echo "The following guardrail step(s) did not succeed:"
+            echo "$not_ok"
+            exit 1
+          fi
