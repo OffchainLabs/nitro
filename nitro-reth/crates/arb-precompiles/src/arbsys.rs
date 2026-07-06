@@ -204,7 +204,9 @@ fn handle_arb_block_hash(
     let hash = match ctx.block.cached_l2_block_hash(requested) {
         Some(hash) => hash,
         None => {
-            return Err(ArbPrecompileError::fatal(MissingL2BlockHash { requested, current }).into());
+            return Err(
+                ArbPrecompileError::fatal(MissingL2BlockHash { requested, current }).into(),
+            );
         }
     };
 
