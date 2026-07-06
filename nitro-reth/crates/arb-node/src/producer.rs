@@ -496,7 +496,7 @@ where
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
         let state_provider: StateProviderBox =
-            if let Some(head_state) = self.in_memory_state.state_by_hash(parent_header.hash()) {
+            match self.in_memory_state.state_by_hash(parent_header.hash()) { Some(head_state) => {
                 let overlay = self.get_or_build_overlay(parent_header.hash(), &head_state);
                 if overlay.is_empty() {
                     raw_state_provider
@@ -504,9 +504,9 @@ where
                     crate::coalesced_state::CoalescedStateProvider::new(raw_state_provider, overlay)
                         .boxed()
                 }
-            } else {
+            } _ => {
                 raw_state_provider
-            };
+            }};
 
         // Read the L2 baseFee from the parent's committed state.
         let l2_base_fee = {
@@ -632,20 +632,20 @@ where
                     if let Ok(target_version) = target.parse::<u64>() {
                         let current = arb_state.arbos_version();
                         if target_version > current {
-                            if let Err(e) = arb_state.upgrade_arbos_version(
+                            match arb_state.upgrade_arbos_version(
                                 unsafe { &mut *state_ptr },
                                 target_version,
                                 true,
-                            ) {
+                            ) { Err(e) => {
                                 info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                            } else {
+                            } _ => {
                                 info!(
                                     target: "block_producer",
                                     from = current,
                                     to = target_version,
                                     "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
                                 );
-                            }
+                            }}
                         }
                     }
                 }

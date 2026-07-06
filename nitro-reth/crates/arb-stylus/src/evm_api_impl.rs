@@ -340,7 +340,7 @@ impl StylusEvmApi {
         precompile_ctx_ptr: *const (),
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
-    ) -> Self {
+    ) -> Self { unsafe {
         let journal: *mut dyn JournalAccess = {
             // Bind the trait object with the borrow's own lifetime (so `DB` need
             // not be `'static`), then erase that lifetime to `'static` for
@@ -370,7 +370,7 @@ impl StylusEvmApi {
             multi_gas: MultiGas::zero(),
             sub_call_gas: 0,
         }
-    }
+    }}
 
     /// Per-dimension gas attributed across this program's host calls.
     pub fn multi_gas(&self) -> MultiGas {

@@ -139,7 +139,7 @@ impl<E: EvmApi> NativeInstance<E> {
         let func_env = FunctionEnv::new(&mut store, env);
 
         macro_rules! func {
-            ($func:expr) => {
+            ($func:expr_2021) => {
                 Function::new_typed_with_env(&mut store, &func_env, $func)
             };
         }

@@ -239,7 +239,7 @@ fn full_round_trip_packs_and_unpacks_all_fields() {
     };
 
     macro_rules! check {
-        ($sig:expr, $expected:expr) => {{
+        ($sig:expr_2021, $expected:expr_2021) => {{
             let run = test_with(p, ARBOS_V32).call(arbwasm, &calldata($sig, &[]));
             assert_eq!(
                 decode_u256(run.output()),

@@ -45,7 +45,7 @@ use crate::{
 
 /// Cached root→subspace derivations: `keccak256(sub_key)` for each static child.
 macro_rules! cached_root_key {
-    ($name:ident, $sub:expr) => {
+    ($name:ident, $sub:expr_2021) => {
         fn $name() -> B256 {
             static KEY: OnceLock<B256> = OnceLock::new();
             *KEY.get_or_init(|| keccak256($sub))
